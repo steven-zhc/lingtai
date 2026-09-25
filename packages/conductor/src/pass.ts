@@ -14,10 +14,11 @@
  *
  * ## What is here, and what is deliberately not
  *
- * Here: how a step is represented, how the recipe drives it, what a step hands
- * back, how a refusal stops the pass and what it reports. **The ten bodies are
- * empty** — `NOT_BUILT_YET` is all ten of them — because the bodies are the
- * next ticket and they are filling in a contract this file has already fixed.
+ * Here: how a step is represented, how the recipe drives it, what a step is
+ * handed and what it hands back, how a refusal stops the pass and what it
+ * reports. **The ten bodies are empty** — `NOT_BUILT_YET` is all ten of them —
+ * because the bodies are the next ticket and they are filling in a contract
+ * this file has already fixed.
  * That is the point of the split: whoever writes `claim`, `admit`, `prepared`,
  * `design`, `implement` and `end` has something that runs to write against, and
  * whoever writes `build`, `review`, `proposed` and `merge` after them has the
@@ -55,9 +56,11 @@ import {
   type Action,
   type ActionContext,
   type ActionEvent,
+  type ActionVerdict,
   type PipelineResult,
 } from "@lingtai/actions";
 import type { Recipe, StepAction } from "@lingtai/recipe";
+import type { TerminalOutcome } from "./end-step.ts";
 
 // ------------------------------------------------------- the ten, as data ----
 
@@ -244,6 +247,31 @@ export type EndingAt<S extends Step> = S extends RefusingStep
 
 // --------------------------------------------------------- the step bodies ----
 
+/** One action's verdict, with the findings behind it, as the pipeline reports it. */
+export type ActionOutcome = PipelineResult["results"][number];
+
+/**
+ * One step, and how it ended — with everything its plugins said.
+ *
+ * It is both what `PassResult.steps` holds and what a later step's body reads.
+ * `results` is carried here rather than left on the log because the reader acts
+ * on it: `proposed` is *the only step that routes* (0058 §3c) and it routes on
+ * `build`'s verdict and `review`'s findings, neither of which is a `StepEnding`
+ * — a review that found a blocker and a review that found nothing both end
+ * `passed`. That is the reason `PipelineResult.results` carries findings rather
+ * than leaving them on `GateFailed`, one layer up: reading the log back to
+ * discover what the action just said would be a second source of truth for one
+ * sentence.
+ *
+ * `results` is `[]` at `end`, whose list is effects and never reaches a
+ * pipeline, and at any step whose list was empty.
+ */
+export interface StepReached {
+  readonly step: Step;
+  readonly ending: StepEnding;
+  readonly results: readonly ActionOutcome[];
+}
+
 /**
  * What the loop hands a step's body.
  *
@@ -259,6 +287,36 @@ export interface StepWork<S extends Step = Step> {
   readonly actions: readonly StepAction[];
   /** Whether this step may refuse. The workflow's fact, never a plugin's. */
   readonly refuses: boolean;
+  /**
+   * Every step the pass has already reached, in order, with how each ended and
+   * what its plugins said. Empty at `claim`; nine long at `end`.
+   *
+   * **A body that cannot see backwards cannot route**, and `proposed` is the
+   * one step whose whole job is routing (0058 §3c): it decides on `build`'s
+   * verdict and `review`'s findings. `emit` is write-only and `context` is
+   * `{ runId, onSha, cwd, env, log?, round? }`, so without this the router
+   * would have to read the log back for a sentence the pass is holding in
+   * memory — which is the second source of truth `PipelineResult.results`
+   * exists to avoid one layer down.
+   */
+  readonly reached: readonly StepReached[];
+  /**
+   * **Which ending the pass reached — at `end`, and nowhere else.**
+   *
+   * `end` is the one step whose declared effects are filtered by `when:`, and
+   * `resolveEndActions(events, end, outcome)` takes that outcome as its third
+   * argument (`end-step.ts`). A body handed no value for it could only run
+   * every declared cell on every ending — `agent:hold` on an item that landed
+   * — or run none of them, which is the declared-drawn-never-fired failure
+   * (`#61`) this file opens by naming.
+   *
+   * The type says *at `end`, and nowhere else*: it is `TerminalOutcome` for
+   * `StepWork<"end">` and `null` for the other nine. So `end`'s body needs no
+   * narrowing to pass it on, and no other body can read an outcome that has
+   * not been decided yet — the outcome is *where the pass stopped*, and only
+   * `end` runs after that is known. `outcomeOf` is the rule.
+   */
+  readonly outcome: S extends "end" ? TerminalOutcome : null;
   readonly context: ActionContext;
   readonly emit: (event: ActionEvent) => Promise<void> | void;
 }
@@ -317,13 +375,18 @@ export const NOT_BUILT_YET: StepBodies = {
    * naming, so it throws. An `end` the recipe left empty passes, which is every
    * step a recipe omits.
    */
-  end: async ({ actions }) => {
+  end: async ({ actions, outcome }) => {
     if (actions.length === 0) return { ending: "passed" };
     throw new Error(
       `the \`end\` step has ${actions.length} effect(s) declared — ${actions
         .map((a) => `"${a.name}"`)
         .join(", ")} — and this pass has no body to carry them out. ` +
-        "`resolveEndActions` resolves them onto the item's own stream and `tell.ts` does them; " +
+        // The outcome is quoted into the call the body will make, because it is
+        // the argument a body had no value for until `StepWork` carried one:
+        // the effects are filtered by `when:`, and a body that cannot read the
+        // outcome can only run every cell or none, which is `#61` either way.
+        `\`resolveEndActions(events, end, "${outcome}")\` resolves them onto the item's own stream ` +
+        "and `tell.ts` does them; " +
         "throwing rather than passing, because a step that was configured and did not run must not " +
         "look like one that was empty (0016 §4, #61).",
     );
@@ -368,12 +431,6 @@ export interface PassOptions {
   readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[];
 }
 
-/** One step, and how it ended. `PassResult.steps` holds one per step reached. */
-export interface StepReached {
-  readonly step: Step;
-  readonly ending: StepEnding;
-}
-
 export interface PassResult {
   /**
    * Every step the pass reached, in order, with how it ended — and `end` last,
@@ -392,6 +449,35 @@ export interface PassResult {
    * the pass is the step that did.
    */
   readonly stoppedAt: { readonly step: Step; readonly ending: Exclude<StepEnding, StepPassed> } | null;
+}
+
+/**
+ * The ending the pass reached, in the vocabulary `end` filters its effects on.
+ *
+ * **This is the pass's to say and not a body's** — 0058 §2b, *the core is the
+ * sequence and the outcome rules.* The mapping is the one the conductor already
+ * runs, read off its call sites rather than invented here:
+ *
+ * - every step passed, so `merge` ran and the work landed — `landed`
+ *   (`run-once.ts:3423`);
+ * - a refusal, a question a person now holds, or an agent that started and left
+ *   no receipt — `blocked`. All three end with a person holding the question
+ *   and the item on *Waiting on you* (`run-once.ts:3383`, `:3274`, and `:2229`,
+ *   whose own comment is *blocked rather than released*);
+ * - an agent that never started — `failed`, the one ending that asks nobody:
+ *   the wall is about the account rather than the diff, so the claim is
+ *   released and the item goes back to the queue
+ *   ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3), which
+ *   is what `failed` means at `end-step.ts` — *a run that ended without a diff
+ *   worth merging and put the item back in the queue.*
+ *
+ * `closed` is the fourth and no pass produces it: it is a person deciding the
+ * ticket is over ([0044](../../../doc/decisions/0044-a-close-is-a-terminal-outcome.md)),
+ * and `close.ts` resolves `end` for it on its own path.
+ */
+export function outcomeOf(stoppedAt: PassResult["stoppedAt"]): TerminalOutcome {
+  if (stoppedAt === null) return "landed";
+  return stoppedAt.ending.ending === "never-ran" ? "failed" : "blocked";
 }
 
 /**
@@ -414,10 +500,13 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   let stoppedAt: PassResult["stoppedAt"] = null;
 
   for (const spec of PASS) {
-    const ending = await runStep(spec, options, bodies);
-    steps.push({ step: spec.step, ending });
-    if (ending.ending !== "passed") {
-      stoppedAt = { step: spec.step, ending };
+    // `stoppedAt` is still null on every iteration — the loop breaks the moment
+    // it is set — so `end` reached here is `end` after a pass that got through,
+    // and `outcomeOf` says `landed`.
+    const reached = await runStep(spec, options, bodies, [...steps], stoppedAt);
+    steps.push(reached);
+    if (reached.ending.ending !== "passed") {
+      stoppedAt = { step: spec.step, ending: reached.ending };
       break;
     }
   }
@@ -430,7 +519,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   // arrivals. The guard is for the one case where the loop already ran it — a
   // stop *at* `end` — which must not run it twice.
   if (stoppedAt !== null && stoppedAt.step !== "end") {
-    steps.push({ step: "end", ending: await runStep(END, options, bodies) });
+    // `reached` includes the step that stopped it, and `stoppedAt` is what
+    // `outcomeOf` reads: `end` is the one body that is told which of the four
+    // endings it is running for, because its effects are filtered by `when:`.
+    steps.push(await runStep(END, options, bodies, [...steps], stoppedAt));
   }
 
   return { steps, stoppedAt };
@@ -445,8 +537,15 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
  * when the step's plugins passed, and never called at all is not a case: every
  * step's plugins either pass or end the pass.
  */
-async function runStep(spec: StepSpec, options: PassOptions, bodies: StepBodies): Promise<StepEnding> {
+async function runStep(
+  spec: StepSpec,
+  options: PassOptions,
+  bodies: StepBodies,
+  reached: readonly StepReached[],
+  stoppedAt: PassResult["stoppedAt"],
+): Promise<StepReached> {
   const actions = options.recipe.steps[spec.step];
+  let results: readonly ActionOutcome[] = [];
 
   if (spec.plugins === "verdicts") {
     const result = await runActionPipeline({
@@ -455,10 +554,17 @@ async function runStep(spec: StepSpec, options: PassOptions, bodies: StepBodies)
       context: options.context,
       emit: options.emit,
     });
+    // Carried out whatever the step then did, because the verdicts are what a
+    // later body routes on and a refusal's are the ones it most needs: a
+    // `proposed` handed only *`build` refused* cannot tell a findings-bearing
+    // refusal that buys a fix round from one that has nothing to fix.
+    results = result.results;
     const ending = endingOf(result);
     // Not `continue`, and not a swallowed failure: a step whose plugins did not
     // pass has ended, and the body does not run.
-    if (ending.ending !== "passed") return onlyTheFourMayRefuse(spec, ending);
+    if (ending.ending !== "passed") {
+      return { step: spec.step, ending: onlyTheFourMayRefuse(spec, ending), results };
+    }
   }
 
   // The cast is the price of `StepBodies` being keyed by the literal step: read
@@ -471,10 +577,16 @@ async function runStep(spec: StepSpec, options: PassOptions, bodies: StepBodies)
     step: spec.step,
     actions,
     refuses: spec.refuses,
+    reached,
+    // Null at nine of the ten, which is exactly what `StepWork`'s type says:
+    // the outcome is *where the pass stopped*, and no step but `end` runs once
+    // that is known. `StepWork<Step>["outcome"]` distributes to
+    // `TerminalOutcome | null`, so this needs no cast.
+    outcome: spec.step === "end" ? outcomeOf(stoppedAt) : null,
     context: options.context,
     emit: options.emit,
   });
-  return onlyTheFourMayRefuse(spec, ending);
+  return { step: spec.step, ending: onlyTheFourMayRefuse(spec, ending), results };
 }
 
 /**
@@ -501,7 +613,7 @@ function endingOf(result: PipelineResult): StepEnding {
     };
   }
   if (result.heldAt !== null) {
-    return { ending: "held", at: result.heldAt, question: evidenceFrom(result, result.heldAt) };
+    return { ending: "held", at: result.heldAt, question: evidenceFrom(result, "needs-approval") };
   }
   if (result.failedAt !== null) {
     return {
@@ -516,7 +628,7 @@ function endingOf(result: PipelineResult): StepEnding {
       // step and an action is an action.
       because: "action-refused",
       at: result.failedAt,
-      detail: evidenceFrom(result, result.failedAt),
+      detail: evidenceFrom(result, "failed"),
     };
   }
   if (result.ok) return { ending: "passed" };
@@ -527,9 +639,26 @@ function endingOf(result: PipelineResult): StepEnding {
   );
 }
 
-/** What the action said, which the pipeline carries beside its name. */
-function evidenceFrom(result: PipelineResult, action: string): string {
-  return result.results.find((r) => r.action === action)?.evidence ?? "";
+/**
+ * What the action the pipeline stopped at said.
+ *
+ * **Asked for by verdict, never matched by name.** Nothing makes an action's
+ * name unique within a step — `actionsAt` (`recipe.ts:1093`) validates the
+ * plugin and the kind, and no refinement in `recipe.ts` or `resolve.ts` refuses
+ * a second `check` beside the first — so a lookup by name returns whichever was
+ * declared first. A step declaring `check` twice, the first green and the
+ * second red, would then report *refused at `check` — tests green*: a refusal
+ * carrying the passing check's evidence, and at `needs-approval` a person asked
+ * a question nobody asked.
+ *
+ * The pipeline stops at the first action that did not pass, so the one that
+ * ended it is the only result with that verdict and is also the last;
+ * `run-once.ts:2648` reads its refusal the same way and says why — *by verdict
+ * rather than by position: the pipeline stops at the first one, so it is also
+ * the last result — and asking for the verdict says what is meant.*
+ */
+function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
+  return result.results.filter((r) => r.verdict === verdict).at(-1)?.evidence ?? "";
 }
 
 /**

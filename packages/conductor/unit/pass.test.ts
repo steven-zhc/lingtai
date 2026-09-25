@@ -18,18 +18,21 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STEPS, type Step } from "@lingtai/domain";
-import type { Action, ActionContext, ActionEvent, ActionResult } from "@lingtai/actions";
+import type { Action, ActionContext, ActionEvent, ActionFinding, ActionResult } from "@lingtai/actions";
 import { StepMap, type StepAction } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
+import type { TerminalOutcome } from "../src/end-step.ts";
 import {
   NOT_BUILT_YET,
   PASS,
   REFUSING_STEPS,
+  outcomeOf,
   runPass,
   type PassOptions,
   type StepBodies,
   type StepBody,
   type StepEnding,
+  type StepReached,
   type StepWork,
 } from "../src/pass.ts";
 
@@ -56,15 +59,27 @@ const recipeWith = (steps: Record<string, unknown>): PassOptions["recipe"] => ({
  * plus whichever of them a test wants to answer differently.
  *
  * `seen` is what makes *a configured step is never skipped* checkable: it is
- * appended to once per step reached, in order.
+ * appended to once per step reached, in order. It records the whole of what a
+ * body is handed to branch on — the declared list, the outcome and the steps
+ * already reached — because those three are the contract this file fixes.
  */
 function watching(overrides: Partial<Record<Step, StepBody<Step>>> = {}) {
-  const seen: { step: Step; actions: readonly string[] }[] = [];
+  const seen: {
+    step: Step;
+    actions: readonly string[];
+    outcome: TerminalOutcome | null;
+    reached: readonly StepReached[];
+  }[] = [];
   const bodies = Object.fromEntries(
     STEPS.map((step) => [
       step,
       async (work: StepWork<Step>): Promise<StepEnding> => {
-        seen.push({ step: work.step, actions: work.actions.map((a) => a.name) });
+        seen.push({
+          step: work.step,
+          actions: work.actions.map((a) => a.name),
+          outcome: work.outcome,
+          reached: work.reached,
+        });
         return (await overrides[step]?.(work)) ?? { ending: "passed" };
       },
     ]),
@@ -178,7 +193,7 @@ describe("a step that was configured is never skipped", () => {
     ]);
     // And `end`'s effects reach `end`'s body, which is the only thing that can
     // carry them out — the loop does not run them as actions.
-    expect(seen.at(-1)).toEqual({ step: "end", actions: ["close it"] });
+    expect(seen.at(-1)).toMatchObject({ step: "end", actions: ["close it"] });
   });
 
   /**
@@ -276,6 +291,143 @@ describe("four steps may refuse, and the other six may not", () => {
     expect(seen.map((s) => s.step)).toEqual(["claim", "admit", "end"]);
     // And nothing after `prepared` was reached, `end` excepted.
     expect(result.steps.map((s) => s.step)).toEqual(["claim", "admit", "prepared", "end"]);
+  });
+});
+
+describe("a refusal reports what the action that refused said", () => {
+  /**
+   * The reason a step is what stopped and an action is what refused: nothing
+   * makes an action's *name* unique within a step. `actionsAt` validates the
+   * plugin and the kind (`recipe.ts:1093`) and no refinement in `recipe.ts` or
+   * `resolve.ts` asks for distinct names, so a lookup by name returns whichever
+   * was declared first — and *refused at `check` — tests green* is a refusal
+   * reporting the passing check's evidence.
+   */
+  it("reads the evidence by verdict rather than by the first action of that name", async () => {
+    const recipe = recipeWith({
+      proposed: [
+        { name: "check", run: "pnpm test" },
+        { name: "check", run: "pnpm typecheck" },
+      ],
+    });
+    // The schema takes both, which is the premise the rest of this rests on.
+    expect(recipe.steps.proposed).toHaveLength(2);
+
+    const { bodies } = watching();
+    const { actionsAt } = watchingActions({
+      proposed: [
+        canned("check", { verdict: "passed", evidence: "tests green", findings: [] }),
+        canned("check", { verdict: "failed", evidence: "typecheck: 3 errors", findings: [] }),
+      ],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt?.ending).toEqual({
+      ending: "refused",
+      because: "action-refused",
+      at: "check",
+      detail: "typecheck: 3 errors",
+    });
+  });
+
+  /**
+   * The same lookup and the same trap, and this one is worse: a person is being
+   * asked, and the question is the whole of what they are answering.
+   */
+  it("asks the question the held action asked, under a duplicated name", async () => {
+    const recipe = recipeWith({
+      merge: [
+        { name: "sign off", run: "pnpm test" },
+        { name: "sign off", human: "ship it?" },
+      ],
+    });
+    const { bodies } = watching();
+    const { actionsAt } = watchingActions({
+      merge: [
+        canned("sign off", { verdict: "passed", evidence: "tests green", findings: [] }),
+        canned("sign off", { verdict: "needs-approval", evidence: "ship it?", findings: [] }),
+      ],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(result.stoppedAt?.ending).toEqual({ ending: "held", at: "sign off", question: "ship it?" });
+  });
+});
+
+describe("a body can read what the steps before it said", () => {
+  /**
+   * 0058 §3c gives `proposed` the one job of routing, and what it routes on is
+   * `build`'s verdict and `review`'s findings — neither of which is a
+   * `StepEnding`, since a review that found a blocker and one that found
+   * nothing both end `passed`. `emit` is write-only, so `reached` is the only
+   * way the router sees them without reading the log back.
+   *
+   * `build` and `review` have no kinds in `KINDS_AT` yet, so the producer here
+   * is `prepared`, the one refusing step that takes a `run:` today. What is
+   * being checked is the contract, and it does not change when those two rows
+   * open.
+   */
+  it("hands a later step the verdicts and findings of the earlier ones", async () => {
+    const finding: ActionFinding = {
+      file: "packages/conductor/src/pass.ts",
+      line: 257,
+      claim: "the router has nothing to route on",
+      failureScenario: "`proposed` is asked to decide and is handed no verdict",
+      severity: "major",
+    };
+    const recipe = recipeWith({ prepared: [{ name: "install", run: "pnpm install" }] });
+    let atProposed: readonly StepReached[] = [];
+    const { bodies } = watching({
+      proposed: async (work) => {
+        atProposed = work.reached;
+        return { ending: "passed" };
+      },
+    });
+    const { actionsAt } = watchingActions({
+      // A finding on a pass, because a minor does not stop the run (#135) — and
+      // it is exactly the case a router must be able to see.
+      prepared: [canned("install", { verdict: "passed", evidence: "1200 packages", findings: [finding] })],
+    });
+    const { emit } = events();
+
+    await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(atProposed.map((s) => s.step)).toEqual([
+      "claim",
+      "admit",
+      "prepared",
+      "design",
+      "implement",
+      "build",
+      "review",
+    ]);
+    expect(atProposed.find((s) => s.step === "prepared")?.results).toEqual([
+      { action: "install", verdict: "passed", evidence: "1200 packages", findings: [finding] },
+    ]);
+    // And a step whose list was empty said nothing, rather than being absent.
+    expect(atProposed.find((s) => s.step === "design")?.results).toEqual([]);
+  });
+
+  /** The refusing case, which is the one the router most needs to see. */
+  it("carries the refusing step's verdicts through to end", async () => {
+    const recipe = recipeWith({ prepared: [{ name: "install", run: "pnpm install" }] });
+    const { bodies, seen } = watching();
+    const { actionsAt } = watchingActions({
+      prepared: [canned("install", { verdict: "failed", evidence: "exited 1", findings: [] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe, context, emit, bodies, actionsAt });
+
+    expect(result.steps.find((s) => s.step === "prepared")?.results).toEqual([
+      { action: "install", verdict: "failed", evidence: "exited 1", findings: [] },
+    ]);
+    // `end` sees the step that stopped the pass, not the eight before it only.
+    expect(seen.at(-1)?.reached.at(-1)).toMatchObject({ step: "prepared" });
   });
 });
 
@@ -389,6 +541,69 @@ describe("end runs on every ending and cannot refuse", () => {
   });
 });
 
+describe("end is told which of the four endings it is running for", () => {
+  /**
+   * `end` is the one step whose declared effects are filtered by `when:`, and
+   * `resolveEndActions(events, end, outcome)` takes that outcome as its third
+   * argument. A body handed no value for it can only run every declared cell on
+   * every ending — `agent:hold` on an item that landed — or run none of them,
+   * which is `#61`'s declared-drawn-never-fired failure.
+   *
+   * The mapping itself is the conductor's, not this file's invention: every
+   * stop that asks a person resolves `blocked` (`run-once.ts:2229`, `:3274`,
+   * `:3383`), the merge resolves `landed` (`:3423`), and the wall releases the
+   * claim without asking anybody (0031 §3).
+   */
+  const endSaw = async (steps: Record<string, unknown>, at: Record<string, readonly Action[]> = {}) => {
+    const { bodies, seen } = watching();
+    const { actionsAt } = watchingActions(at);
+    const { emit } = events();
+    await runPass({ recipe: recipeWith(steps), context, emit, bodies, actionsAt });
+    return seen.filter((s) => s.step === "end").at(-1)?.outcome;
+  };
+
+  const stopping = (verdict: ActionResult["verdict"]) => ({
+    proposed: [canned("check", { verdict, evidence: "…", findings: [] })],
+  });
+  const oneAtProposed = { proposed: [{ name: "check", run: "true" }] };
+
+  it("says landed when every step passed", async () => {
+    expect(await endSaw({})).toBe("landed");
+  });
+
+  it("says blocked when a step refused, held for a person, or did not finish", async () => {
+    for (const verdict of ["failed", "needs-approval", "did-not-finish"] as const) {
+      expect(await endSaw(oneAtProposed, stopping(verdict))).toBe("blocked");
+    }
+  });
+
+  /** The one ending that asks nobody: the claim is released and the item requeues. */
+  it("says failed when the agent never started", async () => {
+    expect(await endSaw(oneAtProposed, stopping("never-ran"))).toBe("failed");
+  });
+
+  it("tells the other nine nothing, because the outcome is not decided yet", async () => {
+    const { bodies, seen } = watching();
+    const { actionsAt } = watchingActions();
+    const { emit } = events();
+
+    await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    expect(seen.filter((s) => s.outcome !== null).map((s) => s.step)).toEqual(["end"]);
+  });
+
+  /** And the rule on its own, since it is the pass's and not a body's (0058 §2b). */
+  it("is outcomeOf, and closed is nobody's pass to reach", () => {
+    expect(outcomeOf(null)).toBe("landed");
+    expect(outcomeOf({ step: "merge", ending: { ending: "held", at: "sign off", question: "?" } })).toBe(
+      "blocked",
+    );
+    expect(
+      outcomeOf({ step: "prepared", ending: { ending: "never-ran", at: "install", detail: "…" } }),
+    ).toBe("failed");
+  });
+});
+
 describe("the ten bodies are empty, and the empty one that is not silent", () => {
   it("passes every step a recipe left empty", async () => {
     const { actionsAt } = watchingActions();
@@ -413,6 +628,11 @@ describe("the ten bodies are empty, and the empty one that is not silent", () =>
 
     await expect(runPass({ recipe, context, emit, actionsAt })).rejects.toThrow(
       /the `end` step has 1 effect\(s\) declared — "close it" — and this pass has no body/,
+    );
+    // And it names the call the body will make, third argument filled in: the
+    // outcome is what a body needs to decide whether `close it` fires at all.
+    await expect(runPass({ recipe, context, emit, actionsAt })).rejects.toThrow(
+      /resolveEndActions\(events, end, "landed"\)/,
     );
   });
 
