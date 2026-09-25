@@ -919,11 +919,56 @@ describe("runOnce, with no world to run in", () => {
     /** The budget's shape, at the recipe's defaults — this asserts the brief, not the bound. */
     const budget = { evidence: 2_000, attempts: 3, findings: 5 };
 
-    const hitTheWall = async (committed: boolean) => {
+    /**
+     * A `RepoFailed`, shaped rather than imported (`#251`).
+     *
+     * `Effect.either` reads `.detail` and nothing else, and `@lingtai/repo`
+     * loads `node:child_process` at import — which is the one thing keeping
+     * this half of the suite out of the `integration` project.
+     */
+    const pushRefusedWith = (detail: string) =>
+      Effect.fail({ _tag: "RepoFailed", operation: "git push", detail } as never);
+
+    const hitTheWall = async (
+      committed: boolean,
+      /**
+       * What goes wrong underneath the publish, and both are things that
+       * actually can (`#251`): a push origin rejects, and a store that will not
+       * take the row accounting for it.
+       */
+      breaks: { push?: string; theRow?: boolean } = {},
+    ) => {
       const store = memoryStore();
       const did: string[] = [];
       const said: string[] = [];
       const ports = fakePorts(did, store);
+      /**
+       * **The appends go on the same list as the git calls**, because what `#250`
+       * needed said is an ordering *between* them.
+       *
+       * A push that only ever happens while the scope unwinds happens after the
+       * `WorkItemBlocked` and after GitHub has been told, and a person asked a
+       * question wants the branch already there to answer it with. Two lists
+       * could not state that, and `did` already holds every side effect in the
+       * order it happened.
+       */
+      const appended = store.append.bind(store);
+      store.append = async (stream, at, events) => {
+        if (breaks.theRow && events.some((e) => e.type === "RunRefsPublished")) {
+          throw new Error("the store would not take the row");
+        }
+        for (const e of events) did.push(`append ${e.type}`);
+        return appended(stream, at, events);
+      };
+      if (breaks.push !== undefined) {
+        const inner = ports.repo.git;
+        ports.repo.git = (args, o) =>
+          args[0] === "push"
+            ? Effect.sync(() => {
+                did.push(`git push ${args.filter((a) => a.includes(":refs/heads/")).join(" ")}`);
+              }).pipe(Effect.andThen(pushRefusedWith(breaks.push!)))
+            : inner(args, o);
+      }
       if (!committed) {
         // The worktree's HEAD is still the base: the agent edited and never ran
         // `git commit`, which is exactly what `#237` did.
@@ -998,6 +1043,124 @@ describe("runOnce, with no world to run in", () => {
       const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
       expect(brief).toContain("It committed no change, so there is no branch to build on");
       expect(brief).not.toContain("git fetch origin");
+    });
+
+    /**
+     * **And the whole of it is on the log, which is what `#251` is** (0062 §1).
+     *
+     * `#239` landed the two arms above and `#250` was the first real claim to
+     * take this ending. It left no ref — and, because the only account the
+     * publish gave was `runLog.note`, no way to find out which of four things
+     * happened: it found nothing, it was refused, it succeeded and something
+     * removed the refs, or it never ran. A run log is a trace and not a record
+     * (0034 §8), a *successful* push wrote nothing to it at all, and the two
+     * silent returns wrote nothing either. $26.84 survived as unreachable git
+     * objects and one night of archaeology, and the four readings are still not
+     * decidable.
+     *
+     * So the four assertions below are one assertion in four postures: **after
+     * this ending, the log says what the publish did.** The arms above already
+     * pin the push and the `RunProducedDiff`; these pin the account, and the
+     * ordering that stops the account arriving after the question.
+     */
+    it("pushes before the person is asked, and the log says both refs went", async () => {
+      const { result, did, run } = await hitTheWall(true);
+      expect(result.ok).toBe(false);
+
+      // **Before the block, not while the scope unwinds.** This is the ordering
+      // `#250` could not have had: the push lived only in the finalizer, which
+      // releases after every append this pass makes.
+      const push = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1";
+      expect(did).toContain(push);
+      expect(did.indexOf(push)).toBeLessThan(did.indexOf("append WorkItemBlocked"));
+
+      // Two rows, and the second is the finalizer saying it ran: it finds the
+      // head already where it wanted it and pushes nothing. *The finalizer
+      // fired* is the fact `#250` had to infer from a `RUN_LOG_END` line.
+      const rows = run.filter((e) => e.type === "RunRefsPublished");
+      expect(rows.map((e) => (e.data as { outcome: string }).outcome)).toEqual([
+        "published",
+        "already-published",
+      ]);
+      expect(rows[0]!.data).toMatchObject({
+        branch: "agent/7",
+        arm: "agent/7-attempt-1",
+        headSha: "b".repeat(40),
+        detail: null,
+      });
+      expect(did.filter((d) => d.startsWith("git push"))).toEqual([push]);
+    });
+
+    /**
+     * **An absence that is meant is said, or it cannot be told from one that is
+     * not.** This is the reading `#250` most needed excluded and could not
+     * exclude: the publish ran, found the head still at the base, and returned
+     * `null` without a word — which on the page is the same nothing as a
+     * finalizer that never fired.
+     */
+    it("says nothing was committed, rather than leaving that absence to be read", async () => {
+      const { run, did } = await hitTheWall(false);
+
+      const rows = run.filter((e) => e.type === "RunRefsPublished");
+      expect(rows.map((e) => (e.data as { outcome: string }).outcome)).toEqual([
+        "nothing-committed",
+        "nothing-committed",
+      ]);
+      expect(rows[0]!.data).toMatchObject({ headSha: null, detail: null });
+      expect(did.filter((d) => d.startsWith("git push"))).toEqual([]);
+    });
+
+    /**
+     * **A refused push keeps git's own words, and the stop still stands.**
+     *
+     * The head is on the row because that is what says whether anything was
+     * lost: a rejection with commits behind it is a run somebody can still
+     * rescue from the worktree's objects, and `#250`'s was. The person is asked
+     * the same question either way — a push that failed is not a second opinion
+     * about the ticket.
+     */
+    it("keeps git's words when the push is refused, and blocks the item anyway", async () => {
+      const rejected = "! [remote rejected] agent/7 -> agent/7 (stale info)";
+      const { result, run, item } = await hitTheWall(true, { push: rejected });
+      expect(result.ok).toBe(false);
+      expect((result as { stage?: string }).stage).toBe("run");
+
+      const rows = run.filter((e) => e.type === "RunRefsPublished");
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.data).toMatchObject({
+          outcome: "refused",
+          headSha: "b".repeat(40),
+          detail: expect.stringContaining("stale info"),
+        });
+      }
+      expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
+    });
+
+    /**
+     * **The account is worth a row and is not worth an ending.**
+     *
+     * `appendAtEnd` is an `Effect.promise`, so a store that will not take the row
+     * arrives as a defect — and a defect raised from inside a finalizer reaches
+     * the handler at the bottom of `runOnce` and comes back as `unexpected`,
+     * which would replace the ending the run actually had with the failure of
+     * its own bookkeeping. It must also not cost the `RunProducedDiff` that
+     * follows it, which is the row `attemptBrief` reads and the reason a next
+     * attempt is told the branch is there.
+     */
+    it("does not let a refused row change the ending or cost the diff record", async () => {
+      const { result, did, run, item } = await hitTheWall(true, { theRow: true });
+      expect(result.ok).toBe(false);
+      expect((result as { stage?: string }).stage).toBe("run");
+
+      expect(run.some((e) => e.type === "RunRefsPublished")).toBe(false);
+      expect(run.some((e) => e.type === "RunFailed")).toBe(true);
+      expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
+      expect(run.find((e) => e.type === "RunProducedDiff")?.data).toMatchObject({
+        branch: "agent/7",
+        headSha: "b".repeat(40),
+      });
+      expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
     });
   });
 });

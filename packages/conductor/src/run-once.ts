@@ -1120,7 +1120,21 @@ export function runOnce(
               actor: "conductor",
               data: parsePayload("RunRefsPublished", { branch, arm, headSha, outcome, detail }),
             },
-          ]);
+          ]).pipe(
+            // **The account never costs the thing it is an account of.**
+            // `appendAtEnd` is an `Effect.promise`, so a store that will not
+            // take this row raises a defect — and raised from here it would
+            // abort the body before the `RunProducedDiff` below, which is the
+            // row `attemptBrief` actually reads. A ref nobody will fetch is a
+            // worse outcome than a missing explanation of a ref that is there.
+            Effect.catchAllDefect((defect) =>
+              Effect.sync(() => {
+                const why = defect instanceof Error ? defect.message : String(defect);
+                runLog.note("push", `the account of ${outcome} was not appended — ${why}`);
+                log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`);
+              }),
+            ),
+          );
         });
 
       const publishing: Effect.Effect<string | null> = Effect.gen(function* () {
@@ -1211,21 +1225,8 @@ export function runOnce(
           const why = defect instanceof Error ? defect.message : String(defect);
           runLog.note("push", `the publish itself failed — ${why}`);
           if (accounted) return Effect.succeed(why);
-          return noteRefs("refused", null, why).pipe(
-            // The row is the last thing that can be tried, so this catch is the
-            // end of the line: swallowed to the run log and the daemon's own
-            // log rather than raised, because raising is what it was added to
-            // stop.
-            Effect.catchAllDefect((second) =>
-              Effect.sync(() =>
-                log(
-                  `RunRefsPublished was refused by the store: ` +
-                    `${second instanceof Error ? second.message : String(second)}`,
-                ),
-              ),
-            ),
-            Effect.as(why),
-          );
+          // `noteRefs` swallows its own, so this cannot raise in turn.
+          return noteRefs("refused", null, why).pipe(Effect.as(why));
         }),
       );
 
