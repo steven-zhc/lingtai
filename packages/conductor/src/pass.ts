@@ -887,7 +887,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   while (at !== null && at !== "end") {
     // The spine visit: the step's own plugins, then its own body. Nothing has
     // arrived, so nothing is on offer and there is nothing to route.
-    const reached = await runStep(SPEC[at], options, bodies, steps, {
+    const reached = await runStep(SPEC[at], options, bodies, [...steps], {
       arriving: null,
       offering: [],
       // Nothing but `end` is told the outcome, because nothing but `end` runs
@@ -928,7 +928,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // the spine walk, and it runs the router without the inspection: see
     // `StepWork.arriving`.
     const offering = onOffer(reached, ceilings, roundsSpent);
-    const router = await runStep(SPEC.proposed, options, bodies, steps, {
+    const router = await runStep(SPEC.proposed, options, bodies, [...steps], {
       arriving: reached,
       offering,
       outcome: null,
@@ -966,7 +966,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   // here, once, after the walk, whichever of the four ways the walk ended.
   const outcome = outcomeOf({ stoppedAt, rested });
   steps.push(
-    await runStep(SPEC.end, options, bodies, steps, { arriving: null, offering: [], outcome }),
+    await runStep(SPEC.end, options, bodies, [...steps], { arriving: null, offering: [], outcome }),
   );
 
   return { steps, stoppedAt, routes, rested };
@@ -1218,6 +1218,19 @@ function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
  * person reads on `detail`; what it no longer does is take the pass with it.
  */
 function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reaching): StepEnding {
+  if (reaching.arriving !== null && ending.ending !== "routed") {
+    // **A visit the loop routed into must answer with a route.** There is no
+    // spine under it: the step before it did not pass, so `passed` would carry a
+    // refused change onward and any report would be a second reason on top of
+    // the one that arrived. The four answers are 0058 §3b's, and `waiting` is
+    // always one of them, so there is no arrival a judge cannot answer.
+    throw new Error(
+      `\`proposed\` was handed the \`${reaching.arriving.step}\` step's ` +
+        `${reaching.arriving.ending.ending} and answered \`${ending.ending}\` rather than a route. ` +
+        `A step that did not pass is routed, not reported on again: choose one of ` +
+        `${reaching.offering.join(", ")} (0058 §3b, 0061 §3).`,
+    );
+  }
   if (ending.ending === "refused" && !spec.refuses) {
     throw new Error(
       `the \`${spec.step}\` step refused, and only ${REFUSING_STEPS.join(", ")} may refuse ` +
