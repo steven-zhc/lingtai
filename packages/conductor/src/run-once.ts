@@ -1047,24 +1047,116 @@ export function runOnce(
        * they are told the branch is not there to answer it with — which is what
        * the returned detail is for, and null means there is nothing to say.
        */
-      const publishWhatIsCommitted: Effect.Effect<string | null> = Effect.gen(function* () {
+      /** Whether `noteRefs` has already described *this* call. See `publishWhatIsCommitted`. */
+      let accounted = false;
+
+      /**
+       * **The account of the publish, on the log rather than only in the file**
+       * (`#251`).
+       *
+       * `#250` met the wall with two commits in its worktree, left neither
+       * `agent/250` nor `agent/250-attempt-1` on origin, and was collected —
+       * $26.84 recovered from unreachable git objects by luck. The reason the
+       * incident could not be read is that **four different things wrote the
+       * same nothing**:
+       *
+       *   a push that *worked* wrote no line at all, so the ordinary case and
+       *   the missing case were one absence
+       *   both silent returns below wrote nothing, so *nothing was committed*
+       *   and *this never ran* were also that absence
+       *   the two refusals wrote `runLog.note`, and a run log is a **trace and
+       *   never a record** (0034 §8): it is deleted on a landing, it is not what
+       *   a behavioural claim is settled by, and it is a file somebody may reap
+       *
+       * **What the evidence settles about #250, and what it does not.** Two
+       * things are proved. The finalizer *ran*: the three finalizers release in
+       * reverse order of acquisition — this publish, then `removeWorktree`, then
+       * the run log, whose own release writes `RUN_LOG_END` and then keeps or
+       * deletes the file — and #250's log carries that `end` line and was kept,
+       * so the scope closed with `didLand` false and this ran first. And the
+       * push *did not succeed*: neither ref is on origin or in the mirror, and
+       * no `agent/*-attempt-*` ref has ever reached origin at all, while the
+       * three pre-0062-§2 `-restart-<k>` refs are all still there — nothing has
+       * ever deleted an arm ref because nothing had ever written one, and the
+       * daemon was held at `e73edf7`, before 0062 §4's cleanup. So the run
+       * stream has **no `RunProducedDiff`**, which is the second of the two
+       * endings `#251` asked us to tell apart.
+       *
+       * **Which of the returns it took is not settled, and this comment will not
+       * pretend it is.** The two that write a `push` line are excluded, because
+       * that word appears nowhere in a log that was not truncated; the two
+       * silent ones are indistinguishable from each other and from a body that
+       * died between its entry and its first write. `#250`'s worktree is gone,
+       * so no new observation can be made of it — and that is not a gap in the
+       * investigation, it **is** the defect: a publish whose every outcome is
+       * unobservable cannot be diagnosed after the fact, only instrumented
+       * before it. So the fix is the row, and the next occurrence names itself.
+       *
+       * A row from here says the publish ran and says which way it went. **No
+       * row at all, on a stream with `RunStarted` and a terminal event, says it
+       * never ran — unless the run landed**, which is the one ending the
+       * finalizer skips on purpose and where §11's own push writes no row
+       * either. Every merged run has that shape, so a reader who drops the
+       * caveat reads the whole happy path as finalizers that did not fire.
+       *
+       * It settles nothing and nothing branches on it — `run.ts` has no case for
+       * it — which is 0034 §8's test passed from the other side: the account
+       * belongs on the log because it outlives the file, not because anything
+       * reads it to decide.
+       */
+      const noteRefs = (
+        outcome: "published" | "nothing-committed" | "already-published" | "refused",
+        headSha: string | null,
+        detail: string | null,
+      ) =>
+        Effect.suspend(() => {
+          // Set before the append rather than after it: what this guards is the
+          // defect handler below writing a *second* row for an ending this call
+          // has already described.
+          accounted = true;
+          return appendAtEnd(runId, [
+            {
+              type: "RunRefsPublished",
+              actor: "conductor",
+              data: parsePayload("RunRefsPublished", { branch, arm, headSha, outcome, detail }),
+            },
+          ]);
+        });
+
+      const publishing: Effect.Effect<string | null> = Effect.gen(function* () {
+        // Per call, not per pass: an ending with its own call reaches this twice,
+        // and what the handler below asks is *did the call that just died
+        // describe itself* — never *did an earlier one*.
+        accounted = false;
         const at = yield* Effect.either(gitInWorktree(["rev-parse", "HEAD"]));
         if (Either.isLeft(at)) {
           runLog.note("push", `${branch} was not pushed — ${at.left.detail}`);
+          yield* noteRefs("refused", null, at.left.detail);
           return at.left.detail;
         }
         const head = at.right;
         // Nothing committed, so there is nothing to name. The next attempt is
-        // told *Nothing*, which is true.
-        if (head === worktree.baseSha) return null;
-        if (head === published) return null;
+        // told *Nothing*, which is true — and is now **said**, because an
+        // unexplained absence of a ref is what `#250` cost.
+        if (head === worktree.baseSha) {
+          runLog.note("push", `nothing to push — ${branch} is still at the base`);
+          yield* noteRefs("nothing-committed", null, null);
+          return null;
+        }
+        if (head === published) {
+          yield* noteRefs("already-published", head, null);
+          return null;
+        }
         const pushed = yield* Effect.either(gitInWorktree(publishRefs()));
         if (Either.isLeft(pushed)) {
           runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
+          yield* noteRefs("refused", head, pushed.left.detail);
           return pushed.left.detail;
         }
         lease = head;
         published = head;
+        runLog.note("push", `${branch} and ${arm} at ${head.slice(0, 7)}`);
+        yield* noteRefs("published", head, null);
         if (recordedDiff) return null;
         recordedDiff = true;
         // The counts, so the next attempt's brief says how much is there rather
@@ -1086,6 +1178,56 @@ export function runOnce(
         ]);
         return null;
       });
+
+      /**
+       * **The same publish, and a defect in it cannot become the run's ending**
+       * (`#251`).
+       *
+       * Not the explanation of `#250` — see above, which does not claim one —
+       * and not a claim that anything here dies today. Under `livePorts()`
+       * `repo.git` is `gitEffect`, whose `catch` turns every rejection into
+       * `RepoFailed`, a typed failure the `Effect.either`s absorb; `runLog.note`
+       * swallows its own writes on purpose. What can die is `parsePayload`, an
+       * append the store refuses, and whatever a later edit puts here — and
+       * `appendAtEnd` is an `Effect.promise`, so a store that will not take the
+       * row arrives as a defect.
+       *
+       * Two things then go wrong at once, which is why the handler is here
+       * rather than nowhere. A defect raised out of a finalizer reaches the
+       * `catchAllDefect` at the bottom of this function and comes back as
+       * `unexpected`, so **the run's ending becomes the failure of its own
+       * bookkeeping**; and *the publish ran and threw* lands in the same silence
+       * as *the publish never ran*, which is the one reading the row exists to
+       * rule out.
+       *
+       * So a defect becomes the last row rather than no row — unless the call
+       * that died had already written one, because a `numstat` append that dies
+       * after a push succeeded must not turn a published ending into a refused
+       * one. The bookkeeping is worth a row and a line, and is not worth an
+       * ending; **`publishing` is therefore never what a caller yields.**
+       */
+      const publishWhatIsCommitted: Effect.Effect<string | null> = publishing.pipe(
+        Effect.catchAllDefect((defect) => {
+          const why = defect instanceof Error ? defect.message : String(defect);
+          runLog.note("push", `the publish itself failed — ${why}`);
+          if (accounted) return Effect.succeed(why);
+          return noteRefs("refused", null, why).pipe(
+            // The row is the last thing that can be tried, so this catch is the
+            // end of the line: swallowed to the run log and the daemon's own
+            // log rather than raised, because raising is what it was added to
+            // stop.
+            Effect.catchAllDefect((second) =>
+              Effect.sync(() =>
+                log(
+                  `RunRefsPublished was refused by the store: ` +
+                    `${second instanceof Error ? second.message : String(second)}`,
+                ),
+              ),
+            ),
+            Effect.as(why),
+          );
+        }),
+      );
 
       /**
        * **Every ending, and not a list of them.**
@@ -1489,6 +1631,33 @@ export function runOnce(
              * does not undo the block by putting the item back in the queue.
              */
             if (outcome.failure.kind === "out-of-turns") {
+              /**
+               * **The commits go to origin here, and not only while the scope
+               * unwinds** (`#251`).
+               *
+               * This is the ending that lost `#250`'s $26.84, and what makes a
+               * call at this one exit something other than the pattern the
+               * finalizer's own comment argues against is **ordering**: a push
+               * that only ever happens in a finalizer happens *after* the
+               * `WorkItemBlocked` below and after GitHub has been told, and a
+               * person asked a question wants the branch already there to answer
+               * it with. The declined round and the hold at §10 push for exactly
+               * that reason; the wall was the one stop that did not.
+               *
+               * It is **not** a vote of no confidence in the finalizer, which on
+               * `#250` did run — see the elimination beside
+               * `publishWhatIsCommitted`, which is also why this is not offered
+               * as that incident's fix. The finalizer stays and stays
+               * underneath: it covers the endings that have no call here and
+               * never will, and reached twice the second call is
+               * `already-published` and pushes nothing — so a wall that worked
+               * leaves two rows, the second of them the finalizer saying it ran.
+               *
+               * Tolerant, like every other call: a push that failed is not a
+               * second opinion about the ticket, and the block, the receipt and
+               * the recommendation below are unchanged by it.
+               */
+              yield* publishWhatIsCommitted;
               const { detail } = outcome.failure;
               const question = `out-of-turns: ${said(detail)}`;
               const ended = yield* Effect.promise(async () => {
