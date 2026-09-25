@@ -1828,21 +1828,37 @@ describe("the ten bodies are empty, and the two that are not silent", () => {
 describe("nothing in the conductor imports it", () => {
   /**
    * The ticket's first *Done when*, and the thing that makes the blast radius
-   * zero: `pass.ts` lands beside `run-once.ts` and is reachable only from this
-   * file. The day T5 wires it, this test is deleted in the same commit as the
+   * zero: the pass lands beside `run-once.ts` and is reachable only from its own
+   * tests. The day T5 wires it, this test is deleted in the same commit as the
    * line that wires it — which is the point of having it say so out loud.
+   *
+   * **The pass is more than one file and the rule is about the set** (`#259`):
+   * `pass-steps.ts` holds the six bodies `runPass` takes as a seam, so it imports
+   * `pass.ts` and nothing imports it. Asking whether anything imports `pass.ts`
+   * alone would have passed while a wired `pass-steps.ts` did the wiring.
    *
    * The pattern is `one-store.test.ts`'s: a rule nobody keeps by reading a
    * comment is a failing test.
    */
-  it("is imported by no source file in the package", () => {
+  const THE_PASS = ["pass.ts", "pass-steps.ts"];
+
+  it("is imported by no source file outside the pass itself", () => {
     const src = fileURLToPath(new URL("../src", import.meta.url));
+    const imports = new RegExp(`["']\\./(${THE_PASS.map((f) => f.replace(".", "\\.")).join("|")})["']`);
 
     const offenders = readdirSync(src)
-      .filter((f) => f.endsWith(".ts") && f !== "pass.ts")
-      .filter((f) => /["']\.\/pass\.ts["']/.test(readFileSync(join(src, f), "utf8")))
+      .filter((f) => f.endsWith(".ts") && !THE_PASS.includes(f))
+      .filter((f) => imports.test(readFileSync(join(src, f), "utf8")))
       .sort();
 
     expect(offenders).toEqual([]);
+  });
+
+  /** And the pass's own files are all there, so the list above cannot go stale. */
+  it("names every file the pass is made of", () => {
+    const src = fileURLToPath(new URL("../src", import.meta.url));
+    const present = readdirSync(src).filter((f) => f.startsWith("pass")).sort();
+
+    expect(present).toEqual([...THE_PASS].sort());
   });
 });
