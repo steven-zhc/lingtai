@@ -428,11 +428,16 @@ export interface StepWork<S extends Step = Step> {
    *   re-run**: they are verdicts about a diff, and the step that arrived did
    *   not pass, so there is no new diff to inspect. Re-running them would put a
    *   declared `human:` approval in front of a person once per round.
+   *
+   * A route is legal on both, and that is what makes `review` able to judge
+   * nothing: it passes carrying findings, and the visit that reads them is the
+   * `null` one. What is legal only on the second is *anything but* a route.
    */
   readonly arriving: S extends RoutingStep ? StepReached | null : null;
   /**
    * **The destinations the judge may choose from — at `proposed`, and nowhere
-   * else**, and empty there on a spine visit, where there is nothing to route.
+   * else.** Non-empty on both of its visits, because a judge may hold a change
+   * back on the way through as well as answer a refusal on the way back.
    *
    * 0061 §3, and the sentence the whole split rests on: *`judge:` decides which
    * step is next. The workflow decides which steps it may choose from.* The
@@ -509,11 +514,12 @@ export const NOT_BUILT_YET: StepBodies = {
    * **Refuses**, and the only step that routes — and the router is the half of
    * it that cannot be empty.
    *
-   * On the spine it passes, which is *nothing was declared and nothing said no*
-   * and is the whole of today's behaviour at a point with no actions. On a
-   * routing arrival it answers `waiting`: **a pass with no judge built sends
-   * every refusal to a person.** That is not a placeholder standing in for a
-   * decision — it is the correct decision while `rounds` can buy nothing,
+   * On its own way through it passes, which is *`build` and `review` said
+   * nothing that stops this* and is today's behaviour at a point whose actions
+   * all passed: no judge is reading the findings, so nothing holds the change
+   * back. On a routing arrival it answers `waiting`: **a pass with no judge built
+   * sends every refusal to a person.** That is not a placeholder standing in for
+   * a decision — it is the correct decision while `rounds` can buy nothing,
    * because the alternative readings are both wrong. `passed` would carry a
    * refused change on to `merge`, and any step back would be the workflow
    * inventing the judgement 0061 §3 reserves for a plugin.
@@ -611,59 +617,65 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
  * to spend.
  *
  * **The set depends on how far the pass got, not only on what is left**
- * (0061 §3, and T4b's own *watch out*). Cell by cell:
+ * (0061 §3, and T4b's own *watch out*). `at` is where the pass is and `ending`
+ * is what it reported there — `passed` on `proposed`'s own way through, which is
+ * a routing opportunity too. Cell by cell:
  *
  * ```
  * waiting              always. A person can always be the answer, and 0058 §3b
  *                      keeps it to exactly one way in: this one
  * claim                while the item has a restart left. Choosing it requeues
  *                      and ends the pass
- * the arriving step    for a `needs-input` — 0058 §3c's *that step again with
+ * that step again      for a `needs-input` — 0058 §3c's *that step again with
  *                      "state your assumption"*. `admit`, `design` and
- *                      `implement` are the three that can ask
- * implement            for a refusal at `implement` or after it. **Not at
+ *                      `implement` are the three that can ask, and nothing but
+ *                      the step that asked knows the question
+ * implement            from `implement` or anywhere after it. **Not from
  *                      `prepared`**: a failed install refuses before any agent
  *                      has run, so there is no diff and no error in one to fix,
  *                      and a judge that knows nothing about `prepared` still
  *                      cannot choose wrongly
- * build                for a refusal at `merge` — a conflict an agent resolved
- *                      is code written *after* `review` passed, so it goes back
- *                      through both (0058 §3c). It is what buys the invariant
- *                      *every path into `end` has been through `build` and
- *                      `review`*
+ * build                from `merge` — a conflict an agent resolved is code
+ *                      written *after* `review` passed, so it goes back through
+ *                      both (0058 §3c). It is what buys the invariant *every
+ *                      path into `end` has been through `build` and `review`*
  * ```
  *
  * Both step edges want a round, because both buy another agent run.
  */
-export function onOffer(arriving: StepReached, ceilings: Ceilings, roundsSpent: number): Destination[] {
+export function onOffer(
+  at: Step,
+  ending: StepEnding,
+  ceilings: Ceilings,
+  roundsSpent: number,
+): Destination[] {
   const offer: Destination[] = ["waiting"];
   if (ceilings.restartsLeft > 0) offer.push("claim");
   if (roundsSpent >= ceilings.rounds) return offer;
 
-  const ending = arriving.ending;
   if (ending.ending === "did-not-finish" && ending.because === NEEDS_INPUT) {
-    // The step that asked, asked again — carrying *state your assumption*. It is
-    // the arriving step itself and never a neighbour: nothing else knows the
-    // question.
-    offer.push(arriving.step);
+    offer.push(at);
     return offer;
   }
 
-  // A refusal. `implement` is on offer once the pass has got as far as an agent
-  // having written something for a refusal to be about.
-  if (AFTER_AN_AGENT.includes(arriving.step)) offer.push("implement");
-  if (arriving.step === "merge") offer.push("build");
+  // `implement` is on offer once the pass has got as far as an agent having
+  // written something for the decision to be about.
+  if (AFTER_AN_AGENT.includes(at)) offer.push("implement");
+  if (at === "merge") offer.push("build");
   return offer;
 }
 
 /**
- * The steps a refusal can arrive from with a diff behind it.
+ * The places a pass can be judged from with a diff behind it.
  *
- * `implement` itself is in the list because a refusal *at* `implement` is one
- * its own next run can answer. `prepared` is not, and that omission is the
- * whole of 0061 §3's worked example.
+ * `implement` itself is on the list because a refusal *at* `implement` is one
+ * its own next run can answer, and `proposed` is on it because **`proposed`
+ * routes on the way through as well as on the way back** (0058 §3b) — a `review`
+ * that passed with findings above the bar is judged at that visit, and its
+ * answer is *the lines or the approach* (0061 §3). `prepared` is not on the
+ * list, and that omission is the whole of 0061 §3's worked example.
  */
-const AFTER_AN_AGENT: readonly Step[] = ["implement", "build", "review", "merge"];
+const AFTER_AN_AGENT: readonly Step[] = ["implement", "build", "review", "proposed", "merge"];
 
 /**
  * The seven steps whose non-pass arrives at `proposed` — 0058 §3b's second
@@ -749,7 +761,11 @@ export interface PassOptions {
 
 /** One decision `proposed` made, in the order it made them. */
 export interface RouteTaken {
-  /** The step that did not pass. `proposed` itself on a spine visit. */
+  /**
+   * The step whose outcome was judged — the one that did not pass, or `proposed`
+   * itself where the judgement was made on the way through, which is where a
+   * `review`'s findings are read.
+   */
   readonly from: Step;
   readonly to: Destination;
   readonly why: string;
@@ -768,13 +784,21 @@ export interface PassResult {
    */
   readonly steps: readonly StepReached[];
   /**
-   * Where the pass stopped, or null when every step passed.
+   * **The step that reported something the pass stopped for**, or null where
+   * nothing did.
    *
    * It names the step, which is the third of the three things 0058 §3c asks a
    * refusal to carry; the other two are on the ending. On a routed pass it is
    * the step that **did not pass**, not the `proposed` that routed it: what a
    * person on *Waiting on you* needs is the install that failed, and the route
    * that brought it to them is `routes`.
+   *
+   * **Null is two unlike things and `rested` tells them apart.** A pass that got
+   * through has nothing to report; so does one the router sent to a person on the
+   * way through, where `build` and `review` both passed and what `proposed`
+   * judged was `review`'s findings — nothing refused, and the findings are on
+   * `review`'s own entry in `steps`. `rested` is `null` for the first and
+   * `waiting` for the second.
    *
    * It is **not** set by `end` failing after a stop: `end` runs on every ending,
    * and what stopped the pass is the step that did. **Nor by `end` failing after
@@ -790,20 +814,22 @@ export interface PassResult {
    */
   readonly stoppedAt: { readonly step: Step; readonly ending: StepReport } | null;
   /**
-   * Every route `proposed` chose, in order — the pass's own audit of the loops
+   * Every decision `proposed` made, in order — the pass's own audit of the loops
    * it bought.
    *
-   * Empty on a pass that sailed through. One entry per round, plus the last one
-   * if the pass rested, so `routes.length` is the rounds spent and the reason
-   * each was spent on.
+   * Empty on a pass that sailed through and was let past. One entry per
+   * judgement, so the ones whose `to` is a step are the rounds spent and the
+   * reason each was spent on.
    */
   readonly routes: readonly RouteTaken[];
   /**
-   * Where the pass rests, when `proposed` sent it somewhere that is not a step.
+   * Where the pass came to rest, when `proposed` sent it somewhere that is not a
+   * step.
    *
-   * `null` covers both a pass that got through and one that stopped without
-   * reaching the router at all — a `never-ran`, a crash, a `proposed` whose own
-   * plugins refused. `stoppedAt` is what tells those apart from a landing.
+   * `null` covers both a pass that got through and one that stopped without a
+   * decision being made about it at all — a `never-ran`, a crash, a `proposed`
+   * whose own plugins refused, a judge that answered something it was not
+   * offered. `stoppedAt` is what tells those apart from a landing.
    */
   readonly rested: Rest | null;
 }
@@ -819,10 +845,14 @@ export interface PassResult {
  *   (`run-once.ts:3423`), and that stays true where `end`'s own body then
  *   stumbled: `main` moved either way, and `end` is never what stopped a pass
  *   (`PassResult.stoppedAt`);
- * - a refusal a person now holds, a question put to one, or an agent that
- *   started and left no receipt — `blocked`. All three end with a person
- *   holding the question and the item on *Waiting on you* (`run-once.ts:3383`,
- *   `:3274`, and `:2229`, whose own comment is *blocked rather than released*);
+ * - a refusal a person now holds, a question put to one, an agent that started
+ *   and left no receipt, or the router deciding a person is next — `blocked`.
+ *   All four end with a person holding the question and the item on *Waiting on
+ *   you* (`run-once.ts:3383`, `:3274`, and `:2229`, whose own comment is
+ *   *blocked rather than released*). `rested` is read before `stoppedAt`,
+ *   because the router may send a pass that refused nothing to a person: a
+ *   `review`'s findings above the bar are a reason for a person without being a
+ *   report by any step;
  * - an agent that never started, and **a restart** — `failed`, the two endings
  *   that ask nobody. The wall is about the account rather than the diff, so the
  *   claim is released and the item goes back to the queue
@@ -838,6 +868,7 @@ export interface PassResult {
  */
 export function outcomeOf(pass: Pick<PassResult, "stoppedAt" | "rested">): TerminalOutcome {
   if (pass.rested === "requeued") return "failed";
+  if (pass.rested === "waiting") return "blocked";
   if (pass.stoppedAt === null) return "landed";
   return pass.stoppedAt.ending.ending === "never-ran" ? "failed" : "blocked";
 }
@@ -857,10 +888,12 @@ export function outcomeOf(pass: Pick<PassResult, "stoppedAt" | "rested">): Termi
  * 1. walk the spine — `STEPS`, in order — running each step's plugins and then
  *    its body;
  * 2. a step that did not pass goes to **`proposed`**, carrying its reason. All
- *    seven of them, which is 0058 §3b's second drawing;
- * 3. `proposed` answers with a destination from the set the workflow offered it:
- *    a step, and the walk resumes there having spent a round; or `waiting`; or
- *    `claim`, which requeues and ends the pass;
+ *    seven of them, which is 0058 §3b's second drawing — and `proposed` may
+ *    route on its own way through too, which is where a `review`'s findings are
+ *    judged;
+ * 3. a route is a destination from the set the workflow offered: a step, and the
+ *    walk resumes there having spent a round; or `waiting`; or `claim`, which
+ *    requeues and ends the pass;
  * 4. `end` runs, whatever happened.
  *
  * Everything a step *does* is its body's and its plugins', which is 0058 §2b —
@@ -884,12 +917,40 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
   let at: Step | null = "claim";
 
+  /**
+   * What a route does to the walk, in one place — because a route is chosen at
+   * two of them: `proposed`'s own visit on the way through, and the visit the
+   * loop takes a step that did not pass to. `reported` is what a person should
+   * be shown, and is null where nothing refused.
+   */
+  const take = (route: StepRouted, reported: { step: Step; ending: StepReport } | null): boolean => {
+    routes.push({ from: reported?.step ?? "proposed", to: route.to, why: route.why });
+    if (route.to === "waiting" || route.to === "claim") {
+      rested = route.to === "claim" ? "requeued" : "waiting";
+      // What a person reads is the step that did not pass, never the router that
+      // sent it to them; where it was sent is `routes`.
+      stoppedAt = reported;
+      return false;
+    }
+    // Back into the spine, and a round is what that costs.
+    roundsSpent += 1;
+    at = route.to;
+    return true;
+  };
+
   while (at !== null && at !== "end") {
-    // The spine visit: the step's own plugins, then its own body. Nothing has
-    // arrived, so nothing is on offer and there is nothing to route.
-    const reached = await runStep(SPEC[at], options, bodies, [...steps], {
+    const spec = SPEC[at];
+    const reached = await runStep(spec, options, bodies, [...steps], {
+      // The spine visit: the step's own plugins, then its own body. Nothing has
+      // arrived, and at nine of the ten there is nothing to route.
       arriving: null,
-      offering: [],
+      // **`proposed` routes on the way through as well as on the way back**
+      // (0058 §3b) — and that visit is where a `review`'s findings are judged,
+      // which is 231 of the log's refusals and 0061 §3's one judgement worth an
+      // agent. `review` judges nothing and passes, so nothing refused and there
+      // is nothing arriving; what the judge reads is the findings on `reached`,
+      // and what it may answer is this set.
+      offering: spec.routes ? onOffer(at, { ending: "passed" }, ceilings, roundsSpent) : [],
       // Nothing but `end` is told the outcome, because nothing but `end` runs
       // after it is known.
       outcome: null,
@@ -897,21 +958,18 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     steps.push(reached);
     const ending = reached.ending;
 
+    if (ending.ending === "routed") {
+      // `proposed`, on the way through, having decided the change is not going
+      // to `merge` as it stands. Nothing reported anything, so nothing is named
+      // as having stopped the pass: `routes` says what was decided and
+      // `review`'s own entry says what it was decided on.
+      if (take(ending, null)) continue;
+      break;
+    }
+
     if (ending.ending === "passed") {
       at = after(at);
       continue;
-    }
-
-    if (ending.ending === "routed") {
-      // Nothing arrived at a spine visit, so `theWorkflowsToSay` has already
-      // refused any route from one — this is the guard that says so rather than
-      // a case. Reported as an ending, for the reason `threw` gives: what an
-      // escape from here takes with it is `end`.
-      stoppedAt = {
-        step: at,
-        ending: threw(SPEC[at], new Error(`a spine visit routed the pass to \`${ending.to}\``)),
-      };
-      break;
     }
 
     // A step that did not pass, and is not one of the seven the drawing takes to
@@ -922,41 +980,27 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       break;
     }
 
-    // **Every one of the other seven arrives at `proposed`, carrying its
-    // reason** — 0058 §3b, and §3c's *what happened has to arrive intact*. This
-    // is a second visit to `proposed` in the pass rather than a branch inside
-    // the spine walk, and it runs the router without the inspection: see
+    // **Every one of the seven arrives at `proposed`, carrying its reason** —
+    // 0058 §3b, and §3c's *what happened has to arrive intact*. This is a second
+    // visit to `proposed` in the pass rather than a branch inside the spine
+    // walk, and it runs the router without the inspection: see
     // `StepWork.arriving`.
-    const offering = onOffer(reached, ceilings, roundsSpent);
     const router = await runStep(SPEC.proposed, options, bodies, [...steps], {
       arriving: reached,
-      offering,
+      offering: onOffer(at, ending, ceilings, roundsSpent),
       outcome: null,
     });
     steps.push(router);
 
     if (router.ending.ending !== "routed") {
-      // The router itself did not answer — its body threw, or `theWorkflowsToSay`
+      // The router did not answer — its body threw, or `theWorkflowsToSay`
       // refused what it answered. What stopped the pass is then `proposed`, and
       // the step that arrived is in `steps` one entry above it.
       stoppedAt = { step: "proposed", ending: router.ending };
       break;
     }
 
-    const route = router.ending;
-    routes.push({ from: reached.step, to: route.to, why: route.why });
-
-    if (route.to === "waiting" || route.to === "claim") {
-      rested = route.to === "claim" ? "requeued" : "waiting";
-      // What a person reads is the step that did not pass, never the router that
-      // sent it to them; where it was sent is `routes`.
-      stoppedAt = { step: reached.step, ending };
-      break;
-    }
-
-    // Back into the spine, and a round is what that costs.
-    roundsSpent += 1;
-    at = route.to;
+    if (!take(router.ending, { step: at, ending })) break;
   }
 
   // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
@@ -1244,14 +1288,6 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reachin
         `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and \`proposed\` is the ` +
           "only step that routes (0058 §3). A step that did not pass reports its reason and the " +
           "loop takes it to `proposed`, which is what keeps `waiting` to one way in.",
-      );
-    }
-    if (reaching.arriving === null) {
-      throw new Error(
-        `\`proposed\` routed the pass to \`${ending.to}\` on a visit nothing arrived at it — ` +
-          `${ending.why}. A spine visit is the inspection and not the router: the change has just ` +
-          "passed `build` and `review`, so what is there to route is `passed` on to `merge`. A " +
-          "route is an answer to a step that did not pass (0058 §3b).",
       );
     }
     if (!reaching.offering.includes(ending.to)) {
