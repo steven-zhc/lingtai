@@ -337,6 +337,28 @@ const quotaRuntime: Runtime = {
 };
 
 /**
+ * The implementer met the recipe's turn limit, with commits behind it.
+ *
+ * **The one ending that arrives as a receipt with a non-zero exit** rather than
+ * as a value the function returns, and the ending 0062 §1 was written for: a
+ * claim that ran out of turns never restarted, so there is no restart ordinal to
+ * name its commits by (§2). `#250` met this with two commits in its worktree and
+ * left no ref at all, which is `#251`.
+ */
+const atTheWall: Runtime = {
+  ...runtime,
+  run: async () => ({
+    exitCode: 1,
+    turns: 150,
+    durationMs: 900_000,
+    costUsd: 24.1,
+    failure: { kind: "out-of-turns", detail: "150 turns, and the recipe allows 150 · $24.10" },
+    text: null,
+    sessionId: "sess-turns",
+  }),
+};
+
+/**
  * The implementer works and is paid for it; the reviewer meets the wall.
  *
  * The shape `#133` is about, and the reason 0031's tests pass while it happens:
@@ -726,18 +748,7 @@ describe("runOnce, with no world to run in", () => {
       {
         project,
         client: fakeGitHub(said),
-        runtime: {
-          ...runtime,
-          run: async () => ({
-            exitCode: 1,
-            turns: 150,
-            durationMs: 900_000,
-            costUsd: 24.1,
-            failure: { kind: "out-of-turns", detail: "150 turns, and the recipe allows 150 · $24.10" },
-            text: null,
-            sessionId: "sess-turns",
-          }),
-        },
+        runtime: atTheWall,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
         prompt: "fix {{issue}}",
@@ -762,6 +773,160 @@ describe("runOnce, with no world to run in", () => {
     const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
     expect(item).toContain("WorkItemBlocked");
     expect(item).not.toContain("WorkItemReleased");
+
+    // **And the work is on origin, which is what `#250` did not get** (0062 §1,
+    // `#251`). This test existed through the whole of `#239` and asserted the
+    // receipt and the block; the ending it drives is the one the finalizer was
+    // added for, and nothing here said so.
+    expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
+
+    // On the log, not only in the run log. A push writes no run-log line when it
+    // works, so *it pushed* and *it never ran* were the same absence — the
+    // silence a night of `git ls-remote` was spent on.
+    const refs = events.filter((e) => e.type === "RunRefsPublished");
+    expect(refs).toHaveLength(1);
+    expect(refs[0]!.data).toEqual({
+      branch: "agent/7",
+      arm: "agent/7-attempt-1",
+      headSha: "b".repeat(40),
+      outcome: "published",
+      detail: null,
+    });
+  });
+
+  /**
+   * **A push refused at the wall reaches the log, not a file somebody has to
+   * still have** (`#251`).
+   *
+   * The finalizer's only account was `runLog.note`, and by then the item's own
+   * terminal event is already down — there is no `WorkItemReleased.reason` left
+   * to carry the sentence the way `agentNeverStarted`'s does. So the one place
+   * the failure could be read was `~/.lingtai/runs/<project>/<runId>.log`, which
+   * 0034 §8 calls a trace and not a record and §4 deletes on a landing. `#250`
+   * is what that costs: the refs were missing, the file said nothing, and
+   * whether the push had been tried was unanswerable.
+   *
+   * **And the ending does not move.** A dropped network must not turn *the
+   * ticket was scoped too large* into *a push failed* — the block, the receipt
+   * and the recommendation are all unchanged, and only the account is added.
+   */
+  it("puts a refused push on the log when the run ends at its turns", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const fake = fakePorts(did, store);
+    const ports: RunPorts = {
+      ...fake,
+      repo: {
+        ...fake.repo,
+        git: (args, o) =>
+          args[0] === "push"
+            ? Effect.fail({
+                _tag: "RepoFailed",
+                operation: "git push",
+                detail: "stale info: agent/7 moved",
+              } as never)
+            : fake.repo.git(args, o),
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: atTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+
+    const run = await store.read(result.runId!);
+    const refs = run.filter((e) => e.type === "RunRefsPublished");
+    expect(refs).toHaveLength(1);
+    expect(refs[0]!.data).toMatchObject({
+      branch: "agent/7",
+      arm: "agent/7-attempt-1",
+      outcome: "refused",
+      detail: "stale info: agent/7 moved",
+    });
+    // The head it could not push, so a person knows there was something to lose.
+    expect((refs[0]!.data as { headSha: string }).headSha).toBe("b".repeat(40));
+    // Nothing recorded a diff, because nothing is fetchable — `attemptBrief`
+    // reads `RunProducedDiff` and would otherwise name a branch nobody can get.
+    expect(run.map((e) => e.type)).not.toContain("RunProducedDiff");
+
+    // The ending is the wall's, unchanged: the limit is a scope alarm, and a
+    // push that failed is not a second opinion about the ticket.
+    const item = await store.read(`wi-${PROJECT}-7`);
+    expect(item.map((e) => e.type)).toContain("WorkItemBlocked");
+    expect(item.map((e) => e.type)).not.toContain("WorkItemReleased");
+    expect((item.find((e) => e.type === "WorkItemBlocked")!.data as { question: string }).question)
+      .toContain("out-of-turns");
+  });
+
+  /**
+   * **And the honest absence says so too** (`#251`).
+   *
+   * An ending with no commits publishes nothing on purpose: a ref to an empty
+   * branch is a worse lie than the absence (0062 §1). But *nothing was
+   * committed* and *the publish never ran* were the same silence, which is
+   * exactly the ambiguity `#250` could not be diagnosed through. Both now have a
+   * row, so the question is one query rather than an archaeology of unreachable
+   * objects.
+   */
+  it("says on the log that nothing was committed, rather than leaving no account", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const fake = fakePorts(did, store);
+    const ports: RunPorts = {
+      ...fake,
+      // HEAD where `provision` left it: the agent burned its turns and committed
+      // nothing, which is `#237`'s half of the same failure.
+      repo: {
+        ...fake.repo,
+        git: (args, o) =>
+          args[0] === "rev-parse" ? Effect.succeed("a".repeat(40)) : fake.repo.git(args, o),
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: atTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+
+    const refs = (await store.read(result.runId!)).filter((e) => e.type === "RunRefsPublished");
+    expect(refs).toHaveLength(1);
+    expect(refs[0]!.data).toEqual({
+      branch: "agent/7",
+      arm: "agent/7-attempt-1",
+      headSha: null,
+      outcome: "nothing-committed",
+      detail: null,
+    });
+    // And no ref was made up for it.
+    expect(did.filter((d) => d.startsWith("git push"))).toEqual([]);
   });
 
   /**

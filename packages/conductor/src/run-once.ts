@@ -1047,24 +1047,72 @@ export function runOnce(
        * they are told the branch is not there to answer it with — which is what
        * the returned detail is for, and null means there is nothing to say.
        */
+      /**
+       * **The account of the above, on the log rather than in the file** (`#251`).
+       *
+       * `#250` met the wall with two commits in its worktree, left no ref and no
+       * line, and was collected. Every question anybody could then ask of it —
+       * did the finalizer run, did it find nothing, was it refused — met the
+       * same silence, because the only account this function gave was
+       * `runLog.note` and:
+       *
+       *   a **success wrote nothing at all**, so the ordinary case and the
+       *   missing case were the same absence
+       *   the two silent returns below wrote nothing either, so *nothing was
+       *   committed* and *this never ran* were also the same absence
+       *   a run log is a trace and not a record (0034 §8) — it is deleted on a
+       *   landing, and it is not what a behavioural claim is settled by
+       *
+       * So the outcome goes where the log settles things. **Tolerant, like
+       * everything else in here**: `appendAtEnd` is an `Effect.promise`, so a
+       * store that would not take the row arrives as a defect — and a defect
+       * raised from inside a finalizer would replace the ending the run actually
+       * had with the failure of its own bookkeeping. The account is worth a row
+       * and is not worth an ending.
+       */
+      const noteRefs = (
+        outcome: "published" | "nothing-committed" | "already-published" | "refused",
+        headSha: string | null,
+        detail: string | null,
+      ) =>
+        appendAtEnd(runId, [
+          {
+            type: "RunRefsPublished",
+            actor: "conductor",
+            data: parsePayload("RunRefsPublished", { branch, arm, headSha, outcome, detail }),
+          },
+        ]).pipe(Effect.catchAllDefect(() => Effect.void));
+
       const publishWhatIsCommitted: Effect.Effect<string | null> = Effect.gen(function* () {
         const at = yield* Effect.either(gitInWorktree(["rev-parse", "HEAD"]));
         if (Either.isLeft(at)) {
           runLog.note("push", `${branch} was not pushed — ${at.left.detail}`);
+          yield* noteRefs("refused", null, at.left.detail);
           return at.left.detail;
         }
         const head = at.right;
         // Nothing committed, so there is nothing to name. The next attempt is
-        // told *Nothing*, which is true.
-        if (head === worktree.baseSha) return null;
-        if (head === published) return null;
+        // told *Nothing*, which is true — and is said, because an unexplained
+        // absence of a ref is what `#251` spent a night on.
+        if (head === worktree.baseSha) {
+          runLog.note("push", `nothing to push — ${branch} is still at the base`);
+          yield* noteRefs("nothing-committed", null, null);
+          return null;
+        }
+        if (head === published) {
+          yield* noteRefs("already-published", head, null);
+          return null;
+        }
         const pushed = yield* Effect.either(gitInWorktree(publishRefs()));
         if (Either.isLeft(pushed)) {
           runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
+          yield* noteRefs("refused", head, pushed.left.detail);
           return pushed.left.detail;
         }
         lease = head;
         published = head;
+        runLog.note("push", `${branch} and ${arm} at ${head.slice(0, 7)}`);
+        yield* noteRefs("published", head, null);
         if (recordedDiff) return null;
         recordedDiff = true;
         // The counts, so the next attempt's brief says how much is there rather

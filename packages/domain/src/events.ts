@@ -446,6 +446,53 @@ export const RunProducedDiff = z.object({
   deletions: z.number().int(),
 });
 
+/**
+ * What a claim left on origin, and it is appended whichever way that went
+ * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §1, `#251`).
+ *
+ * **Because the absence of a push had three meanings and the log could tell
+ * none of them apart.** `#250` ran out of turns with two commits in its
+ * worktree, pushed neither `agent/250` nor `agent/250-attempt-1`, and was
+ * collected — $26.84 recovered from unreachable git objects by luck. The only
+ * account the finalizer that publishes could give was `runLog.note`, and a run
+ * log is a **trace and never a record** (0034 §8): it is deleted when the run
+ * lands, it is not on the log a claim is settled by, and a *successful* push
+ * wrote nothing to it at all. So *did the finalizer run and find nothing*, *did
+ * it run and get refused*, and *did it never run* were one silence, and telling
+ * them apart cost a night of archaeology on a log two resets old.
+ *
+ * One type rather than three, and appended on **every** outcome including the
+ * ones that are not failures: what the incident needed was not a record of
+ * pushes but the answer to *did this happen at all*, and only an event that is
+ * always there answers that. It settles nothing and nothing reads it to decide
+ * anything — `run.ts` has no case for it — which is 0034 §8's test passed on
+ * purpose, in the other direction: the account belongs on the log because it
+ * outlives the file, not because anything branches on it.
+ */
+export const RunRefsPublished = z.object({
+  /** `agent/<n>` — the ref the next attempt's prompt tells an agent to fetch. */
+  branch: z.string(),
+  /**
+   * `agent/<n>-attempt-<k>` — this claim's own, written by nothing else
+   * (0062 §2), so it is still there when `agent/<n>` has moved on.
+   */
+  arm: z.string(),
+  /** The head the two refs point at, or null when nothing was pushed. */
+  headSha: z.string().nullable(),
+  /**
+   * Which of the four it was.
+   *
+   * `nothing-committed` is an ending with no commits, which publishes nothing on
+   * purpose — a ref to an empty branch is a worse lie than the absence (0062
+   * §1). `already-published` is this pass's own second call: a stop publishes
+   * before it asks a person, and the finalizer then finds the head already
+   * where it wanted it — which is the row that says the finalizer ran.
+   */
+  outcome: z.enum(["published", "nothing-committed", "already-published", "refused"]),
+  /** Git's own words when `refused`, and null otherwise. */
+  detail: z.string().nullable(),
+});
+
 /** The moment the gate pipeline fires. */
 export const RunProposedCompletion = z.object({ headSha: z.string() });
 
@@ -1808,6 +1855,7 @@ export const EVENTS = {
   RunContextExhausted,
   RunAwaitingInput,
   RunProducedDiff,
+  RunRefsPublished,
   RunProposedCompletion,
   RunFinished,
   RunFailed,

@@ -167,6 +167,20 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RunAwaitingInput: (d) => clip(need(d, "prompt")),
   RunProducedDiff: (d) =>
     `${need(d, "files")} files +${need(d, "insertions")} −${need(d, "deletions")}`,
+  /**
+   * What the claim left on origin, and the refusal when it left nothing (`#251`).
+   *
+   * The two silent outcomes get a sentence here for the same reason they get an
+   * event: *no ref* and *no account of why there is no ref* are what cost `#250`
+   * $26.84, and a row that read `—` would put the silence back on the page.
+   */
+  RunRefsPublished: (d) => {
+    const outcome = need(d, "outcome");
+    if (outcome === "nothing-committed") return "nothing committed, so no ref was left";
+    if (outcome === "refused") return `${need(d, "branch")} was not pushed: ${clip(d["detail"])}`;
+    const where = `${need(d, "branch")} and ${need(d, "arm")} at ${sha(d, "headSha")}`;
+    return outcome === "already-published" ? `already there — ${where}` : where;
+  },
   RunProposedCompletion: (d) => `head ${sha(d, "headSha")}`,
   RunFinished: (d) => `${need(d, "turns")} turns, $${Number(d["costUsd"] ?? 0).toFixed(2)}`,
   RunFailed: (d) => `${need(d, "kind")}: ${clip(d["detail"])}`,
