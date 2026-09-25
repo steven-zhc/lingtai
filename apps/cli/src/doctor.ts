@@ -980,9 +980,9 @@ export async function daemonCurrency(
  * no `ProjectRecovered` has followed, and sets its commit beside this
  * checkout's, which is what turns the message into a diagnosis.
  */
-async function passRefusals(): Promise<CheckResult> {
+async function passRefusals(load: typeof loadProjects = loadProjects): Promise<CheckResult> {
   const name = "conductor: refusals on the log";
-  const projects = await loadProjects().catch(() => null);
+  const projects = await load().catch(() => null);
   if (projects === null) return { name, status: "skip", detail: "the project streams could not be read" };
 
   const refusing = projects.filter((p) => p.project !== null && p.refused !== null);
@@ -1397,9 +1397,12 @@ export function provenanceLines(provenance: Readonly<Record<string, string>>): s
  * The detail is `ProjectFilter`'s, the same value `lingtai daemon` prints at
  * startup and `lingtai status` prints per project. Three commands, one answer.
  */
-async function projectRecipes(env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+async function projectRecipes(
+  env: NodeJS.ProcessEnv,
+  load: typeof loadProjects = loadProjects,
+): Promise<CheckResult[]> {
   const name = "recipe: resolves for every project";
-  const projects = await loadProjects().catch(() => null);
+  const projects = await load().catch(() => null);
   if (projects === null) {
     return [{ name, status: "skip", detail: "the project streams could not be read" }];
   }
@@ -1811,12 +1814,28 @@ export async function recipeGovernsItsBase(
  * `LINGTAI_DATABASE_URL` is unset — the order `postgresUrl` reads them in — and
  * only where the caller hands it in: `doctorReport` does, and a test's own
  * environment never reaches the operator's file.
+ *
+ * **`load` is the other half of that, and it is one seam rather than four**
+ * (`#242`). Every row that folds projects — the refusals, the recipes, the
+ * declared environment, the base — reads the log for *which* projects and this
+ * machine's `~/.lingtai/<project>/recipe.yml` for what governs each one. On the
+ * operator's machine those two agree. A caller that swaps the log without
+ * swapping the home has made them disagree, and the rows then report on a
+ * machine nobody has: `apps/cli/integration/doctor.test.ts`'s *is green* folded
+ * a `ProjectOnboarded` that a sibling test had appended to the shared test log
+ * and looked for its recipe in the real `$HOME`, where a throwaway
+ * `esctest…` project's recipe has never existed. Eight problems, four projects,
+ * and one more pair every time anybody ran the suite — a red nobody could
+ * clear, beside `--despite-doctor` on every restart. So the projects a report is
+ * about are the caller's to name, and a caller that names them owes the recipes
+ * too.
  */
 export async function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   machine: () => string | undefined = () => undefined,
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
+  load: typeof loadProjects = loadProjects,
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -1897,7 +1916,7 @@ export async function runDoctor(
     results.push(await projectionShapes());
     results.push(await daemonLiveness());
     results.push(await daemonCurrency());
-    results.push(await passRefusals());
+    results.push(await passRefusals(load));
     results.push(await conductorLock());
     results.push(await readableTypes(queries));
     results.push(await orphans());
@@ -1934,7 +1953,7 @@ export async function runDoctor(
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).
-    results.push(await passRefusals());
+    results.push(await passRefusals(load));
     results.push(await conductorLock());
     results.push(await readableTypes(audit));
     results.push(await orphans());
@@ -1951,9 +1970,9 @@ export async function runDoctor(
   }
 
   results.push(githubCredentials(env));
-  results.push(...(await projectRecipes(env)));
-  results.push(...(await declaredEnvironment(env)));
-  results.push(...(await recipeGovernsItsBase(env)));
+  results.push(...(await projectRecipes(env, load)));
+  results.push(...(await declaredEnvironment(env, load)));
+  results.push(...(await recipeGovernsItsBase(env, load)));
   results.push(await settingsSources());
   results.push(await runtimeAuth());
   for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });

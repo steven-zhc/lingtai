@@ -7,9 +7,9 @@
  */
 import { createDb, createEventStore, directPostgresUrl, postgresUrl } from "@lingtai/event-store";
 import { beat, createStatusTable } from "@lingtai/daemon";
-import { SUBSCRIBER_STREAM } from "@lingtai/domain";
+import { SUBSCRIBER_STREAM, type ProjectState } from "@lingtai/domain";
 import pg from "pg";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
 import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
 import type { StoreChoice } from "@lingtai/env";
@@ -27,6 +27,7 @@ import {
 import { createSqliteLogQueries, openSqliteLog } from "@lingtai/event-store/sqlite";
 import type { LogQueries } from "@lingtai/event-store";
 import { existsSync, mkdtempSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // The count `lingtai restart` gates on, asked of this report rather than
@@ -738,38 +739,121 @@ describe("lingtai doctor — against the real database", () => {
   /**
    * Phase 0's exit criterion, as an assertion: *`lingtai doctor` is green*.
    *
-   * "Green" means nothing failed. The six deferred checks are skips, and they
-   * stay visible in the output.
+   * **On one machine, and it is this test's** (`#242`). The database is the test
+   * one and `$HOME` was the operator's, so the rows that fold projects read
+   * *which* projects from a log every other integration file appends to and
+   * *what governs each one* from `~/.lingtai/<project>/recipe.yml`, where a
+   * throwaway `esctest…` project's recipe has never existed. Four such projects
+   * and two rows each is eight problems, identical on the commit before the
+   * change that found them, and one pair more every time anybody ran
+   * `pnpm test:integration` — the log is append-only, so nothing removes them and
+   * nothing was going to. A check nobody can make green stops being read, which
+   * is why `--despite-doctor` is typed on every restart here.
+   *
+   * So the machine is built: a `LINGTAI_HOME` of its own, a recipe in it, and a
+   * `load` naming the one project that recipe is for. Nothing is appended and
+   * nothing is deleted. "Green" means nothing failed; the deferred checks are
+   * skips and stay visible in the output.
    */
-  it("is green", async () => {
-    const report = await runDoctor(
-      env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
-    );
+  describe("on a machine this test owns", () => {
+    const OWN = "esctestdoctorsown";
+    const RECIPE = `
+version: 2
+repo: { base: main }
+source: { kinds: [bug] }
+env: { plantAt: .env.local }
+steps:
+  proposed:
+    - { name: build, run: "true" }
+`;
+    // Registered against `main`, which is what the recipe above says governs it
+    // — so `base:` compares two branches that agree. Never appended: the report
+    // is told which projects it is about, and the log is left as it was.
+    const load = async () => [{ project: OWN, owner: "me", base: "main" } as ProjectState];
 
-    const failures = report.results.filter((r) => r.status === "fail");
-    expect(failures.map((f) => `${f.name}: ${f.detail}`)).toEqual([]);
+    let home: string;
+    let saved: string | undefined;
 
-    // And the checks that carry the weight actually ran, rather than being
-    // skipped into a green that means nothing.
-    expect(find(report.results, "postgres: direct connection is session mode").status).toBe("ok");
-    expect(find(report.results, "schema: optimistic concurrency").status).toBe("ok");
-    expect(find(report.results, "schema: append-only").status).toBe("ok");
-    expect(find(report.results, "schema: notify trigger").status).toBe("ok");
+    beforeEach(async () => {
+      home = await mkdtemp(join(tmpdir(), "lingtai-doctor-green-"));
+      await mkdir(join(home, OWN));
+      await writeFile(join(home, OWN, "recipe.yml"), RECIPE);
+      await writeFile(join(home, "config.yml"), "runtime:\n  agent: claude-code\n");
+      saved = process.env["LINGTAI_HOME"];
+      process.env["LINGTAI_HOME"] = home;
+    });
 
-    // Lag is not the instrument for a shape that has drifted — it read zero
-    // right up to the append that needed the column #84 added (#90). Both
-    // checks are listed, so neither can stand in for the other.
-    expect(find(report.results, "projections: lag").status).toBe("ok");
-    expect(find(report.results, "projections: shape").status).toBe("ok");
+    afterEach(async () => {
+      if (saved === undefined) delete process.env["LINGTAI_HOME"];
+      else process.env["LINGTAI_HOME"] = saved;
+      await rm(home, { recursive: true, force: true });
+    });
 
-    // Up and current are two facts, and folding them into one is the whole of
-    // #98: a daemon beat happily for thirty-nine minutes while holding code
-    // that could not produce the event the log had been fixed to record, and
-    // `up, last beat 2s ago` was the only thing anything said about it. Both
-    // are listed here so neither can be quietly absorbed into the other.
-    expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
-    expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
-  }, 60_000);
+    const reportOf = () =>
+      runDoctor(
+        env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
+        // The three defaults, given by name so the fifth argument can be: the
+        // machine's `database.url`, the written store choice and the log's
+        // queries are all exactly what the command uses.
+        undefined,
+        undefined,
+        undefined,
+        load,
+      );
+
+    it("is green", async () => {
+      const report = await reportOf();
+
+      const failures = report.results.filter((r) => r.status === "fail");
+      expect(failures.map((f) => `${f.name}: ${f.detail}`)).toEqual([]);
+
+      // And the checks that carry the weight actually ran, rather than being
+      // skipped into a green that means nothing.
+      expect(find(report.results, "postgres: direct connection is session mode").status).toBe("ok");
+      expect(find(report.results, "schema: optimistic concurrency").status).toBe("ok");
+      expect(find(report.results, "schema: append-only").status).toBe("ok");
+      expect(find(report.results, "schema: notify trigger").status).toBe("ok");
+
+      // Lag is not the instrument for a shape that has drifted — it read zero
+      // right up to the append that needed the column #84 added (#90). Both
+      // checks are listed, so neither can stand in for the other.
+      expect(find(report.results, "projections: lag").status).toBe("ok");
+      expect(find(report.results, "projections: shape").status).toBe("ok");
+
+      // Up and current are two facts, and folding them into one is the whole of
+      // #98: a daemon beat happily for thirty-nine minutes while holding code
+      // that could not produce the event the log had been fixed to record, and
+      // `up, last beat 2s ago` was the only thing anything said about it. Both
+      // are listed here so neither can be quietly absorbed into the other.
+      expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
+      expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
+
+      // And the project rows ran against the recipe this test wrote, rather
+      // than being green because there was nothing to check.
+      expect(find(report.results, `recipe: ${OWN}`).status).toBe("ok");
+      expect(find(report.results, `env: ${OWN}`).status).toBe("ok");
+      expect(find(report.results, `base: ${OWN}`).status).toBe("ok");
+    }, 60_000);
+
+    /**
+     * **The green above is worth nothing unless this red exists.** It is the
+     * same list, read the same way, on the same machine with the one file taken
+     * away — the exact failure `is green` used to carry for four projects at
+     * once, now arranged rather than inherited.
+     */
+    it("is red when the machine holds no recipe for a project the log has", async () => {
+      await rm(join(home, OWN, "recipe.yml"));
+
+      const report = await reportOf();
+      const failures = report.results.filter((r) => r.status === "fail");
+
+      expect(failures.map((f) => f.name)).toContain(`recipe: ${OWN}`);
+      expect(find(report.results, `recipe: ${OWN}`).detail).toContain(join(home, OWN, "recipe.yml"));
+      // Both rows, because both read that file — which is why one missing
+      // recipe used to print two problems per project.
+      expect(failures.map((f) => f.name)).toContain(`env: ${OWN}`);
+    }, 60_000);
+  });
 
   /**
    * `#144`, as the row somebody reads in the one window they are most likely to
