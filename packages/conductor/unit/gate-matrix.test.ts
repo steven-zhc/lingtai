@@ -1,5 +1,5 @@
 /**
- * **A hundred and ten cells, and each one runs or refuses by name.** There
+ * **A hundred and twenty cells, and each one runs or refuses by name.** There
  * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
@@ -9,14 +9,22 @@
  * sixty until the closed set grew `worktree:` and `merge:` (`#235`), eighty
  * until it grew `queue:` and `assignee:` (`#236`), a hundred until it grew
  * `judge:` (`#238`) and a hundred and twenty until it grew `backlog:` (`#237`)
- * — and a hundred and ten again when 0063 §3 made `assignee` a field of
- * `queue:` rather than a plugin beside it (`#244`). **A column that goes is
+ * — a hundred and ten again when 0063 §3 made `assignee` a field of
+ * `queue:` rather than a plugin beside it (`#244`), and a hundred and twenty
+ * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Eleven of the hundred and ten cells run and **ninety-nine
- * refuse**; sixty-six of those are the six steps with no call site, and
+ * Twelve of the hundred and twenty cells run and **a hundred and eight
+ * refuse**; seventy-two of those are the six steps with no call site, and
  * fifty are the five plugins no step reads — overlapping each other by
  * thirty, because a `worktree:` action at `design` is both at once.
+ *
+ * **`refs:` is the first column that is not a name for code that already
+ * ran**, and it arrives with a row rather than an empty one: the other five new
+ * plugins were 0061 §3's names for the pass's own calls and refuse everywhere,
+ * while this one runs at `end` on the day it lands. The rule is the same either
+ * way — the matrix says what today's code does — and it is worth reading here
+ * because every precedent in this file is the other case.
  *
  * That is the property this file is here to hold, and it holds it down both
  * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
@@ -75,6 +83,7 @@ const ACTION: Record<ActionKind, GateAction> = {
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
   labels: { name: "label it", labels: ["shipped"], when: "any" },
+  refs: { name: "delete the arms", refs: true, branch: false, when: "landed" },
   worktree: { name: "cut the branch", worktree: { base: "main", submodules: false } },
   merge: { name: "land the branch", merge: { strategy: "merge-commit" } },
   queue: {
@@ -251,8 +260,8 @@ describe("every step × kind cell runs or refuses", () => {
    * `"when" in a` a judge action built in code went past it into the match on
    * the outcome, where `findings` equals neither the outcome nor `any`: `end`
    * resolved, wrote an empty list, and the log said nothing had been declared.
-   * That is `#61` for one kind. The guard asks for `KINDS_AT.end`'s two keys
-   * instead, so a sixth plugin spelling `when:` is refused rather than dropped.
+   * That is `#61` for one kind. The guard asks for `KINDS_AT.end`'s three keys
+   * instead, so a plugin spelling `when:` is refused rather than dropped.
    */
   it.each(KINDS.filter((kind) => whyNoKindAt("end", kind) !== null))(
     "resolveEndActions refuses end × %s by name, rather than dropping it",
@@ -272,7 +281,7 @@ describe("every step × kind cell runs or refuses", () => {
    * be accepted by the schema and thrown out by the point.
    */
   it("refuses at `end` exactly the kinds `KINDS_AT` says it does not run", () => {
-    expect(KINDS_AT.end).toEqual(["close", "labels"]);
+    expect(KINDS_AT.end).toEqual(["close", "labels", "refs"]);
     for (const kind of KINDS) {
       const resolve = () => resolveEndActions([], [ACTION[kind]], "landed");
       if ((KINDS_AT.end as readonly ActionKind[]).includes(kind)) {
@@ -588,11 +597,11 @@ describe("doc/reference.md's matrix", () => {
     const refusals = STEPS.flatMap((point) =>
       KINDS.map((kind) => whyNoKindAt(point, kind)),
     ).filter((why) => why !== null).length;
-    expect(refusals).toBe(99);
+    expect(refusals).toBe(108);
     expect(
       doc,
       "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
-    ).toContain("**Ninety-nine of the\nhundred and ten are refusals**");
+    ).toContain("**A hundred and eight of the\nhundred and twenty are refusals**");
   });
 
   /**

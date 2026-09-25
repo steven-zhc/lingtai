@@ -43,6 +43,7 @@ import {
   pluginOf,
   queuePlugin,
   readFields,
+  refsPlugin,
   runPlugin,
   whyNoKindAt,
   withheld,
@@ -541,7 +542,7 @@ describe("the one `claim` will hold", () => {
    */
   it("has no `assignee:` plugin left in the closed set", () => {
     expect(PLUGINS.map((plugin) => plugin.key)).not.toContain("assignee");
-    expect(PLUGINS).toHaveLength(11);
+    expect(PLUGINS).toHaveLength(12);
     expect(pluginOf({ name: "whose", assignee: { take: "both" } })).toBeNull();
   });
 
@@ -727,6 +728,85 @@ describe("the one `proposed` will hold", () => {
  * So the numerals come off `PLUGINS`, and the whitespace is normalised first
  * so that re-wrapping the comment is not a failure.
  */
+/**
+ * **The one that deletes** (`#240`).
+ *
+ * `refs:` is unlike every plugin declared before it in two ways worth holding
+ * with cases. It is the first that is not one of 0061 §3's names for code the
+ * pass already runs — it does something nothing did — and it is the first whose
+ * effect cannot be undone by running the pass again: a deleted ref is gone.
+ *
+ * So the schema carries the safety rather than the operator. `when:` is a
+ * `z.literal("landed")`, not `WHEN`, because for an item that did **not** land
+ * the `agent/<n>-attempt-<k>` refs are the only surviving account of what was
+ * tried — `#239` creates them precisely so a later attempt can fetch them, and
+ * a cleanup on any other ending destroys the thing that ticket was written to
+ * preserve. A value nobody can write is a mistake nobody can make, and the
+ * refusal arrives when the recipe resolves rather than after the delete.
+ */
+describe("the one that deletes", () => {
+  it("is refused at all nine steps that are not `end`", () => {
+    for (const step of STEPS) {
+      if (step === "end") {
+        expect(whyNoKindAt(step, "refs")).toBeNull();
+        continue;
+      }
+      expect(whyNoKindAt(step, "refs"), `${step} × refs is accepted`).not.toBeNull();
+    }
+    expect(whyNoKindAt("proposed", "refs")).toContain("only the `end` point carries out effects");
+  });
+
+  /**
+   * **This is the case that earns the plugin.** The other two effects take
+   * `WHEN` and there is nothing wrong with `labels: … when: any`; here the same
+   * word is the difference between tidying up after a landing and destroying an
+   * abandoned attempt's only record.
+   */
+  it("takes `when: landed` and refuses every other ending, by name, at resolve", () => {
+    const at = (when: string) =>
+      StepMap.safeParse({ end: [{ name: "sweep", refs: true, when }] });
+
+    expect(at("landed").success).toBe(true);
+    for (const when of ["any", "blocked", "failed", "closed"]) {
+      const refused = at(when);
+      expect(refused.success, `"when: ${when}" resolved`).toBe(false);
+      const message = refused.error!.issues[0]!.message;
+      expect(message).toContain('"sweep"');
+      expect(message).toContain('"refs"');
+      expect(message).toContain('"end"');
+      expect(message).toContain('"when"');
+    }
+  });
+
+  /**
+   * Absent means `landed` too, so a file that leaves the key out gets the safe
+   * reading rather than the widest one — and `branch:` is **off**: after a
+   * merge `agent/<n>`'s commits are reachable from `main`, but it is the ref a
+   * person follows from the merge commit, so a cleanup keeps it unless asked.
+   */
+  it("keeps `agent/<n>` unless the recipe asks for it, and defaults to the landing", () => {
+    expect(refsPlugin.schema.parse({ name: "sweep", refs: true })).toEqual({
+      name: "sweep",
+      refs: true,
+      branch: false,
+      when: "landed",
+    });
+    expect(refsPlugin.schema.parse({ name: "sweep", refs: true, branch: true })).toMatchObject({
+      branch: true,
+    });
+  });
+
+  /** A plugin refuses a field it does not understand, this one included (0061 §9). */
+  it("declares four fields and refuses a fifth", () => {
+    expect(refsPlugin.declares).toEqual(["name", "refs", "branch", "when"]);
+    const problems = readFields(refsPlugin, { name: "sweep", refs: true, older_than: "30d" })
+      .problems!;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]!.field).toBe("older_than");
+    expect(problems[0]!.why).toContain('"refs" declares no "older_than" field');
+  });
+});
+
 describe("plugin.ts's own count of who carries a universal key", () => {
   const NUMERAL = [
     "no",

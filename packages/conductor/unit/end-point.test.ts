@@ -130,3 +130,65 @@ describe("the end point on a close", () => {
     expect(resolveEndActions([resolved("blocked")], [LABEL], "closed")).toHaveLength(1);
   });
 });
+
+/**
+ * **`end`'s third effect, and the only one that destroys something** (`#240`).
+ *
+ * A landed ticket's `agent/<n>-attempt-<k>` refs name approaches that were
+ * abandoned or superseded, and their commits are unreachable from `main`;
+ * nothing has ever deleted one, so a remote's `agent/*` count is monotone in
+ * how many issues the repository has had.
+ *
+ * **The safety is `when: landed` and it is asserted here rather than assumed.**
+ * For an item that did *not* land, those refs are the only surviving account of
+ * what was tried — `#239` exists to create them so a later attempt can fetch
+ * them — so the case below, *any other ending resolves nothing*, is the one
+ * this plugin has to pass. The schema refuses a recipe that writes any other
+ * `when:` (`packages/recipe/unit/plugin.test.ts`); this holds the resolver
+ * against an action built in code, which is the door the schema is not on.
+ */
+describe("the end point on the refs", () => {
+  const SWEEP: GateAction = { name: "delete the arms", refs: true, branch: false, when: "landed" };
+  const SWEEP_ALL: GateAction = { name: "delete them all", refs: true, branch: true, when: "landed" };
+
+  it("resolves the sweep on a landing, and carries `branch` as written", () => {
+    expect(resolveEndActions([], [SWEEP], "landed")[0]?.data).toEqual({
+      outcome: "landed",
+      actions: [{ name: "delete the arms", refs: true, branch: false }],
+    });
+    expect(resolveEndActions([], [SWEEP_ALL], "landed")[0]?.data).toEqual({
+      outcome: "landed",
+      actions: [{ name: "delete them all", refs: true, branch: true }],
+    });
+  });
+
+  /**
+   * **The case that earns the ticket.** A row is still written, because
+   * *nothing was configured* and *something was configured and did not match*
+   * must not look the same from the log — but it names no action, so nothing
+   * downstream has a ref to delete.
+   */
+  it("resolves nothing on any other ending", () => {
+    for (const outcome of ["blocked", "failed", "closed"] as const) {
+      expect(resolveEndActions([], [SWEEP, SWEEP_ALL], outcome)[0]?.data).toEqual({
+        outcome,
+        actions: [],
+      });
+    }
+  });
+
+  /**
+   * And it does not take the other effects' `any` with it: a recipe that
+   * labels on every ending and sweeps on a landing gets both on the landing and
+   * only the label on the block.
+   */
+  it("sits beside an effect that fires on every outcome without widening", () => {
+    expect(resolveEndActions([], [LABEL, SWEEP], "landed")[0]?.data).toMatchObject({
+      actions: [{ name: "label it" }, { name: "delete the arms" }],
+    });
+    expect(resolveEndActions([], [LABEL, SWEEP], "blocked")[0]?.data).toEqual({
+      outcome: "blocked",
+      actions: [{ name: "label it", labels: ["lingtai:done"] }],
+    });
+  });
+});

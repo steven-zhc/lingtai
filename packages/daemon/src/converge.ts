@@ -27,6 +27,17 @@
  * `doctor` grades it `warn`: a fact for a person, not a job for a machine.
  * Silently re-sending it would be replay wearing convergence's clothes.
  *
+ * **A refs sweep is computable, and that is why it is here** (`#240`). `end`'s
+ * third effect deletes a landed item's `agent/<n>-attempt-<k>` refs, and a
+ * refusal there used to have nowhere to go: `doctor` put it in the same bucket
+ * as a failed label write and told an operator that the next reconcile would
+ * write the difference, while the only function that swept was `tell.ts`'s and
+ * the resolution it runs from is deduped per outcome — so nothing ran it again
+ * and the sentence was false. The target is *no arm under this issue's branch*,
+ * which needs no decision re-made: it is `armPrefix` and one request. So the
+ * arms are asked for again here and deleted, and — like every other change —
+ * the row this writes is the same `IssueUpdated` the inline path writes.
+ *
  * ## What it looks at, and why not everything
  *
  * One `getIssue` per candidate, and the candidates are the items about which
@@ -45,12 +56,20 @@
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
 import { foreignLabels, labelsFor } from "@lingtai/conductor/labels";
+// A leaf module that imports nothing, which is why it is its own file: the
+// sweep's names have to be one string on the side that publishes them and on
+// both sides that delete them (`#240`).
+import { agentBranch, armPrefix } from "@lingtai/conductor/branches";
 import { loadProjects } from "@lingtai/conductor/projects";
+// One wording for *what a part-way sweep had already deleted*, shared rather
+// than written twice: the inline sweep and this one record the same row.
+import { sweepFailure } from "@lingtai/conductor/tell";
 import {
   parseWorkItemStream,
   parsePayload,
   reduceWorkItem,
   type LabelState,
+  type PayloadOf,
   type ProjectState,
   type WorkItemStatus,
 } from "@lingtai/domain";
@@ -114,7 +133,13 @@ export interface Divergence {
   workItemId: string;
   project: string;
   issue: number;
-  change: "labels" | "closed" | "comment";
+  change: "labels" | "closed" | "comment" | "refs";
+  /**
+   * What the write is, in the vocabulary the change needs, because `Divergence`
+   * carries no payload of its own: the target labels for `labels`, and for
+   * `refs` the refs that are to be gone — `", "`-joined either way, so the one
+   * place that writes them splits on the same string it was joined with.
+   */
   expected: string;
   actual: string;
 }
@@ -217,7 +242,19 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
     // And what it last said it *wrote*. An item that should carry no label but
     // was given one is drift the log can see on its own, without a request.
     let lastWrote: readonly string[] = [];
+    // And whether a `refs:` effect was ever resolved for this item, with what
+    // the recipe asked of it. Read off `EndActionsResolved` rather than assumed
+    // from the failure row, because `branch` is the recipe's decision and
+    // convergence must not widen it: an item swept with `branch: false` keeps
+    // `agent/<n>` however often the sweep is retried.
+    let sweep: { branch: boolean } | null = null;
     for (const e of events) {
+      if (e.type === "EndActionsResolved") {
+        for (const a of (e.data as PayloadOf<"EndActionsResolved">).actions) {
+          if ("refs" in a) sweep = { branch: a.branch };
+        }
+        continue;
+      }
       if (e.type !== "IssueUpdated" && e.type !== "IssueUpdateFailed") continue;
       const d = e.data as { change?: string; detail?: string };
       if (!d.change) continue;
@@ -287,6 +324,41 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
         actual: "not there, and not computable — say it by hand if it still matters",
       });
     }
+
+    // **The arms a sweep did not manage to delete** (`#240`).
+    //
+    // Computable, unlike a comment: the target is *no
+    // `agent/<n>-attempt-<k>` under this item's branch*, and what is actually
+    // there is one read away. Both conditions are needed and neither is the
+    // other — the log has to say a sweep was resolved *and* that its last word
+    // was a refusal, because an item nobody configured a `refs:` effect for has
+    // arms on purpose.
+    //
+    // **Asked of GitHub rather than read off the failed row.** A sweep that
+    // deleted two arms and was refused the third leaves one row saying it
+    // failed, and only the remote knows which two went — so the row is evidence
+    // that something is owed and never the list of what.
+    if (sweep && lastOutcome.get("refs") === "IssueUpdateFailed") {
+      const branch = agentBranch(issue);
+      const arms = armPrefix(branch);
+      // A read that is allowed to fail: this function repairs nothing, and a
+      // request refused here means the divergence is simply not found this
+      // pass. `doctor` still reports the row the log holds.
+      const live = await client.matchingRefs(`heads/${branch}`).catch(() => null);
+      const doomed = (live ?? []).filter(
+        (ref) => ref.startsWith(`heads/${arms}`) || (sweep.branch && ref === `heads/${branch}`),
+      );
+      if (doomed.length > 0) {
+        found.push({
+          workItemId,
+          project: parsed.project,
+          issue,
+          change: "refs",
+          expected: doomed.join(", "),
+          actual: `${doomed.length} still on origin — the log says the sweep asked and did not manage`,
+        });
+      }
+    }
   }
 
   return found;
@@ -316,9 +388,19 @@ export async function convergeIssues(
     // Nothing to write, by design.
     if (d.change === "comment") continue;
 
+    // What a part-way sweep had already deleted when it was refused, so the
+    // failure row can name it — `sweepRefs`'s rule and its wording, because a
+    // delete is one call per ref and the second one can be the one GitHub says
+    // no to. Empty for every other change, which is one call and no partial.
+    const gone: string[] = [];
     try {
       if (d.change === "labels") {
         await client.setLabels(d.issue, d.expected === "(no labels)" ? [] : d.expected.split(", "));
+      } else if (d.change === "refs") {
+        for (const ref of d.expected.split(", ")) {
+          await client.deleteRef(ref);
+          gone.push(ref);
+        }
       } else {
         await client.closeIssue(d.issue);
       }
@@ -340,7 +422,7 @@ export async function convergeIssues(
         project: d.project,
         issue: String(d.issue),
         change: d.change,
-        error: (err as Error).message,
+        error: sweepFailure(err, gone),
       });
       log(paint.fail(`reconcile could not converge ${d.project}#${d.issue} ${d.change}: ${(err as Error).message}`));
     }

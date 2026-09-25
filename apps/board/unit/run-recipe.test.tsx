@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Envelope } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
-import { Recipe, resolveRecipe, withheld, type PluginSecrets } from "@lingtai/recipe";
+import { PLUGINS, Recipe, resolveRecipe, withheld, type GateAction, type PluginSecrets } from "@lingtai/recipe";
 import { foldRun, type Claim, type RunView } from "../src/lib/task.ts";
 import { changesFromHead, describeAction, forgetRunRecipes, recipeOfRun } from "../src/lib/recipe.ts";
 import { Attempt, RECORD_ROWS } from "../src/app/task/[id]/page.tsx";
@@ -510,6 +510,67 @@ describe("what the page may render of an action", () => {
     expect(changesFromHead(mine, head)).toEqual([
       { path: "source.backoff", run: "1h", head: "2h" },
     ]);
+  });
+});
+
+/**
+ * **The reading answers for the whole closed set, and that is read rather than
+ * remembered** (`#240`).
+ *
+ * `describeAction` is a `switch` over `kindOfAction`, and its own comment says
+ * the set is what it answers — so a plugin added to `PLUGINS` with no case here
+ * returns `undefined`, and the page renders a row for an action with no words
+ * on it. The one type that catches that is `never`, and every case in this file
+ * builds its actions `as never` because the page is being driven rather than the
+ * schema; so the guard is a walk.
+ *
+ * `refs:` is why: five of the plugins before it refuse at every step, so a
+ * missing case for one of those would have been a row nothing could reach, and
+ * the habit that grew from that is what this case breaks.
+ */
+describe("describeAction, over the closed set", () => {
+  /** One action per plugin, as a resolved recipe would hold it. */
+  const ACTION: Record<string, GateAction> = {
+    run: { name: "build", run: "pnpm test", timeout: "15m", env: [] },
+    agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
+    watch: { name: "tamper", watch: ["**/x"], then: "fail" },
+    human: { name: "approve", human: "merge?" },
+    close: { name: "close", close: true, when: "landed" },
+    labels: { name: "label", labels: ["shipped"], when: "any" },
+    refs: { name: "sweep", refs: true, branch: false, when: "landed" },
+    worktree: { name: "cut", worktree: { base: "main", submodules: false } },
+    merge: { name: "land", merge: { strategy: "merge-commit" } },
+    queue: {
+      name: "queue",
+      queue: { kinds: ["bug"], exclude: [], backoff: "1h", assignee: { take: "both" } },
+    },
+    judge: { name: "judge", judge: "claude-code", when: "findings" },
+    backlog: { name: "minors", backlog: "minor" },
+  } as unknown as Record<string, GateAction>;
+
+  it.each(PLUGINS.map((plugin) => plugin.key))("says what a %s action does", (kind) => {
+    const action = ACTION[kind];
+    expect(action, `no action for the "${kind}" plugin`).toBeDefined();
+
+    const said = describeAction(action!);
+    expect(said, `describeAction has no case for "${kind}"`).toBeDefined();
+    expect(said.does.length, `"${kind}" reads as nothing`).toBeGreaterThan(0);
+    expect(said.does).not.toContain("undefined");
+    expect(said.bound.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * And the one reading a person has to be able to act on: an effect that
+   * deletes says so, and says whether `agent/<n>` is going with the arms.
+   */
+  it("says which refs go, and that they are not coming back", () => {
+    expect(describeAction(ACTION["refs"]!)).toEqual({
+      does: "deletes every agent/<n>-attempt-<k> from origin when it lands",
+      bound: "runs for effect, and cannot be undone",
+    });
+    expect(
+      describeAction({ name: "sweep", refs: true, branch: true, when: "landed" } as never).does,
+    ).toContain("agent/<n> and every");
   });
 });
 

@@ -75,6 +75,10 @@ const github: GitHubClient = {
   defaultBranch: async () => "develop",
   fileAt: async () => YAML,
   refSha: async () => "0".repeat(40),
+  matchingRefs: async () => [],
+  deleteRef: async () => {
+    throw new Error("no writes in this test");
+  },
   listOpenIssues: async () => ISSUES,
   listIssuesSince: async () => ISSUES,
   getIssue: async (n) => ISSUES.find((i) => i.number === n) ?? issue({ number: n }),

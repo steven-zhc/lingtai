@@ -100,7 +100,16 @@ export {
   type UnresolvedEnd,
 } from "./end-point.ts";
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
-export { tellGitHub, tellGitHubAbout, type IssueChange, type IssueChannel, type TellOptions } from "./tell.ts";
+export {
+  tellGitHub,
+  tellGitHubAbout,
+  sweepRefs,
+  type IssueChange,
+  type IssueChannel,
+  type IssueWrite,
+  type RefChannel,
+  type TellOptions,
+} from "./tell.ts";
 export {
   acceptFinding,
   declineFinding,

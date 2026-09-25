@@ -141,7 +141,8 @@ import {
   stopNeeds,
   unfixedQuestion,
 } from "./fix.ts";
-import { armBranch, decideRestart, restartReason } from "./restart.ts";
+import { agentBranch, armBranch } from "./branches.ts";
+import { decideRestart, restartReason } from "./restart.ts";
 import { type NeverStarted, standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
@@ -671,7 +672,7 @@ export function runOnce(
     );
 
     // ---- 5. from here on, the item is claimed and every exit appends ---------
-    const branch = `agent/${options.issue}`;
+    const branch = agentBranch(options.issue);
     const refusal = (stage: string, detail: string): RunOnceResult => ({
       ok: false,
       workItemId,

@@ -1258,12 +1258,21 @@ async function stepsRan(queries: LogQueries): Promise<CheckResult> {
  * at the next startup (`#69`) — by recomputing the target, never by replaying
  * the call.
  *
- * **Two grades, because two of the three changes are computable and one is
- * not.** Labels and closing come back from `labelsFor` and the work item's
- * state, so a divergence in either is a job with an owner and clears itself.
- * A comment's text was a one-off decision that no later pass can re-make, so
- * it is a fact for a person: it is listed separately and never graded `fail`,
- * because a check that stays red forever is a check nobody reads.
+ * **Two grades, because every change but the comment is computable.** Labels
+ * and closing come back from `labelsFor` and the work item's state, and a refs
+ * sweep from `armPrefix` and one request (`#240`), so a divergence in any of
+ * them is a job with an owner and clears itself. A comment's text was a one-off
+ * decision that no later pass can re-make, so it is a fact for a person: it is
+ * listed separately and never graded `fail`, because a check that stays red
+ * forever is a check nobody reads.
+ *
+ * **So the bucket has to be earned and not assumed.** `refs` sat in the
+ * computable half from the day it was declared, with the sentence below
+ * promising an operator that the next reconcile would write the difference —
+ * while `converge.ts` had no case for it and the only function that swept ran
+ * once per outcome. The grading is right now because that case exists, and a
+ * sixth change added to the enum without one would put this sentence back into
+ * the same lie.
  *
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
