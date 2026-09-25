@@ -172,9 +172,9 @@ describe("what the release says", () => {
 });
 
 /**
- * **Where an abandoned arm is published**, which is the other half of the push:
- * the working branch is one ref and there are as many arms as the ceiling
- * allows, so `agent/7` can only ever hold the newest.
+ * **Where a claim's commits are published**, which is the other half of the
+ * push: the working branch is one ref and there are as many arms as the item
+ * has claims, so `agent/7` can only ever hold the newest.
  *
  * The property under test is that two arms of one ticket do not share a name.
  * Without it the card shown when the last restart is spent — every arm, each
@@ -182,16 +182,32 @@ describe("what the release says", () => {
  * origin dropped when the next arm force-pushed over them, and it does so at
  * exactly the moment a person is being asked to compare the arms.
  */
-describe("where an abandoned approach is published", () => {
+describe("where a claim's commits are published", () => {
   it("gives each arm a ref of its own, beside the working branch", () => {
-    expect(armBranch("agent/7", 1)).toBe("agent/7-restart-1");
-    expect(armBranch("agent/7", 2)).toBe("agent/7-restart-2");
+    expect(armBranch("agent/7", 1)).toBe("agent/7-attempt-1");
+    expect(armBranch("agent/7", 2)).toBe("agent/7-attempt-2");
     expect(armBranch("agent/7", 1)).not.toBe(armBranch("agent/7", 2));
   });
 
   /**
+   * **The ordinal is the attempt's, and `-restart-` is gone**
+   * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2).
+   *
+   * Not a rename. A claim that ran out of turns never restarted, so there is no
+   * restart ordinal to name its commits by — `#237` made 36 edits under exactly
+   * that ending — while every restart releases the claim and claims again, so
+   * every restart *is* an attempt. One axis, defined for every ending, and
+   * keeping both would give one set of commits two names: a pass's first
+   * restart would be `agent/7-restart-1` and `agent/7-attempt-2` at once.
+   */
+  it("names the attempt and not the restart, because only one of those always exists", () => {
+    expect(armBranch("agent/7", 1)).not.toContain("-restart-");
+    expect(armBranch("agent/7", 1)).toContain("-attempt-");
+  });
+
+  /**
    * A sibling and not a child: git cannot hold `refs/heads/agent/7` and
-   * `refs/heads/agent/7/restart-1` at once, because a ref cannot also be a
+   * `refs/heads/agent/7/attempt-1` at once, because a ref cannot also be a
    * directory — and `agent/7` has to keep existing, since it is the name
    * `attempts.ts` spells out in the next attempt's prompt.
    */

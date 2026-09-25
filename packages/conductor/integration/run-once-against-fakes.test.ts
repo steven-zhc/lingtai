@@ -31,6 +31,7 @@ import type { ProjectState } from "@lingtai/domain";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
+import { nextPrompt } from "../src/prompt.ts";
 import { runOnce } from "../src/run-once.ts";
 import { resolveRecipe } from "@lingtai/recipe";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -867,8 +868,10 @@ describe("runOnce, with no world to run in", () => {
     expect(pause.reason).not.toContain("no turns taken, nothing spent");
 
     // Pushed before it let go, so the next attempt's `git fetch origin agent/<n>`
-    // finds the work the implementer was paid for.
-    expect(did).toContain("git push HEAD:refs/heads/agent/7");
+    // finds the work the implementer was paid for — and its own arm ref beside
+    // it, because this claim is one `requeue` away from being attempt 2 and
+    // attempt 2 must not be able to overwrite what attempt 1 left (0062 §1).
+    expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
     // And no round was bought from the account that just refused an agent.
     expect(run).not.toContain("FixRequested");
   });
@@ -1100,8 +1103,10 @@ describe("runOnce, with no world to run in", () => {
     expect(block.diagnosis?.what).not.toContain("refused");
     expect(block.diagnosis?.raw).toContain("already in use");
 
-    // Pushed on the way out, so the person being asked has the work to read.
-    expect(did).toContain("git push HEAD:refs/heads/agent/7");
+    // Pushed on the way out, so the person being asked has the work to read —
+    // and on this claim's own ref too, since a `requeue` makes this attempt 1
+    // of an item whose attempt 2 takes `agent/7` over (0062 §1).
+    expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
   });
 
   /**
@@ -1232,13 +1237,19 @@ describe("runOnce, with no world to run in", () => {
       // **The arm's own ref, not the working branch.** `agent/7` is what the
       // next prompt names, so the arm after this one takes it over — and a
       // person shown every arm at the end would then be reading shas origin
-      // dropped. `agent/7-restart-1` is written by this arm and by nothing
+      // dropped. `agent/7-attempt-1` is written by this claim and by nothing
       // else, so the heading on that card stays fetchable.
+      //
+      // **`attempt-1` and not `restart-1`** (0062 §2). This is the item's first
+      // claim, and it is the *first* restart — so the two counters disagree by
+      // one here, which is exactly why keeping both would give one set of
+      // commits two names. The attempt ordinal is the one that also exists for
+      // the ending below that never restarted at all.
       expect(arm).toMatchObject({
         restart: 1,
         of: 1,
         action: "review",
-        branch: "agent/7-restart-1",
+        branch: "agent/7-attempt-1",
       });
       expect(arm.findings[0]!.claim).toBe("the approach cannot work");
 
@@ -1250,9 +1261,13 @@ describe("runOnce, with no world to run in", () => {
       // the working branch moves to the newest arm and the arm's own ref
       // keeps this one. Pushed while the worktree still exists, which is the
       // only place those commits are.
-      const push = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-restart-1";
+      const push = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1";
       expect(did).toContain(push);
       expect(did.indexOf(push)).toBeLessThan(did.indexOf(`remove ${result.runId}`));
+      // And exactly once. The finalizer that publishes every *other* ending
+      // sees the head this push already put up and does nothing — a second
+      // push here would be a second round trip for a ref that has not moved.
+      expect(did.filter((d) => d === push)).toHaveLength(1);
 
       // And the release says which arm, in the sentence that becomes both the
       // card's line and the next attempt's own history row.
@@ -1304,6 +1319,120 @@ describe("runOnce, with no world to run in", () => {
       // there is only one approach to tell apart.
       expect(blocked.diagnosis!.raw).toContain("deadlocks on the lock the first took");
       expect(blocked.diagnosis!.raw).not.toContain("## this approach");
+    });
+  });
+
+  /**
+   * **A claim that produced commits leaves a ref, whatever ending it had**
+   * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §1,
+   * `#239`).
+   *
+   * `#237` met the wall at 151 turns having made 36 edits, and
+   * `git ls-remote --heads origin refs/heads/agent/237` returned nothing. Both
+   * halves had to fail: the agent never committed, *and* an `out-of-turns`
+   * ending is not `second.restart`, so a committed one would have had no ref
+   * either. This is the half the conductor owns, and the two arms below are the
+   * whole of it — the difference between them is one `rev-parse`.
+   *
+   * The ending is deliberately the one that never restarts. There is no restart
+   * ordinal here to name a ref by, which is why the scheme is the attempt's.
+   */
+  describe("when the agent meets the wall", () => {
+    const atTheWall: Runtime = {
+      ...runtime,
+      run: async () => ({
+        exitCode: 1,
+        turns: 151,
+        durationMs: 1_800_000,
+        costUsd: 20.81,
+        failure: { kind: "out-of-turns", detail: "151 turns, and the recipe allows 151 · $20.81" },
+        text: null,
+        sessionId: "sess-237",
+      }),
+    };
+
+    /** The budget's shape, at the recipe's defaults — this asserts the brief, not the bound. */
+    const budget = { evidence: 2_000, attempts: 3, findings: 5 };
+
+    const hitTheWall = async (committed: boolean) => {
+      const store = memoryStore();
+      const did: string[] = [];
+      const said: string[] = [];
+      const ports = fakePorts(did, store);
+      if (!committed) {
+        // The worktree's HEAD is still the base: the agent edited and never ran
+        // `git commit`, which is exactly what `#237` did.
+        const inner = ports.repo.git;
+        ports.repo.git = (args, o) =>
+          args[0] === "rev-parse"
+            ? Effect.sync(() => {
+                did.push("git rev-parse");
+                return "a".repeat(40);
+              })
+            : inner(args, o);
+      }
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said),
+          runtime: atTheWall,
+          issue: 7,
+          hookBinary: "/tmp/fake/lingtai-hook",
+          prompt: "fix {{issue}}",
+          merge: false,
+          home: "/tmp/fake-home",
+          store,
+        },
+        ports,
+      );
+      const [runId, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+      return { result, did, runId, run, item: await store.read(`wi-${PROJECT}-7`) };
+    };
+
+    it("publishes the commits it made, and names them for the next attempt", async () => {
+      const { result, did, runId, run, item } = await hitTheWall(true);
+      expect(result.ok).toBe(false);
+
+      // **Both refs, from the ending that promises them.** One `lingtai
+      // requeue` makes this attempt 2, `attemptBrief` runs, and it will say
+      // `git fetch origin agent/7` — for a ref that now exists. `agent/7` is
+      // the newest and `agent/7-attempt-1` is this claim's own, so the claim
+      // after this one cannot overwrite what this one left.
+      const push = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1";
+      expect(did).toContain(push);
+      // Pushed while the worktree still exists, which is the only place those
+      // commits are.
+      expect(did.indexOf(push)).toBeLessThan(did.indexOf(`remove ${runId}`));
+
+      // **And recorded, or the ref is one nobody will fetch.** `attemptBrief`
+      // reads `RunProducedDiff` and nothing else; a pass that meets the wall
+      // never reaches the append at section 9, so the publish makes it.
+      const produced = run.find((e) => e.type === "RunProducedDiff");
+      expect(produced).toBeDefined();
+      expect(produced!.data).toMatchObject({ branch: "agent/7", headSha: "b".repeat(40) });
+
+      // The next attempt's prompt, composed the way `run-once` composes it.
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("git fetch origin agent/7");
+      expect(brief).not.toContain("It committed no change");
+    });
+
+    /**
+     * **And nothing when there is nothing.** A ref to an empty branch would be
+     * a worse lie than the absence: it would tell the next agent there is an
+     * approach to build on and hand it the base branch. `attemptBrief` already
+     * has the honest word.
+     */
+    it("publishes nothing when the agent committed nothing, and says so", async () => {
+      const { result, did, run, item } = await hitTheWall(false);
+      expect(result.ok).toBe(false);
+
+      expect(did.filter((d) => d.startsWith("git push"))).toEqual([]);
+      expect(run.some((e) => e.type === "RunProducedDiff")).toBe(false);
+
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("It committed no change, so there is no branch to build on");
+      expect(brief).not.toContain("git fetch origin");
     });
   });
 });

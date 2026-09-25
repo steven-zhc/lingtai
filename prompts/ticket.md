@@ -34,10 +34,14 @@ Make the change and commit it on the branch you are already on.
 1. Read the code the ticket points at.
 2. Make the smallest change that closes the issue as written.
 3. Run the project's own checks before you finish.
-4. **Commit.** A run that ends with uncommitted work in the worktree produces
-   nothing — the worktree is deleted when the run ends, and an uncommitted
-   change goes with it. `git add` and `git commit` on the current branch; do not
-   push.
+4. **Commit as the work stands, not when it is finished.** A run that ends with
+   uncommitted work in the worktree produces nothing — the worktree is deleted
+   when the run ends, and an uncommitted change goes with it. You do not get a
+   warning before your last turn, so commit each piece as it lands rather than
+   saving one commit for the end: an unfinished commit on this branch is
+   published for the next attempt to build on, and nothing merges without
+   passing the gates anyway. `git add` and `git commit` on the current branch;
+   do not push.
 
 If the issue cannot be closed as written — it is ambiguous, or it asks for
 something the code cannot support — say so plainly in your final message rather

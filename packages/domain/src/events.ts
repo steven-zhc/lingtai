@@ -1052,8 +1052,11 @@ export const PassRestarted = z.object({
    * the approach before it records the arm; an arm on the log is therefore an
    * arm that can be read.
    *
-   * **This arm's own ref — `agent/<n>-restart-<k>` — and not `agent/<n>`**
-   * (`armBranch`). The working branch is what the next prompt names, so each
+   * **This arm's own ref — `agent/<n>-attempt-<k>` — and not `agent/<n>`**
+   * (`armBranch`; `k` is the claim's attempt ordinal since
+   * [0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2, because
+   * a restart ordinal is not defined for the endings that now publish too).
+   * The working branch is what the next prompt names, so each
    * restart takes it over, force, from a history with no ancestor in common
    * with the last: recording it here would make every arm but the newest name
    * a sha origin no longer has, which is the reading a person gets exactly

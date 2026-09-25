@@ -964,6 +964,154 @@ export function runOnce(
         };
       });
 
+      /**
+       * What origin last had for this branch, as far as this pass knows.
+       *
+       * Starts as what it had when the worktree was cut and moves to whatever
+       * this pass pushed. See the pushes below: a lease that does not move is a
+       * lease this pass breaks itself on its second round.
+       *
+       * Declared beside the worktree rather than beside the loop that first
+       * used it, because the publish below can run before that loop is reached
+       * — an agent that met the wall never gets there.
+       */
+      let lease: string | null = worktree.remoteHead;
+
+      /**
+       * **This claim's own ref, and it is named by the attempt rather than by
+       * the restart** ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2).
+       *
+       * `next.attempt` is the ordinal `attempts.ts` counts — one per
+       * `WorkItemClaimed` with a new `runId` — so it is defined for the claim
+       * that ran out of turns without ever restarting, which is the claim
+       * whose work was lost.
+       */
+      const arm = armBranch(branch, next.attempt);
+
+      /**
+       * The two refs a claim leaves behind, as one push.
+       *
+       * `agent/<n>` is the one `attempts.ts` names, so it has to be the
+       * *newest* — which means the claim after this one overwrites it, force,
+       * from a history with no ancestor in common. `arm` is this claim's own
+       * and nothing else ever writes it, so every approach stays fetchable and
+       * `PassRestarted` can name a ref that is still there when the last
+       * restart is spent and a person is shown all of them. Forced, not
+       * created: a pass that pushed and then failed to record its arm comes
+       * back with the same ordinal, and a rejected non-fast-forward there would
+       * wedge the ticket.
+       */
+      const publishRefs = () => [
+        "push",
+        `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+        "origin",
+        `HEAD:refs/heads/${branch}`,
+        `+HEAD:refs/heads/${arm}`,
+      ];
+
+      /** The head this pass has already published, so nothing pushes it twice. */
+      let published: string | null = null;
+      /**
+       * Whether anything has recorded the commits on the run's own stream.
+       *
+       * Section 9 does it for every pass that reaches the gates. A pass that
+       * does not — the agent met the wall, or crashed with work committed — has
+       * to record it where it publishes, or the ref exists and the next attempt
+       * is told *Nothing*: `attemptBrief` reads `RunProducedDiff` and nothing
+       * else, so an unrecorded branch is a branch nobody will fetch.
+       */
+      let recordedDiff = false;
+
+      /**
+       * **What this claim leaves behind, whatever ending it had**
+       * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §1).
+       *
+       * A worktree is cut `--force --detach` and `removeWorktree` deletes it
+       * when this scope closes, so commits the agent made and nothing pushed go
+       * with it. The only push inside the pass proper is after a refusal is
+       * handled; every other ending — the wall, a crash, a hold, a restart —
+       * promises a later attempt a branch just as much, because one `lingtai
+       * requeue` makes it attempt *k+1* and `attempts.ts` will tell that agent
+       * to `git fetch origin agent/<n>`. [#237](https://github.com/steven-zhc/lingtai/issues/237)
+       * made 36 edits, committed none, and pushed nothing: both failures had to
+       * happen, and this is the half the conductor owns.
+       *
+       * **An ending with no commits publishes nothing.** A ref to an empty
+       * branch would be a worse lie than the absence, and `attemptBrief`
+       * already has the honest word for it.
+       *
+       * Tolerant, as the stand-down's push was: a hold and a declined refusal
+       * are both decisions about the work, and a push that failed must not turn
+       * either into a different ending. The person is still owed the question;
+       * they are told the branch is not there to answer it with — which is what
+       * the returned detail is for, and null means there is nothing to say.
+       */
+      const publishWhatIsCommitted: Effect.Effect<string | null> = Effect.gen(function* () {
+        const at = yield* Effect.either(gitInWorktree(["rev-parse", "HEAD"]));
+        if (Either.isLeft(at)) {
+          runLog.note("push", `${branch} was not pushed — ${at.left.detail}`);
+          return at.left.detail;
+        }
+        const head = at.right;
+        // Nothing committed, so there is nothing to name. The next attempt is
+        // told *Nothing*, which is true.
+        if (head === worktree.baseSha) return null;
+        if (head === published) return null;
+        const pushed = yield* Effect.either(gitInWorktree(publishRefs()));
+        if (Either.isLeft(pushed)) {
+          runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
+          return pushed.left.detail;
+        }
+        lease = head;
+        published = head;
+        if (recordedDiff) return null;
+        recordedDiff = true;
+        // The counts, so the next attempt's brief says how much is there rather
+        // than only that something is. A `numstat` that fails costs the record
+        // and not the ref: the push has already happened.
+        const counted = yield* Effect.either(numstat);
+        yield* appendAtEnd(runId, [
+          {
+            type: "RunProducedDiff",
+            actor: "conductor",
+            data: parsePayload("RunProducedDiff", {
+              branch,
+              headSha: head,
+              files: Either.isRight(counted) ? counted.right.files : 0,
+              insertions: Either.isRight(counted) ? counted.right.insertions : 0,
+              deletions: Either.isRight(counted) ? counted.right.deletions : 0,
+            }),
+          },
+        ]);
+        return null;
+      });
+
+      /**
+       * **Every ending, and not a list of them.**
+       *
+       * A finalizer rather than a call at each exit, because this class of bug
+       * has already been fixed one exit at a time twice: `#154` moved a push
+       * above the held break and said in its own comment that it covered "a
+       * refusal no round was bought for", and `#157` then lost twelve turns and
+       * two commits down the `declined` path forty lines earlier. The ways out
+       * of this function are a hook failure, a prepare refusal, the wall, a
+       * crash, a declined round, a hold, a restart, a lane refusal and a defect
+       * — enumerating them is how the next one gets missed.
+       *
+       * Registered after the worktree is acquired, so it runs *before* the
+       * worktree is removed: finalizers release in reverse order, and the
+       * commits only exist in that directory.
+       *
+       * Skipped on a landing, and only there. The branch is on origin already
+       * and the diff is in the base, so there is no later attempt to leave
+       * anything for — and an arm ref written there is one
+       * [0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §4's
+       * cleanup would have to take straight back off.
+       */
+      yield* Effect.addFinalizer(() =>
+        didLand ? Effect.void : publishWhatIsCommitted,
+      );
+
       // `actions` a package of plain functions, so the callbacks it is handed
       // are promises. This is the direction of the call reversing, not the
       // boundary moving. `orDie` because a git failure inside a gate callback
@@ -1491,6 +1639,10 @@ export function runOnce(
           data: parsePayload("RunProposedCompletion", { headSha: firstHead }),
         },
       ]);
+      // Said once. The publish above this is what records it for a pass that
+      // never reaches here, and two `RunProducedDiff` for one head would be two
+      // answers to *what did this attempt produce*.
+      recordedDiff = true;
 
       // ---- 10. one pass, and it is a loop -----------------------------------
       /**
@@ -1548,14 +1700,6 @@ export function runOnce(
         refusals.set(action, soFar);
         return soFar;
       };
-      /**
-       * What origin last had for this branch, as far as this pass knows.
-       *
-       * Starts as what it had when the worktree was cut and moves to whatever
-       * this pass pushed. See the push below: a lease that does not move is a
-       * lease this pass breaks itself on its second round.
-       */
-      let lease: string | null = worktree.remoteHead;
       /** The findings the next `proposed` run is asked about again (0038 §2). */
       let recheck: readonly ActionFinding[] = [];
       /** A point that has not run: every ending null, nothing judged, nothing skipped. */
@@ -1648,14 +1792,15 @@ export function runOnce(
        * `--no-merge`, which this repository always passes — and the lane would
        * record `gate-failed`. All three are sentences about the diff.
        *
-       * **Stood down first, then pushed**, with the lease the loop's own push
-       * uses: the next attempt's prompt names `agent/<n>` (`attempts.ts`), and a
-       * pass that stopped for the account should leave the work where it can be
-       * read. But the push is a courtesy to the next attempt and the pause is the
-       * answer to the account, so a rejected lease or a dropped network must not
-       * turn this ending into a push failure — that would release the item as
-       * `push: …`, leave the conductor running, and let the next claim meet the
-       * same wall (0031 §3). A push that fails is said, and the ending stands.
+       * **Stood down first, then published** (`publishWhatIsCommitted`, and no
+       * push of its own since 0062 §1): the next attempt's prompt names
+       * `agent/<n>` (`attempts.ts`), and a pass that stopped for the account
+       * should leave the work where it can be read. But the push is a courtesy
+       * to the next attempt and the pause is the answer to the account, so a
+       * rejected lease or a dropped network must not turn this ending into a
+       * push failure — that would release the item as `push: …`, leave the
+       * conductor running, and let the next claim meet the same wall (0031 §3).
+       * A push that fails is said, and the ending stands.
        */
       const agentNeverStarted = (what: Exclude<NeverStarted, { of: "run" }>, detail: string) =>
         Effect.gen(function* () {
@@ -1663,20 +1808,8 @@ export function runOnce(
             what.of === "gate" ? `the ${what.gate} gate's agent` : `the agent fixing ${what.action}`;
           runLog.note(what.of, `${who} never started — ${detail}`);
           yield* standDownConductor(what, detail);
-          const pushed = yield* Effect.either(
-            gitInWorktree([
-              "push",
-              `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-              "origin",
-              `HEAD:refs/heads/${branch}`,
-            ]),
-          );
-          if (Either.isRight(pushed)) {
-            lease = head;
-          } else {
-            runLog.note("push", `not pushed, and the pass still ends for the account — ${pushed.left.detail}`);
-          }
-          const unpushed = Either.isLeft(pushed) ? ` (and ${branch} was not pushed: ${said(pushed.left.detail, 120)})` : "";
+          const notPushed = yield* publishWhatIsCommitted;
+          const unpushed = notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
           return yield* new Stopped({
             stage: what.of,
             detail: `${who} never started: ${detail}`,
@@ -1717,8 +1850,8 @@ export function runOnce(
        * the retry's absence cost nothing here, because a person is asked either
        * way and is asked one attempt sooner.
        *
-       * Pushed on the way out for the reason every other stop pushes: the work
-       * exists and a person is being asked about it. Tolerant, like the
+       * Published on the way out for the reason every other stop publishes: the
+       * work exists and a person is being asked about it. Tolerant, like the
        * stand-down's, because a rejected lease must not turn this ending into a
        * push failure.
        */
@@ -1726,19 +1859,7 @@ export function runOnce(
         Effect.gen(function* () {
           runLog.note("gate", `the ${what} action did not finish — ${detail}`);
           const question = `did-not-finish: the ${what} action's agent produced no verdict`;
-          const pushed = yield* Effect.either(
-            gitInWorktree([
-              "push",
-              `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-              "origin",
-              `HEAD:refs/heads/${branch}`,
-            ]),
-          );
-          if (Either.isRight(pushed)) {
-            lease = head;
-          } else {
-            runLog.note("push", `not pushed, and the pass still stops here — ${pushed.left.detail}`);
-          }
+          const notPushed = yield* publishWhatIsCommitted;
           const ended = yield* Effect.promise(async () => {
             const blocked = await store.read(workItemId);
             const resolvedEnd = resolveEndActions(blocked, recipe.steps.end, "blocked");
@@ -1787,9 +1908,8 @@ export function runOnce(
               appended: ended,
             }),
           );
-          const unpushed = Either.isLeft(pushed)
-            ? ` (and ${branch} was not pushed: ${said(pushed.left.detail, 120)})`
-            : "";
+          const unpushed =
+            notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
           return yield* new Stopped({
             stage: "gate",
             detail: `the ${what} action did not finish: ${detail}`,
@@ -2138,30 +2258,19 @@ export function runOnce(
         // So the push is a value and a helper rather than a line at one exit,
         // and every path that leaves this loop with commits calls one of them.
         // Adding a third `if` would have been the third time.
+        //
+        // **And the class was wider than this loop** (0062 §1, `#239`): the
+        // wall and a crash leave above it and never see either. The way out of
+        // a stop is `publishWhatIsCommitted`, registered as a finalizer beside
+        // the worktree so that *every* ending publishes, and the calls below
+        // are kept only because they run before the stop is decided rather than
+        // after it — a person asked a question wants the branch already there.
         const push = [
           "push",
           `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
           "origin",
           `HEAD:refs/heads/${branch}`,
         ];
-
-        /**
-         * The push a run makes on its way to a stop, which must not change the
-         * stop.
-         *
-         * Tolerant, as the stand-down's is: a hold and a declined refusal are
-         * both decisions about the work, and a push that failed must not turn
-         * either into a different ending. The person is still owed the question;
-         * they are told the branch is not there to answer it with.
-         */
-        const pushOnTheWayOut = Effect.gen(function* () {
-          const pushed = yield* Effect.either(gitInWorktree(push));
-          if (Either.isRight(pushed)) {
-            lease = head;
-          } else {
-            runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
-          }
-        });
 
         if (!pipeline.ok && pipeline.failedAt !== null) {
           // The refusal, by verdict rather than by position: the pipeline stops
@@ -2198,7 +2307,7 @@ export function runOnce(
             };
             // The work is going to a person, so the person has to be able to
             // read it. This is the exit `#154`'s fix missed.
-            yield* pushOnTheWayOut;
+            yield* publishWhatIsCommitted;
             break;
           }
           // Nothing this loop could have bought for. The lane below records the
@@ -2207,7 +2316,7 @@ export function runOnce(
         }
 
         if (pipeline.heldAt !== null) {
-          yield* pushOnTheWayOut;
+          yield* publishWhatIsCommitted;
           break;
         }
 
@@ -2464,45 +2573,33 @@ export function runOnce(
           /**
            * **The abandoned approach is published before anything names it.**
            *
-           * The only push in a pass is inside the loop above, *after* the
-           * refusal is handled, so a review that spent the rounds never
-           * reaches it: the branch has commits and no ref. The worktree is cut
-           * `--force --detach` and `removeWorktree` deletes it when this scope
-           * closes, so without this the `branch` and `headSha` below name an
-           * approach that exists nowhere — and `attempts.ts` would tell the
-           * next agent `git fetch origin agent/<n>` for a ref origin has never
-           * heard of. That prompt is the whole of the restart mechanism
-           * (0040 §2), so the ending that promises the branch is the ending
-           * that has to put it there.
+           * Strict, and here rather than left to the finalizer, which is the
+           * one thing that separates this ending from the others. A push that
+           * is refused must leave no arm on the log — the pass ends as a `push`
+           * failure, the item goes back through the backoff, and nothing has
+           * claimed one of the restarts for an approach nobody can read. The
+           * finalizer runs after this append and could not make that true.
            *
-           * The same lease as the push above, for the same reason: origin's
-           * `agent/<n>` may be the arm before this one, and what this pass has
-           * of it is what it last looked at.
+           * The same refspecs as every other ending's (`publishRefs`), so the
+           * ref this event names is the ref every other ending writes and there
+           * is one arm-ref scheme rather than two.
            *
-           * **Two refs, because they answer two different questions.**
-           * `agent/<n>` is the one `attempts.ts` names, so it has to be the
-           * *newest* arm — which means the arm after this one overwrites it,
-           * force, from a history with no ancestor in common. `armBranch` is
-           * this arm's own and nothing else ever writes it, so every abandoned
-           * approach stays fetchable and `PassRestarted` can name a ref that
-           * is still there when the last restart is spent and a person is
-           * shown all of them. Forced, not created: a pass that pushed and
-           * then failed to record its arm comes back with the same ordinal,
-           * and a rejected non-fast-forward there would wedge the ticket.
+           * Skipped where this head is already up — the declined round on the
+           * way here published it, tolerantly, and a tolerant push that failed
+           * leaves `published` null and this one still runs. So the invariant
+           * is *the arm is on origin before the append*, not *this line pushed
+           * it*; asserting the second would buy a second round trip for a ref
+           * that has not moved.
            *
-           * Before the append, not after. A push that is refused leaves no arm
-           * on the log — the pass ends as a `push` failure, the item goes back
-           * through the backoff, and nothing has claimed one of the restarts
-           * for an approach nobody can read.
+           * The same lease, for the same reason: origin's `agent/<n>` may be
+           * the arm before this one, and what this pass has of it is what it
+           * last looked at.
            */
-          const arm = armBranch(branch, second.n);
-          yield* gitInWorktree([
-            "push",
-            `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-            "origin",
-            `HEAD:refs/heads/${branch}`,
-            `+HEAD:refs/heads/${arm}`,
-          ]).pipe(failing("push"));
+          if (published !== headSha) {
+            yield* gitInWorktree(publishRefs()).pipe(failing("push"));
+            lease = headSha;
+            published = headSha;
+          }
 
           const reason = restartReason({
             action: unresolved.action,
@@ -2523,7 +2620,9 @@ export function runOnce(
                 // This arm's own ref and not `agent/<n>`, which the next arm
                 // takes. The event is read when the *last* restart is spent,
                 // so the branch it names has to be the one still holding this
-                // arm's commits then.
+                // arm's commits then. Named by the *attempt* since 0062 §2 —
+                // every restart is also an attempt, so one ordinal names both
+                // this arm and the arms no restart ever counted.
                 branch: arm,
                 headSha,
                 findings: unresolved.findings,

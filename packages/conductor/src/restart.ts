@@ -192,23 +192,32 @@ export function restartReason(input: {
 }
 
 /**
- * Where an abandoned approach is published, so a later one cannot overwrite it.
+ * Where a claim's commits are published, so a later claim cannot overwrite them.
  *
  * **A ref per arm, because `agent/<n>` is one ref and there are as many arms as
- * the ceiling allows.** The restart pushes the branch it is abandoning, and
- * that push is what makes the next prompt's `git fetch origin agent/<n>` true
- * (0040 §2) — but the arm after it pushes the same name, force, from a history
- * with no ancestor in common. So `agent/<n>` is the *newest* arm and this is
- * every arm: `PassRestarted` names one of these, and the claim that an arm on
- * the log is an arm that can be read is then true of all of them and not only
- * the last.
+ * the item has claims.** The push is what makes the next prompt's `git fetch
+ * origin agent/<n>` true (0040 §2) — but the claim after it pushes the same
+ * name, force, from a history with no ancestor in common. So `agent/<n>` is the
+ * *newest* arm and this is every arm: `PassRestarted` names one of these, and
+ * the claim that an arm on the log is an arm that can be read is then true of
+ * all of them and not only the last.
+ *
+ * **`n` is the claim's attempt ordinal (`attempts.ts`), not its restart
+ * ordinal** ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md)
+ * §2). The name was `-restart-<k>`, and the problem was never collision — it is
+ * that the number does not always exist. A claim that ran out of turns never
+ * restarted, so there is no restart ordinal to name its commits by, and #237's
+ * 36 edits had nowhere to go. Every restart releases the claim and claims
+ * again, so every restart is also an attempt and the reverse does not hold: one
+ * axis, defined for every ending, subsuming the one it replaces. Keeping both
+ * would give one set of commits two names.
  *
  * A sibling of `agent/<n>` rather than a child of it, because git cannot hold
- * `refs/heads/agent/7` and `refs/heads/agent/7/restart-1` at once — a ref
- * cannot also be a directory. The name says which arm rather than which sha,
- * so a pass that pushed and then failed to record its arm re-pushes the same
- * name on the retry instead of stranding one.
+ * `refs/heads/agent/7` and `refs/heads/agent/7/attempt-1` at once — a ref
+ * cannot also be a directory. The name says which attempt rather than which
+ * sha, so a pass that pushed and then failed to record its arm re-pushes the
+ * same name on the retry instead of stranding one.
  */
 export function armBranch(branch: string, n: number): string {
-  return `${branch}-restart-${n}`;
+  return `${branch}-attempt-${n}`;
 }
