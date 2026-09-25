@@ -89,14 +89,19 @@ export default defineConfig({
           // is a 5s job.
           testTimeout: 180_000,
           hookTimeout: 600_000,
-          // One file at a time: they share one `events` table, the cleanup hook
-          // toggles a table-level rule, and `conduct` appends a refusal that
-          // `doctor`'s "is green" would read as red while both ran.
+          // One file at a time: they share one `events` table and the cleanup
+          // hook toggles a table-level rule. **Not for `doctor`'s sake any
+          // more** — `runDoctor` is handed the projects its report is about
+          // (`#242`), so a refusal `conduct` appended against a project of its
+          // own is not in that report whether the two files overlap or not.
           fileParallelism: false,
           // Removes this run's throwaway `esctest*` projects from the test log.
-          // Without it the residue outlives the run, and `lingtai doctor`'s own
-          // test — which asserts the whole database is green — fails on rows an
-          // earlier file's tests left behind.
+          // **What this buys is the cost of the residue, not a green `doctor`**:
+          // a teardown runs at the end of a run, so it could never have kept an
+          // *earlier file's* projects out of a report the same run reads, and for
+          // months it did not (`#242`). What it does keep down is the replay —
+          // a round trip per event, and `task_view`'s rebuild past the 60s its
+          // own test allows.
           globalSetup: ["./packages/event-store/test-support/teardown.ts"],
         },
       },

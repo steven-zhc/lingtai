@@ -16,6 +16,14 @@
  * started failing on residue no test in that file had created. A suite that
  * fails because of what an *earlier* suite left is a suite nobody trusts.
  *
+ * **`doctor`'s green is no longer among the reasons, and it never could have
+ * been** (`#242`). This runs at the end of a run, so residue an earlier *file*
+ * left is in the log for the whole of the run that reads it; `is green` stayed
+ * red for months with this wired up, over four projects it never created.
+ * `runDoctor` is handed the projects its report is about now. What is left here
+ * is the cost — a round trip per event on every replay — which is reason enough
+ * and is the reason to read this as.
+ *
  * Deleting from `events` is the thing this system says it should never make
  * routine. That rule is about the operator's log; this is not that log, and the
  * guard below is what keeps the distinction real rather than assumed — it
