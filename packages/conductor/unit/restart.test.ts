@@ -17,7 +17,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { emptyWorkItem, type RestartRecord, type WorkItemState } from "@lingtai/domain";
-import { armBranch, decideRestart, restartReason } from "../src/restart.ts";
+import { armBranch } from "../src/branches.ts";
+import { decideRestart, restartReason } from "../src/restart.ts";
 
 const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
   after: "run-1",

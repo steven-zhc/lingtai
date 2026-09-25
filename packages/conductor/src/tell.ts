@@ -27,7 +27,7 @@ import { parseWorkItemStream } from "@lingtai/domain";
 import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
 import { foreignLabels } from "./labels.ts";
-import { agentBranch, armPrefix } from "./restart.ts";
+import { agentBranch, armPrefix } from "./branches.ts";
 
 /** What this needs of GitHub, and nothing more. */
 export interface IssueChannel {
@@ -335,7 +335,12 @@ export async function tellGitHubAbout(options: {
   appended?: readonly ToAppend[];
 }): Promise<void> {
   const { store, github, workItemId } = options;
-  const tell = (change: IssueChange) => tellGitHub({ store, github, workItemId, change });
+  // `IssueWrite` and not `IssueChange`: the `refs` member is `sweepRefs`'s, and
+  // a helper that took the wider union would let one reach `tellGitHub`, whose
+  // `switch` has a case for each of the four issue writes and no default — so a
+  // `refs` change there falls straight through and records an `IssueUpdated`
+  // for a sweep that never ran. That is `#61`'s failure inside one function.
+  const tell = (change: IssueWrite) => tellGitHub({ store, github, workItemId, change });
 
   if (options.question !== undefined) {
     await tell({ kind: "comment", body: `**Lingtai is waiting on you.**\n\n${options.question}` });

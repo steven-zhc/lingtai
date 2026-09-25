@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
 import type { EventStore } from "@lingtai/event-store";
 import type { PayloadOf } from "@lingtai/domain";
-import { agentBranch, armBranch } from "../src/restart.ts";
+import { agentBranch, armBranch } from "../src/branches.ts";
 import { type RefChannel, sweepRefs } from "../src/tell.ts";
 
 /** A remote's ref list, and what a sweep did to it. */

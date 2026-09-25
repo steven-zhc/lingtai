@@ -236,6 +236,12 @@ function fakeClient(over: Partial<GitHubClient> & { recipe?: string } = {}): Git
     fileAt: async (path, ref) =>
       path === ".lingtai/config.yaml" && ref === "develop" ? recipe : null,
     refSha: async () => "0".repeat(40),
+    // No recipe in this file declares `refs:` at `end`, so no run here sweeps.
+    // They answer rather than throw for the reason the writes below do: the
+    // port is what a client owes, and a sweep that did reach them would find
+    // nothing on this fake's remote and delete nothing.
+    matchingRefs: async () => [],
+    deleteRef: async () => {},
     listOpenIssues: async () => [issue],
     // These used to throw. The conductor never wrote to GitHub — the outbox
     // did — so a write from here meant a bug, and the fake said so. 0022

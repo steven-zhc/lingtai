@@ -141,7 +141,8 @@ import {
   stopNeeds,
   unfixedQuestion,
 } from "./fix.ts";
-import { agentBranch, armBranch, decideRestart, restartReason } from "./restart.ts";
+import { agentBranch, armBranch } from "./branches.ts";
+import { decideRestart, restartReason } from "./restart.ts";
 import { type NeverStarted, standDown } from "./never-started.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not

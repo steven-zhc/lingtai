@@ -122,6 +122,12 @@ function readOnlyClient(project: string, issues: Issue[] = ISSUES): GitHubClient
     defaultBranch: async () => "develop",
     fileAt: async () => null,
     refSha: async () => "0".repeat(40),
+    // Reading the refs is a read; deleting one is a write, and the wizard has
+    // no business doing either.
+    matchingRefs: async () => [],
+    deleteRef: async () => {
+      throw new Error("the wizard wrote to GitHub: deleteRef");
+    },
     listOpenIssues: async () => issues,
     listIssuesSince: async () => issues,
     getIssue: async (n) => issues.find((i) => i.number === n) ?? issue({ number: n }),
