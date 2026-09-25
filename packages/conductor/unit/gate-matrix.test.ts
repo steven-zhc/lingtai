@@ -484,8 +484,8 @@ describe("every step × kind cell runs or refuses", () => {
   it("is the deps run-once passes at each point", async () => {
     const src = await readFile(new URL("../src/run-once.ts", import.meta.url), "utf8");
     expect(src).toMatch(/actionsFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
-    expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*gateDeps\s*\)/);
-    expect(src).toMatch(/actionsFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*gateDeps\s*\)/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*stepDeps\s*\)/);
+    expect(src).toMatch(/actionsFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*stepDeps\s*\)/);
     // And nowhere else *in this file*: a fourth call site here is a point this
     // test does not know about, judging with deps it has not been told. The
     // whole tree is the next test's.

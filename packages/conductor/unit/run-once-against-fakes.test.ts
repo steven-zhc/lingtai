@@ -1450,7 +1450,7 @@ describe("runOnce, with no world to run in", () => {
         ports,
       );
       if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-      expect(result).toMatchObject({ ok: "held", gate: "proposed" });
+      expect(result).toMatchObject({ ok: "held", step: "proposed" });
       expect(did).not.toContain("integrate");
 
       const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
