@@ -17,11 +17,12 @@
  * Here: how a step is represented, how the recipe drives it, what a step is
  * handed and what it hands back, **where a step that did not pass goes**, and
  * what it reports when it rests. **The ten bodies are empty** — `NOT_BUILT_YET`
- * is all ten of them — because the bodies are the next ticket and they are
- * filling in a contract this file has already fixed. That is the point of the
- * split: whoever writes `claim`, `admit`, `prepared`, `design`, `implement` and
- * `end` has something that runs to write against, and whoever writes `build`,
- * `review`, `proposed` and `merge` after them has the same.
+ * is all ten of them, and the two that do more than pass do only what the loop
+ * cannot let them leave unsaid — because the bodies are the next ticket and they
+ * are filling in a contract this file has already fixed. That is the point of
+ * the split: whoever writes `claim`, `admit`, `prepared`, `design`, `implement`
+ * and `end` has something that runs to write against, and whoever writes
+ * `build`, `review`, `proposed` and `merge` after them has the same.
  *
  * **The routing is here and the judgement is not**, and that division is 0061
  * §3's in as many words: *`judge:` decides which step is next. The workflow
@@ -30,9 +31,9 @@
  * offer**, it counts the rounds spent, it refuses a destination it did not
  * offer, and it moves the pass where it is told. Which of the offered
  * destinations is right for a given `reason` is a `judge:` plugin at `proposed`,
- * and that is T4b. Until one exists, `NOT_BUILT_YET.proposed` answers
- * `waiting` — every refusal goes to a person, which is what a system with no
- * judge built should do.
+ * and that is T4b. Until one exists, `NOT_BUILT_YET.proposed` sends a refusal to
+ * a person and lets a clean way through past — every refusal is yours and nothing
+ * else is held, which is what a system with no judge built should do.
  *
  * ## An empty step is a pass, not a skip
  *
@@ -198,8 +199,10 @@ export interface StepPassed {
  * beside prose, because `proposed` routes on the first and `waiting` displays
  * the second ([0043](../../../doc/decisions/0043-evidence-is-plain-text.md)).
  *
- * The one exception is `NEEDS_INPUT`, and it is an exception because the
- * **workflow** reads it rather than a judge.
+ * There is exactly one value of `because` the workflow itself reads, and it is
+ * not a refusal's: `NEEDS_INPUT`, on `StepDidNotFinish`, where it decides whether
+ * the pass has anywhere to go. Every other token is read by a judge and by a
+ * person, and neither of them needs it enumerated here.
  */
 export interface StepRefused {
   readonly ending: "refused";
