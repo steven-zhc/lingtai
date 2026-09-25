@@ -130,13 +130,13 @@ describe("standDown", () => {
     const { until, reason } = standDown({
       detail: QUOTA,
       backoffMs: 3_600_000,
-      what: { of: "gate", step: "proposed:review" },
+      what: { of: "step", step: "proposed:review" },
       now,
     });
 
     // The time is read the same way whichever depth met the wall.
     expect(until.toISOString()).toBe("2026-09-10T04:00:00.000Z");
-    expect(reason).toContain("the proposed:review gate's agent never started");
+    expect(reason).toContain("the proposed:review step's agent never started");
     expect(reason).toContain("nothing judged the diff");
     expect(reason).toContain("was paid for");
     expect(reason).not.toContain("nothing spent");

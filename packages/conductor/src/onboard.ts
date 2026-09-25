@@ -371,5 +371,5 @@ export function registrationLine(
   const before: ProjectState = reduceProject(prior);
   return isRegistered(before)
     ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
-    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 gates`;
+    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`;
 }

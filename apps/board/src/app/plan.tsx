@@ -74,9 +74,9 @@ export function Plan({ plan }: { plan: PlanView | null }) {
           The recipe could not be read, so what a run would do here is not known.
         </p>
       ) : (
-        <ol className="points">
+        <ol className="steps">
           {plan.steps.map((p) => (
-            <li key={p.step} className={p.skipped ? "point skipped" : "point"}>
+            <li key={p.step} className={p.skipped ? "step skipped" : "step"}>
               <span className="mono name">{p.step}</span>
               {p.skipped ? (
                 <span className="pill">skipped</span>

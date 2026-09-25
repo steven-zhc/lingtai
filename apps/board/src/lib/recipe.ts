@@ -702,7 +702,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
       keys: ["runtime.assignee.take", "runtime.assignee.login"],
     },
     {
-      name: "the points",
+      name: "the steps",
       says: STEPS.map((step) => `${step} ${recipe.steps[step].length}`).join(" · "),
       keys: ["steps"],
     },

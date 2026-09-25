@@ -18,7 +18,7 @@ import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/e
 import { createPostgresLogQueries } from "@lingtai/event-store/queries";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { landedWithoutSteps } from "../src/gate-audit.ts";
+import { landedWithoutSteps } from "../src/step-audit.ts";
 import { workItemStream } from "@lingtai/domain";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;

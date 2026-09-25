@@ -258,7 +258,7 @@ export function Attempt({
           where a run in flight is *now* is rank 2's to say, and this is the
           record. */}
       {run.progress === null ? (
-        <p className="empty">Nothing is on this attempt's stream, so no point has been reached.</p>
+        <p className="empty">Nothing is on this attempt's stream, so no step has been reached.</p>
       ) : (
         <div className="seq aseq">
           <Segs steps={run.progress.steps} at={null} labels />
@@ -357,7 +357,7 @@ export function RecipeGiven({ run }: { run: RunView }) {
         <ol className="acts">
           {run.progress.steps.map((p) => (
             <li key={p.step}>
-              <span className="actpoint">{p.step}</span>
+              <span className="actstep">{p.step}</span>
               {p.planned.length === 0 ? (
                 <span className="empty">skipped</span>
               ) : (
@@ -538,13 +538,13 @@ export function Record({ task }: { task: TaskDetail }) {
     <section className="record" data-rank="record">
       <Row
         name="findings"
-        fact={verdicts === 0 ? "no gate reported" : `${plural(verdicts, "verdict")} · ${plural(findings, "finding")}`}
+        fact={verdicts === 0 ? "no step reported" : `${plural(verdicts, "verdict")} · ${plural(findings, "finding")}`}
       >
         {/* The gate that refused, what it said, the findings with their failure
             scenarios, and that attempt's diff. If you have to open GitHub to
             decide, nothing changed. */}
         {verdicts === 0 ? (
-          <p className="empty">No gate has reported on any attempt.</p>
+          <p className="empty">No step has reported on any attempt.</p>
         ) : (
           newest
             .filter((run) => run.steps.length > 0)

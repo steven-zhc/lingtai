@@ -51,7 +51,7 @@ import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from 
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import type { GitHubClient } from "@lingtai/github";
 import type { StepAction } from "@lingtai/recipe";
-import { resolveEndActions } from "./end-point.ts";
+import { resolveEndActions } from "./end-step.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 import { currentRecipe } from "./projects.ts";

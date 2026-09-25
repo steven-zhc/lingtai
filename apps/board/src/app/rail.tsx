@@ -276,8 +276,8 @@ export function Rail({
            string, its title, the task page's, the assertions in
            `rail.test.tsx` that quote them, and `the-card.md`'s copy of the
            same sentence. */
-        <p className="snow quiet" title="the agent has finished and no point has started yet">
-          between points
+        <p className="snow quiet" title="the agent has finished and no step has started yet">
+          between steps
         </p>
       ) : (
         /* The fourth reading, and the one the run's own stream cannot name.

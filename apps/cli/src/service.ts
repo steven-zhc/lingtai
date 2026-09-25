@@ -316,7 +316,7 @@ ${argv}
   <key>RunAtLoad</key>
   <true/>
 
-  <!-- The whole point. Crash, logout, sleep — it comes back.
+  <!-- This is why it is here. Crash, logout, sleep — it comes back.
        systemd's Restart=always is the same rule. -->
   <key>KeepAlive</key>
   <true/>
@@ -1307,7 +1307,7 @@ export async function serviceCommand(args: string[], options: ServiceOptions): P
       }
       let mine = asked.version;
       log(`draining — ${await options.drain.holding().catch(() => "what is in flight could not be read")}.`);
-      log(`the pass in flight finishes first: its agent, the gates and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`);
+      log(`the pass in flight finishes first: its agent, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`);
 
       // A lock gone with its connection can be taken, in the gap, by a copy the
       // supervisor started after `mine` — which never reads it, and would take

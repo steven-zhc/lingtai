@@ -136,7 +136,7 @@ export function Evidence({
               where a minor is read — on a gate that passed with one. */}
           {g.state === "passed" && g.findings.some((f) => f.severity === "minor") ? (
             <p className="note">
-              A passing gate's minors wait in the <Link href="/backlog">backlog</Link>, to be opened as an issue or
+              A passing step's minors wait in the <Link href="/backlog">backlog</Link>, to be opened as an issue or
               declined.
             </p>
           ) : null}

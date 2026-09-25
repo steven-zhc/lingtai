@@ -182,7 +182,7 @@ function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
         (was ? `${was} is set — it was renamed to ${full} (#63). ` : "") +
         "The suite writes real events, and writing them to the operator's own log " +
         "leaves work items and board cards that only deleting from an append-only " +
-        `table can remove. Point ${PREFIX}TEST_DATABASE_URL and ` +
+        `table can remove. Set ${PREFIX}TEST_DATABASE_URL and ` +
         `${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own — see .env.example.`,
     );
   }

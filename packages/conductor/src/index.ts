@@ -91,14 +91,14 @@ export {
   type PriorAttempt,
   type PromptBudget,
 } from "./attempts.ts";
-export { landedWithoutSteps, type UnrunStep } from "./gate-audit.ts";
+export { landedWithoutSteps, type UnrunStep } from "./step-audit.ts";
 export {
   appendEndActions,
   endedWithoutEndActions,
   resolveEndActions,
   type TerminalOutcome,
   type UnresolvedEnd,
-} from "./end-point.ts";
+} from "./end-step.ts";
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from "./labels.ts";
 export {
   tellGitHub,

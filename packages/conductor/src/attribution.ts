@@ -222,7 +222,7 @@ const REFUSAL_READING: Record<
     },
   },
   "gate-failed": {
-    says: ({ branch, base }) => `a gate refused ${branch}, so it was not merged into ${base}.`,
+    says: ({ branch, base }) => `a step refused ${branch}, so it was not merged into ${base}.`,
     // Nothing is recommended, deliberately. A red diff is the one case where
     // the judgement is genuinely a person's — approve it anyway, waive the
     // gate, or reject it — and a default here would be picking for them.

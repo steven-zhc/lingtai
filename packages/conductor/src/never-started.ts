@@ -95,7 +95,7 @@ export function parseResetAt(detail: string, now: Date = new Date()): Date | nul
 export type NeverStarted =
   | { readonly of: "run" }
   /** The point's action, as `point:action` — what the card and the chip name. */
-  | { readonly of: "gate"; readonly step: string }
+  | { readonly of: "step"; readonly step: string }
   /**
    * The agent a refusal bought (0038), which is the third agent in a pass and
    * meets the same wall the second one does. `action` is what refused.
@@ -120,9 +120,9 @@ function subject(what: NeverStarted): { opening: string; whose: string } {
   }
   return {
     opening:
-      `the ${what.step} gate's agent never started, so nothing judged the diff — ` +
+      `the ${what.step} step's agent never started, so nothing judged the diff — ` +
       `the run that reached it did start, and was paid for`,
-    whose: `The ${what.step} gate's agent said`,
+    whose: `The ${what.step} step's agent said`,
   };
 }
 

@@ -1189,7 +1189,7 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
  * it says nothing about what the recipe happens to contain today.
  */
 async function endStepRan(queries: LogQueries): Promise<CheckResult> {
-  const name = "gates: end ran on what landed";
+  const name = "steps: end ran on what landed";
   const found = await endedWithoutEndActions(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
@@ -1203,7 +1203,7 @@ async function endStepRan(queries: LogQueries): Promise<CheckResult> {
       `${found.length} item(s) landed with actions planned at end and none resolved — ` +
       `${found.map((f) => `${f.project}#${f.issue}`).join(", ")}. ` +
       "Their issues were never closed or labelled, and nothing on GitHub says Lingtai " +
-      "touched them: lingtai end replay resolves the point as it should have been.",
+      "touched them: lingtai end replay resolves the step as it should have been.",
   };
 }
 
@@ -1229,7 +1229,7 @@ async function endStepRan(queries: LogQueries): Promise<CheckResult> {
  * deciding on the record — the board's waiver, which names who and why.
  */
 async function stepsRan(queries: LogQueries): Promise<CheckResult> {
-  const name = "gates: every step that was planned ran";
+  const name = "steps: every step that was planned ran";
   const found = await landedWithoutSteps(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
 
@@ -1687,7 +1687,7 @@ export function extensionRow(
       `${detail}\n  ${absent.join(", ")} declared by an extension and not set in either file. ` +
       `An extension gets only what it declares (0037 §1), so it would run without them — ` +
       (inTheLoop
-        ? `and a gate action's verdict is what the loop waits for, so every pass is refused after a worktree and an install: `
+        ? `and a step's action verdict is what the loop waits for, so every pass is refused after a worktree and an install: `
         : `a subscriber runs off the log and changes no outcome (0015), so what is lost is the notification, once per event, as a PluginFailed: `) +
       `lingtai env set ${project} ${absent[0]} — it reads the value from stdin, unechoed.`,
   };

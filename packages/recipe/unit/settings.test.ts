@@ -38,7 +38,7 @@
  * to.
  *
  * Reading this repository's own source as a fixture is what
- * `conductor/unit/gate-matrix.test.ts` and `domain/unit/retired-names.test.ts`
+ * `conductor/unit/step-matrix.test.ts` and `domain/unit/retired-names.test.ts`
  * already do, and this follows them.
  */
 import { readdir, readFile } from "node:fs/promises";

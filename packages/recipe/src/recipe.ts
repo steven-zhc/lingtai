@@ -788,7 +788,7 @@ export const KINDS_AT = {
    * carries one too (`#238`), so a `"when" in a` test at the point let a
    * judge action built in code straight past the throw and into a match on
    * the outcome it could not satisfy: `#61` for one kind, silently.
-   * `end-point.ts`'s guard asks for these three keys instead.
+   * `end-step.ts`'s guard asks for these three keys instead.
    */
   end: ["close", "labels", "refs"],
 } as const satisfies Record<Step, readonly ActionKind[]>;
@@ -1011,7 +1011,7 @@ export function whyNoKindAt(step: Step, kind: ActionKind): string | null {
     );
   }
   if (kind === "close" || kind === "labels" || kind === "refs") {
-    return "it is an effect rather than a verdict, and only the `end` point carries out effects";
+    return "it is an effect rather than a verdict, and only the `end` step carries out effects";
   }
   if (kind === "agent") {
     return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";
@@ -1042,7 +1042,7 @@ export function kindRefusedAt(
   why: string,
   tail = "Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start.",
 ): string {
-  return `the "${action}" action is a "${kind}" at the "${step}" point, and ${why}. ${tail}`;
+  return `the "${action}" action is a "${kind}" at the "${step}" step, and ${why}. ${tail}`;
 }
 
 /** What a plugin's own refusal of a field says after the sentence above. */

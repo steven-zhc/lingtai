@@ -318,7 +318,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     taskId: "wi-lingtai-170",
     project: "lingtai",
     issue: "170",
-    title: "the five points are a sequence, so draw one",
+    title: "the five steps are a sequence, so draw one",
     kind: "tech-debt",
     state: "running",
     tier: "guarded",
@@ -482,7 +482,7 @@ describe("a running card", () => {
 
   it("says so when the agent has finished and no step has started", () => {
     const between = running().slice(0, 6);
-    expect(sentence(render({}, between))).toBe("between points");
+    expect(sentence(render({}, between))).toBe("between steps");
   });
 
   /**
@@ -523,7 +523,7 @@ describe("a running card", () => {
    * order — and a point holding two actions draws a cell each, which is the
    * granularity the counter had and the flat row did not.
    */
-  it("drops the gate counters the rail already says, per action", () => {
+  it("drops the step counters the rail already says, per action", () => {
     const html = render({}, running());
 
     expect(html).not.toContain("1 passed");
@@ -638,13 +638,13 @@ describe("a card stopped on a person", () => {
     expect(sentence(html)).toBe("proposed:build refused");
     // And not the bare action name, which is also a label on the same bar.
     expect(labels(html).map(([, name]) => name)).toContain("build");
-    expect(html).not.toContain("between points");
-    expect(html).not.toContain("the agent has finished and no point has started yet");
+    expect(html).not.toContain("between steps");
+    expect(html).not.toContain("the agent has finished and no step has started yet");
   });
 
   /** And a run with nothing refused keeps the neutral sentence it had. */
   it("leaves the in-between sentence to a run that is in between", () => {
-    expect(sentence(render({}, running().slice(0, 6)))).toBe("between points");
+    expect(sentence(render({}, running().slice(0, 6)))).toBe("between steps");
   });
 
   /**
@@ -657,15 +657,15 @@ describe("a card stopped on a person", () => {
    * something is coming, was the wrong half of that on the one lane 0016 §8
    * calls the lane the board exists for.
    */
-  it("never says between points about a pass that is not between anything", () => {
+  it("never says between steps about a pass that is not between anything", () => {
     const html = render(
       { state: "waiting", note: "conflict: base moved", updatedAt: new Date("2026-09-15T17:25:00Z") },
       refusedByTheLane(),
     );
 
     expect(sentence(html)).toBe("nothing running");
-    expect(html).not.toContain("between points");
-    expect(html).not.toContain("the agent has finished and no point has started yet");
+    expect(html).not.toContain("between steps");
+    expect(html).not.toContain("the agent has finished and no step has started yet");
     // The rail itself is unchanged and honest: the gates it drew all passed.
     expect(cellsAt(html, "proposed")).toEqual(["t-pass", "t-pass"]);
     // And the reason is on the card, one line down, where `task_view` put it.
@@ -692,7 +692,7 @@ describe("a card answering a refusal", () => {
 
     expect(sentence(html)).toMatch(/^fixing round 1 of 3 \d/);
     expect(html).not.toContain("build refused");
-    expect(html).not.toContain("between points");
+    expect(html).not.toContain("between steps");
     expect(html).not.toContain(
       "the pipeline stops at the first refusal and waits for a person",
     );
@@ -717,7 +717,7 @@ describe("a card answering a refusal", () => {
   it("keeps the refusal off a card whose lane says the pass is still working", () => {
     const html = render({}, refused());
 
-    expect(sentence(html)).toBe("between points");
+    expect(sentence(html)).toBe("between steps");
     expect(html).not.toContain("build refused");
     // The segment is red all the same. The bar reports the verdict; the
     // sentence reports who is waiting on what.
@@ -725,7 +725,7 @@ describe("a card answering a refusal", () => {
   });
 
   /** The name of a phase that is not a point, printed whole and not sliced. */
-  it("highlights no point for a phase that is not one", () => {
+  it("highlights no step for a phase that is not one", () => {
     const html = render({}, fixRound());
 
     expect(labels(html).filter(([tone]) => tone === "l-at")).toEqual([]);

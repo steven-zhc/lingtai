@@ -9,7 +9,7 @@
 import type { StepAction } from "@lingtai/recipe";
 import type { Envelope } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
-import { resolveEndActions } from "../src/end-point.ts";
+import { resolveEndActions } from "../src/end-step.ts";
 
 const CLOSE: StepAction = { name: "close the ticket", close: true, when: "landed" };
 const LABEL: StepAction = { name: "label it", labels: ["lingtai:done"], when: "any" };
@@ -31,7 +31,7 @@ const event = (type: string, data: unknown): Envelope => ({
 const resolved = (outcome: string, actions: unknown[] = []) =>
   event("EndActionsResolved", { outcome, actions });
 
-describe("the end point", () => {
+describe("the end step", () => {
   it("says nothing when the recipe declares nothing", () => {
     // The skip is the operator's decision, and `GatesResolved` already records
     // that the point was empty.
@@ -52,7 +52,7 @@ describe("the end point", () => {
    * configured and resolved to nothing is not the same fact as a point that
    * never ran, and from the log they must not look alike.
    */
-  it("still records the point when nothing matches the outcome", () => {
+  it("still records the step when nothing matches the outcome", () => {
     const [ev] = resolveEndActions([], [CLOSE], "failed");
     expect(ev?.data).toEqual({ outcome: "failed", actions: [] });
   });
@@ -66,7 +66,7 @@ describe("the end point", () => {
    */
   it("refuses an action at `end` that has no effect to run, rather than dropping it", () => {
     expect(() => resolveEndActions([], [BUILD], "landed")).toThrow(
-      /the "build" action is a "run" at the "end" point/,
+      /the "build" action is a "run" at the "end" step/,
     );
   });
 
@@ -93,7 +93,7 @@ describe("the end point", () => {
  * and the sentence quietly stopped being true. A recipe saying `when: any`
  * would have gone on saying it while doing nothing.
  */
-describe("the end point on a close", () => {
+describe("the end step on a close", () => {
   const CLOSE_ON_CLOSED: StepAction = { name: "close the issue", close: true, when: "closed" };
 
   it("fires the actions that said any", () => {
@@ -147,7 +147,7 @@ describe("the end point on a close", () => {
  * `when:` (`packages/recipe/unit/plugin.test.ts`); this holds the resolver
  * against an action built in code, which is the door the schema is not on.
  */
-describe("the end point on the refs", () => {
+describe("the end step on the refs", () => {
   const SWEEP: StepAction = { name: "delete the arms", refs: true, branch: false, when: "landed" };
   const SWEEP_ALL: StepAction = { name: "delete them all", refs: true, branch: true, when: "landed" };
 

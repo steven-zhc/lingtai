@@ -23,7 +23,7 @@ import { parsePayload, reduceRun, reduceWorkItem, type RunState } from "@lingtai
 import type { GitHubClient } from "@lingtai/github";
 import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
 import { workItemStream } from "@lingtai/domain";
-import { resolveEndActions } from "./end-point.ts";
+import { resolveEndActions } from "./end-step.ts";
 import { labelsFor } from "./labels.ts";
 import { diagnoseRefusal } from "./attribution.ts";
 import { agentBranch } from "./branches.ts";
@@ -566,7 +566,7 @@ export async function waive(options: {
     return {
       ok: false,
       workItemId,
-      detail: `${runId} reported no gate named "${options.step}" — a waiver can only name one it did`,
+      detail: `${runId} reported no step named "${options.step}" — a waiver can only name one it did`,
     };
   }
 

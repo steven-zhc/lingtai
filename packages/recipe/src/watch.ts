@@ -15,7 +15,7 @@ export class BadWatchPatternError extends Error {
   readonly pattern: string;
 
   constructor(step: string, pattern: string, cause: string) {
-    super(`the "${step}" gate watches "${pattern}", which is not a usable glob: ${cause}`);
+    super(`the "${step}" step watches "${pattern}", which is not a usable glob: ${cause}`);
     this.step = step;
     this.pattern = pattern;
   }

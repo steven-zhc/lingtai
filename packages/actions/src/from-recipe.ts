@@ -140,7 +140,7 @@ export function actionsFromRecipe(
 
     // `close` and `labels` are effects, not verdicts. The check above refuses
     // one at any step that decides; reaching here is `actionsFromRecipe("end",
-    // …)`, which nothing does — `end` is resolved by `end-point.ts` and carried
+    // …)`, which nothing does — `end` is resolved by `end-step.ts` and carried
     // out by `tell.ts`, and there is no pipeline for it to be an action in.
     throw new ActionUnavailableError(
       action.name,

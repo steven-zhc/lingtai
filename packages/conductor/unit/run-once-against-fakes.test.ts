@@ -376,7 +376,7 @@ describe("runOnce, with no world to run in", () => {
    *   the card      no block, and no approval question, under `--no-merge` —
    *                 which is the flag this repository passes every single time
    */
-  it("stands the conductor down when a gate's agent never starts, and blames no diff", async () => {
+  it("stands the conductor down when a step's agent never starts, and blames no diff", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const said: string[] = [];
@@ -401,7 +401,7 @@ describe("runOnce, with no world to run in", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok !== false) return;
-    expect(result.stage).toBe("gate");
+    expect(result.stage).toBe("step");
 
     // The run took turns and cost money, so its own ending is not 0031's — the
     // whole reason the dispatch path never sees this.
@@ -454,7 +454,7 @@ describe("runOnce, with no world to run in", () => {
     // And the chip's sentence is about the gate, not about the run. This pass
     // took three turns and cost $0.42, so 0031's opening would be false here —
     // the same wrong sentence as the card's, one screen along (0041 §3).
-    expect(pause.reason).toContain("gate's agent never started");
+    expect(pause.reason).toContain("step's agent never started");
     expect(pause.reason).not.toContain("no turns taken, nothing spent");
 
     // Pushed before it let go, so the next attempt's `git fetch origin agent/<n>`
@@ -508,7 +508,7 @@ describe("runOnce, with no world to run in", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok !== false) return;
-    expect(result.stage).toBe("gate");
+    expect(result.stage).toBe("step");
 
     const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
     expect(paused).toHaveLength(1);
@@ -584,7 +584,7 @@ describe("runOnce, with no world to run in", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok !== false) return;
-    expect(result.stage).toBe("gate");
+    expect(result.stage).toBe("step");
 
     const item = await store.read(`wi-${PROJECT}-7`);
     const reason = (item.find((e) => e.type === "WorkItemReleased")!.data as { reason: string }).reason;
@@ -718,7 +718,7 @@ describe("runOnce, with no world to run in", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok !== false) return;
-    expect(result.stage).toBe("gate");
+    expect(result.stage).toBe("step");
 
     // Once, and only once (`#234`). 0057 §4's retry recomputed the crashed
     // attempt's session id, so it was refused in zero seconds having reviewed
@@ -1403,8 +1403,8 @@ describe("runOnce, with no world to run in", () => {
    * again on the way out, finds the same half-rejection, and has nothing new to
    * say about it.
    */
-  describe("when the pass reaches the gates and a person is asked", () => {
-    it("corrects the ref a half-rejected push left, though the gates were already told the branch", async () => {
+  describe("when the pass reaches the steps and a person is asked", () => {
+    it("corrects the ref a half-rejected push left, though the steps were already told the branch", async () => {
       const store = memoryStore();
       const did: string[] = [];
       const said: string[] = [];

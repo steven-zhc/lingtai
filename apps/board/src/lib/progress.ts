@@ -252,7 +252,7 @@ function stateOf(
   //
   // **Every step but `end`**, which is the same exclusion `landedWithoutSteps`
   // makes in as many words: `end`'s record is `EndActionsResolved` on the *work
-  // item's* stream (`end-point.ts`), and this fold reads the run's. A silent
+  // item's* stream (`end-step.ts`), and this fold reads the run's. A silent
   // `end` here is a question this stream cannot answer, not a step that did not
   // run — `lingtai doctor` has its own check for that one, against the stream
   // that holds it.

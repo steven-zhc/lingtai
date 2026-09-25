@@ -307,7 +307,7 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
         project: parsed.project,
         issue,
         change: "closed",
-        expected: "closed — the log says the end point asked and did not manage",
+        expected: "closed — the log says the end step asked and did not manage",
         actual: "open",
       });
     }

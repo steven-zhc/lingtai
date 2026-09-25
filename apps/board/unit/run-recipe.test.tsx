@@ -192,7 +192,7 @@ describe("the recipe beside an attempt's actions", () => {
     const html = render({ ...run, recipe: await recipeOfRun(run, client, atHead) });
 
     for (const step of ["admit", "prepared", "merge", "end"]) {
-      expect(html).toMatch(new RegExp(`<span class="actpoint">${step}</span><span class="empty">skipped</span>`));
+      expect(html).toMatch(new RegExp(`<span class="actstep">${step}</span><span class="empty">skipped</span>`));
     }
     // One command, for the one action configured.
     expect(html.match(/class="actcmd"/g)).toHaveLength(1);

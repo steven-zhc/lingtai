@@ -1064,7 +1064,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* Its own class rather than the page's `.empty`, which is sized and padded for
    a column that has no cards in it. */
 .sevidence.snone { border-left-color: var(--rule-2); color: var(--muted); font-style: italic; }
-.sgate { font-family: var(--mono); color: var(--ink-2); }
+.sstep { font-family: var(--mono); color: var(--ink-2); }
 .sline {
   font-family: var(--mono);
   color: var(--muted);
@@ -1319,8 +1319,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 /* Tighter than an attempt's, which sit on a wider column: this is half a
    row and the same ten steps have to fit beside a prompt. */
-.plan .points { gap: 0.25rem; }
-.plan .point { padding: 0.3rem 0.55rem; grid-template-columns: 5.5rem 1fr; font-size: 0.72rem; }
+.plan .steps { gap: 0.25rem; }
+.plan .step { padding: 0.3rem 0.55rem; grid-template-columns: 5.5rem 1fr; font-size: 0.72rem; }
 .plan > .empty { margin: 0; }
 
 /* What pressing the button costs when something is holding the item. Muted and
@@ -1732,7 +1732,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .attempt .aseq { margin-bottom: 0.5rem; }
 /* Inside an attempt the point sits on the card's own surface, so it needs the
    step down the board's cards get rather than a second border of its own. */
-.attempt .point { background: var(--surface-2); }
+.attempt .step { background: var(--surface-2); }
 .attempt > .empty { margin: 0; }
 
 /* The recipe this attempt was given, under the rail (#190, #217). The
@@ -1771,7 +1771,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .rhead { opacity: 0.75; }
 .acts { list-style: none; margin: 0 0 0.35rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .acts > li { display: flex; gap: 0.75rem; align-items: baseline; }
-.actpoint { min-width: 5.5rem; color: var(--muted); }
+.actstep { min-width: 5.5rem; color: var(--muted); }
 .actlist { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
 .act > summary { padding: 0.05rem 0; }
 .actbound { opacity: 0.75; }
@@ -1789,8 +1789,8 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    not run, and only the second is a bug (ADR 0016 §4). These are the stacked
    rows the task and queued pages draw, not the card's bar, so ten rows cost
    height rather than width and nothing has to clip. */
-.points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-.point {
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.step {
   display: grid;
   grid-template-columns: 7rem 1fr;
   gap: 0.75rem;
@@ -1802,9 +1802,9 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 /* Present but quiet: it should read as "nothing here, deliberately" rather
    than as an error or as absence. */
-.point.skipped { opacity: 0.62; }
-.point .name { color: var(--muted); }
-.point .actions { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+.step.skipped { opacity: 0.62; }
+.step .name { color: var(--muted); }
+.step .actions { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 
 /* The history. Every summary above it is an interpretation; this is what
    happened, in order, with who did it — grouped by the stream it came off,
@@ -2089,7 +2089,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
      something that opens. */
   .history summary { grid-template-columns: 1rem 1fr; gap: 0.1rem 0.75rem; padding: 0.5rem 0; }
   .history summary > span { grid-column: 2; }
-  .point { grid-template-columns: 1fr; }
+  .step { grid-template-columns: 1fr; }
 }
 
 /* **The ledger's columns are a wide-screen affordance, and below one it gives

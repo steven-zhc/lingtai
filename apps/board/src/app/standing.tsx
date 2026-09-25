@@ -660,7 +660,7 @@ function Reason({
     if (deciding === null) return null;
     return (
       <p className="sevidence">
-        <span className="sgate">{deciding.source}</span>
+        <span className="sstep">{deciding.source}</span>
         <span className="sline">{deciding.line}</span>
         {deciding.attempt !== attempt ? (
           <a className="sptr" href={`#attempt-${deciding.attempt}`}>
@@ -683,7 +683,7 @@ function Reason({
     if (deciding !== null && deciding.attempt === attempt) {
       return (
         <p className="sevidence">
-          <span className="sgate">{deciding.source}</span>
+          <span className="sstep">{deciding.source}</span>
           <span className="sline">{deciding.line}</span>
         </p>
       );
@@ -691,7 +691,7 @@ function Reason({
     const step = refused.at(-1)!.replace(":", " / ");
     return (
       <p className="sevidence snone">
-        The {step} gate refused, and nothing it said was recorded here to quote.
+        The {step} step refused, and nothing it said was recorded here to quote.
       </p>
     );
   }
@@ -699,7 +699,7 @@ function Reason({
   if (raw.trim() === "") {
     return (
       <p className="sevidence snone">
-        {said === null ? "The refusal" : `The ${said} gate`} recorded no output, so there is
+        {said === null ? "The refusal" : `The ${said} step`} recorded no output, so there is
         nothing to quote.
       </p>
     );
@@ -709,7 +709,7 @@ function Reason({
   return (
     <details className="sreason" open>
       <summary>
-        <span className="sgate">{said ?? "what refused, verbatim"}</span>
+        <span className="sstep">{said ?? "what refused, verbatim"}</span>
         <span className="ssize">
           {lines} line{lines === 1 ? "" : "s"}
         </span>

@@ -494,7 +494,7 @@ ${criterion}
   anybody asked for.
 - Add or tighten a test where a test is what would have caught it.
 
-**Commit what you fix.** What the gates judge, and what a person may be asked to
+**Commit what you fix.** What the steps judge, and what a person may be asked to
 approve, is a commit — an attempt that ends with advice about the code produces
 nothing anyone can act on.
 
@@ -614,7 +614,7 @@ ${files === "" ? "(git named no files; use `git status` and `git diff --diff-fil
 \`\`\``,
     criterion: `## What counts as done
 
-Resolve the conflict and commit the merge. Then the whole \`proposed\` point runs
+Resolve the conflict and commit the merge. Then the whole \`proposed\` step runs
 again on what you committed, and the merge is attempted again — **both have to
 pass.** The second is why this is not a matter of picking a side.
 
@@ -644,7 +644,7 @@ ${output.trim()}
 \`\`\``,
     criterion: `## What counts as done
 
-The whole point runs again on what you commit — every action, in order, starting
+The whole step runs again on what you commit — every action, in order, starting
 from the first. **\`${action}\` has to go green, and everything after it has to
 stay green.** That is a criterion no prose can loosen and you cannot author: it
 is checked by running it.
@@ -1152,8 +1152,8 @@ export function diagnoseUnfixed(input: {
           `changed nothing and said why instead. That is an argument and not a check ` +
           `that stayed red: ${
             ran === 1
-              ? "the point has run once"
-              : `the point has run ${ran} times and its last result was not re-checked`
+              ? "the step has run once"
+              : `the step has run ${ran} times and its last result was not re-checked`
           }, and what it printed is below next to the objection.`
         );
       case "no-rounds":

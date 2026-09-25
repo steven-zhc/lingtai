@@ -64,7 +64,7 @@ import {
   actionsFromRecipe,
   verdictFor,
 } from "@lingtai/actions";
-import { resolveEndActions } from "../src/end-point.ts";
+import { resolveEndActions } from "../src/end-step.ts";
 import { BUILT_IN_FOR } from "../src/judge.ts";
 import { decideBacklog } from "../src/backlog.ts";
 
@@ -79,7 +79,7 @@ import { decideBacklog } from "../src/backlog.ts";
 const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
   agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
-  watch: { name: "tamper", watch: ["**/gates.yml"], then: "fail" },
+  watch: { name: "tamper", watch: ["**/steps.yml"], then: "fail" },
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
   labels: { name: "label it", labels: ["shipped"], when: "any" },
@@ -244,7 +244,7 @@ describe("every step × kind cell runs or refuses", () => {
       ActionUnavailableError,
     );
     expect(() => actionsFromRecipe(step, [ACTION[kind]], DEPS[step])).toThrow(
-      new RegExp(`"${kind}" at the "${step}" point`),
+      new RegExp(`"${kind}" at the "${step}" step`),
     );
   });
 
@@ -267,7 +267,7 @@ describe("every step × kind cell runs or refuses", () => {
     "resolveEndActions refuses end × %s by name, rather than dropping it",
     (kind) => {
       expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
-        new RegExp(`"${kind}" at the "end" point`),
+        new RegExp(`"${kind}" at the "end" step`),
       );
       expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
         new RegExp(`"${ACTION[kind].name}"`),
@@ -277,7 +277,7 @@ describe("every step × kind cell runs or refuses", () => {
 
   /**
    * And the keys that guard reads are the row, not a second list beside it: a
-   * kind added to `KINDS_AT.end` whose key `end-point.ts` does not test would
+   * kind added to `KINDS_AT.end` whose key `end-step.ts` does not test would
    * be accepted by the schema and thrown out by the point.
    */
   it("refuses at `end` exactly the kinds `KINDS_AT` says it does not run", () => {
@@ -481,7 +481,7 @@ describe("every step × kind cell runs or refuses", () => {
    * refused mid-pass and released the item, which is the failure this whole
    * file exists to make impossible.
    */
-  it("is the deps run-once passes at each point", async () => {
+  it("is the deps run-once passes at each step", async () => {
     const src = await readFile(new URL("../src/run-once.ts", import.meta.url), "utf8");
     expect(src).toMatch(/actionsFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
     expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*stepDeps\s*\)/);
@@ -577,7 +577,7 @@ describe("doc/reference.md's matrix", () => {
       }
     }
 
-    expect(header, "no point × kind table in doc/reference.md").not.toBeNull();
+    expect(header, "no step × kind table in doc/reference.md").not.toBeNull();
     expect([...rows.keys()]).toEqual([...STEPS]);
     for (const step of STEPS) {
       const drawn = rows.get(step)!;

@@ -200,7 +200,7 @@ export interface UnresolvedEnd {
  * The last hyphen, which is what keeps a project name containing one intact.
  * Safe because the same code writes the id — `workItemStream` in `discover.ts`.
  *
- * Exported for `gate-audit.ts`, which asks the same question about the gating
+ * Exported for `step-audit.ts`, which asks the same question about the gating
  * points that this file asks about `end`, and not re-exported from the barrel:
  * a caller outside the conductor has a `ProjectState` and does not need it.
  */
@@ -228,7 +228,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, computed from the log alone.** `GatesResolved` names all ten steps
  * and the actions planned for each — `.length(10)` in the schema since 0058 §3
- * widened the vocabulary, and the same event `gate-audit.ts` reads for the
+ * widened the vocabulary, and the same event `step-audit.ts` reads for the
  * other nine — so "the recipe asked for something at `end`" is a fact in the
  * log rather than in a recipe that may have changed since;
  * `EndActionsResolved` on the item's own stream is the record that the step

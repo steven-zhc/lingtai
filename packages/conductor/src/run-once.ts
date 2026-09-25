@@ -156,8 +156,8 @@ import {
   workItemStream,
 } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
-import { appendEndActions, resolveEndActions } from "./end-point.ts";
-import { stepsResolved } from "./gates-resolved.ts";
+import { appendEndActions, resolveEndActions } from "./end-step.ts";
+import { stepsResolved } from "./steps-resolved.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
 
@@ -767,8 +767,8 @@ export function runOnce(
         const it =
           what.of === "run"
             ? "a run"
-            : what.of === "gate"
-              ? `the ${what.step} gate's agent`
+            : what.of === "step"
+              ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`;
         const events = await store.read(CONTROL_STREAM);
         const control = reduceControl(events);
@@ -2110,7 +2110,7 @@ export function runOnce(
       const agentNeverStarted = (what: Exclude<NeverStarted, { of: "run" }>, detail: string) =>
         Effect.gen(function* () {
           const who =
-            what.of === "gate" ? `the ${what.step} gate's agent` : `the agent fixing ${what.action}`;
+            what.of === "step" ? `the ${what.step} step's agent` : `the agent fixing ${what.action}`;
           runLog.note(what.of, `${who} never started — ${detail}`);
           yield* standDownConductor(what, detail);
           const notPushed = yield* publishWhatIsCommitted;
@@ -2122,8 +2122,8 @@ export function runOnce(
             // either — the implementer ran and its cost is on `RunFinished`.
             // What is true of the diff is that nobody judged it.
             release:
-              what.of === "gate"
-                ? `the ${what.step} gate never ran — its agent never started, so nothing judged this diff: ${said(detail)}${unpushed}`
+              what.of === "step"
+                ? `the ${what.step} step never ran — its agent never started, so nothing judged this diff: ${said(detail)}${unpushed}`
                 : `the agent fixing ${what.action} never started, so nothing answered the refusal: ${said(detail)}${unpushed}`,
           });
         });
@@ -2162,7 +2162,7 @@ export function runOnce(
        */
       const stepDidNotFinish = (what: string, detail: string) =>
         Effect.gen(function* () {
-          runLog.note("gate", `the ${what} action did not finish — ${detail}`);
+          runLog.note("step", `the ${what} action did not finish — ${detail}`);
           const question = `did-not-finish: the ${what} action's agent produced no verdict`;
           const notPushed = yield* publishWhatIsCommitted;
           const ended = yield* Effect.promise(async () => {
@@ -2216,7 +2216,7 @@ export function runOnce(
           const unpushed =
             notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
           return yield* new Stopped({
-            stage: "gate",
+            stage: "step",
             detail: `the ${what} action did not finish: ${detail}`,
             release:
               `the ${what} action's agent produced no verdict, so nothing judged this ` +
@@ -2524,13 +2524,13 @@ export function runOnce(
         // about by name (0038 §2).
         pipeline = yield* judge(head, recheck, rounds);
         recheck = [];
-        log(`gates: ${pipeline.results.map((r) => `${r.action}=${r.verdict}`).join(" ")}`);
+        log(`steps: ${pipeline.results.map((r) => `${r.action}=${r.verdict}`).join(" ")}`);
 
         // Before the refusal is read: a gate whose agent never started refused
         // nothing, and must not reach `buyRound`, the hold or the lane.
         if (pipeline.neverRanAt !== null) {
           yield* agentNeverStarted(
-            { of: "gate", step: `proposed:${pipeline.neverRanAt.action}` },
+            { of: "step", step: `proposed:${pipeline.neverRanAt.action}` },
             pipeline.neverRanAt.detail,
           );
         }
@@ -2687,7 +2687,7 @@ export function runOnce(
           // The same ending at the other point that runs an `agent` action.
           if (atMerge.neverRanAt !== null) {
             yield* agentNeverStarted(
-              { of: "gate", step: `merge:${atMerge.neverRanAt.action}` },
+              { of: "step", step: `merge:${atMerge.neverRanAt.action}` },
               atMerge.neverRanAt.detail,
             );
           }
@@ -3081,8 +3081,8 @@ export function runOnce(
                       // about, and unlike the other two nothing ever rewrites it.
                       `Merge ${branch} into ${base} anyway? ${mergeAnywayBecause(unresolved)}`
                     : pipeline.ok && atMerge.ok
-                      ? `Merge ${branch} into ${base}? Every gate passed.`
-                      : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} gate refused.`),
+                      ? `Merge ${branch} into ${base}? Every step passed.`
+                      : `Merge ${branch} into ${base} anyway? The ${pipeline.failedAt ?? atMerge.failedAt} step refused.`),
                 artifacts: [`${branch}@${headSha}`],
               }),
             },
@@ -3104,7 +3104,7 @@ export function runOnce(
             : unfixedQuestion({ ...unresolved, branch, base, restarts: arms.length })
           : repairOf
             ? `a repair for ${repairOf.reason} is waiting on you: ${branch} into ${base}`
-            : `held at the ${step} gate: ${branch} into ${base}`;
+            : `held at the ${step} step: ${branch} into ${base}`;
         /**
          * The hold, as something a person can act on rather than only read.
          *
@@ -3173,15 +3173,15 @@ export function runOnce(
               what:
                 `${branch} is at ${headSha.slice(0, 7)} and ` +
                 (failedAt !== null
-                  ? `the ${failedAt} gate refused it. The ${step} point holds for ${action}.`
+                  ? `the ${failedAt} step refused it. The ${step} step holds for ${action}.`
                   : green
-                    ? `every gate passed. The ${step} point holds for ${action}.`
+                    ? `every step passed. The ${step} step holds for ${action}.`
                     : // Neither green nor refused: a gate asked for a person rather
                       // than judging — a `human:` action, or a `watch` one that saw
                       // a migration. It used to fall through to the sentence above
                       // and print `the null gate refused it`, which is the same
                       // defect one word further on: a cause the block does not have.
-                      `the ${action} gate at ${step} asked for a person before anything after it ran.`),
+                      `the ${action} step at ${step} asked for a person before anything after it ran.`),
               // What was done about it, when something was: a repair spent an agent
               // and this diff is what it produced. An ordinary hold had no failure
               // to do anything about, and says so by saying nothing.
@@ -3202,8 +3202,8 @@ export function runOnce(
                 ? {
                     action: "approve" as const,
                     why: repairOf
-                      ? `every gate passed on what the repair for ${repairOf.reason} produced`
-                      : "every gate passed on this diff; approving merges what this run produced",
+                      ? `every step passed on what the repair for ${repairOf.reason} produced`
+                      : "every step passed on this diff; approving merges what this run produced",
                   }
                 : null,
             };

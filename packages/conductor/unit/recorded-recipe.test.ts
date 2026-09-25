@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { parsePayload } from "@lingtai/domain";
 import { RECIPE_PATH, type Recipe, hashRecipe, resolveRecipe } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
-import { stepsResolved } from "../src/gates-resolved.ts";
+import { stepsResolved } from "../src/steps-resolved.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const OWN = readFileSync(join(ROOT, ".lingtai/config.yaml"), "utf8");

@@ -147,7 +147,7 @@ export function proposalFor(entry: BacklogEntry, decision: Decision, since: Date
     "",
     `- ticket: #${entry.issue}`,
     `- run: \`${entry.runId}\`, reviewing \`${entry.onSha.slice(0, 12)}\``,
-    `- gate: \`${entry.step}\`, action \`${entry.action}\``,
+    `- step: \`${entry.step}\`, action \`${entry.action}\``,
     `- finding: \`${entry.key}\` (seq ${entry.raisedSeq})`,
     "",
     "## Done when",

@@ -1416,7 +1416,7 @@ export const OutboxFailed = z.object({
  * (`#240`): it deletes the `agent/<n>-attempt-<k>` refs a landed ticket left
  * behind. It is recorded here rather than under a noun of its own because it
  * is one of `end`'s effects and `tell.ts` is what carries those out — a second
- * carrier is a path that forgets one, which is the failure `end-point.ts`'s own
+ * carrier is a path that forgets one, which is the failure `end-step.ts`'s own
  * header is about. `detail` is the refs that went, so *nothing was there* and
  * *thirteen were deleted* are different rows.
  *

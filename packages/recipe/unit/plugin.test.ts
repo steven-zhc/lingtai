@@ -200,7 +200,7 @@ describe("every problem in one answer", () => {
 
     // The same sentence the step's own refusal opens with, so the two read as
     // one rule rather than as two mechanisms (0061 §8).
-    for (const one of said) expect(one).toMatch(/^the ".+" action is a ".+" at the ".+" point, and /);
+    for (const one of said) expect(one).toMatch(/^the ".+" action is a ".+" at the ".+" step, and /);
     for (const one of said) expect(one).toContain("before a worktree, before an agent, before any money");
   });
 
@@ -426,7 +426,7 @@ describe("the six behind the contract", () => {
  *   true and about the wrong thing; inside it, an operator is told which file
  *   cuts their worktree today. That the *schema* carries that sentence — the
  *   action, its plugin, its step — is asserted of all twenty cells by
- *   `packages/conductor/unit/gate-matrix.test.ts`, which walks the closed set
+ *   `packages/conductor/unit/step-matrix.test.ts`, which walks the closed set
  *   rather than a list of its own; what is here is the sentence itself.
  * - **`merge:` declares no `base:`.** `base` is one value that flows (§4), and
  *   a second declaration would manufacture a disagreement between what a pass
@@ -517,7 +517,7 @@ describe("the two the pass calls itself", () => {
  * - **Refused at all ten steps, by a sentence that says where the code is** and
  *   how `claim` will reduce the list when it reads it. The first half is the
  *   same property `worktree:` and `merge:` have; the second is this plugin's
- *   own, and `packages/conductor/unit/gate-matrix.test.ts` is where it is
+ *   own, and `packages/conductor/unit/step-matrix.test.ts` is where it is
  *   pinned.
  */
 describe("the one `claim` will hold", () => {
@@ -753,7 +753,7 @@ describe("the one that deletes", () => {
       }
       expect(whyNoKindAt(step, "refs"), `${step} × refs is accepted`).not.toBeNull();
     }
-    expect(whyNoKindAt("proposed", "refs")).toContain("only the `end` point carries out effects");
+    expect(whyNoKindAt("proposed", "refs")).toContain("only the `end` step carries out effects");
   });
 
   /**
