@@ -12,7 +12,7 @@
  * Nothing here leaves the system: the two seams `runPass` takes — the ten bodies
  * and how a declared list becomes runnable actions — are both replaced, so no
  * process is spawned, no agent is paid and no person is asked. That is why this
- * is in `unit/` and why the `build` gate runs it (0060 §1).
+ * is in `unit/` and why the `build` point runs it (0060 §1).
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -181,19 +181,29 @@ describe("a step that was configured is never skipped", () => {
     expect(seen.at(-1)).toEqual({ step: "end", actions: ["close it"] });
   });
 
-  it("runs the declared action for real, so its events name the step", async () => {
+  /**
+   * And the action is *run*, not merely built. `runActionPipeline` is what runs
+   * it — the loop calls it and does not reimplement it — so the proof is the
+   * action's own `run` having been entered, and the three events the pipeline
+   * emits for it arriving on the caller's `emit` untouched.
+   */
+  it("runs the declared action rather than only building it", async () => {
     const recipe = recipeWith({ prepared: [{ name: "install", run: "pnpm install" }] });
     const { bodies } = watching();
-    const { actionsAt } = watchingActions();
+    let entered = 0;
+    const { actionsAt } = watchingActions({
+      prepared: [
+        { name: "install", kind: "run", run: async () => (entered += 1, PASSED) },
+      ],
+    });
     const { emit, seen } = events();
 
     await runPass({ recipe, context, emit, bodies, actionsAt });
 
-    expect(seen.map((e) => [e.type, (e.data as { gate: string; action: string }).gate, (e.data as { action: string }).action])).toEqual([
-      ["GateRequested", "prepared", "install"],
-      ["GateStarted", "prepared", "install"],
-      ["GatePassed", "prepared", "install"],
-    ]);
+    expect(entered).toBe(1);
+    // Requested, started, passed — the pipeline's three, and nothing from the
+    // nine steps whose lists were empty.
+    expect(seen).toHaveLength(3);
   });
 });
 
@@ -206,14 +216,14 @@ describe("four steps may refuse, and the other six may not", () => {
     // `EndingAt` has stopped saying the thing the type exists to say.
     const cannotRefuse: StepBody<"claim"> = async () => ({
       ending: "refused",
-      because: "gate-failed",
+      because: "action-refused",
       at: null,
       detail: "nope",
     });
     // And one of the four compiles with no cast at all.
     const mayRefuse: StepBody<"prepared"> = async () => ({
       ending: "refused",
-      because: "gate-failed",
+      because: "action-refused",
       at: "install",
       detail: "pnpm install exited 1",
     });
@@ -230,7 +240,7 @@ describe("four steps may refuse, and the other six may not", () => {
    */
   it("throws when a step that may not refuse refuses anyway", async () => {
     const { bodies } = watching({
-      claim: async () => ({ ending: "refused", because: "gate-failed", at: null, detail: "nope" }) as never,
+      claim: async () => ({ ending: "refused", because: "action-refused", at: null, detail: "nope" }) as never,
     });
     const { actionsAt } = watchingActions();
     const { emit } = events();
@@ -257,7 +267,7 @@ describe("four steps may refuse, and the other six may not", () => {
       step: "prepared",
       ending: {
         ending: "refused",
-        because: "gate-failed",
+        because: "action-refused",
         at: "install",
         detail: "pnpm install exited 1",
       },

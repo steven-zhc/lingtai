@@ -51,11 +51,9 @@
  */
 import { STEPS, type Step } from "@lingtai/domain";
 import {
-  actionsFromRecipe,
   runActionPipeline,
   type Action,
   type ActionContext,
-  type ActionDeps,
   type ActionEvent,
   type PipelineResult,
 } from "@lingtai/actions";
@@ -129,8 +127,15 @@ export const PASS: readonly StepSpec[] = STEPS.map((step) => ({
   plugins: step === "end" ? "effects" : "verdicts",
 }));
 
-/** `end`'s row, which the loop needs by name because it runs on every ending. */
-const END: StepSpec = { step: "end", refuses: false, plugins: "effects" };
+/**
+ * `end`'s row, which the loop needs by name because it runs on every ending.
+ *
+ * Read out of `PASS` rather than written a second time: two rows for one step
+ * are two things to keep the same. The `!` is `Step` containing `"end"`, which
+ * [0016](../../../doc/decisions/0016-the-settled-model.md) §3 calls closed
+ * forever.
+ */
+const END: StepSpec = PASS.find((spec) => spec.step === "end")!;
 
 // ------------------------------------------------- what a step hands back ----
 
@@ -256,7 +261,6 @@ export interface StepWork<S extends Step = Step> {
   readonly refuses: boolean;
   readonly context: ActionContext;
   readonly emit: (event: ActionEvent) => Promise<void> | void;
-  readonly deps: ActionDeps;
 }
 
 export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Promise<EndingAt<S>>;
@@ -344,20 +348,24 @@ export interface PassOptions {
    * remove.*
    */
   readonly emit: (event: ActionEvent) => Promise<void> | void;
-  /** What the four verdict kinds need. `actionsFromRecipe`'s own argument. */
-  readonly deps?: ActionDeps;
   /** The ten bodies. All ten empty is the default, and is what lands today. */
   readonly bodies?: StepBodies;
   /**
    * How a step's declared list becomes actions that can run.
    *
-   * `actionsFromRecipe` by default, which is where a cell `KINDS_AT` does not
-   * run is refused by name. It is a seam because a `run:` action spawns a
-   * process and an `agent:` one spends money, so a test that wants to exercise
-   * the loop rather than the actions replaces it — which is what makes the
-   * whole pass assertable in the half of the suite the `build` gate runs.
+   * **Handed in, and required.** `actionsFromRecipe` is what does it, and its
+   * three dependencies — a reviewer, the diff's file list, an environment
+   * resolver — are all things only a caller with a machine under it can build;
+   * they are what `run-once.ts` assembles as `stepDeps` today. So turning a
+   * declared list into a runnable action is neither the sequence nor the
+   * outcome rules, and by 0058 §2b it is therefore not the pass's. Two things
+   * follow and both are wanted: a cell `KINDS_AT` does not run is refused by
+   * `actionsFromRecipe`, at the caller, by name — and a test can exercise the
+   * whole loop without spawning a process, paying an agent or asking a person,
+   * which is what puts this file's tests in the half of the suite the `build`
+   * point runs (0060 §1).
    */
-  readonly actionsAt?: (step: Step, actions: readonly StepAction[]) => readonly Action[];
+  readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[];
 }
 
 /** One step, and how it ended. `PassResult.steps` holds one per step reached. */
@@ -441,11 +449,9 @@ async function runStep(spec: StepSpec, options: PassOptions, bodies: StepBodies)
   const actions = options.recipe.steps[spec.step];
 
   if (spec.plugins === "verdicts") {
-    const build =
-      options.actionsAt ?? ((step, list) => actionsFromRecipe(step, list, options.deps ?? {}));
     const result = await runActionPipeline({
       step: spec.step,
-      actions: build(spec.step, actions),
+      actions: options.actionsAt(spec.step, actions),
       context: options.context,
       emit: options.emit,
     });
@@ -467,7 +473,6 @@ async function runStep(spec: StepSpec, options: PassOptions, bodies: StepBodies)
     refuses: spec.refuses,
     context: options.context,
     emit: options.emit,
-    deps: options.deps ?? {},
   });
   return onlyTheFourMayRefuse(spec, ending);
 }
@@ -501,11 +506,15 @@ function endingOf(result: PipelineResult): StepEnding {
   if (result.failedAt !== null) {
     return {
       ending: "refused",
-      // `gate-failed` is the log's own word for *something the recipe declared
-      // refused* — `RefusalReason` in `@lingtai/domain`, and 0058 §3c's own
-      // example of a machine-readable reason. Not a new token, and #233 renames
-      // it wherever it is written.
-      because: "gate-failed",
+      // *Something the recipe declared refused*, which is all the pipeline
+      // knows. The log spells this `gate-failed` today — `RefusalReason` in
+      // `@lingtai/domain`, and 0058 §3c's own example of a machine-readable
+      // reason — and that spelling is the retired vocabulary `#232`'s allowlist
+      // is down to nothing on, with `#233` renaming the value itself. Writing
+      // it here would put a fifth word back on a list that may only shrink, so
+      // this says the same thing in the vocabulary that replaced it: a step is a
+      // step and an action is an action.
+      because: "action-refused",
       at: result.failedAt,
       detail: evidenceFrom(result, result.failedAt),
     };
