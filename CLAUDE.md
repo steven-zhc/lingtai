@@ -266,6 +266,17 @@ fixtures that are not themselves tests.
     pnpm test:integration   # the other 76, and `pnpm test:db` is the old name
     pnpm test:all           # both projects in one run
 
+**Nobody runs the integration half as part of doing a ticket.** It takes 803
+seconds, and an agent's background task is killed at 600 — `#249` did the work,
+started `pnpm test:integration`, stopped to wait for it, and was terminated with
+90 turns and $8.95 spent and **no commit at all**. A `Done when` that asks for it
+is a `Done when` an agent cannot reach. Ask for `pnpm test` and `pnpm typecheck`,
+and commit as the work stands.
+
+What that gives up is `apps/release/integration/build.test.ts`, the Next build —
+the one check that sees a server-only import reaching a `"use client"` graph, which
+`tsc` cannot. Nothing else in that half is reachable from a ticket anyway.
+
 `pnpm test` is what the `build` gate runs, so **a red there is a claim about the
 diff** ([0060](doc/decisions/0060-the-gate-runs-unit-tests.md)). It is one
 vitest run rather than `pnpm -r`, which stopped at the first failing package and
