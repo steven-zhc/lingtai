@@ -932,11 +932,17 @@ describe("runOnce, with no world to run in", () => {
     const hitTheWall = async (
       committed: boolean,
       /**
-       * What goes wrong underneath the publish, and both are things that
-       * actually can (`#251`): a push origin rejects, and a store that will not
-       * take the row accounting for it.
+       * What goes wrong underneath the publish, and all three are things that
+       * actually can (`#251`): a push origin rejects, a push origin *half*
+       * rejects, and a store that will not take the row accounting for either.
+       *
+       * `leasedBranch` is the half: only the command carrying
+       * `--force-with-lease` is refused, which is what origin does when a
+       * sibling claim has moved `agent/<n>` since the worktree was cut. The
+       * forced arm refspec in the same command is taken, and a later push of
+       * the arm alone is a no-op that succeeds — so the fake lets it through.
        */
-      breaks: { push?: string; theRow?: boolean } = {},
+      breaks: { push?: string; leasedBranch?: string; theRow?: boolean } = {},
     ) => {
       const store = memoryStore();
       const did: string[] = [];
@@ -960,13 +966,17 @@ describe("runOnce, with no world to run in", () => {
         for (const e of events) did.push(`append ${e.type}`);
         return appended(stream, at, events);
       };
-      if (breaks.push !== undefined) {
+      const refuse = breaks.push ?? breaks.leasedBranch;
+      if (refuse !== undefined) {
         const inner = ports.repo.git;
+        const refused = (args: readonly string[]) =>
+          args[0] === "push" &&
+          (breaks.push !== undefined || args.some((a) => a.startsWith("--force-with-lease=")));
         ports.repo.git = (args, o) =>
-          args[0] === "push"
+          refused(args)
             ? Effect.sync(() => {
                 did.push(`git push ${args.filter((a) => a.includes(":refs/heads/")).join(" ")}`);
-              }).pipe(Effect.andThen(pushRefusedWith(breaks.push!)))
+              }).pipe(Effect.andThen(pushRefusedWith(refuse)))
             : inner(args, o);
       }
       if (!committed) {
@@ -1058,7 +1068,7 @@ describe("runOnce, with no world to run in", () => {
      * objects and one night of archaeology, and the four readings are still not
      * decidable.
      *
-     * So the four assertions below are one assertion in four postures: **after
+     * So the five assertions below are one assertion in five postures: **after
      * this ending, the log says what the publish did.** The arms above already
      * pin the push and the `RunProducedDiff`; these pin the account, and the
      * ordering that stops the account arriving after the question.
@@ -1134,6 +1144,62 @@ describe("runOnce, with no world to run in", () => {
           detail: expect.stringContaining("stale info"),
         });
       }
+      expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
+    });
+
+    /**
+     * **A push that half worked is not a push that failed** (`#251`).
+     *
+     * `git push` is not atomic and this pass sends two refspecs in one command.
+     * The arm is forced and uncontended; `agent/7` carries a
+     * `--force-with-lease` that a sibling claim, a manual push or a re-run of
+     * the sweep can invalidate between the cut and the wall. Origin then takes
+     * the arm, rejects the branch, and exits non-zero — one bit about two refs.
+     *
+     * Believed as a refusal that is the loss this whole ticket is about: a row
+     * saying *nothing was pushed* over commits that are on origin, and a next
+     * attempt told *Nothing* because `attemptBrief` reads `RunProducedDiff` and
+     * nothing else. So the publish asks the arm directly before it decides, and
+     * what it records is the arm — the ref that holds this run's work, and the
+     * one the brief has to name, because `agent/7` now holds whatever
+     * invalidated the lease.
+     */
+    it("finds the arm that survived a half-rejected push, and sends the next attempt to it", async () => {
+      const rejected = "! [rejected] agent/7 -> agent/7 (stale info)";
+      const { result, did, run, item } = await hitTheWall(true, { leasedBranch: rejected });
+      expect(result.ok).toBe(false);
+
+      // The combined push failed; the arm was then asked on its own and said
+      // yes, which is the fact the exit code could not carry.
+      expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
+      expect(did).toContain("git push +HEAD:refs/heads/agent/7-attempt-1");
+
+      const rows = run.filter((e) => e.type === "RunRefsPublished");
+      expect(rows.map((e) => (e.data as { outcome: string }).outcome)).toEqual([
+        "arm-only",
+        "arm-only",
+      ]);
+      expect(rows[0]!.data).toMatchObject({
+        branch: "agent/7",
+        arm: "agent/7-attempt-1",
+        headSha: "b".repeat(40),
+        detail: expect.stringContaining("stale info"),
+      });
+
+      // **The arm, and once.** Naming `agent/7` here would send the next agent
+      // to fetch the commits that rejected this push.
+      const produced = run.filter((e) => e.type === "RunProducedDiff");
+      expect(produced).toHaveLength(1);
+      expect(produced[0]!.data).toMatchObject({
+        branch: "agent/7-attempt-1",
+        headSha: "b".repeat(40),
+      });
+
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("git fetch origin agent/7-attempt-1");
+      expect(brief).not.toContain("It committed no change");
+      // The stop still stands: a push origin argued with is not a second
+      // opinion about the ticket.
       expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
     });
 

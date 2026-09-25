@@ -477,6 +477,16 @@ export const RunProducedDiff = z.object({
  * never ran **only where the run did not land** — read without that, every
  * successful run in the log comes back as a publish that did not fire, which
  * buries the signal this type exists to make.
+ *
+ * **And it is the store's word for it, so the absence is evidence and not
+ * proof.** The append that writes this row is made with its own defect handler
+ * and a store that refuses the row is swallowed there on purpose: raising it
+ * would abort the publish before the `RunProducedDiff` the next attempt's brief
+ * reads, and a ref nobody will fetch is a worse ending than a ref nobody
+ * explained. So a publish that ran, pushed, and could not say so leaves the
+ * sentence in the run log and in the conductor's output instead, and a reader
+ * who finds no row on a run that did not land should look in both before
+ * concluding the finalizer never fired.
  */
 export const RunRefsPublished = z.object({
   /** `agent/<n>` — the ref the next attempt's prompt tells an agent to fetch. */
@@ -486,19 +496,40 @@ export const RunRefsPublished = z.object({
    * (0062 §2), so it is still there when `agent/<n>` has moved on.
    */
   arm: z.string(),
-  /** The head the two refs point at, or null when nothing was pushed. */
+  /**
+   * The head the refs this outcome names point at, or null when nothing was
+   * pushed. On `arm-only` it is the arm's, and `branch` is somebody else's.
+   */
   headSha: z.string().nullable(),
   /**
-   * Which of the four it was.
+   * Which of the five it was.
    *
    * `nothing-committed` is an ending with no commits, which publishes nothing on
    * purpose — a ref to an empty branch is a worse lie than the absence (0062
    * §1). `already-published` is this pass's own second call: a stop publishes
    * before it asks a person, and the finalizer then finds the head already
    * where it wanted it — which is the row that says the finalizer ran.
+   *
+   * **`arm-only` is there because `git push` is not atomic** (`#251`). The two
+   * refspecs go in one command and origin judges them one at a time: the arm is
+   * forced and nothing else writes it, while `agent/<n>` carries a
+   * `--force-with-lease` a sibling claim can invalidate between the cut and the
+   * push. Origin then takes the arm, rejects the branch, and `git push` exits
+   * non-zero — one bit about two refs. Read as `refused` that is a row saying
+   * *nothing was pushed* over commits that are on origin, and the next attempt
+   * is told *Nothing* while the one ref that survived goes unfetched, which is
+   * the loss this type exists to end. So the publish confirms the arm before it
+   * decides, and where the arm is up `RunProducedDiff` names **the arm** rather
+   * than a `agent/<n>` that is no longer this run's.
    */
-  outcome: z.enum(["published", "nothing-committed", "already-published", "refused"]),
-  /** Git's own words when `refused`, and null otherwise. */
+  outcome: z.enum([
+    "published",
+    "nothing-committed",
+    "already-published",
+    "arm-only",
+    "refused",
+  ]),
+  /** Git's own words when `refused` or `arm-only`, and null otherwise. */
   detail: z.string().nullable(),
 });
 

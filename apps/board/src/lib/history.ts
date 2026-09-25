@@ -181,10 +181,18 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * `headSha` is the only thing on the payload that tells them apart, and a
    * reader who has to open the disclosure to find that out is being asked to do
    * the triage the row exists to do.
+   *
+   * **`arm-only` says both halves in one sentence**, because the two facts are
+   * opposite and a reader needs each: `agent/<n>` was rejected and holds
+   * somebody else's commits, and this claim's own arm is on origin at a head
+   * the next attempt is being sent to. Rendering it as a refusal would put the
+   * work back out of sight, which is the whole of `#251`.
    */
   RunRefsPublished: (d) => {
     const outcome = need(d, "outcome");
     if (outcome === "nothing-committed") return "nothing committed, so no ref was left";
+    if (outcome === "arm-only")
+      return `${need(d, "branch")} was not pushed: ${clip(d["detail"])} — ${need(d, "arm")} at ${sha(d, "headSha")} is there`;
     if (outcome === "refused")
       return d["headSha"]
         ? `${need(d, "branch")} at ${sha(d, "headSha")} was not pushed: ${clip(d["detail"])}`

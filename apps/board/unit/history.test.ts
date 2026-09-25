@@ -87,6 +87,11 @@ describe("a line of history", () => {
     expect(row({ outcome: "refused", headSha: null, detail: "not a git repository" })).toBe(
       "agent/250 was not pushed, and no head was read: not a git repository",
     );
+    // Both halves, because they are opposite: the branch is somebody else's
+    // and the arm is this run's work, on origin, fetchable.
+    expect(row({ outcome: "arm-only", headSha: "a".repeat(40), detail: "stale info" })).toBe(
+      "agent/250 was not pushed: stale info — agent/250-attempt-1 at aaaaaaa is there",
+    );
   });
 
   it("keeps a null in the payload, because a null is a statement", () => {

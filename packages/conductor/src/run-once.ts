@@ -1099,13 +1099,26 @@ export function runOnce(
        * either. Every merged run has that shape, so a reader who drops the
        * caveat reads the whole happy path as finalizers that did not fire.
        *
+       * **And it says so on the store's word, which the handler below
+       * deliberately does not insist on** — so the absence is evidence and not
+       * proof. A store that refuses this row is swallowed rather than raised,
+       * because raising it would cost the `RunProducedDiff` that follows; the
+       * sentence goes to the run log and to the conductor's output instead, and
+       * that is where a reader who finds no row on a run that did not land
+       * looks before concluding the publish never happened.
+       *
        * It settles nothing and nothing branches on it — `run.ts` has no case for
        * it — which is 0034 §8's test passed from the other side: the account
        * belongs on the log because it outlives the file, not because anything
        * reads it to decide.
        */
       const noteRefs = (
-        outcome: "published" | "nothing-committed" | "already-published" | "refused",
+        outcome:
+          | "published"
+          | "nothing-committed"
+          | "already-published"
+          | "arm-only"
+          | "refused",
         headSha: string | null,
         detail: string | null,
       ) =>
@@ -1137,6 +1150,38 @@ export function runOnce(
           );
         });
 
+      /**
+       * The counts, against the ref that actually holds them.
+       *
+       * So the next attempt's brief says how much is there rather than only
+       * that something is. A `numstat` that fails costs the record and not the
+       * ref: the push has already happened.
+       *
+       * **The ref is a parameter and not `branch`**, because `arm-only` exists
+       * (`#251`): where origin took the arm and rejected the leased
+       * `agent/<n>`, naming `branch` here would send the next agent to fetch a
+       * ref holding whatever invalidated the lease.
+       */
+      const recordDiff = (ref: string, head: string) =>
+        Effect.gen(function* () {
+          if (recordedDiff) return;
+          recordedDiff = true;
+          const counted = yield* Effect.either(numstat);
+          yield* appendAtEnd(runId, [
+            {
+              type: "RunProducedDiff",
+              actor: "conductor",
+              data: parsePayload("RunProducedDiff", {
+                branch: ref,
+                headSha: head,
+                files: Either.isRight(counted) ? counted.right.files : 0,
+                insertions: Either.isRight(counted) ? counted.right.insertions : 0,
+                deletions: Either.isRight(counted) ? counted.right.deletions : 0,
+              }),
+            },
+          ]);
+        });
+
       const publishing: Effect.Effect<string | null> = Effect.gen(function* () {
         // Per call, not per pass: an ending with its own call reaches this twice,
         // and what the handler below asks is *did the call that just died
@@ -1163,6 +1208,47 @@ export function runOnce(
         }
         const pushed = yield* Effect.either(gitInWorktree(publishRefs()));
         if (Either.isLeft(pushed)) {
+          /**
+           * **One exit code for two refspecs, so a failure is asked which**
+           * (`#251`).
+           *
+           * `git push` is not atomic. The two refs go in one command and origin
+           * judges them one at a time: `+HEAD:refs/heads/<arm>` is forced and
+           * nothing else ever writes that name, while `HEAD:refs/heads/<branch>`
+           * carries a `--force-with-lease` a sibling claim can invalidate
+           * between the cut and the push. Origin takes the arm, rejects the
+           * branch, and the command exits non-zero with the commits on origin.
+           *
+           * Read as a refusal that is the exact loss this publish exists to
+           * end: a row saying *nothing was pushed* over a ref that is there,
+           * and — because `attemptBrief` reads `RunProducedDiff` and nothing
+           * else — a next attempt told *Nothing*, starting over from the base
+           * while the arm sits unfetched.
+           *
+           * So the arm is asked directly rather than inferred. Forced and at
+           * the same head, this push is a no-op where the arm already went and
+           * fails again where the transport is what broke — either way its exit
+           * code is one bit about one ref, which is the fact that was missing.
+           * It costs a round trip on a path that has already failed, and
+           * nothing on the path that has not.
+           */
+          const armAlone = yield* Effect.either(
+            gitInWorktree(["push", "origin", `+HEAD:refs/heads/${arm}`]),
+          );
+          if (Either.isRight(armAlone)) {
+            runLog.note(
+              "push",
+              `${branch} was not pushed, and the stop stands — ${pushed.left.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
+            );
+            yield* noteRefs("arm-only", head, pushed.left.detail);
+            // **The arm and not `branch`.** `agent/<n>` was rejected, so it
+            // holds whatever invalidated the lease; the ref that holds this
+            // run's commits is the one the next attempt has to be sent to.
+            // `lease` and `published` stay where they were: origin's
+            // `agent/<n>` is not this head, and a later call must try it again.
+            yield* recordDiff(arm, head);
+            return pushed.left.detail;
+          }
           runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
           yield* noteRefs("refused", head, pushed.left.detail);
           return pushed.left.detail;
@@ -1171,25 +1257,7 @@ export function runOnce(
         published = head;
         runLog.note("push", `${branch} and ${arm} at ${head.slice(0, 7)}`);
         yield* noteRefs("published", head, null);
-        if (recordedDiff) return null;
-        recordedDiff = true;
-        // The counts, so the next attempt's brief says how much is there rather
-        // than only that something is. A `numstat` that fails costs the record
-        // and not the ref: the push has already happened.
-        const counted = yield* Effect.either(numstat);
-        yield* appendAtEnd(runId, [
-          {
-            type: "RunProducedDiff",
-            actor: "conductor",
-            data: parsePayload("RunProducedDiff", {
-              branch,
-              headSha: head,
-              files: Either.isRight(counted) ? counted.right.files : 0,
-              insertions: Either.isRight(counted) ? counted.right.insertions : 0,
-              deletions: Either.isRight(counted) ? counted.right.deletions : 0,
-            }),
-          },
-        ]);
+        yield* recordDiff(branch, head);
         return null;
       });
 
