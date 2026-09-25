@@ -745,9 +745,9 @@ export interface RailCandidate {
    *
    * This is `foldProgress`'s third argument and the only thing that turns a
    * point that recorded nothing from `pending` into `never-ran`, so it is held
-   * to `landedWithoutSteps`'s own anchor: *an item that landed is the case
+   * to the strict anchor: *an item that landed is the case
    * with no excuse — a change on the base branch went past every point on its
-   * way there* (`step-audit.ts`). A **closed** item has that excuse and shares
+   * way there*. A **closed** item has that excuse and shares
    * this lane anyway (`COLUMN_OF`): the pipeline stops at the first refusal
    * (0041 §4), so a run refused at `prepared` and then closed by a person has
    * later points that correctly did not run, and marking them our bug would

@@ -244,8 +244,8 @@ export const UPCASTERS: UpcastRegistry = {
      * it — nothing could have been configured at one, so empty is what that
      * recipe said and not a shrug about what it might have said. It is the same
      * empty a run today gets at those five, so the board draws them `skipped`
-     * and `landedWithoutSteps` cannot accuse them: its guard is an `actions`
-     * list with something in it.
+     * and `foldProgress` cannot accuse them: its guard is an `actions` list with
+     * something in it.
      *
      * Rebuilt from `STEPS` rather than appended to, so the order is the enum's
      * however the stored row was written, and a stored `gate` that is not a

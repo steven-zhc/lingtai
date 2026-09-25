@@ -39,7 +39,6 @@ export type {
   EndedOutcome,
   EndedWithoutEnd,
   LogQueries,
-  StepNeverRan,
   SubscriberFailures,
   TypeCount,
   UnconvergedUpdate,

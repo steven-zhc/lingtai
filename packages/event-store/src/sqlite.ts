@@ -477,48 +477,6 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
       });
     },
 
-    async landedWithoutSteps(ranTypes) {
-      // Prepared per call rather than once: SQLite has no array parameter, so
-      // the number of placeholders is the caller's list's length. This is
-      // `lingtai doctor`'s path and runs once per command.
-      const holes = ranTypes.map(() => "?").join(", ");
-      const statement = db.prepare(
-        `WITH landed AS (
-           SELECT DISTINCT stream_id AS work_item FROM events WHERE type = 'WorkItemLanded'
-         ),
-         last_run AS (
-           SELECT json_extract(e.data, '$.workItemId') AS work_item, e.stream_id AS run_id
-           FROM events e
-           WHERE e.type = 'RunStarted'
-             AND e.seq = (SELECT max(x.seq) FROM events x
-                          WHERE x.type = 'RunStarted'
-                            AND json_extract(x.data, '$.workItemId')
-                                = json_extract(e.data, '$.workItemId'))
-         ),
-         planned AS (
-           SELECT plan.stream_id AS run_id, json_extract(point.value, '$.gate') AS gate
-           FROM events plan, json_each(plan.data, '$.points') point
-           WHERE plan.type = 'GatesResolved'
-             AND json_extract(point.value, '$.gate') <> 'end'
-             AND json_array_length(point.value, '$.actions') > 0
-         )
-         SELECT last_run.work_item AS workItemId, planned.run_id AS runId, planned.gate AS step
-         FROM landed
-         JOIN last_run ON last_run.work_item = landed.work_item
-         JOIN planned ON planned.run_id = last_run.run_id
-         WHERE NOT EXISTS (
-           SELECT 1 FROM events ran
-           WHERE ran.stream_id = planned.run_id
-             AND ran.type IN (${holes})
-             AND json_extract(ran.data, '$.gate') = planned.gate
-         )
-         ORDER BY last_run.work_item, planned.gate`,
-      );
-      return statement
-        .all(...ranTypes)
-        .map((r) => r as unknown as { workItemId: string; runId: string; step: string });
-    },
-
     async typeCounts() {
       return types.all().map((r) => {
         const row = r as { type: string; n: number };

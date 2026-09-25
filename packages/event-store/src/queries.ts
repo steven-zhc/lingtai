@@ -5,8 +5,8 @@
  * `EventStore` covers appending and reading. It does not cover *which streams
  * are there* or *which items ended with a point that never ran* — so four files
  * asked those by opening a `pg.Client` of their own and writing SQL:
- * `listProjectStreams`, `endedWithoutEndActions` and the gate audit in
- * `packages/conductor/src/`, and `wake.ts` next door. That is
+ * `listProjectStreams`, `endedWithoutEndActions` and the step audit that used to
+ * sit beside it in `packages/conductor/src/`, and `wake.ts` next door. That is
  * [0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
  * §1's defect in one sentence — **a direct `pg.Client` outside a Postgres
  * implementation is a place the init-time choice does not reach** — and it is
@@ -21,20 +21,19 @@
  * ## The comparison happens in the database, and that is the whole design
  *
  * Every question here is *a fold that would be wrong to do in the process*. The
- * gate audit compares fourteen event types' whole history against a plan, and
- * `GatePassed` carries an agent's entire build or review output. Answering it
+ * end audit compares every plan the log holds against every resolution, and a
+ * `GatesResolved` carries the actions resolved at all ten steps. Answering it
  * by reading those rows out and comparing them here would transfer — and zod-
- * parse — tens of megabytes of review prose on every `lingtai doctor`, growing
- * with the log for ever, to produce a result that is two queries returning
- * nothing. So the interface is a list of *named questions* and not a query
+ * parse — the whole history on every `lingtai doctor`, growing with the log for
+ * ever, to produce a result that is one query returning nothing. So the interface is a list of *named questions* and not a query
  * language: each implementation answers its own in its own dialect, and both
  * return only the offending rows.
  *
  * ## What each caller keeps
  *
- * The domain stays with the caller. This takes the stream prefix and the list
- * of event types that count as proof, and hands back column names; parsing
- * `wi-lingtai-52` into a project and an issue is the conductor's, as it was.
+ * The domain stays with the caller. This takes the stream prefix and hands back
+ * column names; parsing `wi-lingtai-52` into a project and an issue is the
+ * conductor's, as it was.
  *
  * ## Nothing here chooses, and since #179 `choose.ts` does
  *
@@ -61,13 +60,6 @@ export type EndedOutcome = "landed" | "closed";
 export interface EndedWithoutEnd {
   streamId: string;
   outcome: EndedOutcome;
-}
-
-/** One landed item, one run, one point that was planned and recorded nothing. */
-export interface StepNeverRan {
-  workItemId: string;
-  runId: string;
-  step: string;
 }
 
 /** One event type the log holds, and how many rows carry it. */
@@ -116,15 +108,6 @@ export interface LogQueries {
    * of each and is not settled by the first.
    */
   endedWithoutEndActions(): Promise<EndedWithoutEnd[]>;
-
-  /**
-   * The same comparison for the four points that produce verdicts, whose record
-   * lives on the run's stream — one row per point, anchored on what landed.
-   *
-   * `ranTypes` is the caller's: which events are proof a pipeline reached a
-   * point is the conductor's rule, not a store's.
-   */
-  landedWithoutSteps(ranTypes: readonly string[]): Promise<StepNeverRan[]>;
 
   /**
    * Every type in the log with its row count, in **byte order of the type** —
@@ -249,41 +232,6 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
         streamId: r.stream_id,
         outcome: r.outcome === "closed" ? ("closed" as const) : ("landed" as const),
       }));
-    },
-
-    async landedWithoutSteps(ranTypes) {
-      const rows = await ask<{ work_item: string; run_id: string; step: string }>(
-        `with landed as (
-           select distinct stream_id as work_item from events where type = 'WorkItemLanded'
-         ),
-         last_run as (
-           select distinct on (data->>'workItemId')
-                  data->>'workItemId' as work_item, stream_id as run_id
-           from events
-           where type = 'RunStarted'
-           order by data->>'workItemId', seq desc
-         ),
-         planned as (
-           select plan.stream_id as run_id, point->>'gate' as gate
-           from events plan, lateral jsonb_array_elements(plan.data->'points') point
-           where plan.type = 'GatesResolved'
-             and point->>'gate' <> 'end'
-             and jsonb_array_length(point->'actions') > 0
-         )
-         select last_run.work_item, planned.run_id, planned.gate as step
-         from landed
-         join last_run on last_run.work_item = landed.work_item
-         join planned on planned.run_id = last_run.run_id
-         where not exists (
-           select 1 from events ran
-           where ran.stream_id = planned.run_id
-             and ran.type = any($1::text[])
-             and ran.data->>'gate' = planned.gate
-         )
-         order by last_run.work_item, planned.gate`,
-        [[...ranTypes]],
-      );
-      return rows.map((r) => ({ workItemId: r.work_item, runId: r.run_id, step: r.step }));
     },
 
     async typeCounts() {

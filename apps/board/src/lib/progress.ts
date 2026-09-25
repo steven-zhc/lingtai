@@ -62,8 +62,8 @@ export type StepState =
    * The point was reached and its agent never started, so it judged nothing:
    * `GateNeverRan`, and the evidence is on that event (#133). Or the plan the
    * log recorded named actions here, the run recorded *none* of them, and the
-   * item landed — `stateOf`'s rule since #170, which is `lingtai doctor`'s
-   * `landedWithoutSteps` comparison. There is no gate event at this point
+   * item landed — `stateOf`'s rule since #170, and since `#257` the only place
+   * that comparison is made. There is no gate event at this point
    * at all in the second, so there is nothing to read evidence off: anything
    * reaching for one must find the `GateNeverRan` and cope with its absence,
    * the way `task.ts`'s `never` line does.
@@ -217,10 +217,10 @@ function stateOf(
   /**
    * The item landed, **and** `GatesResolved` is what named `planned`.
    *
-   * Both halves, because both are `landedWithoutSteps`'s, and the check
-   * below is meant to be its comparison and not a looser one. Its `planned` CTE
-   * selects from `GatesResolved` rows, so a run whose stream has none
-   * contributes nothing to it — and here such a run is folded against the
+   * Both halves, because the rule below is meant to be the strict comparison
+   * and not a looser one: the plan is the `GatesResolved` the run was given, so
+   * a run whose stream has none accuses nothing — and here such a run is folded
+   * against the
    * recipe being read *now*, which may not be the one it got. Calling a point
    * that recipe configures `never-ran` would invent Lingtai's bug out of a
    * recipe the run never saw.
@@ -236,13 +236,14 @@ function stateOf(
   // pipeline and the pass both stop here (0057 §4), so a `failed` beside it on
   // the same point came from an earlier round and a commit that has moved.
   if (seen.includes("did-not-finish")) return "did-not-finish";
-  // **`lingtai doctor`'s comparison, made where a person is already looking.**
+  // **The comparison, made where a person is already looking.**
   // The log's own plan named actions here, the run recorded nothing at all — no
   // request, no verdict, no approval, no waiver — and the item landed, so there
-  // was no later moment for it to run in. `landedWithoutSteps` asks exactly
-  // this and fails the doctor for it; until now it reached the board as
-  // `pending`, which is the word for *configured, not reached yet* and is the
-  // one thing this is not (0016 §4).
+  // was no later moment for it to run in. `lingtai doctor` asked this too and
+  // failed for it until `#257` deleted that row as an invariant the schema
+  // already refuses; the mark stays, because before it existed this reached the
+  // board as `pending`, which is the word for *configured, not reached yet* and
+  // is the one thing this is not (0016 §4).
   //
   // `onRecord` is why this is safe, and it is narrow on purpose — see its own
   // doc. A run still in flight legitimately has points it has not got to, and a
@@ -250,8 +251,8 @@ function stateOf(
   // landed, against the plan this run was given* puts the fail colour on a
   // pipeline that was working.
   //
-  // **Every step but `end`**, which is the same exclusion `landedWithoutSteps`
-  // makes in as many words: `end`'s record is `EndActionsResolved` on the *work
+  // **Every step but `end`**, and the exclusion is a fact about where the
+  // record lives: `end`'s is `EndActionsResolved` on the *work
   // item's* stream (`end-step.ts`), and this fold reads the run's. A silent
   // `end` here is a question this stream cannot answer, not a step that did not
   // run — `lingtai doctor` has its own check for that one, against the stream
@@ -260,8 +261,8 @@ function stateOf(
   // It read *four and not five* until the vocabulary widened, and the exclusion
   // is still exactly one name. The six steps nothing constructs a pipeline for
   // are reached by the line above rather than by this one: their `planned` is
-  // empty, so they are `skipped` before this rule is asked — which is the same
-  // guard `landedWithoutSteps` has in SQL (`jsonb_array_length(...) > 0`).
+  // empty, so they are `skipped` before this rule is asked — an empty `actions`
+  // list is never an accusation.
   if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";
@@ -294,8 +295,8 @@ export function foldProgress(
    *
    * A **closed** item is not this, however finished it is: the pipeline stops
    * at the first refusal (0041 §4), so its later points recorded nothing
-   * because nothing should have run in them. `landedWithoutSteps` is
-   * anchored on `WorkItemLanded` for that reason and so is this — see
+   * because nothing should have run in them. This is anchored on
+   * `WorkItemLanded` for that reason — see
    * `RailCandidate.over`, which is the caller holding the same line.
    */
   over = false,

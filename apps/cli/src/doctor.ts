@@ -31,7 +31,6 @@ import {
   currentRecipe,
   endedWithoutEndActions,
   githubClientFor,
-  landedWithoutSteps,
   loadProjects,
   passCeiling,
   projectFilters,
@@ -1208,46 +1207,6 @@ async function endStepRan(queries: LogQueries): Promise<CheckResult> {
 }
 
 /**
- * Items that landed past a gating point that was configured and did not run.
- *
- * The same comparison as the check above, for the four points that produce
- * verdicts rather than effects. `GatesResolved` says the recipe asked for
- * something at `merge`; a `GateRequested`, a verdict, an approval or a waiver
- * on that run says the pipeline got there. An item that landed with the first
- * and none of the second merged past a control the log claims it has.
- *
- * **This is the check that was missing rather than a check that was failing.**
- * `merge` was resolved into every plan, printed at onboarding and drawn on the
- * board without ever being built into a pipeline, so two of Lingtai's own
- * changes merged with nobody's approval (#58) and nothing anywhere noticed.
- * `end` had the same shape on the same day (#55). Two of the five steps that
- * were built then were quietly not executing; comparing the plan to the log is the only thing that
- * finds that, and the comparison is cheap.
- *
- * **A failure, not a note**, and one with no replay behind it: nothing can
- * un-merge a change that landed unapproved. What closes it is a person
- * deciding on the record — the board's waiver, which names who and why.
- */
-async function stepsRan(queries: LogQueries): Promise<CheckResult> {
-  const name = "steps: every step that was planned ran";
-  const found = await landedWithoutSteps(queries).catch(() => null);
-  if (found === null) return { name, status: "ok", detail: "no log to read yet" };
-
-  if (found.length === 0) {
-    return { name, status: "ok", detail: "every landed item recorded the steps its run planned" };
-  }
-  return {
-    name,
-    status: "fail",
-    detail:
-      `${found.length} item(s) landed past a step that was configured and did not run — ` +
-      `${found.map((f) => `${f.project}#${f.issue} (${f.steps.join(", ")})`).join(", ")}. ` +
-      "The plan in GatesResolved names actions there and the run recorded no verdict, " +
-      "no request and no waiver: those changes merged past a control the log says exists.",
-  };
-}
-
-/**
  * Issues whose last word from Lingtai was a failure.
  *
  * The outbox reported depth and failed on dead letters. There is no queue any
@@ -1769,8 +1728,8 @@ export async function declaredEnvironment(
  * so: the divergence is invisible until a run merges into `repo.base` under
  * gates it read from somewhere else, and every event that run writes is
  * internally consistent — `GatesResolved` carries the hash of the recipe it
- * obeyed, so `steps: every step that was planned ran` compares a plan against
- * itself and finds nothing wrong. Comparing the plan's *origin* to the merge
+ * obeyed, so `steps: end ran on what landed` compares a plan against itself and
+ * finds nothing wrong. Comparing the plan's *origin* to the merge
  * target is the only thing that sees it, and this is where that happens without
  * waiting for a run to pay for it.
  *
@@ -1932,7 +1891,6 @@ export async function runDoctor(
     results.push(await unconverged(queries));
     results.push(await subscribers(queries));
     results.push(await endStepRan(queries));
-    results.push(await stepsRan(queries));
     // Named one at a time, each saying why it does not apply and naming the
     // store. See `postgresOnlyRows`.
     for (const row of postgresOnlyRows()) {
@@ -1969,7 +1927,6 @@ export async function runDoctor(
     results.push(await unconverged(audit));
     results.push(await subscribers(audit));
     results.push(await endStepRan(audit));
-    results.push(await stepsRan(audit));
   } else {
     results.push({
       name: "postgres",

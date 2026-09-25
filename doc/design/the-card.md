@@ -139,16 +139,16 @@ for an operator to do.
 mark for *configured and did not run*, or that state renders as something it is
 not — which is the failure `0016 §4` names. It reached `lingtai doctor` as a FAIL
 naming `#49`, `#53` and `#55` at the merge step and reached the board as nothing
-at all. It costs no projection: `foldProgress` now makes
-`landedWithoutSteps`'s own comparison, and the same one rather than a
-looser one, because this mark accuses Lingtai and a false one is worse than
-none. All three halves of it:
+at all. That `doctor` row is gone (`#257`) and this mark is where the comparison
+now lives; it costs no projection, and `foldProgress` makes the strict
+comparison rather than a looser one, because this mark accuses Lingtai and a
+false one is worse than none. All three halves of it:
 
 | | |
 |---|---|
-| the plan named actions here | and **`GatesResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything (doctor's `planned` CTE selects from those rows and nothing else) |
+| the plan named actions here | and **`GatesResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything: a fold with no `GatesResolved` to read accuses nothing |
 | the run recorded none | no request, no verdict, no approval, no waiver |
-| **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later steps recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. Doctor is anchored on `WorkItemLanded`; so is this |
+| **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later steps recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. `WorkItemLanded` is the anchor and nothing looser is |
 
 The caller supplies the last of those, because the landing is on the merge
 lane's stream and the work item's, not on the run's — `railCandidates` is where

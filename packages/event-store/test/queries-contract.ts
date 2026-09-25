@@ -3,7 +3,7 @@
  * (#221).
  *
  * The pattern is `contract.ts`'s and `wake-contract.ts`'s, and so is the
- * reason: a second implementation held to nothing is worth nothing. Three
+ * reason: a second implementation held to nothing is worth nothing. The
  * questions that used to be raw SQL in `packages/conductor/src/` are now an
  * interface with two answers, and the only thing that makes the second one
  * trustworthy is that both are asked the same things here and must agree.
@@ -15,8 +15,9 @@
  *   [#179](https://github.com/steven-zhc/lingtai/issues/179) exists for.
  *
  * **Every assertion is a negative one made positive.** Each question is an
- * anti-join: *which items landed past a point that was configured and did not
- * run*. The failure that matters is not a wrong row but a silent empty answer,
+ * anti-join: *which items ended with an `end` step that was configured and did
+ * not run*, *which issues we said something about and did not manage*. The
+ * failure that matters is not a wrong row but a silent empty answer,
  * so every case here seeds both an offender and a near-miss and checks that the
  * offender comes back and the near-miss does not.
  */
@@ -59,14 +60,13 @@ export function describeLogQueriesContract(
   make: () => LogQueriesHarness | Promise<LogQueriesHarness>,
 ): void {
   /**
-   * A run for `workItemId` that planned `points` and recorded a verdict at each
-   * of `ran`. Written as events, because that is what the questions read.
+   * A run for `workItemId` that planned `points`. Written as events, because
+   * that is what the questions read.
    */
   async function run(
     h: LogQueriesHarness,
     workItemId: string,
     steps: Record<string, string[]>,
-    ran: { gate: string; action: string }[] = [],
   ): Promise<string> {
     const runId = `run-${h.project}-${crypto.randomUUID().slice(0, 8)}`;
     h.note?.(runId);
@@ -90,11 +90,6 @@ export function describeLogQueriesContract(
         actor: "conductor",
         data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(steps) }),
       },
-      ...ran.map((r) => ({
-        type: "GatePassed",
-        actor: "conductor",
-        data: parsePayload("GatePassed", { ...r, runId, onSha: SHA, evidence: "ok", findings: [] }),
-      })),
     ]);
     return runId;
   }
@@ -242,124 +237,6 @@ export function describeLogQueriesContract(
       await run(h, item, { end: ["close the ticket"] });
 
       expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item);
-    });
-
-    // ----------------------------------------------- landedWithoutSteps ----
-
-    const RAN = ["GatePassed", "GateFailed", "GateWaived", "ApprovalGranted"];
-
-    it("finds a change that merged past a point the recipe configured", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 401);
-      h.note?.(item);
-      const runId = await run(h, item, { proposed: ["build"], merge: ["approval"] }, [
-        { gate: "proposed", action: "build" },
-      ]);
-      await h.store.append(item, 0, [landed()]);
-
-      const found = (await h.queries.landedWithoutSteps(RAN)).filter(
-        (f) => f.workItemId === item,
-      );
-
-      expect(found).toEqual([{ workItemId: item, runId, step: "merge" }]);
-    });
-
-    it("says nothing when every planned point recorded a verdict", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 402);
-      h.note?.(item);
-      await run(h, item, { proposed: ["build"], merge: ["approval"] }, [
-        { gate: "proposed", action: "build" },
-        { gate: "merge", action: "approval" },
-      ]);
-      await h.store.append(item, 0, [landed()]);
-
-      expect((await h.queries.landedWithoutSteps(RAN)).map((f) => f.workItemId)).not.toContain(
-        item,
-      );
-    });
-
-    it("names every point that was skipped, one row each", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 403);
-      h.note?.(item);
-      await run(h, item, { prepared: ["install"], proposed: ["build"], merge: ["approval"] });
-      await h.store.append(item, 0, [landed()]);
-
-      const found = (await h.queries.landedWithoutSteps(RAN))
-        .filter((f) => f.workItemId === item)
-        .map((f) => f.step);
-
-      expect(found.sort()).toEqual(["merge", "prepared", "proposed"]);
-    });
-
-    /** `end`'s record is on the item's stream, and the query above is the one that can see it. */
-    it("leaves the end point to the question that can see it", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 404);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
-      await h.store.append(item, 0, [landed()]);
-
-      expect((await h.queries.landedWithoutSteps(RAN)).map((f) => f.workItemId)).not.toContain(
-        item,
-      );
-    });
-
-    /**
-     * The last run of the item, because one that failed early and landed on a
-     * second attempt has a first run that legitimately stopped at `prepared`.
-     */
-    it("judges the last run of an item, not an earlier one that stopped early", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 405);
-      h.note?.(item);
-      await run(h, item, { proposed: ["build"], merge: ["approval"] });
-      const second = await run(h, item, { proposed: ["build"], merge: ["approval"] }, [
-        { gate: "proposed", action: "build" },
-        { gate: "merge", action: "approval" },
-      ]);
-      await h.store.append(item, 0, [landed()]);
-
-      const found = (await h.queries.landedWithoutSteps(RAN)).filter(
-        (f) => f.workItemId === item,
-      );
-
-      expect(found).toEqual([]);
-      expect(second).toMatch(/^run-/);
-    });
-
-    it("says nothing about an item that has not landed", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 406);
-      h.note?.(item);
-      await run(h, item, { merge: ["approval"] });
-
-      expect((await h.queries.landedWithoutSteps(RAN)).map((f) => f.workItemId)).not.toContain(
-        item,
-      );
-    });
-
-    /**
-     * `ranTypes` is the caller's list and the store must use it rather than one
-     * of its own — the whole reason it is a parameter.
-     */
-    it("counts only the event types it was given as proof", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 407);
-      h.note?.(item);
-      await run(h, item, { merge: ["approval"] }, [{ gate: "merge", action: "approval" }]);
-      await h.store.append(item, 0, [landed()]);
-
-      const withStepPassed = (await h.queries.landedWithoutSteps(RAN)).filter(
-        (f) => f.workItemId === item,
-      );
-      const without = (await h.queries.landedWithoutSteps(["ApprovalGranted"])).filter(
-        (f) => f.workItemId === item,
-      );
-
-      expect(withStepPassed).toEqual([]);
-      expect(without.map((f) => f.step)).toEqual(["merge"]);
     });
 
     // ---------------------------------------------------------- typeCounts ----

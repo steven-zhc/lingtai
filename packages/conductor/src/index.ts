@@ -91,7 +91,6 @@ export {
   type PriorAttempt,
   type PromptBudget,
 } from "./attempts.ts";
-export { landedWithoutSteps, type UnrunStep } from "./step-audit.ts";
 export {
   appendEndActions,
   endedWithoutEndActions,

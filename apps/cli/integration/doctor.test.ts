@@ -296,7 +296,6 @@ describe("lingtai doctor — a machine whose log is a file", () => {
         "github: what we said and did not manage",
         "subscribers: failures",
         "steps: end ran on what landed",
-        "steps: every step that was planned ran",
       ]) {
         expect(find(report.results, name).status, `${name} did not run`).not.toBe("skip");
       }

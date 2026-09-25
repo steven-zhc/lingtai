@@ -252,13 +252,14 @@ function noPlanRecorded(): Envelope[] {
 }
 
 /**
- * **`lingtai doctor`'s three items, as a fixture.**
+ * **The three items `lingtai doctor` used to name, as a fixture.**
  *
- * `landedWithoutSteps` finds an item that landed whose last run's
+ * The comparison finds an item that landed whose last run's
  * `GatesResolved` named actions at a point and whose stream carries no gate
  * event there at all — no request, no verdict, no approval, no waiver. That is
  * #49, #53 and #55 at `merge`, and until #170 it reached the doctor as a FAIL
- * and the board as nothing whatever.
+ * and the board as nothing whatever; since `#257` the doctor row is gone and
+ * the rail is the only place it is drawn.
  *
  * So: `merge` is configured, every other point ran, and the item landed.
  */
@@ -809,8 +810,8 @@ describe("the seven states", () => {
 
 /**
  * `never-ran` is the one mark on the rail that accuses Lingtai rather than
- * reporting on a run, so the rule that draws it is held to exactly the
- * comparison `landedWithoutSteps` makes — *this item landed*, and *against
+ * reporting on a run, so the rule that draws it is held to the strict
+ * comparison — *this item landed*, and *against
  * the plan the log says this run was given*. Everything looser than that puts
  * the hatch on a pipeline that was working.
  */

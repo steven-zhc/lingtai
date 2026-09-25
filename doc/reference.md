@@ -548,8 +548,9 @@ stylesheet's class selectors, and the strings and JSX a person reads: the
 board's copy, a refusal's text, `lingtai`'s output. **A module specifier is one
 of those strings**, and deliberately: it is the only place the ledger can count
 a file whose own name carries a retired word. There is no such file today.
-`gate-audit.ts`, `gates-resolved.ts` and `end-point.ts` are `step-audit.ts`,
-`steps-resolved.ts` and `end-step.ts` since `#250`, and the five under
+`gate-audit.ts`, `gates-resolved.ts` and `end-point.ts` became `step-audit.ts`,
+`steps-resolved.ts` and `end-step.ts` in `#250` — the first of those deleted
+since (`#257`) — and the five under
 `packages/actions/src/` moved with their family in `#248` — so the clause is
 here for the next one rather than for a file it currently catches.
 
@@ -702,7 +703,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**265 occurrences in 33 files, counted 2026-09-25** — and that sentence is
+**231 occurrences in 31 files, counted 2026-09-25** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank.
 
@@ -808,7 +809,6 @@ the equality above, and when none is left an empty table is the truth.
 | `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×4 · `points` ×1 |
 | `apps/board/src/lib/recipe.ts` | `GatesResolved` ×1 |
 | `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×4 |
-| `apps/cli/src/doctor.ts` | `GatesResolved` ×1 |
 | `apps/cli/src/status.ts` | `gates` ×1 |
 | `apps/site/src/lib/snapshot.ts` | `gates` ×1 |
 | `packages/actions/src/action.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `gate` ×1 |
@@ -818,7 +818,6 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/conductor/src/judge.ts` | `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
 | `packages/conductor/src/run-once.ts` | `GatesResolved` ×2 · `gate` ×1 |
-| `packages/conductor/src/step-audit.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 |
 | `packages/conductor/src/steps-resolved.ts` | `gate` ×1 · `points` ×1 |
 | `packages/daemon/src/control.ts` | `gates` ×1 |
 | `packages/domain/src/events.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `GateWaived` ×3 · `GatesResolved` ×3 · `gate` ×3 · `gateBase` ×11 · `points` ×1 |
@@ -826,8 +825,8 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/domain/src/streams.ts` | `gates` ×1 |
 | `packages/domain/src/upcast.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×9 · `points` ×6 |
 | `packages/env/src/colour.ts` | `gates` ×1 |
-| `packages/event-store/src/queries.ts` | `GatesResolved` ×2 · `gate` ×8 · `point` ×7 · `points` ×2 |
-| `packages/event-store/src/sqlite.ts` | `GatesResolved` ×2 · `gate` ×8 · `point` ×7 · `points` ×2 |
+| `packages/event-store/src/queries.ts` | `GatesResolved` ×1 · `gate` ×1 · `point` ×3 · `points` ×1 |
+| `packages/event-store/src/sqlite.ts` | `GatesResolved` ×1 · `gate` ×1 · `point` ×3 · `points` ×1 |
 | `packages/projector/src/backlog.ts` | `GatePassed` ×2 · `gate` ×4 |
 | `packages/projector/src/postgres.ts` | `gate` ×1 |
 | `packages/projector/src/sqlite.ts` | `gate` ×1 |
@@ -839,7 +838,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**0 of those 265 occurrences are the English word** — the table that stood here
+**0 of those 231 occurrences are the English word** — the table that stood here
 is gone, and that is what `#250` spent ten reworded sentences on. It listed nine
 (the tenth, `Point ${PREFIX}TEST_DATABASE_URL …` in `packages/env/src/index.ts`,
 it had missed), each one word in copy that was correct as it stood, and each the
@@ -1593,7 +1592,7 @@ asks.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 23 fixed, 5 per project, 3 deferred
+## doctor check — 22 fixed, 5 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
@@ -1609,7 +1608,7 @@ by four checks and two names.
 | projections (2) | `projections: lag` · `projections: shape` |
 | running system (6) | `daemon: liveness` · `conductor: refusals on the log` · `conductor: lock` · `worktrees: reconciliation` · `github: what we said and did not manage` · `subscribers: failures` |
 | the log itself (1) | `log: every type is readable` |
-| steps ran (2) | `steps: end ran on what landed` · `steps: every step that was planned ran` |
+| steps ran (1) | `steps: end ran on what landed` |
 | credentials (2) | `github: app credentials` · `runtime: signed in` |
 | visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
 
