@@ -273,9 +273,15 @@ started `pnpm test:integration`, stopped to wait for it, and was terminated with
 is a `Done when` an agent cannot reach. Ask for `pnpm test` and `pnpm typecheck`,
 and commit as the work stands.
 
-What that gives up is `apps/release/integration/build.test.ts`, the Next build —
-the one check that sees a server-only import reaching a `"use client"` graph, which
-`tsc` cannot. Nothing else in that half is reachable from a ticket anyway.
+**It is not given up, it moves.** The integration half runs on a separate system
+after the merge — [0060](doc/decisions/0060-the-gate-runs-unit-tests.md)'s other
+half, and `the-pipeline.md`'s **T11**. What a ticket must not do is wait for it.
+
+So one check is out of reach while a change is being made rather than absent:
+`apps/release/integration/build.test.ts`, the Next build, which is the only thing
+that sees a server-only import reaching a `"use client"` graph — `tsc` cannot.
+That one is caught after the merge instead of before it, and `#230` is what it
+looks like when it is caught late.
 
 `pnpm test` is what the `build` gate runs, so **a red there is a claim about the
 diff** ([0060](doc/decisions/0060-the-gate-runs-unit-tests.md)). It is one
