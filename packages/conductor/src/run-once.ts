@@ -1064,8 +1064,16 @@ export function runOnce(
        * they are told the branch is not there to answer it with — which is what
        * the returned detail is for, and null means there is nothing to say.
        */
-      /** Whether `noteRefs` has already described *this* call. See `publishWhatIsCommitted`. */
-      let accounted = false;
+      /**
+       * The answer *this* call has already settled on, or null while it has
+       * settled on none.
+       *
+       * Boxed, because the answer itself is often `null` — *nothing to report,
+       * the refs are where this ending promised them* — and *decided nothing*
+       * and *decided there is nothing to say* are the two readings the handler
+       * below has to tell apart. See `publishWhatIsCommitted`.
+       */
+      let answered: { value: string | null } | null = null;
 
       /**
        * **The account of the publish, on the log rather than only in the file**
@@ -1139,12 +1147,8 @@ export function runOnce(
         headSha: string | null,
         detail: string | null,
       ) =>
-        Effect.suspend(() => {
-          // Set before the append rather than after it: what this guards is the
-          // defect handler below writing a *second* row for an ending this call
-          // has already described.
-          accounted = true;
-          return appendAtEnd(runId, [
+        Effect.suspend(() =>
+          appendAtEnd(runId, [
             {
               type: "RunRefsPublished",
               actor: "conductor",
@@ -1164,8 +1168,8 @@ export function runOnce(
                 log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`);
               }),
             ),
-          );
-        });
+          ),
+        );
 
       /**
        * The counts, against the ref that actually holds them.
@@ -1179,13 +1183,17 @@ export function runOnce(
        * `agent/<n>`, naming `branch` here would send the next agent to fetch a
        * ref holding whatever invalidated the lease. Which is also why the guard
        * is per *answer* and not per pass: on every ending but the wall and the
-       * crash, §9 has already named `agent/<n>`, and a correction that cannot
-       * be appended is a correction that does not exist (`recordedDiff`).
+       * crash, §9 has already named `agent/<n>`, and a correction the key
+       * refused would be a correction that does not exist (`recordedDiff`).
+       *
+       * **The guard is what the store took, not what this was asked to say.**
+       * A call that dies in the append leaves the key where it was, so the next
+       * call — the finalizer's, on every ending that publishes inline — asks
+       * again and the row lands.
        */
       const recordDiff = (ref: string, head: string) =>
         Effect.gen(function* () {
           if (recordedDiff === producedKey(ref, head)) return;
-          recordedDiff = producedKey(ref, head);
           const counted = yield* Effect.either(numstat);
           yield* appendAtEnd(runId, [
             {
@@ -1200,16 +1208,25 @@ export function runOnce(
               }),
             },
           ]);
+          // **After the append and never before it** (`#251`). `appendAtEnd` is
+          // an `Effect.promise`, so a store that drops its connection here
+          // raises a defect — and a key set in advance would mark the answer
+          // given by the append that did not give it, so no later call could
+          // repair it. The row is the one `attemptBrief` reads: the next
+          // attempt would be told *Nothing* over a ref that is on origin, which
+          // is `#250`'s loss arriving by a second road.
+          recordedDiff = producedKey(ref, head);
         });
 
       const publishing: Effect.Effect<string | null> = Effect.gen(function* () {
         // Per call, not per pass: an ending with its own call reaches this twice,
-        // and what the handler below asks is *did the call that just died
-        // describe itself* — never *did an earlier one*.
-        accounted = false;
+        // and what the handler below asks is *what did the call that just died
+        // decide* — never *what did an earlier one*.
+        answered = null;
         const at = yield* Effect.either(gitInWorktree(["rev-parse", "HEAD"]));
         if (Either.isLeft(at)) {
           runLog.note("push", `${branch} was not pushed — ${at.left.detail}`);
+          answered = { value: at.left.detail };
           yield* noteRefs("refused", null, at.left.detail);
           return at.left.detail;
         }
@@ -1219,11 +1236,21 @@ export function runOnce(
         // unexplained absence of a ref is what `#250` cost.
         if (head === worktree.baseSha) {
           runLog.note("push", `nothing to push — ${branch} is still at the base`);
+          answered = { value: null };
           yield* noteRefs("nothing-committed", null, null);
           return null;
         }
         if (head === published) {
+          answered = { value: null };
           yield* noteRefs("already-published", head, null);
+          // **And the record is asked for again** (`#251`). This pass put both
+          // refs on origin at this head, so `RunProducedDiff` naming `branch`
+          // is still the right answer, and `recordDiff` is a no-op once it has
+          // been given. Where the giving call's append died, this is the only
+          // place left that can give it: the endings that publish inline — the
+          // wall, the stand-down — reach the finalizer's call afterwards, and
+          // without this it arrived here and returned with nothing to do.
+          yield* recordDiff(branch, head);
           return null;
         }
         const pushed = yield* Effect.either(gitInWorktree(publishRefs()));
@@ -1260,6 +1287,7 @@ export function runOnce(
               "push",
               `${branch} was not pushed, and the stop stands — ${pushed.left.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
             );
+            answered = { value: pushed.left.detail };
             yield* noteRefs("arm-only", head, pushed.left.detail);
             // **The arm and not `branch`.** `agent/<n>` was rejected, so it
             // holds whatever invalidated the lease; the ref that holds this
@@ -1270,12 +1298,14 @@ export function runOnce(
             return pushed.left.detail;
           }
           runLog.note("push", `${branch} was not pushed, and the stop stands — ${pushed.left.detail}`);
+          answered = { value: pushed.left.detail };
           yield* noteRefs("refused", head, pushed.left.detail);
           return pushed.left.detail;
         }
         lease = head;
         published = head;
         runLog.note("push", `${branch} and ${arm} at ${head.slice(0, 7)}`);
+        answered = { value: null };
         yield* noteRefs("published", head, null);
         yield* recordDiff(branch, head);
         return null;
@@ -1303,16 +1333,30 @@ export function runOnce(
        * rule out.
        *
        * So a defect becomes the last row rather than no row — unless the call
-       * that died had already written one, because a `numstat` append that dies
-       * after a push succeeded must not turn a published ending into a refused
-       * one. The bookkeeping is worth a row and a line, and is not worth an
-       * ending; **`publishing` is therefore never what a caller yields.**
+       * that died had already settled what it was going to say, because a
+       * `numstat` append that dies after a push succeeded must not turn a
+       * published ending into a refused one, nor a person's record into a claim
+       * that the branch is not on origin. The bookkeeping is worth a row and a
+       * line, and is not worth an ending or a wrong sentence; **`publishing` is
+       * therefore never what a caller yields.**
+       *
+       * And it is not worth the record either: the row the dead append owed is
+       * not abandoned here but asked for again on the next call, which is why
+       * `recordedDiff` is set by an append that returned and the
+       * `already-published` return records as well as reports (`#251`).
        */
       const publishWhatIsCommitted: Effect.Effect<string | null> = publishing.pipe(
         Effect.catchAllDefect((defect) => {
           const why = defect instanceof Error ? defect.message : String(defect);
           runLog.note("push", `the publish itself failed — ${why}`);
-          if (accounted) return Effect.succeed(why);
+          // **The answer is the publish's and never the bookkeeping's.** Where
+          // the call had already settled what to say, that stands: this return
+          // is interpolated as ` (and ${branch} was not pushed: …)` into
+          // `WorkItemReleased.reason` and the block's diagnosis, so a `numstat`
+          // append that died after origin took the refs would put the store's
+          // error on an operator-facing record as the reason a branch that is
+          // on origin is not (`#251`).
+          if (answered) return Effect.succeed(answered.value);
           // `noteRefs` swallows its own, so this cannot raise in turn.
           return noteRefs("refused", null, why).pipe(Effect.as(why));
         }),

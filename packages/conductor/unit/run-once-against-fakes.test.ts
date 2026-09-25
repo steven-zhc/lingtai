@@ -18,7 +18,15 @@
  * that `describe` is `integration/run-once-against-the-machines-recipe.test.ts`
  * now, the fixtures are `test/one-pass.ts`, and everything here is unit by
  * [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
- * process, no socket, no disk, no clock.
+ * process, no socket, no disk.
+ *
+ * **The clock is the exception, and it is reachable from here.** `standDown`
+ * takes an optional `now` and `standDownConductor` passes none, so the two
+ * stand-down tests below resolve *resets 11pm (America/Chicago)* against the
+ * host's real clock. Nothing mocks it, so an assertion about the answer must be
+ * true at every instant: `wallHourIn` asserts the hour *in the zone the message
+ * named*, and an assertion on the UTC hour is one that fails for the four
+ * months a year that zone is not in daylight time (`#251`).
  *
  * What it asserts is the *decision*: which events a held run appends, in order,
  * and that the worktree is removed on the way out. Not the git, not the socket
@@ -50,6 +58,22 @@ import {
   streams,
 } from "../test/one-pass.ts";
 
+/**
+ * The hour a stored instant reads on `zone`'s own wall clock.
+ *
+ * What these tests claim is what the runtime's message said — *11pm
+ * (America/Chicago)* — and that claim is one hour, always. The instant it
+ * resolves to is not: `parseResetAt` finds the next moment Chicago reads 23:00,
+ * which is `04:00Z` in daylight time and `05:00Z` in standard time, so
+ * `getUTCHours()` was an assertion that went red on the first Sunday in
+ * November and green again on the second in March — and since these ran in
+ * `integration/`, where nothing runs them while a ticket is worked, it would
+ * have gone red in the `build` gate on every diff instead (`#251`).
+ */
+const wallHourIn = (zone: string, at: string) =>
+  new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", hour: "2-digit" }).format(
+    new Date(at),
+  );
 
 describe("runOnce, with no world to run in", () => {
   it("holds at the merge, appends what it decided, and takes the worktree down", async () => {
@@ -271,8 +295,9 @@ describe("runOnce, with no world to run in", () => {
 
     const d = paused[0]!.data as { by: string; reason: string; until: string };
     expect(d.by).toBe("lingtai");
-    // Read out of the message, not guessed at: 11pm in Chicago, as an instant.
-    expect(new Date(d.until).getUTCHours()).toBe(4);
+    // Read out of the message, not guessed at: 11pm in Chicago, as an instant —
+    // and asked back in Chicago, because that is where the message said it.
+    expect(wallHourIn("America/Chicago", d.until)).toBe("23");
     // The evidence the classification would not read is on the pause, because
     // this is the only place a person can learn what actually stopped the queue.
     expect(d.reason).toContain("You've hit your session limit");
@@ -418,13 +443,13 @@ describe("runOnce, with no world to run in", () => {
     expect(reason).not.toContain("nothing was spent");
 
     // The account-wide answer, given where 0031 gives it: once, on the control
-    // stream, until the time the message named. 2pm in Chicago is 19:00 UTC.
+    // stream, until the time the message named — 2pm, in the zone it named it in.
     const control = await store.read("ctl-conductor");
     const paused = control.filter((e) => e.type === "ConductorPaused");
     expect(paused).toHaveLength(1);
     const pause = paused[0]!.data as { by: string; reason: string; until: string };
     expect(pause.by).toBe("lingtai");
-    expect(new Date(pause.until).getUTCHours()).toBe(19);
+    expect(wallHourIn("America/Chicago", pause.until)).toBe("14");
     expect(pause.reason).toContain("You've hit your session limit");
     // And the chip's sentence is about the gate, not about the run. This pass
     // took three turns and cost $0.42, so 0031's opening would be false here —
@@ -494,6 +519,86 @@ describe("runOnce, with no world to run in", () => {
     expect(reason).not.toMatch(/^push:/);
     // Said, rather than swallowed: the next attempt will not find the branch.
     expect(reason).toContain("was not pushed");
+  });
+
+  /**
+   * **And what it says there is git's word, never the bookkeeping's** (`#251`).
+   *
+   * The sentence above is interpolated into `WorkItemReleased.reason`, which is
+   * the card a person reads to decide whether there is anything to rescue — so
+   * the reason a branch is not on origin has to be the reason it is not on
+   * origin. This pass gets the half-rejection `arm-only` exists for, and *then*
+   * the store drops the correction that outcome owes. `appendAtEnd` is an
+   * `Effect.promise`, so that is a defect, and the handler used to answer the
+   * whole publish with it: a record naming a Postgres disconnect as the thing
+   * origin refused, on a run where origin refused a stale lease.
+   */
+  it("names git's refusal on the card when the correction's append dies, not the store's", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const fake = fakePorts(did, store);
+    const rejected = "! [rejected] agent/7 -> agent/7 (stale info)";
+    const ports: RunPorts = {
+      ...fake,
+      repo: {
+        ...fake.repo,
+        // Only the refspec carrying the lease, so origin takes the arm: the
+        // later push of the arm alone has no lease and goes through.
+        git: (args, o) =>
+          args[0] === "push" && args.some((a) => a.startsWith("--force-with-lease="))
+            ? Effect.fail({ _tag: "RepoFailed", operation: "git push", detail: rejected } as never)
+            : fake.repo.git(args, o),
+      },
+    };
+    // The one append the store drops is the correction — `RunProducedDiff`
+    // naming the arm — and it drops it once, so the finalizer's call repairs it.
+    const appended = store.append.bind(store);
+    let dropTheCorrection = 1;
+    store.append = async (stream, at, events) => {
+      const correction = events.some(
+        (e) =>
+          e.type === "RunProducedDiff" && (e.data as { branch: string }).branch.endsWith("-attempt-1"),
+      );
+      if (correction && dropTheCorrection > 0) {
+        dropTheCorrection -= 1;
+        throw new Error("the store would not take the diff record");
+      }
+      return appended(stream, at, events);
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.stage).toBe("gate");
+
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const reason = (item.find((e) => e.type === "WorkItemReleased")!.data as { reason: string }).reason;
+    expect(reason).toContain("was not pushed");
+    expect(reason).toContain("stale info");
+    expect(reason).not.toContain("the store would not take");
+
+    // And the correction is asked for again on the way out, so the next attempt
+    // is sent to the ref that holds this run's commits rather than to the one
+    // that rejected the push.
+    const run = await store.read(result.runId!);
+    expect(
+      run.filter((e) => e.type === "RunProducedDiff").map((e) => (e.data as { branch: string }).branch),
+    ).toEqual(["agent/7", "agent/7-attempt-1"]);
   });
 
   /**
@@ -941,8 +1046,12 @@ describe("runOnce, with no world to run in", () => {
        * sibling claim has moved `agent/<n>` since the worktree was cut. The
        * forced arm refspec in the same command is taken, and a later push of
        * the arm alone is a no-op that succeeds — so the fake lets it through.
+       *
+       * `theDiff` is how many `RunProducedDiff` appends the store drops before
+       * it starts taking them — the Postgres disconnect CLAUDE.md documents for
+       * `#157`, arriving on the one row `attemptBrief` reads.
        */
-      breaks: { push?: string; leasedBranch?: string; theRow?: boolean } = {},
+      breaks: { push?: string; leasedBranch?: string; theRow?: boolean; theDiff?: number } = {},
     ) => {
       const store = memoryStore();
       const did: string[] = [];
@@ -959,9 +1068,14 @@ describe("runOnce, with no world to run in", () => {
        * order it happened.
        */
       const appended = store.append.bind(store);
+      let dropDiffs = breaks.theDiff ?? 0;
       store.append = async (stream, at, events) => {
         if (breaks.theRow && events.some((e) => e.type === "RunRefsPublished")) {
           throw new Error("the store would not take the row");
+        }
+        if (dropDiffs > 0 && events.some((e) => e.type === "RunProducedDiff")) {
+          dropDiffs -= 1;
+          throw new Error("the store would not take the diff record");
         }
         for (const e of events) did.push(`append ${e.type}`);
         return appended(stream, at, events);
@@ -1227,6 +1341,49 @@ describe("runOnce, with no world to run in", () => {
         headSha: "b".repeat(40),
       });
       expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
+    });
+
+    /**
+     * **A dropped append must not mark the answer given** (`#251`).
+     *
+     * `RunProducedDiff` is the row `attemptBrief` reads and nothing else is, so
+     * losing it over a ref that *is* on origin is `#250`'s loss arriving by a
+     * second road — and a store that drops one append is the ordinary way it
+     * gets lost, not an exotic one: CLAUDE.md documents exactly that
+     * disconnect for `#157`, and `appendAtEnd` is an `Effect.promise`, so it
+     * arrives as a defect rather than a failure the publish can see.
+     *
+     * The guard against two answers is therefore keyed on what the store
+     * *took*. This ending publishes twice — inline before the person is asked,
+     * and again from the finalizer — so the second call is the one place left
+     * that can give the row the first call owed, which is why
+     * `already-published` records as well as reports.
+     */
+    it("asks again for the diff record a dropped append cost, and keeps its own ending", async () => {
+      const { result, did, run, item } = await hitTheWall(true, { theDiff: 1 });
+      expect(result.ok).toBe(false);
+      // The bookkeeping is not the ending: this is still the wall, not
+      // `unexpected`, and the person is still asked.
+      expect((result as { stage?: string }).stage).toBe("run");
+      expect(item.some((e) => e.type === "WorkItemBlocked")).toBe(true);
+
+      // Both refs went, and the account of the publish is unchanged by it.
+      expect(did).toContain("git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1");
+      expect(
+        run
+          .filter((e) => e.type === "RunRefsPublished")
+          .map((e) => (e.data as { outcome: string }).outcome),
+      ).toEqual(["published", "already-published"]);
+
+      // **Once, and there.** The first append died; the second call gave it.
+      const produced = run.filter((e) => e.type === "RunProducedDiff");
+      expect(produced).toHaveLength(1);
+      expect(produced[0]!.data).toMatchObject({ branch: "agent/7", headSha: "b".repeat(40) });
+
+      // Which is the whole point of the row: the next attempt is sent to fetch.
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("git fetch origin agent/7");
+      expect(brief).not.toContain("It committed no change");
     });
   });
 
