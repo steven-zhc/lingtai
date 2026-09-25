@@ -432,7 +432,10 @@ describe("the retired names in doc/reference.md", () => {
 
     expect(g.retired).toEqual(["gate", "gates", "point", "points"]);
     expect(g.named.map(([old]) => old)).toEqual(["GatePoint", "GateAction", "Gate"]);
-    expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "Plugin", Gate: "Action" });
+    // `GateAction` is `StepAction` and not `Plugin` since `#250`: `#228` took
+    // `Plugin` for the plugin *definition* — a key, its fields and its schema —
+    // and a `GateAction` is one written use of one, so only the retired word moves.
+    expect(Object.fromEntries(g.named)).toEqual({ GatePoint: "Step", GateAction: "StepAction", Gate: "Action" });
   });
 
   /**
