@@ -14,13 +14,14 @@
  * is spawned, no agent is paid and no person is asked, which is what puts it in
  * `unit/` and under the `build` point (0060 §1).
  */
-import { STEPS, type Envelope, type PayloadOf, type ToAppend } from "@lingtai/domain";
+import { STEPS, type Envelope, type PayloadOf, type Step, type ToAppend } from "@lingtai/domain";
 import type { Action, ActionContext, ActionEvent, ActionResult } from "@lingtai/actions";
 import { StepMap } from "@lingtai/recipe";
 import type { Worktree } from "@lingtai/repo";
 import { describe, expect, it } from "vitest";
 import type { TerminalOutcome } from "../src/end-step.ts";
 import {
+  NOT_ENDED,
   bodiesFor,
   type Brief,
   type Claimed,
@@ -39,6 +40,7 @@ import {
   type PassOptions,
   type StepBodies,
   type StepBody,
+  type StepWork,
 } from "../src/pass.ts";
 
 // --------------------------------------------------------------- fixtures ----
@@ -248,6 +250,28 @@ const stateYourAssumption: StepBody<"proposed"> = async ({ arriving, offering })
 /** A round to spend, which is what the edge back into the spine costs. */
 const ONE_ROUND: PassOptions["ceilings"] = { rounds: 1, restartsLeft: 0 };
 
+/**
+ * One visit, as the loop would hand it — for the two facts `runPass` cannot
+ * show, where a body has to be called on its own.
+ *
+ * The cast is the same one `runStep` pays and for the same reason: `StepWork`'s
+ * three conditional fields are written per step, and a helper generic over the
+ * step cannot narrow them. Everything here is what the loop hands a step it
+ * walked into on the spine — nothing arriving, nothing offered, no outcome.
+ */
+const visit = <S extends Step>(step: S): StepWork<S> =>
+  ({
+    step,
+    actions: [],
+    refuses: false,
+    reached: [],
+    arriving: null,
+    offering: [],
+    outcome: null,
+    context,
+    emit: () => {},
+  }) as unknown as StepWork<S>;
+
 // ------------------------------------------------------------------ the ten ----
 
 describe("the six bodies fill a contract that already runs", () => {
@@ -383,18 +407,51 @@ describe("a second pass on one closure is its own pass", () => {
     expect(asked.recorded).toMatchObject([{ outcome: "landed", actions: ["close it", "say so"] }]);
   });
 
-  /** And the worktree and the design go with it: no agent is briefed on the last pass's. */
-  it("briefs nothing on the worktree the pass before it cut", async () => {
-    let takes = 0;
+  /**
+   * **The worktree and the design are cleared with the item — and the spine
+   * cannot show it, so this drives the bodies.**
+   *
+   * `runPass` reaches `implement` only after `admit` and `design` passed *in the
+   * same pass*, and both of those overwrite what they hold: a stale tree is
+   * replaced by the one just cut and a stale document by the one just drafted.
+   * So a second pass that stops at `claim` never reaches either, and one that
+   * does not stop overwrites both — which means two `runPass` calls can assert
+   * nothing whatever about this clearing, however the assertions are worded.
+   *
+   * The bodies are the unit and the guarantee is theirs: after a `claim`, a
+   * closure that has already conducted a whole pass holds no worktree and no
+   * document. Delete `worktree = null;` from `claim` and `implement` dispatches
+   * an agent into a tree from a pass that finished hours ago instead of saying
+   * it has none; delete `design = "";` and the next agent is briefed on the last
+   * ticket's design.
+   */
+  it("clears the worktree and the design with the item", async () => {
     const { ports: p, asked } = ports({
-      take: async () => (takes++ === 0 ? { taken: item } : { passedOver: "excluded-label" }),
       draft: async () => ({ document: "# the first pass's design" }),
     });
+    const bodies = bodiesFor(p);
+    const { emit } = events();
 
-    await twice(p);
+    // One whole pass, so the closure holds an item, a tree and a document.
+    await runPass({ recipe: recipeWith(AT_END), context, emit, actionsAt: actionsFrom(), bodies });
+    expect(asked.dispatched[0]).toMatchObject({ worktree: tree, design: "# the first pass's design" });
 
-    expect(asked.cut).toEqual([item]);
+    // The next pass's `claim`, and nothing after it.
+    await bodies.claim(visit("claim"));
+
+    // The tree went with the item, so `implement` has nothing to brief on and
+    // reports the pass's own bookkeeping rather than dispatching into the last
+    // pass's worktree.
+    await expect(bodies.implement(visit("implement"))).rejects.toThrow(
+      /the `implement` step has no worktree/,
+    );
     expect(asked.dispatched).toHaveLength(1);
+
+    // And the document went too: cut a fresh tree, and the brief carries the
+    // empty design every pass produces today, not the one before it.
+    await bodies.admit(visit("admit"));
+    await bodies.implement(visit("implement"));
+    expect(asked.dispatched[1]).toMatchObject({ worktree: tree, design: "" });
   });
 
   /** A second pass that *does* take one is briefed on that one, start to finish. */
@@ -883,12 +940,26 @@ describe("end runs on every ending, and the effects never decide whether it happ
   });
 
   /**
-   * **A resolution that did not happen must not look like one that did**
-   * (0016 §4), so this is not swallowed — and it is still not allowed to change
-   * what the pass did: the merge landed, `main` moved, and `PassResult.stoppedAt`
-   * is never `end`.
+   * **An append that did not happen must not look like one that did** (0016 §4),
+   * so this is not swallowed — and it is still not allowed to change what the
+   * pass did: the merge landed, `main` moved, and `PassResult.stoppedAt` is
+   * never `end`.
+   *
+   * **And `because` is `NOT_ENDED` rather than `threw`, which is the whole of
+   * what saves the item.** One append cannot be made to always happen: the
+   * connection drops, or something else appended between the read and the
+   * expected-version append. What the body decides is what the caller learns.
+   * With a generic crash token the caller reads `outcomeOf(result) === "landed"`,
+   * obeys `PassPorts.record`'s *the caller appends no terminal event of its own*
+   * and writes nothing — and the stream then holds neither `WorkItemLanded` nor
+   * `EndActionsResolved`: the work-item fold still reads the item as claimed so
+   * the queue never re-offers it, `endedWithoutEndActions` cannot see it because
+   * that anti-join names only items that *ended*, and the issue stays open with
+   * `main` moved. `NOT_ENDED` is the instruction to write the bare terminal
+   * event, which puts the item in the one window that already has an audit and
+   * `lingtai end replay` to repair it.
    */
-  it("reports its own failure as its own ending, and leaves the landing alone", async () => {
+  it("names the ending it could not write, so the caller writes it", async () => {
     const { ports: p } = ports({
       record: async () => {
         throw new Error("the store would not append");
@@ -903,10 +974,53 @@ describe("end runs on every ending, and the effects never decide whether it happ
       step: "end",
       ending: {
         ending: "did-not-finish",
-        because: "threw",
+        because: NOT_ENDED,
+        at: null,
         detail: expect.stringContaining("the store would not append"),
       },
     });
+    // And the detail says which item has no ending and which ending it has not
+    // got, because that is what a person reading the run has to act on.
+    const ending = result.steps.at(-1)?.ending;
+    expect(ending?.ending === "did-not-finish" && ending.detail).toContain(item.workItemId);
+    expect(ending?.ending === "did-not-finish" && ending.detail).toContain("landed");
+  });
+
+  /**
+   * The read is the other half of the same call, and it leaves the stream in the
+   * same state: nothing on it. So it carries the same token — a caller that had
+   * to tell `read` failing from `record` failing to decide whether to append
+   * would be reading two tokens for one question.
+   */
+  it("says the same when it could not read the stream to resolve against", async () => {
+    const { ports: p, asked } = ports({
+      read: async () => {
+        throw new Error("the store would not answer");
+      },
+    });
+
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(outcomeOf(result)).toBe("landed");
+    expect(result.steps.at(-1)).toMatchObject({
+      step: "end",
+      ending: { ending: "did-not-finish", because: NOT_ENDED },
+    });
+    // Nothing was recorded, which is the state the token is about.
+    expect(asked.endings).toEqual([]);
+  });
+
+  /**
+   * And a pass whose `end` *did* write says nothing of the kind — otherwise the
+   * caller would append a second terminal event after every landing, and the
+   * token would mean *look at the stream* rather than *nothing reached it*.
+   */
+  it("says nothing of the kind when the append went through", async () => {
+    const { ports: p } = ports();
+
+    const result = await pass({ ports: p, recipe: recipeWith(AT_END) });
+
+    expect(result.steps.at(-1)?.ending).toEqual({ ending: "passed" });
   });
 
   it("runs once, last, on every one of the endings a pass can reach", async () => {

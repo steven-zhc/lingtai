@@ -319,8 +319,24 @@ export interface PassPorts {
    * with its issue already closed by `tell.ts`.
    *
    * So an implementation appends `[<the outcome's own event>, ...resolved]` at
-   * version `at`, and **the caller appends no terminal event of its own**: the
-   * pass's last step is where a claimed item's ending is written.
+   * version `at`, and **the caller appends no terminal event of its own while
+   * this call succeeds**: the pass's last step is where a claimed item's ending
+   * is written.
+   *
+   * **And when it does not succeed, the caller writes the ending** — `end`'s
+   * visit ends `did-not-finish` with `because` exactly `NOT_ENDED`, and that
+   * token means *nothing at all reached this item's stream*. One append cannot
+   * be made to always happen, so what the shape has to decide is which way it
+   * fails: a resolution with no ending is silent to both audits and leaves the
+   * item claimed for ever, and *neither* would be worse still — nothing on the
+   * stream, nothing for `endedWithoutEndActions` to anti-join, and a
+   * `PassResult` whose `outcomeOf` says `landed`. So the failure is handed back
+   * as a token rather than a sentence, and the caller's answer is the bare
+   * terminal event at the same expected version: that lands the item in the one
+   * window this system already audits and already repairs (`lingtai end
+   * replay`), rather than in a new one with no audit on either side. The
+   * version check is what makes that answer safe where this call committed and
+   * then lost its connection — a second terminal event at `at` is rejected.
    *
    * **Resolving and doing are still two acts and neither of them is the doing**
    * (`end-step.ts`): the resolving is `resolveEndActions`, which the body calls;
@@ -345,6 +361,26 @@ export interface PassPorts {
 }
 
 // ---------------------------------------------------------------- the bodies ----
+
+/**
+ * **The one `because` a caller of the pass reads**, and the reason it is a
+ * constant rather than a sentence spelled out at one call site.
+ *
+ * `NEEDS_INPUT` is the token the *workflow* reads; this is the token the
+ * *caller* reads, and it says one thing: **`end` could not write this item's
+ * ending, so nothing reached its stream and writing it is yours.** A pass whose
+ * `end` visit carries it still reports the outcome it actually reached —
+ * `PassResult.stoppedAt` is never `end`, a merge that landed has landed — and
+ * that is exactly what makes the token necessary: without it a caller reading
+ * `outcomeOf(result) === "landed"` and obeying `PassPorts.record`'s *the caller
+ * appends no terminal event of its own* writes nothing, and the item is left
+ * claimed for ever with `main` moved and no event of any kind to find it by.
+ *
+ * Prose would not do. `detail` carries the store's own words for a person
+ * (0043), and a caller that had to read them to decide whether to append would
+ * be the second reader of a sentence `StepNeverRan` already refuses to create.
+ */
+export const NOT_ENDED = "not-ended";
 
 /**
  * The ten bodies: these six, and `NOT_BUILT_YET`'s four.
@@ -637,17 +673,49 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * a window in which an item can be left resolved and never ended. See
      * `PassPorts.record`, which is why it is called on a pass that claimed
      * whether anything resolved or not.
+     *
+     * **And the one append that cannot be retried from here is reported rather
+     * than swallowed.** A store that drops the connection, or an expected-version
+     * append another writer got in ahead of, leaves the item with *nothing* on
+     * its stream — no ending for the work-item fold, nothing for
+     * `endedWithoutEndActions` to anti-join, and a `PassResult` that still says
+     * `landed`. Letting that reach `runStep`'s generic `threw` would make it
+     * indistinguishable from any other crash in this body, so it is caught here
+     * and named: `NOT_ENDED`, which is the caller's instruction to write the
+     * bare terminal event itself. The item then sits in the window that has an
+     * audit and a repair rather than in one that has neither.
      */
-    end: async ({ actions, outcome }): Promise<StepPassed> => {
+    end: async ({ actions, outcome }): Promise<StepPassed | StepDidNotFinish> => {
       if (claimed === null) return { ending: "passed" };
-      const events = await ports.read(claimed);
-      // An empty list is *nothing declared* or *already resolved for this
-      // outcome*, and neither is a row — but the ending is owed either way, so
-      // the call is made either way. A step that resolved a declared list down to
-      // no effects is not empty here: that is one row whose own `actions` are `[]`.
-      const resolved = resolveEndActions(events, actions, outcome);
-      await ports.record({ claimed, at: events.length, outcome, resolved });
-      return { ending: "passed" };
+      const item = claimed;
+      // Which of the step's own three acts did not finish. All three leave the
+      // stream in the same state — no ending on it — and the caller does the
+      // same thing about each, so this is a person's detail and never the signal.
+      let act = "read";
+      try {
+        const events = await ports.read(item);
+        // An empty list is *nothing declared* or *already resolved for this
+        // outcome*, and neither is a row — but the ending is owed either way, so
+        // the call is made either way. A step that resolved a declared list down
+        // to no effects is not empty here: that is one row whose own `actions`
+        // are `[]`.
+        act = "resolve";
+        const resolved = resolveEndActions(events, actions, outcome);
+        act = "record";
+        await ports.record({ claimed: item, at: events.length, outcome, resolved });
+        return { ending: "passed" };
+      } catch (error) {
+        return {
+          ending: "did-not-finish",
+          because: NOT_ENDED,
+          // No action asked it: the step's own work did — the same reason
+          // `asking` and `noReceipt` above are `null` here.
+          at: null,
+          detail:
+            `${item.workItemId} has no \`${outcome}\` on its stream — \`${act}\` threw: ` +
+            `${String(error)}. The pass reached that ending and nothing was written about it.`,
+        };
+      }
     },
   };
 }
