@@ -139,6 +139,13 @@ export interface GitHubClient {
    * behaviour rather than a wrapper's, so it is said here: a caller deleting
    * what it gets back has to filter, and `sweepRefs` in
    * `packages/conductor/src/tell.ts` is the one that does.
+   *
+   * **Nothing matching is a 200 and an empty array**, which is the whole
+   * difference between this endpoint and the single-reference one beside it. So
+   * an error here is never an absence: a 404 is *this installation cannot read
+   * this repository*, and a caller that turned it into `[]` would render a
+   * repository it has lost access to as a remote with no refs on it — and a
+   * sweep would then record a success saying there was nothing to delete.
    */
   matchingRefs(prefix: string): Promise<readonly string[]>;
 
@@ -428,19 +435,16 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     },
 
     async matchingRefs(prefix) {
-      // 404 is *no ref matches*, which this endpoint answers instead of an
-      // empty array when nothing shares the prefix at all — an answer, like
-      // `fileAt`'s missing file, and not a failure.
-      try {
-        const raw = await request<{ ref: string }[]>(
-          "GET",
-          `/repos/${owner}/${repo}/git/matching-refs/${prefix}`,
-        );
-        return raw.map((each) => each.ref.replace(/^refs\//, ""));
-      } catch (err) {
-        if (err instanceof GitHubError && err.status === 404) return [];
-        throw err;
-      }
+      // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
+      // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
+      // status that means *absence* — a 404 here is the repository, not the
+      // refs, and reading it as an empty list would tell a sweep there was
+      // nothing to delete on a remote it can no longer see.
+      const raw = await request<{ ref: string }[]>(
+        "GET",
+        `/repos/${owner}/${repo}/git/matching-refs/${prefix}`,
+      );
+      return raw.map((each) => each.ref.replace(/^refs\//, ""));
     },
 
     async deleteRef(ref) {

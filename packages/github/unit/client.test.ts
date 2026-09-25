@@ -153,9 +153,15 @@ describe("listOpenIssues", () => {
  *   wrapper that answered the first and took the second would make every delete
  *   a 404 on `refs/refs/heads/…`, which is the kind of failure that shows up
  *   only against the live API.
- * - **No match is a 404 and not an empty array.** A ticket that landed before
- *   `#239` published any arm has no refs under its branch at all, and a throw
- *   there would make *nothing to do* read as *GitHub refused*.
+ * - **No match is a 200 and an empty array**, which is the whole point of
+ *   `matching-refs` over the single-reference endpoint beside it. So this
+ *   wrapper has no status that means absence, and a 404 is **not** swallowed:
+ *   a 404 from here is the repository — an App uninstalled between the merge
+ *   and the end point, or one that has lost `contents` — and reading it as
+ *   `[]` would hand the sweep an empty list, delete nothing, and record a
+ *   *success* saying there was nothing to delete while every arm stayed on
+ *   `origin`. That failure is silent and permanent, where a throw is one
+ *   `IssueUpdateFailed` the next reconcile picks up.
  */
 describe("the refs a landed ticket leaves", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -206,7 +212,19 @@ describe("the refs a landed ticket leaves", () => {
     });
   });
 
-  it("reads a 404 as no ref matches, rather than as a failure", async () => {
+  it("reads nothing matching as the empty array the endpoint answers", async () => {
+    stubRefs(() => json([]));
+
+    await expect((await client()).matchingRefs("heads/agent/999")).resolves.toEqual([]);
+  });
+
+  /**
+   * **The case the swallow used to hide.** A 404 here is a repository this
+   * installation cannot read, and answering `[]` for it would tell a sweep
+   * there were no arms to delete — a *success* row, a green `doctor`, and
+   * every ref still on `origin`.
+   */
+  it("lets a 404 through, because absence is the empty array and not a status", async () => {
     stubRefs(() =>
       new Response(JSON.stringify({ message: "Not Found" }), {
         status: 404,
@@ -214,6 +232,6 @@ describe("the refs a landed ticket leaves", () => {
       }),
     );
 
-    await expect((await client()).matchingRefs("heads/agent/999")).resolves.toEqual([]);
+    await expect((await client()).matchingRefs("heads/agent/240")).rejects.toThrow(/404|Not Found/);
   });
 });

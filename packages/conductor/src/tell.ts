@@ -221,6 +221,19 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
  * free: only what was listed is deleted. Nothing here throws either — `end`
  * cannot refuse, so a delete GitHub declined is an `IssueUpdateFailed` and a
  * run that still landed.
+ *
+ * **A sweep can stop half way, and the failure row names what already went.**
+ * The deletes are one call each, so a four-arm item whose third delete is
+ * refused has two arms gone for good — and the names are the one fact a reader
+ * coming back to the row cannot get from the remote any more, which is what
+ * `sweepFailure` puts in the `error`. Without it *we swept nothing* and *we
+ * swept half of it* are one row.
+ *
+ * **What is left is converged, not forgotten.** `findIssueDrift` re-asks GitHub
+ * which arms are still there and `convergeIssues` deletes those
+ * (`packages/daemon/src/converge.ts`), so the refusal is a job with an owner
+ * rather than a permanent warning — the resolution is deduped per outcome
+ * (`end-point.ts`) and nothing ever runs this function again for the same item.
  */
 export async function sweepRefs(options: {
   store: EventStore;
@@ -237,23 +250,26 @@ export async function sweepRefs(options: {
 
   const branch = agentBranch(issue);
   const arms = armPrefix(branch);
-  let detail = "";
+  // Appended to as each delete comes back, so both endings can name it: the
+  // row is written *after* the loop either way, and a `doomed` the loop did not
+  // finish would describe refs that are still on `origin`.
+  const gone: string[] = [];
   try {
     const found = await github.matchingRefs(`heads/${branch}`);
     const doomed = found.filter(
       (ref) =>
         ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
     );
-    for (const ref of doomed) await github.deleteRef(ref);
-    // The names and not the count, because *which* arms went is the only thing
-    // a reader coming back to this row can no longer get from the remote.
-    detail = doomed.length === 0 ? "none" : doomed.join(",");
+    for (const ref of doomed) {
+      await github.deleteRef(ref);
+      gone.push(ref);
+    }
   } catch (err) {
     await record(store, workItemId, "IssueUpdateFailed", {
       project,
       issue: String(issue),
       change: "refs",
-      error: (err as Error).message,
+      error: sweepFailure(err, gone),
     });
     return;
   }
@@ -261,8 +277,25 @@ export async function sweepRefs(options: {
     project,
     issue: String(issue),
     change: "refs",
-    detail,
+    // The names and not the count, because *which* arms went is the only thing
+    // a reader coming back to this row can no longer get from the remote.
+    detail: gone.length === 0 ? "none" : gone.join(","),
   });
+}
+
+/**
+ * **A refused sweep, and what it had already deleted when it was refused**
+ * (`#240`).
+ *
+ * `IssueUpdateFailed` carries an `error` and no `detail`, so the names go in the
+ * message rather than in a second row: an `IssueUpdated` for `refs` then means
+ * the sweep finished, and a reader never has to look at the row after this one
+ * to find out whether it did. `convergeIssues` says it the same way for the
+ * same reason.
+ */
+export function sweepFailure(err: unknown, gone: readonly string[]): string {
+  const why = (err as Error).message;
+  return gone.length === 0 ? why : `${why} — after deleting ${gone.join(",")}`;
 }
 
 /**
@@ -350,13 +383,19 @@ export async function tellGitHubAbout(options: {
   for (const e of options.appended ?? []) {
     if (e.type !== "EndActionsResolved") continue;
     const d = e.data as PayloadOf<"EndActionsResolved">;
-    for (const action of d.actions) {
+    // **The sweep goes last within the item, and this line is what makes that
+    // true** rather than what a recipe happened to declare. It is the only
+    // irreversible effect, and a failure anywhere before it must not have
+    // already deleted the branches somebody would use to work out what went
+    // wrong — so `end: [{refs}, {labels}]` runs the label write first, as
+    // `end: [{labels}, {refs}]` does. Order *among* the writes is still the
+    // recipe's, because close-then-label and label-then-close differ: an issue
+    // closed and then labelled can come back open.
+    const writes = d.actions.filter((a) => !("refs" in a));
+    const sweeps = d.actions.filter((a) => "refs" in a);
+    for (const action of [...writes, ...sweeps]) {
       if ("close" in action) await tell({ kind: "closed" });
       else if ("labels" in action) await tell({ kind: "labels", labels: action.labels });
-      // The sweep goes last within the item for the same reason the end point's
-      // own actions go after the labels: it is the only irreversible one, and a
-      // failure anywhere before it must not have already deleted the branches
-      // somebody would use to work out what went wrong.
       else await sweepRefs({ store, github, workItemId, andTheBranch: action.branch });
     }
   }
