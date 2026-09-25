@@ -187,10 +187,19 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * somebody else's commits, and this claim's own arm is on origin at a head
    * the next attempt is being sent to. Rendering it as a refusal would put the
    * work back out of sight, which is the whole of `#251`.
+   *
+   * **`unrecorded` is the row that contradicts the one above it** (`#252`): the
+   * refs went and the store refused the `RunProducedDiff` twice, so the next
+   * attempt's brief will say *Nothing* over commits that are on origin. It reads
+   * as the rescue it is asking for — the head to fetch, and whose words the
+   * refusal was — because a reader who sees `published` and stops has been told
+   * the opposite of what happened.
    */
   RunRefsPublished: (d) => {
     const outcome = need(d, "outcome");
     if (outcome === "nothing-committed") return "nothing committed, so no ref was left";
+    if (outcome === "unrecorded")
+      return `${sha(d, "headSha")} is on origin and nothing records it: ${clip(d["detail"])}`;
     if (outcome === "arm-only")
       return `${need(d, "branch")} was not pushed: ${clip(d["detail"])} — ${need(d, "arm")} at ${sha(d, "headSha")} is there`;
     if (outcome === "refused")

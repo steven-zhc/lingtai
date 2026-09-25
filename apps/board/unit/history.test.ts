@@ -92,6 +92,17 @@ describe("a line of history", () => {
     expect(row({ outcome: "arm-only", headSha: "a".repeat(40), detail: "stale info" })).toBe(
       "agent/250 was not pushed: stale info — agent/250-attempt-1 at aaaaaaa is there",
     );
+    // The refs went and the record did not, so the row above this one on the
+    // page says the opposite of what a reader needs to act on (`#252`).
+    expect(
+      row({
+        outcome: "unrecorded",
+        headSha: "a".repeat(40),
+        detail: "agent/250 — the connection is closed, and again — the connection is closed",
+      }),
+    ).toBe(
+      "aaaaaaa is on origin and nothing records it: agent/250 — the connection is closed, and again — the connection is closed",
+    );
   });
 
   it("keeps a null in the payload, because a null is a statement", () => {

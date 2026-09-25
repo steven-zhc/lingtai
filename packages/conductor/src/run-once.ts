@@ -1137,13 +1137,18 @@ export function runOnce(
        * belongs on the log because it outlives the file, not because anything
        * reads it to decide.
        */
+      /** A defect's own words, since three handlers in this block want them. */
+      const whyOf = (defect: unknown) =>
+        defect instanceof Error ? defect.message : String(defect);
+
       const noteRefs = (
         outcome:
           | "published"
           | "nothing-committed"
           | "already-published"
           | "arm-only"
-          | "refused",
+          | "refused"
+          | "unrecorded",
         headSha: string | null,
         detail: string | null,
       ) =>
@@ -1163,7 +1168,7 @@ export function runOnce(
             // worse outcome than a missing explanation of a ref that is there.
             Effect.catchAllDefect((defect) =>
               Effect.sync(() => {
-                const why = defect instanceof Error ? defect.message : String(defect);
+                const why = whyOf(defect);
                 runLog.note("push", `the account of ${outcome} was not appended — ${why}`);
                 log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`);
               }),
@@ -1190,31 +1195,76 @@ export function runOnce(
        * A call that dies in the append leaves the key where it was, so the next
        * call — the finalizer's, on every ending that publishes inline — asks
        * again and the row lands.
+       *
+       * **And the second ask is here, because not every ending has a second
+       * call** (`#252`). `appendAtEnd` is an `Effect.promise`, so a store that
+       * drops its connection on this one row raises a defect — the disconnect
+       * CLAUDE.md documents against `#157`, arriving on the row `attemptBrief`
+       * reads and nothing else does. Leaving the repair to *a later call* made
+       * it a repair only the endings that publish inline get: a crash and the
+       * wall publish once, from the finalizer, and `#251`'s `already-published`
+       * re-ask is never reached, so the refs sat on origin and attempt 2 was
+       * told *"It committed no change"*. The same defect, on the same push, with
+       * a different ending. So the row is asked for twice **within one call**,
+       * which costs a round trip on a path that has already failed and nothing
+       * on the path that has not.
+       *
+       * **Twice and not until it works.** What a retry answers is a dropped
+       * connection, where the second attempt gets a new one; a `parsePayload`
+       * that throws or a store that is simply gone would answer the same way
+       * forever, and a finalizer that will not finish holds the worktree — and
+       * with it the commits — against every later attempt.
+       *
+       * Where both die the loss is **said rather than swallowed**: an
+       * `unrecorded` row names the ref, the head and the store's words, so a run
+       * whose brief will say *Nothing* over commits that are on origin carries
+       * the contradiction on the log where a person can find it. That append can
+       * die too, and `noteRefs` answers that by its own rules — at which point
+       * the run log and the conductor's output are what is left, which is the
+       * reading `RunRefsPublished`'s own doc asks for and the reason the absence
+       * of a row is evidence rather than proof.
        */
       const recordDiff = (ref: string, head: string) =>
         Effect.gen(function* () {
           if (recordedDiff === producedKey(ref, head)) return;
           const counted = yield* Effect.either(numstat);
-          yield* appendAtEnd(runId, [
-            {
-              type: "RunProducedDiff",
-              actor: "conductor",
-              data: parsePayload("RunProducedDiff", {
-                branch: ref,
-                headSha: head,
-                files: Either.isRight(counted) ? counted.right.files : 0,
-                insertions: Either.isRight(counted) ? counted.right.insertions : 0,
-                deletions: Either.isRight(counted) ? counted.right.deletions : 0,
-              }),
-            },
-          ]);
-          // **After the append and never before it** (`#251`). `appendAtEnd` is
-          // an `Effect.promise`, so a store that drops its connection here
-          // raises a defect — and a key set in advance would mark the answer
-          // given by the append that did not give it, so no later call could
-          // repair it. The row is the one `attemptBrief` reads: the next
-          // attempt would be told *Nothing* over a ref that is on origin, which
-          // is `#250`'s loss arriving by a second road.
+          const row: ToAppend = {
+            type: "RunProducedDiff",
+            actor: "conductor",
+            data: parsePayload("RunProducedDiff", {
+              branch: ref,
+              headSha: head,
+              files: Either.isRight(counted) ? counted.right.files : 0,
+              insertions: Either.isRight(counted) ? counted.right.insertions : 0,
+              deletions: Either.isRight(counted) ? counted.right.deletions : 0,
+            }),
+          };
+          const took = yield* Effect.either(
+            appendAtEnd(runId, [row]).pipe(
+              Effect.catchAllDefect((first) =>
+                appendAtEnd(runId, [row]).pipe(
+                  Effect.catchAllDefect((again) =>
+                    Effect.fail(`${whyOf(first)}, and again — ${whyOf(again)}`),
+                  ),
+                ),
+              ),
+            ),
+          );
+          if (Either.isLeft(took)) {
+            runLog.note(
+              "push",
+              `${ref} at ${head.slice(0, 7)} is on origin and was not recorded — ${took.left}`,
+            );
+            log(`RunProducedDiff (${ref}) was refused by the store twice: ${took.left}`);
+            yield* noteRefs("unrecorded", head, `${ref} — ${took.left}`);
+            return;
+          }
+          // **After the append and never before it** (`#251`). A key set in
+          // advance would mark the answer given by the append that did not give
+          // it, so no later call could repair it. The row is the one
+          // `attemptBrief` reads: the next attempt would be told *Nothing* over
+          // a ref that is on origin, which is `#250`'s loss arriving by a second
+          // road.
           recordedDiff = producedKey(ref, head);
         });
 
@@ -1246,10 +1296,11 @@ export function runOnce(
           // **And the record is asked for again** (`#251`). This pass put both
           // refs on origin at this head, so `RunProducedDiff` naming `branch`
           // is still the right answer, and `recordDiff` is a no-op once it has
-          // been given. Where the giving call's append died, this is the only
-          // place left that can give it: the endings that publish inline — the
-          // wall, the stand-down — reach the finalizer's call afterwards, and
-          // without this it arrived here and returned with nothing to do.
+          // been given. It is a third chance rather than the last one since
+          // `#252` — `recordDiff` asks twice within the call that owed the row —
+          // and it stays, because the endings that publish inline reach the
+          // finalizer's call afterwards and a store that was down for both of
+          // those attempts may be up by the time the scope unwinds.
           yield* recordDiff(branch, head);
           return null;
         }
@@ -1344,10 +1395,18 @@ export function runOnce(
        * not abandoned here but asked for again on the next call, which is why
        * `recordedDiff` is set by an append that returned and the
        * `already-published` return records as well as reports (`#251`).
+       *
+       * **Which is no longer the only ask, and this handler is no longer where
+       * a dropped `RunProducedDiff` is answered** (`#252`). A later call is a
+       * repair the finalizer-only endings do not have, so `recordDiff` asks
+       * twice itself and says `unrecorded` where both are refused. So a defect
+       * that still arrives here is one no repeat was ever going to answer — a
+       * `parsePayload` that throws, or whatever a later edit puts in this block —
+       * and this stays for those rather than for the append it was written for.
        */
       const publishWhatIsCommitted: Effect.Effect<string | null> = publishing.pipe(
         Effect.catchAllDefect((defect) => {
-          const why = defect instanceof Error ? defect.message : String(defect);
+          const why = whyOf(defect);
           runLog.note("push", `the publish itself failed — ${why}`);
           // **The answer is the publish's and never the bookkeeping's.** Where
           // the call had already settled what to say, that stands: this return

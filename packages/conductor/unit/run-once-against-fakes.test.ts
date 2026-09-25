@@ -1375,7 +1375,11 @@ describe("runOnce, with no world to run in", () => {
           .map((e) => (e.data as { outcome: string }).outcome),
       ).toEqual(["published", "already-published"]);
 
-      // **Once, and there.** The first append died; the second call gave it.
+      // **Once, and there.** The first append died and the retry beside it gave
+      // the row (`#252`); the finalizer's `already-published` then found nothing
+      // left to say. Before `#252` the second *call* was the repair, which is
+      // why this ending — the one with a second call — was the only one it
+      // reached.
       const produced = run.filter((e) => e.type === "RunProducedDiff");
       expect(produced).toHaveLength(1);
       expect(produced[0]!.data).toMatchObject({ branch: "agent/7", headSha: "b".repeat(40) });
@@ -1384,6 +1388,187 @@ describe("runOnce, with no world to run in", () => {
       const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
       expect(brief).toContain("git fetch origin agent/7");
       expect(brief).not.toContain("It committed no change");
+    });
+  });
+
+  /**
+   * **The endings that publish once, and so had no second call to be repaired
+   * by** (`#252`).
+   *
+   * `#251` made a dropped `RunProducedDiff` self-repairing by re-asking for the
+   * row on the *next* call: a stop publishes inline before the person is asked
+   * and the finalizer then takes `already-published`, which records as well as
+   * reports. A crash and the wall have no inline call. `run-once.ts` reaches
+   * `publishWhatIsCommitted` from `kind === "out-of-turns"`, from the two
+   * stand-downs, from a decline and from a hold — a `crash` and a `timeout`
+   * match none of them, so `RunFailed` is appended, `Stopped` is raised, and the
+   * finalizer's is the only publish there will ever be.
+   *
+   * One dropped append therefore lost the row permanently: `agent/7` and
+   * `agent/7-attempt-1` on origin at H, no `RunProducedDiff` on the stream, and
+   * one `lingtai requeue` later `attemptBrief` telling attempt 2 *"Nothing. It
+   * committed no change, so there is no branch to build on"*. The same defect as
+   * `#251`'s, on the same push, with a different ending — and the run's own
+   * `Stopped` said nothing was amiss, so nothing that reads the outcome could
+   * have found it.
+   *
+   * So the repair is inside the call: `recordDiff` asks twice. These three pin
+   * both endings and the case where both asks are refused.
+   */
+  describe("when the ending publishes only from the finalizer", () => {
+    /** The budget's shape, at the recipe's defaults — this asserts the brief, not the bound. */
+    const budget = { evidence: 2_000, attempts: 3, findings: 5 };
+
+    /**
+     * The two kinds with no inline publish, and they are the agent's own
+     * endings: `crash` is the binary dying with commits behind it, `timeout` is
+     * the wall the runtime enforces. Turns and cost are non-zero on purpose —
+     * `never-started` is the ending 0031 §1 reads off zeros, and it stands the
+     * conductor down and publishes inline, which is not this path.
+     */
+    const endedWith = (kind: "crash" | "timeout", detail: string): Runtime => ({
+      ...runtime,
+      run: async () => ({
+        exitCode: 1,
+        turns: 9,
+        durationMs: 120_000,
+        costUsd: 3.14,
+        failure: { kind, detail },
+        text: null,
+        sessionId: "sess-252",
+      }),
+    });
+
+    /**
+     * A pass that ends that way with commits in its worktree, and a store that
+     * drops the first `dropped` appends of the one row `attemptBrief` reads.
+     *
+     * The message is the disconnect's own, because that is what this is: both
+     * test connection strings went through a pooler for months and the suite
+     * read `30 passed → 10 failed → 31 passed` on one commit inside an hour
+     * (`#157`). The same drop on the real log is what this ending does with it.
+     */
+    const ended = async (agent: Runtime, dropped: number) => {
+      const store = memoryStore();
+      const did: string[] = [];
+      const said: string[] = [];
+      const ports = fakePorts(did, store);
+      const appended = store.append.bind(store);
+      let drops = dropped;
+      store.append = async (stream, at, events) => {
+        if (drops > 0 && events.some((e) => e.type === "RunProducedDiff")) {
+          drops -= 1;
+          throw new Error("the connection is closed");
+        }
+        for (const e of events) did.push(`append ${e.type}`);
+        return appended(stream, at, events);
+      };
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub(said),
+          runtime: agent,
+          issue: 7,
+          hookBinary: "/tmp/fake/lingtai-hook",
+          prompt: "fix {{issue}}",
+          merge: false,
+          home: "/tmp/fake-home",
+          store,
+        },
+        ports,
+      );
+      const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+      return { result, did, run, item: await store.read(`wi-${PROJECT}-7`) };
+    };
+
+    /** The outcomes of every `RunRefsPublished` on the stream, in order. */
+    const outcomes = (run: readonly { type: string; data: unknown }[]) =>
+      run
+        .filter((e) => e.type === "RunRefsPublished")
+        .map((e) => (e.data as { outcome: string }).outcome);
+
+    const branchWent = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1";
+
+    it("names the branch a crash left, though the record's first append died", async () => {
+      const { result, did, run, item } = await ended(
+        endedWith("crash", "Error: the agent's binary exited 139 with two commits made"),
+        1,
+      );
+      expect(result.ok).toBe(false);
+      // The ending is the crash's, and the publish happened while unwinding.
+      expect((result as { stage?: string }).stage).toBe("run");
+      expect(run.some((e) => e.type === "RunFailed")).toBe(true);
+      expect(did).toContain(branchWent);
+      // **One publish, which is the whole of the difference.** No inline call
+      // means no `already-published` row behind it to ask again.
+      expect(outcomes(run)).toEqual(["published"]);
+
+      // And the row is there anyway, because the ask that repairs it is inside
+      // the call that owed it.
+      const produced = run.filter((e) => e.type === "RunProducedDiff");
+      expect(produced).toHaveLength(1);
+      expect(produced[0]!.data).toMatchObject({ branch: "agent/7", headSha: "b".repeat(40) });
+
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("git fetch origin agent/7");
+      expect(brief).not.toContain("It committed no change");
+    });
+
+    /** The same path, and the ending `#250` met. */
+    it("names the branch the wall left, though the record's first append died", async () => {
+      const { result, did, run, item } = await ended(
+        endedWith("timeout", "the run passed runtime.limits.wall (1h) and was killed"),
+        1,
+      );
+      expect(result.ok).toBe(false);
+      expect(did).toContain(branchWent);
+      expect(outcomes(run)).toEqual(["published"]);
+      expect(run.filter((e) => e.type === "RunProducedDiff")).toHaveLength(1);
+
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("git fetch origin agent/7");
+      expect(brief).not.toContain("It committed no change");
+    });
+
+    /**
+     * **And where both asks are refused it is said, not swallowed.**
+     *
+     * The handler used to answer a dropped append with `Effect.succeed(null)`,
+     * so a run that put commits on origin and lost the only row naming them
+     * ended reporting nothing amiss. Two asks is where the retry stops — a
+     * `parsePayload` or a store that is simply gone would answer the same way
+     * forever, and a finalizer that will not finish holds the worktree those
+     * commits are in — so the last thing owed is an account: the head, the ref,
+     * and whose words the refusal was.
+     *
+     * The brief still says *Nothing*, and that is the honest reading of a log
+     * with no `RunProducedDiff` on it. What the row buys is that the
+     * contradiction is on the log rather than only in a run log somebody may
+     * reap (0034 §8).
+     */
+    it("says the refs are on origin and unrecorded when both asks are refused", async () => {
+      const { result, did, run, item } = await ended(
+        endedWith("crash", "Error: the agent's binary exited 139 with two commits made"),
+        2,
+      );
+      // Still the crash, and still the crash's stage: the bookkeeping is not
+      // allowed to become the ending.
+      expect(result.ok).toBe(false);
+      expect((result as { stage?: string }).stage).toBe("run");
+      expect(did).toContain(branchWent);
+
+      expect(run.some((e) => e.type === "RunProducedDiff")).toBe(false);
+      expect(outcomes(run)).toEqual(["published", "unrecorded"]);
+      const row = run.filter((e) => e.type === "RunRefsPublished")[1]!;
+      expect(row.data).toMatchObject({ headSha: "b".repeat(40) });
+      // The ref to fetch, and that it was asked twice.
+      expect((row.data as { detail: string }).detail).toContain("agent/7");
+      expect((row.data as { detail: string }).detail).toContain("and again");
+
+      // The brief cannot say more than the log does — which is why the row has
+      // to carry what it carries.
+      const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+      expect(brief).toContain("It committed no change");
     });
   });
 

@@ -502,7 +502,7 @@ export const RunRefsPublished = z.object({
    */
   headSha: z.string().nullable(),
   /**
-   * Which of the five it was.
+   * Which of the six it was.
    *
    * `nothing-committed` is an ending with no commits, which publishes nothing on
    * purpose — a ref to an empty branch is a worse lie than the absence (0062
@@ -521,6 +521,19 @@ export const RunRefsPublished = z.object({
    * the loss this type exists to end. So the publish confirms the arm before it
    * decides, and where the arm is up `RunProducedDiff` names **the arm** rather
    * than a `agent/<n>` that is no longer this run's.
+   *
+   * **`unrecorded` is the refs being up and the record of them not being**
+   * (`#252`). `RunProducedDiff` is the row `attemptBrief` reads and nothing else
+   * is, and its append is the one step of the publish that can fail *after*
+   * origin has the commits — the dropped Postgres connection CLAUDE.md
+   * documents against `#157`, landing on the one row that matters. The publish
+   * asks twice for it; where the store refuses both, this row is what is left,
+   * and it is not a duplicate of the `published` or `arm-only` row above it:
+   * that one says the commits are on origin, this one says **nothing on the log
+   * will send the next attempt to fetch them.** `headSha` is where they are and
+   * `detail` names the ref that holds them and the store's words. On the endings
+   * that publish only from the finalizer — a crash, the wall — there is no third
+   * call to hope for, so a claim whose record is lost says so here or nowhere.
    */
   outcome: z.enum([
     "published",
@@ -528,8 +541,12 @@ export const RunRefsPublished = z.object({
     "already-published",
     "arm-only",
     "refused",
+    "unrecorded",
   ]),
-  /** Git's own words when `refused` or `arm-only`, and null otherwise. */
+  /**
+   * Git's own words when `refused` or `arm-only`, the store's and the ref they
+   * were about when `unrecorded`, and null otherwise.
+   */
   detail: z.string().nullable(),
 });
 
