@@ -360,13 +360,15 @@ export interface PassPorts {
    * `end` — **what the step resolved, on the item's own stream, at the version
    * the read gave.**
    *
-   * `appendEndActions` in [`end-step.ts`](end-step.ts) is a live implementation
-   * of this and nothing else: it is that module's own entry point *for the one
-   * caller that cannot batch*, and the pass is one. Batching is the caller's
-   * because the *ending* is the caller's — the pass says which outcome was
-   * reached and does not append it (see this file's opening) — so a port here
-   * that took a store and a terminal event would be the pass writing an item's
-   * ending on the way past.
+   * A live implementation is `store.append(workItemId, at, plan)` and nothing
+   * else — the same append `appendEndActions` makes, that function being the
+   * three acts at once for a caller that holds a store, which a body does not.
+   * Its doc is also why the append stands alone here: it is that module's entry
+   * point *for the one caller that cannot batch*, and the pass is one. Batching
+   * is the caller's because the *ending* is the caller's — the pass says which
+   * outcome was reached and does not append it (see this file's opening) — so a
+   * port here that took a store and a terminal event would be the pass writing
+   * an item's ending on the way past.
    *
    * It is handed a plan rather than an outcome, and that is the wiring the ticket
    * asks for rather than a rewrite: what `when:` matches and what has already
@@ -398,7 +400,7 @@ export interface PassPorts {
  *
  * Which of the step's three acts threw is on `detail`, for a person; nothing
  * branches on it, because the item's own stream says what was resolved and what
- * was not, and that is what `lingtai end replay` reads.
+ * was not, and a repair reads that rather than a token.
  */
 export const END_UNRESOLVED = "end-unresolved";
 
@@ -612,9 +614,9 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      *
      * `prepared`'s plugin is `run:` carrying the command (0061 §3), and
      * `KINDS_AT.prepared` is the one row of these six that is open
-     * (`recipe.ts:775`): the recipe this repository is conducted by declares one
-     * command there and nothing else — `pnpm install --frozen-lockfile`, with a
-     * `10m` timeout (`.lingtai/config.yaml:113`). The loop has already run that
+     * (`recipe.ts:775`): this repository's own recipe file declares one command
+     * there and nothing else — `pnpm install --frozen-lockfile`, with a `10m`
+     * timeout (`.lingtai/config.yaml:113`). The loop has already run that
      * list by the time this is called, and `endingOf` has already read a `failed`
      * verdict at a refusing step as a **refusal** — so there is nothing left for
      * the body to do, and a second install written here would be the
