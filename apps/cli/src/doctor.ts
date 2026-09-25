@@ -75,7 +75,14 @@ import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
 import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
-import { backlogProjection, describeShape, projectionLag, projectionShape, taskViewProjection } from "@lingtai/projector";
+import {
+  backlogProjection,
+  describeShape,
+  projectionLag,
+  projectionShape,
+  readTasks,
+  taskViewProjection,
+} from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -1167,6 +1174,41 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
   };
 }
 
+/** What the board calls each issue the two rows below name — `project#issue` to its title. */
+type TitleBook = Map<string, string>;
+
+/**
+ * That book, read from `task_view`.
+ *
+ * Those rows are read by somebody deciding whether to act *now*, and a detail
+ * that fails and says `lingtai#49, lingtai#53, lingtai#55` makes that decision
+ * impossible without a round trip to GitHub, under exactly the time pressure
+ * that makes a round trip expensive (#258). `task_view` already holds the
+ * title, so it costs one read.
+ *
+ * **Over the whole history, and never thrown.** The board's retention window
+ * would drop the oldest divergence, which is the one still being reported; and
+ * a store that cannot answer costs the titles rather than the check, which is
+ * why the failure is an empty book.
+ */
+async function issueTitles(): Promise<TitleBook> {
+  const cards = await readTasks({ retentionDays: 36_500 }).catch(() => []);
+  return new Map(cards.map((c) => [`${c.project}#${c.issue}`, c.title]));
+}
+
+/**
+ * One reference as a person reads it: the number, what happened to it, and the
+ * title when the board has one.
+ *
+ * `what` is the row's own word — the outcome an item reached, or the change
+ * that never landed. It is not a substitute for the title and is not offered as
+ * one: it is what keeps the fallback a sentence rather than a bare number.
+ */
+function say(titles: TitleBook, ref: string, what: string): string {
+  const title = titles.get(ref);
+  return title === undefined ? `${ref} ${what}` : `${ref} ${what} — ${title}`;
+}
+
 /**
  * Items that landed with an `end` point that was configured and did not run.
  *
@@ -1187,7 +1229,7 @@ async function readableTypes(queries: LogQueries): Promise<CheckResult> {
  * From the log alone, and from the *item's own stream* for the second half, so
  * it says nothing about what the recipe happens to contain today.
  */
-async function endStepRan(queries: LogQueries): Promise<CheckResult> {
+async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
   const name = "steps: end ran on what landed";
   const found = await endedWithoutEndActions(queries).catch(() => null);
   if (found === null) return { name, status: "ok", detail: "no log to read yet" };
@@ -1200,7 +1242,7 @@ async function endStepRan(queries: LogQueries): Promise<CheckResult> {
     status: "fail",
     detail:
       `${found.length} item(s) landed with actions planned at end and none resolved — ` +
-      `${found.map((f) => `${f.project}#${f.issue}`).join(", ")}. ` +
+      `${found.map((f) => say(titles, `${f.project}#${f.issue}`, f.outcome)).join(", ")}. ` +
       "Their issues were never closed or labelled, and nothing on GitHub says Lingtai " +
       "touched them: lingtai end replay resolves the step as it should have been.",
   };
@@ -1236,7 +1278,7 @@ async function endStepRan(queries: LogQueries): Promise<CheckResult> {
  * A failure that a later attempt fixed is not reported: the log keeps both, and
  * only the last one is the state of the world.
  */
-async function unconverged(queries: LogQueries): Promise<CheckResult> {
+async function unconverged(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
   const name = "github: what we said and did not manage";
   const rows = await queries.unconvergedUpdates().catch(() => null);
   if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
@@ -1246,8 +1288,8 @@ async function unconverged(queries: LogQueries): Promise<CheckResult> {
 
   const comments = rows.filter((r) => r.change === "comment");
   const computable = rows.filter((r) => r.change !== "comment");
-  const say = (r: { project: string; issue: string; change: string }) =>
-    `${r.project}#${r.issue} (${r.change})`;
+  const named = (r: { project: string; issue: string; change: string }) =>
+    say(titles, `${r.project}#${r.issue}`, r.change);
 
   if (computable.length === 0) {
     return {
@@ -1255,7 +1297,7 @@ async function unconverged(queries: LogQueries): Promise<CheckResult> {
       status: "warn",
       detail:
         `${comments.length} comment(s) the log says were never posted — ` +
-        comments.slice(0, 4).map(say).join(", ") +
+        comments.slice(0, 4).map(named).join(", ") +
         ". A comment is not computable from state, so nothing will converge it; say it by hand if it still matters.",
     };
   }
@@ -1264,7 +1306,7 @@ async function unconverged(queries: LogQueries): Promise<CheckResult> {
     status: "warn",
     detail:
       `${computable.length} issue(s) diverged — ` +
-      computable.slice(0, 4).map(say).join(", ") +
+      computable.slice(0, 4).map(named).join(", ") +
       ". The next reconcile recomputes and writes the difference (lingtai daemon)" +
       (comments.length > 0
         ? `; ${comments.length} comment(s) it cannot, which need a person.`
@@ -1888,9 +1930,12 @@ export async function runDoctor(
     results.push(await conductorLock());
     results.push(await readableTypes(queries));
     results.push(await orphans());
-    results.push(await unconverged(queries));
+    // Read once and handed to both: the two rows below name issues, and a
+    // number on its own is homework for whoever is reading them (#258).
+    const titles = await issueTitles();
+    results.push(await unconverged(queries, titles));
     results.push(await subscribers(queries));
-    results.push(await endStepRan(queries));
+    results.push(await endStepRan(queries, titles));
     // Named one at a time, each saying why it does not apply and naming the
     // store. See `postgresOnlyRows`.
     for (const row of postgresOnlyRows()) {
@@ -1924,9 +1969,13 @@ export async function runDoctor(
     results.push(await conductorLock());
     results.push(await readableTypes(audit));
     results.push(await orphans());
-    results.push(await unconverged(audit));
+    // The projection and not the audit connection: this is what the rows are
+    // *called*, not what they assert, so it is read where every other
+    // projection read here is read (#258).
+    const titles = await issueTitles();
+    results.push(await unconverged(audit, titles));
     results.push(await subscribers(audit));
-    results.push(await endStepRan(audit));
+    results.push(await endStepRan(audit, titles));
   } else {
     results.push({
       name: "postgres",

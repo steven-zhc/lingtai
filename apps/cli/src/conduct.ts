@@ -163,7 +163,11 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
       const offered = await runnableNow({ client, recipe: resolved.recipe });
-      const queued = new Set(
+      // The rows and not a set of numbers. `selectRunnable` already carries the
+      // kind and the title, and the line below is read by somebody watching a
+      // pass decide what to spend an agent on: `taking #123` is a number they
+      // have to go and look up before it means anything (#258).
+      const queued = new Map(
         (
           await selectRunnable({
             project: name,
@@ -171,12 +175,15 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
             kinds: kindsOf(resolved.recipe),
             backoffMs: 0,
           })
-        ).map((t) => t.issue),
+        ).map((t) => [t.issue, t] as const),
       );
       const asked = control.requested.find((r) => r.project === name && queued.has(r.issue));
 
       if (asked) {
-        log(`${name}: taking #${asked.issue} — asked for by ${asked.by}`);
+        // Non-null because `queued.has` is what matched it. The shape is
+        // `lingtai status`'s — `#123  bug  the title`.
+        const task = queued.get(asked.issue)!;
+        log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`);
         const result = await Effect.runPromise(
           runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
         );

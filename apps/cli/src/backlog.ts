@@ -26,6 +26,7 @@ import {
   backlogProjection,
   createProjectionRunner,
   readBacklog,
+  readTasks,
 } from "@lingtai/projector";
 import { userInfo } from "node:os";
 import { withProjector } from "./projector.ts";
@@ -76,11 +77,20 @@ function oneLine(text: string, n = 120): string {
   return said.length > n ? `${said.slice(0, n - 1)}…` : said;
 }
 
-/** One entry, as a listing shows it. Exported for the test. */
-export function describeEntry(e: BacklogEntry): string[] {
+/**
+ * One entry, as a listing shows it. Exported for the test.
+ *
+ * `title` is what the board calls the ticket this finding was raised against.
+ * The backlog does not hold it — a `FindingRaised` names the issue by number —
+ * so it is passed in from `task_view`, and `null` when no card answers for it.
+ * A bare `#49` in a listing is a lookup and not a fact (#258), so without a
+ * title the line says what the number *is* instead of standing it on its own.
+ */
+export function describeEntry(e: BacklogEntry, title: string | null = null): string[] {
   const where = e.line === null ? e.file : `${e.file}:${e.line}`;
+  const ticket = title === null ? `raised while working #${e.issue}` : `#${e.issue} ${oneLine(title, 60)}`;
   const lines = [
-    `${e.key}  #${e.issue}  ${e.step}:${e.action}  ${where}`,
+    `${e.key}  ${ticket}  ${e.step}:${e.action}  ${where}`,
     `    ${oneLine(e.claim)}`,
     `    fails when: ${oneLine(e.failureScenario)}`,
     `    from ${e.runId} at seq ${e.raisedSeq}`,
@@ -120,13 +130,24 @@ async function list(project: string | undefined, all: boolean, log: (line: strin
     log(all ? "the backlog is empty" : "nothing open in the backlog");
     return 0;
   }
+
+  // The one column the backlog does not hold: what each ticket it names is
+  // called. Over the whole history rather than the board's retention window,
+  // because a finding outlives the run that raised it; and caught rather than
+  // thrown, because a listing without titles is still a listing.
+  const titles = new Map(
+    (
+      await readTasks({ retentionDays: 36_500, ...(project === undefined ? {} : { project }) }).catch(() => [])
+    ).map((t) => [`${t.project}#${t.issue}`, t.title] as const),
+  );
+
   let current: string | null = null;
   for (const e of entries) {
     if (e.project !== current) {
       current = e.project;
       log(`${e.project}`);
     }
-    for (const line of describeEntry(e)) log(`  ${line}`);
+    for (const line of describeEntry(e, titles.get(`${e.project}#${e.issue}`) ?? null)) log(`  ${line}`);
   }
   if (!all) log("\naccept one:  lingtai backlog accept <project> <key> --kind <kind>");
   return 0;
