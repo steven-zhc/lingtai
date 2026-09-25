@@ -16,13 +16,19 @@
  *
  * Here: how a step is represented, how the recipe drives it, what a step is
  * handed and what it hands back, **where a step that did not pass goes**, and
- * what it reports when it rests. **The ten bodies are empty** — `NOT_BUILT_YET`
- * is all ten of them, and the two that do more than pass do only what the loop
- * cannot let them leave unsaid — because the bodies are the next ticket and they
- * are filling in a contract this file has already fixed. That is the point of
- * the split: whoever writes `claim`, `admit`, `prepared`, `design`, `implement`
- * and `end` has something that runs to write against, and whoever writes
- * `build`, `review`, `proposed` and `merge` after them has the same.
+ * what it reports when it rests. **The ten bodies in this file are empty** —
+ * `NOT_BUILT_YET` is all ten of them, and the two that do more than pass do only
+ * what the loop cannot let them leave unsaid — because the bodies are their own
+ * tickets and they are filling in a contract this file has already fixed. That is
+ * the point of the split: whoever writes `claim`, `admit`, `prepared`, `design`,
+ * `implement` and `end` has something that runs to write against, and whoever
+ * writes `build`, `review`, `proposed` and `merge` after them has the same.
+ *
+ * **Six of them are now written, beside this file rather than in it** —
+ * `bodiesFor` in [`pass-steps.ts`](pass-steps.ts) (`#259`), which is what a caller
+ * hands `bodies` below; T4b's four are still `NOT_BUILT_YET`'s. That object stays
+ * the default, because *nothing was handed in* must go on doing the thing with no
+ * consequences rather than the thing with a GitHub client behind it.
  *
  * **The routing is here and the judgement is not**, and that division is 0061
  * §3's in as many words: *`judge:` decides which step is next. The workflow
@@ -528,11 +534,17 @@ const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: "pas
 /**
  * The ten bodies, empty — and each one says what will be in it.
  *
- * This is the whole of what `#253` leaves for T4b, written down where somebody
- * about to fill one in will meet it. Eight of them pass, because the loop has
- * already run their plugins by the time they are called and a step with no own
- * work has nothing left to do. Two do not, and both for the same reason: they
- * are the two places where *pass* would be a lie the loop cannot detect.
+ * This is what `#253` left for the two tickets after it, written down where
+ * somebody about to fill one in will meet it. Eight of them pass, because the
+ * loop has already run their plugins by the time they are called and a step with
+ * no own work has nothing left to do. Two do not, and both for the same reason:
+ * they are the two places where *pass* would be a lie the loop cannot detect.
+ *
+ * **Six of the ten are written and are not here** — `bodiesFor` in
+ * [`pass-steps.ts`](pass-steps.ts) — and this object is still all ten, still the
+ * default, and still what runs when a caller hands nothing in. So the six rows
+ * below say what the step is *for*, which has not changed, rather than what any
+ * running body does.
  */
 export const NOT_BUILT_YET: StepBodies = {
   /** Pick the ticket — `discover`/`claim`, and `queue:`'s four fields. */
@@ -597,6 +609,10 @@ export const NOT_BUILT_YET: StepBodies = {
    * being answered *passed* would be the exact `#61` failure this file opens by
    * naming, so it throws. An `end` the recipe left empty passes, which is every
    * step a recipe omits.
+   *
+   * The body that *can* carry them out is `bodiesFor`'s
+   * ([`pass-steps.ts`](pass-steps.ts)), and it makes exactly the call this throw
+   * names.
    */
   end: async ({ actions, outcome }) => {
     if (actions.length === 0) return { ending: "passed" };
@@ -798,7 +814,15 @@ export interface PassOptions {
    * remove.*
    */
   readonly emit: (event: ActionEvent) => Promise<void> | void;
-  /** The ten bodies. All ten empty is the default, and is what lands today. */
+  /**
+   * The ten bodies.
+   *
+   * `bodiesFor` in [`pass-steps.ts`](pass-steps.ts) is what a caller with a
+   * machine under it hands here — six real, and T4b's four still the skeleton's.
+   * **`NOT_BUILT_YET` is the default and stays it**: a pass handed nothing must do
+   * the thing with no consequences, not the thing with a GitHub client behind it,
+   * so *forgot to pass them* cannot claim a ticket.
+   */
   readonly bodies?: StepBodies;
   /** What the back edges may spend. Nothing, when a caller says nothing. */
   readonly ceilings?: Ceilings;
