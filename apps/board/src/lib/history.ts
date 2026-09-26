@@ -301,6 +301,29 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     (d["failure"] === null ? "" : ` · ${clip(d["failure"])}`),
   FixDeclined: (d) => `${need(d, "action")} — ${clip(d["why"])}`,
 
+  // ---------------------------------------------------------------- route --
+  /**
+   * **Where the router sent a pass, and what it wanted instead** (`#271`).
+   *
+   * `to` alone cannot tell *the decision sent this to a person* from *the
+   * decision wanted another round and there was none*, and those are the two
+   * sentences somebody deciding what to do about the card is choosing between.
+   * So `chose` is on the row where it differs, with the ceiling that is the
+   * difference — and silent where they agree, which is most routes.
+   *
+   * `chose` is read defensively rather than with `need`: a route that went where
+   * it wanted still says so without it, and a row rendering as the raw payload
+   * over a field that adds nothing to it would be rule 2 spent for nothing.
+   */
+  PassRouted: (d) => {
+    const to = need(d, "to");
+    const chose = d["chose"] === undefined || d["chose"] === to ? null : String(d["chose"]);
+    const ceiling = typeof d["ceiling"] === "string" ? d["ceiling"] : null;
+    const wanted =
+      chose === null ? "" : ` (wanted ${chose}${ceiling === null ? "" : `, ${ceiling} spent`})`;
+    return `${need(d, "from")} → ${to}${wanted} — ${clip(d["why"])}`;
+  },
+
   // -------------------------------------------------------------- restart --
   // The row a person reads to learn that the ticket, and not just this diff, is
   // what was in doubt (0040). It says which arm and what the spent arm cost in

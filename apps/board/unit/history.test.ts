@@ -47,6 +47,36 @@ describe("a line of history", () => {
     expect(said).toContain("n=3");
   });
 
+  /**
+   * **A route that went where it wanted and one that did not read differently**
+   * (`#271`).
+   *
+   * The event exists because a route used to be written to the run log, which is
+   * deleted on the ending where the change landed — so *why did that pass buy a
+   * round* was on the log nowhere. The row has to carry the distinction the
+   * fields were separated for: `to: waiting` is *a person is next* either way,
+   * and only `chose` says whether the decision asked for that or was refused it.
+   */
+  it("says where a route went, and what it wanted where those differ", () => {
+    const row = (data: Record<string, unknown>) =>
+      summarise(e("PassRouted", { from: "build", why: "the lines, not the approach", ...data }));
+
+    // Nothing intervened: one sentence, and no parenthesis to read past.
+    expect(row({ chose: "implement", to: "implement", ceiling: null })).toBe(
+      "build → implement — the lines, not the approach",
+    );
+    // The rounds were spent, so the round the decision wanted is on the row
+    // beside the person who got it instead.
+    expect(row({ chose: "implement", to: "waiting", ceiling: "rounds" })).toBe(
+      "build → waiting (wanted implement, rounds spent) — the lines, not the approach",
+    );
+    // And a choice no ceiling refused says what was wanted without naming a limit
+    // a person would raise for nothing.
+    expect(row({ chose: "implement", to: "waiting", ceiling: null })).toBe(
+      "build → waiting (wanted implement) — the lines, not the approach",
+    );
+  });
+
   /** A copy with no checkout records `sha: null`, which the schema allows. */
   it("says who started a conductor with no recorded commit, rather than the raw payload", () => {
     const said = summarise(
