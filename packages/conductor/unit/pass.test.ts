@@ -29,6 +29,7 @@ import {
   NO_OFFER,
   PASS,
   REFUSING_STEPS,
+  ceilingFor,
   onOffer,
   outcomeOf,
   runPass,
@@ -894,6 +895,45 @@ describe("the workflow decides which steps the judge may choose from", () => {
       expect(onOffer(at, refused, spare, 0).reachable).not.toContain("claim");
     }
     expect(onOffer("implement", asking, spare, 0).reachable).not.toContain("claim");
+  });
+
+  /**
+   * **The two sets, and the whole of why there are two** (0064 §7).
+   *
+   * A destination can be off the offer for two unlike reasons and `affordable`
+   * alone reads them the same. `implement` from a `prepared` refusal is *no
+   * meaning* — no agent has run, and no number a person raises puts it back, so
+   * it is off **both** sets. `implement` from a spent pass, and `claim` from an
+   * item with no restart left, are *no money*: reachable, unaffordable, and
+   * exactly the numbers somebody can raise. `ceilingFor` is that subtraction and
+   * names which of the two ceilings it was.
+   */
+  it("keeps what the pass reached apart from what it can pay for", () => {
+    const noRestart: Ceilings = { rounds: 2, restartsLeft: 0 };
+    const noRound: Ceilings = { rounds: 0, restartsLeft: 1 };
+
+    // No meaning: off both sets, and no ceiling to name.
+    const early = onOffer("prepared", refused, spare, 0);
+    expect(early.reachable).toEqual(["waiting"]);
+    expect(ceilingFor("implement", early)).toBeNull();
+
+    // No money, and the item's ceiling rather than this pass's.
+    const spentRestart = onOffer("proposed", wayThrough, noRestart, 0);
+    expect(spentRestart.reachable).toEqual(["waiting", "claim", "implement"]);
+    expect(spentRestart.affordable).toEqual(["waiting", "implement"]);
+    expect(ceilingFor("claim", spentRestart)).toBe("restarts");
+
+    // No money, and this pass's. Every edge but `claim` spends a round.
+    const spentRound = onOffer("merge", refused, noRound, 0);
+    expect(spentRound.reachable).toEqual(["waiting", "implement", "build"]);
+    expect(spentRound.affordable).toEqual(["waiting"]);
+    expect(ceilingFor("implement", spentRound)).toBe("rounds");
+    expect(ceilingFor("build", spentRound)).toBe("rounds");
+
+    // And `waiting` costs nothing, so no ceiling can take it out — which is what
+    // keeps the set non-empty and every arrival answerable.
+    expect(onOffer("proposed", wayThrough, spent, 0).affordable).toContain("waiting");
+    expect(ceilingFor("waiting", spentRound)).toBeNull();
   });
 
   /** And a destination outside the set is refused by name (0061 §3, §8). */
