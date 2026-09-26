@@ -103,8 +103,9 @@ and it is why the list below is shorter than the one a migration needs.**
 
 2   the pass     T4a  pass.ts — the skeleton and the steps that cannot refuse  ✓ #253 #259
                  T4b  pass.ts — build, review, proposed, merge             ✓ #254
-                 T5b  013 — the log before the third reset       ← before T5
-                 T5   the conductor runs pass.ts; run-once.ts is deleted
+                 T5   the conductor runs pass.ts; run-once.ts is deleted  ✓ #256
+                 T5c  the comment citations of run-once.ts             ← opened by T5
+                 T5b  013 — the log before the reset       ← moved out, with the reset
                  T6   the rail draws ten
 
 3   configure    T7   init and add propose plugins for every step
@@ -218,11 +219,26 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T5** | The conductor runs `pass.ts`; `run-once.ts` is deleted |
+| **T5** | The conductor runs `pass.ts`; `run-once.ts` is deleted · **landed 2026-09-26 as [#256](https://github.com/steven-zhc/lingtai/issues/256)** |
 | kind | `tech-debt` |
 | blocked by | T5b |
-| what | The wiring, the deletion, and the reset. |
-| watch out | **The largest single risk in this plan, and it is a Lingtai-runs-on-Lingtai risk rather than a code one.** The daemon holds the code it started with (0010), so the pass that lands this is running the old one; the reset happens under a stopped conductor and `lingtai restart` (0042) brings it back on the new code. Do not let this land unattended — it is the one ticket that should carry `agent:hold` until a person is at the keyboard. |
+| what | The wiring and the deletion. **The reset came out on 2026-09-25** and is not this: `pass.ts` and `pass-steps.ts` append no event type of their own, so nothing about the stored vocabulary changes when the conductor switches, and the reset now waits for a store that starts empty. Binding them would have tied two independent failure sources to one stop-the-world day. |
+| watch out | **The largest single risk in this plan, and it is a Lingtai-runs-on-Lingtai risk rather than a code one.** The daemon holds the code it started with (0010), so the pass that lands this is running the old one. Do not let this land unattended — it is the one ticket that should carry `agent:hold` until a person is at the keyboard, and **the pass that lands it must be followed by `pnpm lingtai restart`**: until then the conductor is running `run-once.ts` out of its own memory and the file it is running no longer exists on disk. |
+| result | `conduct.ts` is the caller: the recipe, the environment and the tier are resolved above the pass and are the refusals that cost nothing; the eight `PassPorts` methods wrap `discover.ts`, `claim.ts`, `repo.provision`, the hook and the agent, `repo.integrate` and the store; `runPass`'s `actionsAt` is **one** `(step, actions)` seam where `run-once.ts` had four literal call sites, so the code now runs whatever the schema accepts at every step and `whyNoKindAt` is the only answer at both doors. 1579 lines of code became 1045. |
+| result | **Two ports answer *nothing is declared*, and that is truthful rather than a stub.** `KINDS_AT.design` is `[]` and `whyNoKindAt` refuses a `judge:` cell at all ten steps, so neither a design nor a judge can be written in a recipe today: `draft` returns `""` — which is 0058 §3's *does this need designing*, answered — and `judge` returns `noJudge`, which is what makes `BUILT_IN_FOR` answer `red` and `gate-failed` for nothing and a person the floor under the other three. T9 gives the first of them a body and nothing in the pass changes. |
+| result | **`decideFix` and `decideRestart` are no longer consulted, and that is 0061 §3 rather than a loss.** *The workflow counts, the judge chooses*: `Ceilings` carries `rounds` and `restartsLeft`, `onOffer` puts `implement` and `claim` on the offer while each is left, and the judge answers *which of these*. What each of those two functions decided is now either the ceiling's arithmetic or the judge's answer. `fix.ts`'s `fixBrief` is still what writes a fix round's prompt. |
+| result | **`--no-merge` and a pre-`#143` repair are now the `human:` action they always were** (#20). Both inject a `createHumanAction` after `merge`'s declared list, so both ask for the same `ApprovalRequested` a declared person there asks for, through one mechanism — and the hold is bound to `onSha` like any other verdict. |
+| what it cost | **Two test files, and the claims in them.** `unit/run-once-against-fakes.test.ts` (1849 lines) and `integration/run-once.test.ts` (2385) asserted the five-gate-point engine; `unit/pass.test.ts` and `unit/pass-steps.test.ts` assert the decisions instead, against the loop that makes them. What had no home there is the pre-claim half, carried to `unit/conduct-before-the-claim.test.ts` — the recipe, the environment and the runtime, and *nothing was claimed and nothing was acquired*. `test/one-pass.ts`'s fixtures and both surviving integration tests are re-pointed. |
+
+| | |
+|---|---|
+| **T5c** | The 108 comment citations of `run-once.ts` point at a file that is gone |
+| kind | `tech-debt` |
+| blocked by | T5 |
+| what | Re-point every `run-once.ts:<line>` citation in a **comment** at whichever of `pass.ts`, `pass-steps.ts` and `conduct.ts` now holds the thing it was pointing at. 184 mentions across 84 files as `#256` landed; the ones this ticket is about are the code comments — `git grep -n run-once -- 'packages/**/*.ts' 'apps/**/*.ts'` — and the heaviest are `conductor/src/fix.ts` (12), `conductor/unit/fix.test.ts` (10) and `recipe/src/recipe.ts` (9). |
+| watch out | **`doc/decisions/` and `doc/experiments/` are not in scope and must not be edited.** The ADRs are append-only in spirit: a decision that cited `run-once.ts` cited the file that existed when it was written, and rewriting it makes the record say something it did not. `doc/reference.md` and `doc/design/` are in scope, being descriptions of what is true now. |
+| watch out | **It is a judgement per comment and not a substitution.** Which of the three files a citation now means depends on what it was saying — the sequence is `pass.ts`'s, a step's outcome rules are `pass-steps.ts`'s, and the wiring, the events and the ports are `conduct.ts`'s — which is exactly why `#256` did not do it: 54 files of judgement inside that ticket is how that ticket stops landing. |
+| why now | A comment citing a file that no longer exists is a reference a reader cannot follow — worse than no comment, because it looks like it would help. Deleting the file made all of them dead at once, so this is opened before they have been dead long enough to be normal. |
 
 | | |
 |---|---|

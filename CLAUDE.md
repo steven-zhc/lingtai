@@ -14,9 +14,12 @@ not let it past. **It is written for somebody about to point Lingtai at a
 repository**, so it carries no ADR history and no before-and-after; it
 describes [0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) and
 [0061](doc/decisions/0061-the-recipe-is-the-pipeline.md), which are accepted
-and are being built — **the code still runs five gate points, and that gap is
-[the plan](doc/design/the-pipeline.md), not something the page pretends
-away.** Both drawings come from `scripts/the-pass.py`; the HTML is generated.
+and are built: **the conductor runs the ten steps since #256** —
+`conduct.ts` resolves the recipe, the environment and the tier and hands the
+rest to `runPass`, and `run-once.ts`'s five gate points are deleted. What is
+still [the plan](doc/design/the-pipeline.md) is the rest of that document's
+list, not the engine. Both drawings come from `scripts/the-pass.py`; the HTML
+is generated.
 
 [doc/README.md](doc/README.md) indexes the ADRs, which are append-only in
 spirit: a decision that turns out wrong gets a superseding file, not an edit.
