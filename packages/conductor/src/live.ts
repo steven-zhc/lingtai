@@ -1,7 +1,7 @@
 /**
  * The real wiring, in the one file that is allowed to know the names.
  *
- * Kept apart from `run-once.ts` so that file imports **types only** from `repo`
+ * Kept apart from `conduct.ts` so that file imports **types only** from `repo`
  * and `agent`. A host that wants the real thing asks for it here; a test that
  * wants a fake never loads this module, and so never loads git, a socket or a
  * subprocess.

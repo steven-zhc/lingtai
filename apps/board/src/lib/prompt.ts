@@ -10,7 +10,7 @@
  * **This composes nothing itself.** It gathers the four things the composition
  * needs — the template, the ticket, the recipe's budget and the item's own
  * streams — and hands them to `@lingtai/conductor/prompt`, which is the same
- * call `run-once.ts` makes. That is the whole point: a page that built its own
+ * call `conduct.ts` makes. That is the whole point: a page that built its own
  * approximation would invite somebody to approve a document that is not the one
  * that runs, which is worse than showing nothing at all.
  *

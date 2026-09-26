@@ -204,7 +204,7 @@ describe("when a run never starts", () => {
  * error pointed the other way.
  *
  * Neither could be asserted anywhere after `#256` deleted
- * `run-once.test.ts` and `run-once-against-fakes.test.ts`: `reviewerAtTheWall`
+ * the old engine's two test files: `reviewerAtTheWall`
  * and `reviewerThatCrashes` survived in `test/one-pass.ts` carrying these two
  * citations and no test imported either, so the sentence a person is woken by at
  * 2am was guarded by nothing. `quotaRuntime` above cannot make the claim — it is

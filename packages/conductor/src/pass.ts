@@ -1,16 +1,17 @@
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
- * **Nothing imports this yet, and that is the ticket rather than an oversight**
- * (`#253`). `run-once.ts` is 2961 lines of five gate points wrapped around code
- * nobody can name or replace, and the shape of the work is not surgery on it —
- * it is *write the new pass beside it, and delete it*
- * ([the-pipeline.md](../../../doc/design/the-pipeline.md) §2). So this file
- * lands wired to nothing: a reviewer reads it against
+ * **`conduct.ts` calls this, and has since `#256`.** It landed importing
+ * nothing and imported by nothing, and that was the ticket rather than an
+ * oversight (`#253`): the old engine was 2961 lines of five gate points wrapped
+ * around code nobody could name or replace, and the shape of the work was never
+ * surgery on it — it was *write the new pass beside it, and delete it*
+ * ([the-pipeline.md](../../../doc/design/the-pipeline.md) §2). So it landed
+ * wired to nothing: a reviewer read it against
  * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) and
  * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) rather than
- * against a diff, and a mistake here cannot touch the conductor that is
- * running. The blast radius is zero until T5 wires it.
+ * against a diff, and a mistake here could not touch the conductor that was
+ * running. The blast radius was zero until T5 wired it.
  *
  * ## What is here, and what is deliberately not
  *
@@ -871,7 +872,7 @@ export interface PassOptions {
    * **Handed in, and required.** `actionsFromRecipe` is what does it, and its
    * three dependencies — a reviewer, the diff's file list, an environment
    * resolver — are all things only a caller with a machine under it can build;
-   * they are what `run-once.ts` assembles as `stepDeps` today. So turning a
+   * they are what `conduct.ts` assembles as `stepDeps` today. So turning a
    * declared list into a runnable action is neither the sequence nor the
    * outcome rules, and by 0058 §2b it is therefore not the pass's. Two things
    * follow and both are wanted: a cell `KINDS_AT` does not run is refused by
@@ -966,14 +967,14 @@ export interface PassResult {
  * runs, read off its call sites rather than invented here:
  *
  * - nothing stopped the spine, so `merge` ran and the work landed — `landed`
- *   (`run-once.ts:3423`), and that stays true where `end`'s own body then
+ *   (`conduct.ts`, the landed ending), and that stays true where `end`'s own body then
  *   stumbled: `main` moved either way, and `end` is never what stopped a pass
  *   (`PassResult.stoppedAt`);
  * - a refusal a person now holds, a question put to one, an agent that started
  *   and left no receipt, or the router deciding a person is next — `blocked`.
  *   All four end with a person holding the question and the item on *Waiting on
- *   you* (`run-once.ts:3383`, `:3274`, and `:2229`, whose own comment is
- *   *blocked rather than released*). `rested` is read before `stoppedAt`,
+ *   you* (`conduct.ts`, the blocked ending — where the item is blocked rather
+ *   than released). `rested` is read before `stoppedAt`,
  *   because the router may send a pass that refused nothing to a person: a
  *   `review`'s findings above the bar are a reason for a person without being a
  *   report by any step;
@@ -1442,8 +1443,8 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
  * a question nobody asked.
  *
  * The pipeline stops at the first action that did not pass, so the one that
- * ended it is the only result with that verdict and is also the last;
- * `run-once.ts:2648` reads its refusal the same way and says why — *by verdict
+ * ended it is the only result with that verdict and is also the last. The old
+ * engine's merge lane read its refusal the same way and said why — *by verdict
  * rather than by position: the pipeline stops at the first one, so it is also
  * the last result — and asking for the verdict says what is meant.*
  */

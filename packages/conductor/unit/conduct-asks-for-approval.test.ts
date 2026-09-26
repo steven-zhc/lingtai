@@ -13,7 +13,7 @@
  * decoration.** Named after the action that refused, the request overwrites
  * that action's verdict with `pending`: the card's `failed` count drops to zero
  * and the board shows a change that was refused as merely waiting, on every
- * projection and every rebuild. `run-once.ts` named its request `unfixed` or
+ * projection and every rebuild. The old engine named its request `unfixed` or
  * `disagreement` for precisely this reason and wrote the collision out in a
  * comment at the append; the name is what survived the engine swap badly.
  *

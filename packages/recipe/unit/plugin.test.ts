@@ -632,8 +632,9 @@ describe("the one `claim` will hold", () => {
  * **The one `proposed` will hold, and the only one of the five with design
  * content** (`#238`, [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
  *
- * `judge:` is a name for `buyRound`'s decision at `run-once.ts:1761`, and like
- * the four above it is read by no step yet. What is different is that two
+ * `judge:` is a name for the decision `onOffer` and `Ceilings` make in
+ * `packages/conductor/src/pass.ts`, and like the four above it is read by no
+ * step yet. What is different is that two
  * rules have to hold before it can ever be read, and both are in the schema
  * rather than in prose — the other half of each, the set a judge is handed and
  * the refusal of an answer outside it, is
@@ -644,8 +645,8 @@ describe("the one `proposed` will hold", () => {
    * **And the one `proposed` will hold** (`#238`,
    * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
    *
-   * `judge:` is a name for `buyRound`'s decision at `run-once.ts:1761` and is
-   * read by no step either, but it is the one of the five with design content:
+   * `judge:` is a name for the decision `onOffer` and `Ceilings` make in
+   * `packages/conductor/src/pass.ts` and is read by no step either, but it is the one of the five with design content:
    * two rules make a replaceable judge safe, and both are in the schema rather
    * than in prose.
    *

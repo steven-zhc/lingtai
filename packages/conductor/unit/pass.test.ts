@@ -1751,9 +1751,9 @@ describe("end is told which of the four endings it is running for", () => {
    * which is `#61`'s declared-drawn-never-fired failure.
    *
    * The mapping itself is the conductor's, not this file's invention: every
-   * stop that asks a person resolves `blocked` (`run-once.ts:2229`, `:3274`,
-   * `:3383`), the merge resolves `landed` (`:3423`), and the wall releases the
-   * claim without asking anybody (0031 §3).
+   * stop that asks a person resolves `blocked` and the merge resolves `landed`
+   * (`conduct.ts`'s own three endings), and the wall releases the claim without
+   * asking anybody (0031 §3).
    */
   const endSaw = async (steps: Record<string, unknown>, at: Record<string, readonly Action[]> = {}) => {
     const { bodies, seen } = watching();
@@ -1897,7 +1897,7 @@ describe("the pass has one caller, and it is `conduct.ts`", () => {
    *
    * What it guarded was the blast radius while the pass was unreachable. What it
    * guards now is the thing that replaced that: the pass has **one** caller, and
-   * a second one would be a second engine. `run-once.ts` is gone, and the way
+   * a second one would be a second engine. The old engine is gone, and the way
    * that stays true is that this fails the day another source file reaches for
    * `runPass`.
    *

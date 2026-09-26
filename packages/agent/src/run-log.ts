@@ -98,7 +98,7 @@ export type RunTrace = Pick<RunLog, "note">;
  *
  * `close` takes the decision rather than making it: **landed → delete, did not
  * land → keep** (0034 §4) is the caller's to know, and the caller is the scoped
- * release in `run-once.ts` that already runs on every outcome. What survives is
+ * release in `conduct.ts` that already runs on every outcome. What survives is
  * then exactly the investigable set, with no timer, no sweeper and no retention
  * period.
  */
@@ -306,7 +306,7 @@ export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
  *
  * Deliberately **not** `acquireRelease`: the close carries the keep-or-delete
  * decision (0034 §4) and only the caller knows it, at the moment its scope
- * closes. `run-once.ts` is where that pair is made, beside the worktree's.
+ * closes. `conduct.ts` is where that pair is made, beside the worktree's.
  */
 export const openRunLogEffect = (
   options: OpenRunLogOptions,

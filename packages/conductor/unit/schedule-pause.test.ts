@@ -6,8 +6,8 @@
  * once, before the lock, and the loop went round and took the second. The
  * answer is asked every time round, before anything is offered or claimed —
  * this is the first time round, where nothing may be asked of GitHub at all.
- * The second time round, with a ticket finished between, is
- * `integration/run-once.test.ts`'s, because that needs the projection.
+ * The second time round, with a ticket finished between, needs the projection,
+ * and nothing asserts it since `#256` deleted the old engine's tests.
  */
 import type { GitHubClient } from "@lingtai/github";
 import type { Runtime } from "@lingtai/agent";

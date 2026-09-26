@@ -13,7 +13,7 @@
  *
  * **No new events.** Everything read here is already on the work item's stream
  * and the previous run's, which is why this is a module of pure functions
- * beside `attribution.ts` rather than more code inside `run-once.ts`: it is a
+ * beside `attribution.ts` rather than more code inside `conduct.ts`: it is a
  * decision about what an attempt is told, and a decision about that belongs
  * somewhere it can be tested without a database.
  *
@@ -91,7 +91,7 @@ export interface AttemptOutcome {
  * `outcome` is null until a caller fills it from that run's stream. That is the
  * shape the bound takes: the history of *every* attempt costs one stream read
  * because it is already in hand, and reading a run costs one more each — so
- * `run-once` fills exactly the last.
+ * `conduct.ts` fills exactly the last.
  */
 export interface PriorAttempt {
   /** 1 for the first attempt at this item. The table's left column. */

@@ -353,8 +353,8 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
      */
     const blocked = await store.read(workItemId);
     const question = `${merged.reason}: ${merged.detail.slice(0, 400)}`;
-    // Beside the question, the same reading of the refusal `run-once`'s merge
-    // lane writes — from the one function, so an approval that failed and a pass
+    // Beside the question, the same reading of the refusal `conduct.ts`'s own
+    // blocked ending writes — from the one function, so an approval that failed and a pass
     // that failed cannot describe the same conflict differently (#83).
     const diagnosis = diagnoseRefusal({
       reason: merged.reason,

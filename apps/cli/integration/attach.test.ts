@@ -37,7 +37,7 @@ describe("lingtai attach", () => {
   it("prints a finished run whole and says the log ends, not how the run went", async () => {
     const path = runLogPath(home, "lingtai", "run-9");
     const log = await openRunLog({ path });
-    log.note("Read", "packages/conductor/src/run-once.ts");
+    log.note("Read", "packages/conductor/src/conduct.ts");
     log.note(RUN_LOG_END, runLogEnd(false));
     await log.close("keep");
 
@@ -45,7 +45,7 @@ describe("lingtai attach", () => {
     expect(await attach({ runId: "run-9", home, ...sinks })).toBe(0);
 
     expect(out[0]).toBe(`attached to lingtai · ${path}`);
-    expect(out.some((l) => l.includes("packages/conductor/src/run-once.ts"))).toBe(true);
+    expect(out.some((l) => l.includes("packages/conductor/src/conduct.ts"))).toBe(true);
     expect(out.at(-1)).toContain("the run log ends here");
     expect(out.at(-1)).toContain(path);
     // Never a verdict. `lingtai status` and the board answer that from

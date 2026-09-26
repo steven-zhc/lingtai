@@ -1,7 +1,8 @@
 /**
  * The document the next attempt will be handed, composed in one place.
  *
- * `run-once.ts` built this inline: the failure block was an array literal in
+ * The conductor built this inline, before `#256`: the failure block was an
+ * array literal in
  * the middle of an `Effect.gen`, and the version came out of it two lines
  * later. That was fine while the conductor was the only thing that ever needed
  * to know what an attempt would be told. `#104` puts the prompt on the page

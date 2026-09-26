@@ -31,7 +31,7 @@
  *
  * Everything here is a decision and nothing here does I/O, which is why it is a
  * module of its own rather than a condition inline at the two call sites that
- * need it (`run-once.ts`'s merge lane, and `approve.ts`'s). 0025's ticket asked
+ * need it (`conduct.ts`'s blocked ending, and `approve.ts`'s). 0025's ticket asked
  * for the classification to be *a named function with tests* for a reason that
  * outlived the spending it was written for: a rule a card's only sentence comes
  * out of, living inside an `if` in a 1,000-line file, is a rule nobody can

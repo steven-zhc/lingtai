@@ -51,9 +51,10 @@
  * be put in its place.
  *
  * **Nothing calls it yet, and that is the same fact `whyNoKindAt` states about
- * the plugin.** `run-once.ts` still decides in `buyRound`, from `decideFix` and
- * `decideRestart`; `judge:` is refused at all ten steps until the ticket that
- * makes the recipe file `steps:`. What is here is the half that had to exist
+ * the plugin.** Since `#256` the back edges are bounded by `Ceilings` and
+ * offered by `onOffer` (`pass.ts`), and `conduct.ts` asks neither `decideFix`
+ * nor `decideRestart`; `judge:` is refused at all ten steps until the ticket
+ * that makes the recipe file `steps:`. What is here is the half that had to exist
  * before that ticket could be written safely — because the offered set is the
  * bound, and a bound invented at the same time as the thing it bounds is a
  * bound nobody checked. **Naming a thing is not wiring it**, and neither is

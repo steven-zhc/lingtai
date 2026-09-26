@@ -134,7 +134,7 @@ export const runPlugin = definePlugin("run", {
  * **This schema says which runtime, and no step dispatches a second one yet.**
  * One conductor runs one runtime and hands it to every gate, so a value here
  * that is not the dispatched one cannot be honoured — and is refused before the
- * claim by `agentRefusal` (`conductor/src/run-once.ts`), which reads every
+ * claim by `agentRefusal` (`conductor/src/conduct.ts`), which reads every
  * `agent:` in the file rather than `runtime.agent` alone. The enum is what a
  * *name* has to be in; the refusal is what makes the name true of the run.
  */
@@ -520,8 +520,8 @@ export type JudgeName = z.infer<typeof JudgeName>;
 
 /**
  * **Which step is next when something refuses** — a name for the decision
- * `buyRound` makes at `run-once.ts:1761`, which no recipe can see, name or
- * replace today (0061 §3).
+ * `onOffer` and `Ceilings` make in `packages/conductor/src/pass.ts`, which no
+ * recipe can see, name or replace today (0061 §3).
  *
  * **One entry per `when:`, and that is the schema rather than a convention.**
  * `when:` is required and has no default, so no entry can answer for all five
@@ -741,7 +741,7 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Ste
  * the weeks it spent declared-but-unbuilt are the argument for writing the
  * table down: *a control the log claims and the code does not have is worse
  * than an unimplemented one, because every signal an operator has says it is
- * there* (`run-once.ts`, section 11).
+ * there.*
  *
  * So the matrix lives beside the schema that enforces it, and
  * `doc/reference.md`'s copy is checked against this constant by a test rather
@@ -775,7 +775,7 @@ export const KINDS_AT = {
   prepared: ["run"],
   /** Nothing yet: 0058 §3's design step is named here and built by the pass ticket. */
   design: [],
-  /** Nothing yet: the implementing agent is dispatched by `run-once.ts`, not by a recipe entry here. */
+  /** Nothing yet: the implementing agent is dispatched by `conduct.ts`, not by a recipe entry here. */
   implement: [],
   /** Nothing yet: today's build is a `run:` action at `proposed`. */
   build: [],
@@ -805,7 +805,7 @@ export const KINDS_AT = {
 const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review", string> = {
   claim: "the queue picks the item by `source.kinds`, `source.exclude` and `runtime.assignee`",
   design: "there is no design step: the implementing agent is handed the issue body and works from it",
-  implement: "`run-once.ts` dispatches the implementing agent directly, under `runtime.limits`",
+  implement: "`conduct.ts` dispatches the implementing agent directly, under `runtime.limits`",
   build: "the build is a `run:` action at `proposed`",
   review: "the review is an `agent:` action at `proposed`",
 };
@@ -917,8 +917,8 @@ const FILES_AND_ROUTES_NOTHING =
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
   worktree:
-    "`run-once.ts` cuts it itself before the pass reaches any step, from `repo.base` and " +
-    "`repo.submodules` — `provisionWorktree` in `packages/repo/src/worktree.ts`",
+    "`conduct.ts` cuts it itself, at `admit`'s port rather than from a recipe cell, from " +
+    "`repo.base` and `repo.submodules` — `provisionWorktree` in `packages/repo/src/worktree.ts`",
   merge:
     "the merge lane runs it itself once everything before it has passed — `integrate` in " +
     "`packages/repo/src/integrate.ts`, which is handed `repo.base` rather than reading a base of its own",
@@ -931,9 +931,11 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     "until 0063 §4 inverts the refusal — and `claimWorkItem` in " +
     `\`packages/conductor/src/claim.ts\` is what then takes the one that survives. ${FIRST_YIELDS}`,
   judge:
-    "`run-once.ts` decides it itself, in `buyRound` — `decideFix` in `packages/conductor/src/fix.ts` " +
-    "buys another round in the same worktree and `decideRestart` in `packages/conductor/src/restart.ts` " +
-    "buys a fresh approach, both from `runtime.limits.rounds` and `runtime.limits.restarts`, and no " +
+    "the pass decides it itself, from the two ceilings — `onOffer` in " +
+    "`packages/conductor/src/pass.ts` puts another round in the same worktree back on the offer while " +
+    "`runtime.limits.rounds` are left, and a fresh approach while `runtime.limits.restarts` are; the " +
+    "same two questions are `decideFix` in `packages/conductor/src/fix.ts` and `decideRestart` in " +
+    "`packages/conductor/src/restart.ts`, and no " +
     "recipe can see that decision, name it or replace it. What a step will hand a judge is already a " +
     `module of its own: \`stepsOnOffer\` in \`packages/conductor/src/judge.ts\`. ${WORKFLOW_COUNTS}`,
   backlog:
@@ -956,7 +958,7 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
  *
  * Every reason is a fact about the **step**, and that is why they are spelled
  * out rather than left as "unsupported": an operator told that `agent:` is
- * refused at `prepared` should not have to read `run-once.ts` to discover that
+ * refused at `prepared` should not have to read `conduct.ts` to discover that
  * the reason is that nothing has been committed yet.
  *
  * **Five of them are facts about the plugin instead, and they are asked
@@ -1451,7 +1453,7 @@ export const Recipe = z.object({
   runtime: z.object({
     agent: RuntimeId.default("claude-code"),
     /**
-     * How contained the runtime must be. `run-once` refuses to dispatch when the
+     * How contained the runtime must be. `conduct.ts` refuses to dispatch when the
      * runtime cannot meet it, which is the whole of the enforcement.
      *
      * Defaulted rather than optional: nothing sits underneath it to fall back

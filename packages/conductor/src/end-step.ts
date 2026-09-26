@@ -9,7 +9,7 @@
  *
  * ## Why this is its own file
  *
- * It used to be a private function in `run-once.ts`, with one call site: the
+ * It used to be a private function in the conductor, with one call site: the
  * line where that same run merged the branch. Everything that landed by any
  * other route — `lingtai approve`, the board's approve button — integrated,
  * appended `WorkItemLanded`, and stopped. The point was configured, the log

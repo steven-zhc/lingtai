@@ -52,7 +52,7 @@
  * they are the seam that plugin was always going to be reached through.
  *
  * **Why plain promises rather than [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)'s
- * `Effect`.** `ports.ts`'s two are Effect-shaped because `run-once.ts` is, and
+ * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
  * the conversion is at the boundary the *caller* stands on. `runPass` is plain,
  * its `actionsAt` and `emit` seams are plain, and a second calling convention
  * inside one file would be a thing to learn for no gain. The caller that builds
@@ -100,7 +100,7 @@
  *
  * **The item's ending.** `outcomeOf` says which of the four it is and
  * `PassResult` reports it, and appending `WorkItemLanded`, `WorkItemBlocked` or
- * `WorkItemReleased` belongs to whoever holds the claim — `run-once.ts` today,
+ * `WorkItemReleased` belongs to whoever holds the claim — `conduct.ts` today,
  * T5's caller after it. `end` here resolves the declared effects against that
  * outcome and records the resolution, which is 0058 §3's *runs on every ending*
  * and the whole of what the ticket asks for; the effects never decide whether

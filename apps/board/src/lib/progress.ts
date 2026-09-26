@@ -314,7 +314,7 @@ export function foldProgress(
    *
    * Kept because a round's own event does not carry it and the fixer is
    * launched under the same `runtime.limits.wall` the implementer was — one
-   * recipe, read once, inside one pass (`run-once.ts:1088`, `:1697`). Null for
+   * recipe, read once, inside one pass (`conduct.ts`). Null for
    * a v1 `RunStarted`, and null renders as no denominator.
    */
   let wallMs: number | null = null;
@@ -346,8 +346,8 @@ export function foldProgress(
        * ordinary path here — `.lingtai/config.yaml`'s `rounds: 3`.
        *
        * It appends `FixRequested`, runs a fixing agent against the findings,
-       * and appends `FixApplied` when that agent is done (`run-once.ts:1631`,
-       * `:1721`). No `RunStarted` between them, because a round is a step
+       * and appends `FixApplied` when that agent is done (`conduct.ts`'s fix
+       * round). No `RunStarted` between them, because a round is a step
        * inside a run and not a run of its own — so without this the fold had
        * nothing in flight for the whole of that agent's run, and a card
        * spending money to answer a refusal said the refusal was what the pass

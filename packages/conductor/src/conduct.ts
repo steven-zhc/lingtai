@@ -11,8 +11,9 @@
  * not do ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
  * §2b, and `pass-steps.ts`'s *What the pass does not write*).
  *
- * It replaces `run-once.ts`, which ran five gate points around the same wiring
- * in 3479 lines. Nothing about the *stored* vocabulary changed in that swap:
+ * It replaces the engine `#256` deleted, which ran five gate points around the
+ * same wiring in 3479 lines. That file is **the old engine** wherever the
+ * comments below need it: named, never cited, because it is not there to read. Nothing about the *stored* vocabulary changed in that swap:
  * `pass.ts` and `pass-steps.ts` append no event type of their own, so every
  * event below is one the log already carried, appended from the same place in
  * the order — the caller's.
@@ -405,7 +406,7 @@ export function runOnce(
      *
      * A store that will not append is a defect and not a refusal this function
      * can make on anyone's behalf: the handler at the bottom is where defects
-     * are answered for. That was true of every append while `run-once.ts` made
+     * are answered for. That was true of every append while the old engine made
      * them, and the swap to `pass.ts` quietly made it false for the ones made
      * from inside the walk — `emit`'s verdicts, `dispatch`'s `RunStarted`, a
      * round's `FixRequested`. `runStep` catches whatever a step throws and
@@ -916,7 +917,7 @@ export function runOnce(
        *
        * **And it is opened by the claim, not before it** — which is 0034 §4's
        * *what is kept is exactly the investigable set* read as a rule about when
-       * the file is created rather than only about its fate. Under `run-once.ts`
+       * the file is created rather than only about its fate. Under the old engine
        * discovery and the claim both ran above the scope that opened this, so a
        * candidate that was never taken left nothing behind. Since `#256` the
        * claim is the pass's first step, and an eager open put a file on disk for
@@ -1032,7 +1033,7 @@ export function runOnce(
        * `git fetch origin <arm>`, and appending it consumes one of
        * `ceilings.restartsLeft` — so a restart recorded over a publish that was
        * refused spends a restart, points the next attempt at a ref that has
-       * never existed, and loses the commits with the worktree. `run-once.ts`
+       * never existed, and loses the commits with the worktree. The old engine
        * pushed strictly *before* the append for exactly this reason: *a push
        * that is refused must leave no arm on the log.*
        */
@@ -1937,7 +1938,7 @@ export function runOnce(
        * person to acknowledge a diagnosis naming a step that did its work. So
        * the defect is raised here instead, before a word of the ending is
        * written, and the handler at the bottom answers it as it answered every
-       * append `run-once.ts` made — the item is released, the pass ends
+       * append the old engine made — the item is released, the pass ends
        * `unexpected`, and the queue takes it again after the backoff.
        *
        * Only the appends nothing else answers for: the tolerant three call
@@ -2008,7 +2009,7 @@ export function runOnce(
        * null where origin refused the leased ref (`arm-only`, a broken transport),
        * and the head itself where the push went. Where it is null there is nothing
        * to approve and the block below is the whole of what a person is told, which
-       * is what `run-once.ts` did on both endings that reach a person without a
+       * is what the old engine did on both endings that reach a person without a
        * commit.
        */
       const onOrigin = published;
@@ -2154,7 +2155,7 @@ export function runOnce(
        * `selectRunnable` requires (`queue.ts`), so removing the label no longer
        * makes it runnable. `notClaimed: held` is **another conductor's live
        * item**: the block replaces that item's lifecycle and relabels its issue
-       * while its agent is still working. `run-once.ts` returned `discover`/
+       * while its agent is still working. The old engine returned `discover`/
        * `claim` here and wrote nothing at all.
        *
        * So: nothing is appended and nothing is told. `released` is set because
@@ -2241,7 +2242,7 @@ export function runOnce(
        * publish it spends the ceiling, names a ref that never existed, and the
        * worktree holding the commits is deleted by the finalizer a moment later.
        *
-       * `run-once.ts` pushed strictly before the append and said why in as many
+       * The old engine pushed strictly before the append and said why in as many
        * words: *a push that is refused must leave no arm on the log.* This is
        * that rule, asked of the publish that already ran rather than of a second
        * push — which also keeps the `arm-only` case a restart, because there the
@@ -2302,7 +2303,7 @@ export function runOnce(
          * person may be offered *merge it anyway*, and the half `onOrigin` cannot
          * answer.
          *
-         * Two shapes, and they are the two `run-once.ts` asked on. `stopped ===
+         * Two shapes, and they are the two the old engine asked on. `stopped ===
          * null` is the router having sent the pass to a person: `proposed` weighed
          * an arriving refusal, or a `review` that passed carrying findings, and
          * spent what it had — `unfixed` and `disagreement` under the old engine.
@@ -2319,7 +2320,7 @@ export function runOnce(
          * click merges a half-finished diff the build and the cold reviewer never
          * read, with no `note`, no `GateWaived` and nothing on the log saying
          * anything was skipped. On a card whose own diagnosis reads *the limit is a
-         * scope alarm … requeue*. `run-once.ts` appended no request on that ending
+         * scope alarm … requeue*. The old engine appended no request on that ending
          * and Requeue was the only move offered; this is that, as a predicate
          * rather than as a list of endings.
          *
@@ -2341,7 +2342,7 @@ export function runOnce(
            * "failed"`, and a request carrying that same pair overwrites it with
            * `pending`: the card's `failed` count drops to zero and the board
            * shows a change that was refused as merely waiting — on every
-           * projection and every rebuild. `run-once.ts` named its request
+           * projection and every rebuild. The old engine named its request
            * `unfixed` for exactly this reason, and wrote the collision out at
            * the append.
            *

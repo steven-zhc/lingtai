@@ -42,7 +42,7 @@ import {
 } from "../src/judge.ts";
 
 const FINDING: ActionFinding = {
-  file: "packages/conductor/src/run-once.ts",
+  file: "packages/conductor/src/conduct.ts",
   line: 1761,
   claim: "the decision that costs the most money is invisible",
   failureScenario: "a review refuses twice about the approach; every round patches the lines",

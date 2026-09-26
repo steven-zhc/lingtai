@@ -29,7 +29,7 @@
  * **The ledger counts occurrences, and that is the half a set cannot do.** Keyed
  * by distinct `file · token` — which is what this shipped as — a name already
  * recorded in a file already listed is recorded, however many more times it
- * arrives: `export const gate = "…the gate failed"` appended to `run-once.ts`,
+ * arrives: `export const gate = "…the gate failed"` appended to `conduct.ts`,
  * a new identifier and a new operator-facing string, moves nothing and lands
  * green. Every file the epic is going to touch already says `gate` or `point`
  * once, so that hole is exactly the shape of the epic. A count closes it, and

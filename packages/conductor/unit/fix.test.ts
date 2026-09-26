@@ -245,7 +245,7 @@ describe("what the fixer is told", () => {
   /**
    * 0039 §5, and the reason it needed deciding at all.
    *
-   * `run-once.ts`'s `if (!committed)` has always ended the loop and put the
+   * `conduct.ts`'s `if (!committed)` has always ended the loop and put the
    * findings in front of a person — 0038's Open §2 said a fixer had no move
    * except to change the code anyway, and that was wrong. What was missing was
    * telling the fixer, and what the prompt said instead pointed the other way:
@@ -432,7 +432,7 @@ describe("what a person is shown when the rounds are over", () => {
  * person who reads that word acts on it — and **`out-of-turns` must never say
  * *send it again*, because a person who reads that acts on it too**, and this
  * repository has already decided what it costs: `RUN_OWNER` calls the turn
- * limit the repository's own failure and `run-once.ts` blocks a whole run on it
+ * limit the repository's own failure and `conduct.ts` blocks a whole run on it
  * with *narrow or split the ticket first; requeued as written, it buys another
  * run to the same limit* (`#89`). The two remedies are opposites, so one
  * sentence for both is worse than no sentence.
@@ -493,7 +493,7 @@ describe("the headline says what stopped the pass", () => {
    * in the crash's arm, so the card opened by calling the agent crashed and
    * closed by telling a person to send it again. Both halves are refuted by
    * code that was already there: `attribution.ts`'s `RUN_OWNER` marks the turn
-   * limit the *repository's* failure, and `run-once.ts` blocks a whole run that
+   * limit the *repository's* failure, and `conduct.ts` blocks a whole run that
    * ends this way with *narrow or split the ticket first; requeued as written,
    * it buys another run to the same limit*. A person who followed the headline
    * bought a second 300-turn budget that ended the same way.
@@ -510,7 +510,7 @@ describe("the headline says what stopped the pass", () => {
     // Nor is the one the ceiling's arm would have produced.
     expect(overspent.what).not.toMatch(/judgement/i);
     expect(overspent.what).not.toMatch(/two agents disagreed/i);
-    // What is true, in the words `run-once.ts` already blocks a run with.
+    // What is true, in the words `conduct.ts` already blocks a run with.
     expect(overspent.what).toMatch(/ran out of turns/i);
     expect(overspent.what).toMatch(/scope alarm/i);
     expect(overspent.what).toMatch(/narrowing or splitting the ticket/i);
@@ -620,7 +620,8 @@ describe("the headline says what stopped the pass", () => {
    * have been round twice as one nothing has argued with.
    *
    * **And the counter that says so cannot be `rounds`**, which is the whole of
-   * the last row here. `run-once.ts` keeps *one ceiling, so one counter*:
+   * the last row here. The pass keeps *one ceiling, so one counter*
+   * (`Ceilings` in `pass.ts`):
    * `rounds` is spent by whichever point refused, so it is as easily *`build`
    * refused A, round 1 fixed it, `review` refused B* — where this reviewer has
    * read exactly one diff and the card would credit it with refusing a diff it
@@ -684,8 +685,8 @@ describe("the headline says what stopped the pass", () => {
 
   /**
    * **And the ceiling only earns that sentence where this reviewer is what spent
-   * it.** One ceiling means one counter and every point spends it (`run-once.ts`),
-   * so with `proposed: [build, review]` and a ceiling of 3: `build` refuses A,
+   * it.** One ceiling means one counter and every point spends it (`Ceilings` in
+   * `pass.ts`), so with `proposed: [build, review]` and a ceiling of 3: `build` refuses A,
    * three rounds answer it, and `review` refuses the last diff. `decideFix`
    * returns `spent` at `rounds: 3` with this reviewer having refused **once**,
    * and nothing was ever bought to answer it — so *two agents disagreed* and
@@ -832,7 +833,7 @@ describe("the headline says what stopped the pass", () => {
   /**
    * The evidence under the headline is untouched by which ending it is (#83).
    * The headline is a reading; `done` and `raw` are what it was made from, and
-   * `run-once.ts` was already composing the true sentence in `why`.
+   * the conductor was already composing the true sentence in `why`.
    */
   it("changes only the headline — done and raw are the same whatever stopped it", () => {
     const crashed = card({ ended: "crashed", failure: "crash: it broke" });
@@ -919,7 +920,7 @@ describe("the headline says what stopped the pass", () => {
      * same evidence.
      *
      * **`rounds` cannot be that count, and the last row is why.** There is one
-     * ceiling and so one counter (`run-once.ts`), spent by whichever point
+     * ceiling and so one counter (`Ceilings` in `pass.ts`), spent by whichever point
      * refused: *`review` refuses A; round 1 commits B; `build` refuses B; round
      * 2's fixer is killed* is `rounds: 2` with `build` having refused **once**.
      * A headline reading *`build` ran 2 times in all, on 2 different diffs, and
@@ -1039,9 +1040,8 @@ describe("the headline says what stopped the pass", () => {
    * two readings that contradict each other, the one a person acts on is the one
    * they reach first.
    *
-   * `run-once.ts` passes `stop` by spreading `unresolved`, so these are what
-   * pins the line: nothing at that call site would fail if these functions
-   * stopped reading it.
+   * Nothing type-checks the connection between the two, so these are what pins
+   * the line: no caller would fail if these functions stopped reading `stop`.
    */
   describe("and so does the one line a person is notified with", () => {
     const line = (stop: FixStop, refusals = 2) =>
@@ -1432,7 +1432,7 @@ describe("what a person is shown when the restarts are over too", () => {
  * The other half of 0039 §5: the fixer is told it may decline, so a person has
  * to be able to see that it did.
  *
- * Both outcomes reach `run-once.ts`'s `if (!committed)` — a fixer that objected
+ * Both outcomes reach `conduct.ts`'s `if (!committed)` — a fixer that objected
  * and a fixer that was killed commit exactly the same nothing. For a day the
  * sentence for both was *the fixing agent committed nothing*, which describes a
  * crashed process as a judgement and a judgement as a crash.

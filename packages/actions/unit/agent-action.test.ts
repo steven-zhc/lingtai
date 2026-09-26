@@ -523,7 +523,7 @@ describe("the action", () => {
    *
    * This test asserted `failed` for two years, and the verdict it asserted is
    * the one a reviewer that read the diff and refused it returns. So
-   * `run-once.ts` bought a fix round for an action that judged nothing, and on
+   * the conductor bought a fix round for an action that judged nothing, and on
    * `run-9e510ffc` the fixing agent spent fourteen seconds working out that
    * *the review never looked at the change*. The evidence sentence had said so
    * all along — and a sentence is not something `decideFix` reads.
@@ -584,7 +584,7 @@ describe("the action", () => {
     ).run(context);
 
     expect(result.verdict).toBe("never-ran");
-    // The runtime's own words, whole and unwrapped: `run-once.ts` reads a reset
+    // The runtime's own words, whole and unwrapped: `conduct.ts` reads a reset
     // time out of them, and a prefix like "the reviewer did not finish" would
     // read as a sentence about the diff.
     expect(result.evidence).toBe(said);

@@ -16,7 +16,7 @@
  * The writer is the real one throughout. A follower matched against a fixture
  * of what the log *ought* to look like is a test of the fixture, and the one
  * line the reader is allowed to act on (`RUN_LOG_END`) is written by
- * `run-once.ts` at the far side of two packages.
+ * `conduct.ts` at the far side of two packages.
  */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -11,8 +11,7 @@
  * No database: the pause is appended to a memory store, and a run that got past
  * it would reach for the conductor lock and say so — which the first test
  * asserts it does not. A pause heard *between* tickets is `runQueue`'s, and is
- * held in `packages/conductor` (`unit/schedule-pause.test.ts`, and the
- * whole-queue case in `integration/run-once.test.ts`).
+ * held in `packages/conductor` (`unit/schedule-pause.test.ts`).
  */
 import { readControl } from "@lingtai/daemon/control";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";

@@ -268,8 +268,9 @@ describe("the pipeline", () => {
    * after this one would ask the same account the same question and meet the
    * same wall, so continuing is pointless — but nothing here judged the diff,
    * so no verdict may be appended about it. `GateNeverRan` is what is on the
-   * log instead, and `neverRanAt` is how `run-once.ts` tells this ending from a
-   * refusal without reading a sentence.
+   * log instead, and `neverRanAt` is how `endingOf` in
+   * `packages/conductor/src/pass.ts` tells this ending from a refusal without
+   * reading a sentence.
    */
   it("appends no verdict for an action whose agent never started, and stops", async () => {
     const { events, emit } = collector();
@@ -309,7 +310,8 @@ describe("the pipeline", () => {
    * The pipeline stops the way `never-ran` stops it and for a nearer reason —
    * this action is not going to produce a verdict this pass — but no verdict
    * event may be appended about a diff nothing judged. `didNotFinishAt` is how
-   * `run-once.ts` tells this ending from a refusal without reading a sentence,
+   * `endingOf` in `packages/conductor/src/pass.ts` tells this ending from a
+   * refusal without reading a sentence,
    * which is the whole of the defect: the difference used to live only inside
    * `evidence`, and `decideFix` bought a round off it.
    *

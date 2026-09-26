@@ -2,7 +2,7 @@
  * A whole pass against fakes — the scaffolding, and no test in it.
  *
  * **It is its own module so that the claims built on it run in the `build`
- * gate.** `run-once-against-fakes.test.ts` said this itself and named the way:
+ * gate.** The old engine's fakes test said this itself and named the way:
  * it was *mostly unit and reached out once* — one `describe` writing a
  * `recipe.yml` into a temporary `LINGTAI_HOME`, which is the filesystem and so
  * is integration ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
@@ -460,7 +460,7 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
           return { ok: true, detail: "refuses when it cannot reach the socket" };
         }),
       // Acquired and released, because that is what the port now says it is.
-      // The `close` this records is the one `run-once.ts` used to make in a
+      // The `close` this records is the one the old engine used to make in a
       // `finally`; here nothing calls it, and it still happens.
       serve: () =>
         Effect.acquireRelease(

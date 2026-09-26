@@ -1,11 +1,12 @@
 /**
  * The one claim about a pass that needs a world: **which `recipe.yml` judged it.**
  *
- * It was the last `describe` of `run-once-against-fakes.test.ts` and the only
+ * It was the last `describe` of the old engine's fakes test and the only
  * reason that file — nineteen unit assertions about a pass — sat in the half
  * the `build` gate does not run. The file's own header named the split and
  * `#251` paid for it not having happened. Everything else it held is
- * `unit/run-once-against-fakes.test.ts`; this is here because it writes a real
+ * `unit/conduct-before-the-claim.test.ts`'s and
+ * `unit/conduct-what-a-claim-leaves.test.ts`'s; this is here because it writes a real
  * `recipe.yml` under a temporary `LINGTAI_HOME` and sets `process.env`, and the
  * filesystem and the real environment are outside the system
  * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).

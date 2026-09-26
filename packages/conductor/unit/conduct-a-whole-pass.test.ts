@@ -5,7 +5,7 @@
  * own words: *can `conductor` run a whole pass against a fake `repo`, a fake
  * `agent` and a fake `event-store`, with no database — producing the events it
  * wants appended and the calls it wants made, for a test to assert?* It carried
- * that claim about `run-once.ts`; it carries it about `conduct.ts` now, and the
+ * that claim about the old engine; it carries it about `conduct.ts` now, and the
  * assertions are unchanged, which is the useful thing about it: **the engine was
  * replaced and the sentences a person reads off the log were not.**
  *
@@ -197,9 +197,9 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * `#58`, and the claim `CLAUDE.md` rests on when it says this repository merges
    * its own work unattended *by configuration rather than by a gap*.
    *
-   * It was pinned by `integration/run-once.test.ts`'s *holds at a human action at
-   * the merge point, with no --no-merge anywhere*, which `#256` deleted with the
-   * engine that file tested. The flag is a `createHumanAction` injected after
+   * It was pinned by the old engine's own integration test — *holds at a human
+   * action at the merge point, with no --no-merge anywhere* — which `#256`
+   * deleted along with the engine it tested. The flag is a `createHumanAction` injected after
    * `merge`'s declared list now (#20), so **a test that passes `merge: false`
    * cannot make this claim at all**: it exercises the injected action and says
    * nothing about the declared one. That is exactly how `#58` stayed hidden for
@@ -305,7 +305,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    *
    * `appendNow` says a store that will not append is a defect and that the
    * handler at the bottom is where defects are answered for, and that was true
-   * of every append `run-once.ts` made. The swap to `pass.ts` quietly made it
+   * of every append the old engine made. The swap to `pass.ts` quietly made it
    * false for the ones made from inside the walk: `runActionPipeline` does not
    * wrap `emit`, so the rejection propagates into `runStep`, which catches
    * whatever a step throws and reports *did-not-finish: threw*. `merge` is not

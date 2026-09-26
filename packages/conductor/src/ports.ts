@@ -2,7 +2,7 @@
  * What the conductor needs from outside itself, named as interfaces.
  *
  * [0022](../../../doc/decisions/0022-the-seams.md) step 5. The conductor
- * decides; `repo` and `agent` touch the world. Before this, `run-once.ts`
+ * decides; `repo` and `agent` touch the world. Before this, the conductor
  * imported `provisionWorktree`, `git`, `integrate`, `createHookServer` and
  * `resolveAgentEnv` directly, so **the only way to test a decision was to
  * perform it** — which is why every one of this package's tests appends real
@@ -82,8 +82,8 @@ export interface AgentHostPort {
    * The one method whose *shape* the conversion changed. It returned a
    * `HookServer` the caller then had to `listen()` and `close()`; it now hands
    * back one already listening, and closes it when the scope closes. A fake
-   * implements the same pair, which is what lets `integration/run-once-against-fakes.test.ts` assert
-   * that the close happened at all.
+   * implements the same pair, which is what lets
+   * `unit/conduct-a-whole-pass.test.ts` assert that the close happened at all.
    */
   serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>;
   /**
@@ -113,7 +113,7 @@ export interface AgentHostPort {
    *
    * The one acquisition that is deliberately *not* scoped here, unlike `serve`.
    * Its close carries a judgement — landed → delete, did not land → keep — and
-   * the moment that judgement is known is the moment `run-once.ts`'s scope
+   * the moment that judgement is known is the moment `conduct.ts`'s scope
    * closes, not before. So the pair is made there, in the open, where a fake
    * can assert which way it went.
    */

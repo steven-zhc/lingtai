@@ -384,7 +384,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // A function of what the log already records — the run and the commit —
       // so a transcript is still findable from a verdict, which is
       // `sessionIdFor`'s whole reason. The head moves every round a fix is
-      // bought for (`run-once.ts` only continues the loop when the fixer
+      // bought for (`conduct.ts` only continues the loop when the fixer
       // committed), so the commit is what makes each round's review a
       // different reviewer.
       const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`;
@@ -436,7 +436,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         if (outcome.failure.kind === "never-started") {
           return {
             verdict: "never-ran",
-            // The runtime's own words, whole. `run-once.ts` reads a reset time
+            // The runtime's own words, whole. `conduct.ts` reads a reset time
             // out of them (0031 §4) and the board shows them as what they are:
             // evidence about the account, never about the diff.
             evidence: outcome.failure.detail,
@@ -450,7 +450,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * The sentence below has said `the reviewer did not finish` since this
          * branch was written, and the verdict beside it said `failed` — which
          * is the verdict a reviewer that read the diff and refused it returns.
-         * So `run-once.ts` bought a fix round, and on `run-9e510ffc` an agent
+         * So the conductor bought a fix round, and on `run-9e510ffc` an agent
          * was paid fourteen seconds to write *I'm not fixing anything this
          * round … the review never looked at the change* (`#196`). The
          * difference was real and lived only in this string, and a string is

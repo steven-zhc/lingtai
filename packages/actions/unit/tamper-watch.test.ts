@@ -58,7 +58,7 @@ async function judge(files: string[]) {
 describe("this repository's tamper watch", () => {
   it.each([
     ".lingtai/config.yaml",
-    "packages/conductor/src/run-once.ts",
+    "packages/conductor/src/conduct.ts",
     "packages/event-store/src/db.ts",
     "packages/hook/src/lingtai-hook.ts",
     "packages/actions/src/watch-action.ts",
@@ -149,7 +149,7 @@ describe("this repository's tamper watch", () => {
    * security argument — an agent's branch deleting the watch changes nothing,
    * because 0005 reads the recipe from the base — and it comes back when the
    * block does. That the recipe is read from the base is still asserted, in
-   * `packages/conductor/integration/run-once-against-fakes.test.ts`.
+   * `packages/conductor/integration/run-once-against-the-machines-recipe.test.ts`.
    */
   it("is not wired in this repository, and the documented block is where it lives", async () => {
     const { recipe } = await resolveRecipe(

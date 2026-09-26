@@ -3,8 +3,7 @@
  *
  * The interesting behaviour is a pure function on purpose: *what the point
  * resolved to* is decided from the recipe and the item's own stream, and
- * nothing about it needs a merge lane, a worktree or GitHub. The path that
- * lands an item through an approval is exercised for real in `run-once.test.ts`.
+ * nothing about it needs a merge lane, a worktree or GitHub.
  */
 import type { StepAction } from "@lingtai/recipe";
 import type { Envelope } from "@lingtai/domain";

@@ -305,7 +305,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  *
  * So what is reaped here is narrower: **a log whose work item has landed**
  * (§5). These files exist to explain why an item is not done; when it lands and
- * its issue closes there is nothing left to explain. `run-once.ts` deletes its
+ * its issue closes there is nothing left to explain. `conduct.ts` deletes its
  * own on the way out, so in the ordinary case this finds nothing. It catches
  * the two cases that release cannot: a daemon killed mid-run, and an item that
  * landed by some other route — an approval, on the CLI or the board.
@@ -319,7 +319,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * `answerDiscussion` names the file for the `chatId`, that id *is* the chat's
  * stream, and `DiscussionAsked` on it carries the work item — so the two
  * questions below are asked and answered about a chat exactly as they are about
- * a run. A turn deletes its own on the way out, exactly as `run-once.ts` does,
+ * a run. A turn deletes its own on the way out, exactly as `conduct.ts` does,
  * so what this finds is the same residue for the same reason: a daemon killed
  * mid-answer.
  *

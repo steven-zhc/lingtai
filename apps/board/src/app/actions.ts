@@ -28,7 +28,7 @@
  * can move. The server compares and refuses rather than acting on something
  * nobody looked at — the same reason `onSha` exists on every verdict.
  */
-// Subpaths, not the barrel. The root export pulls in `run-once`, which pulls
+// Subpaths, not the barrel. The root export pulls in `conduct.ts`, which pulls
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
 import { approve, requeue } from "@lingtai/conductor/decide";

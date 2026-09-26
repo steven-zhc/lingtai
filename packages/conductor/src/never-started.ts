@@ -23,7 +23,7 @@
  * make it slower. That is why the same brittle text is safe here and unsafe in
  * `neverStarted`.
  *
- * Nothing here does I/O and nothing here appends. `run-once.ts` is where the
+ * Nothing here does I/O and nothing here appends. `conduct.ts` is where the
  * pause is written, and it is one call.
  */
 

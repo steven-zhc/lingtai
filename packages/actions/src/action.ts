@@ -16,7 +16,7 @@
  * Four kinds of action produce a verdict — `run`, `agent`, `watch`, `human` —
  * and all four are implemented. `run` and `human` need nothing from the caller;
  * `agent` needs a reviewer and `watch` needs the diff's file list, and
- * `run-once` supplies both. A kind whose dependency is missing is refused by
+ * `conduct.ts` supplies both. A kind whose dependency is missing is refused by
  * name rather than skipped — see `from-recipe.ts`. The pipeline, the events and
  * `onSha` are the same for all four.
  *
@@ -43,7 +43,7 @@ import type { Step, PayloadOf, Severity } from "@lingtai/domain";
  * not fail, because a failure is a sentence about *this diff* produced by a
  * condition that has nothing to do with any diff (`#133`).
  *
- * What it means for the run is `run-once.ts`'s: the conductor stands down and
+ * What it means for the run is `conduct.ts`'s: the conductor stands down and
  * the item goes back to the queue, exactly as 0031 §3 decided for a run.
  *
  * **`did-not-finish` is a fifth, and it is the neighbour `never-ran` does not
@@ -52,7 +52,7 @@ import type { Step, PayloadOf, Severity } from "@lingtai/domain";
  * An `agent` action that *started* and ended with no receipt — a crash, a
  * timeout, a turn budget spent without an answer — judged nothing either, and
  * for months it said so only inside the `evidence` string while returning
- * `failed`. So `run-once.ts` bought a fix round for it and an agent was paid to
+ * `failed`. So the conductor bought a fix round for it and an agent was paid to
  * answer a question nobody asked (`#196`). It is not `never-ran`, because that
  * stands the whole conductor down on the grounds that the wall is account-wide
  * (0031 §3) and a crash is local.

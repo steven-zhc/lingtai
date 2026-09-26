@@ -2,9 +2,9 @@
  * Where a run's log lives — the one place that knows, and now the one place
  * that can find one again.
  *
- * `runLogPath` was `run-once.ts`'s and had one caller. `#110` gives it three
+ * `runLogPath` was the conductor's own and had one caller. `#110` gives it three
  * more that are not conducting anything — `lingtai attach`, the board's task
- * page and the route behind it — and a viewer importing `run-once.ts` would
+ * page and the route behind it — and a viewer importing `conduct.ts` would
  * have dragged `spawn`, the ports and the whole of a pass in behind one
  * `join`. So the layout is its own module, and the reading half of
  * [0034](../../../doc/decisions/0034-the-run-log.md) is re-exported through it:

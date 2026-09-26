@@ -146,7 +146,7 @@ describe("provisionWorktree", () => {
 
     // The run's own push, which comes first in a real pass and is what gives
     // the lane something to fetch. `HEAD:refs/heads/<branch>` is verbatim what
-    // `run-once.ts` does, and it is the reason a detached checkout costs
+    // `conduct.ts` does, and it is the reason a detached checkout costs
     // nothing: the branch has never been what this worktree holds.
     await exec("git", ["config", "user.email", "a@example.invalid"], { cwd: wt.path });
     await exec("git", ["config", "user.name", "agent"], { cwd: wt.path });

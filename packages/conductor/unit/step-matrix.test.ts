@@ -152,7 +152,7 @@ const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
  *
  * **There is no longer a set of steps that have a call site**, and that is the
  * whole of what `#256` changed here. `HAS_A_CALL_SITE` was `["prepared",
- * "proposed", "merge", "end"]` — the four points `run-once.ts` built a pipeline
+ * "proposed", "merge", "end"]` — the four points the old engine built a pipeline
  * at — and every cell at the other six was false because nothing asked. The pass
  * asks at all ten: `runPass` calls `options.actionsAt(step, actions)` for every
  * step whose plugins are verdicts, and `end` by its resolver.
@@ -295,10 +295,10 @@ describe("every step × kind cell runs or refuses", () => {
    *
    * The reason is worth pinning rather than just the refusal: `agent:` and
    * `watch:` used to say "no reviewer was supplied", which is a fact about the
-   * dependencies `run-once.ts` happens to pass and reads as something that
+   * dependencies `conduct.ts` happens to pass and reads as something that
    * could be fixed by passing them. It cannot: nothing has been committed yet.
    * `human:` is the one that cost a review round — a hold there is turned into
-   * a release (`run-once.ts`, section 7), so the person is asked a question
+   * a release, which is what `whyNoKindAt` says back, so the person is asked a question
    * that re-asks itself every pass and can never be answered.
    */
   it("says why `prepared` is narrower than `proposed`", () => {

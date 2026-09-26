@@ -140,7 +140,7 @@ const refused = (): Envelope[] => [
  *
  * `rounds: 3` in this repository's own recipe, so this is the common path and
  * not an edge: `FixRequested`, then an agent patching the diff for minutes,
- * then `FixApplied` (`run-once.ts:1631`, `:1721`). No `RunStarted` between
+ * then `FixApplied` (`conduct.ts`'s fix round). No `RunStarted` between
  * them — a round is a step inside a run — and `task_view` keeps the card
  * `running` throughout (`task-view.ts:554`).
  */
@@ -701,8 +701,9 @@ describe("a card answering a refusal", () => {
 
   /**
    * The round's event carries no ceiling of its own, and the fixer is launched
-   * under the same `runtime.limits.wall` the implementer was (`run-once.ts:1088`,
-   * `:1697`) — which `RunStarted` is the only event to write down. *Slow* and
+   * under the same `runtime.limits.wall` the implementer was (`conduct.ts`, one
+   * recipe read once per pass) — which `RunStarted` is the only event to write
+   * down. *Slow* and
    * *about to be killed* are the two this line exists to separate.
    */
   it("measures the round against the wall clock the run recorded", () => {

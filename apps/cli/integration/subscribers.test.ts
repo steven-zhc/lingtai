@@ -11,7 +11,7 @@
  *   `ApprovalRequested`    `run-<uuid>`          only the run's `RunStarted`
  *   `RunAwaitingInput`     `run-<uuid>`          the same
  *
- * So all four are appended here exactly as `run-once.ts`, `hook-socket.ts` and
+ * So all four are appended here exactly as `conduct.ts`, `hook-socket.ts` and
  * `integrate.ts` append them, and the resolver is asked. A mock store would
  * have passed for the version that was refused, because the thing it got wrong
  * was what the log actually holds.
@@ -47,7 +47,7 @@ beforeAll(async () => {
   store = createEventStore(client);
   subject = createSubjectResolver(store);
 
-  // A run stream, opened the way `run-once.ts` opens one: `RunStarted` first,
+  // A run stream, opened the way `conduct.ts` opens one: `RunStarted` first,
   // carrying the work item, and then the events that carry only a `runId`.
   await store.append(runId, 0, [
     {

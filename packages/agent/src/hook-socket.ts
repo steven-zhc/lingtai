@@ -383,7 +383,7 @@ export function createHookServer(options: HookServerOptions): HookServer {
  * The same server, with a lifetime.
  *
  * The socket is one of the three things a run acquires, and it was released by
- * a `finally` in `run-once.ts` — correct, and correct only because that
+ * a `finally` in the conductor — correct, and correct only because that
  * function remembered. As an `Effect.acquireRelease` the close happens because
  * the scope closed: on the happy path, on a typed refusal, on a defect and on
  * an interruption alike

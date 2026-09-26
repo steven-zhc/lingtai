@@ -56,7 +56,7 @@ export function armBranch(branch: string, n: number): string {
  * One function because the name is now read by something that *deletes* it
  * (`#240`): `refs:` at `end` sweeps what this and `armBranch` wrote, and a
  * cleanup working from its own spelling of the name is a cleanup that misses
- * the refs, or hits somebody else's. `run-once.ts` and `approve.ts` compose it
+ * the refs, or hits somebody else's. `conduct.ts` and `approve.ts` compose it
  * too, so the publish and the delete are provably about one string.
  */
 export function agentBranch(issue: number | string): string {

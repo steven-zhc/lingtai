@@ -42,7 +42,8 @@ export interface RuntimeCapabilities {
  * honouring a refusal before tool calls says nothing about this.
    *
    * Not mediation — the hook refuses nothing it is not forced to (ADR 0016 §6).
-   * It is for the other half of `run-once.ts`'s step 6: *"a hook that cannot
+   * It is for the other half of the conductor's smoke test (`conduct.ts`):
+   * *"a hook that cannot
    * reach the conductor must stop the run rather than let it produce nothing
    * and look like it produced everything."* A runtime that only notifies its
    * hook cannot stop anything. Both declare it; a future one might not.

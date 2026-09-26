@@ -2,8 +2,8 @@
  * **What a claim leaves behind, whatever ending it had** — 0062 §1, and the
  * three incidents that wrote it.
  *
- * Carried from `unit/run-once-against-fakes.test.ts` when `#256` deleted the
- * engine it was written for. The publish is the one block of that file that moved
+ * Carried from the old engine's fakes test when `#256` deleted the engine it
+ * was written for. The publish is the one block of that file that moved
  * into `conduct.ts` essentially verbatim, so these are the assertions that say it
  * moved *correctly* — and they are the assertions this repository has paid the
  * most for:
@@ -156,7 +156,7 @@ describe("when the agent meets the wall", () => {
   /**
    * **The wall is a `did-not-finish` at `implement`, and it holds the item.**
    *
-   * The result reads `held` where `run-once.ts` returned `ok: false, stage: "run"`
+   * The result reads `held` where the old engine returned `ok: false, stage: "run"`
    * *and* appended `WorkItemBlocked` — a failure and a hold at once, which is what
    * the two vocabularies cost. Under the pass there is one answer: the commit is
    * the receipt (0057 §2), an agent that ran out of turns left none, and
@@ -248,7 +248,7 @@ describe("when the agent meets the wall", () => {
    * merges a half-finished diff with no reason required, no `GateWaived` and
    * nothing on the log recording that the build and the cold reviewer were
    * skipped. On a card whose own diagnosis reads *the limit is a scope alarm …
-   * requeue*. `run-once.ts` appended no request on this ending and Requeue was the
+   * requeue*. The old engine appended no request on this ending and Requeue was the
    * only move; `conduct.ts` asks whether anything **refused** the diff, and this
    * ending refused nothing.
    *

@@ -506,7 +506,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    * board to the notification tray.
    *
    * The retry is here rather than at the caller because both callers do the
-   * same thing with a refusal — `run-once.ts` blocks the item on a human
+   * same thing with a refusal — `conduct.ts` blocks the item on a human
    * acknowledgement, `approve.ts` blocks it with the approval already spent —
    * and neither has anything to decide. A rejected push says the branch is fine
    * and the base moved, which is a recomputation, not a question: an item that

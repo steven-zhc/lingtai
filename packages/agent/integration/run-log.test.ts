@@ -111,7 +111,7 @@ describe("a run's log file", () => {
    * A run whose log could not be opened is worse observed and is not worse off.
    *
    * The events are the half that settles anything and they are unaffected, so
-   * `run-once.ts` takes this rather than refusing — and takes it as an object
+   * `conduct.ts` takes this rather than refusing — and takes it as an object
    * rather than a `null`, so no call site has to remember a `?.`.
    */
   it("has a shape that does nothing, for when there is no file", async () => {

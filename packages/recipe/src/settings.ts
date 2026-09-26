@@ -26,7 +26,7 @@
  * that list rather than by what a caller happened to need.** It was three for a
  * while — `limitsFor`, `baseOf`, `kindsOf` — and the other three settings in
  * the same five-line table were read by hand in nine files: `repo.submodules`
- * at `run-once.ts` and the wizard, `source.exclude` at `discover.ts`, the
+ * at `conduct.ts` and the wizard, `source.exclude` at `discover.ts`, the
  * filter, the wizard and the board, `source.backoff` at four more. A half-set
  * is worse than none, because the guard below reads as *nothing reaches past
  * the accessors* while three of the six settings have nothing to reach past.
@@ -57,7 +57,7 @@ export function baseOf(recipe: Recipe): string {
  *
  * `baseOf`'s sibling and it moves with it: both are `worktree:`'s fields under
  * 0061 §4, and a caller that asks for one usually asks for the other in the
- * next line (`run-once.ts`'s `provisionWorktree` call is exactly that pair).
+ * next line (`conduct.ts`'s `repo.provision` call is exactly that pair).
  */
 export function submodulesOf(recipe: Recipe): boolean {
   return recipe.repo.submodules;

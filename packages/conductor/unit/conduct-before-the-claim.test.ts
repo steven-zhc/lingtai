@@ -2,8 +2,8 @@
  * **Everything the conductor refuses before it claims anything**, against fakes,
  * with no database — and in the gate.
  *
- * It is the surviving half of `unit/run-once-against-fakes.test.ts`, which `#256`
- * deleted with the engine it was written for. Every claim in that file about the
+ * It is the surviving half of the old engine's fakes test, which `#256` deleted
+ * along with the engine it was written for. Every claim in that file about the
  * *pass* is now `unit/pass.test.ts`'s and `unit/pass-steps.test.ts`'s, where it is
  * asserted against the loop that makes the decision rather than against a
  * five-gate-point wrapper around it. **What has no home there is this**: the
@@ -253,7 +253,7 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
  * **Lingtai is waiting on you** and writes `lingtai:waiting` — about an item
  * this pass never took.
  *
- * `run-once.ts` returned `discover`/`claim` here and wrote nothing at all, and
+ * The old engine returned `discover`/`claim` here and wrote nothing at all, and
  * the two tests below are the two items that get written on: one nobody holds
  * and one somebody else does.
  */
@@ -302,7 +302,7 @@ describe("a claim that took nothing writes nothing", () => {
     // And nothing was said to GitHub — no `lingtai:waiting`, no comment.
     expect(said).toEqual([]);
     /**
-     * **And nothing on disk either**, which is the half `run-once.ts` got for
+     * **And nothing on disk either**, which is the half the old engine got for
      * free and this file has to assert.
      *
      * There, discovery and the claim both ran *above* the scope that opened the

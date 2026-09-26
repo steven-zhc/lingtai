@@ -847,7 +847,7 @@ export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
  * The third of the three ways a gate's agent can end, and until this event the
  * log had two. A reviewer that crashed after twenty turns wrote `GateFailed`,
  * which is the event a reviewer that read the diff and refused it writes, and
- * everything downstream believed it: `run-once.ts` bought a fix round, and a
+ * everything downstream believed it: the conductor bought a fix round, and a
  * fixing agent was paid to answer a question nobody asked (`#196`,
  * `run-9e510ffc`). The difference existed only inside the `evidence` sentence,
  * and a sentence is not something `decideFix` or the board reads.
@@ -1397,7 +1397,7 @@ export const ConductorShutdownWithdrawn = z.object({
  * says they must. Deleting a type the log still holds makes every stream
  * carrying it unreadable from its first row — that is what took
  * `projection rebuild` out and forced the second reset — and skipping rows on
- * read is not an option at any price: `run-once` computes `expectedVersion` as
+ * read is not an option at any price: `conduct.ts` computes `expectedVersion` as
  * `(await store.read(id)).length`, so a read that drops rows makes every later
  * append fail a concurrency check.
  */

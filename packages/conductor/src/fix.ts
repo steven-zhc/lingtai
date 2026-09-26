@@ -53,9 +53,9 @@
  * then meets a finding has to be able to do both.
  *
  * Everything here is a decision and nothing here does I/O — the same reason
- * `repair.ts` is a module rather than a condition inline in `run-once.ts`. A rule
- * about spending money that lives inside an `if` in a 1,500-line file is a rule
- * nobody can check.
+ * `repair.ts` is a module rather than a condition inline in the conductor. A
+ * rule about spending money that lives inside an `if` in a 1,500-line file is a
+ * rule nobody can check.
  */
 import type { ActionFinding } from "@lingtai/actions";
 import { SEVERITIES, type Severity } from "@lingtai/domain";
@@ -100,7 +100,7 @@ export type FixRule = "no-criterion" | "no-rounds" | "spent";
  * `FixRule` is only half of it: it says why no *further* round was bought, and
  * two of the endings never reach `decideFix` at all. A round that ran and whose
  * agent died, and a round that ran and whose agent objected, both arrive at
- * `run-once.ts`'s `if (!committed)` — where 0039 §5 already tells them apart for
+ * `conduct.ts`'s `if (!committed)` — where 0039 §5 already tells them apart for
  * the sentence underneath and, until `#197`, for nothing else.
  *
  * **The headline is the thing that needed this** (`#197`). A person shown a
@@ -118,7 +118,7 @@ export type FixRule = "no-criterion" | "no-rounds" | "spent";
  * and the ticket is coming back, so the remedy is to send it again;
  * `out-of-turns` is the *repository's* and the remedy is the opposite one, which
  * is why it is its own ending rather than a sixth way of saying *crashed*.
- * (`never-started` never arrives — `run-once.ts` stands the conductor down on it
+ * (`never-started` never arrives — `conduct.ts` stands the conductor down on it
  * before the loop can block.)
  *
  * Carried rather than matched out of `why` for `FixRule`'s own reason: a
@@ -141,9 +141,9 @@ export type FixStop =
    * Its own ending because it is the one run failure this repository calls the
    * **repository's** (`attribution.ts`'s `RUN_OWNER`), and because the sentence
    * it has already decided on is the negation of the crash's: *the ticket was
-   * scoped wrong — which no retry of the same ticket answers* (`run-once.ts`'s
-   * `out-of-turns` block, `#89`). Told to send it again, a person buys another
-   * run to the same limit.
+   * scoped wrong — which no retry of the same ticket answers*
+   * (`conduct.ts`'s `out-of-turns` block, `#89`). Told to send it again, a
+   * person buys another run to the same limit.
    */
   | { ended: "out-of-turns"; failure: string }
   /** A round ran and its agent objected by committing nothing (0039 §5). */
@@ -164,7 +164,7 @@ export type FixStop =
  * repository owns is the one it does not.
  *
  * `never-started` has a row because the record is total; it never arrives,
- * because `run-once.ts` stands the conductor down on it before the fix loop can
+ * because `conduct.ts` stands the conductor down on it before the fix loop can
  * block anything.
  */
 const STOP_OF: Record<RunFailureKind, "crashed" | "out-of-turns"> = {
@@ -428,7 +428,7 @@ export function decideFix(input: FixInput): FixDecision {
  *
  * **And it says the fixer may decline**
  * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
- * §5). The mechanism was always there — `run-once.ts`'s `if (!committed)` ends
+ * §5). The mechanism was always there — `conduct.ts`'s `if (!committed)` ends
  * the loop and hands a person the findings — and for a day this prompt pointed
  * the other way: *commit*, *an attempt that ends with advice produces nothing*,
  * and *if a finding is wrong say so in your final message*, which is not a
@@ -670,7 +670,7 @@ const DECLINE_CHARS = 400;
  * The sentence for a round that ended with no commit and no failure.
  *
  * **That is the decline** — the move `fixBrief` tells the fixer it has — and it
- * arrives at `run-once.ts` through the same `if (!committed)` branch a crashed
+ * arrives at `conduct.ts` through the same `if (!committed)` branch a crashed
  * fixer does. What separates them there is `failure`; what separates them for a
  * person is this sentence, which says *declined* and then says what was said.
  *
@@ -697,8 +697,8 @@ const FAILURE_CHARS = 200;
  *
  * Shorter than a decline's clip because this one is inside the headline rather
  * than under it, and a headline a reader has to scroll is not one. The
- * untruncated failure is still in `done`, which `run-once.ts` composes and
- * `#197` was careful not to touch.
+ * untruncated failure is still in `done`, which `#197` was careful not to
+ * touch.
  *
  * It arrives as `kind: detail`, so the kind is in the headline by construction
  * and no sentence around it has to name one.
@@ -811,8 +811,8 @@ export function diagnoseDisagreement(input: {
    * decided* is false in the direction that costs — it invites a person to
    * treat a refusal two agents have been round twice as one nothing has argued
    * with. But `rounds` cannot say which: it is **one counter for the whole
-   * pass**, spent by whichever point refused (`run-once.ts`'s *one ceiling, so
-   * one counter*), so `rounds: 2` is as easily *`build` refused, a round fixed
+   * pass**, spent by whichever point refused (*one ceiling, so one counter* —
+   * `Ceilings` in `pass.ts`), so `rounds: 2` is as easily *`build` refused, a round fixed
    * it, then `review` refused the result* — where this reviewer has read
    * exactly one diff. Counting that as two credits this reviewer with a refusal
    * of a diff it never saw, which is the same overstatement one field over.
@@ -860,7 +860,7 @@ export function diagnoseDisagreement(input: {
       case "out-of-turns":
         // **The one ending where sending it again is the wrong move**, and the
         // repository decided that before this function existed: `RUN_OWNER`
-        // calls the turn limit the repository's failure, and `run-once.ts`
+        // calls the turn limit the repository's failure, and `conduct.ts`
         // blocks a whole run that ends this way with *narrow or split the ticket
         // first; requeued as written, it buys another run to the same limit*.
         // Nothing was adjudicated, and nothing crashed either.
@@ -933,7 +933,8 @@ export function diagnoseDisagreement(input: {
         //
         // Byte for byte the sentence it has always been wherever the reviewer
         // did refuse more than one diff, which is the ordinary shape and the one
-        // `run-once.test.ts`'s end-to-end pass produces: the common case must
+        // `unit/conduct-a-whole-pass.test.ts`'s end-to-end pass produces: the
+        // common case must
         // not get worse to fix the others.
         return input.refusals <= 1
           ? `One agent refused ${at} and no round answered it. ${refused}, and the ` +
@@ -1138,7 +1139,7 @@ export function diagnoseUnfixed(input: {
       case "out-of-turns":
         // Not re-run either, and the opposite remedy: the turn limit is the
         // repository's failure, so *send it again* costs another full budget and
-        // answers nothing (`RUN_OWNER`, `run-once.ts`'s own block).
+        // answers nothing (`RUN_OWNER`, and `conduct.ts`'s own block).
         return (
           `\`${input.action}\` refuses ${at}, and this pass stopped on the recipe's turn ` +
           `limit rather than on the check. The agent sent to make it green spent its whole ` +

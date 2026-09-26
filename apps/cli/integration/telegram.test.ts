@@ -156,7 +156,7 @@ async function started(port: number, spec: Partial<SubscriberSpec> = {}, token =
 }
 
 let issue = 0;
-/** A work item and a run for it, opened the way `run-once.ts` opens one. */
+/** A work item and a run for it, opened the way `conduct.ts` opens one. */
 async function aRun() {
   issue += 1;
   const wi = workItemStream(PROJECT, issue);
