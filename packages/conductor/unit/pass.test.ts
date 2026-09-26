@@ -26,6 +26,7 @@ import {
   ARRIVE_AT_THE_ROUTER,
   NEEDS_INPUT,
   NOT_BUILT_YET,
+  NO_OFFER,
   PASS,
   REFUSING_STEPS,
   onOffer,
@@ -33,6 +34,7 @@ import {
   runPass,
   type Ceilings,
   type Destination,
+  type Offer,
   type PassOptions,
   type StepBodies,
   type StepBody,
@@ -65,7 +67,7 @@ interface Handed {
   actions: readonly string[];
   outcome: TerminalOutcome | null;
   arriving: StepReached | null;
-  offering: readonly Destination[];
+  offering: Offer;
   reached: readonly StepReached[];
   /** This visit's — the head it is judged against, the round, and the recheck. */
   context: ActionContext;
@@ -682,7 +684,7 @@ describe("every step that does not pass arrives at proposed", () => {
 
   /** And `needs-input` arrives too, which is the half that is not a refusal. */
   it("takes a needs-input to the router without buying a round", async () => {
-    let offering: readonly Destination[] = [];
+    let offering: Offer = NO_OFFER;
     const { bodies } = watching({
       implement: asked("which of the two `base` values did you mean?"),
       proposed: async (work) => {
@@ -703,7 +705,7 @@ describe("every step that does not pass arrives at proposed", () => {
     });
 
     // 0058 §3c: *that step again with "state your assumption"*, or a person.
-    expect(offering).toEqual(["waiting", "implement"]);
+    expect(offering.affordable).toEqual(["waiting", "implement"]);
     expect(result.stoppedAt).toMatchObject({
       step: "implement",
       ending: { ending: "did-not-finish", because: NEEDS_INPUT },
@@ -835,8 +837,8 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * `waiting` is always there, because a person can always be the answer.
    */
   it("offers a person, and nothing else, once every ceiling is spent", () => {
-    expect(onOffer("proposed", wayThrough, spent, 0)).toEqual(["waiting"]);
-    expect(onOffer("proposed", wayThrough, spare, spare.rounds)).toEqual(["waiting", "claim"]);
+    expect(onOffer("proposed", wayThrough, spent, 0).affordable).toEqual(["waiting"]);
+    expect(onOffer("proposed", wayThrough, spare, spare.rounds).affordable).toEqual(["waiting", "claim"]);
   });
 
   /**
@@ -845,9 +847,9 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * diff and no error in one to fix.
    */
   it("does not offer implement for a refusal at prepared", () => {
-    expect(onOffer("prepared", refused, spare, 0)).toEqual(["waiting"]);
-    expect(onOffer("build", refused, spare, 0)).toEqual(["waiting", "implement"]);
-    expect(onOffer("review", refused, spare, 0)).toEqual(["waiting", "implement"]);
+    expect(onOffer("prepared", refused, spare, 0).affordable).toEqual(["waiting"]);
+    expect(onOffer("build", refused, spare, 0).affordable).toEqual(["waiting", "implement"]);
+    expect(onOffer("review", refused, spare, 0).affordable).toEqual(["waiting", "implement"]);
   });
 
   /**
@@ -856,13 +858,13 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * through `build` and `review`*.
    */
   it("offers build for a refusal at merge", () => {
-    expect(onOffer("merge", refused, spare, 0)).toEqual(["waiting", "implement", "build"]);
+    expect(onOffer("merge", refused, spare, 0).affordable).toEqual(["waiting", "implement", "build"]);
   });
 
   /** 0058 §3c: a `needs-input` offers the step that asked, and nothing else. */
   it("offers the step that asked, for a needs-input", () => {
-    expect(onOffer("design", asking, spare, 0)).toEqual(["waiting", "design"]);
-    expect(onOffer("admit", asking, spare, 0)).toEqual(["waiting", "admit"]);
+    expect(onOffer("design", asking, spare, 0).affordable).toEqual(["waiting", "design"]);
+    expect(onOffer("admit", asking, spare, 0).affordable).toEqual(["waiting", "admit"]);
   });
 
   /**
@@ -872,7 +874,7 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * the spine.
    */
   it("offers the way-through visit a round as well as a person", () => {
-    expect(onOffer("proposed", wayThrough, spare, 0)).toEqual(["waiting", "claim", "implement"]);
+    expect(onOffer("proposed", wayThrough, spare, 0).affordable).toEqual(["waiting", "claim", "implement"]);
   });
 
   /**
@@ -887,11 +889,11 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * released and the worktree thrown away.
    */
   it("offers a restart for the findings direction and for no other", () => {
-    expect(onOffer("proposed", wayThrough, spare, 0)).toContain("claim");
+    expect(onOffer("proposed", wayThrough, spare, 0).affordable).toContain("claim");
     for (const at of ["prepared", "implement", "build", "review", "merge"] as const) {
-      expect(onOffer(at, refused, spare, 0)).not.toContain("claim");
+      expect(onOffer(at, refused, spare, 0).reachable).not.toContain("claim");
     }
-    expect(onOffer("implement", asking, spare, 0)).not.toContain("claim");
+    expect(onOffer("implement", asking, spare, 0).reachable).not.toContain("claim");
   });
 
   /** And a destination outside the set is refused by name (0061 §3, §8). */
@@ -1175,7 +1177,9 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
     const recipe = recipeWith({});
     const { bodies } = watching({
       // The replaced judge that would loop for ever if it could.
-      proposed: routerSaying((work) => (work.offering.includes("implement") ? "implement" : "waiting")),
+      proposed: routerSaying((work) =>
+        work.offering.affordable.includes("implement") ? "implement" : "waiting",
+      ),
     });
     const { actionsAt } = watchingActions({
       build: [canned("tests", { verdict: "failed", evidence: "3 failing", findings: [] })],
@@ -1242,7 +1246,7 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
   /** And a restart is on no offer when the item has none left. */
   it("does not offer a restart the item cannot afford", async () => {
     const { recipe, at } = installFails();
-    let offering: readonly Destination[] = [];
+    let offering: Offer = NO_OFFER;
     const { bodies } = watching({
       proposed: async (work) => {
         offering = work.offering;
@@ -1254,7 +1258,7 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
 
     await runPass({ recipe, context, emit, bodies, actionsAt, ceilings: { rounds: 2, restartsLeft: 0 } });
 
-    expect(offering).toEqual(["waiting"]);
+    expect(offering.affordable).toEqual(["waiting"]);
   });
 });
 

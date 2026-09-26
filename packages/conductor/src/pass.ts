@@ -482,21 +482,26 @@ export interface StepWork<S extends Step = Step> {
    */
   readonly arriving: S extends RoutingStep ? StepReached | null : null;
   /**
-   * **The destinations the judge may choose from — at `proposed`, and nowhere
-   * else.** Non-empty on both of its visits, because a judge may hold a change
-   * back on the way through as well as answer a refusal on the way back.
+   * **What is on offer — at `proposed`, and nowhere else.** Never empty on
+   * either of its visits, because a judge may hold a change back on the way
+   * through as well as answer a refusal on the way back.
    *
    * 0061 §3, and the sentence the whole split rests on: *`judge:` decides which
    * step is next. The workflow decides which steps it may choose from.* The
    * workflow counts the rounds and restarts spent, works out what is reachable
-   * from where the pass actually got to, and hands the judge the result as a
+   * from where the pass actually got to, and hands the body the result as a
    * fact. **A judge is never asked to know which step it is answering for** —
    * it answers *which of these*, never *what is legal* — and when `rounds` is
-   * spent, `implement` is simply not in the set.
+   * spent, `implement` is simply not in `affordable`.
+   *
+   * **Two sets and not a menu** (0064 §7, `Offer`): the body routes against
+   * `affordable` and hands a judge that list alone, and `reachable` is there so
+   * that a decision the offer refused can be reported as *no money* or as *no
+   * meaning* rather than as one indistinguishable absence.
    *
    * `onOffer` is the computation and its doc comment is the rule, cell by cell.
    */
-  readonly offering: S extends RoutingStep ? readonly Destination[] : readonly [];
+  readonly offering: S extends RoutingStep ? Offer : NoOffer;
   /**
    * **Which ending the pass reached — at `end`, and nowhere else.**
    *
@@ -620,7 +625,7 @@ export const NOT_BUILT_YET: StepBodies = {
             `no \`judge:\` is built yet in these bodies (\`bodiesFor\`'s ask one), so the ` +
             `\`${arriving.step}\` step's ` +
             `${arriving.ending.ending} goes to a person rather than to ` +
-            `${offering.filter((d) => d !== "waiting").join(" or ") || "any step"}`,
+            `${offering.affordable.filter((d) => d !== "waiting").join(" or ") || "any step"}`,
         },
   /**
    * **Refuses**, and reports a `reason` and a `detail` rather than deciding —
@@ -716,6 +721,79 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
 const PASSED_THROUGH: StepPassed = { ending: "passed" };
 
 /**
+ * **What is on offer, and it is two sets rather than one** (0064 §7).
+ *
+ * `offering` used to be a single list mixing two unlike facts, and the whole
+ * cost of that was that **it could not say why a destination was missing**: *no
+ * meaning* and *no money* read identically, and they are different messages to
+ * whoever ends up on the card. `implement` is off a `prepared` refusal's offer
+ * because no agent has run — no number a person could raise would put it back —
+ * and off a spent pass's offer because the rounds are gone, which is exactly a
+ * number a person could raise.
+ *
+ * So the two are named separately and the difference between them is the
+ * budget's, by construction: `affordable` is `reachable` minus what the ceilings
+ * refuse, and `ceilingFor` reads which ceiling that was off the pair rather than
+ * re-deriving it. **`waiting` is in both, always** — it is the one destination
+ * that costs nothing, so no ceiling can take it out, which is what makes it the
+ * right answer both when a decision chooses it and when a ceiling is spent.
+ *
+ * **A judge is handed `affordable` and never this object.** It answers *which of
+ * these*, never *what is legal*, and the reachable set is the workflow's own
+ * arithmetic about money — `Judging` in [`pass-steps.ts`](pass-steps.ts) carries
+ * the one list, and 0064 §7's *the plugin chooses; the workflow still bounds what
+ * the choice costs* is that line drawn.
+ */
+export interface Offer {
+  /**
+   * Everything the arrival could mean, whatever is left to spend — *how far the
+   * pass got*, and the half no ceiling participates in.
+   */
+  readonly reachable: readonly Destination[];
+  /**
+   * Those of them this pass can pay for. **This is the set, and the only one a
+   * decision is held to** (`theWorkflowsToSay`).
+   */
+  readonly affordable: readonly Destination[];
+}
+
+/**
+ * Nothing on offer — the nine steps that do not route, said as two empty sets
+ * rather than as an absent field.
+ *
+ * Its own type, so `StepWork.offering` goes on saying *at `proposed`, and
+ * nowhere else* in the type rather than in a comment.
+ */
+export interface NoOffer {
+  readonly reachable: readonly [];
+  readonly affordable: readonly [];
+}
+
+/** The one value of `NoOffer`, so the nine visits share it. */
+export const NO_OFFER: NoOffer = { reachable: [], affordable: [] };
+
+/**
+ * **Which ceiling took a destination off the offer, or null** — and null is a
+ * real answer twice over.
+ *
+ * Read off the pair rather than by asking `onOffer` a second question with a
+ * fabricated budget, which is what this replaces: a destination in `reachable`
+ * and not in `affordable` differs from an affordable one *by the budget and by
+ * nothing else*, so the subtraction is the answer and the arithmetic is which
+ * number pays for that edge — `claim` is the item's restarts and every other
+ * edge is this pass's rounds (`Ceilings`).
+ *
+ * Null where the destination was affordable, and null where it was never
+ * reachable: the second is the one worth naming, because a refusal that named a
+ * ceiling there would send a person to raise a limit that will refuse the same
+ * route again.
+ */
+export function ceilingFor(to: Destination, offer: Offer): Ceiling | null {
+  if (offer.affordable.includes(to) || !offer.reachable.includes(to)) return null;
+  return to === "claim" ? "restarts" : "rounds";
+}
+
+/**
  * The destinations a judge may choose from, given what arrived and what is left
  * to spend.
  *
@@ -763,66 +841,43 @@ const PASSED_THROUGH: StepPassed = { ending: "passed" };
  * lets no `held` past, and the pass rests there without ever reaching a judge.
  * So the rule is a fact about the walk rather than a line in this function, and
  * `alsoAsked` has no counterpart on `Judging` for the same reason.
+ *
+ * **The cells above are `reachable`, and `affordable` is what the two ceilings
+ * then leave of it** (0064 §7). Every one of them but `waiting` re-enters the
+ * spine and so buys an agent run, which is what they cost: `claim` spends the
+ * item's restart and each of the others spends one of this pass's rounds. That
+ * subtraction is the whole of the second set, and it is why the offer can say
+ * which half refused a destination without being asked a second question.
  */
-export function onOffer(
-  at: Step,
-  ending: StepEnding,
-  ceilings: Ceilings,
-  roundsSpent: number,
-): Destination[] {
-  const offer: Destination[] = ["waiting"];
+export function onOffer(at: Step, ending: StepEnding, ceilings: Ceilings, roundsSpent: number): Offer {
+  const reachable: Destination[] = ["waiting"];
   // The way-through visit, which is the `findings` direction and the only one a
-  // restart is offered for — see the table above.
-  if (at === "proposed" && ending.ending === "passed" && ceilings.restartsLeft > 0) offer.push("claim");
-  if (roundsSpent >= ceilings.rounds) return offer;
+  // restart is offered for — see the table above. **Reachable whatever the item
+  // has left**: having no restart to spend is the budget's answer and not this
+  // half's, which is the distinction the two sets exist to keep.
+  if (at === "proposed" && ending.ending === "passed") reachable.push("claim");
 
   if (ending.ending === "did-not-finish" && ending.because === NEEDS_INPUT) {
-    offer.push(at);
-    return offer;
+    // The step that asked, and nothing else: nobody but it knows the question,
+    // so the edges below are not reachable from a question either.
+    reachable.push(at);
+  } else {
+    // `implement` is on offer once the pass has got as far as an agent having
+    // written something for the decision to be about.
+    if (AFTER_AN_AGENT.includes(at)) reachable.push("implement");
+    if (at === "merge") reachable.push("build");
   }
 
-  // `implement` is on offer once the pass has got as far as an agent having
-  // written something for the decision to be about.
-  if (AFTER_AN_AGENT.includes(at)) offer.push("implement");
-  if (at === "merge") offer.push("build");
-  return offer;
-}
-
-/**
- * **`onOffer` asked again with a budget, which is the only honest way to say
- * which ceiling refused a choice** (`#271`).
- *
- * Asked only where what was chosen and what was taken differ. A destination can
- * be off an offer for either of two unlike reasons, and they read the same on
- * `to`: *the pass never got far enough for it* — `implement` from `prepared`,
- * where no agent has run — or *it got there and the budget is spent*. The first
- * is the offer's own rule and no number a person could raise would change it; the
- * second is exactly a number a person could raise.
- *
- * So the same arrival is offered again with a round and a restart to spare, and
- * what is in that set and not in the one the judge was handed differs by the
- * budget and by nothing else. Which of the two is then arithmetic: `claim` is the
- * item's restarts and every other edge is this pass's rounds.
- *
- * **Null is a real answer and not a gap**, and it is what the first case above
- * gets: the route was refused on grounds that have nothing to do with a ceiling,
- * and naming one would send a person to raise a limit that will refuse it again.
- */
-function refusedBy(
-  chose: Destination,
-  to: Destination,
-  offeredFor: { readonly at: Step; readonly ending: StepEnding },
-  roundsSpent: number,
-): Ceiling | null {
-  if (chose === to) return null;
-  const spare = onOffer(
-    offeredFor.at,
-    offeredFor.ending,
-    { rounds: roundsSpent + 1, restartsLeft: 1 },
-    roundsSpent,
-  );
-  if (!spare.includes(chose)) return null;
-  return chose === "claim" ? "restarts" : "rounds";
+  const round = roundsSpent < ceilings.rounds;
+  const restart = ceilings.restartsLeft > 0;
+  return {
+    reachable,
+    // `waiting` costs nothing, so no ceiling can take it out — which is what
+    // keeps the set non-empty and therefore keeps every arrival answerable.
+    affordable: reachable.filter((to) =>
+      to === "waiting" ? true : to === "claim" ? restart : round,
+    ),
+  };
 }
 
 /**
@@ -976,9 +1031,10 @@ export interface RouteTaken {
    * where it wanted.
    *
    * Named here because this is where both halves are known: the choice arrives
-   * on the ending and the counts are the loop's. Null with `chose !== to` is a
-   * choice nothing this loop bounds refused — a judge answering a step the
-   * arrival never offered, which the offer refuses on its own grounds.
+   * on the ending and the offer it was made against is the loop's. Null with
+   * `chose !== to` is a choice nothing this loop bounds refused — a judge
+   * answering a step the arrival never reached, which the offer refuses on its
+   * own grounds. `ceilingFor` is the reading, off `Offer`'s two sets.
    */
   readonly ceiling: Ceiling | null;
 }
@@ -1175,16 +1231,17 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * loop takes a step that did not pass to. `reported` is what a person should
    * be shown, and is null where nothing refused.
    *
-   * `offeredFor` is the arrival the offer was computed from — the same pair that
-   * went to `onOffer` a line above the call — because naming the ceiling means
-   * asking that function what it would have offered with something to spend
-   * (`refusedBy`). It is not derivable here: `reported` is null on the
-   * way-through visit, where what was judged is a `review` that passed.
+   * `offer` is the one the visit was handed — the same object that went to the
+   * body — because naming the ceiling is a subtraction over its two sets
+   * (`ceilingFor`) and not something derivable from the route alone. It is
+   * passed rather than recomputed for the reason `reported` is passed: it is
+   * built differently on the two visits, and the way-through one is judged on a
+   * `review` that passed.
    */
   const take = (
     route: StepRouted,
     reported: { step: Step; ending: StepReport } | null,
-    offeredFor: { readonly at: Step; readonly ending: StepEnding },
+    offer: Offer,
   ): boolean => {
     const chose = route.chose ?? route.to;
     routes.push({
@@ -1193,8 +1250,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       to: route.to,
       why: route.why,
       // Read here and not on the ending, because this is the only scope that
-      // holds both the choice and what has been spent against it.
-      ceiling: refusedBy(chose, route.to, offeredFor, roundsSpent),
+      // holds both the choice and the offer it was made against. A route that
+      // got what it wanted took an affordable destination, so this is null
+      // without a `chose === to` case of its own.
+      ceiling: ceilingFor(chose, offer),
     });
     if (route.to === "waiting" || route.to === "claim") {
       rested = route.to === "claim" ? "requeued" : "waiting";
@@ -1227,19 +1286,22 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
 
   while (at !== null && at !== "end") {
     const spec = SPEC[at];
+    // **`proposed` routes on the way through as well as on the way back** (0058
+    // §3b) — and that visit is where a `review`'s findings are judged, which is
+    // 231 of the log's refusals and 0061 §3's one judgement worth an agent.
+    // `review` judges nothing and passes, so nothing refused and there is
+    // nothing arriving; what the judge reads is the findings on `reached`, and
+    // what it may answer is this offer. Held in a local because `take` is
+    // handed the same object the body was, rather than a second computation of
+    // it (`ceilingFor`).
+    const offer = spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : NO_OFFER;
     const reached = record(
       await runStep(spec, options, bodies, [...steps], {
         context: contextFor(),
         // The spine visit: the step's own plugins, then its own body. Nothing has
         // arrived, and at nine of the ten there is nothing to route.
         arriving: null,
-        // **`proposed` routes on the way through as well as on the way back**
-        // (0058 §3b) — and that visit is where a `review`'s findings are judged,
-        // which is 231 of the log's refusals and 0061 §3's one judgement worth an
-        // agent. `review` judges nothing and passes, so nothing refused and there
-        // is nothing arriving; what the judge reads is the findings on `reached`,
-        // and what it may answer is this set.
-        offering: spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : [],
+        offering: offer,
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
@@ -1252,7 +1314,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       // to `merge` as it stands. Nothing reported anything, so nothing is named
       // as having stopped the pass: `routes` says what was decided and
       // `review`'s own entry says what it was decided on.
-      if (take(ending, null, { at, ending: PASSED_THROUGH })) continue;
+      if (take(ending, null, offer)) continue;
       break;
     }
 
@@ -1274,11 +1336,12 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // visit to `proposed` in the pass rather than a branch inside the spine
     // walk, and it runs the router without the inspection: see
     // `StepWork.arriving`.
+    const arrival = onOffer(at, ending, ceilings, roundsSpent);
     const router = record(
       await runStep(SPEC.proposed, options, bodies, [...steps], {
         context: contextFor(),
         arriving: reached,
-        offering: onOffer(at, ending, ceilings, roundsSpent),
+        offering: arrival,
         outcome: null,
       }),
     );
@@ -1291,7 +1354,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       break;
     }
 
-    if (!take(router.ending, { step: at, ending }, { at, ending })) break;
+    if (!take(router.ending, { step: at, ending }, arrival)) break;
   }
 
   // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
@@ -1304,7 +1367,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     await runStep(SPEC.end, options, bodies, [...steps], {
       context: contextFor(),
       arriving: null,
-      offering: [],
+      offering: NO_OFFER,
       outcome,
     }),
   );
@@ -1331,7 +1394,7 @@ interface Reaching {
    */
   readonly context: ActionContext;
   readonly arriving: StepReached | null;
-  readonly offering: readonly Destination[];
+  readonly offering: Offer;
   readonly outcome: TerminalOutcome | null;
 }
 
@@ -1603,7 +1666,7 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reachin
       `\`proposed\` was handed the \`${reaching.arriving.step}\` step's ` +
         `${reaching.arriving.ending.ending} and answered \`${ending.ending}\` rather than a route. ` +
         `A step that did not pass is routed, not reported on again: choose one of ` +
-        `${reaching.offering.join(", ")} (0058 §3b, 0061 §3).`,
+        `${reaching.offering.affordable.join(", ")} (0058 §3b, 0061 §3).`,
     );
   }
   if (ending.ending === "refused" && !spec.refuses) {
@@ -1621,12 +1684,17 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reachin
           "loop takes it to `proposed`, which is what keeps `waiting` to one way in.",
       );
     }
-    if (!reaching.offering.includes(ending.to)) {
+    if (!reaching.offering.affordable.includes(ending.to)) {
+      // **And the refusal says which half it failed** (0064 §7): a ceiling is a
+      // number somebody can raise, and a destination the arrival never reached
+      // is not — so the two cannot read as one absence.
+      const ceiling = ceilingFor(ending.to, reaching.offering);
       throw new Error(
         `\`proposed\` routed the pass to \`${ending.to}\`, which was not on offer — ` +
-          `${reaching.offering.join(", ") || "nothing was"} (0061 §3). A judge answers *which of ` +
-          "these*, never *what is legal*: the workflow counts the rounds and restarts spent and " +
-          "hands it the set, so a destination outside the set is refused by name (0061 §8).",
+          `${reaching.offering.affordable.join(", ") || "nothing was"}` +
+          `${ceiling === null ? "" : `, and \`${ceiling}\` is spent`} (0061 §3). A judge answers ` +
+          "*which of these*, never *what is legal*: the workflow counts the rounds and restarts " +
+          "spent and hands it the set, so a destination outside the set is refused by name (0061 §8).",
       );
     }
   }

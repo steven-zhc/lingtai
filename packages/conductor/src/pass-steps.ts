@@ -119,7 +119,9 @@ import { BUILT_IN_FOR } from "./judge.ts";
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
+  ceilingFor,
   type Destination,
+  type Offer,
   type StepBodies,
   type StepDidNotFinish,
   type StepNeverRan,
@@ -405,10 +407,17 @@ export type Landed =
  * workflow has already counted, and `offering` is what is left of the arithmetic.
  *
  * **A judge answers *which of these*, never *what is legal*.** `offering` is
- * `onOffer`'s, computed from how far the pass got as well as from what is left to
- * spend (0061 §3): `prepared`'s refusal happens before any agent has run, so
- * `implement` is not in it there and a judge that knows nothing about `prepared`
- * still cannot choose wrongly.
+ * `Offer.affordable` — `onOffer`'s, computed from how far the pass got as well as
+ * from what is left to spend (0061 §3): `prepared`'s refusal happens before any
+ * agent has run, so `implement` is not in it there and a judge that knows nothing
+ * about `prepared` still cannot choose wrongly.
+ *
+ * **One list and not the `Offer`'s two**, and that is the safety property again
+ * (0064 §7). The reachable half is the workflow's arithmetic *about money*: a
+ * judge handed both could read off exactly which destinations the ceilings took
+ * away, which is the one thing `JudgeBrief` exists to keep out of its hands. What
+ * the two sets are for is the sentence a **person** then reads — `becauseSpent`
+ * below — and the body holds them for that.
  */
 export interface Judging {
   /** The direction — the reason the step that did not pass gave. */
@@ -420,6 +429,15 @@ export interface Judging {
   /** What the step printed when it did not pass; the question, for `needs-input`. */
   readonly evidence: string;
 }
+
+/**
+ * One arrival as the body has it, before the offer is put beside it.
+ *
+ * `Judging` minus the set rather than a second declaration of the three fields:
+ * the body computes `offering` from the `Offer` it was handed, so a call site
+ * that passed its own would be a set the answer was not held to.
+ */
+type Arrival = Omit<Judging, "offering">;
 
 /**
  * What the recipe's `judge:` for that direction answered, or that it declared
@@ -694,7 +712,7 @@ const MECHANICALLY: Record<BuiltInJudge, { readonly wants: Destination; readonly
  * none is an absent criterion rather than a command with no output, which is the
  * more useful of the two truths.
  */
-function carriesACriterion(on: Judging): boolean {
+function carriesACriterion(on: Arrival): boolean {
   return on.when === "findings"
     ? on.findings.some((finding) => finding.failureScenario.trim() !== "")
     : on.evidence.trim() !== "";
@@ -765,6 +783,29 @@ function toAPerson(why: string, chose?: Destination): StepRouted {
 /** The offered steps, for a sentence a person or a judge reads. */
 function listing(offering: readonly Destination[]): string {
   return offering.map((step) => `"${step}"`).join(", ");
+}
+
+/**
+ * **Why the destination a decision wanted was not one it could have — and only
+ * where a number would have bought it** (0064 §7).
+ *
+ * `offering` used to be one set, so a destination missing from it read the same
+ * whichever reason it was missing for, and the words on the card could say only
+ * *that is not one of the steps it was offered*. With `Offer`'s two sets the
+ * difference is readable, and it is the difference between two next moves: a
+ * `rounds` or a `restarts` that is spent is a line in
+ * `~/.lingtai/<project>/recipe.yml` somebody can raise, and a step the arrival
+ * never reached is not.
+ *
+ * **Empty for the second, deliberately, and that is `#271`'s rule kept.** The
+ * words are what the router quotes back to a person, and naming a step no number
+ * would have offered invites the reader to ask for it — `implement` from a
+ * `prepared` refusal, where no agent has run and none will until the install
+ * works. `RouteTaken.chose` records what was wanted there; the sentence does not.
+ */
+function becauseSpent(wanted: Destination, offer: Offer): string {
+  const ceiling = ceilingFor(wanted, offer);
+  return ceiling === null ? "" : ` — it wanted \`${wanted}\`, and \`${ceiling}\` is spent`;
 }
 
 /**
@@ -916,14 +957,17 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * judge is not one to ask for a second opinion, so the answer is not the next
    * cheapest step — it is a person, with the refusal on the card (`askJudge`).
    */
-  const judged = async (on: Judging, about: string): Promise<StepRouted> => {
-    if (!carriesACriterion(on)) {
+  const judged = async (arrival: Arrival, offer: Offer, about: string): Promise<StepRouted> => {
+    if (!carriesACriterion(arrival)) {
       return toAPerson(
         `${about} carries nothing an agent could be held to — ` +
-          `${on.when === "findings" ? "no finding with a failure scenario" : "no output"} — so no ` +
-          "round is worth buying and the pass is held for a person (0038 §2)",
+          `${arrival.when === "findings" ? "no finding with a failure scenario" : "no output"} — so ` +
+          "no round is worth buying and the pass is held for a person (0038 §2)",
       );
     }
+    // The affordable half and never the `Offer` — a judge answers *which of
+    // these*, and what the ceilings took away is not its business (`Judging`).
+    const on: Judging = { ...arrival, offering: offer.affordable };
     const answer = await ports.judge(on);
     if ("noJudge" in answer) {
       const built = BUILT_IN_FOR[on.when];
@@ -935,7 +979,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         );
       }
       const mechanical = MECHANICALLY[built];
-      const next = on.offering.includes(mechanical.wants) ? mechanical.wants : mechanical.orElse;
+      const afforded = on.offering.includes(mechanical.wants);
+      const next = afforded ? mechanical.wants : mechanical.orElse;
       return {
         ending: "routed",
         to: next,
@@ -943,22 +988,27 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         // `waiting` the rounds bought and a `waiting` somebody chose are two
         // different rows on the log (`RouteTaken.chose`).
         //
-        // **It is not in the sentence, and that is deliberate**: the words are
-        // what the router quotes back to a person, and the destinations in them
-        // are the ones that were actually on offer — naming a step the arrival
-        // could not have taken invites the reader to ask for it (`pass-steps.test.ts`'s
-        // *offers the judge a person and a restart, and never `implement`*).
+        // **It is in the sentence only where a ceiling is what refused it**, and
+        // `becauseSpent` is that distinction (0064 §7). A step no number would
+        // have offered stays out of the words, which is `#271`'s rule —
+        // naming one invites the reader to ask for it (`pass-steps.test.ts`'s
+        // *offers the judge a person and a restart, and never `implement`*) —
+        // while a spent `rounds` is a line somebody can raise and so is said.
         chose: mechanical.wants,
         why:
           `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
           `there and the remedy is to fix it where it stands — and of ${listing(on.offering)} it ` +
-          `chose \`${next}\``,
+          `chose \`${next}\`${afforded ? "" : becauseSpent(mechanical.wants, offer)}`,
       };
     }
     if (!on.offering.includes(answer.next)) {
       return toAPerson(
         `the "${answer.named}" judge answered "${answer.next}" for ${about}, and that is not one ` +
-          `of the steps it was offered — ${listing(on.offering)}. A judge chooses which of the ` +
+          `of the steps it was offered — ${listing(on.offering)}` +
+          // Which half it failed, where that is a number rather than the shape
+          // of the arrival: a `restarts` a person can raise reads differently
+          // from a `claim` that was never on a mechanical direction's offer.
+          `${becauseSpent(answer.next, offer)}. A judge chooses which of the ` +
           "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
           "rounds and restarts spent to work them out (0061 §3). The pass is held for a person, " +
           "because a judge that answered outside the set is not one to ask a second time",
@@ -1228,7 +1278,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         // are on `review`'s own visit and are the `backlog:` plugin's business,
         // not a reason to hold a change back.
         if (said === null) return { ending: "passed" };
-        return await judged({ when: "findings", offering, ...said }, "`review`'s findings");
+        return await judged({ when: "findings", ...said }, offering, "`review`'s findings");
       }
       const when = directionOf(arriving);
       if (when === null) {
@@ -1239,7 +1289,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         );
       }
       return await judged(
-        { when, offering, ...whatArrived(arriving) },
+        { when, ...whatArrived(arriving) },
+        offering,
         `the \`${arriving.step}\` step's ${arriving.ending.ending}`,
       );
     },
