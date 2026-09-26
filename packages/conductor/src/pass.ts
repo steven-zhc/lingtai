@@ -357,6 +357,17 @@ export interface StepRouted extends LeftTheTreeAt {
   readonly ending: "routed";
   readonly to: Destination;
   readonly why: string;
+  /**
+   * Where the decision **wanted** to go, where that is not where it went — and
+   * absent everywhere else, which is every route that got what it asked for.
+   *
+   * It is deliberately not held to `offering`: the whole of what it records is a
+   * choice the offer did not contain, and `theWorkflowsToSay` checks `to` for
+   * that reason. Which limit refused it is not a body's to say either — the
+   * workflow counts the rounds and the restarts (0061 §3) — so `take` names the
+   * ceiling and this says only what was wanted (`RouteTaken`, `#271`).
+   */
+  readonly chose?: Destination;
 }
 
 /** The six ways a step ends: five reports, and `proposed`'s one decision. */
@@ -695,6 +706,16 @@ export interface Ceilings {
 const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
 
 /**
+ * What `proposed`'s own visit is judging: nothing refused.
+ *
+ * Named because two things ask `onOffer` about that visit — the offer it is
+ * handed, and `refusedBy` asking what it would have offered with something to
+ * spend — and an object literal written twice is two chances for them to disagree
+ * about what a way-through arrival is.
+ */
+const PASSED_THROUGH: StepPassed = { ending: "passed" };
+
+/**
  * The destinations a judge may choose from, given what arrived and what is left
  * to spend.
  *
@@ -765,6 +786,43 @@ export function onOffer(
   if (AFTER_AN_AGENT.includes(at)) offer.push("implement");
   if (at === "merge") offer.push("build");
   return offer;
+}
+
+/**
+ * **`onOffer` asked again with a budget, which is the only honest way to say
+ * which ceiling refused a choice** (`#271`).
+ *
+ * Asked only where what was chosen and what was taken differ. A destination can
+ * be off an offer for either of two unlike reasons, and they read the same on
+ * `to`: *the pass never got far enough for it* — `implement` from `prepared`,
+ * where no agent has run — or *it got there and the budget is spent*. The first
+ * is the offer's own rule and no number a person could raise would change it; the
+ * second is exactly a number a person could raise.
+ *
+ * So the same arrival is offered again with a round and a restart to spare, and
+ * what is in that set and not in the one the judge was handed differs by the
+ * budget and by nothing else. Which of the two is then arithmetic: `claim` is the
+ * item's restarts and every other edge is this pass's rounds.
+ *
+ * **Null is a real answer and not a gap**, and it is what the first case above
+ * gets: the route was refused on grounds that have nothing to do with a ceiling,
+ * and naming one would send a person to raise a limit that will refuse it again.
+ */
+function refusedBy(
+  chose: Destination,
+  to: Destination,
+  offeredFor: { readonly at: Step; readonly ending: StepEnding },
+  roundsSpent: number,
+): Ceiling | null {
+  if (chose === to) return null;
+  const spare = onOffer(
+    offeredFor.at,
+    offeredFor.ending,
+    { rounds: roundsSpent + 1, restartsLeft: 1 },
+    roundsSpent,
+  );
+  if (!spare.includes(chose)) return null;
+  return chose === "claim" ? "restarts" : "rounds";
 }
 
 /**
@@ -884,7 +942,16 @@ export interface PassOptions {
   readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[];
 }
 
-/** One decision `proposed` made, in the order it made them. */
+/**
+ * One decision `proposed` made, in the order it made them — **and the log's own
+ * shape for it** (`PassRouted`, `#271`).
+ *
+ * Every field here is appended, so this is what *why the pass took this path*
+ * says after the run log is deleted. The two that are not a body's answer are
+ * `chose` and `ceiling`, and both are the workflow's for one reason: a route is
+ * a plugin's decision and the budget it is spent against is not (0061 §3, 0064
+ * §7).
+ */
 export interface RouteTaken {
   /**
    * The step whose outcome was judged — the one that did not pass, or `proposed`
@@ -892,9 +959,32 @@ export interface RouteTaken {
    * `review`'s findings are read.
    */
   readonly from: Step;
+  /**
+   * Where the decision wanted to go — `to` on every route nothing intervened in.
+   *
+   * It differs where the destination was not on offer: the built-in that answers
+   * a red build wants `implement` and settles for a person when the rounds are
+   * spent, and a declared judge that answers outside the set is overruled. Both
+   * read as `waiting` on `to` alone, and they are not the same thing to somebody
+   * deciding what to do about it.
+   */
+  readonly chose: Destination;
   readonly to: Destination;
   readonly why: string;
+  /**
+   * Which ceiling refused `chose`, or null — including on every route that went
+   * where it wanted.
+   *
+   * Named here because this is where both halves are known: the choice arrives
+   * on the ending and the counts are the loop's. Null with `chose !== to` is a
+   * choice nothing this loop bounds refused — a judge answering a step the
+   * arrival never offered, which the offer refuses on its own grounds.
+   */
+  readonly ceiling: Ceiling | null;
 }
+
+/** The two limits that take a destination off the offer. */
+export type Ceiling = "rounds" | "restarts";
 
 /** Where a pass came to rest, when it did not simply get through. */
 export type Rest = "waiting" | "requeued";
@@ -1084,9 +1174,28 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * two of them: `proposed`'s own visit on the way through, and the visit the
    * loop takes a step that did not pass to. `reported` is what a person should
    * be shown, and is null where nothing refused.
+   *
+   * `offeredFor` is the arrival the offer was computed from — the same pair that
+   * went to `onOffer` a line above the call — because naming the ceiling means
+   * asking that function what it would have offered with something to spend
+   * (`refusedBy`). It is not derivable here: `reported` is null on the
+   * way-through visit, where what was judged is a `review` that passed.
    */
-  const take = (route: StepRouted, reported: { step: Step; ending: StepReport } | null): boolean => {
-    routes.push({ from: reported?.step ?? "proposed", to: route.to, why: route.why });
+  const take = (
+    route: StepRouted,
+    reported: { step: Step; ending: StepReport } | null,
+    offeredFor: { readonly at: Step; readonly ending: StepEnding },
+  ): boolean => {
+    const chose = route.chose ?? route.to;
+    routes.push({
+      from: reported?.step ?? "proposed",
+      chose,
+      to: route.to,
+      why: route.why,
+      // Read here and not on the ending, because this is the only scope that
+      // holds both the choice and what has been spent against it.
+      ceiling: refusedBy(chose, route.to, offeredFor, roundsSpent),
+    });
     if (route.to === "waiting" || route.to === "claim") {
       rested = route.to === "claim" ? "requeued" : "waiting";
       // What a person reads is the step that did not pass, never the router that
@@ -1130,7 +1239,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         // agent. `review` judges nothing and passes, so nothing refused and there
         // is nothing arriving; what the judge reads is the findings on `reached`,
         // and what it may answer is this set.
-        offering: spec.routes ? onOffer(at, { ending: "passed" }, ceilings, roundsSpent) : [],
+        offering: spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : [],
         // Nothing but `end` is told the outcome, because nothing but `end` runs
         // after it is known.
         outcome: null,
@@ -1143,7 +1252,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       // to `merge` as it stands. Nothing reported anything, so nothing is named
       // as having stopped the pass: `routes` says what was decided and
       // `review`'s own entry says what it was decided on.
-      if (take(ending, null)) continue;
+      if (take(ending, null, { at, ending: PASSED_THROUGH })) continue;
       break;
     }
 
@@ -1182,7 +1291,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       break;
     }
 
-    if (!take(router.ending, { step: at, ending })) break;
+    if (!take(router.ending, { step: at, ending }, { at, ending })) break;
   }
 
   // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be

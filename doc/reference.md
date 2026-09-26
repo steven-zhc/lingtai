@@ -19,7 +19,7 @@ reader learns to disbelieve the stamp instead of the table.
 
 ---
 
-## event — 66 types
+## event — 67 types
 
 One fact that already happened, past tense. Never edited, never deleted.
 Source: the registry at the bottom of `packages/domain/src/events.ts`.
@@ -36,6 +36,7 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
 | repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
 | fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
+| route (1) | `PassRouted` — where `proposed` sent a pass and why (`#271`). It carries **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a judge may choose `implement` and the pass still go to `waiting` because `rounds` is spent, and *the decision sent this to a person* and *the decision wanted another round and there was none* are the two sentences a person reads on the card. Written by the pass and not by whatever routed, because the budget is the workflow's ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3, [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §7). **It is not named `Gate…`** — the allowlist below may only shrink — so the log carries two vocabularies until the reset 0061 §7 spends, which is what a log with two eras looks like |
 | restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 | control (5) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` `ConductorShutdownWithdrawn` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |

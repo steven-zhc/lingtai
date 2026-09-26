@@ -1119,6 +1119,72 @@ export const FixDeclined = z.object({
   findings: z.array(Finding),
 });
 
+// --------------------------------------------------------------- route ----
+
+/**
+ * Where a route could send a pass: one of the ten, or a person.
+ *
+ * `Destination` in `pass.ts`, which is where the concept is argued —
+ * `waiting` is not a step (0058 §3) and has exactly one way in, so it is the
+ * one value here that is not one of the ten.
+ */
+const Destination = z.union([Step, z.literal("waiting")]);
+
+/**
+ * **`proposed` sent the pass somewhere, and why** (`#271`).
+ *
+ * The decision the whole loop turns on, and until this existed it was written
+ * with `runLog.note` and nowhere else: the run log is a trace kept only while
+ * something is still owed an explanation
+ * ([0034](../../../doc/decisions/0034-the-run-log.md)), so on the ending that
+ * matters most — the one where the change landed — the file is deleted and *why
+ * this pass bought a round* was on the log nowhere.
+ *
+ * **It is not named `Gate…`**, and that is the one thing about it that is not
+ * about routing. The retired-name allowlist may only shrink
+ * (`doc/reference.md`), so a new type carrying the retired word could not be
+ * added at all; the log therefore holds two vocabularies until the reset 0061 §7
+ * spends, which is correct rather than untidy — a log records history and this
+ * history has two eras.
+ *
+ * **`chose` and `to` are separated because they answer different questions.**
+ * 0064 §7 keeps the budget with the workflow rather than with the plugin that
+ * routes: a judge may choose `implement` and the pass still go to `waiting`
+ * because `rounds` is spent. A single `to` cannot tell *the decision sent this
+ * to a person* from *the decision wanted another round and there was none*, and
+ * those are the two sentences a person reads on the card. They are equal on
+ * every route nothing intervened in, which is most of them.
+ *
+ * On the **run's** stream, appended after the walk rather than from inside it:
+ * the pass is the thing that knows both the choice and the budget, and
+ * `conduct.ts` writes what it returns (`PassResult.routes`).
+ */
+export const PassRouted = z.object({
+  /**
+   * The step whose outcome was judged — the one that did not pass, or
+   * `proposed` itself where the judgement was made on the way through, which is
+   * where a review's findings are read.
+   */
+  from: Step,
+  /** Where the decision wanted to go. Equal to `to` unless something refused it. */
+  chose: Destination,
+  /** Where the pass actually went. */
+  to: Destination,
+  /** The decision's own words, as a person reads them beside the arriving step's detail. */
+  why: z.string(),
+  /**
+   * Which limit refused the choice, where `to` and `chose` differ — and null
+   * everywhere else, including a route that went where it wanted.
+   *
+   * `rounds` is `runtime.limits.rounds`, spent: no step is on offer any more, so
+   * a choice that was a step became a person. `restarts` is the item's, spent:
+   * `claim` was not on offer. Both are counted by the workflow and neither is
+   * the plugin's to know (0061 §3), which is why this field is written by the
+   * pass and not by whatever answered.
+   */
+  ceiling: z.enum(["rounds", "restarts"]).nullable(),
+});
+
 // ------------------------------------------------------------- restart ----
 
 /**
@@ -1939,6 +2005,7 @@ export const EVENTS = {
   FixRequested,
   FixApplied,
   FixDeclined,
+  PassRouted,
   PassRestarted,
   ConductorPaused,
   ConductorResumed,

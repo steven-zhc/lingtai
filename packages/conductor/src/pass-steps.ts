@@ -661,9 +661,16 @@ function directionOf(arriving: StepReached): JudgeWhen | null {
  *
  * A **total** record over `BuiltInJudge`, so a name added to `BUILT_IN_JUDGES`
  * with no answer here does not compile — the same argument `BUILT_IN` makes.
+ *
+ * **What it wants and what it settles for, rather than one function of the
+ * offer** (`#271`). The two were the same line and the difference was lost in
+ * it: a route to `waiting` because the rounds are spent read exactly like a route
+ * to `waiting` somebody chose, and `RouteTaken.chose` is what a person is owed
+ * there. So the cell says the answer it would give with everything on offer, and
+ * the caller is what consults the offer.
  */
-const MECHANICALLY: Record<BuiltInJudge, (offering: readonly Destination[]) => Destination> = {
-  "same-worktree": (offering) => (offering.includes("implement") ? "implement" : "waiting"),
+const MECHANICALLY: Record<BuiltInJudge, { readonly wants: Destination; readonly orElse: Destination }> = {
+  "same-worktree": { wants: "implement", orElse: "waiting" },
 };
 
 /**
@@ -741,9 +748,18 @@ function reasonOf(arriving: StepReached): string {
   return "because" in ending ? ending.because : ending.ending;
 }
 
-/** `waiting`, which `onOffer` offers on every arrival, so this can never be refused. */
-function toAPerson(why: string): StepRouted {
-  return { ending: "routed", to: "waiting", why };
+/**
+ * `waiting`, which `onOffer` offers on every arrival, so this can never be
+ * refused.
+ *
+ * `chose` is the destination somebody asked for and did not get, on the one path
+ * that has one — a judge answering outside its offer. Every other caller wanted
+ * a person and says nothing, which `take` reads as *it went where it wanted*.
+ */
+function toAPerson(why: string, chose?: Destination): StepRouted {
+  return chose === undefined
+    ? { ending: "routed", to: "waiting", why }
+    : { ending: "routed", to: "waiting", why, chose };
 }
 
 /** The offered steps, for a sentence a person or a judge reads. */
@@ -918,10 +934,21 @@ export function bodiesFor(ports: PassPorts): StepBodies {
             `${listing(on.offering)} on its own (0061 §3)`,
         );
       }
-      const next = MECHANICALLY[built](on.offering);
+      const mechanical = MECHANICALLY[built];
+      const next = on.offering.includes(mechanical.wants) ? mechanical.wants : mechanical.orElse;
       return {
         ending: "routed",
         to: next,
+        // What it would have answered with everything on offer, so that a
+        // `waiting` the rounds bought and a `waiting` somebody chose are two
+        // different rows on the log (`RouteTaken.chose`).
+        //
+        // **It is not in the sentence, and that is deliberate**: the words are
+        // what the router quotes back to a person, and the destinations in them
+        // are the ones that were actually on offer — naming a step the arrival
+        // could not have taken invites the reader to ask for it (`pass-steps.test.ts`'s
+        // *offers the judge a person and a restart, and never `implement`*).
+        chose: mechanical.wants,
         why:
           `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
           `there and the remedy is to fix it where it stands — and of ${listing(on.offering)} it ` +
@@ -935,6 +962,10 @@ export function bodiesFor(ports: PassPorts): StepBodies {
           "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
           "rounds and restarts spent to work them out (0061 §3). The pass is held for a person, " +
           "because a judge that answered outside the set is not one to ask a second time",
+        // The judge's answer is on the log as what was chosen, and `to` says a
+        // person got it instead: an overruled judge and a judge that asked for a
+        // person are not the same thing to read back.
+        answer.next,
       );
     }
     return { ending: "routed", to: answer.next, why: answer.why };

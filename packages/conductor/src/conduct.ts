@@ -1951,8 +1951,41 @@ export function runOnce(
       }
 
       log(`pass: ${pass.steps.map((v) => `${v.step}=${v.ending.ending}`).join(" ")}`);
+      /**
+       * **Every decision the router made, on the log** (`#271`).
+       *
+       * The note below is what `lingtai attach` and the task page's run log show
+       * while a pass is in flight, and it stays: a trace is what answers *what is
+       * it doing now*. What it cannot answer is *why did that pass buy a round*,
+       * because the file is deleted on the ending where the change landed (0034),
+       * so until this append existed the one decision the whole loop turns on was
+       * the one thing no ending recorded.
+       *
+       * One append rather than one per route: they were all decided by the walk
+       * that has just returned, and a reader asking what a pass did wants them
+       * whole or not at all. An empty list appends nothing — a pass that sailed
+       * through decided nothing, and `pass.steps` already says it got through.
+       */
       for (const route of pass.routes) {
         runLog.note("route", `${route.from} → ${route.to}: ${route.why}`);
+      }
+      if (pass.routes.length > 0) {
+        yield* Effect.promise(() =>
+          appendNow(
+            runId,
+            pass.routes.map((route) => ({
+              type: "PassRouted" as const,
+              actor: "conductor",
+              data: parsePayload("PassRouted", {
+                from: route.from,
+                chose: route.chose,
+                to: route.to,
+                why: route.why,
+                ceiling: route.ceiling,
+              }),
+            })),
+          ),
+        );
       }
 
       const outcome = outcomeOf(pass);

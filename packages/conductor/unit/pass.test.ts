@@ -667,8 +667,16 @@ describe("every step that does not pass arrives at proposed", () => {
     ]);
     // `proposed` is visited for the routing, and the visit is in `steps`.
     expect(result.steps.map((s) => s.step)).toEqual(["claim", "admit", "prepared", "proposed", "end"]);
+    // A body that named no other destination wanted the one it took, and no
+    // ceiling stood between them (`RouteTaken`, `#271`).
     expect(result.routes).toEqual([
-      { from: "prepared", to: "waiting", why: "a base that will not install is yours" },
+      {
+        from: "prepared",
+        chose: "waiting",
+        to: "waiting",
+        why: "a base that will not install is yours",
+        ceiling: null,
+      },
     ]);
   });
 
@@ -1012,7 +1020,13 @@ describe("proposed routes on the way through as well as on the way back", () => 
       "passed",
     ]);
     expect(result.routes).toEqual([
-      { from: "proposed", to: "implement", why: "the lines, not the approach" },
+      {
+        from: "proposed",
+        chose: "implement",
+        to: "implement",
+        why: "the lines, not the approach",
+        ceiling: null,
+      },
     ]);
     expect(result.stoppedAt).toBeNull();
     expect(result.rested).toBeNull();
@@ -1064,7 +1078,13 @@ describe("proposed routes on the way through as well as on the way back", () => 
     expect(result.stoppedAt).toBeNull();
     expect(result.rested).toBe("waiting");
     expect(result.routes).toEqual([
-      { from: "proposed", to: "waiting", why: "this changes a decision — your call" },
+      {
+        from: "proposed",
+        chose: "waiting",
+        to: "waiting",
+        why: "this changes a decision — your call",
+        ceiling: null,
+      },
     ]);
     expect(outcomeOf(result)).toBe("blocked");
     // `merge` was never reached, and `end` was told the pass did not land.
@@ -1118,7 +1138,9 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
 
     expect(result.stoppedAt).toBeNull();
     expect(result.rested).toBeNull();
-    expect(result.routes).toEqual([{ from: "build", to: "implement", why: "because a test said so" }]);
+    expect(result.routes).toEqual([
+      { from: "build", chose: "implement", to: "implement", why: "because a test said so", ceiling: null },
+    ]);
     expect(result.steps.map((s) => s.step)).toEqual([
       "claim",
       "admit",
@@ -1208,7 +1230,9 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
     });
 
     expect(result.rested).toBe("requeued");
-    expect(result.routes).toEqual([{ from: "proposed", to: "claim", why: "because a test said so" }]);
+    expect(result.routes).toEqual([
+      { from: "proposed", chose: "claim", to: "claim", why: "because a test said so", ceiling: null },
+    ]);
     expect(result.steps.filter((s) => s.step === "claim")).toHaveLength(1);
     // Released rather than held: `failed` is *put the item back in the queue*.
     expect(outcomeOf(result)).toBe("failed");
@@ -1354,7 +1378,9 @@ describe("a visit is judged in the round the pass is in", () => {
       ceilings: { rounds: 2, restartsLeft: 0 },
     });
 
-    expect(result.routes).toEqual([{ from: "build", to: "implement", why: "because a test said so" }]);
+    expect(result.routes).toEqual([
+      { from: "build", chose: "implement", to: "implement", why: "because a test said so", ceiling: null },
+    ]);
     expect(judged.map((j) => [j.step, j.round])).toEqual([
       ["claim", 0],
       ["admit", 0],
