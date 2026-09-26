@@ -38,7 +38,7 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 import { type ProjectState, reduceWorkItem } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
 import { selectRunnable } from "./queue.ts";
-import { type RunOnceResult, runOnce } from "./run-once.ts";
+import { type RunOnceResult, runOnce } from "./conduct.ts";
 import type { TokenSource } from "@lingtai/repo";
 import { Effect } from "effect";
 import type { AgentHost, Repo } from "./ports.ts";

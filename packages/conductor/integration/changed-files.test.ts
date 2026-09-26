@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { changedFilesArgs } from "../src/run-once.ts";
+import { changedFilesArgs } from "../src/conduct.ts";
 
 const exec = promisify(execFile);
 const env = {

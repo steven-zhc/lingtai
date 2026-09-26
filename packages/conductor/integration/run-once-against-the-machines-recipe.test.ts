@@ -17,7 +17,7 @@
 import type { GitHubClient } from "@lingtai/github";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { runOnce } from "../src/run-once.ts";
+import { runOnce } from "../src/conduct.ts";
 import {
   PROJECT,
   RECIPE,

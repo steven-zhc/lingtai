@@ -112,6 +112,7 @@ import {
   parseDuration,
   submodulesOf,
   type ResolvedRecipe,
+  type StepAction,
 } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
@@ -144,7 +145,6 @@ import { nextPrompt, renderPrompt } from "./prompt.ts";
 import {
   CONTROL_STREAM,
   type Step,
-  type StepAction,
   type ToAppend,
   reduceControl,
   reduceWorkItem,
@@ -335,6 +335,18 @@ function runBinary(
  */
 function headReached(steps: readonly StepReached[]): string {
   return steps.reduce<string>((sha, visit) => visit.ending.head ?? sha, "");
+}
+
+/**
+ * The action a step named when it did not pass, or null where none did.
+ *
+ * `StepReport` includes `passed`, which carries no `at` — and a `null` `at` is
+ * the step's *own* work having refused rather than a declared action, which
+ * `pass-steps.ts` says at each of the bodies that set it.
+ */
+function whatRefused(stopped: PassResult["stoppedAt"]): string | null {
+  if (stopped === null) return null;
+  return "at" in stopped.ending ? stopped.ending.at : null;
 }
 
 /** What a step said when it did not pass, in the words a person reads (0043). */
@@ -674,8 +686,15 @@ export function runOnce(
        * here that means it.
        */
       let didLand = false;
-      /** The merge commit the lane produced, for the caller's `ok: true`. */
+      /**
+       * The merge commit the lane produced, for the caller's `ok: true`.
+       *
+       * Read through `landedAt()` and not off the variable: `land` is a port and
+       * the compiler cannot see that it ran, so narrowing the `let` at the read
+       * would make it `never`.
+       */
       let mergeCommit: string | null = null;
+      const landedAt = (): string | null => mergeCommit;
       /** The tree, once `admit`'s port has cut it. */
       let worktree: Worktree | null = null;
       /** The item, once `claim`'s port has taken it. */
@@ -1273,7 +1292,11 @@ export function runOnce(
                   options.runtime.run({
                     runId,
                     cwd: tree.path,
-                    prompt: renderPrompt(options.prompt, brief.ticket, next.failure),
+                    prompt: renderPrompt(
+                      options.prompt,
+                      { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
+                      next.failure,
+                    ),
                     settingsPath: wiring.settingsPath,
                     log: runLog,
                     env: agentEnv,
@@ -1668,13 +1691,14 @@ export function runOnce(
       };
 
       // ---- landed -------------------------------------------------------------
-      if (outcome === "landed" && mergeCommit !== null) {
+      const merged = landedAt();
+      if (outcome === "landed" && merged !== null) {
         yield* Effect.promise(() =>
           appendNow(workItemId, [
             {
               type: "WorkItemLanded",
               actor: "conductor",
-              data: parsePayload("WorkItemLanded", { mergeCommit, base }),
+              data: parsePayload("WorkItemLanded", { mergeCommit: merged, base }),
             },
           ]),
         );
@@ -1691,9 +1715,9 @@ export function runOnce(
             appended: endResolved,
           }),
         );
-        log(`landed ${mergeCommit.slice(0, 7)} on ${base}`);
+        log(`landed ${merged.slice(0, 7)} on ${base}`);
         didLand = true;
-        return { ok: true, workItemId, runId, mergeCommit } satisfies RunOnceResult;
+        return { ok: true, workItemId, runId, mergeCommit: merged } satisfies RunOnceResult;
       }
 
       // ---- requeued: a second approach was bought (0040) -----------------------
@@ -1728,7 +1752,7 @@ export function runOnce(
         log(`starting over — restart ${restart} of ${limits.restarts}`);
         runLog.note("restart", reason);
         yield* release(reason);
-        return { ok: false, workItemId, runId, stage: "restart", detail: reason };
+        return { ok: false, workItemId, runId, stage: "restart", detail: reason } satisfies RunOnceResult;
       }
 
       // ---- blocked: a person now holds it -------------------------------------
@@ -1745,7 +1769,7 @@ export function runOnce(
                 actor: "conductor",
                 data: parsePayload("ApprovalRequested", {
                   gate: stopped?.step ?? "proposed",
-                  action: stopped?.ending.at ?? "judge",
+                  action: whatRefused(stopped) ?? "judge",
                   runId,
                   onSha: headSha,
                   question: `Merge ${branch} into ${base} anyway? ${said_.question}`,

@@ -1888,29 +1888,28 @@ describe("the ten bodies are empty, and the two that are not silent", () => {
   });
 });
 
-// ------------------------------------------------------- wired to nothing ----
+// ---------------------------------------------------------- one caller ----
 
-describe("nothing in the conductor imports it", () => {
+describe("the pass has one caller, and it is `conduct.ts`", () => {
   /**
-   * The ticket's first *Done when*, and the thing that makes the blast radius
-   * zero: the pass lands beside `run-once.ts` and is reachable only from its own
-   * tests. The day T5 wires it, this test is deleted in the same commit as the
-   * line that wires it — which is the point of having it say so out loud.
+   * **This test was *nothing in the conductor imports it*, and `#256` is the
+   * commit that wires it** — so the rule is inverted rather than deleted.
    *
-   * **It is two files now** (`#259`): `pass-steps.ts` holds six of the ten bodies
-   * and is the one source file allowed to import `pass.ts`, because it is filling
-   * in that file's own contract. So the rule is read per file rather than as one
-   * list — *nothing imports the pass, and nothing imports the bodies either* —
-   * and a third file importing either fails this whichever of the two it reaches
-   * for.
+   * What it guarded was the blast radius while the pass was unreachable. What it
+   * guards now is the thing that replaced that: the pass has **one** caller, and
+   * a second one would be a second engine. `run-once.ts` is gone, and the way
+   * that stays true is that this fails the day another source file reaches for
+   * `runPass`.
    *
-   * The pattern is `one-store.test.ts`'s: a rule nobody keeps by reading a
-   * comment is a failing test.
+   * **`pass-steps.ts` is still allowed to import `pass.ts`**, because it is
+   * filling in that file's own contract — and nothing but `conduct.ts` may import
+   * either. The pattern is `one-store.test.ts`'s: a rule nobody keeps by reading
+   * a comment is a failing test.
    */
   it.each([
-    { module: "pass.ts", allowed: ["pass-steps.ts"] },
-    { module: "pass-steps.ts", allowed: [] as string[] },
-  ])("$module is imported by no source file in the package", ({ module, allowed }) => {
+    { module: "pass.ts", allowed: ["pass-steps.ts", "conduct.ts"] },
+    { module: "pass-steps.ts", allowed: ["conduct.ts"] },
+  ])("$module is imported only by $allowed", ({ module, allowed }) => {
     const src = fileURLToPath(new URL("../src", import.meta.url));
     const imports = new RegExp(`["']\\./${module.replace(".", "\\.")}["']`);
 
@@ -1920,5 +1919,14 @@ describe("nothing in the conductor imports it", () => {
       .sort();
 
     expect(offenders).toEqual([]);
+  });
+
+  /** And the caller is there, which is the other half of *one*. */
+  it("is imported by `conduct.ts`", () => {
+    const src = fileURLToPath(new URL("../src/conduct.ts", import.meta.url));
+    const wiring = readFileSync(src, "utf8");
+    expect(wiring).toContain('from "./pass.ts"');
+    expect(wiring).toContain('from "./pass-steps.ts"');
+    expect(wiring).toContain("runPass({");
   });
 });

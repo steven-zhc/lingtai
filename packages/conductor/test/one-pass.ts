@@ -32,7 +32,7 @@ import type { Runtime } from "@lingtai/agent";
 import type { ProjectState } from "@lingtai/domain";
 import { Effect, Layer } from "effect";
 import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
-import { runOnce } from "../src/run-once.ts";
+import { runOnce } from "../src/conduct.ts";
 import { resolveRecipe } from "@lingtai/recipe";
 
 /**
