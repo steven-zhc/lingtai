@@ -160,6 +160,14 @@ is *move this step's hard-coded work into a plugin's `at.<step>`, and let the
 recipe declare it*. The pass keeps running them in order; what changes is where
 each one comes from.
 
+**Not every body moves, and `end` is the case that shows the line.** Its effects
+are already declared — both recipes write `close:` at `end` and the pass carries
+them out — and what its body does is *resolve which of them apply to this
+outcome*. That is the workflow's, exactly as `proposed`'s routing mechanics are
+the workflow's while the destination is the plugin's (§7). A migration ticket
+must say, for its step, which half is moving; one that moves the workflow's half
+into a plugin has given away something no recipe should be able to get wrong.
+
 **And the four runnable kinds lose nothing.** `run`, `agent`, `watch` and `human`
 become plugins with `at: { "*": … }` and behave exactly as they do now.
 
