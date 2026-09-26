@@ -182,9 +182,18 @@ export interface Asked {
  * was committed. A second byte-identical brief buys the same question back and
  * burns every round in `ceilings.rounds` arriving at the answer the first one did.
  *
+ * **And the same holds for the round a mechanical refusal buys**, which is where
+ * the money is: a red `build` routed back to `implement` committed nothing and
+ * raised no findings either — a `run:` action returns `findings: []`
+ * (`process-action.ts`) — so `context.recheck` is empty too, and the compiler's
+ * three errors exist nowhere on this object unless `printed` carries them. The
+ * loop this replaces put them in the prompt by name (`fix.ts`, *## What
+ * `${action}` printed*), and an agent sent back without them is ~31 turns and
+ * ~$3.40 spent on being told only that something failed.
+ *
  * Read off `StepWork.reached` rather than held in the closure, because it is the
- * *loop's* fact and not a step's: which visit routed here, and why, is in the
- * visit list the pass hands every body.
+ * *loop's* fact and not a step's: which visit routed here, with what it said and
+ * why, is in the visit list the pass hands every body.
  */
 export interface SentBack {
   /**
@@ -195,9 +204,26 @@ export interface SentBack {
   /**
    * The question this step asked, where the round was bought on its own
    * `needs-input`. `null` where the judge sent the pass back for some other
-   * reason — a refusal downstream, whose evidence is `context.recheck`'s.
+   * reason, and then `printed` is what that reason said.
    */
   readonly asked: string | null;
+  /**
+   * **What the step that did not pass printed, and which step printed it** — the
+   * compiler's errors from a red `build`, the lane's `detail` from a refused
+   * `merge` — or `null`.
+   *
+   * It is the criterion the round was bought on, in the one case findings are
+   * not: *run it again; green is green* (0038 §2), which is the same bar
+   * `carriesACriterion` holds the judge to one step earlier. A brief that omits
+   * it asks an agent to fix a failure it has not been shown.
+   *
+   * `null` in the two cases where it would say nothing new. Where this step's own
+   * question bought the round, `asked` is the same words. And on the way through
+   * — a `review` that passed carrying findings — nothing refused and nothing
+   * printed: those findings travel on `context.recheck`, which is the path 0038
+   * §2 is written for.
+   */
+  readonly printed: { readonly step: Step; readonly detail: string } | null;
 }
 
 /**
@@ -317,9 +343,10 @@ export interface Brief {
    * **Why this step is being run a second time**, or `null` on the way through.
    *
    * The whole of what makes a re-run brief different from the first one when the
-   * round was bought on a question: see `SentBack`. An implementation hands it to
-   * the agent beside the ticket — *you asked this, and the judge said that* — and
-   * a port that ignores it dispatches the brief that produced the question.
+   * round was bought on a question or on what a step printed: see `SentBack`. An
+   * implementation hands it to the agent beside the ticket — *you asked this, and
+   * the judge said that*, or *`build` printed this* — and a port that ignores it
+   * dispatches the brief that produced the failure.
    */
   readonly again: SentBack | null;
   /**
@@ -415,7 +442,10 @@ export type Judged =
   | { readonly noJudge: true };
 
 /**
- * A step's own work, as the pass asks for it — for the eight steps that have any.
+ * A step's own work, as the pass asks for it — for the **seven** steps that have
+ * any, in eight methods: `end` is the one step with two, because reading the
+ * item's stream and appending to it are separate calls for the reason its own
+ * rows give.
  *
  * **`build` and `review` are not here, and that is the shape of them rather than
  * an omission.** Both are entirely their plugins' — a `run:` carrying the checks
@@ -788,7 +818,16 @@ export function bodiesFor(ports: PassPorts): StepBodies {
       arrived.ending.because === NEEDS_INPUT
         ? arrived.ending.detail
         : null;
-    return { why: route.why, asked };
+    // And what it printed, where that is not the question `asked` already holds.
+    // The evidence the judge weighed is on the arriving visit's ending, and this
+    // is the only thing that carries it as far as the agent buying the round:
+    // `context.recheck` is empty on a mechanical route, because a command's
+    // refusal raises no findings.
+    const printed =
+      asked === null && arrived !== undefined && "detail" in arrived.ending && arrived.ending.detail !== ""
+        ? { step: arrived.step, detail: arrived.ending.detail }
+        : null;
+    return { why: route.why, asked, printed };
   };
 
   const briefOn = (

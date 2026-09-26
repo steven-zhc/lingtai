@@ -819,14 +819,16 @@ describe("the workflow decides which steps the judge may choose from", () => {
   const spare: Ceilings = { rounds: 2, restartsLeft: 1 };
   const refused: StepEnding = { ending: "refused", because: "action-refused", at: "check", detail: "…" };
   const asking: StepEnding = { ending: "did-not-finish", because: NEEDS_INPUT, at: null, detail: "?" };
+  /** `proposed`'s own visit, which is the `findings` direction and no other. */
+  const wayThrough: StepEnding = { ending: "passed" };
 
   /**
    * 0061 §3: *when `rounds` is spent, `implement` is not in that set* — and
    * `waiting` is always there, because a person can always be the answer.
    */
   it("offers a person, and nothing else, once every ceiling is spent", () => {
-    expect(onOffer("build", refused, spent, 0)).toEqual(["waiting"]);
-    expect(onOffer("build", refused, spare, spare.rounds)).toEqual(["waiting", "claim"]);
+    expect(onOffer("proposed", wayThrough, spent, 0)).toEqual(["waiting"]);
+    expect(onOffer("proposed", wayThrough, spare, spare.rounds)).toEqual(["waiting", "claim"]);
   });
 
   /**
@@ -835,9 +837,9 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * diff and no error in one to fix.
    */
   it("does not offer implement for a refusal at prepared", () => {
-    expect(onOffer("prepared", refused, spare, 0)).toEqual(["waiting", "claim"]);
-    expect(onOffer("build", refused, spare, 0)).toEqual(["waiting", "claim", "implement"]);
-    expect(onOffer("review", refused, spare, 0)).toEqual(["waiting", "claim", "implement"]);
+    expect(onOffer("prepared", refused, spare, 0)).toEqual(["waiting"]);
+    expect(onOffer("build", refused, spare, 0)).toEqual(["waiting", "implement"]);
+    expect(onOffer("review", refused, spare, 0)).toEqual(["waiting", "implement"]);
   });
 
   /**
@@ -846,13 +848,13 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * through `build` and `review`*.
    */
   it("offers build for a refusal at merge", () => {
-    expect(onOffer("merge", refused, spare, 0)).toEqual(["waiting", "claim", "implement", "build"]);
+    expect(onOffer("merge", refused, spare, 0)).toEqual(["waiting", "implement", "build"]);
   });
 
   /** 0058 §3c: a `needs-input` offers the step that asked, and nothing else. */
   it("offers the step that asked, for a needs-input", () => {
-    expect(onOffer("design", asking, spare, 0)).toEqual(["waiting", "claim", "design"]);
-    expect(onOffer("admit", asking, spare, 0)).toEqual(["waiting", "claim", "admit"]);
+    expect(onOffer("design", asking, spare, 0)).toEqual(["waiting", "design"]);
+    expect(onOffer("admit", asking, spare, 0)).toEqual(["waiting", "admit"]);
   });
 
   /**
@@ -861,12 +863,27 @@ describe("the workflow decides which steps the judge may choose from", () => {
    * so nothing refused, and the judge that reads its findings is at `proposed` on
    * the spine.
    */
-  it("offers the way-through visit the same set a refusal after an agent gets", () => {
-    expect(onOffer("proposed", { ending: "passed" }, spare, 0)).toEqual([
-      "waiting",
-      "claim",
-      "implement",
-    ]);
+  it("offers the way-through visit a round as well as a person", () => {
+    expect(onOffer("proposed", wayThrough, spare, 0)).toEqual(["waiting", "claim", "implement"]);
+  });
+
+  /**
+   * **A restart is offered for one direction and it is `findings`** — 0039 §2,
+   * `stepsOnOffer`'s own rule, and the reason it is in code rather than in the
+   * recipe: *no number a project writes down should make a typecheck error buy a
+   * fresh worktree, and no judge should be able to either.* The way-through visit
+   * is the `findings` direction; every other arrival at the router is one of the
+   * four mechanical ones, and their remedy is to fix the work where it stands.
+   *
+   * It is the one move `claim` makes that cannot be taken back: the item is
+   * released and the worktree thrown away.
+   */
+  it("offers a restart for the findings direction and for no other", () => {
+    expect(onOffer("proposed", wayThrough, spare, 0)).toContain("claim");
+    for (const at of ["prepared", "implement", "build", "review", "merge"] as const) {
+      expect(onOffer(at, refused, spare, 0)).not.toContain("claim");
+    }
+    expect(onOffer("implement", asking, spare, 0)).not.toContain("claim");
   });
 
   /** And a destination outside the set is refused by name (0061 §3, §8). */
@@ -1167,13 +1184,22 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
    * loop does not walk back to `claim` itself.
    */
   it("ends the pass when the judge chooses a restart", async () => {
-    const { recipe, at } = installFails();
-    const { bodies } = watching({ proposed: routerSaying(() => "claim") });
-    const { actionsAt } = watchingActions(at);
+    // On the way through, because that is the one visit `claim` is offered at:
+    // a restart answers *the approach is wrong*, which only the `findings`
+    // direction can say (0039 §2).
+    const { bodies } = watching({
+      proposed: async (work): Promise<StepEnding> => {
+        const at = work as StepWork<"proposed">;
+        return at.arriving === null
+          ? { ending: "routed", to: "claim", why: "because a test said so" }
+          : { ending: "routed", to: "waiting", why: "not this one" };
+      },
+    });
+    const { actionsAt } = watchingActions();
     const { emit } = events();
 
     const result = await runPass({
-      recipe,
+      recipe: recipeWith({}),
       context,
       emit,
       bodies,
@@ -1182,7 +1208,7 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
     });
 
     expect(result.rested).toBe("requeued");
-    expect(result.routes).toEqual([{ from: "prepared", to: "claim", why: "because a test said so" }]);
+    expect(result.routes).toEqual([{ from: "proposed", to: "claim", why: "because a test said so" }]);
     expect(result.steps.filter((s) => s.step === "claim")).toHaveLength(1);
     // Released rather than held: `failed` is *put the item back in the queue*.
     expect(outcomeOf(result)).toBe("failed");

@@ -661,6 +661,9 @@ describe("implement dispatches the one agent, and reports what it committed", ()
     expect(asked.dispatch[1]?.again).toEqual({
       why: "state your assumption and carry on",
       asked: "which of the two files?",
+      // The question is the whole of what this round was bought on, and `asked`
+      // is where it is: `printed` would be the same words twice.
+      printed: null,
     });
     expect(asked.dispatch[1]?.context.round).toBe(1);
     expect(outcomeOf(result)).toBe("landed");
@@ -806,7 +809,42 @@ describe("proposed is the only step that routes, and one judge answers each when
       { from: "build", to: "implement", why: expect.stringContaining("same-worktree") },
     ]);
     expect(asked.judge.map((on) => on.when)).toEqual(["red"]);
+    // **And the agent that was sent back was shown the three errors.** A `run:`
+    // action raises no findings, so `context.recheck` is empty on this edge and
+    // `asked` is null — the visit before the router was `build` and not
+    // `implement` — which leaves `printed` as the only thing on the brief that
+    // says what to fix. Without it the round is ~31 turns and ~$3.40 spent on an
+    // agent told nothing but that something failed.
+    expect(asked.dispatch[1]?.again).toEqual({
+      why: expect.stringContaining("same-worktree"),
+      asked: null,
+      printed: { step: "build", detail: RED.evidence },
+    });
+    expect(asked.dispatch[1]?.context.recheck).toEqual([]);
     expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * **The one move a judge may not make for a mechanical refusal**, and the
+   * reason `claim` is not in the set it was handed: 0039 §2, kept in code and
+   * never in the recipe. A red build leaves the work still there and its remedy
+   * is to fix it where it stands, so releasing the item throws a branch away for
+   * a typecheck error. The judge asks anyway and is refused by name.
+   */
+  it("refuses a judge that answers `claim` for a mechanical refusal", async () => {
+    const { result, asked } = await pass({
+      actions: { build: [canned("typecheck", RED)] },
+      answers: { judge: { next: "claim", named: "claude-code", why: "start over" } },
+      // A restart to spend, and it is still on no offer: the direction is `red`.
+      ceilings: { rounds: 1, restartsLeft: 3 },
+    });
+
+    expect(asked.judge[0]?.offering).toEqual(["waiting", "implement"]);
+    expect(result.routes[0]?.to).toBe("waiting");
+    expect(result.routes[0]?.why).toContain('answered "claim"');
+    expect(result.rested).toBe("waiting");
+    // The item is held for a person, never released.
+    expect(outcomeOf(result)).toBe("blocked");
   });
 
   /**
@@ -815,6 +853,11 @@ describe("proposed is the only step that routes, and one judge answers each when
    * before any agent has run, so there is no diff and no error in one to fix —
    * and a judge that knows nothing about `prepared` still cannot choose wrongly,
    * because the wrong answer was never in the set.
+   *
+   * **And `claim` is on neither**, though the item has a restart to spend: both
+   * are mechanical directions, and 0039 §2's rule is that a restart needs a
+   * judgement. No number a project writes down should make a failed install buy
+   * a fresh worktree, and no judge should be able to either.
    */
   it("offers a judge only the steps the pass reached", async () => {
     const spare = { rounds: 3, restartsLeft: 1 };
@@ -825,8 +868,8 @@ describe("proposed is the only step that routes, and one judge answers each when
     });
     const late = await pass({ ...checked(RED, PASSED), ceilings: spare });
 
-    expect(early.asked.judge[0]?.offering).toEqual(["waiting", "claim"]);
-    expect(late.asked.judge[0]?.offering).toEqual(["waiting", "claim", "implement"]);
+    expect(early.asked.judge[0]?.offering).toEqual(["waiting"]);
+    expect(late.asked.judge[0]?.offering).toEqual(["waiting", "implement"]);
     // And a judge is never told what it is answering for, nor what is left to
     // spend: `Judging` carries the direction, the words and the set, and no
     // ceiling and no count (`JudgeBrief`).

@@ -541,11 +541,12 @@ const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: "pas
  * no own work has nothing left to do. Two do not, and both for the same reason:
  * they are the two places where *pass* would be a lie the loop cannot detect.
  *
- * **Six of the ten are written and are not here** — `bodiesFor` in
- * [`pass-steps.ts`](pass-steps.ts) — and this object is still all ten, still the
- * default, and still what runs when a caller hands nothing in. So the six rows
- * below say what the step is *for*, which has not changed, rather than what any
- * running body does.
+ * **All ten are written and are not here** — `bodiesFor` in
+ * [`pass-steps.ts`](pass-steps.ts) (`#259`, then `#254`) — and this object is
+ * still all ten, still the default, and still what runs when a caller hands
+ * nothing in. So the rows below say what the step is *for*, which has not
+ * changed, rather than what any running body does: not one of them is still
+ * waiting to be written somewhere.
  */
 export const NOT_BUILT_YET: StepBodies = {
   /** Pick the ticket — `discover`/`claim`, and `queue:`'s four fields. */
@@ -704,8 +705,17 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
  * ```
  * waiting              always. A person can always be the answer, and 0058 §3b
  *                      keeps it to exactly one way in: this one
- * claim                while the item has a restart left. Choosing it requeues
- *                      and ends the pass
+ * claim                **on `proposed`'s own way through, and nowhere else**,
+ *                      while the item has a restart left. That visit is the
+ *                      `findings` direction — every other arrival at the router
+ *                      is one of the mechanical four (`directionOf`) — and
+ *                      0039 §2's rule is that a restart needs a *judgement*: a
+ *                      red build and a conflict leave the work still there and
+ *                      their remedy is mechanical, so starting over throws a
+ *                      branch away for nothing. **No number a project writes
+ *                      down should make a typecheck error buy a fresh
+ *                      worktree, and no judge should be able to either.**
+ *                      Choosing it requeues and ends the pass
  * that step again      for a `needs-input` — 0058 §3c's *that step again with
  *                      "state your assumption"*. `admit`, `design` and
  *                      `implement` are the three that can ask, and nothing but
@@ -722,6 +732,15 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
  * ```
  *
  * Both step edges want a round, because both buy another agent run.
+ *
+ * **`stepsOnOffer`'s other rule has no cell here because the loop already keeps
+ * it.** That function also takes `claim` off the set when something else on the
+ * pass has asked for a person — releasing the item would throw their question
+ * away — and in this loop nothing can have: a `human:` action, a `watch:` that
+ * saw a migration and a repair all end their step `held`, `goesToTheRouter`
+ * lets no `held` past, and the pass rests there without ever reaching a judge.
+ * So the rule is a fact about the walk rather than a line in this function, and
+ * `alsoAsked` has no counterpart on `Judging` for the same reason.
  */
 export function onOffer(
   at: Step,
@@ -730,7 +749,9 @@ export function onOffer(
   roundsSpent: number,
 ): Destination[] {
   const offer: Destination[] = ["waiting"];
-  if (ceilings.restartsLeft > 0) offer.push("claim");
+  // The way-through visit, which is the `findings` direction and the only one a
+  // restart is offered for — see the table above.
+  if (at === "proposed" && ending.ending === "passed" && ceilings.restartsLeft > 0) offer.push("claim");
   if (roundsSpent >= ceilings.rounds) return offer;
 
   if (ending.ending === "did-not-finish" && ending.because === NEEDS_INPUT) {
