@@ -24,9 +24,11 @@ import {
   type PluginSecrets,
   definePlugin,
   disclose,
+  notBuiltYet,
   pluginNaming,
   pluginsNamed,
   readFields,
+  servesStep,
 } from "./plugin.ts";
 import { parseDuration } from "./duration.ts";
 
@@ -96,9 +98,29 @@ const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
  * (0061 §9) rather than having it accepted and ignored.
  */
 export const runPlugin = definePlugin("run", {
-  run: z.string(),
-  timeout: z.string().default("15m"),
-  env: ExtensionEnvNames,
+  fields: {
+    run: z.string(),
+    timeout: z.string().default("15m"),
+    env: ExtensionEnvNames,
+  },
+  /**
+   * **Three steps written out rather than `"*"`, and the reason is `end`.**
+   *
+   * `"*"` is 0064 §3's second true thing and the shape this plugin wants the
+   * day its body moves here: a command at `build` and a command at `proposed`
+   * are the same work with the same inputs. What stops it being written today
+   * is that `"*"` includes `end`, and `end` runs no pipeline — its consumer is
+   * `resolveEndActions`, which carries out three effects and would throw on a
+   * command. A cell the schema accepts and the step throws out is `#61` with
+   * the throw in a different file, and *accepted ⇒ runs* is the invariant
+   * `conductor/unit/step-matrix.test.ts` walks every cell to hold.
+   *
+   * So these are today's three, unchanged: **this ticket moves where legality
+   * is read from and widens nothing.** Opening `build` and `review` is
+   * [T5d](../../../doc/design/the-pipeline.md), and it is now two keys here
+   * rather than a row in a table somewhere else.
+   */
+  at: { prepared: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
 });
 
 /**
@@ -139,19 +161,31 @@ export const runPlugin = definePlugin("run", {
  * *name* has to be in; the refusal is what makes the name true of the run.
  */
 export const agentPlugin = definePlugin("agent", {
-  agent: RuntimeId,
-  model: z.string().optional(),
-  prompt: z.string(),
+  fields: {
+    agent: RuntimeId,
+    model: z.string().optional(),
+    prompt: z.string(),
+  },
+  /** Not `prepared`: nothing has been committed there, so there is no diff to read. */
+  at: { proposed: notBuiltYet, merge: notBuiltYet },
 });
 
 /** Globs against the diff's file list; a match holds or fails. */
 export const watchPlugin = definePlugin("watch", {
-  watch: z.array(z.string()).min(1),
-  then: z.enum(["request-approval", "fail"]).default("request-approval"),
+  fields: {
+    watch: z.array(z.string()).min(1),
+    then: z.enum(["request-approval", "fail"]).default("request-approval"),
+  },
+  /** Not `prepared`: the globs would be matched against no file list. */
+  at: { proposed: notBuiltYet, merge: notBuiltYet },
 });
 
 /** Waits for a person. The string is the question they are asked. */
-export const humanPlugin = definePlugin("human", { human: z.string() });
+export const humanPlugin = definePlugin("human", {
+  fields: { human: z.string() },
+  /** Not `prepared`: a hold there is a release, so the question re-asks itself every pass. */
+  at: { proposed: notBuiltYet, merge: notBuiltYet },
+});
 
 /**
  * Closes the issue. Only meaningful at `end`, which is the one point that
@@ -168,14 +202,21 @@ export const humanPlugin = definePlugin("human", { human: z.string() });
  * to run `gh issue close` by hand afterwards.
  */
 export const closePlugin = definePlugin("close", {
-  close: z.literal(true),
-  when: WHEN.default("landed"),
+  fields: {
+    close: z.literal(true),
+    when: WHEN.default("landed"),
+  },
+  /** An effect, and `end` is the one step that carries out effects. */
+  at: { end: notBuiltYet },
 });
 
 /** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
 export const labelsPlugin = definePlugin("labels", {
-  labels: z.array(z.string()),
-  when: WHEN.default("any"),
+  fields: {
+    labels: z.array(z.string()),
+    when: WHEN.default("any"),
+  },
+  at: { end: notBuiltYet },
 });
 
 /**
@@ -216,12 +257,15 @@ export const labelsPlugin = definePlugin("labels", {
  * might read. `branch: true` takes it too.
  */
 export const refsPlugin = definePlugin("refs", {
-  /** `true` and nothing else: what it deletes is decided by `branch:`, not by a value here. */
-  refs: z.literal(true),
-  /** `agent/<n>` itself, on top of its arms. Off, so the merge commit's ref still resolves. */
-  branch: z.boolean().default(false),
-  /** `landed`, and only `landed` — see above. Written out, so the file says which ending. */
-  when: z.literal("landed").default("landed"),
+  fields: {
+    /** `true` and nothing else: what it deletes is decided by `branch:`, not by a value here. */
+    refs: z.literal(true),
+    /** `agent/<n>` itself, on top of its arms. Off, so the merge commit's ref still resolves. */
+    branch: z.boolean().default(false),
+    /** `landed`, and only `landed` — see above. Written out, so the file says which ending. */
+    when: z.literal("landed").default("landed"),
+  },
+  at: { end: notBuiltYet },
 });
 
 /**
@@ -248,11 +292,21 @@ export const refsPlugin = definePlugin("refs", {
  * fail in a way that reads as the agent's fault.
  */
 export const worktreePlugin = definePlugin("worktree", {
-  worktree: z.strictObject({
-    /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
-    base: z.string(),
-    submodules: z.boolean().default(false),
-  }),
+  fields: {
+    worktree: z.strictObject({
+      /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
+      base: z.string(),
+      submodules: z.boolean().default(false),
+    }),
+  },
+  /**
+   * **It serves no step, and that is the declaration rather than an omission**
+   * (0064 §4). It is 0061 §3's *name* for code the pass calls itself, so a
+   * recipe writing it anywhere is refused with `CALLED_DIRECTLY.worktree` —
+   * which says where the code is instead. The day `admit` reads one, this
+   * gains a key and that entry goes, in the same diff.
+   */
+  at: {},
 });
 
 /**
@@ -273,9 +327,13 @@ export const worktreePlugin = definePlugin("worktree", {
  * enum says what the code does and grows when the code does.
  */
 export const mergePlugin = definePlugin("merge", {
-  merge: z.strictObject({
-    strategy: z.enum(["merge-commit"]).default("merge-commit"),
-  }),
+  fields: {
+    merge: z.strictObject({
+      strategy: z.enum(["merge-commit"]).default("merge-commit"),
+    }),
+  },
+  /** No step reads it — the merge lane runs it itself. `CALLED_DIRECTLY.merge` says where. */
+  at: {},
 });
 
 /**
@@ -454,7 +512,11 @@ const QUEUE_FIELDS = {
  *   conductor's own process — so a recipe writing one is refused by name
  *   (0061 §9) rather than having it accepted and ignored.
  */
-export const queuePlugin = definePlugin("queue", { queue: z.strictObject(QUEUE_FIELDS) });
+export const queuePlugin = definePlugin("queue", {
+  fields: { queue: z.strictObject(QUEUE_FIELDS) },
+  /** No step reads it — `discover.ts` asks GitHub itself. `CALLED_DIRECTLY.queue` says where. */
+  at: {},
+});
 
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
@@ -552,10 +614,14 @@ export type JudgeName = z.infer<typeof JudgeName>;
  * *which of these*, never *what is legal*.
  */
 export const judgePlugin = definePlugin("judge", {
-  /** A built-in, which spends nothing, or a runtime, which is an agent and a prompt. */
-  judge: JudgeName,
-  /** The direction it answers. Required, undefaulted: one entry per `when:`. */
-  when: JudgeWhen,
+  fields: {
+    /** A built-in, which spends nothing, or a runtime, which is an agent and a prompt. */
+    judge: JudgeName,
+    /** The direction it answers. Required, undefaulted: one entry per `when:`. */
+    when: JudgeWhen,
+  },
+  /** No step reads it — the pass's own ceilings decide. `CALLED_DIRECTLY.judge` says where. */
+  at: {},
 });
 
 /**
@@ -613,8 +679,12 @@ export type BacklogBar = z.infer<typeof BacklogBar>;
  * already holds is a knob whose only reachable value is the one it has.
  */
 export const backlogPlugin = definePlugin("backlog", {
-  /** At or below this, a finding is filed and buys no round. `minor` today. */
-  backlog: BacklogBar.default("minor"),
+  fields: {
+    /** At or below this, a finding is filed and buys no round. `minor` today. */
+    backlog: BacklogBar.default("minor"),
+  },
+  /** No step reads it — the bar is a literal in two folds. `CALLED_DIRECTLY.backlog` says where. */
+  at: {},
 });
 
 /**
@@ -629,15 +699,15 @@ export const backlogPlugin = definePlugin("backlog", {
  * **`refs:` is the first member that 0061 §3 did not name** (`#240`). The set
  * is not closed against *new* work: §3's list is the names the v2 file gives
  * code that already runs, and a plugin doing something no code did before joins
- * the same set by the same rules — a key, a schema, a row in `KINDS_AT`, a cell
- * in the matrix.
+ * the same set by the same rules — a key, a schema, and an `at` saying which
+ * steps it serves.
  *
- * **Five of them are in no step's row.**
+ * **Five of them serve no step, and they say so themselves** (0064 §4).
  * `worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` are
- * names for code the pass calls directly today, so every cell of theirs
- * refuses, by a sentence that says where that code is called instead. That is the same
- * two-valued rule the six steps with no call site are held to — **naming a
- * thing is not wiring it** — read down the other axis.
+ * names for code the pass calls directly today, so their `at` is `{}` and
+ * every step refuses them, by a sentence that says where that code is called
+ * instead. That is the same two-valued rule a step nothing implements is held
+ * to — **naming a thing is not wiring it** — read down the other axis.
  *
  * The twelfth was `assignee:`, and it is not missing: 0063 §3 makes it a field
  * of `queue:` rather than a plugin beside it, because the two answer one
@@ -733,74 +803,35 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Ste
 }
 
 /**
- * **Which of the twelve kinds each of the ten steps actually runs.**
+ * **Which plugins serve this step**, read off their own declarations (0064 §4).
  *
- * A hundred and twenty cells, and ten of them used to be accepted here, resolved into
- * `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
- * called (`#61`). `merge` was a sixteenth until `#58` built its pipeline, and
- * the weeks it spent declared-but-unbuilt are the argument for writing the
- * table down: *a control the log claims and the code does not have is worse
- * than an unimplemented one, because every signal an operator has says it is
- * there.*
+ * This is what `KINDS_AT` was, and the difference is where it is written. The
+ * table was a hundred and twenty cells answering two questions at once — *is
+ * this plugin's output read here* and *has this step been built yet* — and
+ * could not tell them apart, which is how `#231` died: it put configuration on
+ * steps whose rows were empty for a reason that had nothing to do with what it
+ * was asking for. A plugin's `at` can only answer the first.
  *
- * So the matrix lives beside the schema that enforces it, and
- * `doc/reference.md`'s copy is checked against this constant by a test rather
- * than kept by hand — the copy in `#61`'s own body was wrong about `merge`
- * within three weeks of being written.
- *
- * **It does not narrow the closed set of steps** ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md),
- * widened to ten by [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §5).
- * All ten are still steps and the set may still never grow; what is narrowed is
- * what a recipe may *say* today, to exactly what today's code does. The day
- * something runs a pipeline at `design`, its row grows and nothing else moves.
- *
- * **Six empty rows, and they are the honest half of widening the vocabulary.**
- * Naming `claim`, `design`, `implement`, `build` and `review` is what lets the
- * log and the board draw the pass 0058 §3 describes; it does not build the
- * pass, which is that plan's next ticket. Until it is built, an action written
- * at one of them is the exact `#61` failure one level up — resolved, recorded,
- * drawn, never called — so it is refused by name when the recipe resolves.
- *
- * **And five empty columns, for the same reason read the other way.**
- * `worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` name
- * code the pass calls itself, so no row carries them and `CALLED_DIRECTLY` is
- * what their fifty cells refuse with.
+ * **The guard `#61` bought survives the move, and only its source changed.**
+ * Ten cells were once accepted here, resolved into `GatesResolved`, printed by
+ * `lingtai add`, drawn on the board — and never called; `merge` was a
+ * sixteenth until `#58` built its pipeline. *A control the log claims and the
+ * code does not have is worse than an unimplemented one, because every signal
+ * an operator has says it is there.*
  */
-export const KINDS_AT = {
-  /** Nothing yet: the queue picks the item and no pipeline is constructed here. */
-  claim: [],
-  /** Nothing yet: no pipeline is constructed at `admit` anywhere. */
-  admit: [],
-  /** A command. The other three want a diff or an answer, and there is neither yet. */
-  prepared: ["run"],
-  /** Nothing yet: 0058 §3's design step is named here and built by the pass ticket. */
-  design: [],
-  /** Nothing yet: the implementing agent is dispatched by `conduct.ts`, not by a recipe entry here. */
-  implement: [],
-  /** Nothing yet: today's build is a `run:` action at `proposed`. */
-  build: [],
-  /** Nothing yet: today's review is an `agent:` action at `proposed`. */
-  review: [],
-  proposed: ["run", "agent", "watch", "human"],
-  merge: ["run", "agent", "watch", "human"],
-  /**
-   * The three effects — and **`when:` is not what picks them out**. `judge:`
-   * carries one too (`#238`), so a `"when" in a` test at the point let a
-   * judge action built in code straight past the throw and into a match on
-   * the outcome it could not satisfy: `#61` for one kind, silently.
-   * `end-step.ts`'s guard asks for these three keys instead.
-   */
-  end: ["close", "labels", "refs"],
-} as const satisfies Record<Step, readonly ActionKind[]>;
+function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
+  return plugins.filter((plugin) => servesStep(plugin, step));
+}
 
 /**
- * Where the work a not-yet-built step names is actually done today.
+ * Where the work a step no plugin implements names is actually done today.
  *
- * The half of the refusal that is worth reading. *Nothing runs here* leaves an
- * operator with a recipe key and no next move; *the build runs as a `run:`
- * action at `proposed`* is the line they can act on, and it is also the thing
- * that will stop being true when the pass ticket lands — at which point this
- * table and that step's `KINDS_AT` row move together.
+ * The half of the refusal that is worth reading. *No plugin implements this
+ * step* leaves an operator with a recipe key and no next move; *the build runs
+ * as a `run:` action at `proposed`* is the line they can act on, and it is also
+ * the thing that will stop being true the day a plugin declares itself at that
+ * step — at which point this entry goes and an `at` key arrives in the same
+ * diff.
  */
 const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review", string> = {
   claim: "the queue picks the item by `source.kinds`, `source.exclude` and `runtime.assignee`",
@@ -906,8 +937,8 @@ const FILES_AND_ROUTES_NOTHING =
  * the closed set, `queue:` written under `end:` is *an action naming no
  * plugin* — a true refusal with the wrong subject, and the cell nobody
  * decided. Inside it, the refusal is the sentence below, and the day the file
- * becomes `steps:` this entry goes and a `KINDS_AT` row arrives in the same
- * diff.
+ * becomes `steps:` this entry goes and an `at` key arrives on the plugin in
+ * the same diff.
  *
  * `assignee:` was the sixth and the case that document wrote the rule about —
  * it had a row in 0061 §3 and appeared in no other list. It is gone from here
@@ -953,26 +984,52 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
 };
 
 /**
+ * **Where a plugin does live**, for the refusal that has to say so.
+ *
+ * *`close:` does not implement `proposed`* is half an answer; *it serves
+ * `end`* is the half somebody can act on, and it is read off the plugin's own
+ * `at` rather than looked up anywhere (0064 §4).
+ */
+function servedBy(plugin: Plugin): string {
+  return plugin.serves.length === 0
+    ? "it serves no step at all"
+    : `it serves ${plugin.serves.map((served) => `\`${served}\``).join(", ")}`;
+}
+
+/**
  * Why a step does not run a kind, in the words the refusal carries — or `null`
  * when it does.
  *
- * Every reason is a fact about the **step**, and that is why they are spelled
- * out rather than left as "unsupported": an operator told that `agent:` is
- * refused at `prepared` should not have to read `conduct.ts` to discover that
- * the reason is that nothing has been committed yet.
+ * **The answer is the plugin's own `at`, and there is no table** (0064 §4).
+ * What follows the *no* is not: a refusal that only said *not here* would
+ * leave an operator with a recipe key and no next move, so every branch below
+ * says where the thing they were trying to configure actually is.
  *
- * **Five of them are facts about the plugin instead, and they are asked
- * first.** `worktree:`, `merge:`, `queue:`, `judge:` and
- * `backlog:` are
- * refused everywhere and each for one reason, so a sentence about the step would be
- * the less useful half of the truth at all ten: *nothing runs a pipeline at
- * `admit`* is right and leaves a reader looking for the code that cuts their
- * worktree, which `CALLED_DIRECTLY` names. It is sharpest at `claim`, where
- * the step's own sentence and the plugin's are about the same plugin —
- * and only the plugin's says where `discover.ts` is.
+ * **Three kinds of no, and they are asked in this order.**
+ *
+ * - **A plugin no step reads** — `worktree:`, `merge:`, `queue:`, `judge:` and
+ *   `backlog:`, which serve nothing and are refused everywhere for one reason.
+ *   Asked first, because a sentence about the *step* would be the less useful
+ *   half of the truth at all ten: *no plugin implements `admit`* is right and
+ *   leaves a reader looking for the code that cuts their worktree, which
+ *   `CALLED_DIRECTLY` names. It is sharpest at `claim`, where the step's own
+ *   sentence and the plugin's are about the same plugin — and only the
+ *   plugin's says where `discover.ts` is.
+ * - **A step no plugin implements**, which is the sentence the table could not
+ *   say (0064 §1). An empty row read as *this step takes nothing*, which is
+ *   indistinguishable from *nobody has built it* — and that ambiguity is how
+ *   `#231` died. `WHERE_INSTEAD` is what each of those says instead.
+ * - **A step somebody implements and this plugin does not.** Then the useful
+ *   thing is where this plugin *does* serve, and the reason is about the pair.
  */
-export function whyNoKindAt(step: Step, kind: ActionKind): string | null {
-  if ((KINDS_AT[step] as readonly ActionKind[]).includes(kind)) return null;
+export function whyNoKindAt(
+  step: Step,
+  kind: ActionKind,
+  plugins: readonly Plugin[] = PLUGINS,
+): string | null {
+  const plugin = plugins.find((each) => each.key === kind) ?? null;
+  if (plugin !== null && servesStep(plugin, step)) return null;
+
   const calledDirectly = CALLED_DIRECTLY[kind];
   if (calledDirectly !== undefined) {
     return (
@@ -983,26 +1040,43 @@ export function whyNoKindAt(step: Step, kind: ActionKind): string | null {
       "the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
   }
-  if (step === "admit") {
+
+  // **A step nobody has built, said as that and not as *it takes nothing*.**
+  // Under the table these two were one empty row; under `at` they are the
+  // presence or absence of a key, and this is the sentence that difference
+  // buys — one somebody can act on, because it names what to write instead.
+  if (pluginsAt(step, plugins).length === 0) {
+    if (step === "admit") {
+      return (
+        "no plugin implements `admit` — the step is in the closed set and nothing declares itself " +
+        "there, so an action here would be resolved, printed, and never called. A question that has " +
+        "to be asked before anything is spent is `lingtai ask`, which holds the item in the queue instead"
+      );
+    }
+    // One sentence per step and not one for the group: *nobody implements it*
+    // is the same refusal at all five, and **where the work actually happens
+    // today** is different at each — the only part an operator can act on.
+    const instead = step in WHERE_INSTEAD ? ` Today ${WHERE_INSTEAD[step as keyof typeof WHERE_INSTEAD]}.` : "";
     return (
-      "nothing runs a pipeline at `admit` — the step is in the closed set and no code reaches it, " +
-      "so an action here would be resolved, printed, and never called. A question that has to be " +
-      "asked before anything is spent is `lingtai ask`, which holds the item in the queue instead"
-    );
-  }
-  // The five 0058 §3 named and the pipeline does not yet construct. One
-  // sentence per step and not one for the group: *nothing runs here* is the
-  // same refusal at all five, and **where the work actually happens today** is
-  // different at each — which is the only part an operator can act on.
-  if (step === "claim" || step === "design" || step === "implement" || step === "build" || step === "review") {
-    return (
-      `nothing runs a pipeline at \`${step}\` yet — the step is named by ` +
+      `no plugin implements \`${step}\` — the step is named by ` +
       "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
-      `have a word for it, and the pass that runs it is that plan's next ticket. Today ${WHERE_INSTEAD[step]}. ` +
-      "Refused rather than accepted here because an action at a step no code reaches would be resolved, recorded " +
+      `have a word for it, and no plugin's \`at\` carries that key yet.${instead} ` +
+      "Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded " +
       "in `GatesResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
   }
+
+  // Somebody serves this step and this plugin does not, so the answer leads
+  // with where this one does live and then says why the pair is meaningless.
+  const wrongStep =
+    plugin === null
+      ? `no plugin is named \`${kind}:\``
+      : `\`${kind}:\` does not implement \`${step}\` — ${servedBy(plugin)}`;
+  return `${wrongStep}: ${whyThatPair(step, kind)}`;
+}
+
+/** Why this plugin's output would mean nothing at this step, said in the step's own terms. */
+function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "end") {
     return (
       "`end` fires on every terminal outcome and produces no verdict, so the only actions it can " +
@@ -1155,10 +1229,10 @@ function actionsAt(step: Step) {
  * **Strict about the kind at a step, too, and for the same reason** (`#61`).
  * A key that *is* one of the ten, carrying an action that step does not run,
  * is the identical failure reached one level down: it resolves, it is drawn,
- * and nothing happens. `KINDS_AT` is which pairs run and `whyNoKindAt` is what
- * the refusal says — and it is what keeps the five steps 0058 §3 named but has
- * not yet built from becoming five silent cells: their keys parse, and any
- * action in them is refused with the step's own sentence.
+ * and nothing happens. Each plugin's `at` is which pairs run (0064 §4) and
+ * `whyNoKindAt` is what the refusal says — and it is what keeps the five steps
+ * 0058 §3 named but nothing implements from becoming five silent cells: their
+ * keys parse, and any action in them is refused with the step's own sentence.
  */
 export const StepMap = z.strictObject({
   claim: actionsAt("claim"),

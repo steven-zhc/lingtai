@@ -35,6 +35,7 @@ import {
   canonicalRecipe,
   definePlugin,
   disclose,
+  notBuiltYet,
   discloseSteps,
   hashRecipe,
   judgePlugin,
@@ -69,7 +70,10 @@ const BASE: Recipe = Recipe.parse({
  * a mark is honoured: marking the key would have `disclose` withhold what this
  * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
-const spendPlugin = definePlugin("spend", { spend: z.string(), token: noLog(z.string()) });
+const spendPlugin = definePlugin("spend", {
+  fields: { spend: z.string(), token: noLog(z.string()) },
+  at: { proposed: notBuiltYet },
+});
 const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as StepAction;
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
@@ -87,7 +91,7 @@ describe("the contract", () => {
 
   it("reads a field's `no_log` off the schema, not off a list", () => {
     expect(spendPlugin.secrets).toEqual(["token"]);
-    expect(definePlugin("loud", { loud: z.string() }).secrets).toEqual([]);
+    expect(definePlugin("loud", { fields: { loud: z.string() }, at: {} }).secrets).toEqual([]);
   });
 
   /**
@@ -325,17 +329,21 @@ describe("a `no_log` field never leaves its plugin", () => {
    * is an error at import rather than an empty `secrets`.
    */
   it("refuses a mark written below the field, however deep", () => {
-    expect(() => definePlugin("notify", { notify: z.object({ token: noLog(z.string()) }) })).toThrow(
+    expect(() => definePlugin("notify", { fields: { notify: z.object({ token: noLog(z.string()) }) }, at: {} })).toThrow(
       /marks no_log below its "notify" field/,
     );
-    expect(() => definePlugin("late", { late: noLog(z.string()).optional() })).toThrow(
+    expect(() => definePlugin("late", { fields: { late: noLog(z.string()).optional() }, at: {} })).toThrow(
       /marks no_log below its "late" field/,
     );
-    expect(() => definePlugin("deep", { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) })).toThrow(
+    expect(() => definePlugin("deep", {
+        fields: { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) },
+        at: {},
+      })).toThrow(
       /marks no_log below its "deep" field/,
     );
     // And the way round that does work is the way round the wording asks for.
-    expect(definePlugin("fine", { fine: z.string(), token: noLog(z.string().optional()) }).secrets).toEqual(["token"]);
+    expect(definePlugin("fine", { fields: { fine: z.string(), token: noLog(z.string().optional()) }, at: {} })
+        .secrets).toEqual(["token"]);
   });
 
   /**
@@ -347,10 +355,10 @@ describe("a `no_log` field never leaves its plugin", () => {
    * way.
    */
   it("refuses a mark on the key, and on `name`", () => {
-    expect(() => definePlugin("spend", { spend: noLog(z.string()) })).toThrow(
+    expect(() => definePlugin("spend", { fields: { spend: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "spend" field no_log/,
     );
-    expect(() => definePlugin("spend", { spend: z.string(), name: noLog(z.string()) })).toThrow(
+    expect(() => definePlugin("spend", { fields: { spend: z.string(), name: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "name" field no_log/,
     );
     // The same rule at the strip, because a `PluginSecrets` is written by hand
