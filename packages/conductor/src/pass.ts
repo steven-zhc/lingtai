@@ -24,11 +24,11 @@
  * `implement` and `end` has something that runs to write against, and whoever
  * writes `build`, `review`, `proposed` and `merge` after them has the same.
  *
- * **Six of them are now written, beside this file rather than in it** —
- * `bodiesFor` in [`pass-steps.ts`](pass-steps.ts) (`#259`), which is what a caller
- * hands `bodies` below; T4b's four are still `NOT_BUILT_YET`'s. That object stays
- * the default, because *nothing was handed in* must go on doing the thing with no
- * consequences rather than the thing with a GitHub client behind it.
+ * **All ten are now written, beside this file rather than in it** — `bodiesFor`
+ * in [`pass-steps.ts`](pass-steps.ts) (`#259`, then `#254`), which is what a
+ * caller hands `bodies` below. That object stays the default, because *nothing
+ * was handed in* must go on doing the thing with no consequences rather than the
+ * thing with a GitHub client and a paid judge behind it.
  *
  * **The routing is here and the judgement is not**, and that division is 0061
  * §3's in as many words: *`judge:` decides which step is next. The workflow
@@ -37,9 +37,10 @@
  * offer**, it counts the rounds spent, it refuses a destination it did not
  * offer, and it moves the pass where it is told. Which of the offered
  * destinations is right for a given `reason` is a `judge:` plugin at `proposed`,
- * and that is T4b. Until one exists, `NOT_BUILT_YET.proposed` sends a refusal to
- * a person and lets a clean way through past — every refusal is yours and nothing
- * else is held, which is what a system with no judge built should do.
+ * and it is asked by `bodiesFor`'s body rather than by anything here. Where no
+ * judge is handed in, `NOT_BUILT_YET.proposed` sends a refusal to a person and
+ * lets a clean way through past — every refusal is yours and nothing else is
+ * held, which is what a system with no judge built should do.
  *
  * ## An empty step is a pass, not a skip
  *
@@ -564,9 +565,17 @@ export const NOT_BUILT_YET: StepBodies = {
    * `needs-input`.
    */
   implement: nothingBeyondThePlugins,
-  /** **Refuses**, and a red one skips `review` — T4b. */
+  /**
+   * **Refuses**, and a red one skips `review` — which is the loop's doing
+   * rather than this body's: a refusal here goes to `proposed`, so `review` is
+   * never reached and no agent is paid to read a diff that does not compile.
+   */
   build: nothingBeyondThePlugins,
-  /** Reads the diff, returns findings, judges nothing — T4b. */
+  /**
+   * Reads the diff, returns findings, judges nothing — the findings are its
+   * plugins' and travel on `StepReached.results`; `endingOf` is where *no
+   * verdict of its own* is enforced.
+   */
   review: nothingBeyondThePlugins,
   /**
    * **Refuses**, and the only step that routes — and the router is the half of
@@ -582,9 +591,11 @@ export const NOT_BUILT_YET: StepBodies = {
    * refused change on to `merge`, and any step back would be the workflow
    * inventing the judgement 0061 §3 reserves for a plugin.
    *
-   * T4b replaces it with one `judge:` per `when:` — `red` and `gate-failed`
-   * mechanically back to `implement`, `findings` the one worth an agent — each
-   * choosing from `offering` and nothing else.
+   * **The body that asks a judge is `bodiesFor`'s** ([`pass-steps.ts`](pass-steps.ts),
+   * `#254`) — one `judge:` per `when:`, `red` and `gate-failed` mechanically
+   * back to `implement`, `findings` the one worth an agent, each choosing from
+   * `offering` and nothing else. What it keeps is this row's floor: an arrival
+   * no judge can answer still reaches a person.
    */
   proposed: async ({ arriving, offering }) =>
     arriving === null
@@ -593,11 +604,18 @@ export const NOT_BUILT_YET: StepBodies = {
           ending: "routed",
           to: "waiting",
           why:
-            `no \`judge:\` is built yet (T4b), so the \`${arriving.step}\` step's ` +
+            `no \`judge:\` is built yet in these bodies (\`bodiesFor\`'s ask one), so the ` +
+            `\`${arriving.step}\` step's ` +
             `${arriving.ending.ending} goes to a person rather than to ` +
             `${offering.filter((d) => d !== "waiting").join(" or ") || "any step"}`,
         },
-  /** **Refuses**, and reports a `reason` and a `detail` rather than deciding — T4b. */
+  /**
+   * **Refuses**, and reports a `reason` and a `detail` rather than deciding —
+   * the lane is `bodiesFor`'s port, and over the whole log it has refused 32
+   * times: 26 `gate-failed`, 6 `conflict`. Somebody else's work landed and the
+   * diff stopped being true, which is a fact about the world rather than a
+   * verdict about the change.
+   */
   merge: nothingBeyondThePlugins,
   /**
    * Runs on every ending and cannot refuse — and its effects are **not**
@@ -818,7 +836,7 @@ export interface PassOptions {
    * The ten bodies.
    *
    * `bodiesFor` in [`pass-steps.ts`](pass-steps.ts) is what a caller with a
-   * machine under it hands here — six real, and T4b's four still the skeleton's.
+   * machine under it hands here — all ten of them.
    * **`NOT_BUILT_YET` is the default and stays it**: a pass handed nothing must do
    * the thing with no consequences, not the thing with a GitHub client behind it,
    * so *forgot to pass them* cannot claim a ticket.
@@ -1354,17 +1372,32 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
       at: result.failedAt,
       detail: evidenceFrom(result, "failed"),
     } as const;
+    // **A reviewer's `failed` is its findings, and not a verdict about the
+    // step** (0058 §3: *a reviewer returns findings with a severity and no
+    // verdict*). So `review` passes, carrying them on `results`, and the
+    // judgement is made one step later — which is the whole of *`review`
+    // returns findings and judges nothing*: 10% of its refusals in fourteen
+    // days carried no findings at all, 24 of them
+    // ([012](../../../doc/experiments/012-where-the-turns-go.md) §4), and a
+    // step that refuses without saying what is wrong is a step whose judgement
+    // is worth nothing to the round it buys.
+    //
+    // Nothing is dropped and nothing is quiet about it: the action's own
+    // verdict is on `results` and `GateFailed` is already on the log, which is
+    // what a `proposed` reads to decide there is a `findings` direction to
+    // judge at all. What it costs is `runActionPipeline`'s own rule — the
+    // pipeline stops at the first action that did not pass, so a second
+    // reviewer declared after this one is not asked about a diff the first
+    // already has findings on.
+    if (spec.step === "review") return { ending: "passed" };
     // **Which step ran it decides what a `failed` verdict means** (0058 §2).
     // At one of the four it is a refusal, with everything a refusal buys. At
-    // the other six an action saying no is an ordinary plugin verdict and not a
-    // programming error: `review`'s whole job is a reviewer that finds
-    // blockers, and its verdict for one is `failed` — so the day `KINDS_AT`
-    // opens that row (`recipe.ts:783`) the first blocker anybody finds arrives
-    // on this line. Reported as a `did-not-finish` whose `because` is the
-    // action's refusal: no fix round is spent at a step the workflow does not
-    // let refuse, nothing the action said is dropped, and it does not reach the
-    // router, because *a step that may not refuse has not refused* and there is
-    // no judgement to route.
+    // the other five an action saying no is an ordinary plugin verdict and not
+    // a programming error. Reported as a `did-not-finish` whose `because` is
+    // the action's refusal: no fix round is spent at a step the workflow does
+    // not let refuse, nothing the action said is dropped, and it does not reach
+    // the router, because *a step that may not refuse has not refused* and
+    // there is no judgement to route.
     return spec.refuses ? { ending: "refused", ...said } : { ending: "did-not-finish", ...said };
   }
   if (result.ok) return { ending: "passed" };

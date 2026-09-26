@@ -448,36 +448,75 @@ describe("four steps may refuse, and the other six may not", () => {
   /**
    * 0058 §2 from the plugin's side, and the case that makes the check above a
    * body's alone. `actionsAt` is the caller's seam and the pass does no kind
-   * check of its own — which is why this test hands one in at `review` though
-   * `KINDS_AT.review` is still `[]`. The day that row opens, a cold reviewer
-   * finding a blocker returns `failed` exactly as it does at `proposed` today.
+   * check of its own — which is why this test hands one in at `implement` though
+   * `KINDS_AT.implement` is still `[]`.
    *
-   * That is an ordinary verdict and not a programming error. Reported as
-   * `did-not-finish`, which buys no fix round (0057) and is not routed, because
-   * a step that may not refuse has not refused.
+   * A plugin saying no at a step the workflow does not let refuse is an ordinary
+   * verdict and not a programming error. Reported as `did-not-finish`, which buys
+   * no fix round (0057) and is not routed, because a step that may not refuse has
+   * not refused.
    */
-  it("reads a plugin's failed verdict at one of the six as did-not-finish", async () => {
+  it("reads a plugin's failed verdict at one of the five as did-not-finish", async () => {
     const { bodies } = watching();
     const { actionsAt } = watchingActions({
-      review: [canned("cold reviewer", { verdict: "failed", evidence: "a blocker in pass.ts", findings: [] })],
+      implement: [canned("a check of its own", { verdict: "failed", evidence: "no diff", findings: [] })],
     });
     const { emit } = events();
 
     const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
 
     expect(result.stoppedAt).toEqual({
-      step: "review",
+      step: "implement",
       ending: {
         ending: "did-not-finish",
         because: "action-refused",
-        at: "cold reviewer",
-        detail: "a blocker in pass.ts",
+        at: "a check of its own",
+        detail: "no diff",
       },
     });
     // Everything the action said is kept: the router's whole job is reading it.
-    expect(result.steps.find((s) => s.step === "review")?.results).toHaveLength(1);
+    expect(result.steps.find((s) => s.step === "implement")?.results).toHaveLength(1);
     // And no round was bought for it, which is what `did-not-finish` costs.
     expect(result.routes).toEqual([]);
+  });
+
+  /**
+   * **And `review` is the sixth, which does not report it at all** — 0058 §3, *a
+   * reviewer returns findings with a severity and no verdict*, and `#254`'s *review
+   * returns findings and judges nothing*. A cold reviewer finding a blocker returns
+   * `failed` exactly as it does at `proposed` today; the **step** passes carrying
+   * the findings, and the judgement is made one step later, where there is a round
+   * to buy with it.
+   *
+   * Nothing is dropped and nothing is quiet: the action's own verdict is still on
+   * `results`, and it is what a `proposed` reads to know there is a `findings`
+   * direction to judge at all.
+   */
+  it("reads the same verdict at `review` as findings and not a verdict", async () => {
+    const finding: ActionFinding = {
+      file: "packages/conductor/src/pass.ts",
+      line: 1,
+      claim: "a blocker",
+      failureScenario: "it does the wrong thing",
+      severity: "blocker",
+    };
+    const { bodies } = watching();
+    const { actionsAt } = watchingActions({
+      review: [canned("cold reviewer", { verdict: "failed", evidence: "a blocker in pass.ts", findings: [finding] })],
+    });
+    const { emit } = events();
+
+    const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+    const reviewed = result.steps.find((s) => s.step === "review");
+    expect(reviewed?.ending).toEqual({ ending: "passed" });
+    expect(reviewed?.results).toEqual([
+      { action: "cold reviewer", verdict: "failed", evidence: "a blocker in pass.ts", findings: [finding] },
+    ]);
+    // Nothing refused, so nothing stopped the pass and no round was bought here:
+    // the visit that decides is `proposed`, on its own way through.
+    expect(result.stoppedAt).toBeNull();
+    expect(result.steps.map((s) => s.step)).toEqual([...STEPS]);
   });
 
   /** And at one of the four the same verdict is a refusal, with all it buys. */

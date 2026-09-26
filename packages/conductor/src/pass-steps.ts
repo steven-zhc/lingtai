@@ -1,14 +1,22 @@
 /**
- * The six bodies of T4a — `claim`, `admit`, `prepared`, `design`, `implement`
- * and `end` — against the contract [`pass.ts`](pass.ts) already fixed.
+ * **The ten bodies**, against the contract [`pass.ts`](pass.ts) already fixed —
+ * `claim`, `admit`, `prepared`, `design`, `implement` and `end` from T4a
+ * (`#259`), and `build`, `review`, `proposed` and `merge` from T4b (`#254`).
  *
- * **Still wired to nothing** (`#259`, and `#253` before it). `runPass` takes the
- * ten bodies as a seam and defaults to `NOT_BUILT_YET`; this file is what a
- * caller hands it instead, and no caller does yet. T5 is the ticket that wires
- * it, and `pass.test.ts`'s *nothing in the conductor imports it* is the test that
- * fails the day anything but the pass's own two files does.
+ * **Still wired to nothing** (`#254`, `#259`, and `#253` before them). `runPass`
+ * takes the ten bodies as a seam and defaults to `NOT_BUILT_YET`; this file is
+ * what a caller hands it instead, and no caller does yet. T5 is the ticket that
+ * wires it, and `pass.test.ts`'s *nothing in the conductor imports it* is the test
+ * that fails the day anything but the pass's own two files does.
  *
- * ## What a body is, and why these six are not empty
+ * **Three of the ten are nothing beyond their plugins** — `prepared`, `build` and
+ * `review` — and that is the shape of them rather than an unfinished body: their
+ * work is a `run:` carrying commands and an `agent:` reading the diff, the loop
+ * has run both by the time either is called, and the step's part is the outcome
+ * rules. `endingOf` is where `review`'s is, because a reviewer's `failed` verdict
+ * arrives before any body could see it.
+ *
+ * ## What a body is, and why most of them are not empty
  *
  * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §2b
  * divides this file from the one beside it in one sentence — *the core is the
@@ -36,6 +44,13 @@
  * body's. A port is what keeps that honest: the body still cannot act, so the
  * day a cell opens the body loses the call and keeps the rule.
  *
+ * **Two of the ports are not waiting on a cell at all**, and they are the other
+ * half of the same table: `judge:` at `proposed` and `merge:` at `merge` are two
+ * of the five *columns* `KINDS_AT` carries at no step, and `CALLED_DIRECTLY` is
+ * what their cells are refused with — *they name code the pass calls itself.* So
+ * `ports.judge` and `ports.land` are not stand-ins for a plugin that will exist;
+ * they are the seam that plugin was always going to be reached through.
+ *
  * **Why plain promises rather than [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)'s
  * `Effect`.** `ports.ts`'s two are Effect-shaped because `run-once.ts` is, and
  * the conversion is at the boundary the *caller* stands on. `runPass` is plain,
@@ -44,15 +59,15 @@
  * a live `PassPorts` from `Repo` and `AgentHost` runs the conversion there, once,
  * where it already has a runtime.
  *
- * ## What travels between the six, and how
+ * ## What travels between the steps, and how
  *
  * Three facts are made at one step and needed at a later one, and `StepWork`
  * carries none of them:
  *
  * ```
- * the item        claim → design, implement, end     the ticket's own text
- * the worktree    admit → design, implement          where an agent works
- * the design      design → implement                 and `""` is an answer
+ * the item        claim → design, implement, merge, end   the ticket's own text
+ * the worktree    admit → design, implement, merge         where an agent works
+ * the design      design → implement                      and `""` is an answer
  * ```
  *
  * They are held by `bodiesFor`, cleared at `claim` so one closure may conduct one
@@ -60,12 +75,17 @@
  * therefore fakeable one method at a time.
  *
  * **What the loop already carries is read off `StepWork` and never kept here**,
- * and there are two of those. The head: a step that moved the tree says so on its
- * ending (`LeftTheTreeAt`) and `runPass` carries it to every visit after, which
+ * and there are three of those. The head: a step that moved the tree says so on
+ * its ending (`LeftTheTreeAt`) and `runPass` carries it to every visit after, which
  * is why `admit` and `implement` return one and nothing here reads `onSha` back.
- * And the route back: which visit sent the pass to this step and why is in
+ * The route back: which visit sent the pass to this step and why is in
  * `reached`, so `SentBack` is computed from the visit list rather than remembered
  * — a body that remembered it would have to know how many rounds ago it was.
+ * **And `review`'s findings**, which is the one a fourth closure variable would be
+ * most tempting for: they are its plugins' verdicts, they are on
+ * `StepReached.results`, and `proposed` reads them off the visit list one step
+ * later (`reviewRefused`). A copy here would be a second source of truth for the
+ * sentence the pass is already holding in memory.
  *
  * **What does not travel is the worktree's path into `ActionContext.cwd`.** The
  * pass rebuilds three fields of the context per visit — `onSha`, `round`,
@@ -86,21 +106,26 @@
  * and the whole of what the ticket asks for; the effects never decide whether
  * the ending happened, and neither does this file's failure to resolve them.
  */
-import type { ActionContext } from "@lingtai/actions";
-import type { Envelope, Step, ToAppend } from "@lingtai/domain";
+import type { ActionContext, ActionFinding } from "@lingtai/actions";
+import type { Envelope, RefusalReason, Step, ToAppend } from "@lingtai/domain";
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
 import type { Worktree } from "@lingtai/repo";
+import type { BuiltInJudge, JudgeWhen } from "@lingtai/recipe";
 import { type TerminalOutcome, resolveEndActions } from "./end-step.ts";
+import { BUILT_IN_FOR } from "./judge.ts";
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
+  type Destination,
   type StepBodies,
   type StepDidNotFinish,
   type StepNeverRan,
   type StepPassed,
   type StepReached,
+  type StepRefused,
+  type StepRouted,
 } from "./pass.ts";
 
 // -------------------------------------------------- what a pass is about ----
@@ -306,7 +331,98 @@ export interface Brief {
 }
 
 /**
- * The six steps' own work, as the pass asks for it.
+ * What `merge` was asked to land, and it is the same three facts `IntegrateOptions`
+ * asks for under its own names.
+ *
+ * There is no *did the steps pass* here, and that absence is the sequence:
+ * `merge` is reached only where every step before it passed, so a lane told
+ * otherwise would be a lane told something the pass cannot be in a position to
+ * say. `context.onSha` is `headSha` — **the commit the steps gave their verdicts
+ * about**, which is what makes the merge the one the review was of.
+ */
+export interface Landing {
+  readonly claimed: Claimed;
+  readonly worktree: Worktree;
+  readonly context: ActionContext;
+}
+
+/**
+ * What the merge lane answered — `IntegrateResult`'s two cases, and no third.
+ *
+ * **`notMerged` is a report and not a verdict**, which is the whole of *`merge`
+ * reports a `reason` and a `detail` and decides nothing*: over the whole log it
+ * has refused 32 times, **26 `gate-failed` and 6 `conflict`**, and the common
+ * failure is that somebody else's work landed and the diff stopped being true.
+ * That is a fact about the world. Whether it is worth another agent or a person
+ * is the judge's at `proposed`, and the lane is not asked.
+ *
+ * `reason` is `RefusalReason` because those are the lane's own words and they are
+ * already on the log — two of them, `conflict` and `gate-failed`, are also
+ * `JudgeWhen` values, and the other five are directions no judge is offered
+ * (`JudgeWhen`'s own doc: they stop the lane before the diff is what is in
+ * doubt).
+ */
+export type Landed =
+  /** The merge commit on the base branch. Not a worktree head: nothing local moved. */
+  | { readonly merged: string }
+  | { readonly notMerged: { readonly reason: RefusalReason; readonly detail: string } };
+
+/**
+ * **What a judge is asked, and it is everything except the numbers.**
+ *
+ * `JudgeBrief` in [`judge.ts`](judge.ts) is the same object for the same reason,
+ * and the reason is the safety property rather than tidiness: a judge that could
+ * see `rounds` could answer *back to `implement`* for ever at ~$3.40 a round and
+ * nothing would report a fault. So there is no ceiling and no count here — the
+ * workflow has already counted, and `offering` is what is left of the arithmetic.
+ *
+ * **A judge answers *which of these*, never *what is legal*.** `offering` is
+ * `onOffer`'s, computed from how far the pass got as well as from what is left to
+ * spend (0061 §3): `prepared`'s refusal happens before any agent has run, so
+ * `implement` is not in it there and a judge that knows nothing about `prepared`
+ * still cannot choose wrongly.
+ */
+export interface Judging {
+  /** The direction — the reason the step that did not pass gave. */
+  readonly when: JudgeWhen;
+  /** The destinations on offer. Never empty: `waiting` is always one of them. */
+  readonly offering: readonly Destination[];
+  /** The reviewer's findings, verbatim — the whole of the `findings` direction. */
+  readonly findings: readonly ActionFinding[];
+  /** What the step printed when it did not pass; the question, for `needs-input`. */
+  readonly evidence: string;
+}
+
+/**
+ * What the recipe's `judge:` for that direction answered, or that it declared
+ * none.
+ *
+ * **`noJudge` is not a failure and is the ordinary answer for four of the five.**
+ * `BUILT_IN_FOR` is what the body falls back to — the mechanical directions are
+ * answered there, synchronously, spending nothing — and where that is `null` too,
+ * the pass reaches a person. So a direction nobody configured costs no agent and
+ * is never silently let past.
+ */
+export type Judged =
+  | {
+      /** Which of the offered steps is next. Held to `offering` by the body. */
+      readonly next: Destination;
+      /** The name a recipe wrote, so a refusal can say which entry to fix. */
+      readonly named: string;
+      /** The judge's own words, which is what `waiting` displays (0043). */
+      readonly why: string;
+    }
+  | { readonly noJudge: true };
+
+/**
+ * A step's own work, as the pass asks for it — for the eight steps that have any.
+ *
+ * **`build` and `review` are not here, and that is the shape of them rather than
+ * an omission.** Both are entirely their plugins' — a `run:` carrying the checks
+ * and an `agent:` reading the diff (0061 §3) — so the loop has run them by the
+ * time either body is called, and a port beside them would be the
+ * reimplementation the rule below exists to prevent. `prepared` is the third of
+ * the three and has been since `#259`.
  *
  * Stateless by construction: everything one step makes and another needs is held
  * by `bodiesFor`, so a test fakes one method without arranging the rest and a
@@ -346,6 +462,39 @@ export interface PassPorts {
   draft(brief: Brief): Promise<Drafted>;
   /** `implement` — one agent, in that worktree, and what it committed. */
   dispatch(brief: Brief): Promise<Worked>;
+  /**
+   * `proposed` — **which of the offered steps the recipe's `judge:` for this
+   * direction answers**, or that it declared none.
+   *
+   * 0061 §3 in one sentence, and the two halves of it are on either side of this
+   * call: *`judge:` decides which step is next. The workflow decides which steps
+   * it may choose from.* The set is already computed — it is on `Judging.offering`
+   * — and the body holds the answer to it, so a judge that answers outside the set
+   * is refused by name rather than obeyed (0061 §8).
+   *
+   * **It is a port and not a plugin for the reason `queue:` and `worktree:` are.**
+   * `judge:` is one of the five columns `KINDS_AT` carries at no step at all, and
+   * `CALLED_DIRECTLY` is what its fifty cells are refused with: the plugin names
+   * code the pass calls itself. So `actionsAt` will not build one, and this is
+   * where a caller that has resolved the recipe's entries answers instead.
+   *
+   * **Answering costs money for one of the five and must not for the other four.**
+   * A live implementation returns `noJudge` for a direction the recipe declared
+   * nothing for, and the body falls back to `BUILT_IN_FOR` — so `red` and
+   * `gate-failed` are mechanical by default and no agent is paid to reach a
+   * conclusion a `switch` reaches. What a recipe *did* declare is asked, whichever
+   * direction it is, because a declared judge nothing calls is `#61` again.
+   */
+  judge(on: Judging): Promise<Judged>;
+  /**
+   * `merge` — the merge lane, and `integrate` is what one is.
+   *
+   * Not reimplemented and not decided: the lane merges the base in, re-verifies
+   * against what landed in the meantime, merges out and pushes, and answers with
+   * the merge commit or with its own `reason` and `detail`. The step reports that
+   * answer and the judge at `proposed` decides what it costs.
+   */
+  land(on: Landing): Promise<Landed>;
   /**
    * `end` — the work item's own stream.
    *
@@ -404,16 +553,175 @@ export interface PassPorts {
  */
 export const END_UNRESOLVED = "end-unresolved";
 
+// --------------------------------------------------------- what refused ----
+
 /**
- * The ten bodies, six of them written.
+ * **Which of the five directions an arrival at `proposed` is**, or null where it
+ * is none of them.
  *
- * `NOT_BUILT_YET`'s four are kept for `build`, `review`, `proposed` and `merge`,
- * which are T4b — including its router, which sends every refusal to a person
- * while no `judge:` is built. So a pass run with these ports walks the whole
- * spine, and a refusal at `prepared` travels to `proposed` and rests with
- * somebody, which is the correct behaviour for a system with no judge in it.
+ * `when:` is *the reason the last step gave* (`JudgeWhen`), and the reason is read
+ * off **which step arrived** rather than off the ending's `because`: the pipeline
+ * knows only that *something the recipe declared refused* and says
+ * `action-refused` at every step alike, on purpose — writing `gate-failed` there
+ * would put a retired word back on a list that may only shrink (`endingOf`). So
+ * the direction is the pass's to name, and it is named where the pass knows it:
  *
- * One closure conducts one pass at a time: the three facts below are the pass's,
+ * ```
+ * needs-input   a step that stopped and asked, at any of the three that can
+ * red           a command said no — `build`'s checks, and `prepared`'s install,
+ *               which is the same kind of evidence one step earlier
+ * conflict      the merge lane's own word
+ * gate-failed   the merge lane's other one: the base moved and the re-verify
+ *               went red
+ * findings      **not here.** `review` refuses nothing, so it never arrives —
+ *               its findings are judged on `proposed`'s own way through
+ * ```
+ *
+ * **Null is the lane's other five reasons** — `dirty-base`, `unpushed-base`,
+ * `pending-migration`, `no-commits`, `push-rejected` — and `JudgeWhen`'s own doc
+ * is why they are not directions: they stop the lane before the diff is what is
+ * in doubt, and *offering a judge a direction nothing can arrive by is the same
+ * mistake as offering it a step nothing can run.* A person is next, which is
+ * where they go today.
+ */
+function directionOf(arriving: StepReached): JudgeWhen | null {
+  const ending = arriving.ending;
+  // The only `did-not-finish` with anywhere to go, and the loop has already
+  // decided that: `goesToTheRouter` lets no other one arrive here.
+  if (ending.ending === "did-not-finish") return ending.because === NEEDS_INPUT ? NEEDS_INPUT : null;
+  if (ending.ending !== "refused") return null;
+  if (arriving.step !== "merge") return "red";
+  if (ending.because === "conflict") return "conflict";
+  return ending.because === "gate-failed" ? "gate-failed" : null;
+}
+
+/**
+ * **The mechanical answers, and the whole of what keeps `proposed` from buying a
+ * model to answer a question a `switch` answers.**
+ *
+ * The rule is `BUILT_IN["same-worktree"]`'s in [`judge.ts`](judge.ts) and the
+ * argument is there: `red` and `gate-failed` were seen sixty times between them
+ * in fourteen days and not one of them was a judgement. A build that went red
+ * says *this line is wrong* by construction; a merge whose re-verify went red on
+ * the new base says *the base moved and the result is wrong*; in both the work is
+ * still there (0039 §2) and the remedy is to fix it where it stands. **And it
+ * falls to a person rather than reaching for `claim`** — when `implement` is not
+ * on offer the rounds are spent or no agent has run, and neither is answered by
+ * starting over.
+ *
+ * **It is that function's rule written again rather than that function called,
+ * and the reason is the two files' `Destination`s.** `judge.ts`'s has three
+ * values and calls a person `human`; the pass's is `Step | "waiting"`, because the
+ * loop offers `build` from `merge` and the asking step back to itself, neither of
+ * which the three can say. Reconciling them is T5's, which deletes the caller
+ * `judge.ts` was written for; until then `pass-steps.test.ts`'s *the mechanical
+ * answer is `judge.ts`'s, cell for cell* is what makes a divergence a failing
+ * test rather than a surprise.
+ *
+ * A **total** record over `BuiltInJudge`, so a name added to `BUILT_IN_JUDGES`
+ * with no answer here does not compile — the same argument `BUILT_IN` makes.
+ */
+const MECHANICALLY: Record<BuiltInJudge, (offering: readonly Destination[]) => Destination> = {
+  "same-worktree": (offering) => (offering.includes("implement") ? "implement" : "waiting"),
+};
+
+/**
+ * Whether the arrival carries something an agent could be held to.
+ *
+ * `stepsOnOffer`'s first rule and `decideFix`'s before it (0038 §2, 0039 §2): the
+ * bar is not *has findings*, it is *carries something the fixer could not have
+ * authored* — a `failureScenario` a reviewer wrote before anybody knew what the
+ * fix would be, or a command's own output and *run it again; green is green*.
+ * **A refusal with neither buys nothing at either extent**, so no judge is asked
+ * and no round is offered: asking an agent to address an opinion is the unbounded
+ * rewriting 0038 §2 is about.
+ *
+ * It is `review`'s own measurement that makes this the rule rather than a
+ * precaution: **10% of its refusals in fourteen days carried no findings at
+ * all** — 24 of them ([012](../../../doc/experiments/012-where-the-turns-go.md)
+ * §4). Under the old pass each bought a fix round with nothing in it.
+ *
+ * The shape is decided by `when` rather than inferred from what arrived, which is
+ * `carriesACriterion`'s reason there: a `findings` arrival that came back with
+ * none is an absent criterion rather than a command with no output, which is the
+ * more useful of the two truths.
+ */
+function carriesACriterion(on: Judging): boolean {
+  return on.when === "findings"
+    ? on.findings.some((finding) => finding.failureScenario.trim() !== "")
+    : on.evidence.trim() !== "";
+}
+
+/**
+ * **What `review` came back with, where the reviewer said it stops the change** —
+ * or null, where nothing did.
+ *
+ * Read off the visit rather than off an ending, because `review`'s ending says
+ * nothing: a reviewer's `failed` verdict is its findings and not a verdict about
+ * the step, so `endingOf` reports the step as `passed` and leaves the verdict on
+ * `results` where it belongs. That is the whole of *`review` returns findings and
+ * judges nothing*, and this is the reader it leaves them for.
+ *
+ * The last `review` visit and not the first: a pass that took a round has two, and
+ * what the way-through `proposed` is judging is the review that has just run. A
+ * pass that never reached `review` — a red `build` routed straight here — has no
+ * visit at all and is not this function's case: it arrives with a direction.
+ *
+ * Findings from the passing results are carried too, and deliberately: a reviewer
+ * that refused on a blocker and also filed two minors has said three things about
+ * one diff, and the agent that is sent back should be told all three.
+ */
+function reviewRefused(reached: readonly StepReached[]): Pick<Judging, "findings" | "evidence"> | null {
+  const reviewed = reached.findLast((visit) => visit.step === "review");
+  if (reviewed === undefined) return null;
+  // By verdict rather than by position, which is `evidenceFrom`'s reason: the
+  // pipeline stops at the first action that did not pass, so the one that refused
+  // is the only result with that verdict and is also the last.
+  const refused = reviewed.results.filter((result) => result.verdict === "failed").at(-1);
+  if (refused === undefined) return null;
+  return { findings: reviewed.results.flatMap((result) => result.findings), evidence: refused.evidence };
+}
+
+/** What the step that did not pass said, as the judge is shown it. */
+function whatArrived(arriving: StepReached): Pick<Judging, "findings" | "evidence"> {
+  const ending = arriving.ending;
+  return {
+    findings: arriving.results.flatMap((result) => result.findings),
+    // Every arriving ending has one — `StepRefused` and `StepDidNotFinish` are the
+    // only two the loop routes — and it is the words a person reads beside the
+    // judge's (0043).
+    evidence: "detail" in ending ? ending.detail : "",
+  };
+}
+
+/** The reason the arriving step gave, for a sentence about it. */
+function reasonOf(arriving: StepReached): string {
+  const ending = arriving.ending;
+  return "because" in ending ? ending.because : ending.ending;
+}
+
+/** `waiting`, which `onOffer` offers on every arrival, so this can never be refused. */
+function toAPerson(why: string): StepRouted {
+  return { ending: "routed", to: "waiting", why };
+}
+
+/** The offered steps, for a sentence a person or a judge reads. */
+function listing(offering: readonly Destination[]): string {
+  return offering.map((step) => `"${step}"`).join(", ");
+}
+
+/**
+ * The ten bodies, all of them written.
+ *
+ * It is still spread over `NOT_BUILT_YET`, and that is not a leftover: the spread
+ * is what makes *every* row of `StepBodies` present by construction, so a step
+ * added to the vocabulary arrives here as a pass rather than as a type error
+ * somebody answers under time pressure.
+ *
+ * A pass run with these ports walks the whole spine, and every refusal on it
+ * reaches `proposed`, where a judge is asked and a person is the floor.
+ *
+ * One closure conducts one pass at a time: the four facts below are the pass's,
  * and `claim` clears them.
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
@@ -517,6 +825,70 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     at: wall.agent,
     detail: wall.detail,
   });
+
+  /**
+   * **One arrival at `proposed`, answered** — and the only place a round is bought.
+   *
+   * Four answers in order, and the order is what makes the cheap ones cheap:
+   *
+   * 1. **nothing to hold an agent to** — `carriesACriterion`, and a person. Asked
+   *    before any judge, because a refusal with no criterion buys nothing at either
+   *    extent and paying a model to discover that is paying twice;
+   * 2. **what the recipe declared** for this direction, whichever it is. A judge a
+   *    person wrote down and nothing calls is `#61` arriving through the one door
+   *    this repository has decided it will not leave open;
+   * 3. **the mechanical answer**, where it declared none — `BUILT_IN_FOR`, which is
+   *    `same-worktree` for `red` and `gate-failed` and nothing for the other three.
+   *    So the sixty refusals a year that are not judgements cost no agent;
+   * 4. **a person**, for a direction with neither. `needs-input` is that today:
+   *    0061 §3's yaml names `ask-or-assume` and nothing implements it, so a
+   *    question reaches somebody rather than a name the schema would accept and no
+   *    code answers.
+   *
+   * And a judge held to the set: **an answer outside `offering` is refused by
+   * name**, and the fallback is the one destination that cannot loop. An overruled
+   * judge is not one to ask for a second opinion, so the answer is not the next
+   * cheapest step — it is a person, with the refusal on the card (`askJudge`).
+   */
+  const judged = async (on: Judging, about: string): Promise<StepRouted> => {
+    if (!carriesACriterion(on)) {
+      return toAPerson(
+        `${about} carries nothing an agent could be held to — ` +
+          `${on.when === "findings" ? "no finding with a failure scenario" : "no output"} — so no ` +
+          "round is worth buying and the pass is held for a person (0038 §2)",
+      );
+    }
+    const answer = await ports.judge(on);
+    if ("noJudge" in answer) {
+      const built = BUILT_IN_FOR[on.when];
+      if (built === null) {
+        return toAPerson(
+          `no \`judge:\` is declared for a "${on.when}" and there is no built-in that answers one, ` +
+            `so ${about} is held for a person rather than the workflow choosing from ` +
+            `${listing(on.offering)} on its own (0061 §3)`,
+        );
+      }
+      const next = MECHANICALLY[built](on.offering);
+      return {
+        ending: "routed",
+        to: next,
+        why:
+          `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
+          `there and the remedy is to fix it where it stands — and of ${listing(on.offering)} it ` +
+          `chose \`${next}\``,
+      };
+    }
+    if (!on.offering.includes(answer.next)) {
+      return toAPerson(
+        `the "${answer.named}" judge answered "${answer.next}" for ${about}, and that is not one ` +
+          `of the steps it was offered — ${listing(on.offering)}. A judge chooses which of the ` +
+          "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
+          "rounds and restarts spent to work them out (0061 §3). The pass is held for a person, " +
+          "because a judge that answered outside the set is not one to ask a second time",
+      );
+    }
+    return { ending: "routed", to: answer.next, why: answer.why };
+  };
 
   /** 0058 §3c, and the one `because` the workflow itself reads. */
   const asking = (question: string): StepDidNotFinish => ({
@@ -693,6 +1065,142 @@ export function bodiesFor(ports: PassPorts): StepBodies {
       if ("asked" in answer) return asking(answer.asked);
       if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
       return noReceipt(answer.stopped);
+    },
+
+    /**
+     * **Its own step, and a red one skips `review`.**
+     *
+     * The skip is the loop's rather than this body's: `build` is one of
+     * `REFUSING_STEPS`, so `endingOf` reads a `failed` verdict here as a
+     * **refusal**, and the loop takes a refusal to `proposed`. `review` is never
+     * reached, and no agent is paid to read a diff that does not compile.
+     *
+     * **It goes before `review` and not because it is quick** — median 313s
+     * against review's 149s. It goes first because it spends no tokens where a
+     * review spends an agent.
+     *
+     * Its work is entirely its plugins', which is `prepared`'s argument again: the
+     * build is `run:` carrying the commands (0061 §3), the loop has run them by
+     * the time this is called, and a second build written here would be the
+     * reimplementation 0061 §3 exists to prevent. `KINDS_AT.build` is still `[]`,
+     * and it stays that way until the conductor runs this file — turning a
+     * declared list into a runnable action is `actionsAt`'s, at the caller, which
+     * is why this body needs no row opened.
+     */
+    build: async (): Promise<StepPassed> => ({ ending: "passed" }),
+
+    /**
+     * Reads the diff, returns findings — **and judges nothing** (0058 §3).
+     *
+     * The findings are its plugins': an `agent:` reviewer returns them with a
+     * severity, the pipeline carries them on `StepReached.results`, and
+     * `reviewRefused` is what reads them one step later. So the body is nothing
+     * beyond them, exactly as `build`'s and `prepared`'s are.
+     *
+     * **Where *no verdict of its own* is enforced is `endingOf`**, and it has to
+     * be: a reviewer that finds a blocker returns `failed`, and a body is never
+     * called after its own plugins did not pass. `review` is not one of
+     * `REFUSING_STEPS`, so that verdict is the reviewer's findings rather than a
+     * verdict about the step, the step passes carrying them, and the judgement is
+     * made at `proposed` — where there is a round to buy with it.
+     *
+     * **Why it stopped judging**: 10% of its refusals in fourteen days carried no
+     * findings at all — 24 of them
+     * ([012](../../../doc/experiments/012-where-the-turns-go.md) §4). A step that
+     * refuses without saying what is wrong is a step whose judgement is worth
+     * nothing to the round it buys, and `carriesACriterion` is where that is now
+     * answered instead.
+     */
+    review: async (): Promise<StepPassed> => ({ ending: "passed" }),
+
+    /**
+     * **The only step that routes** (0058 §3), and the one that spends what a
+     * round costs.
+     *
+     * Its two jobs are told apart by `arriving`, which is the whole of what
+     * `StepWork` carries it for:
+     *
+     * - **`null` — the way through.** `build` and `review` have passed, and what is
+     *   left to judge is what the reviewer said: `findings`, the direction 0061 §3
+     *   measured at 231 refusals and calls *the one judgement worth an agent*. A
+     *   reviewer that refused nothing lets the change through to `merge`, which is
+     *   a recorded decision saying so rather than an absence (0058 §3b);
+     * - **a visit — a routing arrival.** The step that did not pass, carrying its
+     *   reason intact (0058 §3c), and `directionOf` is which of the five that is.
+     *
+     * **Every arrival is answered, and four things can answer it, in this order.**
+     * A direction no judge is written for is a person; a refusal carrying nothing
+     * an agent could be held to is a person, whatever is declared; what the recipe
+     * declared for the direction is asked; and where it declared nothing, the
+     * mechanical answer is given without paying for one. **A judge that answers
+     * outside `offering` is refused by name and the pass is held for a person**,
+     * which is 0061 §8 again and the asymmetry `judge.ts` opens with — *a
+     * misconfiguration that fails is cheap; one that loops is not.*
+     *
+     * So the floor `#253` set holds: **an arrival no judge can answer still reaches
+     * a person**, as it did when no judge existed at all.
+     */
+    proposed: async ({ arriving, offering, reached }): Promise<StepPassed | StepRouted> => {
+      if (arriving === null) {
+        const said = reviewRefused(reached);
+        // Nothing the reviewer said stops this. The findings at or below the bar
+        // are on `review`'s own visit and are the `backlog:` plugin's business,
+        // not a reason to hold a change back.
+        if (said === null) return { ending: "passed" };
+        return await judged({ when: "findings", offering, ...said }, "`review`'s findings");
+      }
+      const when = directionOf(arriving);
+      if (when === null) {
+        return toAPerson(
+          `the \`${arriving.step}\` step reported "${reasonOf(arriving)}", which is not a ` +
+            "direction any `judge:` answers — it stops the lane before the diff is what is in " +
+            "doubt — so the pass is held for a person rather than buying a round for it",
+        );
+      }
+      return await judged(
+        { when, offering, ...whatArrived(arriving) },
+        `the \`${arriving.step}\` step's ${arriving.ending.ending}`,
+      );
+    },
+
+    /**
+     * **Reports a `reason` and a `detail`, and decides nothing.**
+     *
+     * The lane is `ports.land` — merge the base in, re-verify against what landed
+     * in the meantime, merge out, push — and its two answers are the step's two
+     * endings. Over the whole log it has refused 32 times, **26 `gate-failed` and
+     * 6 `conflict`**: the common failure is that somebody else's work landed and
+     * the diff stopped being true, which is a fact about the world rather than a
+     * verdict about the change. So the words travel and the decision does not
+     * happen here — `proposed` is where a `conflict` is weighed and where a
+     * `gate-failed` buys the mechanical round.
+     *
+     * **It is one of `REFUSING_STEPS` all the same**, and the refusal is what pays
+     * for the edge back: `onOffer` offers `build` from here, so an agent that
+     * resolves a conflict writes code *after* the review passed and goes through
+     * both again. That is what buys *every path into `end` has been through
+     * `build` and `review`*.
+     *
+     * It reports no `head`. A merge commit is on the base branch and the worktree
+     * did not move, and `LeftTheTreeAt` is a fact about the tree.
+     */
+    merge: async ({ context }): Promise<StepPassed | StepRefused> => {
+      const answer = await ports.land({
+        claimed: madeBy("merge", "item", claimed),
+        worktree: madeBy("merge", "worktree", worktree),
+        context,
+      });
+      if ("merged" in answer) return { ending: "passed" };
+      return {
+        ending: "refused",
+        // The lane's own word, on the log already — and two of the five values it
+        // can be are directions a judge answers (`directionOf`).
+        because: answer.notMerged.reason,
+        // No action refused: the step's own work did, which is why `at` is null
+        // here and an action's name where `endingOf` builds one.
+        at: null,
+        detail: answer.notMerged.detail,
+      };
     },
 
     /**

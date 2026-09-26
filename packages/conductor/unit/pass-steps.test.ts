@@ -13,12 +13,20 @@
  * the `build` point run it ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
  * §1).
  */
-import type { Action, ActionContext, ActionResult } from "@lingtai/actions";
+import type { Action, ActionContext, ActionFinding, ActionResult } from "@lingtai/actions";
 import type { Envelope, PayloadOf, ToAppend } from "@lingtai/domain";
 import type { Worktree } from "@lingtai/repo";
 import { StepMap, type StepAction } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
-import { NEEDS_INPUT, outcomeOf, runPass, type PassOptions, type PassResult } from "../src/pass.ts";
+import {
+  NEEDS_INPUT,
+  outcomeOf,
+  runPass,
+  type Destination,
+  type PassOptions,
+  type PassResult,
+} from "../src/pass.ts";
+import { BUILT_IN, BUILT_IN_FOR } from "../src/judge.ts";
 import {
   END_UNRESOLVED,
   bodiesFor,
@@ -26,6 +34,10 @@ import {
   type Claimed,
   type Cut,
   type Drafted,
+  type Judged,
+  type Judging,
+  type Landed,
+  type Landing,
   type PassPorts,
   type SentBack,
   type Taken,
@@ -57,8 +69,29 @@ const TREE: Worktree = {
 const CLOSE_ON_LANDED: StepAction = { name: "close the ticket", close: true, when: "landed" };
 const HOLD_ON_BLOCKED: StepAction = { name: "hold it", labels: ["agent:hold"], when: "blocked" };
 
+const MERGED = "3333333333333333333333333333333333333333";
+
 const PASSED: ActionResult = { verdict: "passed", evidence: "green", findings: [] };
 const RED: ActionResult = { verdict: "failed", evidence: "pnpm install exited 1", findings: [] };
+
+/**
+ * A finding with a `failureScenario`, which is the whole of what makes it worth an
+ * agent: *something the fixer could not have authored* (0038 §2).
+ */
+const BLOCKER: ActionFinding = {
+  file: "packages/conductor/src/pass.ts",
+  line: 1201,
+  claim: "the router is asked before the build",
+  failureScenario: "a red build pays for a review of a diff that does not compile",
+  severity: "blocker",
+};
+
+/** What a reviewer that says the diff stops here looks like — findings, and `failed`. */
+const REVIEW_REFUSED: ActionResult = {
+  verdict: "failed",
+  evidence: "blocker packages/conductor/src/pass.ts:1201 — the router is asked before the build",
+  findings: [BLOCKER],
+};
 
 const canned = (name: string, result: ActionResult): Action => ({
   name,
@@ -77,6 +110,9 @@ interface Asks {
   cut: { claimed: Claimed; again: SentBack | null }[];
   draft: Brief[];
   dispatch: Brief[];
+  /** Every brief a judge was handed, which is what *spends an agent* looks like. */
+  judge: Judging[];
+  land: Landing[];
   read: string[];
   record: { workItemId: string; at: number; plan: readonly ToAppend[] }[];
 }
@@ -86,6 +122,9 @@ interface Answers {
   cut?: Cut | (() => Cut);
   draft?: Drafted | (() => Drafted);
   dispatch?: Worked | ((brief: Brief) => Worked);
+  /** Nothing declared, by default: the built-ins and the person are what answer. */
+  judge?: Judged | ((on: Judging) => Judged);
+  land?: Landed | ((on: Landing) => Landed);
   /** The stream `end` reads. Empty is an item with nothing resolved on it. */
   stream?: readonly Envelope[];
   /** Thrown by `readEnd`, so `end`'s own failure can be reached. */
@@ -94,7 +133,16 @@ interface Answers {
 }
 
 function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks } {
-  const asked: Asks = { take: 0, cut: [], draft: [], dispatch: [], read: [], record: [] };
+  const asked: Asks = {
+    take: 0,
+    cut: [],
+    draft: [],
+    dispatch: [],
+    judge: [],
+    land: [],
+    read: [],
+    record: [],
+  };
   const of = <T, A>(given: T | ((arg: A) => T) | undefined, fallback: T, arg: A): T =>
     given === undefined ? fallback : typeof given === "function" ? (given as (a: A) => T)(arg) : given;
 
@@ -114,6 +162,14 @@ function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks 
     dispatch: async (brief) => {
       asked.dispatch.push(brief);
       return of(answers.dispatch, { committed: COMMITTED }, brief);
+    },
+    judge: async (on) => {
+      asked.judge.push(on);
+      return of(answers.judge, { noJudge: true }, on);
+    },
+    land: async (on) => {
+      asked.land.push(on);
+      return of(answers.land, { merged: MERGED }, on);
     },
     readEnd: async (workItemId) => {
       asked.read.push(workItemId);
@@ -608,6 +664,440 @@ describe("implement dispatches the one agent, and reports what it committed", ()
     });
     expect(asked.dispatch[1]?.context.round).toBe(1);
     expect(outcomeOf(result)).toBe("landed");
+  });
+});
+
+// ------------------------------------------------------------------ build ----
+
+describe("build is its own step, and a red one skips review", () => {
+  /**
+   * The behaviour change with the cheapest argument behind it. `build` goes first
+   * **not because it is quick** — median 313s against review's 149s — but because
+   * it spends no tokens where a review spends an agent: the refusal reaches
+   * `proposed` and `review` is never visited at all.
+   */
+  it("refuses, and `review` is never reached", async () => {
+    const { result, asked } = await pass({ actions: { build: [canned("typecheck", RED)] } });
+
+    expect(walk(result)).toEqual([
+      "claim:passed",
+      "admit:passed",
+      "prepared:passed",
+      "design:passed",
+      "implement:passed",
+      "build:refused",
+      "proposed:routed",
+      "end:passed",
+    ]);
+    expect(result.steps.some((visit) => visit.step === "review")).toBe(false);
+    // And the lane was never asked to merge a diff that does not compile.
+    expect(asked.land).toEqual([]);
+  });
+
+  /** Its work is its plugins', which is `prepared`'s argument at the next step along. */
+  it("passes on a green build, and adds nothing of its own", async () => {
+    const { result } = await pass({ actions: { build: [canned("typecheck", PASSED)] } });
+
+    const built = result.steps.find((visit) => visit.step === "build");
+    expect(built?.ending).toEqual({ ending: "passed" });
+    expect(built?.results.map((r) => r.verdict)).toEqual(["passed"]);
+  });
+});
+
+// ----------------------------------------------------------------- review ----
+
+describe("review returns findings and judges nothing", () => {
+  /**
+   * 0058 §3 — *a reviewer returns findings with a severity and no verdict* — and
+   * the measurement behind it: **10% of `review`'s refusals in fourteen days
+   * carried no findings at all**, 24 of them
+   * ([012](../../../doc/experiments/012-where-the-turns-go.md) §4). The step
+   * passes carrying what the reviewer said, and the judgement is made where
+   * there is a round to buy with it.
+   */
+  it("passes carrying the findings, and the judge is asked about them", async () => {
+    const { result, asked } = await pass({
+      actions: { review: [canned("cold reviewer", REVIEW_REFUSED)] },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    const reviewed = result.steps.find((visit) => visit.step === "review");
+    expect(reviewed?.ending).toEqual({ ending: "passed" });
+    // Nothing is dropped: the reviewer's own verdict is on the visit, and it is
+    // what says there is a `findings` direction to judge at all.
+    expect(reviewed?.results.map((r) => r.verdict)).toEqual(["failed"]);
+    expect(asked.judge).toEqual([
+      {
+        when: "findings",
+        offering: ["waiting", "implement"],
+        findings: [BLOCKER],
+        evidence: REVIEW_REFUSED.evidence,
+      },
+    ]);
+  });
+
+  /** A reviewer that refused nothing lets the change through, and `merge` runs. */
+  it("lets the change through when the reviewer refused nothing", async () => {
+    const minor: ActionFinding = { ...BLOCKER, severity: "minor" };
+    const { result, asked } = await pass({
+      actions: {
+        review: [canned("cold reviewer", { verdict: "passed", evidence: "read it", findings: [minor] })],
+      },
+    });
+
+    expect(walk(result).slice(-4)).toEqual([
+      "review:passed",
+      "proposed:passed",
+      "merge:passed",
+      "end:passed",
+    ]);
+    // A finding at or below the bar is the `backlog:` plugin's business and never
+    // a reason to hold a change back, so no judge was asked and nothing was paid.
+    expect(asked.judge).toEqual([]);
+    expect(asked.land).toHaveLength(1);
+    expect(outcomeOf(result)).toBe("landed");
+  });
+});
+
+// --------------------------------------------------------------- proposed ----
+
+describe("proposed is the only step that routes, and one judge answers each when", () => {
+  /** A `build` and a `review` declared together, since most of these need both. */
+  const checked = (build: ActionResult, review: ActionResult) => ({
+    actions: { build: [canned("typecheck", build)], review: [canned("cold reviewer", review)] },
+  });
+
+  /**
+   * The mechanical direction, and the whole of what keeps `proposed` from buying
+   * a model to answer a question a `switch` answers: `red` and `gate-failed` were
+   * seen sixty times between them in fourteen days and not one was a judgement.
+   * Nothing was declared, so the built-in answered — and no judge was paid.
+   */
+  it("sends a red build back to `implement` without paying for a judgement", async () => {
+    let red = true;
+    const { result, asked } = await pass({
+      actions: {
+        build: [
+          {
+            name: "typecheck",
+            kind: "run",
+            run: async () => {
+              const answer = red ? RED : PASSED;
+              red = false;
+              return answer;
+            },
+          },
+        ],
+      },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(walk(result).slice(5)).toEqual([
+      "build:refused",
+      "proposed:routed",
+      "implement:passed",
+      "build:passed",
+      "review:passed",
+      "proposed:passed",
+      "merge:passed",
+      "end:passed",
+    ]);
+    expect(result.routes).toEqual([
+      { from: "build", to: "implement", why: expect.stringContaining("same-worktree") },
+    ]);
+    expect(asked.judge.map((on) => on.when)).toEqual(["red"]);
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * **The set depends on how far the pass got, not only on what is left to
+   * spend** (0061 §3, and the ticket's own *watch out*). A failed install refuses
+   * before any agent has run, so there is no diff and no error in one to fix —
+   * and a judge that knows nothing about `prepared` still cannot choose wrongly,
+   * because the wrong answer was never in the set.
+   */
+  it("offers a judge only the steps the pass reached", async () => {
+    const spare = { rounds: 3, restartsLeft: 1 };
+    const early = await pass({
+      steps: { prepared: [{ name: "install", run: "x" }] },
+      actions: { prepared: [canned("install", RED)] },
+      ceilings: spare,
+    });
+    const late = await pass({ ...checked(RED, PASSED), ceilings: spare });
+
+    expect(early.asked.judge[0]?.offering).toEqual(["waiting", "claim"]);
+    expect(late.asked.judge[0]?.offering).toEqual(["waiting", "claim", "implement"]);
+    // And a judge is never told what it is answering for, nor what is left to
+    // spend: `Judging` carries the direction, the words and the set, and no
+    // ceiling and no count (`JudgeBrief`).
+    expect(Object.keys(late.asked.judge[0] ?? {}).sort()).toEqual([
+      "evidence",
+      "findings",
+      "offering",
+      "when",
+    ]);
+  });
+
+  /**
+   * The direction 0061 §3 measured at 231 refusals and calls *the one judgement
+   * worth an agent*. Here it answers `claim` — *the approach, not the lines* —
+   * which requeues: the item is released and a higher-priority ticket opened in
+   * the meantime goes first (0040).
+   */
+  it("takes a declared judge's answer for the findings direction, and a `claim` requeues", async () => {
+    const { result, asked } = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      answers: {
+        judge: { next: "claim", named: "claude-code", why: "the approach is wrong, not the lines" },
+      },
+      ceilings: { rounds: 1, restartsLeft: 1 },
+    });
+
+    expect(asked.judge[0]?.when).toBe("findings");
+    expect(result.routes).toEqual([
+      { from: "proposed", to: "claim", why: "the approach is wrong, not the lines" },
+    ]);
+    expect(result.rested).toBe("requeued");
+    // Nothing refused, so nothing is named as having stopped it — and a requeue
+    // releases the item, which is `failed` at `end`.
+    expect(result.stoppedAt).toBeNull();
+    expect(outcomeOf(result)).toBe("failed");
+    expect(asked.land).toEqual([]);
+  });
+
+  /**
+   * **An arrival no judge can answer still reaches a person**, which is the floor
+   * `#253` set and the one thing replacing its router had to keep. 0061 §3's yaml
+   * names `ask-or-assume` for `needs-input` and nothing implements it, so a
+   * question reaches somebody rather than a name the schema would accept and no
+   * code answers.
+   */
+  it("holds a direction no judge answers for a person", async () => {
+    const { result, asked } = await pass({
+      answers: { dispatch: { asked: "the ticket names two files and neither exists" } },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT]);
+    expect(result.routes[0]?.to).toBe("waiting");
+    expect(result.routes[0]?.why).toContain("no `judge:` is declared");
+    expect(result.rested).toBe("waiting");
+    // The person is shown the step that asked, not the router that sent it.
+    expect(result.stoppedAt?.step).toBe("implement");
+  });
+
+  /**
+   * 0061 §8 once more — *a step refuses a destination it did not offer* — and the
+   * fallback is the one destination that cannot loop. An overruled judge is not
+   * one to ask for a second opinion, so the answer is a person with the refusal
+   * on the card rather than the next cheapest step.
+   */
+  it("refuses a destination it did not offer, and names the judge", async () => {
+    const { result } = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      answers: { judge: { next: "implement", named: "claude-code", why: "have another go" } },
+      // Nothing left to spend, so `implement` is on no offer.
+      ceilings: { rounds: 0, restartsLeft: 0 },
+    });
+
+    expect(result.routes[0]?.to).toBe("waiting");
+    expect(result.routes[0]?.why).toContain(
+      'the "claude-code" judge answered "implement" for `review`\'s findings',
+    );
+    expect(result.rested).toBe("waiting");
+  });
+
+  /**
+   * `decideFix`'s first rule and the one that makes the loop safe to have (0038
+   * §2): the bar is not *has findings*, it is *carries something the fixer could
+   * not have authored*. This is the 24 refusals a year that carried nothing — and
+   * no judge is asked about them, because paying a model to discover there is
+   * nothing to fix is paying twice.
+   */
+  it("spends nothing on a refusal carrying nothing an agent could be held to", async () => {
+    const anOpinion: ActionFinding = { ...BLOCKER, failureScenario: "  " };
+    const { result, asked } = await pass({
+      ...checked(PASSED, { verdict: "failed", evidence: "", findings: [anOpinion] }),
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(asked.judge).toEqual([]);
+    expect(result.routes[0]).toMatchObject({ to: "waiting" });
+    expect(result.routes[0]?.why).toContain("nothing an agent could be held to");
+    expect(result.rested).toBe("waiting");
+  });
+
+  /**
+   * The mechanical answer is written in this file's vocabulary because
+   * `judge.ts`'s `Destination` has three values and cannot say `build`; this is
+   * what makes a divergence between the two a failing test rather than a
+   * surprise. It is deleted the day T5 makes them one.
+   */
+  it("answers a mechanical direction exactly as `judge.ts`'s built-in does", async () => {
+    const named = BUILT_IN_FOR.red;
+    expect(named).not.toBeNull();
+
+    for (const rounds of [0, 1]) {
+      const { result } = await pass({
+        actions: { build: [canned("typecheck", RED)] },
+        ceilings: { rounds, restartsLeft: 0 },
+      });
+      const theirs = BUILT_IN[named ?? "same-worktree"]({
+        when: "red",
+        evidence: RED.evidence,
+        findings: [],
+        offer: rounds > 0 ? ["implement", "human"] : ["human"],
+      });
+
+      expect(result.routes[0]?.to).toBe(theirs === "human" ? "waiting" : theirs);
+    }
+  });
+});
+
+// ------------------------------------------------------------------ merge ----
+
+describe("merge reports a reason and a detail, and decides nothing", () => {
+  it("lands, and is handed the head the steps gave their verdicts about", async () => {
+    const { result, asked } = await pass();
+
+    expect(asked.land).toEqual([
+      { claimed: ITEM, worktree: TREE, context: expect.objectContaining({ onSha: COMMITTED }) },
+    ]);
+    expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({ ending: "passed" });
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * Over the whole log the lane has refused 32 times — **26 `gate-failed`, 6
+   * `conflict`** — and the common failure is that somebody else's work landed and
+   * the diff stopped being true. The step reports the lane's own words and the
+   * judge at `proposed` decides what they cost: a `gate-failed` is mechanical, so
+   * the built-in sends it back to `implement` with the new base.
+   */
+  it("reports the lane's `reason` and `detail`, and the judge decides", async () => {
+    let refuses = true;
+    const { result, asked } = await pass({
+      answers: {
+        land: () => {
+          const answer: Landed = refuses
+            ? { notMerged: { reason: "gate-failed", detail: "pnpm test failed on the new base" } }
+            : { merged: MERGED };
+          refuses = false;
+          return answer;
+        },
+      },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({
+      ending: "refused",
+      because: "gate-failed",
+      at: null,
+      detail: "pnpm test failed on the new base",
+    });
+    expect(asked.judge[0]).toMatchObject({
+      when: "gate-failed",
+      evidence: "pnpm test failed on the new base",
+    });
+    expect(result.routes).toMatchObject([{ from: "merge", to: "implement" }]);
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * **Every path into `end` has been through `build` and `review`**, and the edge
+   * from `merge` back to `build` is what buys it: an agent that resolves a
+   * conflict writes code *after* the review passed, so both run again before
+   * anything lands.
+   *
+   * A declared judge is what chooses it. `conflict` has no built-in, and that is
+   * deliberate — **the intent conflict is the row an agent must not take**: two
+   * changes that edited the same decision differently produce text an agent can
+   * merge and an intent it cannot know.
+   */
+  it("takes a conflict back through `build` and `review` when a judge says so", async () => {
+    let refuses = true;
+    const { result } = await pass({
+      answers: {
+        land: () => {
+          const answer: Landed = refuses
+            ? { notMerged: { reason: "conflict", detail: "both changed doc/design/the-pipeline.md" } }
+            : { merged: MERGED };
+          refuses = false;
+          return answer;
+        },
+        judge: { next: "build", named: "claude-code", why: "the text resolves; the intent is one file" },
+      },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(walk(result).slice(8)).toEqual([
+      "merge:refused",
+      "proposed:routed",
+      "build:passed",
+      "review:passed",
+      "proposed:passed",
+      "merge:passed",
+      "end:passed",
+    ]);
+    expect(result.routes).toEqual([
+      { from: "merge", to: "build", why: "the text resolves; the intent is one file" },
+    ]);
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * The lane's other five reasons are not directions: they stop the lane before
+   * the diff is what is in doubt, and *offering a judge a direction nothing can
+   * arrive by is the same mistake as offering it a step nothing can run*
+   * (`JudgeWhen`). So they reach a person, which is where they go today.
+   */
+  it("holds a lane reason no judge answers for a person, without asking one", async () => {
+    const { result, asked } = await pass({
+      answers: { land: { notMerged: { reason: "pending-migration", detail: "1 migration file" } } },
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(asked.judge).toEqual([]);
+    expect(result.routes[0]).toMatchObject({ from: "merge", to: "waiting" });
+    expect(result.routes[0]?.why).toContain("pending-migration");
+    expect(result.rested).toBe("waiting");
+    expect(result.stoppedAt?.step).toBe("merge");
+    expect(outcomeOf(result)).toBe("blocked");
+  });
+});
+
+// ------------------------------------------------- every reason is reported ----
+
+/**
+ * 0058 §3c's third thing, read across the whole file: **which step** the loop
+ * stamps, **what refused** is on the ending, and **a reason** is what this
+ * asserts. A route that forgets leaves a person reading *waiting on you* with no
+ * way to learn why without opening a run log.
+ *
+ * `never-ran` is the one ending with no `because`, and that is its own argument:
+ * it is the wall about the *account* rather than about the diff, told apart by a
+ * field rather than by a sentence (0031 §1).
+ */
+describe("every step that does not simply pass reports a reason", () => {
+  it.each([
+    { what: "a claim nobody could take", answers: { take: { passedOver: "no kind label" } } as Answers },
+    { what: "a tree that was not cut", answers: { cut: { notCut: "no such base ref" } } as Answers },
+    { what: "a question at `admit`", answers: { cut: { asked: "which base?" } } as Answers },
+    { what: "a question at `implement`", answers: { dispatch: { asked: "which file?" } } as Answers },
+    { what: "an agent with no receipt", answers: { dispatch: { stopped: "the budget went" } } as Answers },
+    {
+      what: "a merge the lane refused",
+      answers: { land: { notMerged: { reason: "conflict", detail: "both changed one file" } } } as Answers,
+    },
+  ])("names a reason for $what", async ({ answers }) => {
+    const { result } = await pass({ answers });
+
+    const reported = result.steps
+      .map((visit) => visit.ending)
+      .filter((ending) => ending.ending === "refused" || ending.ending === "did-not-finish");
+
+    expect(reported.length).toBeGreaterThan(0);
+    for (const ending of reported) expect(ending.because).not.toBe("");
   });
 });
 
