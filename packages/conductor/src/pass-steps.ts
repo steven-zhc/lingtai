@@ -37,16 +37,17 @@
  * **Why a port and not a plugin.** 0061 §3 puts `queue:` at `claim`,
  * `worktree:` at `admit` and `agent:` at `design` and `implement`, and those four
  * plugin names exist — `PLUGINS` in `@lingtai/recipe` carries them. What does
- * not exist is a cell for any of them: `KINDS_AT.claim`, `.admit`, `.design` and
- * `.implement` are all `[]` (`recipe.ts:769`), and `whyNoKindAt` refuses every
- * one by name, saying where that code is called from instead. **Naming a thing
- * is not wiring it**, and until the cells open, the step's own work is its
- * body's. A port is what keeps that honest: the body still cannot act, so the
- * day a cell opens the body loses the call and keeps the rule.
+ * not exist is a plugin declaring itself there: no plugin's `at` carries
+ * `claim`, `admit`, `design` or `implement` (0064 §4), and `whyNoKindAt`
+ * refuses every one by name, saying where that code is called from instead.
+ * **Naming a thing is not wiring it**, and until a plugin claims the step, the
+ * step's own work is its body's. A port is what keeps that honest: the body
+ * still cannot act, so the day a plugin claims it the body loses the call and
+ * keeps the rule.
  *
- * **Two of the ports are not waiting on a cell at all**, and they are the other
- * half of the same table: `judge:` at `proposed` and `merge:` at `merge` are two
- * of the five *columns* `KINDS_AT` carries at no step, and `CALLED_DIRECTLY` is
+ * **Two of the ports are not waiting on that at all**, and they are the other
+ * half of the same fact: `judge:` at `proposed` and `merge:` at `merge` are two
+ * of the five plugins whose `at` is `{}`, and `CALLED_DIRECTLY` is
  * what their cells are refused with — *they name code the pass calls itself.* So
  * `ports.judge` and `ports.land` are not stand-ins for a plugin that will exist;
  * they are the seam that plugin was always going to be reached through.
@@ -503,8 +504,8 @@ export interface PassPorts {
    * is refused by name rather than obeyed (0061 §8).
    *
    * **It is a port and not a plugin for the reason `queue:` and `worktree:` are.**
-   * `judge:` is one of the five columns `KINDS_AT` carries at no step at all, and
-   * `CALLED_DIRECTLY` is what its fifty cells are refused with: the plugin names
+   * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no step
+   * at all, and `CALLED_DIRECTLY` is what its ten cells are refused with: the plugin names
    * code the pass calls itself. So `actionsAt` will not build one, and this is
    * where a caller that has resolved the recipe's entries answers instead.
    *
@@ -1034,8 +1035,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * plugins.**
      *
      * `prepared`'s plugin is `run:` carrying the command (0061 §3), and
-     * `KINDS_AT.prepared` is the one row of these six that is open
-     * (`recipe.ts:775`): this repository's own recipe file declares one command
+     * `prepared` is the one of these six a plugin declares itself at —
+     * `runPlugin`'s `at` in `recipe.ts`: this repository's own recipe file declares one command
      * there and nothing else — `pnpm install --frozen-lockfile`, with a `10m`
      * timeout (`.lingtai/config.yaml:113`). The loop has already run that
      * list by the time this is called, and `endingOf` has already read a `failed`
@@ -1131,10 +1132,10 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * Its work is entirely its plugins', which is `prepared`'s argument again: the
      * build is `run:` carrying the commands (0061 §3), the loop has run them by
      * the time this is called, and a second build written here would be the
-     * reimplementation 0061 §3 exists to prevent. `KINDS_AT.build` is still `[]`,
-     * and it stays that way until the conductor runs this file — turning a
+     * reimplementation 0061 §3 exists to prevent. No plugin declares itself at
+     * `build` yet, and none does until the conductor runs this file — turning a
      * declared list into a runnable action is `actionsAt`'s, at the caller, which
-     * is why this body needs no row opened.
+     * is why this body needs no `at` key opened.
      */
     build: async (): Promise<StepPassed> => ({ ending: "passed" }),
 

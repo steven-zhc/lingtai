@@ -449,7 +449,7 @@ describe("four steps may refuse, and the other six may not", () => {
    * 0058 §2 from the plugin's side, and the case that makes the check above a
    * body's alone. `actionsAt` is the caller's seam and the pass does no kind
    * check of its own — which is why this test hands one in at `implement` though
-   * `KINDS_AT.implement` is still `[]`.
+   * no plugin declares itself there.
    *
    * A plugin saying no at a step the workflow does not let refuse is an ordinary
    * verdict and not a programming error. Reported as `did-not-finish`, which buys
@@ -1088,9 +1088,9 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
   /** 0058 §3b: back to `implement`, in the same worktree, and on through. */
   it("walks the spine again from where the judge sent it", async () => {
     let refusals = 0;
-    // Declared nowhere, because `KINDS_AT.build` is still `[]` and the schema
-    // refuses an action at a step no code reaches (`#61`). The action arrives
-    // through `actionsAt`, which is the caller's seam and not the recipe's.
+    // Declared nowhere, because no plugin declares itself at `build` and the
+    // schema refuses an action at a step nothing implements (`#61`). The action
+    // arrives through `actionsAt`, the caller's seam and not the recipe's.
     const recipe = recipeWith({});
     const { bodies } = watching({ proposed: routerSaying(() => "implement") });
     const actionsAt: PassOptions["actionsAt"] = (step) =>
@@ -1147,9 +1147,9 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
    * spends.*
    */
   it("stops buying rounds once the ceiling is spent", async () => {
-    // Declared nowhere, because `KINDS_AT.build` is still `[]` and the schema
-    // refuses an action at a step no code reaches (`#61`). The action arrives
-    // through `actionsAt`, which is the caller's seam and not the recipe's.
+    // Declared nowhere, because no plugin declares itself at `build` and the
+    // schema refuses an action at a step nothing implements (`#61`). The action
+    // arrives through `actionsAt`, the caller's seam and not the recipe's.
     const recipe = recipeWith({});
     const { bodies } = watching({
       // The replaced judge that would loop for ever if it could.
@@ -1465,10 +1465,10 @@ describe("a body can read what the steps before it said", () => {
    * nothing both end `passed`. `emit` is write-only, so `reached` is the only
    * way the router sees them without reading the log back.
    *
-   * `build` and `review` have no kinds in `KINDS_AT` yet, so the producer here
+   * No plugin declares itself at `build` or `review` yet, so the producer here
    * is `prepared`, the one refusing step that takes a `run:` today. What is
-   * being checked is the contract, and it does not change when those two rows
-   * open.
+   * being checked is the contract, and it does not change when those two `at`
+   * keys open.
    */
   it("hands a later step the verdicts and findings of the earlier ones", async () => {
     const finding: ActionFinding = {

@@ -4,10 +4,13 @@ A pass is ten steps, and **a step's behaviour is the plugins the recipe declares
 there**. This page is for somebody who wants to write one.
 
 > **This describes [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md),
-> which is accepted and not yet built.** Today a plugin is a schema and four of
-> the twelve have a runnable form; the `at` below is the shape being built
-> towards. The page is here before the code so the target can be argued with
-> while arguing is still cheap.
+> which is accepted and half built.** `at` exists and **its keys are what make
+> you legal** — `definePlugin` takes it, the resolve reads it, and the refusals
+> below are the ones you get (`#261`). What is not built is the **values**: a
+> plugin's body is still `pass-steps.ts`'s hard-coded one, so the functions
+> written below are the shape being built towards rather than something a
+> plugin supplies today. Everything about *where* you may be declared is live;
+> everything about *what runs* is the next ticket.
 
 ## A plugin is two halves
 
@@ -39,6 +42,11 @@ step:
   alone.
 - `at: { "*": … }` — you do not care which step you are at, and one function
   serves every step a recipe may put you at.
+
+**`"*"` includes `end`, and `end` runs no pipeline** — it carries out effects
+through `resolveEndActions` and never builds an action. So a plugin that wants
+to run at the nine steps that decide writes them out; the four that ship today
+(`run:`, `agent:`, `watch:`, `human:`) do exactly that.
 
 **The keys are also what makes you legal.** There is no table to add yourself to:
 a recipe declaring your plugin at a step your `at` has no key for is refused when
@@ -158,7 +166,8 @@ runs, what happened has happened.
 | | |
 |---|---|
 | Not in `PLUGINS` | `slack: not a plugin` — an unknown key, at resolve |
-| In `PLUGINS`, no `at` for that step | *slack: declared at `claim`, which it does not implement — it serves `proposed`* |
+| In `PLUGINS`, no `at` for that step | *the "tell the channel" action is a "slack" at the "claim" step, and `slack:` does not implement `claim` — it serves `proposed`* |
+| In `PLUGINS`, and nothing implements that step | *… and no plugin implements `claim` — today the queue picks the item by `source.kinds`…* |
 | Two plugin keys in one entry | refused: an entry names exactly one |
 | Plugin landed, daemon not restarted, recipe edited | the recipe resolves on your machine and is refused on the daemon's, and **no pass starts at all** until it restarts. Editing the recipe alone never needs one |
 

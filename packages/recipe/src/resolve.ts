@@ -108,8 +108,8 @@ function canonical(value: unknown): string {
  * already in the record would fail that comparison and be told, in a refusal,
  * that the recipe at its base differs — about bytes that never changed.
  *
- * **Nothing is lost by leaving them out.** `KINDS_AT` refuses every kind at all
- * five, so a resolving recipe's list at one of them is *always* `[]` — the
+ * **Nothing is lost by leaving them out.** No plugin declares itself at any of
+ * the five, so a resolving recipe's list at one of them is *always* `[]` — the
  * canonical form is dropping a field that carries no information. The day
  * 0058's plan builds one and a recipe configures it, the list is non-empty, it
  * is in the hash, and the hash changes because the configuration did.

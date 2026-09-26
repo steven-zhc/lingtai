@@ -544,9 +544,9 @@ describe("design produces a document, or nothing, and nothing is an answer", () 
 
 describe("implement dispatches the one agent, and reports what it committed", () => {
   /**
-   * Declared at `proposed` rather than at `build`, because `KINDS_AT.build` is
-   * still `[]` and the recipe schema refuses an action at a step no code reaches
-   * — which is the same `#61` rule this pass is arranged around, one layer out.
+   * Declared at `proposed` rather than at `build`, because no plugin declares
+   * itself at `build` and the recipe schema refuses an action at a step nothing
+   * implements — the same `#61` rule this pass is arranged around, one layer out.
    * The point is the head either way: whatever runs after `implement` is judged
    * against what `implement` committed.
    */

@@ -146,18 +146,20 @@ own plugins refused has nothing to route (`ARRIVE_AT_THE_ROUTER` does not includ
 it), and a red `pnpm test` declared there stops the pass for a person with **no
 fix round bought**, where the five gate points bought one. The build belongs at
 `build:` and the cold reviewer at `review:` — and **a `recipe.yml` edited that way
-stops every pass before it claims anything.** `KINDS_AT.build` and
-`KINDS_AT.review` are both `[]` (`packages/recipe/src/recipe.ts`, held cell by
-cell against `doc/reference.md`'s matrix by `conductor/unit/step-matrix.test.ts`),
+stops every pass before it claims anything.** **No plugin declares itself at
+`build` or at `review`** — since #261 that is each plugin's own `at` in
+`packages/recipe/src/recipe.ts` and not a table beside the schema (0064 §4) —
 so `resolveRecipe` refuses a `run:` at `build` and an `agent:` at `review` by
 name and `conduct.ts` returns `stage: "recipe"` for every ticket — a daemon
 restarted onto it takes nothing at all until somebody puts the two lines back.
 
 The refusal's own reason is what is left to fix rather than the recipe: it says
-*nothing runs a pipeline at `build` yet*, and since #256 that is untrue —
+*no plugin implements `build`*, and what makes that worth fixing is that since
+#256 nothing else stands in the way —
 `runPass` resolves `actionsAt(step, actions)` at all ten steps, so the only thing
-standing between a declared build and a `build` step that runs it is those two
-rows. Opening them is [T5d](doc/design/the-pipeline.md), and until it lands
+standing between a declared build and a `build` step that runs it is two keys
+on `runPlugin` and `agentPlugin`. Opening them is
+[T5d](doc/design/the-pipeline.md), and until it lands
 `proposed:` is where the build and the reviewer have to stay and the first red
 build of the night is a person's to answer.
 

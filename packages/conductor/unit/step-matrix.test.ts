@@ -269,8 +269,9 @@ describe("every step × kind cell runs or refuses", () => {
    * `"when" in a` a judge action built in code went past it into the match on
    * the outcome, where `findings` equals neither the outcome nor `any`: `end`
    * resolved, wrote an empty list, and the log said nothing had been declared.
-   * That is `#61` for one kind. The guard asks for `KINDS_AT.end`'s three keys
-   * instead, so a plugin spelling `when:` is refused rather than dropped.
+   * That is `#61` for one kind. The guard asks for the three keys the plugins
+   * declared `at: { end }` name instead, so a plugin spelling `when:` is
+   * refused rather than dropped.
    */
   it.each(KINDS.filter((kind) => whyNoKindAt("end", kind) !== null))(
     "resolveEndActions refuses end × %s by name, rather than dropping it",
@@ -557,8 +558,8 @@ describe("every step × kind cell runs or refuses", () => {
    * the seam `PassOptions.actionsAt` asks for.
    *
    * What that buys is the thing the old pair could only approximate: the code
-   * runs whatever the schema accepts, at every step, so `KINDS_AT` and
-   * `whyNoKindAt` are the only answer and a matrix cannot go on refusing a step
+   * runs whatever the schema accepts, at every step, so the plugins' own `at`
+   * and `whyNoKindAt` are the only answer and nothing can go on refusing a step
    * the code has started running. What it costs is that *one* has to stay true,
    * because a second call site is a second table of what each step may build —
    * and that is exactly what this asserts.

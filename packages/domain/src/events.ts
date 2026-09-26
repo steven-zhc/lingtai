@@ -77,10 +77,10 @@ export type Tier = z.infer<typeof Tier>;
  * `design`, `implement`, `build` and `review` name work a pass already does and
  * no pipeline is constructed at any of them — today's build and review run as
  * actions at `proposed`. A recipe that names an action at one of the five is
- * refused when it resolves, which is `KINDS_AT`'s rule and not an exception to
- * it: the vocabulary is what the model may *say*, and the matrix is what the
- * code will *run*. The two are allowed to differ only in the direction that is
- * loud.
+ * refused when it resolves, which is the plugins' own rule (0064 §4) and not an
+ * exception to it: the vocabulary is what the model may *say*, and what a
+ * plugin declares itself at is what the code will *run*. The two are allowed to
+ * differ only in the direction that is loud.
  *
  * `proposed` was called `diff` until
  * [ADR 0018](../../../doc/decisions/0018-the-proposed-point.md). Stored events

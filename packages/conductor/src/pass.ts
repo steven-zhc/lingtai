@@ -48,7 +48,7 @@
  * A recipe may omit any step and the resolved recipe holds all ten
  * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5,
  * `StepMap` in `@lingtai/recipe`), so the loop meets `[]` at nine steps out of
- * ten today — `KINDS_AT` accepts an action at four of them — and it must keep
+ * ten today — a plugin declares itself at four of them — and it must keep
  * going. **The one thing it must never do is `continue` past a step that *was*
  * configured**: four of `end`'s six cells were declarable, drawn, and silently
  * dropped by exactly that line (`#61`, and the comment at `end-step.ts`'s kind
@@ -251,7 +251,7 @@ export interface StepRefused extends LeftTheTreeAt {
  * Not a refusal: a `human:` action asking a question has judged nothing, and
  * folding it into `failed` would put *the build is broken* on a card whose
  * build is fine (`action.ts`, `needs-approval`). Which steps can reach it is
- * `KINDS_AT`'s answer — `human:` runs at `proposed` and `merge` today — and not
+ * the `human:` plugin's `at` — `proposed` and `merge` today — and not
  * this type's, which is why `held` is not restricted to the four the way
  * `refused` is.
  *
@@ -875,7 +875,7 @@ export interface PassOptions {
    * they are what `conduct.ts` assembles as `stepDeps` today. So turning a
    * declared list into a runnable action is neither the sequence nor the
    * outcome rules, and by 0058 §2b it is therefore not the pass's. Two things
-   * follow and both are wanted: a cell `KINDS_AT` does not run is refused by
+   * follow and both are wanted: a cell no plugin declares itself at is refused by
    * `actionsFromRecipe`, at the caller, by name — and a test can exercise the
    * whole loop without spawning a process, paying an agent or asking a person,
    * which is what puts this file's tests in the half of the suite the `build`

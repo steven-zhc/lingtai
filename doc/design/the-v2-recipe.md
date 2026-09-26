@@ -408,8 +408,8 @@ out incomplete gets a superseding file rather than a correction, and what it is
 missing is the two below.
 
 Where the two unplaced ones may go is already decided, by code rather than by
-this file. `KINDS_AT` (`recipe.ts:186-187`) gives **`proposed` and `merge` each
-all four of `run`, `agent`, `watch`, `human`** — so neither `watch:` nor
+this file. Each of the four runnable plugins declares itself at **`proposed`
+and `merge`** (their `at` in `recipe.ts`; `run:` adds `prepared`) — so neither `watch:` nor
 `human:` has *a* home; each has two, and v2 inherits both unless something
 decides otherwise.
 

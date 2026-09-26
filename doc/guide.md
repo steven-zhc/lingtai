@@ -231,10 +231,11 @@ event rather than a convention so that an unconfigured point renders as
 cannot see is a check you will forget you never had.
 
 The gating half of that comparison was a `doctor` row too and is gone (`#257`):
-`KINDS_AT` in `packages/recipe/src/recipe.ts` refuses a plugin written at a step
-the code does not run, by name and before a worktree, so *configured and never
-called* is now something the recipe cannot say rather than something a health
-check hunts for on every log. What a person can still act on stays — an `end`
+a plugin declares the steps it serves — its `at`, in
+`packages/recipe/src/recipe.ts` — and a plugin written at any other step is
+refused by name and before a worktree, so *configured and never called* is now
+something the recipe cannot say rather than something a health check hunts for
+on every log. What a person can still act on stays — an `end`
 effect that failed at runtime, which `lingtai end replay` resolves.
 
 ## Hold by default, and unhold what you have read
