@@ -137,6 +137,62 @@ each one comes from.
 **And the four runnable kinds lose nothing.** `run`, `agent`, `watch` and `human`
 become plugins with `at: { "*": … }` and behave exactly as they do now.
 
+## 7. Routing is the plugin's return value; the budget is not
+
+`StepBody<"proposed">` may already return `StepRouted { to: Destination }`, so a
+plugin that implements `at.proposed` **decides the route**. That is the point:
+where a refusal goes is a workflow's design, and a project should be able to
+change it.
+
+A project that wants every refusal to reach a person writes it:
+
+```yaml
+proposed:
+  - name: everything comes to me
+    judge: always-waiting
+```
+
+**That is today's behaviour becoming declarable.** The current stub answers
+`waiting` on every routing arrival, and its own comment argues that is correct
+rather than a placeholder: `passed` would carry a refused change on to `merge`,
+and any step back would be the workflow inventing the judgement 0061 §3 reserves
+for a plugin. After this decision the same policy is a line in a recipe instead
+of a fallback in the code.
+
+### What does not move
+
+**The plugin chooses; the workflow still bounds what the choice costs.** A
+plugin that may return any destination can construct a loop, and the money is
+somebody else's. So a route that spends is checked against the ceiling, and a
+route that cannot be afforded goes to a person **naming the ceiling that is
+spent** rather than being silently refused.
+
+`offering` therefore stops being a menu. Today it is *reachable* and *affordable*
+in one set, which is why it cannot say **why** a destination is missing — no
+meaning, or no money — and those are different messages to whoever reads the
+card.
+
+**`waiting` is the one destination that costs nothing**, so the budget never
+refuses it. That is what makes it the right answer both when a plugin chooses it
+and when a ceiling is spent: the two arrive at the same place for different
+reasons, and the pass says which.
+
+### `rounds` and the plugin are not two ways to write one thing
+
+`rounds: 0` already means *every refusal goes straight to a person*
+([0039](0039-the-worktree-is-the-whole-of-a-pass.md) §4), and an always-`waiting`
+plugin says something that looks identical. They are not redundant, and the
+difference is worth keeping:
+
+- **`rounds` is a ceiling, and it is the workflow's.** A plugin cannot count its
+  own rounds — every plugin would have to implement counting, and one that got it
+  wrong would loop on somebody's money until the wall.
+- **The plugin is the choice, and it is the project's.**
+
+`rounds: 0` makes every spending choice unaffordable, so whatever the plugin
+chooses falls through to `waiting`. That is a ceiling doing what a ceiling does,
+not a second spelling of the same policy.
+
 ## Related
 
 - [0058](0058-lingtai-is-a-development-pipeline.md) §2b — *a step's behaviour is
