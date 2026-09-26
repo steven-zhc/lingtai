@@ -820,7 +820,7 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/conductor/src/judge.ts` | `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
 | `packages/conductor/src/pass-steps.ts` | `gate` ×2 |
-| `packages/conductor/src/run-once.ts` | `GatesResolved` ×2 · `gate` ×1 |
+| `packages/conductor/src/conduct.ts` | `GatesResolved` ×2 · `gate` ×1 |
 | `packages/conductor/src/steps-resolved.ts` | `gate` ×1 · `points` ×1 |
 | `packages/daemon/src/control.ts` | `gates` ×1 |
 | `packages/domain/src/events.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `GateWaived` ×3 · `GatesResolved` ×3 · `gate` ×3 · `gateBase` ×11 · `points` ×1 |
@@ -1422,18 +1422,36 @@ one terminal. That is on purpose — an `IntegrationRefused` reaches the `deskto
 subscriber as *did not merge* and wakes a queue pass, and a race the lane goes on
 to win is neither.
 
-## run stage — 13
+## run stage — 15
 
-Where a failed run stopped, as `stopped at <stage>`. Source: the `stage:`
-returns, the `failing("…")` combinators and the `refusal("…")` calls in
-`packages/conductor/src/run-once.ts`.
+Where a failed run stopped, as `stopped at <stage>`. Source: the `stage:` returns
+in `packages/conductor/src/conduct.ts`.
 
-`recipe` · `dispatch` · `discover` · `claim` · `env` · `hook` · `worktree` ·
-`prepare` · `run` · `diff` · `push` · `integrate` · `unexpected`
+**Since `#256` all but five of them are step names**, and that is the shape of the
+list rather than a coincidence: the conductor resolves the recipe, the
+environment and the tier and then hands the rest to `runPass`, so a run that
+failed inside the pass is named by the step that stopped it
+(`PassResult.stoppedAt`). The four points and the eight hand-written stages that
+used to be here are gone with the engine that had them.
 
-`diff: no commits` is the one worth recognising — the agent finished and wrote
-nothing. This `diff` is a *stage*, not the gate point: the run stopped while
-computing the diff, before anything at `proposed` could be asked about it.
+Before the pass, four:
+
+`recipe` · `env` · `dispatch` · `unexpected`
+
+Inside it, one per step, and `pass` where the pass ended without landing and
+without anybody having been asked:
+
+`claim` · `admit` · `prepared` · `design` · `implement` · `build` · `review` ·
+`proposed` · `merge` · `end` · `pass`
+
+And one beside them: `restart`, where the rounds were spent and a second
+approach was bought (0040) — the item is released and the next claim is an
+ordinary pass from the base.
+
+**`implement` is the one worth recognising** — it is where *the agent produced no
+commits* now reads, and it used to be `diff: no commits`. The commit is the
+receipt (0057 §2), so an agent that finished and wrote nothing is a step that did
+not finish rather than a stage of computing a diff.
 
 ## issue change — 3
 

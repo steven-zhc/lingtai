@@ -125,12 +125,15 @@ function finding(severity: Severity): Finding {
 const KINDS = PLUGINS.map((plugin) => plugin.key);
 
 /**
- * What each gating point hands `actionsFromRecipe`, which is the other half of
- * what it can run: `prepared` gets an environment resolver and nothing else,
- * because there is no diff there for a reviewer to read or globs to match.
+ * What a step hands `actionsFromRecipe`, which is the other half of what it can
+ * run — **and since `#256` it is one object at all ten steps.**
  *
- * Pinned against `run-once.ts` itself below, so this cannot drift from the
- * call sites it is describing without a red test.
+ * `conduct.ts`'s `actionsAt` is a single `(step, actions)` seam, which is the
+ * shape `PassOptions.actionsAt` asks for, so there is no per-step deps table in
+ * the conductor for this to be a copy of any more. What keeps a step from
+ * building a kind it must not is `whyNoKindAt`, asked by `actionsFromRecipe`
+ * itself and by the schema — the two doors the matrix below is about. `DEPS`
+ * survives only for the three steps the by-name refusal cases enumerate.
  */
 const EVERY_DEP: ActionDeps = {
   env: () => ({}),
@@ -145,28 +148,23 @@ const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
 };
 
 /**
- * The steps something actually constructs a pipeline for.
+ * Does the code that consumes this step actually dispatch this action?
  *
- * **Compared against the conductor's whole `src/` tree** by *is read off the
- * conductor's own source* below, which is what stops it being a list somebody
- * keeps: a `actionsFromRecipe` call site anywhere under `packages/conductor/src`
- * is a red test here rather than a matrix that goes on refusing a step the
- * code has started running. That is `#61` inverted, and it is exactly what
- * 0058's own plan will do — it builds `build` and `review`, and a pipeline
- * constructed in a new module would not have moved a count pinned against
- * `run-once.ts` alone.
+ * **There is no longer a set of steps that have a call site**, and that is the
+ * whole of what `#256` changed here. `HAS_A_CALL_SITE` was `["prepared",
+ * "proposed", "merge", "end"]` — the four points `run-once.ts` built a pipeline
+ * at — and every cell at the other six was false because nothing asked. The pass
+ * asks at all ten: `runPass` calls `options.actionsAt(step, actions)` for every
+ * step whose plugins are verdicts, and `end` by its resolver.
+ *
+ * So the class of drift that list guarded — *the matrix goes on refusing a step
+ * the code has started running*, `#61` inverted — is closed by construction
+ * rather than by a list somebody keeps, and `whyNoKindAt` is the single answer
+ * at both doors. What is left to check is that there is still exactly **one**
+ * call site, which is *the conductor builds every step's list through one seam*
+ * below.
  */
-const HAS_A_CALL_SITE = ["prepared", "proposed", "merge", "end"] as const;
-
-/** Does the code that consumes this step actually dispatch this action? */
 function runsAt(step: Step, kind: ActionKind): boolean {
-  if (!(HAS_A_CALL_SITE as readonly string[]).includes(step)) {
-    // Nothing constructs a pipeline at `claim`, `admit`, `design`, `implement`,
-    // `build` or `review`: no call site, nothing to ask. Five of those six are
-    // named by 0058 §3 and built by its next ticket; `admit` has been in the
-    // closed set since 0016 with nothing behind it.
-    return false;
-  }
   // A throw is a refusal and not a run, which is the answer this asks for; the
   // refusals themselves are asserted by name below.
   try {
@@ -175,7 +173,7 @@ function runsAt(step: Step, kind: ActionKind): boolean {
       const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? [];
       return named.some((a) => a.name === ACTION[kind].name);
     }
-    return actionsFromRecipe(step, [ACTION[kind]], DEPS[step as keyof typeof DEPS]).some(
+    return actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP).some(
       (step) => step.name === ACTION[kind].name,
     );
   } catch {
@@ -475,66 +473,62 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
-   * The deps in this file are a copy of what `run-once.ts` passes, and a copy
-   * is a thing to keep correct. Read rather than reasoned about: narrowing
-   * `proposed`'s deps would leave the schema accepting an `agent:` action that
-   * refused mid-pass and released the item, which is the failure this whole
-   * file exists to make impossible.
-   */
-  it("is the deps run-once passes at each step", async () => {
-    const src = await readFile(new URL("../src/run-once.ts", import.meta.url), "utf8");
-    expect(src).toMatch(/actionsFromRecipe\(\s*"prepared",\s*recipe\.steps\.prepared,\s*\{\s*env:/);
-    expect(src).toMatch(/actionsFromRecipe\(\s*"proposed",\s*recipe\.steps\.proposed,\s*stepDeps\s*\)/);
-    expect(src).toMatch(/actionsFromRecipe\(\s*"merge",\s*recipe\.steps\.merge,\s*stepDeps\s*\)/);
-    // And nowhere else *in this file*: a fourth call site here is a point this
-    // test does not know about, judging with deps it has not been told. The
-    // whole tree is the next test's.
-    expect(src.match(/actionsFromRecipe\(/g)?.length).toBe(3);
-  });
-
-  /**
-   * **`HAS_A_CALL_SITE` is read, not kept**, and the reading is over every
-   * file under `packages/conductor/src` rather than the one module that
-   * happens to hold the call sites today.
+   * **The conductor builds every step's list through one seam**, and a second
+   * `actionsFromRecipe` call site anywhere under `packages/conductor/src` is a
+   * red test here.
    *
-   * The matrix, `doc/reference.md` and `KINDS_AT` all refuse a `build:` action
-   * because nothing constructs a pipeline at `build`. When 0058's plan builds
-   * that step, it may well construct it somewhere other than `run-once.ts` —
-   * and a count pinned against `run-once.ts` alone would stay 3, every test
-   * here would stay green, and the recipe would go on refusing an action at a
-   * step the code had started running. That is `#61` with the sign flipped,
-   * and this file exists to make it a red test.
+   * This is what `is the deps run-once passes at each step` and `is read off the
+   * conductor's own source` became when `#256` deleted the file they read.
+   * Between them they pinned four literal call sites and the per-step deps each
+   * was handed; there is one call site now, it names its step with a *variable*,
+   * and it hands the same deps everywhere — `conduct.ts`'s `actionsAt`, which is
+   * the seam `PassOptions.actionsAt` asks for.
    *
-   * `end` by its resolver and not by `actionsFromRecipe`: its actions are
-   * effects, so the thing that is proof the step is built is
-   * `resolveEndActions` existing, which is what `runsAt` calls for it.
+   * What that buys is the thing the old pair could only approximate: the code
+   * runs whatever the schema accepts, at every step, so `KINDS_AT` and
+   * `whyNoKindAt` are the only answer and a matrix cannot go on refusing a step
+   * the code has started running. What it costs is that *one* has to stay true,
+   * because a second call site is a second table of what each step may build —
+   * and that is exactly what this asserts.
+   *
+   * Recursive over `src/`, because "the module the call site is in today" is
+   * exactly the assumption this exists to stop being made — and **over the code
+   * rather than over the bytes**: `pass.ts`'s own doc comment names
+   * `actionsFromRecipe("end", …)` to say the `end` step is not one, and a count
+   * that read comments would read that sentence as a second call site.
    */
-  it("is read off the conductor's own source, not kept by hand", async () => {
+  it("builds every step's list through one `actionsFromRecipe` call, and it takes the step as a variable", async () => {
     const src = new URL("../src/", import.meta.url);
-    // Recursive, because "the module the call sites are in today" is exactly
-    // the assumption this test exists to stop being made.
     const files = (await readdir(src, { recursive: true })).filter((f) => f.endsWith(".ts"));
-    const built = new Set<string>();
     let calls = 0;
     let literals = 0;
+    let end = false;
+
+    /** The file with every comment taken out, so a sentence is not a call. */
+    const code = (text: string) =>
+      text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
     for (const file of files) {
-      const text = await readFile(new URL(file, src), "utf8");
+      const text = code(await readFile(new URL(file, src), "utf8"));
       calls += text.match(/actionsFromRecipe\(/g)?.length ?? 0;
-      for (const m of text.matchAll(/actionsFromRecipe\(\s*"([a-z]+)"/g)) {
-        literals += 1;
-        built.add(m[1]!);
-      }
-      if (/export function resolveEndActions\b/.test(text)) built.add("end");
+      literals += [...text.matchAll(/actionsFromRecipe\(\s*"([a-z]+)"/g)].length;
+      if (/export function resolveEndActions\b/.test(text)) end = true;
     }
 
-    // A call site whose point is a variable would be invisible to the regex
-    // above, so the two counts have to agree before the set means anything.
-    expect(literals, "a actionsFromRecipe call site names its step with a variable").toBe(calls);
-    expect(
-      [...built].sort(),
-      "HAS_A_CALL_SITE is stale — the matrix, doc/reference.md and KINDS_AT move with it",
-    ).toEqual([...HAS_A_CALL_SITE].sort());
+    expect(calls, "the conductor has more than one `actionsFromRecipe` call site").toBe(1);
+    // Zero literals is the seam: a call site that named a step would be a step
+    // built differently from the other nine.
+    expect(literals, "an `actionsFromRecipe` call site names its step literally").toBe(0);
+    // And `end`'s consumer, which is its resolver and never a pipeline.
+    expect(end, "`end` has no `resolveEndActions` to carry its effects out").toBe(true);
+  });
+
+  /** And the call is the pass's seam, handed to `runPass` rather than called directly. */
+  it("hands that call to the pass as `actionsAt`", async () => {
+    const wiring = await readFile(new URL("../src/conduct.ts", import.meta.url), "utf8");
+    expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/);
+    expect(wiring).toMatch(/actionsFromRecipe\(step, actions, stepDeps\)/);
+    expect(wiring).toMatch(/runPass\(\{[\s\S]*actionsAt,/);
   });
 });
 
