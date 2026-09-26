@@ -66,9 +66,9 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     // Say what it actually did before asserting, so a refusal names its stage
     // rather than reading as `false`.
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    expect(result.ok).toBe("held");
     // And it names the step that held it, which is the merge point — the thing a
     // person is being asked about.
+    if (result.ok !== "held") throw new Error(`landed, and this run asked not to merge`);
     expect(result.step).toBe("merge");
 
     // The decision, as the log records it.

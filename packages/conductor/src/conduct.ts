@@ -1602,6 +1602,31 @@ export function runOnce(
 
       const outcome = outcomeOf(pass);
       const headSha = headReached(pass.steps);
+      /**
+       * **The refs go before the question, and this line is what makes that
+       * true** (`#250`, 0062 §1).
+       *
+       * A person asked *merge this anyway?* wants the branch already on origin to
+       * answer it with, and a publish that happens only while the scope unwinds
+       * happens after every append below and after GitHub has been told. So the
+       * publish is asked for here, on every ending but a landing — where the lane
+       * has already pushed and `didLand` will delete the run log.
+       *
+       * The finalizer still runs and is not redundant: it is the only thing that
+       * covers a crash or an interruption between here and the end of the scope,
+       * and on the paths that reach this line it finds the head already published
+       * and writes the `already-published` row that says *the finalizer fired* —
+       * which is the fact `#250` had to infer from a `RUN_LOG_END` line.
+       *
+       * `null` is *nothing to say*: the refs are where this ending promised them,
+       * or there was nothing committed to promise. A string is git's own words,
+       * and it travels onto the card rather than being swallowed — the person is
+       * still owed the question, and is told the branch is not there.
+       */
+      const notPushed =
+        outcome === "landed" ? null : yield* Effect.promise(publishWhatIsCommitted);
+      const unpushed =
+        notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
       const stopped = pass.stoppedAt;
       /** What the router decided last, which is what sent a pass to a person. */
       const lastRoute = pass.routes.at(-1) ?? null;
@@ -1623,6 +1648,17 @@ export function runOnce(
        * already — `diagnoseRefusal` — and it is used rather than restated.
        */
       const blocked = () => {
+        const said_ = whatIsWaitingOnYou();
+        return notPushed === null
+          ? said_
+          : // **Git's own words reach the card, on every shape of the question.**
+            // A rescue starts from knowing whether the commits reached origin, and
+            // the three returns below each compose their own `what` — so the
+            // sentence is appended once, here, rather than three times there.
+            { ...said_, diagnosis: { ...said_.diagnosis, what: `${said_.diagnosis.what}${unpushed}` } };
+      };
+
+      const whatIsWaitingOnYou = () => {
         const at = stopped?.step ?? "proposed";
         const ending = stopped?.ending.ending ?? "routed";
         const why = stopped === null ? (lastRoute?.why ?? "the pass was held for a person") : detailOf(stopped);
@@ -1835,8 +1871,8 @@ export function runOnce(
       }
       const reason =
         stopped === null
-          ? "the pass ended without landing and without asking anybody"
-          : `the \`${stopped.step}\` step ${stopped.ending.ending}: ${said(detailOf(stopped))}`;
+          ? `the pass ended without landing and without asking anybody${unpushed}`
+          : `the \`${stopped.step}\` step ${stopped.ending.ending}: ${said(detailOf(stopped))}${unpushed}`;
       yield* release(reason);
       return {
         ok: false,
