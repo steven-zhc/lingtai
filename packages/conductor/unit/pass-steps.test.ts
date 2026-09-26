@@ -1069,11 +1069,54 @@ describe("proposed is the only step that routes, and one judge answers each when
   });
 
   /**
+   * **And the words a person reads name the ceiling too** (0064 §7, `#267`).
+   *
+   * `ceiling` on the route is for whoever reads the log back; the sentence is
+   * what is on the card, and until the offer had two sets it could say only
+   * *that is not one of the steps it was offered* — true of a spent `rounds`
+   * and of a step no number would have bought alike. Both rows below end at
+   * `waiting`, and the next move a person has differs: the first is a line in
+   * `~/.lingtai/<project>/recipe.yml`, and the second is not.
+   */
+  it("names the ceiling in the words, where a number is what refused the choice", async () => {
+    const spent = await pass({
+      actions: { build: [canned("typecheck", RED)] },
+      ceilings: { rounds: 0, restartsLeft: 0 },
+    });
+
+    expect(spent.result.routes[0]?.why).toContain("it wanted `implement`, and `rounds` is spent");
+
+    // The item's ceiling rather than this pass's, and through the other door: a
+    // declared judge answering outside the set it was handed.
+    const overruled = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      answers: { judge: { next: "claim", named: "claude-code", why: "the approach is wrong" } },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(overruled.result.routes[0]?.why).toContain("it wanted `claim`, and `restarts` is spent");
+
+    // And a destination no number would have offered is not named in the words
+    // at all, which is `#271`'s rule: naming a step the arrival could not have
+    // taken invites the reader to ask for it. `chose` records it; the card does
+    // not.
+    const never = await pass({
+      steps: { prepared: [{ name: "install", run: "false" }] },
+      actions: { prepared: [canned("install", RED)] },
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(never.result.routes[0]?.chose).toBe("implement");
+    expect(never.result.routes[0]?.why).not.toContain("implement");
+    expect(never.result.routes[0]?.why).not.toContain("spent");
+  });
+
+  /**
    * **And null is a ceiling's absence rather than a gap in the record** — the
-   * reading `refusedBy` is careful about. A failed install refuses before any
-   * agent has run, so the built-in's `implement` was never on offer whatever is
-   * left to spend: naming `rounds` here would send a person to raise a number
-   * that would refuse the same route again.
+   * reading `ceilingFor` is careful about. A failed install refuses before any
+   * agent has run, so the built-in's `implement` was on neither half of the
+   * offer whatever is left to spend: naming `rounds` here would send a person to
+   * raise a number that would refuse the same route again.
    */
   it("names no ceiling where no number would have offered the choice", async () => {
     const { result } = await pass({
