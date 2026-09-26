@@ -1666,6 +1666,33 @@ export function runOnce(
         outcome === "landed" ? null : yield* Effect.promise(publishWhatIsCommitted);
       const unpushed =
         notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
+      /**
+       * **What a person can be asked to merge: the head this pass put on origin
+       * for `branch`, or null where it put none there.**
+       *
+       * `headSha` cannot answer that, and the gap is not small. `headReached` is
+       * the last `head` a *visit* reported, `admit` reports the base sha so that
+       * the head the pass is judged against always has a value (`pass-steps.ts`),
+       * and the endings that stop at `implement` report none — an agent stopped at
+       * its turns is a `did-not-finish` with no `head` on it, whatever it
+       * committed. So `headSha` there is the commit the worktree was **cut** at,
+       * and binding a request to it asks a person to merge `agent/<n>@<base>`
+       * while origin holds this pass's actual commits at another sha: `approve()`
+       * compares the two, refuses every one as `stale`, and until somebody clicks
+       * it the board draws the item `awaitingApproval` at a sha nothing is at
+       * (`#92`, and `#84`'s *a card offers the move that is left, never a control
+       * that refuses*).
+       *
+       * `published` is set by the publish a few lines above — the one ending that
+       * skips it is a landing, which does not reach here — so it is exactly *what
+       * is fetchable under `branch` right now*: null where nothing was committed,
+       * null where origin refused the leased ref (`arm-only`, a broken transport),
+       * and the head itself where the push went. Where it is null there is nothing
+       * to approve and the block below is the whole of what a person is told, which
+       * is what `run-once.ts` did on both endings that reach a person without a
+       * commit.
+       */
+      const onOrigin = published;
       const stopped = pass.stoppedAt;
       /** What the router decided last, which is what sent a pass to a person. */
       const lastRoute = pass.routes.at(-1) ?? null;
@@ -1942,8 +1969,9 @@ export function runOnce(
         const held = stopped?.ending.ending === "held";
         const said_ = blocked();
         // A plugin that asked for a person has already had its `ApprovalRequested`
-        // emitted by the pipeline; everything else that reaches a person has not.
-        if (!held) {
+        // emitted by the pipeline; everything else that reaches a person has not —
+        // and only where origin holds something for them to merge (`onOrigin`).
+        if (!held && onOrigin !== null) {
           /**
            * **The request is named for itself, never for the action that
            * refused** — and naming it after that action destroys the thing it
@@ -1973,11 +2001,15 @@ export function runOnce(
                   gate: stopped?.step ?? "proposed",
                   action: stopped === null ? "judge" : "unfixed",
                   runId,
-                  onSha: headSha,
+                  // What is on origin, never what the walk last reported: see
+                  // `onOrigin`. The two are the same sha wherever a declared
+                  // action refused, and differ on every ending that stopped at
+                  // `implement` with commits behind it.
+                  onSha: onOrigin,
                   question:
                     `Merge ${branch} into ${base} anyway? ${said_.question}` +
                     (refusedBy === null ? "" : ` (\`${refusedBy}\`)`),
-                  artifacts: [`${branch}@${headSha}`],
+                  artifacts: [`${branch}@${onOrigin}`],
                 }),
               },
             ]),

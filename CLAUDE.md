@@ -127,22 +127,39 @@ Then, under a rule, the evidence — house style as in #52, #55, #58:
 **This repository merges its own work unattended, and that is configuration
 rather than a gap.** `gates.merge` is `[]` — nothing is declared there, so
 nothing holds. Declare a `human:` action there and the point runs it: #58 was
-fixed, and the test that pins it is `conductor/integration/run-once.test.ts`'s
-*holds at a human action at the merge point, with no --no-merge anywhere*, which
-asserts the base branch does not move. `--no-merge` remains the way to hold a
-run whose recipe asks for nothing.
+fixed, and the test that pins it is `conductor/unit/conduct-a-whole-pass.test.ts`'s
+*holds at a human action declared at the merge point, with no --no-merge
+anywhere*, which asserts the merge lane is never called — it carried that claim
+in `integration/run-once.test.ts` until #256 deleted the engine that file tested.
+**A test that passes `--no-merge` cannot make it**: since #256 the flag is itself
+an injected `human:` action, so it exercises the injected one and says nothing
+about the declared one, which is how #58 stayed hidden for four days.
+`--no-merge` remains the way to hold a run whose recipe asks for nothing.
 
 So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
 **And since #256 the recipe's own `proposed:` is the wrong home for either of
-them.** The conductor runs the ten steps now, so `proposed` is the router and not
-the gate: a step whose own plugins refused has nothing to route
-(`ARRIVE_AT_THE_ROUTER` does not include it), and a red `pnpm test` declared
-there stops the pass for a person with **no fix round bought**. The build belongs
-at `build:` and the cold reviewer at `review:` — two lines in
-`~/.lingtai/lingtai/recipe.yml`, which is outside every worktree, so no agent can
-make the move and no diff can record it.
+them — and the right home refuses them, so do not move them yet.** The conductor
+runs the ten steps now, so `proposed` is the router and not the gate: a step whose
+own plugins refused has nothing to route (`ARRIVE_AT_THE_ROUTER` does not include
+it), and a red `pnpm test` declared there stops the pass for a person with **no
+fix round bought**, where the five gate points bought one. The build belongs at
+`build:` and the cold reviewer at `review:` — and **a `recipe.yml` edited that way
+stops every pass before it claims anything.** `KINDS_AT.build` and
+`KINDS_AT.review` are both `[]` (`packages/recipe/src/recipe.ts`, held cell by
+cell against `doc/reference.md`'s matrix by `conductor/unit/step-matrix.test.ts`),
+so `resolveRecipe` refuses a `run:` at `build` and an `agent:` at `review` by
+name and `conduct.ts` returns `stage: "recipe"` for every ticket — a daemon
+restarted onto it takes nothing at all until somebody puts the two lines back.
+
+The refusal's own reason is what is left to fix rather than the recipe: it says
+*nothing runs a pipeline at `build` yet*, and since #256 that is untrue —
+`runPass` resolves `actionsAt(step, actions)` at all ten steps, so the only thing
+standing between a declared build and a `build` step that runs it is those two
+rows. Opening them is [T5d](doc/design/the-pipeline.md), and until it lands
+`proposed:` is where the build and the reviewer have to stay and the first red
+build of the night is a person's to answer.
 
 **There is no exception, and `tamper` is not one.** What stands between an agent
 and `main` here is `proposed` — the build and the cold reviewer — and neither is

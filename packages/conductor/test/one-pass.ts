@@ -160,6 +160,29 @@ steps:
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
+/**
+ * A person declared at `merge`, and nothing else asking — which is the recipe
+ * this repository has had since the day it was self-hosted.
+ *
+ * **The point of it is that no flag is passed.** `#58` merged two changes into
+ * `main` with nobody's approval because `merge:` was resolved, printed by
+ * `lingtai add` and drawn on the board without ever being built into a pipeline,
+ * and the reason that stayed hidden for four days is that `--no-merge` was the
+ * only thing that had ever held a run: every test held its run with the flag, and
+ * the daemon does not pass it.
+ */
+export const HUMAN_AT_MERGE = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  merge:
+    - name: approval
+      human: "Merge this? It is Lingtai's own code."
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
 export const issue: Issue = {
   number: 7,
   title: "a race in the importer",

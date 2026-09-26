@@ -236,6 +236,61 @@ describe("when the agent meets the wall", () => {
   });
 
   /**
+   * **And it asks nobody to merge what does not exist** (`#84`: a card offers the
+   * move that is left, never a control that refuses).
+   *
+   * The two arms differ in one fact — whether the agent committed — and the
+   * question a person is asked has to differ with it. **The walk's own `headSha`
+   * cannot tell them apart**: `headReached` is the last `head` a *visit* reported,
+   * `admit` reports the base sha so that the head the pass is judged against
+   * always has a value (`pass-steps.ts`), and the wall is a `did-not-finish` with
+   * no `head` on it — so `headSha` is the base sha in **both** arms, including the
+   * one where origin is holding two commits at another.
+   *
+   * Bound to that, the request read *Merge `agent/7` into `main` anyway?* about
+   * `agent/7@<base>` in both: a ref the publish had just declined to write at all
+   * on one arm, and a sha origin is not at on the other. `approve()` compares the
+   * request's `onSha` to what origin has and refuses every one of them as `stale`
+   * (`#92`), while until somebody clicks it the board draws the item
+   * `awaitingApproval` at that sha — `#84`'s *a control that refuses* where a card
+   * should carry the move that is left, which here is the `requeue` its own
+   * diagnosis recommends.
+   *
+   * So the request is bound to what the publish put on origin, and `run-once.ts`'s
+   * behaviour on an ending that reaches a person with nothing there — no
+   * `ApprovalRequested` at all — falls out of the same fact rather than out of a
+   * list of endings.
+   */
+  it("offers no approval when there is nothing on origin to merge, and one when there is", async () => {
+    const nothing = await hitTheWall(false);
+    expect(nothing.result.ok).toBe("held");
+    expect(nothing.run.some((e) => e.type === "ApprovalRequested")).toBe(false);
+    // Still a person's, and still with the move that is actually left on it.
+    const blocked = nothing.item.find((e) => e.type === "WorkItemBlocked")!;
+    expect(blocked.data).toMatchObject({ needs: "acknowledgement" });
+    expect(
+      (blocked.data as { diagnosis: { recommendation: { action: string } | null } }).diagnosis
+        .recommendation,
+    ).toMatchObject({ action: "requeue" });
+
+    // The same ending with commits behind it: the refs went, so the question is
+    // answerable — and it is bound to the head that went, not to the base the
+    // walk last reported.
+    const committed = await hitTheWall(true);
+    const asked = committed.run.find((e) => e.type === "ApprovalRequested");
+    expect(asked, "a hold over a real diff must still ask").toBeDefined();
+    expect(asked!.data).toMatchObject({
+      onSha: "b".repeat(40),
+      artifacts: [`agent/7@${"b".repeat(40)}`],
+    });
+    const published = committed.run.find((e) => e.type === "RunProducedDiff")!;
+    // One head, two events: what was published is what is being asked about.
+    expect((published.data as { headSha: string }).headSha).toBe(
+      (asked!.data as { onSha: string }).onSha,
+    );
+  });
+
+  /**
    * **The push happens before the person is asked**, which is the ordering `#250`
    * could not have had: the publish lived only in the finalizer, which releases
    * after every append the pass makes.

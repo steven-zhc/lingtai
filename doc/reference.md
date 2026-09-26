@@ -1427,7 +1427,7 @@ to win is neither.
 Where a failed run stopped, as `stopped at <stage>`. Source: the `stage:` returns
 in `packages/conductor/src/conduct.ts`.
 
-**Since `#256` all but five of them are step names**, and that is the shape of the
+**Since `#256` all but six of them are step names**, and that is the shape of the
 list rather than a coincidence: the conductor resolves the recipe, the
 environment and the tier and then hands the rest to `runPass`, so a run that
 failed inside the pass is named by the step that stopped it
@@ -1438,11 +1438,14 @@ Before the pass, four:
 
 `recipe` · `env` · `dispatch` · `unexpected`
 
-Inside it, one per step, and `pass` where the pass ended without landing and
-without anybody having been asked:
+Inside it, one per step — **nine of the ten, and `end` is not one of them**: it
+runs after the walk on every ending and cannot refuse (0058 §3), so it never
+becomes `stoppedAt` and there is no run it can be said to have stopped. Plus
+`pass`, where the pass ended without landing and without anybody having been
+asked:
 
 `claim` · `admit` · `prepared` · `design` · `implement` · `build` · `review` ·
-`proposed` · `merge` · `end` · `pass`
+`proposed` · `merge` · `pass`
 
 And one beside them: `restart`, where the rounds were spent and a second
 approach was bought (0040) — the item is released and the next claim is an

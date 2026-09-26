@@ -23,6 +23,7 @@
 import { STEPS } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import {
+  HUMAN_AT_MERGE,
   PROJECT,
   fakeGitHub,
   fakePorts,
@@ -177,6 +178,65 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(did).not.toContain("runLog delete");
     // And the hook socket's live view reached it.
     expect(did).toContain("note run finished: 3 turns, 0.42 usd");
+  });
+
+  /**
+   * **A person declared at `merge` holds it, with no `--no-merge` anywhere** —
+   * `#58`, and the claim `CLAUDE.md` rests on when it says this repository merges
+   * its own work unattended *by configuration rather than by a gap*.
+   *
+   * It was pinned by `integration/run-once.test.ts`'s *holds at a human action at
+   * the merge point, with no --no-merge anywhere*, which `#256` deleted with the
+   * engine that file tested. The flag is a `createHumanAction` injected after
+   * `merge`'s declared list now (#20), so **a test that passes `merge: false`
+   * cannot make this claim at all**: it exercises the injected action and says
+   * nothing about the declared one. That is exactly how `#58` stayed hidden for
+   * four days — every test held its run with the flag, and the daemon does not
+   * pass it.
+   *
+   * So the recipe is the only thing asking, `merges` is `true` on the fake so a
+   * pipeline that let this past would really call the lane, and the assertion is
+   * that it was never called.
+   */
+  it("holds at a human action declared at the merge point, with no --no-merge anywhere", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, HUMAN_AT_MERGE),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        // No `merge: false`. The recipe is the only thing asking.
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    if (result.ok !== "held") throw new Error("it merged, and a person had been declared at merge");
+    expect(result.step).toBe("merge");
+    // **Nothing reached the base branch.** That is the entire ticket.
+    expect(did).not.toContain("integrate");
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
+
+    // A real pipeline and not a special case: the action the recipe named is what
+    // asked, through the same `ApprovalRequested` the flag asks with, bound to the
+    // head the steps judged.
+    const [, run] = [...store.streams].find(([id]) => id.startsWith("run-"))!;
+    const asked = run.filter((e) => e.type === "ApprovalRequested");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.data).toMatchObject({
+      gate: "merge",
+      action: "approval",
+      onSha: result.headSha,
+    });
   });
 
   /**
