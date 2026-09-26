@@ -861,6 +861,14 @@ export function runOnce(
       /** The item, once `claim`'s port has taken it. */
       let took: Claimed | null = null;
       /**
+       * The cold reviewer's settings file, once `admit`'s port has written it.
+       *
+       * Empty until then, and nothing reads it until then: every `agent:` action
+       * runs at `review`, `proposed` or `merge`. See `cut` for why it is written
+       * there rather than above the pass.
+       */
+      let reviewSettingsPath = "";
+      /**
        * The turn limit's own words, where that is what stopped the agent.
        *
        * The pass reports an agent that ran out of turns as a `did-not-finish` and
@@ -871,6 +879,31 @@ export function runOnce(
        * than pushed into a vocabulary the pass would then have to carry.
        */
       let turnLimit: string | null = null;
+      /**
+       * **Which agent met the account-wide wall, where `implement` reports one.**
+       *
+       * The pass has one `implement` step and this file dispatches two different
+       * agents at it — the implementer on the way through, and the agent a round
+       * bought on the way back — and `StepNeverRan` carries the runtime's id, not
+       * which of the two it was. Left unrecorded, a fix round that met the wall
+       * was reported to `standDown` as `{of: "run"}`, whose sentence is *a run
+       * ended without ever starting — no turns taken, nothing spent*: written
+       * into `ConductorPaused.reason`, which is what the board's pause chip and
+       * `lingtai doctor` print, about a pass whose implementer ran, took its turns
+       * and was paid. That is the false sentence `#133` is against and `0041` §3
+       * gave `NeverStarted` a third case for — `{of: "fix"}`, which nothing
+       * constructed.
+       *
+       * Null until a round's agent is the one refused, so the first dispatch's
+       * wall is still `{of: "run"}` and says so.
+       */
+      let fixWall: { action: string; round: number } | null = null;
+      /**
+       * Read through a call and not off the variable, for `landedAt`'s reason:
+       * `fixRound` is a port and the compiler cannot see that it ran, so
+       * narrowing the `let` at the read below would make it `never`.
+       */
+      const wallMetBy = (): { action: string; round: number } | null => fixWall;
 
       /**
        * The run's log, and the keep-or-delete that ends it.
@@ -880,26 +913,64 @@ export function runOnce(
        * that worked has the least marginal value of anything here. A log that
        * could not be opened is `NO_RUN_LOG` rather than a refusal: the
        * observability of a run is not worth failing it for.
+       *
+       * **And it is opened by the claim, not before it** — which is 0034 §4's
+       * *what is kept is exactly the investigable set* read as a rule about when
+       * the file is created rather than only about its fate. Under `run-once.ts`
+       * discovery and the claim both ran above the scope that opened this, so a
+       * candidate that was never taken left nothing behind. Since `#256` the
+       * claim is the pass's first step, and an eager open put a file on disk for
+       * every `passed-over` and every lost race — kept, because `didLand` is
+       * false, with a closing line calling itself *the only account of why* a run
+       * that never started did not land. One pair per pass, for ever, and the
+       * rule 0034 rests on to need no sweeper is exactly that nothing
+       * uninvestigable is written.
+       *
+       * So the handle is deferred and `runLog` is what everything holds: notes
+       * before the claim would be dropped, and there are none — the first is the
+       * one `openTheRunLog` writes itself, once there is a run to account for.
        */
-      const runLog = yield* Effect.acquireRelease(
-        host.runLog({ path: runLogPath(home, project, runId) }).pipe(
-          Effect.catchAll((err) =>
-            Effect.sync(() => {
-              log(`no run log: ${err.detail}`);
-              return NO_RUN_LOG satisfies RunLog;
-            }),
+      let opened: RunLog | null = null;
+      const runLog: RunLog = {
+        get path() {
+          return opened?.path ?? "";
+        },
+        note: (label, detail) => opened?.note(label, detail),
+        close: async (fate) => {
+          await opened?.close(fate);
+        },
+      };
+      /** Called by `claim`'s port, and only once it holds the item. */
+      const openTheRunLog = async (): Promise<void> => {
+        opened = await Effect.runPromise(
+          host.runLog({ path: runLogPath(home, project, runId) }).pipe(
+            Effect.catchAll((err) =>
+              Effect.sync(() => {
+                log(`no run log: ${err.detail}`);
+                return NO_RUN_LOG satisfies RunLog;
+              }),
+            ),
           ),
-        ),
-        (opened) =>
-          Effect.promise(async () => {
-            // The sentence, and the label a reader recognises it by: `#110`
-            // follows this from another process and has nothing else to tell *the
-            // writer has finished* from *the writer is thinking*.
-            opened.note(RUN_LOG_END, runLogEnd(didLand));
-            await opened.close(didLand ? "delete" : "keep");
-          }),
+        );
+        runLog.note("run", `${runId} · ${workItemId} · ${branch} → ${base}`);
+      };
+      /**
+       * Released last, because it is registered first — the same ordering the
+       * `acquireRelease` this replaces gave, and for the same reason: the fate
+       * turns on `didLand`, which is only a fact once the worktree's finalizer
+       * and the publish's have run. A log that was never opened has nothing to
+       * close and nothing to say.
+       */
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(async () => {
+          if (opened === null) return;
+          // The sentence, and the label a reader recognises it by: `#110`
+          // follows this from another process and has nothing else to tell *the
+          // writer has finished* from *the writer is thinking*.
+          runLog.note(RUN_LOG_END, runLogEnd(didLand));
+          await runLog.close(didLand ? "delete" : "keep");
+        }),
       );
-      runLog.note("run", `${runId} · ${workItemId} · ${branch} → ${base}`);
 
       /**
        * **The worktree's release, and it is unconditional** (0039 §1).
@@ -1202,6 +1273,10 @@ export function runOnce(
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) };
         log(`claimed ${workItemId} as ${runId}`);
+        // **The run's account starts here**, because until this line there is no
+        // run to account for: see `runLog`. A `passedOver` or a lost race above
+        // returns having opened nothing.
+        await openTheRunLog();
         took = {
           workItemId,
           kind: runnable.kind,
@@ -1228,6 +1303,45 @@ export function runOnce(
        * class rather than as a refusal buying a round to fix a repository.
        */
       const cut = async (_claimed: Claimed): Promise<Cut> => {
+        /**
+         * The cold reviewer's own settings, with no hook in them. `wiring`'s
+         * settings and `wiring.env` are one thing and the `agent` gate had only
+         * the first, so the hook refused the reviewer's opening prompt and every
+         * review returned that refusal instead of findings.
+         *
+         * Through the port and not `writeUnhookedSettings` itself: it writes a
+         * file under `~/.lingtai`, and a conductor that wrote it here would put a
+         * disk under every test of a decision that reaches `review` (0060 §1,
+         * `AgentHostPort.unhookedSettings`).
+         *
+         * **Here, and not above the pass, because above the pass is before the
+         * claim.** It used to be `….pipe(Effect.orDie)` in this file's own scope,
+         * which is two faults in one line. A file under `~/.lingtai/runs/<runId>/`
+         * was written for every candidate the `claim` step then passed over or
+         * lost the race for, one per pass and never removed (`runLog`). And a
+         * write that failed — ENOSPC, `~/.lingtai` not writable after a
+         * permissions change — became a **defect**, which the handler at the
+         * bottom of `runOnce` answers with `release(…)`: `releaseWorkItem`
+         * appends whoever holds it (`claim.ts`), so a failure here appended
+         * `WorkItemReleased` to another conductor's live item and wrote
+         * `lingtai:queued` over its `lingtai:working` while its agent was still
+         * working. The `claim` branch guards declines the pass reports; a defect
+         * raised before the `claim` step reaches the handler with `released`
+         * still false.
+         *
+         * So it is asked for at the step that gets this pass's disk ready, on an
+         * item this run holds, and **before** the worktree: a failure is `notCut`
+         * with nothing cut, which is true, and the item is then blocked or
+         * released by the ending like any other machine fact.
+         */
+        const settings = await Effect.runPromise(
+          Effect.either(host.unhookedSettings({ runId, label: "review", home })),
+        );
+        if (Either.isLeft(settings)) {
+          return { notCut: `the cold reviewer had no settings: ${settings.left.detail}` };
+        }
+        reviewSettingsPath = settings.right;
+
         const provisioned = await Effect.runPromise(
           Effect.either(
             repo.provision({
@@ -1304,18 +1418,6 @@ export function runOnce(
         endPlan = plan;
       };
 
-      // The cold reviewer's own settings, with no hook in them. `wiring`'s
-      // settings and `wiring.env` are one thing and the `agent` gate had only the
-      // first, so the hook refused the reviewer's opening prompt and every review
-      // returned that refusal instead of findings.
-      // Through the port and not `writeUnhookedSettings` itself: it writes a
-      // file under `~/.lingtai`, and a conductor that wrote it here would put a
-      // disk under every test of a decision that reaches `review` (0060 §1,
-      // `AgentHostPort.unhookedSettings`).
-      const reviewSettingsPath = yield* host
-        .unhookedSettings({ runId, label: "review", home })
-        .pipe(Effect.orDie);
-
       /**
        * What a declared plugin needs in order to run — the three things only a
        * caller with a machine under it can build (`PassOptions.actionsAt`).
@@ -1331,7 +1433,12 @@ export function runOnce(
           runtime: options.runtime,
           issue: async () => took?.ticket ?? { ref: String(options.issue), title: "", body: "" },
           diff: () => gitOrDie(["diff", `${baseShaOr("HEAD")}...HEAD`]),
-          settingsPath: reviewSettingsPath,
+          // A getter, because `admit` is what writes it: `createAgentAction`
+          // reads `deps.settingsPath` when the action *runs*, which is at
+          // `review`, `proposed` or `merge` and so is always after `cut`.
+          get settingsPath() {
+            return reviewSettingsPath;
+          },
           limits: {
             turns: limits.turns,
             wallMs: parseDuration(limits.wall),
@@ -1721,6 +1828,8 @@ export function runOnce(
         );
 
         if (fixed.failure?.kind === "never-started") {
+          // Whose wall it was, for the sentence the pause carries (`fixWall`).
+          fixWall = { action: from, round };
           return {
             neverStarted: { agent: options.runtime.capabilities.id, detail: fixed.failure.detail },
           };
@@ -1880,17 +1989,18 @@ export function runOnce(
        * for `branch`, or null where it put none there.**
        *
        * `headSha` cannot answer that, and the gap is not small. `headReached` is
-       * the last `head` a *visit* reported, `admit` reports the base sha so that
+       * the last `head` a *visit* reported and `admit` reports the base sha so that
        * the head the pass is judged against always has a value (`pass-steps.ts`),
-       * and the endings that stop at `implement` report none — an agent stopped at
-       * its turns is a `did-not-finish` with no `head` on it, whatever it
-       * committed. So `headSha` there is the commit the worktree was **cut** at,
-       * and binding a request to it asks a person to merge `agent/<n>@<base>`
-       * while origin holds this pass's actual commits at another sha: `approve()`
-       * compares the two, refuses every one as `stale`, and until somebody clicks
-       * it the board draws the item `awaitingApproval` at a sha nothing is at
-       * (`#92`, and `#84`'s *a card offers the move that is left, never a control
-       * that refuses*).
+       * so it is the commit the worktree was **cut** at on every ending whose step
+       * moved the tree without reporting it. Binding a request to that asks a
+       * person to merge `agent/<n>@<base>` while origin holds this pass's actual
+       * commits at another sha: `approve()` compares the two, refuses every one as
+       * `stale`, and until somebody clicks it the board draws the item
+       * `awaitingApproval` at a sha nothing is at (`#92`, and `#84`'s *a card
+       * offers the move that is left, never a control that refuses*). The endings
+       * that stop at `implement` are the widest such gap and no longer ask at all
+       * — nothing judged them, see `judged` below — so what this now carries is the
+       * other half: a push origin refused.
        *
        * `published` is set by the publish a few lines above — the one ending that
        * skips it is a landing, which does not reach here — so it is exactly *what
@@ -2187,10 +2297,38 @@ export function runOnce(
       if (outcome === "blocked") {
         const held = stopped?.ending.ending === "held";
         const said_ = blocked();
-        // A plugin that asked for a person has already had its `ApprovalRequested`
-        // emitted by the pipeline; everything else that reaches a person has not —
-        // and only where origin holds something for them to merge (`onOrigin`).
-        if (!held && onOrigin !== null) {
+        /**
+         * **Something judged this diff and said no** — the second half of when a
+         * person may be offered *merge it anyway*, and the half `onOrigin` cannot
+         * answer.
+         *
+         * Two shapes, and they are the two `run-once.ts` asked on. `stopped ===
+         * null` is the router having sent the pass to a person: `proposed` weighed
+         * an arriving refusal, or a `review` that passed carrying findings, and
+         * spent what it had — `unfixed` and `disagreement` under the old engine.
+         * A `refused` ending is a step's own declared actions refusing, which is
+         * the `build` gone red and the lane that would not take it.
+         *
+         * **Every other blocked ending judged nothing, and must not offer the
+         * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —
+         * an agent stopped at `runtime.limits.turns` having committed twice — and
+         * `admit`'s is a clone that did not finish. Asked there, `ApprovalRequested`
+         * sets `task_view.awaitingSha`, `standing.tsx` draws **Approve**, and
+         * `refusingOn` (`approve.ts`) finds no `GateFailed`, `GateNeverRan` or
+         * `GateDidNotFinish` row to be refusing — because no gate ran — so one
+         * click merges a half-finished diff the build and the cold reviewer never
+         * read, with no `note`, no `GateWaived` and nothing on the log saying
+         * anything was skipped. On a card whose own diagnosis reads *the limit is a
+         * scope alarm … requeue*. `run-once.ts` appended no request on that ending
+         * and Requeue was the only move offered; this is that, as a predicate
+         * rather than as a list of endings.
+         *
+         * A plugin that asked for a person has already had its own request emitted
+         * by the pipeline, which is what `held` excludes — and the request is only
+         * worth making where origin is holding something to merge (`onOrigin`).
+         */
+        const judged = stopped === null || stopped.ending.ending === "refused";
+        if (!held && judged && onOrigin !== null) {
           /**
            * **The request is named for itself, never for the action that
            * refused** — and naming it after that action destroys the thing it
@@ -2222,8 +2360,9 @@ export function runOnce(
                   runId,
                   // What is on origin, never what the walk last reported: see
                   // `onOrigin`. The two are the same sha wherever a declared
-                  // action refused, and differ on every ending that stopped at
-                  // `implement` with commits behind it.
+                  // action refused, which since `judged` is the only ending that
+                  // reaches here — and this stays the field that says so, because
+                  // that is a fact about the push and not about the walk.
                   onSha: onOrigin,
                   question:
                     `Merge ${branch} into ${base} anyway? ${said_.question}` +
@@ -2282,14 +2421,19 @@ export function runOnce(
       // is taken until the pause lifts.
       if (stopped?.ending.ending === "never-ran") {
         const at = stopped.ending.at;
+        const round = wallMetBy();
         yield* standDownConductor(
           // `implement` and `design` have no cell open, so a `never-ran` at either
-          // is the body's own stand-down and the wall is the *run's*. At any other
-          // step it is a declared plugin's agent, which 0041 §3 reuses this whole
-          // mechanism for.
-          stopped.step === "implement" || stopped.step === "design"
-            ? { of: "run" }
-            : { of: "step", step: `${stopped.step}:${at ?? "agent"}` },
+          // is the body's own stand-down and the wall is the *run's* — **unless
+          // the agent at `implement` was a round's rather than the implementer's**,
+          // which is the one thing `StepNeverRan` cannot say and `fixWall` is
+          // recorded for. At any other step it is a declared plugin's agent, which
+          // 0041 §3 reuses this whole mechanism for.
+          round !== null && stopped.step === "implement"
+            ? { of: "fix", action: round.action, round: round.round }
+            : stopped.step === "implement" || stopped.step === "design"
+              ? { of: "run" }
+              : { of: "step", step: `${stopped.step}:${at ?? "agent"}` },
           stopped.ending.detail,
         );
       }

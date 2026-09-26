@@ -25,6 +25,8 @@
  * hour is one that fails for the four months a year that zone is not in daylight
  * time (`#251`).
  */
+import type { Runtime } from "@lingtai/agent";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   PROJECT,
@@ -38,6 +40,7 @@ import {
   quotaRuntime,
   reviewerAtTheWall,
   reviewerThatCrashes,
+  runtime,
   streams,
 } from "../test/one-pass.ts";
 
@@ -267,6 +270,111 @@ describe("when an agent inside the pass produces no verdict", () => {
 
     // The item keeps its place, as any failed run's does.
     expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemReleased");
+  });
+
+  /**
+   * **The third agent in a pass, and the third sentence** — the agent a round
+   * bought, which meets the same wall at the same step the implementer did.
+   *
+   * `never-started.ts` has exactly three variants because there are three agents,
+   * and `{of: "fix"}` is the one nothing constructed: the pass has one `implement`
+   * step and `conduct.ts` dispatches two different agents at it, while
+   * `StepNeverRan` carries the runtime's id rather than which of the two it was.
+   * So `stopped.step === "implement"` selected `{of: "run"}` for both, and the
+   * pause read *a run ended without ever starting — no turns taken, nothing
+   * spent* about a pass whose implementer ran for 3 turns and $0.42 and whose lane
+   * then refused it. Every clause false, in `ConductorPaused.reason` — the board's
+   * pause chip and `lingtai doctor` — which is `#133`'s own species of sentence
+   * one agent further down.
+   *
+   * The route is the mechanical one and it has to be: a `gate-failed` from the
+   * lane is what `BUILT_IN_FOR` answers `same-worktree` to, so `implement` is
+   * offered and a round is spent. A refusal at `proposed` itself buys nothing —
+   * `ARRIVE_AT_THE_ROUTER` does not include the step — and `conflict`,
+   * `needs-input` and `findings` have a person as their floor.
+   */
+  it("names the agent a round bought when that is what met the wall", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const ports = fakePorts(did, store);
+    // The lane refuses with the one reason a round is bought for.
+    ports.repo.integrate = () =>
+      Effect.sync(() => {
+        did.push("integrate");
+        return { ok: false, reason: "gate-failed", detail: "policy: this branch may not land" } as never;
+      });
+
+    /** The implementer works and is paid; the agent the round buys never starts. */
+    const fixerAtTheWall: Runtime = {
+      ...runtime,
+      run: async (request) =>
+        request.runId.includes(":fix:")
+          ? {
+              exitCode: 1,
+              turns: 0,
+              durationMs: 7_000,
+              costUsd: 0,
+              failure: {
+                kind: "never-started",
+                detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
+              },
+              text: null,
+              sessionId: "sess-fix",
+            }
+          : {
+              exitCode: 0,
+              turns: 3,
+              durationMs: 1234,
+              costUsd: 0.42,
+              failure: null,
+              text: "done",
+              sessionId: "sess-1",
+            },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime: fixerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        // No hold at `merge`: the lane has to be reached for it to refuse.
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    // Released, at the step the wall was met at — `implement`, because that is
+    // where a round's agent runs.
+    expect(result).toMatchObject({ ok: false, stage: "implement" });
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    // A round *was* bought, or this is not the branch under test.
+    expect(run.find((e) => e.type === "FixRequested")!.data).toMatchObject({
+      round: 1,
+      action: "merge",
+    });
+    // And the run that reached it was paid for, which is what makes the
+    // `{of: "run"}` sentence a lie here rather than merely imprecise.
+    expect(run.find((e) => e.type === "RunFinished")!.data).toMatchObject({
+      turns: 3,
+      costUsd: 0.42,
+    });
+
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+    const reason = (paused[0]!.data as { reason: string }).reason;
+    // The fixing agent, by name, and what it was bought to answer.
+    expect(reason).toContain("the agent bought to fix merge (round 1) never started");
+    expect(reason).toContain("the run that reached it did start, and was paid for");
+    // The falsehood the three variants exist to prevent.
+    expect(reason).not.toContain("no turns taken, nothing spent");
+    expect(reason).toContain("You've hit your session limit");
   });
 
   /**

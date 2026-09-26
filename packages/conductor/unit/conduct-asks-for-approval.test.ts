@@ -74,6 +74,20 @@ describe("the approval a refusal reaches a person with", () => {
     expect(failed.data).toMatchObject({ gate: "proposed", action: "review" });
 
     const asked = run.find((e) => e.type === "ApprovalRequested")!;
+    /**
+     * **Bound to what the publish put on origin**, which is what makes the
+     * question answerable: `approve()` compares `onSha` to what origin has for the
+     * branch and refuses anything else as `stale` (`#92`). `published` is the head
+     * `publishWhatIsCommitted` pushed, and it is what `conduct.ts` binds to —
+     * never `headReached`, which is the last head a *visit* reported.
+     */
+    expect(asked.data).toMatchObject({
+      onSha: "b".repeat(40),
+      artifacts: [`agent/7@${"b".repeat(40)}`],
+    });
+    expect((run.find((e) => e.type === "RunProducedDiff")!.data as { headSha: string }).headSha).toBe(
+      (asked.data as { onSha: string }).onSha,
+    );
     const key = (data: unknown) => {
       const d = data as { gate: string; action: string };
       return `${d.gate}:${d.action}`;

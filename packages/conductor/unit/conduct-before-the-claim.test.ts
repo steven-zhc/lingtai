@@ -32,6 +32,7 @@ import {
   once,
   project,
   runtime,
+  streams,
 } from "../test/one-pass.ts";
 
 describe("nothing is claimed and nothing is acquired", () => {
@@ -300,10 +301,25 @@ describe("a claim that took nothing writes nothing", () => {
     expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
     // And nothing was said to GitHub — no `lingtai:waiting`, no comment.
     expect(said).toEqual([]);
-    // Nothing was acquired past the run's own log, so there is no worktree and
-    // no agent to answer for either.
-    expect(did).not.toContain("wire");
-    expect(did.filter((line) => line.startsWith("provision"))).toEqual([]);
+    /**
+     * **And nothing on disk either**, which is the half `run-once.ts` got for
+     * free and this file has to assert.
+     *
+     * There, discovery and the claim both ran *above* the scope that opened the
+     * run log and wrote the cold reviewer's settings, so a candidate that was
+     * never taken left nothing. Since `#256` the claim is the pass's first step,
+     * and acquiring either eagerly put two files under `~/.lingtai` per
+     * passed-over ticket and per lost race — the log **kept**, because `didLand`
+     * is false, closing on a line calling itself *the only account of why* a run
+     * that never started did not land. Against 0034 §4's *what is kept is exactly
+     * the investigable set, and the rule needs no timer, no sweeper and no
+     * retention period.*
+     *
+     * The worktree's removal is the one entry, and it is a no-op: the finalizer
+     * is unconditional because `repo.remove` tolerates a path nothing cut (0039
+     * §1), which is cheaper than a flag somebody has to keep true.
+     */
+    expect(did).toEqual([`remove ${(result as { runId: string }).runId}`]);
   });
 
   /**
@@ -347,5 +363,81 @@ describe("a claim that took nothing writes nothing", () => {
     // The other run's item, exactly as it was.
     expect((await store.read(itemId)).map((e) => e.type)).toEqual(["WorkItemClaimed"]);
     expect(said).toEqual([]);
+    // And nothing on disk for a candidate this pass never took: see above.
+    expect(did).toEqual([`remove ${(result as { runId: string }).runId}`]);
+  });
+});
+
+/**
+ * **The one thing this file's own scope used to acquire, and what its failure
+ * cost.**
+ *
+ * The cold reviewer's settings file was written above the pass as
+ * `host.unhookedSettings(…).pipe(Effect.orDie)`, which is a *defect* channel
+ * inside the scope the `catchAllDefect` at the bottom of `runOnce` guards — and
+ * that handler answers with `release("unexpected failure: …")`. `releaseWorkItem`
+ * reads the stream and appends unconditionally (`claim.ts:137`), so on a pass
+ * whose item another conductor claimed a second earlier an ENOSPC here appended
+ * `WorkItemReleased{runId: <this run>}` to that conductor's live item, folded it
+ * to `backlog`, and wrote `lingtai:queued` over its `lingtai:working` while its
+ * agent was still working — after which `selectRunnable` hands it to a third
+ * pass. The `claim` branch's `released = true` guards declines the pass *reports*;
+ * a defect raised between entering the scope and the `claim` step reaches the
+ * handler with `released` still false.
+ *
+ * It is asked for at `admit` now, which is after the claim and inside a step that
+ * can report. So the failure is `notCut` on an item this run holds, the walk stops
+ * there, and no `release` — nor any `unexpected` — is involved.
+ */
+describe("a failure acquiring what a step needs is answered at that step", () => {
+  it("reports a settings file it could not write as admit not cutting, and releases nobody", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const ports = fakePorts(did, store);
+    ports.agent.unhookedSettings = () =>
+      Effect.fail({
+        _tag: "AgentHostFailed",
+        operation: "writeUnhookedSettings",
+        detail: "ENOSPC: no space left on device, mkdir '/home/x/.lingtai/runs'",
+      } as never);
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    // **Not `unexpected`.** A machine fact the step met, reported by the step.
+    expect(result).toMatchObject({ ok: "held", step: "admit" });
+    expect(did).not.toContain("wire");
+    expect(did.filter((line) => line.startsWith("provision"))).toEqual([]);
+
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const types = item.map((e) => e.type);
+    // This run claimed it, so this run is what holds it — and a person is asked
+    // rather than the queue, because the next pass meets the same disk.
+    expect(types).toContain("WorkItemClaimed");
+    expect(types).toContain("WorkItemBlocked");
+    expect(types).not.toContain("WorkItemReleased");
+
+    const blocked = item.find((e) => e.type === "WorkItemBlocked")!.data as {
+      question: string;
+      diagnosis: { raw: string | null };
+    };
+    expect(blocked.question).toContain("the cold reviewer had no settings");
+    expect(blocked.diagnosis.raw).toContain("ENOSPC");
+    // Nothing was cut, so there is nothing on origin and nothing to approve.
+    const run = [...streams(store)].find(([id]) => id.startsWith("run-"));
+    expect((run?.[1] ?? []).map((e) => e.type)).not.toContain("ApprovalRequested");
   });
 });
