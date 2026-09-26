@@ -60,11 +60,12 @@ export class ActionUnavailableError extends Error {
 /**
  * The step's actions, or a refusal naming the first one it cannot run.
  *
- * **The step is an argument because the answer depends on it** (`#61`).
- * `KINDS_AT` in `@lingtai/recipe` is which of the thirty step × kind cells run,
- * and it is asked here as well as in the schema: a recipe cannot reach this
- * with a cell that does not run, and a caller constructing actions in code
- * gets the same sentence rather than an action that silently does nothing.
+ * **The step is an argument because the answer depends on it** (`#61`). Each
+ * plugin's own `at` in `@lingtai/recipe` is which step × kind cells run (0064
+ * §4), `whyNoKindAt` is the one reading of it, and it is asked here as well as
+ * in the schema: a recipe cannot reach this with a cell that does not run, and
+ * a caller constructing actions in code gets the same sentence rather than an
+ * action that silently does nothing.
  */
 export function actionsFromRecipe(
   step: Step,

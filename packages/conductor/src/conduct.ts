@@ -52,8 +52,8 @@
  * ```
  *
  * **Two of them answer *nothing is declared* and that is the truthful answer
- * rather than a stub.** `KINDS_AT.design` is `[]` and `whyNoKindAt` refuses a
- * `judge:` cell at all ten steps (`recipe.ts`), so neither a design nor a judge
+ * rather than a stub.** No plugin declares itself at `design` and `judge:`
+ * declares itself nowhere, so `whyNoKindAt` refuses both (`recipe.ts`) — neither a design nor a judge
  * can be written in a recipe today — a port that pretended otherwise would be
  * `#61`'s shape with the pieces swapped. What a direction with no judge costs is
  * `BUILT_IN_FOR`'s: `red` and `gate-failed` are mechanical and spend nothing,
@@ -1372,8 +1372,8 @@ export function runOnce(
       /**
        * `design` — **nothing, and `""` is the answer rather than a stub** (0058 §3).
        *
-       * `KINDS_AT.design` is `[]` and `whyNoKindAt` refuses every kind there by
-       * name, so a design cannot be declared in a recipe and no code writes one.
+       * No plugin declares itself at `design`, so `whyNoKindAt` refuses every kind
+       * there by name: a design cannot be declared in a recipe and no code writes one.
        * The step still runs and still reports, which is the point: *does this need
        * designing* is answered by the step returning an empty document, and
        * `implement` works from the issue — no conditional step, no skip. T9 is the
@@ -1385,8 +1385,8 @@ export function runOnce(
       /**
        * `proposed` — **nothing, and `noJudge` is the truthful answer** (0061 §3).
        *
-       * `judge:` is one of the five columns `KINDS_AT` carries at no step, and
-       * `whyNoKindAt` refuses the cell at all ten: the recipe *schema* rejects a
+       * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no
+       * step and `whyNoKindAt` refuses the cell at all ten: the recipe *schema* rejects a
        * `judge:` entry, so there is no declared judge for this to resolve. What
        * follows is what the body does with it — `BUILT_IN_FOR` answers `red` and
        * `gate-failed` mechanically and spends nothing, and a person is the floor

@@ -5,6 +5,22 @@
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
  * called (`#61`).
  *
+ * **There is no matrix any more, and the cells are still there** (`#261`).
+ * `KINDS_AT` was a hand-written table of which of the twelve plugins each of
+ * the ten steps runs; since
+ * [0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md)
+ * §4 a plugin declares the steps it serves and that declaration is what makes
+ * it legal there. The cells are the product of two closed sets rather than a
+ * constant, this file walks them exactly as it did, and what it asserts is
+ * unchanged: a cell runs, or the recipe does not resolve and the refusal names
+ * the action, its kind, the step and why. **The guard `#61` bought survives;
+ * only its source moved.**
+ *
+ * What went with the table is the copy of it in `doc/reference.md` and the
+ * case here that compared the two — a document cannot drift from a constant
+ * that does not exist, and a plugin is one file to add rather than three
+ * places to keep in step.
+ *
  * **It was thirty until the vocabulary went from five names to ten** (0058 §3),
  * sixty until the closed set grew `worktree:` and `merge:` (`#235`), eighty
  * until it grew `queue:` and `assignee:` (`#236`), a hundred until it grew
@@ -15,15 +31,15 @@
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
  * Twelve of the hundred and twenty cells run and **a hundred and eight
- * refuse**; seventy-two of those are the six steps with no call site, and
- * fifty are the five plugins no step reads — overlapping each other by
+ * refuse**; seventy-two of those are the six steps no plugin implements, and
+ * fifty are the five plugins that serve no step — overlapping each other by
  * thirty, because a `worktree:` action at `design` is both at once.
  *
  * **`refs:` is the first column that is not a name for code that already
- * ran**, and it arrives with a row rather than an empty one: the other five new
+ * ran**, and it arrives serving a step rather than serving none: the other five new
  * plugins were 0061 §3's names for the pass's own calls and refuse everywhere,
  * while this one runs at `end` on the day it lands. The rule is the same either
- * way — the matrix says what today's code does — and it is worth reading here
+ * way — a plugin says where it runs — and it is worth reading here
  * because every precedent in this file is the other case.
  *
  * That is the property this file is here to hold, and it holds it down both
@@ -40,11 +56,6 @@
  *   the dependencies that point's own call site supplies; or
  * - **refuses** — the recipe does not resolve, and the refusal names the
  *   action, its kind, the point and why.
- *
- * It is the thing that keeps `doc/reference.md`'s matrix true: the last
- * hand-maintained copy of it was wrong about `merge` within three weeks of
- * being written, which is why the last test here reads the document and
- * compares it to `KINDS_AT` rather than trusting it.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
@@ -53,8 +64,8 @@ import {
   type ActionKind,
   type StepAction,
   StepMap,
-  KINDS_AT,
   PLUGINS,
+  servesStep,
   whyNoKindAt,
 } from "@lingtai/recipe";
 import {
@@ -258,8 +269,9 @@ describe("every step × kind cell runs or refuses", () => {
    * `"when" in a` a judge action built in code went past it into the match on
    * the outcome, where `findings` equals neither the outcome nor `any`: `end`
    * resolved, wrote an empty list, and the log said nothing had been declared.
-   * That is `#61` for one kind. The guard asks for `KINDS_AT.end`'s three keys
-   * instead, so a plugin spelling `when:` is refused rather than dropped.
+   * That is `#61` for one kind. The guard asks for the three keys the plugins
+   * declared `at: { end }` name instead, so a plugin spelling `when:` is
+   * refused rather than dropped.
    */
   it.each(KINDS.filter((kind) => whyNoKindAt("end", kind) !== null))(
     "resolveEndActions refuses end × %s by name, rather than dropping it",
@@ -274,15 +286,21 @@ describe("every step × kind cell runs or refuses", () => {
   );
 
   /**
-   * And the keys that guard reads are the row, not a second list beside it: a
-   * kind added to `KINDS_AT.end` whose key `end-step.ts` does not test would
-   * be accepted by the schema and thrown out by the point.
+   * And the keys that guard reads are the plugins' own, not a second list
+   * beside them: a plugin that declared itself `at: { end }` and whose key
+   * `end-step.ts` does not test would be accepted by the schema and thrown out
+   * by the point.
+   *
+   * **Read off `at` rather than off a constant since `#261`.** It was
+   * `KINDS_AT.end`, which said the same thing from a table; 0064 §4 makes the
+   * plugin say it, and this walks the closed set asking each one.
    */
-  it("refuses at `end` exactly the kinds `KINDS_AT` says it does not run", () => {
-    expect(KINDS_AT.end).toEqual(["close", "labels", "refs"]);
+  it("refuses at `end` exactly the kinds no plugin declares itself at `end` for", () => {
+    const atEnd = PLUGINS.filter((plugin) => servesStep(plugin, "end")).map((plugin) => plugin.key);
+    expect(atEnd).toEqual(["close", "labels", "refs"]);
     for (const kind of KINDS) {
       const resolve = () => resolveEndActions([], [ACTION[kind]], "landed");
-      if ((KINDS_AT.end as readonly ActionKind[]).includes(kind)) {
+      if (atEnd.includes(kind)) {
         expect(resolve, kind).not.toThrow();
       } else {
         expect(resolve, kind).toThrow();
@@ -306,6 +324,61 @@ describe("every step × kind cell runs or refuses", () => {
     expect(whyNoKindAt("prepared", "watch")).toMatch(/nothing has been committed/);
     expect(whyNoKindAt("prepared", "human")).toMatch(/released back to the queue/);
     expect(whyNoKindAt("prepared", "run")).toBeNull();
+  });
+
+  /**
+   * **The refusal a plugin author gets, and it names the step they should have
+   * written** (`#261`).
+   *
+   * Under the table this sentence could not be written: a cell was refused
+   * because a row did not list a column, and nothing anywhere knew where that
+   * column *did* belong. Under `at` the plugin carries the answer, so *close:
+   * does not implement `proposed`* arrives with *it serves `end`* beside it —
+   * which is the difference between a refusal and homework.
+   *
+   * `doc/writing-a-plugin.md` promises this wording to whoever reads it before
+   * writing one, and the three effects are the only plugins in the closed set
+   * that are legal somewhere and refused somewhere else.
+   */
+  it("names where a plugin does serve, when it is declared at a step it does not", () => {
+    for (const kind of ["close", "labels", "refs"] as const) {
+      const why = whyNoKindAt("proposed", kind);
+      expect(why, `${kind} is no longer refused at proposed`).not.toBeNull();
+      expect(why).toContain(`\`${kind}:\` does not implement \`proposed\``);
+      expect(why).toContain("it serves `end`");
+      // And the whole sentence, as a recipe's reader meets it: the action, the
+      // kind and the step are `kindRefusedAt`'s, the rest is the plugin's.
+      expect(accepted("proposed", kind)).toContain(`"${ACTION[kind].name}"`);
+      expect(accepted("proposed", kind)).toContain("it serves `end`");
+    }
+  });
+
+  /**
+   * **And a step nobody implements says that, rather than *this step takes
+   * nothing*** (0064 §4, `#261`).
+   *
+   * The two were one empty row in `KINDS_AT` — *no plugin's output is read
+   * here* and *nobody has built this yet* — and
+   * [#231](https://github.com/steven-zhc/lingtai/issues/231) died of the
+   * ambiguity: it put configuration on steps whose rows were empty for a
+   * reason that had nothing to do with what it was asking for. An `at` can
+   * only say the first, so the second is now a sentence of its own, and it
+   * carries `WHERE_INSTEAD`'s half — the only part an operator can act on.
+   */
+  it("says a step no plugin implements, and where that work happens today", () => {
+    const unimplemented = STEPS.filter((step) =>
+      PLUGINS.every((plugin) => !servesStep(plugin, step)),
+    );
+    expect(unimplemented).toEqual(["claim", "admit", "design", "implement", "build", "review"]);
+    for (const step of unimplemented) {
+      // Asked of a plugin that serves *somewhere*, so the answer is the
+      // step's; the five that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
+      const why = whyNoKindAt(step, "run");
+      expect(why, `${step} is no longer unimplemented`).toContain(`no plugin implements \`${step}\``);
+    }
+    expect(whyNoKindAt("build", "run")).toContain("the build is a `run:` action at `proposed`");
+    expect(whyNoKindAt("review", "run")).toContain("the review is an `agent:` action at `proposed`");
+    expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
   });
 
   /**
@@ -485,8 +558,8 @@ describe("every step × kind cell runs or refuses", () => {
    * the seam `PassOptions.actionsAt` asks for.
    *
    * What that buys is the thing the old pair could only approximate: the code
-   * runs whatever the schema accepts, at every step, so `KINDS_AT` and
-   * `whyNoKindAt` are the only answer and a matrix cannot go on refusing a step
+   * runs whatever the schema accepts, at every step, so the plugins' own `at`
+   * and `whyNoKindAt` are the only answer and nothing can go on refusing a step
    * the code has started running. What it costs is that *one* has to stay true,
    * because a second call site is a second table of what each step may build —
    * and that is exactly what this asserts.
@@ -533,71 +606,19 @@ describe("every step × kind cell runs or refuses", () => {
 });
 
 /**
- * `doc/reference.md` carries the matrix, and this is what keeps it true.
+ * **`doc/reference.md` no longer carries a copy of the matrix, and that is
+ * `#261`.**
  *
- * Checked rather than generated because the document is prose around the table
- * and the reasons matter as much as the ticks — but the ticks themselves are
- * `KINDS_AT`'s, cell for cell, and a document that disagrees is the document
- * that is wrong.
+ * It used to, and this file's last case read the document and compared its
+ * hundred and twenty ticks to `KINDS_AT` cell for cell — because the
+ * hand-kept copy in `#61`'s own body was wrong about `merge` within three
+ * weeks of being written. 0064 §4 removes the thing being copied: a plugin's
+ * `at` is the only statement of where it is legal, there is no constant beside
+ * the schema for a document to disagree with, and adding a plugin edits one
+ * file. What is left here is the *other* table in that document, whose column
+ * nothing else walks.
  */
-describe("doc/reference.md's matrix", () => {
-  const RUNS = "✅";
-  const REFUSES = "✋";
-
-  it("says what the code does, cell for cell", async () => {
-    const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
-    const rows = new Map<string, string[]>();
-    // The row's own label plus one cell per plugin, read off `PLUGINS` like
-    // everything else here: a seventh and eighth column arrived with `#235`,
-    // a ninth and tenth with `#236` and an eleventh with `#238`, one of the
-    // tenth's two went again with `#244`, and a width
-    // written as `7` would have gone on matching the six-wide table it was no
-    // longer about and reported *no table at all*.
-    const width = KINDS.length + 1;
-    let header: string[] | null = null;
-    for (const line of doc.split("\n")) {
-      const cells = line.trim().startsWith("|")
-        ? line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
-        : null;
-      if (cells === null) continue;
-      if (cells.length === width && cells.slice(1).join(" ") === KINDS.map((k) => `\`${k}:\``).join(" ")) {
-        header = cells;
-        continue;
-      }
-      if (header === null) continue;
-      const step = cells[0]?.replace(/[`*]/g, "");
-      if (cells.length === width && STEPS.includes(step as Step)) {
-        rows.set(step!, cells.slice(1));
-      }
-    }
-
-    expect(header, "no step × kind table in doc/reference.md").not.toBeNull();
-    expect([...rows.keys()]).toEqual([...STEPS]);
-    for (const step of STEPS) {
-      const drawn = rows.get(step)!;
-      KINDS.forEach((kind, i) => {
-        const runs = whyNoKindAt(step, kind) === null;
-        expect(drawn[i]?.replace(/[`*]/g, ""), `${step} × ${kind} in doc/reference.md`).toBe(
-          runs ? RUNS : REFUSES,
-        );
-      });
-    }
-
-    // **And the sentence above the table, which nothing checked.** It said
-    // *thirty-six of the sixty are refusals* — the contribution of the six
-    // steps with no call site, not the total — while the table below it drew
-    // forty-nine, so a reader auditing the closed set counted one number
-    // against another and concluded the code or the table had drifted.
-    const refusals = STEPS.flatMap((step) =>
-      KINDS.map((kind) => whyNoKindAt(step, kind)),
-    ).filter((why) => why !== null).length;
-    expect(refusals).toBe(108);
-    expect(
-      doc,
-      "doc/reference.md's prose count of the refusals no longer matches whyNoKindAt",
-    ).toContain("**A hundred and eight of the\nhundred and twenty are refusals**");
-  });
-
+describe("doc/reference.md", () => {
   /**
    * **The other table, whose `Needs` column is what a person budgets from.**
    *

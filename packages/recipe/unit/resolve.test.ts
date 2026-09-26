@@ -427,8 +427,8 @@ env:
 
   /**
    * The other half, and the half that expires first: the five are out of the
-   * hash **because they are empty**, not because of their names. `KINDS_AT`
-   * refuses every kind at all five today, so the list is always `[]` and the
+   * hash **because they are empty**, not because of their names. No plugin
+   * declares itself at any of the five today, so the list is always `[]` and the
    * canonical form is dropping a field that carries nothing. The day 0058's
    * plan builds one and a recipe configures it, it is in the hash and the hash
    * moves — because the configuration did.

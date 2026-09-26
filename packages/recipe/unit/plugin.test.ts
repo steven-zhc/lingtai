@@ -35,6 +35,7 @@ import {
   canonicalRecipe,
   definePlugin,
   disclose,
+  notBuiltYet,
   discloseSteps,
   hashRecipe,
   judgePlugin,
@@ -69,7 +70,10 @@ const BASE: Recipe = Recipe.parse({
  * a mark is honoured: marking the key would have `disclose` withhold what this
  * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
-const spendPlugin = definePlugin("spend", { spend: z.string(), token: noLog(z.string()) });
+const spendPlugin = definePlugin("spend", {
+  fields: { spend: z.string(), token: noLog(z.string()) },
+  at: { proposed: notBuiltYet },
+});
 const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as StepAction;
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
@@ -87,7 +91,7 @@ describe("the contract", () => {
 
   it("reads a field's `no_log` off the schema, not off a list", () => {
     expect(spendPlugin.secrets).toEqual(["token"]);
-    expect(definePlugin("loud", { loud: z.string() }).secrets).toEqual([]);
+    expect(definePlugin("loud", { fields: { loud: z.string() }, at: {} }).secrets).toEqual([]);
   });
 
   /**
@@ -325,17 +329,21 @@ describe("a `no_log` field never leaves its plugin", () => {
    * is an error at import rather than an empty `secrets`.
    */
   it("refuses a mark written below the field, however deep", () => {
-    expect(() => definePlugin("notify", { notify: z.object({ token: noLog(z.string()) }) })).toThrow(
+    expect(() => definePlugin("notify", { fields: { notify: z.object({ token: noLog(z.string()) }) }, at: {} })).toThrow(
       /marks no_log below its "notify" field/,
     );
-    expect(() => definePlugin("late", { late: noLog(z.string()).optional() })).toThrow(
+    expect(() => definePlugin("late", { fields: { late: noLog(z.string()).optional() }, at: {} })).toThrow(
       /marks no_log below its "late" field/,
     );
-    expect(() => definePlugin("deep", { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) })).toThrow(
+    expect(() => definePlugin("deep", {
+        fields: { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) },
+        at: {},
+      })).toThrow(
       /marks no_log below its "deep" field/,
     );
     // And the way round that does work is the way round the wording asks for.
-    expect(definePlugin("fine", { fine: z.string(), token: noLog(z.string().optional()) }).secrets).toEqual(["token"]);
+    expect(definePlugin("fine", { fields: { fine: z.string(), token: noLog(z.string().optional()) }, at: {} })
+        .secrets).toEqual(["token"]);
   });
 
   /**
@@ -347,10 +355,10 @@ describe("a `no_log` field never leaves its plugin", () => {
    * way.
    */
   it("refuses a mark on the key, and on `name`", () => {
-    expect(() => definePlugin("spend", { spend: noLog(z.string()) })).toThrow(
+    expect(() => definePlugin("spend", { fields: { spend: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "spend" field no_log/,
     );
-    expect(() => definePlugin("spend", { spend: z.string(), name: noLog(z.string()) })).toThrow(
+    expect(() => definePlugin("spend", { fields: { spend: z.string(), name: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "name" field no_log/,
     );
     // The same rule at the strip, because a `PluginSecrets` is written by hand
@@ -433,6 +441,66 @@ describe("the six behind the contract", () => {
  *   cut and what it lands — which cannot happen today and is not made possible
  *   here.
  */
+/**
+ * **`at`, and the two sentences a plugin author meets** (0064 §4, `#261`).
+ *
+ * Driven over a plugin of its own rather than over the closed set, for the
+ * reason the `no_log` cases above are: what is being asserted is the
+ * *mechanism*, and the closed set is a set of twelve decisions that happen to
+ * exercise part of it. A plugin written outside the tree is the case
+ * `doc/writing-a-plugin.md` is addressed to, and `whyNoKindAt` takes the set
+ * it works against so that case is reachable — the same seam `resolve.ts` has.
+ */
+describe("a plugin declares the steps it serves", () => {
+  /** The page's own example: one plugin, at one step, and nowhere else. */
+  const slack = definePlugin("slack", {
+    fields: { slack: z.strictObject({ channel: z.string() }) },
+    at: { proposed: notBuiltYet },
+  });
+  /** And the second true thing: one body, every step. */
+  const everywhere = definePlugin("everywhere", { fields: { everywhere: z.string() }, at: { "*": notBuiltYet } });
+
+  it("is legal where its `at` has a key, and refused by name where it does not", () => {
+    // Two, so `claim` *is* implemented — by the other one. A set where nobody
+    // implements the step takes the next case's branch, which is the whole
+    // distinction 0064 §1 is about, and this case would otherwise assert it
+    // by accident and say nothing about this one.
+    const set = [slack, everywhere] as unknown as typeof PLUGINS[number][];
+    expect(whyNoKindAt("proposed", "slack" as never, set)).toBeNull();
+    const why = whyNoKindAt("claim", "slack" as never, set);
+    // The sentence the page promises: what it does not implement, and where it
+    // does. `kindRefusedAt` adds the action, the kind and the step around it.
+    expect(why).toContain("`slack:` does not implement `claim`");
+    expect(why).toContain("it serves `proposed`");
+  });
+
+  /** `"*"` is every step, including the nine this plugin has never heard of. */
+  it("is legal everywhere when its `at` is `*`", () => {
+    const set = [everywhere] as unknown as typeof PLUGINS[number][];
+    for (const step of STEPS) expect(whyNoKindAt(step, "everywhere" as never, set)).toBeNull();
+  });
+
+  /**
+   * **And the sentence the table could not say.** An empty row meant *no
+   * plugin's output is read here* and *nobody has built this yet* at once, so
+   * a reader could not tell which — and `#231` died of the difference. An `at`
+   * can only say the first, so the second is a refusal of its own.
+   */
+  it("says when no plugin implements a step at all", () => {
+    const set = [slack] as unknown as typeof PLUGINS[number][];
+    const why = whyNoKindAt("design", "slack" as never, set);
+    expect(why).toContain("no plugin implements `design`");
+    expect(why).toContain("there is no design step");
+  });
+
+  /** A key that is not a step is refused at import, where the author is. */
+  it("refuses an `at` key that is not a step", () => {
+    expect(() => definePlugin("typo", { fields: { typo: z.string() }, at: { propsed: notBuiltYet } as never })).toThrow(
+      /declares itself at "propsed", which is not a step/,
+    );
+  });
+});
+
 describe("the two the pass calls itself", () => {
   it("is refused at every one of the ten steps, and names the file instead", () => {
     for (const step of STEPS) {

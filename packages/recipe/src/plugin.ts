@@ -21,6 +21,28 @@
  * **the schema is the documentation**, and the JSDoc beside a field is on the
  * field rather than in a second block about it.
  *
+ * ## And `at`, which is the other half
+ *
+ * A plugin is two halves — *what a recipe may write*, as a schema, and *what
+ * runs*, as one entry per step it can serve
+ * ([0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md)).
+ * `at`'s keys are the steps, `"*"` is every step, and **the keys are what make
+ * the plugin legal there**: a recipe declaring it at a step its `at` is silent
+ * about is refused when the recipe resolves, by name.
+ *
+ * That replaces a hand-written table of step × kind, which answered two
+ * questions at once — *is this plugin's output read here* and *has this step
+ * been built yet* — and could not tell them apart (0064 §1). A step nobody
+ * implements now says so in as many words, which is a sentence somebody can
+ * act on; an empty row said *this step takes nothing*, which is not.
+ *
+ * **The check is at resolve, on the declaration, and never at the call site on
+ * the function** (0064 §5). A `plugin.at[step]?.()` would accept a plugin that
+ * does not serve the step and quietly run nothing, which is `#61` in a new
+ * costume. By the time a body is called the recipe has already been refused.
+ *
+ * `doc/writing-a-plugin.md` is the page this is written for.
+ *
  * ## `env:` is a field, not a universal key
  *
  * *Which credentials do I need* is the one question only the plugin can answer,
@@ -117,9 +139,58 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { type Step, STEPS } from "@lingtai/domain";
 
 /** A plugin's own fields, by the name a recipe writes them under. */
 export type PluginFields = Readonly<Record<string, z.ZodType>>;
+
+/**
+ * **The key that says *every step***: one body, wherever a recipe puts it
+ * ([0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md) §3).
+ *
+ * Not a loophole and not a widening of what a plugin may do — a second true
+ * thing. A `run:` at `build` and a `run:` at `proposed` are the same work with
+ * the same inputs, and ten identical bodies would be a worse lie than one.
+ */
+export const ANY_STEP = "*";
+export type AnyStep = typeof ANY_STEP;
+
+/**
+ * **What a plugin's `at` carries until the bodies move** (0064 §3, `#261`).
+ *
+ * `at`'s value at a step is that step's `StepBody` — `StepWork<S>` in, an
+ * `EndingAt<S>` out — and today the ten bodies are `pass-steps.ts`'s, hard
+ * coded. So this ticket declares the **keys** and the next one fills the
+ * values in: the shape is a record from the start rather than a list that
+ * changes shape later, which is what lets both halves land without changing a
+ * pass.
+ *
+ * **A symbol rather than a function that does nothing**, deliberately. A
+ * marker a call site could invoke would answer `undefined` and read as a step
+ * that ran and found nothing — `#61` one layer down, and 0064 §5's *absent and
+ * empty stay different* is the rule it would break. This one cannot be called
+ * at all, by the type and by the runtime.
+ */
+export const notBuiltYet = Symbol("the step body 0064 §3 will put here; nothing calls it yet");
+export type NotBuiltYet = typeof notBuiltYet;
+
+/**
+ * **The steps a plugin serves**, and the whole of what makes it legal at one
+ * (0064 §4).
+ *
+ * `Partial`, so a plugin that serves nothing writes `{}` — that is the five
+ * 0061 §3 names for code the pass calls itself, and their refusal is
+ * `CALLED_DIRECTLY`'s rather than a row in a table. A key that is neither a
+ * step nor `"*"` does not compile, and `definePlugin` refuses it at import as
+ * well, because a declaration reaching here from JavaScript has had no
+ * compiler.
+ */
+export type PluginSteps = Partial<Record<Step | AnyStep, NotBuiltYet>>;
+
+/** Whether this plugin serves this step — the one question legality asks. */
+export function servesStep(plugin: { readonly at: PluginSteps }, step: string): boolean {
+  return ANY_STEP in plugin.at || step in plugin.at;
+}
 
 /**
  * A field whose **value** never leaves the plugin — Ansible's `no_log`.
@@ -194,6 +265,13 @@ export interface Plugin extends PluginSecrets {
   readonly declares: readonly string[];
   /** Those of them marked `noLog`. */
   readonly secrets: readonly string[];
+  /**
+   * **The steps it serves**, keyed by step name or `"*"` — and legality is read
+   * off these keys and written nowhere else (0064 §4).
+   */
+  readonly at: PluginSteps;
+  /** Those keys, as written, for a refusal that has to say where it does live. */
+  readonly serves: readonly string[];
 }
 
 /**
@@ -253,21 +331,40 @@ function isSchema(value: object): value is z.ZodType {
 }
 
 /**
- * A plugin, from its key and the fields it declares.
+ * A plugin, from its key, the fields it declares and **the steps it serves**.
  *
  * The strictness is the contract's rather than each plugin's, because *refuse a
  * field you do not understand* is the rule all of them are held to (0061 §9)
  * and a plugin that forgot to say `strictObject` would be the one that accepts
  * `env:` and drops it.
  *
- * **It throws on a `no_log` mark it could not honour**, rather than answering a
- * plugin whose `secrets` is quietly shorter than its author wrote — see the two
- * cases at the head of this file. A declaration is code, so the throw is at
- * import: there is no recipe, no worktree and nothing claimed to be halfway
- * through.
+ * **`at` is the second half, and it is what a recipe's legality is read from**
+ * (0064 §4). There is no table beside the schema any more: a plugin says which
+ * steps it serves, and a recipe declaring it anywhere else is refused by name
+ * when it resolves. Adding a plugin is one file.
+ *
+ * **It throws on a `no_log` mark it could not honour, and on an `at` key that
+ * is not a step**, rather than answering a plugin whose `secrets` is quietly
+ * shorter than its author wrote or whose `at` names a step nothing will ever
+ * ask about. A declaration is code, so the throw is at import: there is no
+ * recipe, no worktree and nothing claimed to be halfway through.
  */
-export function definePlugin<Key extends string, Fields extends PluginFields>(key: Key, fields: Fields) {
+export function definePlugin<Key extends string, Fields extends PluginFields>(
+  key: Key,
+  declaration: { readonly fields: Fields; readonly at: PluginSteps },
+) {
+  const { fields, at } = declaration;
   const shape = { name: z.string(), ...fields };
+  const serves = Object.keys(at);
+  for (const step of serves) {
+    if (step === ANY_STEP || (STEPS as readonly string[]).includes(step)) continue;
+    throw new Error(
+      `"${key}" declares itself at "${step}", which is not a step — the ten are ` +
+        `${STEPS.map((s) => `"${s}"`).join(", ")}, and "${ANY_STEP}" is every one of them. A plugin's ` +
+        "`at` is what makes it legal at a step (0064 §4), so a key nothing matches is a plugin no " +
+        "recipe can ever declare and no refusal can ever explain",
+    );
+  }
   const secrets: string[] = [];
   for (const [field, schema] of Object.entries(fields)) {
     if (schema.meta()?.["no_log"] !== true) {
@@ -283,7 +380,7 @@ export function definePlugin<Key extends string, Fields extends PluginFields>(ke
     if (why !== null) throw markRefused(key, field, why);
     secrets.push(field);
   }
-  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets };
+  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets, at, serves };
 }
 
 /**

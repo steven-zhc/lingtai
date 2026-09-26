@@ -464,7 +464,7 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | Step | When | May refuse? | Built? |
 |---|---|---|---|
 | `claim` | the queue picks the item | no | not yet |
-| `admit` | work starts on it; the worktree is cut here | nothing runs here — see the matrix below | not yet |
+| `admit` | work starts on it; the worktree is cut here | no plugin implements it — see *step × kind* below | not yet |
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
 | `design` | a document, before any code — or nothing, which is an answer | no | not yet |
 | `implement` | one agent, in that worktree | no | not yet |
@@ -982,8 +982,8 @@ decides what *refuses* — beside `acceptFinding` and `declineFinding` in
 take that value or neither does**: replace the fold's literal alone and a major
 still fails the step, is never filed, and buys the fix round the recipe said it
 would not, which is why the refusal says so. So a recipe
-cannot yet say any of the five and every one of their fifty cells in the matrix
-below is a ✋. They are declared
+cannot yet say any of the five: each declares `at: {}`, so every step refuses
+it. They are declared
 anyway because **a plugin no list carries is a plugin no step refuses**
 ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3,
 [`the-v2-recipe.md`](design/the-v2-recipe.md) §3.2): outside the closed set,
@@ -997,8 +997,8 @@ the cell nobody had decided — and
 eleven (`#244`) — and back to twelve with `refs:` (`#240`), which is the first
 member 0061 §3 did not name at all. The set is not closed against *new* work:
 §3's list is the names the v2 file gives code that already runs, and a plugin
-doing something no code did before joins by the same rules — a key, a schema, a
-row in `KINDS_AT`, a cell here.
+doing something no code did before joins by the same rules — a key, a schema,
+and an `at` saying which steps it serves.
 
 **`assignee` is `queue:`'s and not a plugin of its own** (0063 §3, revising 0061
 §§2–3). The two answer one question: `kinds` orders the listing, `exclude`
@@ -1123,8 +1123,8 @@ judge; `restarts` still bounds how many times it can be made.
 it is blocked" is one configuration rather than two mechanisms. `refs:` carries
 the same key narrowed to `landed` alone, because it deletes. Putting any of them
 at a gating point is refused by name — a gate that silently did nothing would be
-worse. Which kind may be at which point is the matrix below, and every cell in
-it answers one way or the other.
+worse. Which plugin may be at which step is each plugin's own `at`, below, and
+every pair answers one way or the other.
 
 The shape is GitHub Actions': a `name`, exactly one of the keys above, and its
 parameters beside it. Order within a point is the array's, the first refusal
@@ -1140,154 +1140,113 @@ second silently overwrite the first.
 `onSha` is load-bearing: a verdict is about a diff, so a force-push invalidates
 it by arithmetic rather than by anybody noticing.
 
-## step × kind — the 120 cells, and which of them run
+## step × kind — where a plugin is legal, and who says so
 
-Not every kind runs at every step, and for a year ten of the cells said
+Not every plugin runs at every step, and for a year ten of the pairs said
 neither yes nor no: an action there was accepted by the schema, resolved into
 `GatesResolved`, printed by `lingtai add`, drawn on the board — and never
 called (`#61`). `merge` was a sixteenth until `#58` built its pipeline. **The
-set is two-valued now**: a cell runs, or the recipe does not resolve and the
+set is two-valued now**: a pair runs, or the recipe does not resolve and the
 refusal names the action, its kind, the step and why.
 
-It was thirty cells until the vocabulary went to ten names, sixty until the
-closed set grew `worktree:` and `merge:` (`#235`), eighty until it grew
-`queue:` and `assignee:` (`#236`), a hundred until it grew `judge:` (`#238`)
-and a hundred and twenty until it grew `backlog:` (`#237`) — a hundred and
-ten again when 0063 §3 made `assignee` a field of `queue:` rather than a plugin
-beside it (`#244`), and a hundred and twenty once more with `refs:` (`#240`).
-**A hundred and eight of the
-hundred and twenty are refusals** — count the ✋ in the table below, which is what
-`whyNoKindAt` answers for every cell but the twelve that run. Seventy-two of
-them are the six steps with no call site and fifty are the five
-plugins no step reads, overlapping each other by thirty; they are the
-interesting
-ones: that is the same two-valued rule and not an exception to it, because
-**naming a thing is not wiring it**, and a `design:` block a recipe could
-write and nothing would run is `#61` with a new spelling. So is a `worktree:`
-one — which is the same sentence read down the other axis, and the reason the
-six empty columns are here rather than left outside the set.
+**There is no table, and there is no copy of one here** (`#261`). `KINDS_AT`
+was a hand-written hundred and twenty cells beside the schema, and this
+document carried a tick-by-tick copy of it that
+`packages/conductor/unit/step-matrix.test.ts` checked line by line — because
+the hand-kept copy in `#61`'s own body was wrong about `merge` within three
+weeks of being written.
+[0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4 removes
+the thing being copied: **a plugin declares the steps it serves, and that
+declaration is what makes it legal there.**
 
-Source: `KINDS_AT` and `whyNoKindAt` in `packages/recipe/src/recipe.ts`. This
-table is checked against that constant, cell for cell, by
-`packages/conductor/unit/step-matrix.test.ts` — the copy in `#61`'s own body
-was wrong about `merge` within three weeks of being written, so a copy nothing
-checks is not worth having.
-
-**And the columns are `PLUGINS`, read rather than kept** (`#228`). The test
-walks the closed set rather than a list of its own, so the day a ninth plugin
-lands it has no action to try, no row here and no cell in `KINDS_AT` — and all
-three say so at once. That is 0059 §5's rule surviving the growth 0061 §3
-describes: the set is twelve and this table now carries all twelve. It
-is also what made `#235`, `#236`, `#238`, `#237` and `#240` cheap — each new column
-arrived in `PLUGINS`, and the test asked for it here rather than walking eleven
-of twelve in silence. **And `#244` is the same test read backwards**: a column
-that *goes* has to take its cells with it, rather than leaving a twelfth the
-table draws and the code no longer has.
-
-✅ runs · ✋ refused when the recipe resolves, by name
-
-| | `run:` | `agent:` | `watch:` | `human:` | `close:` | `labels:` | `refs:` | `worktree:` | `merge:` | `queue:` | `judge:` | `backlog:` |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `claim` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `admit` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `prepared` | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `design` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `implement` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `build` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `review` | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `proposed` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
-| `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
-
-Where each row comes from. **There is one call site, and it names its step with
-a variable** — `conduct.ts`'s `actionsAt`, handed to `runPass`, which asks it at
-every step whose plugins are verdicts and hands the same dependencies at all of
-them (`#256`). So a ✋ below is `KINDS_AT`'s and never a fact about which steps a
-caller remembered:
-
-```
-prepared    conduct.ts    actionsAt(step, actions)   every dependency, as at all ten
-proposed    conduct.ts    actionsAt(step, actions)   every dependency
-merge       conduct.ts    actionsAt(step, actions)   every dependency   ← #58
-end         end-step.ts   resolveEndActions          the three effects — `end` runs no pipeline
-claim       conduct.ts    actionsAt(step, actions)   `KINDS_AT.claim` is `[]`, so the list is empty
-admit       conduct.ts    actionsAt(step, actions)   `KINDS_AT.admit` is `[]`
-design      conduct.ts    actionsAt(step, actions)   `[]`   ← 0058 §3, not yet built
-implement   conduct.ts    actionsAt(step, actions)   `[]`   ← conduct.ts dispatches the agent directly
-build       conduct.ts    actionsAt(step, actions)   `[]`   ← today a `run:` action at `proposed`
-review      conduct.ts    actionsAt(step, actions)   `[]`   ← today an `agent:` action at `proposed`
+```ts
+definePlugin("close", { fields: { … }, at: { end: … } });        // one step
+definePlugin("run",   { fields: { … }, at: { prepared: …, proposed: …, merge: … } });
+definePlugin("queue", { fields: { … }, at: {} });                // none — see below
 ```
 
-And the five columns, which are a fact about the plugin rather than the step:
+Source: each plugin's `at` in `packages/recipe/src/recipe.ts`, and
+`whyNoKindAt` beside them, which is what the refusal says. `lingtai add` and
+`lingtai doctor` both print it, so the answer for a recipe you are holding is
+a command rather than a table to read off. Every pair is still walked by
+`step-matrix.test.ts`, which asserts the same two-valued rule it always did —
+what went is the third place a new plugin had to be written down.
+
+**The table could not say what `at` says.** It answered two questions at once
+— *is this plugin's output read here* and *has this step been built yet* — and
+an empty row was both. That is how
+[#231](https://github.com/steven-zhc/lingtai/issues/231) died: it put
+configuration on steps whose rows were empty for a reason that had nothing to
+do with what it was asking for. So the refusals now come in three shapes, and
+each says the part an operator can act on:
+
+- **A plugin declared where it does not serve.** *`close:` does not implement
+  `proposed` — it serves `end`.* The plugin carries where it does belong, so
+  the refusal is not homework.
+- **A step no plugin implements.** *No plugin implements `build` — today the
+  build is a `run:` action at `proposed`.* That sentence was unwritable under
+  the table, because an empty row could not tell *not yet* from *not ever*.
+  The five steps [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3
+  named are these: the queue's filter for `claim`, the issue body for `design`,
+  `conduct.ts`'s own dispatch for `implement`, and the `proposed` step's
+  actions for `build` and `review`. `admit` is the sixth, and a question that
+  must be asked *before* anything is spent is `lingtai ask`, which holds the
+  item in the queue and is answered without a worktree
+  ([`ask.ts`](../packages/conductor/src/ask.ts)).
+- **A plugin that serves no step at all** — `worktree:`, `merge:`, `queue:`,
+  `judge:` and `backlog:`, whose `at` is `{}`. All five are names 0061 §3 gives
+  code the pass already runs, and the recipe is not yet what tells it to. Asked
+  first, and the same sentence at all ten steps, because it is a fact about the
+  plugin: *nothing implements `admit`* is true and leaves a reader hunting for
+  the code that cuts their worktree. `CALLED_DIRECTLY` names it instead, and it
+  is sharpest at `claim`, where the step's sentence and the plugin's are about
+  the same plugin and only the plugin's says which file to open. The last three
+  carry one more clause, and it is the only part of those refusals that is not
+  a fact about today's code — what the step will do with the list when it reads
+  it: **at `claim` the first plugin that yields a work item wins**, rather than
+  every one having to pass as at `prepared` (0061 §2), and at `proposed` **the
+  one entry whose `when:` matches the reason the last step gave**, with the
+  workflow counting the rounds and restarts and the judge only choosing from
+  what it is offered (0061 §3). The day a step reads one, its entry in
+  `CALLED_DIRECTLY` goes and an `at` key arrives on the plugin in the same diff.
+
+Where each step's list comes from. **There is one call site, and it names its
+step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runPass`, which
+asks it at every step whose plugins are verdicts and hands the same
+dependencies at all of them (`#256`). So a refusal is the plugins' and never a
+fact about which steps a caller remembered:
 
 ```
-worktree    —             no step reads it from the recipe        ← conduct.ts cuts it at `admit`'s port, from `repo.base`
-merge       —             no step reads it from the recipe        ← the merge lane runs it itself, handed that same base
-queue       —             no step reads it from the recipe        ← discover.ts asks GitHub itself, from `source.*` and `runtime.assignee`
-judge       —             no step reads it from the recipe        ← the pass's ceilings decide it, from `runtime.limits`
-backlog     —             no step reads it from the recipe        ← the fold and verdictFor each hold the bar as a literal
+every step but `end`   conduct.ts    actionsAt(step, actions)   every dependency, the same at all nine
+end                    end-step.ts   resolveEndActions          the three effects — `end` runs no pipeline
 ```
 
-**Every ✋ is a fact about the step or about the plugin, never about the
-caller** — and the five columns above are why that sentence has two halves:
-their refusal is the same at all ten steps, so saying *nothing runs a pipeline
-at `admit`* would be true and would leave a reader hunting for the code that
-cuts their worktree. `CALLED_DIRECTLY` names it instead. It is sharpest at
-`claim`, where the step's sentence and the plugin's are about the same
-plugin and only the plugin's says which file to open.
+Two facts worth reading off that. **`prepared` is narrower than `proposed`**,
+and this is where that is written down: nothing has been committed yet, so
+`agent:` would be handed no diff to read and `watch:` no file list to match —
+it is a step before a change exists, not a step missing a dependency. `human:`
+is refused for a different reason and a sharper one: a hold there is turned
+into a *release* back to the queue, so the person would be asked a question
+that re-asks itself — and pays for a worktree and an install — on every pass,
+and can never be answered. Ask before the claim, or at `proposed`, where there
+is a diff to approve.
 
-- **`admit` carries nothing.** No code reaches it, so an action there would be
-  resolved, printed and never called. The point stays in the closed set and the
-  day something runs a pipeline there its row grows — but a recipe may only say
-  what today's code does. A question that must be asked *before* anything is
-  spent is `lingtai ask`, which holds the item in the queue and is answered
-  without a worktree ([`ask.ts`](../packages/conductor/src/ask.ts)).
-- **`prepared` is narrower than `proposed`, and this is where that is written
-  down.** Nothing has been committed yet, so `agent:` would be handed no diff to
-  read and `watch:` no file list to match — it is a point before a change
-  exists, not a point missing a dependency. `human:` is refused for a different
-  reason and a sharper one: a hold there is turned into a *release* back to the
-  queue, so the person would be asked a question that re-asks itself — and pays
-  for a worktree and an install — on every pass, and can never be answered. Ask
-  before the claim, or at `proposed`, where there is a diff to approve.
-- **The five steps 0058 §3 named carry nothing yet**, and each refusal says
-  where that work is done today instead — the queue's filter for `claim`, the
-  issue body for `design`, `conduct.ts`'s own dispatch for `implement`, and
-  the `proposed` point's actions for `build` and `review`. The refusal is the
-  half an operator can act on; *nothing runs here* on its own is a recipe key
-  and no next move.
-- **`end` produces no verdict**, so the four kinds that produce one have nothing
-  to be there. Its three carry `when:`, which is how one step serves every
-  terminal outcome — and `refs:`'s is a `z.literal("landed")` rather than the
-  enum the other two take, because that word is the whole safety argument for a
-  plugin that deletes: for an item that did *not* land, the
-  `agent/<n>-attempt-<k>` refs are the only surviving account of what was tried
-  ([#239](https://github.com/steven-zhc/lingtai/issues/239) creates them so a
-  later attempt can fetch them), and a value nobody can write is a mistake
-  nobody can make.
-- **`close:`, `labels:` and `refs:` at a step that decides** are effects rather
-  than verdicts, and only `end` carries out effects. This is the direction the
-  codebase already got right, and its wording is the argument for the rest:
-  *an action that is silently absent is worse than a run that will not start.*
-- **`worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` at any step at
-  all.** All five are names 0061 §3 gives code the pass already runs, and the
-  recipe is not yet the thing that tells it to — that is the ticket that makes
-  the file `steps:`. Until then the plugin and its schema exist, every cell
-  refuses, and the refusal says which file the code is in. The last three carry
-  one more clause than the first two, and it is the only part of those refusals
-  that is not a fact about today's code — what the step will do with the list
-  when it reads it: **at `claim` the first plugin that yields a work item
-  wins**, rather than every one having to pass as at `prepared` (0061 §2), and
-  at `proposed` **the one entry whose `when:` matches the reason the last step
-  gave**, with the workflow counting the rounds and restarts and the judge only
-  choosing from what it is offered (0061 §3). The day a step reads one, its
-  entry in `CALLED_DIRECTLY` goes and a `KINDS_AT` row arrives in the same
-  diff.
+**And `end` produces no verdict**, so the four plugins that produce one are not
+declared there. Its three carry `when:`, which is how one step serves every
+terminal outcome — and `refs:`'s is a `z.literal("landed")` rather than the
+enum the other two take, because that word is the whole safety argument for a
+plugin that deletes: for an item that did *not* land, the
+`agent/<n>-attempt-<k>` refs are the only surviving account of what was tried
+([#239](https://github.com/steven-zhc/lingtai/issues/239) creates them so a
+later attempt can fetch them), and a value nobody can write is a mistake nobody
+can make. Putting one of those three at a step that decides is refused by name
+for the mirror reason: they are effects rather than verdicts, and *an action
+that is silently absent is worse than a run that will not start.*
 
 The refusal arrives when the recipe resolves — so `lingtai doctor`, `lingtai
 add` and the first moment of a pass all name it, before a ticket is claimed or
-an install paid for. `actionsFromRecipe` asks the same table again for a caller
-that builds actions in code rather than reading a recipe.
+an install paid for. `actionsFromRecipe` asks the same plugins again for a
+caller that builds actions in code rather than reading a recipe.
 
 ## extension environment — declared, and the declaration is the whole of it
 

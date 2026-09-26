@@ -116,7 +116,8 @@ export function resolveEndActions(
     // this point must never do (`#61`): four of `end`'s six cells were
     // declarable, drawn, and dropped by that line.
     //
-    // It asks for the three keys `KINDS_AT.end` names rather than for `when`,
+    // It asks for the three keys the plugins that declare `at: { end }` name,
+    // rather than for `when`,
     // because **`when:` stopped being the effects' own key** the day `judge:`
     // declared one (`#238`) — and a `"when" in a` test let a judge action
     // straight past this throw into the `continue` below, where a `findings`
