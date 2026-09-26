@@ -591,6 +591,23 @@ export function runOnce(
 
     let released = false;
     /**
+     * What `end` resolved, so the issue is told what the item recorded.
+     *
+     * **Out here rather than inside the scope, because `release` is out here
+     * too.** `recordEnd` sets it; all three endings read it. It used to be a
+     * local of the scope below, which `release` cannot see — so the `failed` and
+     * restart endings passed `labels` to `tellGitHubAbout` and no `appended`,
+     * and `tellGitHubAbout` carries out an `EndActionsResolved` **only** from
+     * `appended` (`tell.ts`). A recipe's `end: [{ when: failed, close: true }]`
+     * was therefore resolved onto the log and never carried out: no
+     * `closeIssue`, no `IssueUpdateFailed` for `converge.ts` to retry, and
+     * `resolveEndActions`'s once-per-outcome rule makes every later pass resolve
+     * nothing — so `endedWithoutEndActions` finds the row and reports nothing
+     * wrong. The landed and blocked endings always passed it; this is the path
+     * that dropped it.
+     */
+    let endResolved: readonly ToAppend[] = [];
+    /**
      * How a run that did not land gives the item back.
      *
      * **One way, and `#143` is what made it one.** The item returns to the queue
@@ -598,6 +615,7 @@ export function runOnce(
      * resolved its declared effects against `failed` by the time this runs — the
      * pass ran it, on every ending — so this does not resolve them again, and
      * `resolveEndActions`'s once-per-outcome rule would refuse it if it tried.
+     * What is left is *carrying them out*, which is what `appended` is.
      */
     const release = (reason: string): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -611,6 +629,7 @@ export function runOnce(
               github: options.client,
               workItemId,
               labels: labelsFor("queued"),
+              appended: endResolved,
             });
           },
           catch: (err) => err,
@@ -699,8 +718,6 @@ export function runOnce(
       let worktree: Worktree | null = null;
       /** The item, once `claim`'s port has taken it. */
       let took: Claimed | null = null;
-      /** What `end` resolved, so the issue is told what the item recorded. */
-      let endResolved: readonly ToAppend[] = [];
       /**
        * The turn limit's own words, where that is what stopped the agent.
        *
@@ -785,6 +802,24 @@ export function runOnce(
       let lease: string | null = null;
       /** The head this pass has already published, so nothing pushes it twice. */
       let published: string | null = null;
+      /**
+       * The head **`arm` itself is on origin at**, or null while it is on none.
+       *
+       * Apart from `published`, because the two refs do not always go together:
+       * `arm-only` is origin taking the forced arm and rejecting the leased
+       * `agent/<n>`, which leaves `published` where it was and the arm up.
+       *
+       * It exists because `PassRestarted` makes a claim about this ref and
+       * nothing else could check it. That event names `arm` as where the
+       * abandoned approach is fetchable, `attempts.ts` tells the next agent to
+       * `git fetch origin <arm>`, and appending it consumes one of
+       * `ceilings.restartsLeft` — so a restart recorded over a publish that was
+       * refused spends a restart, points the next attempt at a ref that has
+       * never existed, and loses the commits with the worktree. `run-once.ts`
+       * pushed strictly *before* the append for exactly this reason: *a push
+       * that is refused must leave no arm on the log.*
+       */
+      let armPublished: string | null = null;
       /**
        * What the run's own stream has already been told this claim produced, as
        * `<ref>@<head>`. A key and not a flag, because `arm-only` corrects an
@@ -925,6 +960,9 @@ export function runOnce(
                 "push",
                 `${branch} was not pushed — ${pushed.left.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
               );
+              // The arm is up even though the command exited non-zero, which is
+              // the whole point of asking it separately.
+              armPublished = head;
               await noteRefs("arm-only", head, pushed.left.detail);
               await recordDiff(arm, head);
               return pushed.left.detail;
@@ -935,6 +973,7 @@ export function runOnce(
           }
           lease = head;
           published = head;
+          armPublished = head;
           runLog.note("push", `${branch} and ${arm} at ${head.slice(0, 7)}`);
           await noteRefs("published", head, null);
           await recordDiff(branch, head);
@@ -1715,8 +1754,32 @@ export function runOnce(
               (roundsSpent > 0 ? ` ${roundsSpent} of ${limits.rounds} rounds were spent.` : ""),
             done: repairOf ? `a repair for ${repairOf.reason} produced this diff` : null,
             raw: why,
+            /**
+             * **Approve is recommended exactly where every step passed** — and
+             * since `#256` a hold at `merge` is one of those.
+             *
+             * `stopped === null` alone is not the good hold any more. `--no-merge`
+             * and a pre-`#143` repair are `human:` actions injected after
+             * `merge`'s declared list (#20), so the ordinary self-hosted ending —
+             * green run, operator asked it not to merge — now ends `held` at
+             * `merge` with `stoppedAt` set, and the card lost the one
+             * recommendation #83 calls the good hold: `standing.tsx` drew no
+             * recommended move and `page.tsx` passed `recommended={null}`.
+             *
+             * **`merge` and not any held step**, because the walk is what makes
+             * the sentence true: a step only holds once every step before it has
+             * passed, and `merge` is the last of the nine before `end` — so
+             * *every step passed on this diff* is arithmetic there and a false
+             * claim at `build`, where `review` and `proposed` never ran.
+             *
+             * Findings still veto it. A `review` may pass carrying them (0058
+             * §3b), and approving over a live finding is the one judgement
+             * nothing but a person should make.
+             */
             recommendation:
-              stopped === null && findings.length === 0
+              findings.length === 0 &&
+              (stopped === null ||
+                (stopped.step === "merge" && stopped.ending.ending === "held"))
                 ? {
                     action: "approve" as const,
                     why: "every step passed on this diff; approving merges what this run produced",
@@ -1725,6 +1788,57 @@ export function runOnce(
           },
         };
       };
+
+      /**
+       * **`claim` took nothing, so there is no item here to write on** — and
+       * this is the one ending that must reach none of the three below.
+       *
+       * `claim` cannot refuse (0058 §2, `pass-steps.ts`): its three declines are
+       * `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`,
+       * and `ARRIVE_AT_THE_ROUTER` does not include the step — so `stoppedAt` is
+       * `{step: "claim"}` and `outcomeOf` reads any non-`never-ran` stop as
+       * `blocked`. Left to fall through, the blocked branch appends
+       * `ApprovalRequested` to a run stream with no `RunStarted`, appends
+       * `WorkItemBlocked` to `workItemId`, comments **Lingtai is waiting on you**
+       * and sets `lingtai:waiting` — for an item this pass never claimed.
+       *
+       * Both declines are worse than noise. `passedOver` is `runnableNow` saying
+       * GitHub is not offering it — `agent:hold`, a blocker, an assignee — and a
+       * block there takes the ticket out of `queued`, which is the state
+       * `selectRunnable` requires (`queue.ts`), so removing the label no longer
+       * makes it runnable. `notClaimed: held` is **another conductor's live
+       * item**: the block replaces that item's lifecycle and relabels its issue
+       * while its agent is still working. `run-once.ts` returned `discover`/
+       * `claim` here and wrote nothing at all.
+       *
+       * So: nothing is appended and nothing is told. `released` is set because
+       * the `ensuring` at the bottom would otherwise append `WorkItemReleased`
+       * and write `lingtai:queued` over exactly those two items —
+       * `releaseWorkItem` appends whoever holds it.
+       *
+       * **`claim-unconfirmed` is the exception, and it is the reason `Taken` has
+       * four cases.** The append may have committed and then lost its
+       * connection, so the item may be held *by this run* — and giving back
+       * something this run may hold is the one honest move. `end` has already
+       * resolved against that stream (`onStream` is set for this decline alone),
+       * so the release carries those effects out.
+       */
+      if (stopped?.step === "claim") {
+        const why = detailOf(stopped);
+        const mayHold =
+          stopped.ending.ending === "did-not-finish" &&
+          stopped.ending.because === "claim-unconfirmed";
+        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`);
+        released = true;
+        log(`nothing claimed: ${said(why)}`);
+        return {
+          ok: false,
+          workItemId,
+          runId,
+          stage: "claim",
+          detail: why,
+        } satisfies RunOnceResult;
+      }
 
       // ---- landed -------------------------------------------------------------
       const merged = landedAt();
@@ -1757,7 +1871,39 @@ export function runOnce(
       }
 
       // ---- requeued: a second approach was bought (0040) -----------------------
-      if (pass.rested === "requeued") {
+      /**
+       * **The arm is on origin before anything names it, or no restart is
+       * recorded at all** (0040, 0062 §2).
+       *
+       * `publishWhatIsCommitted` above is deliberately tolerant — a
+       * `--force-with-lease` a sibling claim invalidated, or a dropped network,
+       * returns git's words and pushes nothing — and every other ending is right
+       * to go on regardless: a person is still owed the question, and is told the
+       * branch is not there. **A restart is the one ending that cannot.** It
+       * spends one of `limits.restarts`, and the event it appends promises the
+       * next agent a ref to `git fetch` (`attempts.ts`). Recorded over a refused
+       * publish it spends the ceiling, names a ref that never existed, and the
+       * worktree holding the commits is deleted by the finalizer a moment later.
+       *
+       * `run-once.ts` pushed strictly before the append and said why in as many
+       * words: *a push that is refused must leave no arm on the log.* This is
+       * that rule, asked of the publish that already ran rather than of a second
+       * push — which also keeps the `arm-only` case a restart, because there the
+       * command exited non-zero and the arm **is** up.
+       *
+       * Where it is not, the pass falls through to the `failed` ending below: no
+       * restart is consumed, the reason there already carries `unpushed`, and the
+       * item comes back through the backoff with its ceiling intact.
+       */
+      const armIsUp = armPublished !== null && armPublished === headSha;
+      if (pass.rested === "requeued" && !armIsUp) {
+        runLog.note(
+          "restart",
+          `no restart was recorded — ${arm} is not on origin at ${headSha.slice(0, 7) || "the base"}`,
+        );
+        log(`not starting over — ${arm} was not published, so no restart is spent`);
+      }
+      if (pass.rested === "requeued" && armIsUp) {
         const restart = folded.restarts.length + 1;
         const reason = restartReason({
           action: lastRoute?.from ?? "review",
@@ -1798,6 +1944,26 @@ export function runOnce(
         // A plugin that asked for a person has already had its `ApprovalRequested`
         // emitted by the pipeline; everything else that reaches a person has not.
         if (!held) {
+          /**
+           * **The request is named for itself, never for the action that
+           * refused** — and naming it after that action destroys the thing it
+           * exists to report.
+           *
+           * `task-view.ts` folds `GateFailed` and `ApprovalRequested` through one
+           * `setStep`, keyed `${runId}:${gate}:${action}`, with
+           * `VERDICT.ApprovalRequested = "pending"`. So a `build` refused by a
+           * `run:` action called `test` writes `verdicts[<run>:build:test] =
+           * "failed"`, and a request carrying that same pair overwrites it with
+           * `pending`: the card's `failed` count drops to zero and the board
+           * shows a change that was refused as merely waiting — on every
+           * projection and every rebuild. `run-once.ts` named its request
+           * `unfixed` for exactly this reason, and wrote the collision out at
+           * the append.
+           *
+           * The pointer travels in the question instead, which is what a person
+           * reads.
+           */
+          const refusedBy = whatRefused(stopped);
           yield* Effect.promise(() =>
             appendNow(runId, [
               {
@@ -1805,10 +1971,12 @@ export function runOnce(
                 actor: "conductor",
                 data: parsePayload("ApprovalRequested", {
                   gate: stopped?.step ?? "proposed",
-                  action: whatRefused(stopped) ?? "judge",
+                  action: stopped === null ? "judge" : "unfixed",
                   runId,
                   onSha: headSha,
-                  question: `Merge ${branch} into ${base} anyway? ${said_.question}`,
+                  question:
+                    `Merge ${branch} into ${base} anyway? ${said_.question}` +
+                    (refusedBy === null ? "" : ` (\`${refusedBy}\`)`),
                   artifacts: [`${branch}@${headSha}`],
                 }),
               },

@@ -28,6 +28,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PROJECT,
+  RECIPE,
   fakeGitHub,
   fakePorts,
   memoryStore,
@@ -125,5 +126,61 @@ describe("when a run never starts", () => {
     expect(did.filter((line) => line.startsWith("remove "))).toHaveLength(6);
     // And no merge lane was reached on any of them.
     expect(did).not.toContain("integrate");
+  });
+
+  /**
+   * **The `end` step's effects are carried out on this ending too, and not only
+   * recorded.**
+   *
+   * The pass runs `end` on every outcome and appends `EndActionsResolved`;
+   * `tellGitHubAbout` is what carries the plan out, and it reads it from
+   * `appended` and from nowhere else (`tell.ts`). The `landed` and `blocked`
+   * endings always handed it over; the `failed` ending — this one, and the
+   * restart — called `release`, which is declared above the scope holding the
+   * plan and so passed `labels` and nothing else.
+   *
+   * What that costs is silent in both directions. No `closeIssue` runs and no
+   * `IssueUpdateFailed` is recorded for `converge.ts` to retry; and because
+   * `resolveEndActions` resolves once per outcome (`end-step.ts`), every later
+   * pass resolves nothing, so `endedWithoutEndActions` finds a matching row and
+   * reports nothing wrong. A recipe's `end:` is simply not obeyed, for ever,
+   * with the log saying it was.
+   */
+  it("carries out the end actions a failed ending resolved, rather than only recording them", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const closing = RECIPE.replace(
+      "steps: {}",
+      "steps:\n  end:\n    - { name: close it, when: failed, close: true }",
+    );
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, closing),
+        runtime: quotaRuntime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+    expect(result).toMatchObject({ ok: false, stage: "implement" });
+
+    // The plan reached the log, which is the half that already worked.
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const resolved = item.find((e) => e.type === "EndActionsResolved");
+    expect(resolved, "the end step resolved nothing").toBeDefined();
+    expect(resolved!.data).toMatchObject({ outcome: "failed" });
+
+    // And it reached GitHub, which is the half that did not.
+    expect(said).toContain("close #7");
+    // Recorded as done, so `converge.ts` has nothing to retry and
+    // `endedWithoutEndActions` has nothing to report.
+    expect(item.map((e) => e.type)).not.toContain("IssueUpdateFailed");
   });
 });

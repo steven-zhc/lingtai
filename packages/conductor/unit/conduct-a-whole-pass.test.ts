@@ -20,6 +20,7 @@
  * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
+import { STEPS } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import {
   PROJECT,
@@ -47,6 +48,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const store = memoryStore();
     const did: string[] = [];
     const said: string[] = [];
+    const lines: string[] = [];
 
     const result = await once(
       {
@@ -59,6 +61,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         merge: false,
         home: "/tmp/fake-home",
         store,
+        log: (line) => lines.push(line),
       },
       fakePorts(did, store),
     );
@@ -72,11 +75,32 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(result.step).toBe("merge");
 
     // The decision, as the log records it.
-    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    const events = await store.read(`wi-${PROJECT}-7`);
+    const item = events.map((e) => e.type);
     expect(item).toContain("WorkItemClaimed");
     expect(item).toContain("WorkItemBlocked");
     // Told GitHub inline, and recorded that it did (0022 — no outbox).
     expect(item.filter((t) => t === "IssueUpdated").length).toBeGreaterThan(0);
+
+    /**
+     * **The good hold carries the move it recommends** (#83).
+     *
+     * `--no-merge` is a `human:` action injected after `merge`'s declared list
+     * since `#256` (#20), so the ordinary self-hosted ending — every step
+     * passed, the operator asked it not to merge — now stops at `merge` with
+     * `PassResult.stoppedAt` set rather than null. A recommendation gated on
+     * *nothing stopped it* is therefore a recommendation this case never gets,
+     * and `standing.tsx` draws no move for the one hold that most obviously has
+     * one. A step only holds once every step before it passed, and `merge` is
+     * the last before `end`, so the sentence is arithmetic here.
+     */
+    const asked = events.find((e) => e.type === "WorkItemBlocked")!.data as {
+      needs: string;
+      diagnosis: { recommendation: { action: string; why: string } | null };
+    };
+    expect(asked.needs).toBe("judgement");
+    expect(asked.diagnosis.recommendation?.action).toBe("approve");
+    expect(asked.diagnosis.recommendation?.why).toContain("every step passed");
 
     // `working` at the claim, `waiting` once a person is the thing being waited
     // on — and in that order, which is the whole of `#71`. `bug` survives both,
@@ -85,14 +109,39 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(labelWrites).toEqual(["labels #7 bug,lingtai:working", "labels #7 bug,lingtai:waiting"]);
 
     /**
-     * **Every one of the ten ran, and `end` ran last.**
+     * **Every one of the ten ran, and `end` ran last** — asserted, rather than
+     * claimed and then not looked at.
      *
-     * The anti-skip assertion, from the caller's side: `GatesResolved` records
-     * the resolved plan for all ten, and the run's own stream carries the verdict
-     * events of the steps that had plugins. What `#61` was is a step declared,
-     * recorded, drawn and never fired, and what makes it unreachable now is that
-     * the pass reports a visit per step whether or not anything was declared.
+     * The headline used to sit over `toContain` checks for six event types, and
+     * every one of them survives a step being dropped: delete `design` from
+     * `STEPS`, have `runPass` `continue` past a visit, let `stepsResolved`
+     * record five points, and `RunStarted`/`GatesResolved`/`RunFinished` are all
+     * still there. That is `#61`'s own shape — declared, recorded, drawn, never
+     * fired — wearing the name of the test that would have caught it.
+     *
+     * What does catch it is the line `conduct.ts` prints from `pass.steps`,
+     * which is one entry per *visit the loop actually made* and is the only
+     * caller-side view of the walk. The step names in it, in order, have to be
+     * `STEPS` — the ten `@lingtai/domain` exports so that nothing keeps a list
+     * of its own — and `end` has to be the last of them, because `runPass` runs
+     * it after the walk on every ending.
      */
+    const walked = lines.find((line) => line.startsWith("pass: "));
+    expect(walked, `no pass line among:\n${lines.join("\n")}`).toBeDefined();
+    const visits = walked!.slice("pass: ".length).split(" ");
+    expect(visits.map((v) => v.split("=")[0])).toEqual([...STEPS]);
+    expect(visits.at(-1)).toBe("end=passed");
+    // And the one that did not pass is the merge point, which is where the
+    // injected `no-merge` action asked for a person.
+    expect(visits).toContain("merge=held");
+
+    // The plan the log records agrees with the walk: ten points, same order, so
+    // *declared* and *ran* cannot drift apart unnoticed.
+    const resolved = (await store.read(result.runId)).find((e) => e.type === "GatesResolved")!;
+    expect((resolved.data as { points: { gate: string }[] }).points.map((p) => p.gate)).toEqual([
+      ...STEPS,
+    ]);
+
     const run = (await store.read(result.runId)).map((e) => e.type);
     expect(run).toContain("RunStarted");
     expect(run).toContain("GatesResolved");

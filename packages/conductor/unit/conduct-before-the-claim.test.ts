@@ -27,6 +27,7 @@ import {
   REVIEWED,
   fakeGitHub,
   fakePorts,
+  issue,
   memoryStore,
   once,
   project,
@@ -237,3 +238,114 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
   });
 });
 
+
+/**
+ * **The `claim` step declining is not a person's problem, and it must not be
+ * written down as one.**
+ *
+ * `claim` cannot refuse (0058 §2): it answers *took it* or one of three ways of
+ * *did not*, all of them `did-not-finish`, and `ARRIVE_AT_THE_ROUTER` leaves the
+ * step off — so `PassResult.stoppedAt` is `{step: "claim"}` and `outcomeOf`,
+ * which reads any non-`never-ran` stop as `blocked`, sends it to the blocked
+ * ending. Left there, `conduct.ts` appends `ApprovalRequested` to a run stream
+ * with no `RunStarted`, appends `WorkItemBlocked` to the item, comments
+ * **Lingtai is waiting on you** and writes `lingtai:waiting` — about an item
+ * this pass never took.
+ *
+ * `run-once.ts` returned `discover`/`claim` here and wrote nothing at all, and
+ * the two tests below are the two items that get written on: one nobody holds
+ * and one somebody else does.
+ */
+describe("a claim that took nothing writes nothing", () => {
+  /** The ticket as GitHub offers it while somebody has put a hold on it. */
+  const HELD_BACK = RECIPE.replace("exclude: []", "exclude: [hold]");
+  const held = { ...issue, labels: [...issue.labels, { name: "hold", color: "#ededed" }] };
+  // `getIssue` and not `listOpenIssues`: `runnableNow` is called with
+  // `only: [7]`, which reads the ticket by number.
+  const onHold = (said: string[]): GitHubClient =>
+    ({ ...fakeGitHub(said, HELD_BACK), getIssue: async () => held }) as GitHubClient;
+
+  /**
+   * **A ticket the queue passed over stays queued**, which is the whole of it.
+   *
+   * `task_view`'s state would become `blocked`, and `selectRunnable` takes only
+   * `queued` (`queue.ts`) — so an operator's `pnpm lingtai run 7` on a ticket
+   * carrying a hold label would take it out of the queue for good, and removing
+   * the label would no longer bring it back.
+   */
+  it("says nothing about an issue GitHub passed over, and leaves its stream empty", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: onHold(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "claim" });
+    expect((result as { detail: string }).detail).toContain("excluded-label");
+    // Not one event on the item: not the block, and not the release the
+    // `ensuring` at the bottom of `runOnce` would otherwise append.
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
+    // And nothing was said to GitHub — no `lingtai:waiting`, no comment.
+    expect(said).toEqual([]);
+    // Nothing was acquired past the run's own log, so there is no worktree and
+    // no agent to answer for either.
+    expect(did).not.toContain("wire");
+    expect(did.filter((line) => line.startsWith("provision"))).toEqual([]);
+  });
+
+  /**
+   * **The item another conductor is mid-run on**, which is the expensive one.
+   *
+   * `claimWorkItem` answers `held` and the pass declines; a block here replaces
+   * that run's lifecycle with `blocked` and relabels its issue while its agent
+   * is still working, and `releaseWorkItem` appends `WorkItemReleased` to
+   * whoever holds it rather than only to this run.
+   */
+  it("touches nothing on an item another run holds", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const itemId = `wi-${PROJECT}-7`;
+    await store.append(itemId, 0, [
+      {
+        type: "WorkItemClaimed",
+        actor: "conductor",
+        data: { runId: "run-somebody-else", worker: "other:1", title: null, kind: null },
+      },
+    ]);
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "claim" });
+    expect((result as { detail: string }).detail).toContain("held");
+    // The other run's item, exactly as it was.
+    expect((await store.read(itemId)).map((e) => e.type)).toEqual(["WorkItemClaimed"]);
+    expect(said).toEqual([]);
+  });
+});
