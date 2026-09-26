@@ -359,6 +359,23 @@ describe("when an agent inside the pass produces no verdict", () => {
       round: 1,
       action: "merge",
     });
+    /**
+     * **And the decision that bought it is on the log, not only in the run log**
+     * (`#271`).
+     *
+     * `runLog.note` still says it while the pass is in flight, and that file is
+     * kept only while something is owed an explanation (0034) — so on a landing
+     * there was no account anywhere of why a round was spent. This run does not
+     * land, which is exactly the ending whose run log survives: asserting the
+     * event here says the append does not depend on the ending.
+     */
+    expect(run.find((e) => e.type === "PassRouted")!.data).toEqual({
+      from: "merge",
+      chose: "implement",
+      to: "implement",
+      why: expect.stringContaining("same-worktree"),
+      ceiling: null,
+    });
     // And the run that reached it was paid for, which is what makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
     expect(run.find((e) => e.type === "RunFinished")!.data).toMatchObject({

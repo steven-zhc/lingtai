@@ -420,7 +420,18 @@ describe("prepared refuses, and the refusal reports like any other", () => {
       },
     });
     expect(result.routes).toEqual([
-      { from: "prepared", to: "waiting", why: expect.any(String) },
+      // **What was wanted and what happened, and no ceiling between them**
+      // (`#271`). The built-in wants the work fixed where it stands; `prepared`
+      // offers no step at all, so a person got it — and `ceiling` is null
+      // because no number a project could raise would have offered `implement`
+      // here. That is the reading `chose` alone would get wrong.
+      {
+        from: "prepared",
+        chose: "implement",
+        to: "waiting",
+        why: expect.any(String),
+        ceiling: null,
+      },
     ]);
     expect(result.rested).toBe("waiting");
     expect(outcomeOf(result)).toBe("blocked");
@@ -806,7 +817,15 @@ describe("proposed is the only step that routes, and one judge answers each when
       "end:passed",
     ]);
     expect(result.routes).toEqual([
-      { from: "build", to: "implement", why: expect.stringContaining("same-worktree") },
+      // It got what it wanted and no ceiling was reached, which is what `chose`
+      // and `to` agreeing says (`#271`).
+      {
+        from: "build",
+        chose: "implement",
+        to: "implement",
+        why: expect.stringContaining("same-worktree"),
+        ceiling: null,
+      },
     ]);
     expect(asked.judge.map((on) => on.when)).toEqual(["red"]);
     // **And the agent that was sent back was shown the three errors.** A `run:`
@@ -898,7 +917,13 @@ describe("proposed is the only step that routes, and one judge answers each when
 
     expect(asked.judge[0]?.when).toBe("findings");
     expect(result.routes).toEqual([
-      { from: "proposed", to: "claim", why: "the approach is wrong, not the lines" },
+      {
+        from: "proposed",
+        chose: "claim",
+        to: "claim",
+        why: "the approach is wrong, not the lines",
+        ceiling: null,
+      },
     ]);
     expect(result.rested).toBe("requeued");
     // Nothing refused, so nothing is named as having stopped it — and a requeue
@@ -995,6 +1020,78 @@ describe("proposed is the only step that routes, and one judge answers each when
       expect(result.routes[0]?.to).toBe(theirs === "human" ? "waiting" : theirs);
     }
   });
+
+  /**
+   * **What was chosen, what happened, and which ceiling is the difference between
+   * them** (`#271`; 0064 §7's pair, and the fields `PassRouted` carries).
+   *
+   * Both rows below end at `waiting` and `to` alone cannot tell either of them
+   * from a decision that asked for a person — which is the sentence on the card.
+   * The first wanted another round and the rounds were spent; the second wanted a
+   * fresh approach and the item had no restart left. The route is why a pass took
+   * the path it took, and until `#271` it was written to a file that is deleted on
+   * the ending where the change lands.
+   */
+  it("records what the decision wanted, and which ceiling refused it", async () => {
+    const spent = await pass({
+      actions: { build: [canned("typecheck", RED)] },
+      // The built-in wants `implement` and there is no round to buy it with.
+      ceilings: { rounds: 0, restartsLeft: 0 },
+    });
+
+    expect(spent.result.routes).toEqual([
+      {
+        from: "build",
+        chose: "implement",
+        to: "waiting",
+        why: expect.stringContaining("same-worktree"),
+        ceiling: "rounds",
+      },
+    ]);
+
+    const overruled = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      answers: { judge: { next: "claim", named: "claude-code", why: "the approach is wrong" } },
+      // A round to spend, so `claim` is the one destination off the set — and the
+      // ceiling that took it off is the item's and not this pass's.
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(overruled.result.routes).toEqual([
+      {
+        from: "proposed",
+        chose: "claim",
+        to: "waiting",
+        why: expect.stringContaining('answered "claim"'),
+        ceiling: "restarts",
+      },
+    ]);
+  });
+
+  /**
+   * **And null is a ceiling's absence rather than a gap in the record** — the
+   * reading `refusedBy` is careful about. A failed install refuses before any
+   * agent has run, so the built-in's `implement` was never on offer whatever is
+   * left to spend: naming `rounds` here would send a person to raise a number
+   * that would refuse the same route again.
+   */
+  it("names no ceiling where no number would have offered the choice", async () => {
+    const { result } = await pass({
+      steps: { prepared: [{ name: "install", run: "false" }] },
+      actions: { prepared: [canned("install", RED)] },
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(result.routes).toEqual([
+      {
+        from: "prepared",
+        chose: "implement",
+        to: "waiting",
+        why: expect.stringContaining("same-worktree"),
+        ceiling: null,
+      },
+    ]);
+  });
 });
 
 // ------------------------------------------------------------------ merge ----
@@ -1083,7 +1180,13 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
       "end:passed",
     ]);
     expect(result.routes).toEqual([
-      { from: "merge", to: "build", why: "the text resolves; the intent is one file" },
+      {
+        from: "merge",
+        chose: "build",
+        to: "build",
+        why: "the text resolves; the intent is one file",
+        ceiling: null,
+      },
     ]);
     expect(outcomeOf(result)).toBe("landed");
   });
