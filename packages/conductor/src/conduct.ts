@@ -47,7 +47,7 @@
  * judge     nothing, and `noJudge` is why     the schema refuses a `judge:` cell
  * land      repo.integrate                    the merge lane
  * readEnd   store.read                        the item's own stream
- * recordEnd store.append                      what `end` resolved, at that version
+ * recordEnd held for the ending's append       what `end` resolved, never alone
  * ```
  *
  * **Two of them answer *nothing is declared* and that is the truthful answer
@@ -151,7 +151,7 @@ import {
   workItemStream,
 } from "@lingtai/domain";
 import { runnableNow } from "./discover.ts";
-import { resolveEndActions } from "./end-step.ts";
+import type { TerminalOutcome } from "./end-step.ts";
 import { stepsResolved } from "./steps-resolved.ts";
 import { labelsFor } from "./labels.ts";
 import { tellGitHubAbout } from "./tell.ts";
@@ -302,6 +302,11 @@ export type RunOnceResult =
    */
   | { ok: "held"; workItemId: string; runId: string; headSha: string; step: string }
   | { ok: false; workItemId: string | null; runId: string | null; stage: string; detail: string };
+
+/** A defect's own words. Wanted by the publish and by the release above it. */
+function whyOf(defect: unknown): string {
+  return defect instanceof Error ? defect.message : String(defect);
+}
 
 function said(detail: string, n = 300): string {
   const one = detail.replace(/\s+/g, " ").trim();
@@ -605,17 +610,71 @@ export function runOnce(
      * nothing — so `endedWithoutEndActions` finds the row and reports nothing
      * wrong. The landed and blocked endings always passed it; this is the path
      * that dropped it.
+     *
+     * **What actually reached the stream, never what was going to.** Each ending
+     * sets it after its own append has returned — see `endPlan`.
      */
     let endResolved: readonly ToAppend[] = [];
+    /**
+     * **What `end` resolved, held until the append that makes its outcome true.**
+     *
+     * `recordEnd` sets this and appends nothing, which is `PassPorts.recordEnd`
+     * read the way it states itself — *batching is the caller's because the
+     * ending is the caller's*. It used to append on the spot, and that put the
+     * resolution on the item's stream **before** the `WorkItemLanded` or
+     * `WorkItemBlocked` it is about: the exact split `resolveEndActions` says is
+     * impossible — *one transaction, so the outcome and its resolution cannot
+     * come apart* (`end-step.ts`).
+     *
+     * The window was not theoretical and it was the expensive kind. A dropped
+     * connection on the next append — the disconnect CLAUDE.md documents against
+     * `#157` — left `EndActionsResolved{landed}` over a commit that is on the
+     * base branch with no landing recorded: `reduceWorkItem` reads `backlog`,
+     * the issue is relabelled `lingtai:queued`, the next queue pass buys a whole
+     * agent to re-implement merged work, and because the point resolves **once
+     * per outcome** the real landing can never resolve it again —
+     * `endedWithoutEndActions` finds the matching row and reports nothing wrong.
+     * The same window on the blocked ending recorded a `when: blocked` action as
+     * carried out for a block that was never recorded.
+     *
+     * So it is held here and appended *by* the ending, in one transaction with
+     * it. Where the ending is a release the two cannot be one transaction —
+     * `releaseWorkItem` owns its own read and version — and there the order is
+     * what carries the rule: the release first, the resolution after it.
+     */
+    let endPlan: readonly ToAppend[] = [];
+    /**
+     * Which of the four endings the pass reached, or null while it is walking.
+     *
+     * Read by `release`, for the rule above: a plan may only be appended beside
+     * the event that makes its outcome true, and a release makes `failed` true
+     * and nothing else. So a `landed` plan whose own append died must not be
+     * carried in on the release that follows it — that is the orphan row again,
+     * arriving by the defect handler instead of by the window.
+     */
+    let endedAs: TerminalOutcome | null = null;
     /**
      * How a run that did not land gives the item back.
      *
      * **One way, and `#143` is what made it one.** The item returns to the queue
      * and the backoff decides when it is seen again. The `end` step has already
-     * resolved its declared effects against `failed` by the time this runs — the
-     * pass ran it, on every ending — so this does not resolve them again, and
-     * `resolveEndActions`'s once-per-outcome rule would refuse it if it tried.
-     * What is left is *carrying them out*, which is what `appended` is.
+     * *resolved* its declared effects by the time this runs — the pass ran it, on
+     * every ending — so nothing here resolves them again; what is left is
+     * recording that resolution and carrying it out.
+     *
+     * **The release goes first, and this is the one ending where the two are two
+     * appends.** `releaseWorkItem` owns its own read and version, which is
+     * `appendEndActions`'s *the one caller that cannot batch* arriving from the
+     * other side. The direction is what stands in for the transaction: losing the
+     * second append leaves effects unrecorded, where losing the first would leave
+     * them recorded for an ending the log does not carry (`endPlan`).
+     *
+     * **And only a plan about `failed`**, because that is the outcome a release
+     * makes true. A `landed` plan reaching here means the landing's own append
+     * died, and appending it would be the orphan row this ordering exists to
+     * prevent; a `blocked` plan reaching here is the `claim-unconfirmed` decline,
+     * where the item goes back to the queue and nothing was blocked. Neither is
+     * recorded, so a later pass resolves whichever ending it actually reaches.
      */
     const release = (reason: string): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -624,6 +683,17 @@ export function runOnce(
         return Effect.tryPromise({
           try: async () => {
             await releaseWorkItem(workItemId, runId, reason, store).catch(() => {});
+            if (endedAs === "failed" && endPlan.length > 0) {
+              try {
+                await appendNow(workItemId, endPlan);
+                endResolved = endPlan;
+              } catch (defect) {
+                // Said rather than raised: the run has already ended and the item
+                // is already back, and a throw here would replace the reason it
+                // ended with the reason the bookkeeping did.
+                log(`end actions not recorded: ${whyOf(defect)}`);
+              }
+            }
             await tellGitHubAbout({
               store,
               github: options.client,
@@ -827,9 +897,6 @@ export function runOnce(
        */
       let recordedDiff: string | null = null;
       const producedKey = (ref: string, head: string) => `${ref}@${head}`;
-
-      const whyOf = (defect: unknown) =>
-        defect instanceof Error ? defect.message : String(defect);
 
       /**
        * **The account of the publish, on the log rather than only in the file**
@@ -1119,15 +1186,24 @@ export function runOnce(
       const readEnd = (stream: string) => store.read(stream);
 
       /**
-       * `end` — what the step resolved, at the version the read gave.
+       * `end` — what the step resolved, held for the append that makes its
+       * outcome true.
        *
-       * The append and nothing else. The plan is kept so the issue can be told
-       * what the item recorded: `tellGitHubAbout` reads `EndActionsResolved` out of
-       * what was appended rather than out of the stream, which is the same list.
+       * **Not an append of its own, and that is the contract rather than a
+       * shortcut.** `resolveEndActions`'s own doc is *one transaction, so the
+       * outcome and its resolution cannot come apart*, and `PassPorts.recordEnd`
+       * says whose transaction it is: *batching is the caller's because the ending
+       * is the caller's*. The pass runs `end` before this file writes
+       * `WorkItemLanded` or `WorkItemBlocked`, so an append here is the resolution
+       * landing first and a dropped connection leaving it there alone. See
+       * `endPlan` for what that cost.
+       *
+       * The version the read gave is therefore not used: the append that carries
+       * this reads the stream for itself, which is the same optimistic check one
+       * step further on.
        */
-      const recordEnd = async (stream: string, at: number, plan: readonly ToAppend[]) => {
-        await store.append(stream, at, plan);
-        endResolved = plan;
+      const recordEnd = async (_stream: string, _at: number, plan: readonly ToAppend[]) => {
+        endPlan = plan;
       };
 
       // The cold reviewer's own settings, with no hook in them. `wiring`'s
@@ -1640,6 +1716,9 @@ export function runOnce(
       }
 
       const outcome = outcomeOf(pass);
+      // For `release`, which is declared above this scope and has to know which
+      // outcome the plan it is holding is about (`endedAs`).
+      endedAs = outcome;
       const headSha = headReached(pass.steps);
       /**
        * **The refs go before the question, and this line is what makes that
@@ -1848,7 +1927,11 @@ export function runOnce(
        * connection, so the item may be held *by this run* — and giving back
        * something this run may hold is the one honest move. `end` has already
        * resolved against that stream (`onStream` is set for this decline alone),
-       * so the release carries those effects out.
+       * and the release does **not** record that resolution: the outcome the pass
+       * computed for a stop at `claim` is `blocked`, and what the release makes
+       * true is that the item is back in the queue. Nothing is recorded and
+       * nothing is carried out, so the pass that does reach an ending resolves it
+       * (`endPlan`, `release`).
        */
       if (stopped?.step === "claim") {
         const why = detailOf(stopped);
@@ -1877,11 +1960,17 @@ export function runOnce(
               actor: "conductor",
               data: parsePayload("WorkItemLanded", { mergeCommit: merged, base }),
             },
+            // **In the same append as the landing, so the two cannot come apart**
+            // (`end-step.ts`, `endPlan`). The pass resolved this against `landed`
+            // before this line and appended nothing; one transaction is what makes
+            // an `EndActionsResolved{landed}` over an unrecorded landing
+            // unreachable rather than merely unlikely.
+            ...endPlan,
           ]),
         );
-        // **`end` has already resolved and recorded its effects** — the pass ran it,
-        // on this outcome, before this line. What is left is telling the issue,
-        // which reads the plan `recordEnd` kept rather than the stream.
+        endResolved = endPlan;
+        // What is left is telling the issue, which reads the plan that was just
+        // appended rather than the stream.
         released = true;
         yield* Effect.promise(() =>
           tellGitHubAbout({
@@ -2028,8 +2117,13 @@ export function runOnce(
                 diagnosis: said_.diagnosis,
               }),
             },
+            // In the same append as the block, for the landing's reason: a
+            // `when: blocked` action recorded as carried out for a block the log
+            // does not carry is the same orphan one ending along (`endPlan`).
+            ...endPlan,
           ]),
         );
+        endResolved = endPlan;
         released = true;
         yield* Effect.promise(() =>
           tellGitHubAbout({

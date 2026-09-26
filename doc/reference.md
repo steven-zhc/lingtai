@@ -582,9 +582,12 @@ it worth arguing — because what stands there is **larger than the table below*
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
 `{apps,packages}/*/{unit,integration,test}/` reads **at most 661 occurrences in
-61 files**, counted 2026-09-25 — down from 1073 in 73 because `#250` had to
+62 files**, counted 2026-09-26 — down from 1073 in 73 because `#250` had to
 carry the halves as far as compiling and asserting against a renamed `src/`,
-and no further. They are
+and no further. The 62nd is
+`conductor/unit/conduct-stands-the-conductor-down.test.ts`, which asserts on
+`GateNeverRan` and `GateDidNotFinish` by name because those are the event types
+the log carries today. They are
 out because a name that survives only in a test is one no
 operator reads and no shipped code calls, and because a test names the thing it
 tests: `step-matrix.test.ts` is the test of a matrix that is called that because
@@ -1451,10 +1454,20 @@ And one beside them: `restart`, where the rounds were spent and a second
 approach was bought (0040) — the item is released and the next claim is an
 ordinary pass from the base.
 
-**`implement` is the one worth recognising** — it is where *the agent produced no
-commits* now reads, and it used to be `diff: no commits`. The commit is the
-receipt (0057 §2), so an agent that finished and wrote nothing is a step that did
-not finish rather than a stage of computing a diff.
+**`implement` is the one worth recognising, and what it is not is `diff: no
+commits`.** That stage is gone and what replaced it is not a stage at all. The
+commit is the receipt (0057 §2), so an agent that finished and wrote nothing is a
+`did-not-finish` at `implement` — which `goesToTheRouter` refuses, so `outcomeOf`
+reads `blocked` and the run comes back `{ok: "held", step: "implement"}` with no
+`stage` on it. `schedule.ts` prints `stopped at <stage>` for a failure and
+**`held at implement`** for this, so a log or a board grepped for `stopped at
+implement` after `#237`'s failure mode shows nothing and the run did reach the
+agent. *Where a failed run stopped* is the whole of this vocabulary, and a hold
+is not one.
+
+What `implement` **is** a stage for is the ending that asks nobody: a `never-ran`
+there is an agent that never started (0031 §1), so the item is released, the
+conductor stands down, and this is the word on `stopped at`.
 
 ## issue change — 3
 

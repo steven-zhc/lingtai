@@ -29,12 +29,15 @@ import { describe, expect, it } from "vitest";
 import {
   PROJECT,
   RECIPE,
+  REVIEWED,
   fakeGitHub,
   fakePorts,
   memoryStore,
   once,
   project,
   quotaRuntime,
+  reviewerAtTheWall,
+  reviewerThatCrashes,
   streams,
 } from "../test/one-pass.ts";
 
@@ -182,5 +185,156 @@ describe("when a run never starts", () => {
     // Recorded as done, so `converge.ts` has nothing to retry and
     // `endedWithoutEndActions` has nothing to report.
     expect(item.map((e) => e.type)).not.toContain("IssueUpdateFailed");
+  });
+});
+
+/**
+ * **The second agent in a pass, and the two ways it can produce no verdict** —
+ * `#133`/[0041](../../../doc/decisions/0041-a-gate-that-never-ran.md) §3 and
+ * `#196`/[0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md).
+ *
+ * The distinction is the whole point and it is a caller-side one: a `never-ran`
+ * measured the **account**, so the conductor stands down and the item goes back
+ * to the queue; a `did-not-finish` is local — a reused session id, a settings
+ * path that is not there — so nothing about the queue changes and a person is
+ * asked. Standing the queue down for the second would be 0041's own category
+ * error pointed the other way.
+ *
+ * Neither could be asserted anywhere after `#256` deleted
+ * `run-once.test.ts` and `run-once-against-fakes.test.ts`: `reviewerAtTheWall`
+ * and `reviewerThatCrashes` survived in `test/one-pass.ts` carrying these two
+ * citations and no test imported either, so the sentence a person is woken by at
+ * 2am was guarded by nothing. `quotaRuntime` above cannot make the claim — it is
+ * the *run's* own wall, which is `{of: "run"}` and the one branch that was
+ * covered.
+ */
+describe("when an agent inside the pass produces no verdict", () => {
+  /**
+   * **The reviewer met the wall, and the sentence says so about the reviewer.**
+   *
+   * The implementer ran, took turns and was paid for them, so *a run ended
+   * without ever starting — no turns taken, nothing spent* is false about this
+   * pass in every clause (`never-started.ts`'s three variants). The pause is the
+   * same; the words are not, and the board's chip and `lingtai doctor` are where
+   * they are read.
+   */
+  it("names the step's agent that met the wall, not the run that was paid for", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    // Released rather than held: the wall is about the account, so it asks
+    // nobody — the same ending `quotaRuntime` gets, at the step that met it.
+    expect(result).toMatchObject({ ok: false, stage: "proposed" });
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    // **The run started and was paid**, which is the fact that makes the
+    // `{of: "run"}` sentence a lie here rather than merely imprecise.
+    expect(run.find((e) => e.type === "RunFinished")!.data).toMatchObject({
+      turns: 3,
+      costUsd: 0.42,
+    });
+    // And the reviewer judged nothing — `never-ran`, not a refusal of the diff.
+    const never = run.find((e) => e.type === "GateNeverRan")!;
+    expect(never.data).toMatchObject({ gate: "proposed", action: "review" });
+
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+    const reason = (paused[0]!.data as { reason: string }).reason;
+    // Which agent, by name, and where it was declared.
+    expect(reason).toContain("the proposed:review step's agent never started");
+    expect(reason).toContain("the run that reached it did start, and was paid for");
+    // The falsehood the three variants exist to prevent.
+    expect(reason).not.toContain("no turns taken, nothing spent");
+    // The runtime's own words, because this is the only place a person can learn
+    // what stopped the queue.
+    expect(reason).toContain("You've hit your session limit");
+
+    // The item keeps its place, as any failed run's does.
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemReleased");
+  });
+
+  /**
+   * **A reviewer that started and left no receipt goes to a person, and the
+   * queue is untouched** (0057 §1–§3).
+   *
+   * `#192` spent rounds 2 and 3 on a reviewer that died in one second, because
+   * the evidence said *the reviewer did not finish* and the verdict beside it
+   * said `failed` — the verdict a reviewer that read the diff and refused it
+   * returns. The pass stops here instead: no round is bought, nothing is routed
+   * (`goesToTheRouter` refuses a crash), and what a person is shown is about the
+   * machinery rather than about the change.
+   */
+  it("sends a reviewer that left no verdict to a person, and pauses nothing", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const tried = { n: 0 };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, REVIEWED),
+        runtime: reviewerThatCrashes(tried),
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    // Held at the step that produced nothing, and a person holds it.
+    expect(result).toMatchObject({ ok: "held", step: "proposed" });
+    // Run once (`#234`): 0057 §4's retry is gone, and a second attempt would be
+    // the same machine failing the same way at the same price.
+    expect(tried.n).toBe(1);
+
+    // **The queue is not stood down.** A crash is local, so pausing every other
+    // ticket for it is 0041's category error with the sign flipped.
+    expect(await store.read("ctl-conductor")).toEqual([]);
+
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const types = item.map((e) => e.type);
+    expect(types).toContain("WorkItemBlocked");
+    expect(types).not.toContain("WorkItemReleased");
+
+    const blocked = item.find((e) => e.type === "WorkItemBlocked")!.data as {
+      needs: string;
+      question: string;
+      diagnosis: { raw: string | null };
+    };
+    // Nothing is being asked of anybody's judgement about the diff: the
+    // machinery broke and the log is asking for it to be acknowledged.
+    expect(blocked.needs).toBe("acknowledgement");
+    expect(blocked.question).toContain("did-not-finish");
+    // The reviewer's own ending, verbatim, rather than a sentence about the diff.
+    expect(blocked.diagnosis.raw).toContain("the reviewer did not finish (crash)");
+    expect(blocked.diagnosis.raw).toContain("already in use");
+
+    // And no round was bought to answer a judgement nobody made.
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    expect(run.map((e) => e.type)).not.toContain("FixRequested");
+    expect(run.find((e) => e.type === "GateDidNotFinish")!.data).toMatchObject({
+      gate: "proposed",
+      action: "review",
+    });
   });
 });

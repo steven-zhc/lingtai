@@ -539,15 +539,25 @@ export interface PassPorts {
    * `end` — **what the step resolved, on the item's own stream, at the version
    * the read gave.**
    *
-   * A live implementation is `store.append(workItemId, at, plan)` and nothing
-   * else — the same append `appendEndActions` makes, that function being the
-   * three acts at once for a caller that holds a store, which a body does not.
-   * Its doc is also why the append stands alone here: it is that module's entry
-   * point *for the one caller that cannot batch*, and the pass is one. Batching
-   * is the caller's because the *ending* is the caller's — the pass says which
-   * outcome was reached and does not append it (see this file's opening) — so a
-   * port here that took a store and a terminal event would be the pass writing
-   * an item's ending on the way past.
+   * **Batching is the caller's because the *ending* is the caller's** — the pass
+   * says which outcome was reached and does not append it (see this file's
+   * opening) — so a port here that took a store and a terminal event would be the
+   * pass writing an item's ending on the way past. What that leaves the caller is
+   * not a free choice: `resolveEndActions`'s own doc is *one transaction, so the
+   * outcome and its resolution cannot come apart*, and `end` runs **before** the
+   * caller writes `WorkItemLanded` or `WorkItemBlocked`. So a live implementation
+   * holds this plan and appends it beside the event that makes its outcome true;
+   * one that appended here instead would put the resolution on the stream first,
+   * and a dropped connection on the next append leaves it there alone — an
+   * `EndActionsResolved{landed}` over a commit that is on the base branch with no
+   * landing recorded, which the once-per-outcome rule then makes permanent
+   * (`conduct.ts`'s `endPlan`).
+   *
+   * Where the ending is an append the caller does not own — a release, which
+   * `releaseWorkItem` reads and versions for itself — the two cannot be one
+   * transaction and the *order* carries the rule instead: the outcome first, the
+   * resolution after it. That is what `appendEndActions` is for, it being this
+   * module's entry point *for the one caller that cannot batch*.
    *
    * It is handed a plan rather than an outcome, and that is the wiring the ticket
    * asks for rather than a rewrite: what `when:` matches and what has already
