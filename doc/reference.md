@@ -581,8 +581,8 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 658 occurrences in
-60 files**, counted 2026-09-25 — down from 1073 in 73 because `#250` had to
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 661 occurrences in
+61 files**, counted 2026-09-25 — down from 1073 in 73 because `#250` had to
 carry the halves as far as compiling and asserting against a renamed `src/`,
 and no further. They are
 out because a name that survives only in a test is one no
@@ -703,7 +703,7 @@ the rule does not flag them.
 
 ### the allowlist
 
-**231 occurrences in 31 files, counted 2026-09-25** — and that sentence is
+**233 occurrences in 32 files, counted 2026-09-25** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table below
 and not a number somebody forgot to lower when the table shrank.
 
@@ -736,7 +736,9 @@ table below now holds, and nothing else:
   into `parsePayload`, so returning `step` type-checks — the parameter is
   `unknown` — and then Zod refuses every `approve` and every `waive` at run time.
 - **`gate-failed`**, the `RefusalReason` the merge lane has recorded since the
-  lane was built and `judge:`'s `when:` reads.
+  lane was built, that `judge:`'s `when:` reads, and that `#254`'s `merge` body
+  reports and its `proposed` body routes on — one value, read by the step that
+  writes it and the step that answers it.
 - **`gates`**, the `LabelState` and `task_view.state` value, and **the key every
   reader of that value looks it up by** — `status.ts`'s `NAMES`, which folds it
   into `running`. `#249` left the value standing on its own argument, which is in
@@ -817,6 +819,7 @@ the equality above, and when none is left an empty table is the truth.
 | `packages/conductor/src/attribution.ts` | `gate` ×2 |
 | `packages/conductor/src/judge.ts` | `gate` ×1 |
 | `packages/conductor/src/labels.ts` | `gates` ×1 |
+| `packages/conductor/src/pass-steps.ts` | `gate` ×2 |
 | `packages/conductor/src/run-once.ts` | `GatesResolved` ×2 · `gate` ×1 |
 | `packages/conductor/src/steps-resolved.ts` | `gate` ×1 · `points` ×1 |
 | `packages/daemon/src/control.ts` | `gates` ×1 |
@@ -838,7 +841,7 @@ the equality above, and when none is left an empty table is the truth.
 
 ### ordinary English
 
-**0 of those 231 occurrences are the English word** — the table that stood here
+**0 of those 233 occurrences are the English word** — the table that stood here
 is gone, and that is what `#250` spent ten reworded sentences on. It listed nine
 (the tenth, `Point ${PREFIX}TEST_DATABASE_URL …` in `packages/env/src/index.ts`,
 it had missed), each one word in copy that was correct as it stood, and each the

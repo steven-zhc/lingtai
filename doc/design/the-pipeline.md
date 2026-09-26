@@ -101,8 +101,8 @@ and it is why the list below is shorter than the one a migration needs.**
                  T2   the eleven plugins, as one interface
                  T3   the recipe is `steps:`                     (0061)
 
-2   the pass     T4a  pass.ts — the skeleton and the steps that cannot refuse
-                 T4b  pass.ts — build, review, proposed, merge
+2   the pass     T4a  pass.ts — the skeleton and the steps that cannot refuse  ✓ #253 #259
+                 T4b  pass.ts — build, review, proposed, merge             ✓ #254
                  T5b  013 — the log before the third reset       ← before T5
                  T5   the conductor runs pass.ts; run-once.ts is deleted
                  T6   the rail draws ten
@@ -197,13 +197,16 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T4b** | `pass.ts` — `build`, `review`, `proposed`, `merge` |
+| **T4b** | `pass.ts` — `build`, `review`, `proposed`, `merge` · **landed 2026-09-25 as [#254](https://github.com/steven-zhc/lingtai/issues/254)** |
 | kind | `tech-debt` |
 | blocked by | T4a |
 | what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: **one `judge:` per `when:`**, each choosing from the set the workflow offers it — only the `findings` direction is a judgement worth an agent, the mechanical ones are built in; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
 | evidence | `build` first **not because it is quick** — median 313s against review's 149s — but because it spends no tokens where a review spends an agent. `review` stops judging because **10% of its refusals in 14 days carried no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md)). `merge` reports rather than decides because over the whole log it has refused 32 times: **26 `gate-failed`, 6 `conflict`** — the common failure is that somebody else's work landed and the diff stopped being true. |
 | watch out | **The set of steps the workflow offers the judge depends on how far the pass got, not only on what is left to spend** — `prepared`'s refusal happens before any agent has run, so `implement` is not on offer there and a judge that knows nothing about `prepared` still cannot choose wrongly. A judge answers *which of these*, never *what is legal*. And the edge back to `claim` is a **requeue**: the item is released and a higher-priority ticket opened in the meantime goes first. |
 | watch out | **Every path into `end` must have been through `build` and `review`**, which is what the edge from `merge` back to `build` buys: an agent that resolves a conflict writes code *after* the review passed. And the intent conflict is the row an agent must not take — two changes that edited the same decision differently produce text an agent can merge and an intent it cannot know. |
+| result | **Three of the four are nothing beyond their plugins or one line, and the fourth is the whole ticket.** `build` and `review` are `run:` and `agent:` lists the loop already runs, so their bodies pass and their behaviour is the loop's: a `build` refusal goes to `proposed`, which is what skips `review`. `merge` wraps the lane and reports its two answers. `proposed` is where the work is — `directionOf` names which of `JudgeWhen`'s five arrived, `carriesACriterion` refuses to buy a round for a refusal with nothing in it, the recipe's judge is asked through `PassPorts.judge`, `BUILT_IN_FOR` answers the mechanical two without paying, and a person is the floor under all of it. |
+| the finding T5 needs | **`review` judges nothing only because `endingOf` says so, and that is not a body.** A reviewer that finds a blocker returns `failed`, and a body is never called after its own plugins did not pass — so *no verdict of its own* had to land in the pass's own verdict mapping, beside the sentence that says a `failed` at one of the four is a refusal. It is the one line of this ticket that is not in a body, and it is where a reader looks for the rule. |
+| the finding T5 needs | **`judge.ts`'s `Destination` and the pass's are two vocabularies for one idea**, and this ticket could not merge them: `judge.ts` has three values and calls a person `human`, where the pass offers `Step \| "waiting"` — `build` from `merge`, and the asking step back to itself, neither of which the three can say. So `BUILT_IN_FOR` is imported and `BUILT_IN`'s one rule is written again in the pass's words, pinned by a test that compares the two cell for cell. **T5 deletes `run-once.ts`, which is the only caller `judge.ts` was written for; the two sets come down to one in that commit.** |
 
 | | |
 |---|---|
