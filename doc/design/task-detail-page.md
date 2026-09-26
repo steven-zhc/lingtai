@@ -225,10 +225,10 @@ refused it`, which reads as *a reviewer read this diff and found problems*; the
 reviewer had never started. `the build gate refused it` is worth less than
 `pnpm typecheck && pnpm test exited 1 after 117.0s`, for every gate, every time.
 
-**This is not a stylesheet change.** `run-once.ts`'s `diagnosis` carries
-`raw: null` with a comment saying the verdicts are on the task's own page with
-their evidence — true, three ranks down and behind a disclosure. The block does
-not have the words to quote, so it says the only thing it has.
+**This is not a stylesheet change.** The conductor's `diagnosis` carried
+`raw: null`, with a comment saying the verdicts were on the task's own page with
+their evidence — true, three ranks down and behind a disclosure. The block did
+not have the words to quote, so it said the only thing it had.
 
 **A running attempt is a different object from a finished one.** It opens on
 load and its run log opens with it, following. Only the running one: `#110`'s

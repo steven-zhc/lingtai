@@ -786,7 +786,7 @@
         <code>GatesResolved</code> and rendered on the board. All of that reads as evidence that it
         works. <b>Configured and did not run</b> is the failure this system names as its own bug,
         and this is the most expensive instance of it so far.</p>
-      <p>The point builds a pipeline like every other now (<code>run-once.ts</code>, step 11), and
+      <p>The point builds a pipeline like every other now (<code>conduct.ts</code>), and
         <code>gate-audit.ts</code> makes the same comparison for every gating point: an item that
         landed, whose <code>GatesResolved</code> planned actions at a point, and whose run recorded
         no verdict there. <b>That check is the part that generalises</b> — the fix closes one

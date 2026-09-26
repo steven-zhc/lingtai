@@ -18,7 +18,7 @@
 |---|---|---|
 | `packages/agent/src/codex.ts` | 能力声明、登录探测和拒绝运行的 stub | 可执行、可取消、按职责配置的 Codex 适配器 |
 | `apps/cli/src/run.ts`、`conduct.ts` | 固定创建 Claude Code runtime | 根据项目解析后的配置选择适配器 |
-| `packages/conductor/src/run-once.ts` | 开发、review、fix 共用一个 runtime；review 共用开发 worktree | 按职责分配 runtime；review 使用独立 worktree |
+| `packages/conductor/src/conduct.ts` | 开发、review、fix 共用一个 runtime；review 共用开发 worktree | 按职责分配 runtime；review 使用独立 worktree |
 | `packages/actions/src/from-recipe.ts` | 所有 agent 门禁共用一份 agent dependencies | 每个门禁解析自己的 runtime |
 | `apps/cli/src/discuss.ts` | 固定 Claude Code，专用禁止工具的设置 | 根据 discussion 配置选择 agent，保留权限边界 |
 | `packages/recipe/src/local.ts` | 从机器配置注入 agent、limits，拒绝写在 recipe 中 | 从 recipe 解析职责选择和预算，支持旧配置迁移 |
@@ -328,7 +328,7 @@ CLI 账号配置不搬迁。
 | 3. 运行接口与记录 | agent Runtime、选择 port、domain events/upcasters | 宿主能按 role 选择；统一调用生命周期和未知金额可表达 |
 | 4. Codex 适配器 | app-server client、角色设置、能力检测和进程管理 | 可返回正文、错误、用量；超时/取消清理；权限约束经验证 |
 | 5. Review checkout | repo port 和 adapter、actions dependencies、conductor | 固定 SHA 的独立目录；源码变化使审查无效；不会污染开发 |
-| 6. 调度与 discussion | run、conduct、run-once、讨论宿主 | 开发/fix、每个 gate 和 discussion 都使用正确的绑定配置 |
+| 6. 调度与 discussion | run、conduct、pass、讨论宿主 | 开发/fix、每个 gate 和 discussion 都使用正确的绑定配置 |
 | 7. 用户界面与检查 | 项目引导/编辑、doctor、task/history/spend、attach | 能编辑和解释每个职责；检查实际 runtime；未知费用和历史信息如实呈现 |
 | 8. 真实验收 | 支持平台上的 CLI、沙箱和进程验证 | 下列验收矩阵通过，验证材料可复核；再更新操作文档和架构图 |
 

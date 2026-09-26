@@ -29,7 +29,7 @@ Lingtai dispatched, one unheld ticket at a time.
    build and review are two            build is its own step, and a red one
    actions at one point                skips review
 
-   ceilings inside run-once.ts         `rounds` on implement, `restarts` on
+   ceilings inside the old engine      `rounds` on implement, `restarts` on
    (buyRound, passCeiling)             claim — on the step each one bounds
 
    recipe: four sections               recipe: `steps:`, ten names, read down
@@ -62,15 +62,12 @@ refusal buys a fix round at ~31 turns and ~$3.40
 to hold in one reading costs: eleven passes, its findings landing on a
 different file each round.
 
-So the shape of the work is **not** surgery on this:
-
-```
-packages/conductor/src/run-once.ts     2961 lines
-```
-
-It is: **write the new pass beside it, and delete it.** A clean cut is what
-makes that legal, and it is a better ticket in both directions — new code a
-reviewer reads against the ADR, then a deletion that is its own diff.
+So the shape of the work was **not** surgery on the engine that was there —
+2961 lines in one file. It was: **write the new pass beside it, and delete
+it**, which `#256` did: `pass.ts`, `pass-steps.ts` and `conduct.ts` are what
+stand in its place. A clean cut is what makes that legal, and it is a better
+ticket in both directions — new code a reviewer reads against the ADR, then a
+deletion that is its own diff.
 
 What survives from the old file is the one thing already the right shape:
 
@@ -104,7 +101,7 @@ and it is why the list below is shorter than the one a migration needs.**
 2   the pass     T4a  pass.ts — the skeleton and the steps that cannot refuse  ✓ #253 #259
                  T4b  pass.ts — build, review, proposed, merge             ✓ #254
                  T5   the conductor runs pass.ts; run-once.ts is deleted  ✓ #256
-                 T5c  the comment citations of run-once.ts             ← opened by T5
+                 T5c  the citations of the deleted engine, re-pointed  ✓ #260
                  T5d  `build:` and `review:` accept nothing yet        ← opened by T5
                  T5b  013 — the log before the reset       ← moved out, with the reset
                  T6   the rail draws ten
@@ -234,7 +231,7 @@ value rather than declaring it again.*
 
 | | |
 |---|---|
-| **T5c** | The 108 comment citations of `run-once.ts` point at a file that is gone |
+| **T5c** | The 108 comment citations of `run-once.ts` point at a file that is gone · **landed 2026-09-26 as [#260](https://github.com/steven-zhc/lingtai/issues/260)** |
 | kind | `tech-debt` |
 | blocked by | T5 |
 | what | Re-point every `run-once.ts:<line>` citation in a **comment** at whichever of `pass.ts`, `pass-steps.ts` and `conduct.ts` now holds the thing it was pointing at. 184 mentions across 84 files as `#256` landed; the ones this ticket is about are the code comments — `git grep -n run-once -- 'packages/**/*.ts' 'apps/**/*.ts'` — and the heaviest are `conductor/src/fix.ts` (12), `conductor/unit/fix.test.ts` (10) and `recipe/src/recipe.ts` (9). |
@@ -319,7 +316,8 @@ bail has nothing left to bail from.
 ## 5. What is done when this is done
 
 - [ ] A person reads `~/.lingtai/<project>/recipe.yml` downward and has read the pass
-- [ ] `run-once.ts` does not exist
+- [x] `run-once.ts` does not exist *(#256)*, and nothing outside
+      `doc/decisions/` and `doc/experiments/` still cites it *(#260)*
 - [ ] The board's rail shows which of the ten steps a run is in, during a fix round included
 - [ ] `rounds` is readable on `implement` and `restarts` on `claim` — the step each bounds — and no replaced `judge:` can widen either
 - [x] A red at `build` is a claim about the diff — no test in it leaves the system *(#225)*

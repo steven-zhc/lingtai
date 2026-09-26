@@ -156,7 +156,7 @@ steps:
       # the diff cannot cause is a gate that teaches people to disbelieve it.
       #
       # **What stops being checked on every merge**: 28 files across six
-      # packages — claim, the queue, `run-once`, the projections, the advisory
+      # packages — claim, the queue, the pass, the projections, the advisory
       # lock, `work-loop`, `reconcile`, `integrate`. That is real coverage and
       # this comment does not pretend otherwise. The script still exists and
       # still runs when a person runs it.

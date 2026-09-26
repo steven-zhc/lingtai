@@ -463,7 +463,7 @@ the hash.
 
 Four action kinds produce a verdict, and all four run. `run` and `human` need
 nothing from the caller; `agent` needs a reviewer and `watch` needs the diff's
-file list, and `run-once` supplies both. A recipe naming a kind whose dependency
+file list, and `conduct.ts` supplies both. A recipe naming a kind whose dependency
 is missing is **refused** by name rather than skipped — a pipeline that silently
 dropped a human approval would put a green board on a change nobody approved.
 (`close` and `labels` are the other two: effects, not verdicts, and only at
@@ -1216,7 +1216,7 @@ Nothing else in the system works that way, which is what makes it hard to see:
 
 | | lifetime | code |
 |---|---|---|
-| **daemon** — conductor, claim, hook socket, run-once, queue | one long-lived process | **frozen at startup** |
+| **daemon** — conductor, claim, hook socket, the pass, queue | one long-lived process | **frozen at startup** |
 | `lingtai doctor` / `status` / `run` | fresh per invocation | current |
 | gates (`sh -c pnpm typecheck && pnpm test`) | fresh per invocation | current |
 | the board (`next dev`) | hot reload | current |

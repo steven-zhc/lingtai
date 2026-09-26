@@ -350,7 +350,7 @@ finding** — §3 takes them one at a time.
 | v2 | what it is |
 |---|---|
 | `steps.design` | the one genuinely new step. Omitted here: nothing writes a design today |
-| `proposed` → `judge:` | `buyRound`'s decision (`run-once.ts:1761`), made sayable |
+| `proposed` → `judge:` | the back-edge decision the pass's ceilings make (`Ceilings` and `onOffer` in `pass.ts`), made sayable |
 | `proposed` → `backlog:` | `acceptFinding` ([#137](https://github.com/steven-zhc/lingtai/issues/137)) — a severity stops being an opinion and becomes an outcome |
 | `merge` → `merge:` | **the merge lane, named** — the one plugin in §1 whose value is not copied from a file, because no v1 key can hold it. `integrate.ts:417` is `git merge --no-edit` and offers no choice, so `strategy:` has one legal value until T3 names more. Writing it is what keeps `merge` from resolving to a step that runs nothing (`#58`) |
 | `discuss:` | `discuss.ts`'s two constants, made sayable |
@@ -417,8 +417,9 @@ What this repository *uses* is one apiece, which is a different fact:
 
 - **`human:` at `merge`.** [CLAUDE.md](../../CLAUDE.md) says it in as many
   words: *declare a `human:` action there and the point runs it*, and
-  `conductor/integration/run-once.test.ts`'s *holds at a human action at the
-  merge point* is the test that pins it. **`human:` at `proposed` is legal
+  `conductor/unit/conduct-a-whole-pass.test.ts`'s *holds at a human action
+  declared at the merge point, with no --no-merge anywhere* is the test that
+  pins it. **`human:` at `proposed` is legal
   today too**, and is the cheaper of the two — it holds a diff before the merge
   lane starts rather than inside it.
 - **`watch:` at `proposed`, last.** That is where the commented-out block sits
@@ -442,7 +443,7 @@ twenty, and the four above are the ones it must not narrow by accident.
 All three belong on `implement`'s `agent:`, and this file puts them there:
 
 ```
-runtime.tier              → implement: agent.tier    — what `run-once.ts:477`
+runtime.tier              → implement: agent.tier    — what `conduct.ts`
                             checks before it dispatches (`missingForTier`)
 runtime.budget.evidence   → implement: agent.evidence — characters of an earlier
                             failure quoted into the next prompt (`attempts.ts:351`)
@@ -462,7 +463,7 @@ naming: 0061 §4's mapping is five lines long and reads as exhaustive.
 
 `recipe.ts:622` declares `prompt: z.string().optional()`. A search of every
 `.ts` and `.tsx` in the workspace finds no reader: `schedule.ts:232` and
-`run-once.ts:1214` carry an `options.prompt` that comes from the scheduler's
+`conduct.ts` carry an `options.prompt` that comes from the scheduler's
 own arguments, not from the recipe, and neither `emit.ts` nor
 `apps/board/src/lib/recipe.ts` mentions it at all.
 
@@ -681,7 +682,7 @@ Four things the v1 file cannot say and the v2 file says by existing:
    `admit` cuts a worktree from*; the build stops being the first of two
    actions at a point named after neither of them.
 4. **Three things that exist today only in code get a line in a file** —
-   `proposed`'s judge, which is `buyRound` at `run-once.ts:1761`; `discuss`,
+   `proposed`'s judge, which is `Ceilings` and `onOffer` in `pass.ts`; `discuss`,
    which is two constants at `discuss.ts:72` and `:80`; and the merge lane
    itself, which is `integrate.ts` and no key at all, so that a `merge` step
    that runs nothing is a thing you can see rather than `#58` again.
@@ -691,8 +692,8 @@ files become 79 in one — **twelve more**. Seventeen of the 79 are things
 neither v1 file can say at all:
 
 ```
-proposed:          11 lines   `buyRound`'s five directions. v1 has no way to
-                              write any of it — it is code at run-once.ts:1761
+proposed:          11 lines   the pass's five directions. v1 has no way to
+                              write any of it — it is code in pass.ts
 discuss:            5 lines   discuss.ts:72 and :80. Neither file can say it
 merge:              1 line    the lane itself, which in v1 is integrate.ts and
                               no key anywhere

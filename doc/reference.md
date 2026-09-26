@@ -485,7 +485,7 @@ column is for.** Nothing constructs a pipeline for `claim`, `admit`, `design`,
 `implement`, `build` or `review`, so an action declared at one is refused when
 the recipe resolves rather than accepted and skipped (`#61`). Today's build and
 review run as actions at `proposed`, and today's implementing agent is
-dispatched by `run-once.ts` directly. They are all ten steps regardless — the
+dispatched by `conduct.ts` directly. They are all ten steps regardless — the
 closed set is about the places in the pass, not about what is built today — and
 naming them is what lets the log, the recipe and the board say where a pass is.
 Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
@@ -767,7 +767,7 @@ rule reads that token there**. The count is the entry and not decoration: a
 ledger of *distinct* names cannot see a second `gate` arrive in a file that
 already says `gate`, and every file this epic will touch already says it once.
 Keyed by name alone, `export const gate = "…the gate failed"` appended to
-`run-once.ts` — a new identifier and a new operator-facing string — is a name
+`conduct.ts` — a new identifier and a new operator-facing string — is a name
 already recorded in a file already listed, and lands with nothing written down
 anywhere and no number moved.
 
@@ -949,7 +949,7 @@ cheap model on `review` actually buys a cheap review.
 
 **What `agent:` does not yet buy is a second runtime in one pass**, and that is
 refused rather than ignored. One conductor dispatches one runtime and the gates
-are handed it, so `agentRefusal` (`conductor/src/run-once.ts`) now reads every
+are handed it, so `agentRefusal` (`conductor/src/conduct.ts`) now reads every
 `agent:` in the file and not only `runtime.agent`: a step naming the other one
 stops the pass before the claim, naming the point and the action, and
 `lingtai doctor`'s recipe row says the same refusal. **The remedy is the one
@@ -964,14 +964,15 @@ nothing anywhere recording that the named one was not used.
 **The last five are names for code that already runs, and no step accepts one**
 (`#235`, `#236`, `#237`, `#238`). `worktree:` is `provisionWorktree` in
 `packages/repo/src/worktree.ts` and `merge:` is the integrator,
-`packages/repo/src/integrate.ts`; `run-once.ts` calls both itself, from
+`packages/repo/src/integrate.ts`; `conduct.ts` calls both itself, from
 `repo.base`. `queue:` is `runnableNow` and `considerIssue` in
 `packages/conductor/src/discover.ts`, with its `assignee` field `assigneeSkip`
 beside them together with `claimWorkItem` in `packages/conductor/src/claim.ts`,
 which takes the one that survives; the queue pass calls those itself, before a
-pass exists to have steps at all. `judge:` is the decision `buyRound` makes at
-`run-once.ts:1761`, from `decideFix` in `packages/conductor/src/fix.ts` and
-`decideRestart` in `packages/conductor/src/restart.ts`. `backlog:` is **two
+pass exists to have steps at all. `judge:` is the decision the pass's ceilings
+make — `Ceilings` and `onOffer` in `packages/conductor/src/pass.ts`, which are
+the same two questions `decideFix` in `packages/conductor/src/fix.ts` and
+`decideRestart` in `packages/conductor/src/restart.ts` answer. `backlog:` is **two
 literals and not one** — the `minor` in `backlogProjection`,
 `packages/projector/src/backlog.ts`, which decides what is *filed*, and the
 blocker-or-major in `verdictFor`, `packages/actions/src/agent-action.ts`, which
@@ -1198,28 +1199,32 @@ table draws and the code no longer has.
 | `merge` | ✅ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ | ✋ |
 | `end` | ✋ | ✋ | ✋ | ✋ | ✅ | ✅ | ✅ | ✋ | ✋ | ✋ | ✋ | ✋ |
 
-Where each row comes from:
+Where each row comes from. **There is one call site, and it names its step with
+a variable** — `conduct.ts`'s `actionsAt`, handed to `runPass`, which asks it at
+every step whose plugins are verdicts and hands the same dependencies at all of
+them (`#256`). So a ✋ below is `KINDS_AT`'s and never a fact about which steps a
+caller remembered:
 
 ```
-prepared    run-once.ts   actionsFromRecipe("prepared", …, { env })    an environment, and nothing else
-proposed    run-once.ts   actionsFromRecipe("proposed", …, stepDeps)   every dependency
-merge       run-once.ts   actionsFromRecipe("merge",    …, stepDeps)   every dependency   ← #58
-end         end-step.ts   resolveEndActions                          the three effects
-claim       —             no pipeline is constructed anywhere
-admit       —             no pipeline is constructed anywhere
-design      —             no pipeline is constructed anywhere        ← 0058 §3, not yet built
-implement   —             no pipeline is constructed anywhere        ← run-once.ts dispatches the agent directly
-build       —             no pipeline is constructed anywhere        ← today a `run:` action at `proposed`
-review      —             no pipeline is constructed anywhere        ← today an `agent:` action at `proposed`
+prepared    conduct.ts    actionsAt(step, actions)   every dependency, as at all ten
+proposed    conduct.ts    actionsAt(step, actions)   every dependency
+merge       conduct.ts    actionsAt(step, actions)   every dependency   ← #58
+end         end-step.ts   resolveEndActions          the three effects — `end` runs no pipeline
+claim       conduct.ts    actionsAt(step, actions)   `KINDS_AT.claim` is `[]`, so the list is empty
+admit       conduct.ts    actionsAt(step, actions)   `KINDS_AT.admit` is `[]`
+design      conduct.ts    actionsAt(step, actions)   `[]`   ← 0058 §3, not yet built
+implement   conduct.ts    actionsAt(step, actions)   `[]`   ← conduct.ts dispatches the agent directly
+build       conduct.ts    actionsAt(step, actions)   `[]`   ← today a `run:` action at `proposed`
+review      conduct.ts    actionsAt(step, actions)   `[]`   ← today an `agent:` action at `proposed`
 ```
 
 And the five columns, which are a fact about the plugin rather than the step:
 
 ```
-worktree    —             no step reads it from the recipe        ← run-once.ts cuts it itself, from `repo.base`
+worktree    —             no step reads it from the recipe        ← conduct.ts cuts it at `admit`'s port, from `repo.base`
 merge       —             no step reads it from the recipe        ← the merge lane runs it itself, handed that same base
 queue       —             no step reads it from the recipe        ← discover.ts asks GitHub itself, from `source.*` and `runtime.assignee`
-judge       —             no step reads it from the recipe        ← run-once.ts decides it in buyRound, from `runtime.limits`
+judge       —             no step reads it from the recipe        ← the pass's ceilings decide it, from `runtime.limits`
 backlog     —             no step reads it from the recipe        ← the fold and verdictFor each hold the bar as a literal
 ```
 
@@ -1247,7 +1252,7 @@ plugin and only the plugin's says which file to open.
   before the claim, or at `proposed`, where there is a diff to approve.
 - **The five steps 0058 §3 named carry nothing yet**, and each refusal says
   where that work is done today instead — the queue's filter for `claim`, the
-  issue body for `design`, `run-once.ts`'s own dispatch for `implement`, and
+  issue body for `design`, `conduct.ts`'s own dispatch for `implement`, and
   the `proposed` point's actions for `build` and `review`. The refusal is the
   half an operator can act on; *nothing runs here* on its own is a recipe key
   and no next move.
@@ -1372,7 +1377,7 @@ Source: `meetsTier` and `missingForTier` in `packages/agent/src/runtime.ts`.
 | `sandboxed` | also enforces a filesystem boundary of its own | `filesystem-sandbox` |
 
 **It is the recipe's** — `runtime.tier`, defaulting to `guarded`. There is no
-comparison to make and no floor underneath: `run-once.ts` refuses to dispatch
+comparison to make and no floor underneath: `conduct.ts` refuses to dispatch
 when the runtime cannot meet what the recipe asks, and that is the whole of the
 enforcement.
 

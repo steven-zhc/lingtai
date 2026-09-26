@@ -74,8 +74,10 @@ watching — the packages that load the gates, the lockfile, a `tsconfig` — an
 deleting a control is a different decision from removing what it guarded.
 
 That the run obeys the machine's recipe and not any copy in the repository is
-asserted in `packages/conductor/integration/run-once-against-fakes.test.ts`,
-*judges a change by the machine's recipe, not by any file in the repository*.
+asserted in
+`packages/conductor/integration/run-once-against-the-machines-recipe.test.ts`,
+*runOnce judges a change by the machine's recipe, not by any file in the
+repository*.
 
 ## The list is kept correct by something other than the list
 
