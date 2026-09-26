@@ -87,6 +87,23 @@ export interface AgentHostPort {
    */
   serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>;
   /**
+   * A settings file for an agent that is a *step inside* a run — the cold
+   * reviewer, a fix round — with no hook in it.
+   *
+   * Here for the reason `wire` is: it writes a file under `~/.lingtai`, so a
+   * conductor that called `writeUnhookedSettings` directly would be deciding
+   * and performing in one breath, and every test of a decision that reaches
+   * `review` would touch a disk ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
+   * §1 — *a temporary directory is still the filesystem*). It is the pair of
+   * `wire`, one step down: the wiring is a run's, this is a step's.
+   */
+  unhookedSettings(options: {
+    runId: string;
+    /** `review`, `fix-1` — what the file is named after, and who reads it. */
+    label: string;
+    home?: string;
+  }): Effect.Effect<string, AgentHostFailed>;
+  /**
    * The run's log file, open for writing
    * ([0034](../../../doc/decisions/0034-the-run-log.md)).
    *

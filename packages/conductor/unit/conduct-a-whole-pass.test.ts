@@ -20,6 +20,7 @@
  * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
+import type { Envelope, ToAppend } from "@lingtai/domain";
 import { STEPS } from "@lingtai/domain";
 import { describe, expect, it } from "vitest";
 import {
@@ -160,6 +161,17 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
 
     // The hook was wired and proved to fail closed before the agent started.
     expect(did.indexOf("smokeTest")).toBeLessThan(did.indexOf("git rev-parse"));
+    /**
+     * **And the step agents' settings were asked of the host, not written here.**
+     *
+     * `writeUnhookedSettings` `mkdir -p`s and writes under the `home` it is
+     * handed, so while `conduct.ts` called it directly every pass that reached
+     * this line wrote a real file into `/tmp/fake-home` — from the unit half,
+     * which is integration by 0060 §1 and a directory per run nothing ever
+     * removes. A direct call appears nowhere in `did`, which is the whole of
+     * why this assertion is the one that would have caught it.
+     */
+    expect(did).toContain("unhookedSettings review");
     // The socket was closed, by the scope and not by a `finally`, and before the
     // worktree it outlived — releases run in the reverse of acquisition.
     expect(did.indexOf("close")).toBeLessThan(did.indexOf(`remove ${result.runId}`));
@@ -286,5 +298,70 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     // And the merge lane was reached by the `merge` step, which means every step
     // before it passed — the sequence, asserted from outside it.
     expect(did.indexOf(`provision ${result.runId}`)).toBeLessThan(did.indexOf("integrate"));
+  });
+
+  /**
+   * **A store that refused an append is not a step's verdict about the change.**
+   *
+   * `appendNow` says a store that will not append is a defect and that the
+   * handler at the bottom is where defects are answered for, and that was true
+   * of every append `run-once.ts` made. The swap to `pass.ts` quietly made it
+   * false for the ones made from inside the walk: `runActionPipeline` does not
+   * wrap `emit`, so the rejection propagates into `runStep`, which catches
+   * whatever a step throws and reports *did-not-finish: threw*. `merge` is not
+   * in `ARRIVE_AT_THE_ROUTER`, `outcomeOf` reads `blocked`, and a dropped
+   * Postgres connection — the disconnect CLAUDE.md documents against `#157` —
+   * came back as an item parked on *Waiting on you* with a diagnosis naming a
+   * step that did its work, the verdict it was recording lost.
+   *
+   * So the item goes back to the queue instead, which is what the same rejection
+   * did before the swap: the queue takes it again after the backoff and nobody
+   * is asked to acknowledge a database blip. The one append in reach of this
+   * fixture is the pipeline's own `GateRequested` for the person declared at
+   * `merge` — it is `emit`'s, from inside the walk, which is the whole class.
+   */
+  it("releases the item when the store refused an append the pass made, rather than holding a person", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const refusing: typeof store = {
+      ...store,
+      append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
+        if (events.some((e) => e.type === "GateRequested")) {
+          throw new Error("terminating connection due to administrator command");
+        }
+        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, HUMAN_AT_MERGE),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store: refusing,
+      },
+      fakePorts(did, refusing, true),
+    );
+
+    // The defect channel, and not a step's ending believed.
+    expect(result).toMatchObject({ ok: false, stage: "unexpected" });
+    expect((result as { detail: string }).detail).toContain("terminating connection");
+
+    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(types).toContain("WorkItemReleased");
+    // Nobody is waiting on a person over a database blip.
+    expect(types).not.toContain("WorkItemBlocked");
+    // And the issue says so: `lingtai:working` is off it again, which is what a
+    // whole-set write of `labelsFor("queued")` — no label of Lingtai's — leaves.
+    expect(said.filter((line) => line.startsWith("labels #7"))).toEqual([
+      "labels #7 bug,lingtai:working",
+      "labels #7 bug",
+    ]);
   });
 });

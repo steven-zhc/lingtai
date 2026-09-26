@@ -129,7 +129,6 @@ import {
   type Runtime,
   missingForTier,
   taggedTrace,
-  writeUnhookedSettingsEffect,
 } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { claimWorkItem, releaseWorkItem } from "./claim.ts";
@@ -386,17 +385,74 @@ export function runOnce(
     const basePromptVersion = options.promptVersion ?? "ticket@1";
 
     /**
-     * An append at whatever version the stream is at.
+     * An append at whatever version the stream is at, and nothing else.
      *
      * A promise rather than an `Effect`, because the ports below are plain
      * promises (`pass-steps.ts`'s *Why plain promises*) and this is what they
-     * append with. A store that will not append is a defect and not a refusal
-     * this function can make on anyone's behalf: the handler at the bottom is
-     * where defects are answered for.
+     * append with. **For the callers that answer a refused append themselves**
+     * — the account of the publish, the diff's counts, the release's record of
+     * what `end` resolved — each of which has already decided that losing its
+     * row costs less than losing the ending it is about. Everything else uses
+     * `appendNow`.
      */
-    const appendNow = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
+    const appendAt = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
       const at = (await store.read(stream)).length;
       await store.append(stream, at, events);
+    };
+
+    /**
+     * The same append, **remembered when the store refuses it**.
+     *
+     * A store that will not append is a defect and not a refusal this function
+     * can make on anyone's behalf: the handler at the bottom is where defects
+     * are answered for. That was true of every append while `run-once.ts` made
+     * them, and the swap to `pass.ts` quietly made it false for the ones made
+     * from inside the walk — `emit`'s verdicts, `dispatch`'s `RunStarted`, a
+     * round's `FixRequested`. `runStep` catches whatever a step throws and
+     * reports it as that step having *did-not-finish: threw* (`pass.ts`), so a
+     * dropped Postgres connection — the disconnect CLAUDE.md documents against
+     * `#157` — came back as `blocked` with `needs: "acknowledgement"` and a
+     * diagnosis naming the step, parking the item on *Waiting on you* over a
+     * database blip and losing the verdict it was recording. Before the swap
+     * the same rejection reached the defect handler, released the item, and the
+     * queue took it again after the backoff with nobody involved.
+     *
+     * So the throw still travels — the step must not carry on as though its
+     * verdict were recorded — and the defect is kept here, where the ending is
+     * written: the pass is re-raised into the defect channel the moment it
+     * returns (see `unappended`), rather than having its report believed.
+     */
+    let unappended: unknown = null;
+    const appendNow = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
+      try {
+        await appendAt(stream, events);
+      } catch (defect) {
+        unappended ??= defect;
+        throw defect;
+      }
+    };
+
+    /**
+     * The same, at a version the caller already holds rather than one read here.
+     *
+     * The receipts, and only those: the hook server wrote to the run's stream
+     * while the agent worked, so `server.get(runId).version` is where it got to
+     * and a read of our own would race it. Remembered like `appendNow` and for
+     * its reason — the dispatch is inside the walk, so a store that refuses one
+     * of these arrives as *the `implement` step threw* unless this says
+     * otherwise.
+     */
+    const appendFrom = async (
+      stream: string,
+      version: number,
+      events: readonly ToAppend[],
+    ): Promise<void> => {
+      try {
+        await store.append(stream, version, events);
+      } catch (defect) {
+        unappended ??= defect;
+        throw defect;
+      }
     };
 
     // ---- 1. the recipe, from this machine -----------------------------------
@@ -701,7 +757,7 @@ export function runOnce(
             });
             if (backInTheQueue && endedAs === "failed" && endPlan.length > 0) {
               try {
-                await appendNow(workItemId, endPlan);
+                await appendAt(workItemId, endPlan);
                 endResolved = endPlan;
               } catch (defect) {
                 // Said rather than raised: the run has already ended and the item
@@ -891,9 +947,13 @@ export function runOnce(
       /**
        * The head **`arm` itself is on origin at**, or null while it is on none.
        *
-       * Apart from `published`, because the two refs do not always go together:
-       * `arm-only` is origin taking the forced arm and rejecting the leased
-       * `agent/<n>`, which leaves `published` where it was and the arm up.
+       * Apart from `published`, because the two refs do not always go together
+       * and both directions happen: `arm-only` is origin taking the forced arm
+       * and rejecting the leased `agent/<n>`, which leaves `published` where it
+       * was and the arm up; `land` is the other way round — it pushes the
+       * branch alone, so a merge the lane then refuses leaves `published` at
+       * this head with no arm anywhere, which is what the end-of-pass publish
+       * asks about before it decides it has nothing to do.
        *
        * It exists because `PassRestarted` makes a claim about this ref and
        * nothing else could check it. That event names `arm` as where the
@@ -938,7 +998,7 @@ export function runOnce(
         detail: string | null,
       ): Promise<void> => {
         try {
-          await appendNow(runId, [
+          await appendAt(runId, [
             {
               type: "RunRefsPublished",
               actor: "conductor",
@@ -972,10 +1032,10 @@ export function runOnce(
           data: parsePayload("RunProducedDiff", { branch: ref, headSha: head, ...counted }),
         };
         try {
-          await appendNow(runId, [row]);
+          await appendAt(runId, [row]);
         } catch (first) {
           try {
-            await appendNow(runId, [row]);
+            await appendAt(runId, [row]);
           } catch (again) {
             const why = `${whyOf(first)}, and again — ${whyOf(again)}`;
             runLog.note(
@@ -1017,7 +1077,29 @@ export function runOnce(
             await noteRefs("nothing-committed", null, null);
             return null;
           }
-          if (head === published) {
+          /**
+           * **Both refs, because the row says both and a restart names the
+           * second** (0062 §2, `#251`).
+           *
+           * `published` alone was the condition, and `land` sets it without the
+           * arm: it pushes `HEAD:refs/heads/<branch>` on its own, because the
+           * lane is about to merge that ref and an arm written for a landing is
+           * one 0062 §4's sweep would take straight back off. So on every
+           * ending that reached the merge lane and was refused there —
+           * `conflict`, `no-commits`, `pending-migration`, `dirty-base` — this
+           * short-circuited as `already-published`, pushed nothing, and wrote a
+           * row naming an `arm` that is on no remote. The person requeues, the
+           * next attempt's `--force-with-lease` matches and overwrites
+           * `agent/<n>` from a fresh base, and the commits the live
+           * `ApprovalRequested` named are unreachable — which is the loss the
+           * arm ref exists to prevent, under a log row asserting it was
+           * prevented.
+           *
+           * Asking for both means the push below runs on that ending: the
+           * branch's refspec is a no-op at a head origin already has, and the
+           * forced arm is the whole point of the second trip.
+           */
+          if (head === published && head === armPublished) {
             await noteRefs("already-published", head, null);
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
@@ -1226,9 +1308,13 @@ export function runOnce(
       // settings and `wiring.env` are one thing and the `agent` gate had only the
       // first, so the hook refused the reviewer's opening prompt and every review
       // returned that refusal instead of findings.
-      const reviewSettingsPath = yield* writeUnhookedSettingsEffect(runId, "review", home).pipe(
-        Effect.orDie,
-      );
+      // Through the port and not `writeUnhookedSettings` itself: it writes a
+      // file under `~/.lingtai`, and a conductor that wrote it here would put a
+      // disk under every test of a decision that reaches `review` (0060 §1,
+      // `AgentHostPort.unhookedSettings`).
+      const reviewSettingsPath = yield* host
+        .unhookedSettings({ runId, label: "review", home })
+        .pipe(Effect.orDie);
 
       /**
        * What a declared plugin needs in order to run — the three things only a
@@ -1466,7 +1552,7 @@ export function runOnce(
                   },
                 ]
               : [];
-          await store.append(runId, version, [
+          await appendFrom(runId, version, [
             ...receipt,
             {
               type: "RunFailed",
@@ -1486,7 +1572,7 @@ export function runOnce(
           return { stopped: `${outcome.failure.kind}: ${outcome.failure.detail}` };
         }
 
-        await store.append(runId, version, [
+        await appendFrom(runId, version, [
           {
             type: "RunFinished",
             actor: "conductor",
@@ -1562,7 +1648,7 @@ export function runOnce(
         runLog.note("fix", `round ${round} for ${from}`);
 
         const settings = await Effect.runPromise(
-          Effect.either(writeUnhookedSettingsEffect(runId, `fix-${round}`, home)),
+          Effect.either(host.unhookedSettings({ runId, label: `fix-${round}`, home })),
         );
         if (Either.isLeft(settings)) {
           return { stopped: `the fixing agent had no settings: ${settings.left.detail}` };
@@ -1678,6 +1764,11 @@ export function runOnce(
           return { notMerged: { reason: "push-rejected", detail: pushed.left.detail } };
         }
         lease = on.context.onSha;
+        // The branch and not the arm: the lane is about to merge this ref, and
+        // an arm written for a landing is one 0062 §4's sweep takes back off.
+        // A lane that refuses leaves the arm to the end-of-pass publish, which
+        // asks about `armPublished` and not only about this
+        // (`publishWhatIsCommitted`).
         published = on.context.onSha;
 
         const result = await Effect.runPromise(
@@ -1725,6 +1816,29 @@ export function runOnce(
           ceilings,
         }),
       );
+
+      /**
+       * **A store that refused an append is not a step's verdict about the
+       * change, however the walk reported it.**
+       *
+       * `runStep` catches whatever a step throws and reports *did-not-finish:
+       * threw* (`pass.ts`), which is right for a body that failed and wrong for
+       * the store underneath it: the ending below would read that as `blocked`,
+       * park the item on *Waiting on you* over a dropped connection and ask a
+       * person to acknowledge a diagnosis naming a step that did its work. So
+       * the defect is raised here instead, before a word of the ending is
+       * written, and the handler at the bottom answers it as it answered every
+       * append `run-once.ts` made — the item is released, the pass ends
+       * `unexpected`, and the queue takes it again after the backoff.
+       *
+       * Only the appends nothing else answers for: the tolerant three call
+       * `appendAt`, having already decided their row costs less than the ending
+       * it is about (`appendNow`).
+       */
+      if (unappended !== null) {
+        log(`the store refused an append during the pass: ${whyOf(unappended)}`);
+        return yield* Effect.die(unappended);
+      }
 
       log(`pass: ${pass.steps.map((v) => `${v.step}=${v.ending.ending}`).join(" ")}`);
       for (const route of pass.routes) {

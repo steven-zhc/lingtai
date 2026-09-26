@@ -450,3 +450,100 @@ describe("when the agent meets the wall", () => {
     ).toMatchObject({ headSha: "b".repeat(40) });
   });
 });
+
+/**
+ * **The other ending that publishes nothing of its own, and it is the one that
+ * reaches the merge lane** (0062 §2).
+ *
+ * `land` pushes `agent/<n>` alone — the lane is about to merge that ref, and an
+ * arm written for a landing is one 0062 §4's sweep takes straight back off — and
+ * it records the head as published. So a lane that then *refuses* leaves the
+ * branch on origin and the arm on none, and the end-of-pass publish used to read
+ * its own `published` as the whole answer, short-circuit as `already-published`,
+ * push nothing, and write a row naming an `arm` that has never existed.
+ *
+ * What that costs is exactly what the arm exists to prevent. The card blocks
+ * recommending a requeue, attempt 2's `--force-with-lease` matches the lease and
+ * overwrites `agent/<n>` from a fresh base, and attempt 1's commits — the diff
+ * the live `ApprovalRequested` named — are unreachable on origin with no ref of
+ * their own, under a log row asserting both refs went up.
+ */
+describe("when the merge lane refuses what every step passed", () => {
+  const budget = { evidence: 2_000, attempts: 3, findings: 5 };
+
+  /**
+   * A lane that says no, with a reason no judge answers.
+   *
+   * `dirty-base` is one of the five `directionOf` calls null — they stop the lane
+   * before the diff is what is in doubt — so the pass is held for a person with
+   * no round bought and no second agent, which keeps this test about the refs.
+   * `conflict`, `no-commits` and `pending-migration` reach the same publish.
+   */
+  const theLaneRefuses = async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const ports = fakePorts(did, store, true);
+    ports.repo.integrate = () =>
+      Effect.sync(() => {
+        did.push("integrate");
+        return { ok: false, reason: "dirty-base", detail: "the base branch has local changes" } as never;
+      });
+    const appended = store.append.bind(store) as EventStore["append"];
+    store.append = async (stream, at, events) => {
+      for (const e of events) did.push(`append ${e.type}`);
+      return appended(stream, at, events);
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        // No `--no-merge`: the lane has to be reached for this ending to exist.
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+    const [runId, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    return { result, did, runId, run, item: await store.read(`wi-${PROJECT}-7`) };
+  };
+
+  it("leaves this attempt's own arm on origin, and does not call it already published", async () => {
+    const { result, did, run, item } = await theLaneRefuses();
+    expect(result.ok, JSON.stringify(result)).toBe("held");
+
+    // The lane pushed the branch on its way in, and the ending published the arm
+    // beside it — the second push is the one that was missing.
+    const both = "git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1";
+    expect(did).toContain("git push HEAD:refs/heads/agent/7");
+    expect(did).toContain(both);
+    expect(did.indexOf("integrate")).toBeLessThan(did.indexOf(both));
+    // Before the person is asked, like every other ending that asks one.
+    expect(did.indexOf(both)).toBeLessThan(did.indexOf("append WorkItemBlocked"));
+
+    // And the log says so rather than claiming the refs were already up: the
+    // first row is this publish, the second is the finalizer finding nothing
+    // left to do.
+    const rows = run.filter((e) => e.type === "RunRefsPublished");
+    expect(rows.map((e) => (e.data as { outcome: string }).outcome)).toEqual([
+      "published",
+      "already-published",
+    ]);
+    expect(rows[0]!.data).toMatchObject({
+      branch: "agent/7",
+      arm: "agent/7-attempt-1",
+      headSha: "b".repeat(40),
+    });
+
+    // The whole of what the arm is for: one `lingtai requeue` makes this attempt
+    // 2, and the ref its brief names is on origin.
+    const brief = nextPrompt({ base: "ticket@1", budget, item, lastRun: run }).failure;
+    expect(brief).toContain("git fetch origin agent/7");
+  });
+});

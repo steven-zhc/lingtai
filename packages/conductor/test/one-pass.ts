@@ -483,6 +483,22 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
           }),
           () => Effect.sync(() => void did.push("close")),
         ),
+      /**
+       * The step agents' settings file, as a path and no file.
+       *
+       * The real one `mkdir -p`s and writes under the `home` it is handed, so
+       * while the conductor called it directly every pass that reached `review`
+       * wrote `<home>/runs/<runId>/<runId>.review.settings.json` to a real disk
+       * — from the unit half, into a `/tmp/fake-home` nothing ever cleans, which
+       * is the filesystem and so is integration (0060 §1). It is a port now, and
+       * this is the fake: the path is what the reviewer is handed, and what the
+       * tests assert is that it was asked for.
+       */
+      unhookedSettings: (o) =>
+        Effect.sync(() => {
+          did.push(`unhookedSettings ${o.label}`);
+          return `/tmp/fake/${o.runId}.${o.label}.settings.json`;
+        }),
       resolveEnv: () => Effect.succeed({ values: {}, names: [], refusal: null }) as never,
       /**
        * The run's log, as a list of what was written to it and how it ended.
