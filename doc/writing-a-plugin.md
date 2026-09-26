@@ -31,6 +31,19 @@ export const slackPlugin = definePlugin("slack", {
 });
 ```
 
+**`at` is the map from step name to the function your plugin runs there.** Its
+keys are the steps you serve and its values are the function, typed for that
+step:
+
+- `at: { proposed: … }` — you serve one step, and your function is typed for it
+  alone.
+- `at: { "*": … }` — you do not care which step you are at, and one function
+  serves every step a recipe may put you at.
+
+**The keys are also what makes you legal.** There is no table to add yourself to:
+a recipe declaring your plugin at a step your `at` has no key for is refused when
+it resolves.
+
 A recipe then writes it wherever it likes:
 
 ```yaml
@@ -123,11 +136,20 @@ runs, what happened has happened.
    The recipe is `~/.lingtai/<project>/recipe.yml` — **outside the repository**,
    one per project on the machine that conducts.
 
-4. **Restart the daemon.** It holds the code it started with, so a plugin that
-   landed in `main` is not a plugin the running conductor has. **And the order
-   matters: restart before you edit the recipe.** A recipe naming a plugin the
-   running daemon does not know is refused at resolve, and then no pass starts at
-   all.
+4. **Restart the daemon — and only step 2 needs it.**
+
+   **The recipe is read on every pass**, so step 3 needs no restart: edit the
+   file and the next pass sees it. `conduct.ts` calls `currentRecipe` inside the
+   pass, and the hash in the log line — *recipe b54751468e38 from main* — is
+   recomputed each time.
+
+   **`PLUGINS` is not.** It is a module constant the daemon loaded when it
+   started, so a plugin that landed in `main` is not a plugin the running
+   conductor has.
+
+   **Which is why the order matters.** Declare a plugin the running daemon does
+   not know and the per-pass resolve refuses the whole recipe — *every* pass,
+   until it restarts. So: land the code, restart, then edit the recipe.
 
 5. **Watch one pass.** `lingtai attach <runId>`, or the run log on the task page.
 
@@ -138,7 +160,7 @@ runs, what happened has happened.
 | Not in `PLUGINS` | `slack: not a plugin` — an unknown key, at resolve |
 | In `PLUGINS`, no `at` for that step | *slack: declared at `claim`, which it does not implement — it serves `proposed`* |
 | Two plugin keys in one entry | refused: an entry names exactly one |
-| Landed but not restarted | the recipe resolves on your machine and is refused on the daemon's, and **nothing runs** until it restarts |
+| Plugin landed, daemon not restarted, recipe edited | the recipe resolves on your machine and is refused on the daemon's, and **no pass starts at all** until it restarts. Editing the recipe alone never needs one |
 
 ## A step-specific example: deciding where a refusal goes
 
