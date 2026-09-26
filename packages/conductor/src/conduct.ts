@@ -669,6 +669,17 @@ export function runOnce(
      * second append leaves effects unrecorded, where losing the first would leave
      * them recorded for an ending the log does not carry (`endPlan`).
      *
+     * **So the first append's failure is read, and that is the whole of what
+     * makes the direction mean anything.** It is not raised — the reasons below
+     * stand — but a release that never reached the log must not be followed by
+     * the row that says what that release resolved: `.catch(() => {})` on its
+     * own made the two indistinguishable, and `EndActionsResolved{failed}` went
+     * on next regardless. That is the orphan this ordering exists to prevent,
+     * arriving by the tolerant catch rather than by the window, and it costs
+     * exactly what the window costs — the point resolves once per outcome, so
+     * the pass that does release the item can never resolve `failed` again, and
+     * `endedWithoutEndActions` finds the row and reports nothing wrong.
+     *
      * **And only a plan about `failed`**, because that is the outcome a release
      * makes true. A `landed` plan reaching here means the landing's own append
      * died, and appending it would be the orphan row this ordering exists to
@@ -682,8 +693,13 @@ export function runOnce(
         released = true;
         return Effect.tryPromise({
           try: async () => {
-            await releaseWorkItem(workItemId, runId, reason, store).catch(() => {});
-            if (endedAs === "failed" && endPlan.length > 0) {
+            /** Whether the release reached the log — the gate on the append after it. */
+            let backInTheQueue = true;
+            await releaseWorkItem(workItemId, runId, reason, store).catch((err: unknown) => {
+              backInTheQueue = false;
+              log(`the item was not released: ${whyOf(err)}`);
+            });
+            if (backInTheQueue && endedAs === "failed" && endPlan.length > 0) {
               try {
                 await appendNow(workItemId, endPlan);
                 endResolved = endPlan;

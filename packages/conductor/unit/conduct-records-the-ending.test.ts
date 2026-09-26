@@ -39,11 +39,12 @@ import {
   memoryStore,
   once,
   project,
+  quotaRuntime,
   runtime,
 } from "../test/one-pass.ts";
 
 /** `RECIPE`, with one `end` action that fires on the outcome named. */
-const closingOn = (when: "landed" | "blocked") =>
+const closingOn = (when: "landed" | "blocked" | "failed") =>
   RECIPE.replace(
     "steps: {}",
     `steps:\n  end:\n    - { name: close it, when: ${when}, close: true }`,
@@ -143,6 +144,105 @@ describe("the ending and its end actions", () => {
     expect(types).toContain("WorkItemReleased");
     // So nothing was done to the issue on the strength of a landing nothing
     // recorded.
+    expect(said).not.toContain("close #7");
+  });
+
+  /**
+   * **The `failed` ending is the one where the two cannot be one append**, and
+   * the order is what stands in for the transaction: `releaseWorkItem` owns its
+   * own read and version (`appendEndActions`'s *the one caller that cannot
+   * batch*), so the release goes first and the resolution after it.
+   *
+   * This is the ordinary way through it — the release lands, and the row that
+   * says what `end` resolved for that outcome lands next to it.
+   */
+  it("records the release and what `end` resolved, in that order", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, closingOn("failed")),
+        // The wall of 0031 §1: zero turns, zero cost, an account-wide refusal —
+        // which `outcomeOf` reads as `failed`, the outcome a release makes true.
+        runtime: quotaRuntime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "implement" });
+
+    const item = await store.read(`wi-${PROJECT}-7`);
+    const at = item.findIndex((e) => e.type === "WorkItemReleased");
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(item[at + 1]?.type).toBe("EndActionsResolved");
+    expect(item[at + 1]!.data).toMatchObject({ outcome: "failed" });
+    expect(said).toContain("close #7");
+  });
+
+  /**
+   * **And the direction only means something if the first append's failure is
+   * read.** Here the store takes everything but the release, which is the
+   * dropped connection CLAUDE.md documents against `#157` arriving on the one
+   * row that makes this outcome true.
+   *
+   * What must not be on the stream afterwards is the resolution. A
+   * `EndActionsResolved{failed}` over an item the log still shows as claimed is
+   * the same orphan the landing's window produced, reached by a tolerant
+   * `catch` instead: the point resolves **once per outcome**, so the pass that
+   * does release the item can never resolve `failed` again, and
+   * `endedWithoutEndActions` finds the matching row and reports nothing wrong.
+   *
+   * Nothing is raised either — the run has already ended, and a throw here would
+   * replace the reason it ended with the reason the cleanup did.
+   */
+  it("records nothing about `end` when the release itself was not recorded", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const refusing: typeof store = {
+      ...store,
+      append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
+        if (events.some((e) => e.type === "WorkItemReleased")) {
+          throw new Error("terminating connection due to administrator command");
+        }
+        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, closingOn("failed")),
+        runtime: quotaRuntime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store: refusing,
+      },
+      fakePorts(did, refusing),
+    );
+
+    // The run still ends where it ended. A release that would not append is not
+    // a second reason for the run to have failed.
+    expect(result).toMatchObject({ ok: false, stage: "implement" });
+
+    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(types).not.toContain("WorkItemReleased");
+    expect(types).not.toContain("EndActionsResolved");
+    // And nothing was done to the issue on the strength of an ending nothing
+    // recorded, which is `tellGitHubAbout` reading the plan that was appended
+    // rather than the one that was held (`tell.ts`).
     expect(said).not.toContain("close #7");
   });
 
