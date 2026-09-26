@@ -135,6 +135,15 @@ run whose recipe asks for nothing.
 So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
+**And since #256 the recipe's own `proposed:` is the wrong home for either of
+them.** The conductor runs the ten steps now, so `proposed` is the router and not
+the gate: a step whose own plugins refused has nothing to route
+(`ARRIVE_AT_THE_ROUTER` does not include it), and a red `pnpm test` declared
+there stops the pass for a person with **no fix round bought**. The build belongs
+at `build:` and the cold reviewer at `review:` — two lines in
+`~/.lingtai/lingtai/recipe.yml`, which is outside every worktree, so no agent can
+make the move and no diff can record it.
+
 **There is no exception, and `tamper` is not one.** What stands between an agent
 and `main` here is `proposed` — the build and the cold reviewer — and neither is
 a person. `merge: []` means nothing holds at the merge point; `proposed` holds
