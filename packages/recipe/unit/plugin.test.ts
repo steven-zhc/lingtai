@@ -441,6 +441,66 @@ describe("the six behind the contract", () => {
  *   cut and what it lands — which cannot happen today and is not made possible
  *   here.
  */
+/**
+ * **`at`, and the two sentences a plugin author meets** (0064 §4, `#261`).
+ *
+ * Driven over a plugin of its own rather than over the closed set, for the
+ * reason the `no_log` cases above are: what is being asserted is the
+ * *mechanism*, and the closed set is a set of twelve decisions that happen to
+ * exercise part of it. A plugin written outside the tree is the case
+ * `doc/writing-a-plugin.md` is addressed to, and `whyNoKindAt` takes the set
+ * it works against so that case is reachable — the same seam `resolve.ts` has.
+ */
+describe("a plugin declares the steps it serves", () => {
+  /** The page's own example: one plugin, at one step, and nowhere else. */
+  const slack = definePlugin("slack", {
+    fields: { slack: z.strictObject({ channel: z.string() }) },
+    at: { proposed: notBuiltYet },
+  });
+  /** And the second true thing: one body, every step. */
+  const everywhere = definePlugin("everywhere", { fields: { everywhere: z.string() }, at: { "*": notBuiltYet } });
+
+  it("is legal where its `at` has a key, and refused by name where it does not", () => {
+    // Two, so `claim` *is* implemented — by the other one. A set where nobody
+    // implements the step takes the next case's branch, which is the whole
+    // distinction 0064 §1 is about, and this case would otherwise assert it
+    // by accident and say nothing about this one.
+    const set = [slack, everywhere] as unknown as typeof PLUGINS[number][];
+    expect(whyNoKindAt("proposed", "slack" as never, set)).toBeNull();
+    const why = whyNoKindAt("claim", "slack" as never, set);
+    // The sentence the page promises: what it does not implement, and where it
+    // does. `kindRefusedAt` adds the action, the kind and the step around it.
+    expect(why).toContain("`slack:` does not implement `claim`");
+    expect(why).toContain("it serves `proposed`");
+  });
+
+  /** `"*"` is every step, including the nine this plugin has never heard of. */
+  it("is legal everywhere when its `at` is `*`", () => {
+    const set = [everywhere] as unknown as typeof PLUGINS[number][];
+    for (const step of STEPS) expect(whyNoKindAt(step, "everywhere" as never, set)).toBeNull();
+  });
+
+  /**
+   * **And the sentence the table could not say.** An empty row meant *no
+   * plugin's output is read here* and *nobody has built this yet* at once, so
+   * a reader could not tell which — and `#231` died of the difference. An `at`
+   * can only say the first, so the second is a refusal of its own.
+   */
+  it("says when no plugin implements a step at all", () => {
+    const set = [slack] as unknown as typeof PLUGINS[number][];
+    const why = whyNoKindAt("design", "slack" as never, set);
+    expect(why).toContain("no plugin implements `design`");
+    expect(why).toContain("there is no design step");
+  });
+
+  /** A key that is not a step is refused at import, where the author is. */
+  it("refuses an `at` key that is not a step", () => {
+    expect(() => definePlugin("typo", { fields: { typo: z.string() }, at: { propsed: notBuiltYet } as never })).toThrow(
+      /declares itself at "propsed", which is not a step/,
+    );
+  });
+});
+
 describe("the two the pass calls itself", () => {
   it("is refused at every one of the ten steps, and names the file instead", () => {
     for (const step of STEPS) {
