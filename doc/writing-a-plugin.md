@@ -43,75 +43,102 @@ build:
 The key — `slack:` — is what says which plugin this is. One key per entry, and a
 recipe naming zero or two of them is refused when it resolves.
 
-## What your function is handed
+## The ten steps, what each hands you, and what it may return
+
+**Every step hands you the same five things.** `step`, `actions` (everything the
+recipe declared here, including you), `reached` (every visit so far, in order,
+with how each ended), `context` (the run, the head, the round) and `emit`.
+
+**Three more appear only where they mean something**, and they are typed away
+everywhere else — you do not check for null, the compiler does not offer you the
+field.
+
+| step | also handed | may return | it is for |
+|---|---|---|---|
+| `claim` | — | pass · hold · did-not-finish · never-ran | picking the ticket. **There is no work item yet** |
+| `admit` | — | pass · hold · did-not-finish · never-ran | starting work on it. The worktree first exists here, so this is where `head` first has a value |
+| `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
+| `design` | — | pass · hold · did-not-finish · never-ran | a document before any code — **or nothing, which is an answer** |
+| `implement` | — | pass · hold · did-not-finish · never-ran | one agent in the worktree. It reports the `head` it committed |
+| `build` | — | **+ refuse** | is it green. A red one skips `review` |
+| `review` | — | pass · hold · did-not-finish · never-ran | read the diff, return findings, **judge nothing** |
+| `proposed` | `arriving` · `offering` | **+ refuse + route** | the only step that routes |
+| `merge` | — | **+ refuse** | land it. Report a reason, decide nothing |
+| `end` | `outcome` | pass · hold · did-not-finish · never-ran | runs on **every** ending and cannot refuse |
+
+Read the return column as three tiers:
+
+```
+the six that settle     passed · held · did-not-finish · never-ran
+the three that refuse   …those four, + refused          (prepared, build, merge)
+the one that routes     …those five, + routed           (proposed)
+```
+
+**That is `EndingAt<S>`, and it is a type rather than a rule you are asked to
+remember.** A `claim` body returning `refused` does not compile; only `proposed`
+can move the pass.
+
+### The four endings every step has
 
 ```ts
-interface StepWork<S extends Step> {
-  step: S;                      // which of the ten you are at
-  actions: StepAction[];        // everything the recipe declared here, including you
-  refuses: boolean;             // whether this step is allowed to refuse
-  reached: StepReached[];       // every visit so far, in order, with how each ended
-  arriving: …                   // `proposed` only — the ending that routed here
-  offering: …                   // `proposed` only — the destinations available
-  outcome: …                    // `end` only — how the pass came to rest
-  context: ActionContext;       // the run, the head, the round
-  emit: (event) => …            // one event per thing you do
-}
+{ ending: "passed" }                                  // carry on
+{ ending: "held", at, question }                      // a person is needed, and this is the question
+{ ending: "did-not-finish", because, at, detail }     // you could not tell
+{ ending: "never-ran", at, detail }                   // you did not start
 ```
 
-**Three of those are typed away where they make no sense.** `outcome` is a
-`TerminalOutcome` when `S` is `"end"` and `null` for the other nine, so a plugin
-at `build` cannot read an outcome that has not been decided. `arriving` and
-`offering` are the same for `proposed`. **You do not check for null; the compiler
-does not offer you the field.**
+**`refused` and `did-not-finish` are the pair to get right.** *I read it and it is
+wrong* buys a fix round; *I could not read it* does not, because there is nothing
+for the next agent to fix. A plugin that crashed and reported `refused` sends an
+agent to repair a defect that is not in the diff.
 
-`reached` is the one worth knowing about: it is the pass's own history, in order,
-so a plugin can see that `build` already failed twice this round without being
-told.
+### `end` is the one that runs for effect
 
-## What you may return
+Its plugins do not produce a verdict — they close an issue, write a label, delete
+a branch. `outcome` tells you which ending the pass came to rest on, so a plugin
+can act on `landed` and not on `blocked`. It **cannot refuse**: by the time it
+runs, what happened has happened.
 
-```ts
-{ ending: "passed" }                                     // carry on
-{ ending: "refused", because, at, detail }               // refusing steps only
-{ ending: "held", at, question }                         // a person is needed
-{ ending: "did-not-finish", because, at, detail }        // you could not tell
-{ ending: "never-ran", at, detail }                      // you did not start
-{ ending: "routed", to, why }                            // `proposed` only
-```
+## From nothing to running
 
-**`refused` and `did-not-finish` are different and the difference matters.** *I
-read it and it is wrong* buys a fix round; *I could not read it* does not,
-because there is nothing for the next agent to fix. A plugin that crashed and
-reported `refused` sends an agent to fix a defect that is not in the diff.
+**Five steps, and two of them are easy to forget.**
 
-**Only four steps may refuse** — `prepared`, `build`, `proposed`, `merge` — and
-the type will not let the other six. `refuses` on your `StepWork` tells you which
-one you are at, for the plugins that serve several.
+1. **Write the plugin** — a schema and an `at`, as above. It lives in the tree:
+   `packages/recipe/src/` beside the twelve that exist.
 
-## Where your plugin is legal
+2. **Add it to `PLUGINS`** in `recipe.ts`. That array is the closed set — what
+   is not in it is not a plugin, and a recipe naming it is refused as an unknown
+   key. *(There is no external plugin loading today. A plugin is code in this
+   repository, and `resolve.ts` takes the set as a parameter only so tests can
+   pass their own.)*
 
-**Wherever `at` has a function for it.** That is the whole rule; there is no
-table to add yourself to.
+3. **Declare it in the recipe**, at a step your `at` covers:
 
-- **`at: { "*": … }`** — you do not care which step you are at. The example above
-  is this: posting to a channel is the same work everywhere.
-- **`at: { proposed: … }`** — you serve one step, and the compiler types your
-  function for that step alone.
+   ```yaml
+   build:
+     - name: tell the channel
+       slack: { channel: "#lingtai" }
+   ```
 
-A recipe that declares your plugin at a step you have no function for is
-**refused when it resolves**, naming the plugin and the step:
+   The recipe is `~/.lingtai/<project>/recipe.yml` — **outside the repository**,
+   one per project on the machine that conducts.
 
-```
-slack: declared at `claim`, which it does not implement — it serves `proposed`
-```
+4. **Restart the daemon.** It holds the code it started with, so a plugin that
+   landed in `main` is not a plugin the running conductor has. **And the order
+   matters: restart before you edit the recipe.** A recipe naming a plugin the
+   running daemon does not know is refused at resolve, and then no pass starts at
+   all.
 
-That refusal reaches the person editing the recipe, on their machine, while they
-are editing it. It is not a log line from a machine running overnight.
+5. **Watch one pass.** `lingtai attach <runId>`, or the run log on the task page.
 
-**And absent is not empty.** A plugin without a function for a step is refused;
-a plugin whose function does nothing is a bug you wrote. The check is on the
-declaration, never at the call site, so nothing silently runs nothing.
+### Where it can go wrong, and what you will see
+
+| | |
+|---|---|
+| Not in `PLUGINS` | `slack: not a plugin` — an unknown key, at resolve |
+| In `PLUGINS`, no `at` for that step | *slack: declared at `claim`, which it does not implement — it serves `proposed`* |
+| Two plugin keys in one entry | refused: an entry names exactly one |
+| Landed but not restarted | the recipe resolves on your machine and is refused on the daemon's, and **nothing runs** until it restarts |
 
 ## A step-specific example: deciding where a refusal goes
 
