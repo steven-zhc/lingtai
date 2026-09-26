@@ -77,6 +77,7 @@ import {
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-step.ts";
 import { BUILT_IN_FOR } from "../src/judge.ts";
+import { NOT_BUILT_YET } from "../src/pass.ts";
 import { decideBacklog } from "../src/backlog.ts";
 
 /**
@@ -379,6 +380,39 @@ describe("every step × kind cell runs or refuses", () => {
     expect(whyNoKindAt("build", "run")).toContain("the build is a `run:` action at `proposed`");
     expect(whyNoKindAt("review", "run")).toContain("the review is an `agent:` action at `proposed`");
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
+  });
+
+  /**
+   * **A step has one body and three steps have several plugins**, which is why
+   * `at`'s *value* cannot be that body
+   * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5, `#267`).
+   *
+   * `StepBodies` is keyed by step and `runStep` calls `bodies[spec.step]` once a
+   * visit — a step whose body were absent would have to mean *pass* (0016 §4).
+   * The plugins at a step are a list. So `at[step]` holds something that is
+   * called once per *entry* for the four runnable kinds, and something called
+   * once per *visit* for a plugin that would supply the step's own answer, and
+   * those are different functions under one key.
+   *
+   * Asserted here rather than left in the document because the counts are what
+   * the document's §5 argues from, and a plugin added or a key opened moves them:
+   * T5d puts `run` at `build` and `agent` at `review`, and this row is where a
+   * reader learns the argument still holds.
+   */
+  it("gives a step one body and several plugins, which is what `at`'s value cannot be one of", () => {
+    const serving = new Map(
+      STEPS.map((step) => [step, PLUGINS.filter((plugin) => servesStep(plugin, step)).map((p) => p.key)]),
+    );
+
+    expect([...serving].filter(([, keys]) => keys.length > 1).map(([step]) => step)).toEqual([
+      "proposed",
+      "merge",
+      "end",
+    ]);
+    expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human"]);
+    expect(serving.get("end")).toEqual(["close", "labels", "refs"]);
+    // And exactly one body per step, which is the other half of the sentence.
+    expect(Object.keys(NOT_BUILT_YET).sort()).toEqual([...STEPS].sort());
   });
 
   /**
