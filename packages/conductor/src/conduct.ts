@@ -1965,27 +1965,45 @@ export function runOnce(
        * that has just returned, and a reader asking what a pass did wants them
        * whole or not at all. An empty list appends nothing — a pass that sailed
        * through decided nothing, and `pass.steps` already says it got through.
+       *
+       * **`appendAt` and a swallowed refusal, which is `noteRefs`' rule and not a
+       * laxness**: *the account never costs the thing it is an account of.* This
+       * is the only store write between the walk returning and the landing's own
+       * `appendNow(workItemId, [WorkItemLanded, ...endPlan])`, because
+       * `publishWhatIsCommitted` is skipped on a landing — so a strict append
+       * here would let a dropped connection on a purely informational row reach
+       * the defect handler, release an item whose branch is already on `main`,
+       * leave `end`'s plan unresolved and hand the ticket to a second pass that
+       * reworks a merged change. A route nobody can read back is worth less than
+       * that by any measure, so it is said and not raised. `appendAt` is what
+       * this class of caller is for (`appendNow`'s own doc).
        */
       for (const route of pass.routes) {
         runLog.note("route", `${route.from} → ${route.to}: ${route.why}`);
       }
       if (pass.routes.length > 0) {
-        yield* Effect.promise(() =>
-          appendNow(
-            runId,
-            pass.routes.map((route) => ({
-              type: "PassRouted" as const,
-              actor: "conductor",
-              data: parsePayload("PassRouted", {
-                from: route.from,
-                chose: route.chose,
-                to: route.to,
-                why: route.why,
-                ceiling: route.ceiling,
-              }),
-            })),
-          ),
-        );
+        yield* Effect.promise(async () => {
+          try {
+            await appendAt(
+              runId,
+              pass.routes.map((route) => ({
+                type: "PassRouted" as const,
+                actor: "conductor",
+                data: parsePayload("PassRouted", {
+                  from: route.from,
+                  chose: route.chose,
+                  to: route.to,
+                  why: route.why,
+                  ceiling: route.ceiling,
+                }),
+              })),
+            );
+          } catch (defect) {
+            const why = whyOf(defect);
+            runLog.note("route", `the ${pass.routes.length} route(s) were not appended — ${why}`);
+            log(`PassRouted was refused by the store: ${why}`);
+          }
+        });
       }
 
       const outcome = outcomeOf(pass);

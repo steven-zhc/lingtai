@@ -22,6 +22,7 @@
  */
 import type { Envelope, ToAppend } from "@lingtai/domain";
 import { STEPS } from "@lingtai/domain";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   HUMAN_AT_MERGE,
@@ -32,6 +33,7 @@ import {
   once,
   project,
   runtime,
+  streams,
 } from "../test/one-pass.ts";
 
 describe("the conductor runs a whole pass, with no world to run in", () => {
@@ -363,5 +365,95 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
       "labels #7 bug,lingtai:working",
       "labels #7 bug",
     ]);
+  });
+  /**
+   * **And the route's own row is the one append that must never cost the ending
+   * it describes** (`#271`).
+   *
+   * It is the opposite rule to the one above, for the opposite kind of append.
+   * A verdict lost is a pass whose report is a lie, so it is raised; a route lost
+   * is an explanation missing from a pass that happened, and on a landing it is
+   * the **only** store write between `runPass` returning and the atomic
+   * `WorkItemLanded` + `endPlan` — `publishWhatIsCommitted` is skipped when the
+   * change went in. Raised there, a dropped connection on a purely informational
+   * row would release an item whose branch is already on `main`, leave `end`'s
+   * plan unresolved, tell GitHub nothing, and hand the ticket to a second pass
+   * that reworks a merged change.
+   *
+   * So the row is appended with `appendAt` and its refusal is said rather than
+   * raised — `noteRefs`' rule, *the account never costs the thing it is an
+   * account of* — and this is the test that a route nobody can read back is all
+   * that is lost. The pass routes because the lane refuses `gate-failed` once,
+   * which is the mechanical round `BUILT_IN_FOR` answers, and lands on the round
+   * it bought.
+   */
+  it("lands though the store refused the row that says why it bought a round", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const refusing: typeof store = {
+      ...store,
+      append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
+        if (events.some((e) => e.type === "PassRouted")) {
+          throw new Error("terminating connection due to administrator command");
+        }
+        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+      },
+    };
+
+    const ports = fakePorts(did, refusing, true);
+    /** The lane refuses once — the one reason a round is bought for — and then merges. */
+    let lane = 0;
+    ports.repo.integrate = () =>
+      Effect.sync(() => {
+        did.push("integrate");
+        lane += 1;
+        return lane === 1
+          ? ({ ok: false, reason: "gate-failed", detail: "the base moved under it" } as never)
+          : ({ ok: true, mergeCommit: "c".repeat(40) } as never);
+      });
+    // And the agent the round buys commits something, or the pass stops at
+    // `implement` with nothing to merge and never reaches the lane again: the
+    // fixture's `rev-parse` answers one sha for ever, and a round that left the
+    // head where it was is a round with no diff in it (`fix round 1: no commit`).
+    const git = ports.repo.git;
+    ports.repo.git = (args, o) =>
+      args[0] === "rev-parse" && lane > 0 ? Effect.succeed("d".repeat(40)) : git(args, o);
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store: refusing,
+      },
+      ports,
+    );
+
+    // The change went in, which is the whole assertion: the ending survived the
+    // refusal of the row about it.
+    // Say what it actually did first, as the hold above does, so a stop names its
+    // step rather than reading as a mismatched object.
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
+    expect(result).toMatchObject({ ok: true, mergeCommit: "c".repeat(40) });
+    expect(lane).toBe(2);
+
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
+    expect(item).toContain("WorkItemLanded");
+    expect(item).not.toContain("WorkItemReleased");
+
+    // The row is not on the run's stream, and the run log says so in the words a
+    // person reading a trace gets — which is all that was lost.
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    expect(run.map((e) => e.type)).not.toContain("PassRouted");
+    expect(
+      did.some((line) => line.startsWith("note route merge \u2192 implement:") && line.includes("same-worktree")),
+    ).toBe(true);
+    expect(did.some((line) => line.startsWith("note route the 1 route(s) were not appended"))).toBe(true);
   });
 });
