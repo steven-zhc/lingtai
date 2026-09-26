@@ -107,6 +107,32 @@ both wanted:
   declaring it, and the refusal says *no plugin implements `claim`* rather than
   *`claim` takes nothing*, which is a sentence somebody can act on.
 
+### And there is no `plugins:` node
+
+Neither inside a step nor at the top level.
+
+**Inside a step**, the key is the plugin —
+[0063](0063-every-setting-is-the-recipes.md) §2, and it does not reopen here.
+Wrapping entries in a `plugins:` list buys a level of nesting and no information:
+the key already says which plugin an entry is, and `pluginNaming` refuses an
+entry carrying zero or two of them.
+
+**At the top level**, a node listing which plugins this recipe uses would list
+exactly what `PLUGINS` already contains. `PLUGINS` is a closed set in the tree
+and every plugin in it is available to every recipe, so the node would be
+written, believed, and connected to nothing — which is the argument
+[0063](0063-every-setting-is-the-recipes.md) §1 used to keep a
+`runtimes: [claude-code]` out of the machine file, and it is this project's
+most-repeated defect.
+
+**The day it is needed it will be answering a different question.** When a plugin
+can be loaded from outside the tree, a recipe will have to say *where this one
+comes from* — a source, a version, something to check it against. That is not
+*which plugins do I use*, which the keys already answer, and it should be named
+for the question it does answer. Ansible's `collections:` is the same
+distinction: it does not list the modules a task uses, it says where to install
+them from.
+
 ## 5. Absent and empty stay different
 
 **An `at` without this step is refused; an `at` with this step that does nothing
