@@ -10,7 +10,12 @@ there**. This page is for somebody who wants to write one.
 > plugin's body is still `pass-steps.ts`'s hard-coded one, so the functions
 > written below are the shape being built towards rather than something a
 > plugin supplies today. Everything about *where* you may be declared is live;
-> everything about *what runs* is the next ticket.
+> everything about *what runs* is the next ticket — and that ticket
+> ([#262](https://github.com/steven-zhc/lingtai/issues/262)) found three things
+> 0064 defers before it found a rewrite:
+> [design/the-plugin-body.md](design/the-plugin-body.md) is what they are. The
+> shape below is still the shape; what a **runnable** plugin returns through it
+> is the open question.
 
 ## A plugin is two halves
 
