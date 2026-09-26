@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  HAND-WRITTEN. Unlike architecture.html and the-pass.html there is no script
+  behind this one: it carries no generated drawing, so editing it here is how it
+  is edited. If that ever stops being true, put the generator in scripts/ and say
+  so at the top, the way the other two do.
+-->
+<title>Change What a Pass Does</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:    #faf9fb;
+    --raised:   #f2f0f6;
+    --ink:      #16141c;
+    --dim:      #655f73;
+    --rule:     #e0dce8;
+    --accent:   #7648ec;
+    --accent-w: #ede6ff;
+    --refuse:   #a8321c;
+    --refuse-w: #fbe9e5;
+    --route:    #0b6a58;
+    --route-w:  #e0f2ec;
+
+    --display: "Fraunces", Georgia, serif;
+    --body: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:    #131118;
+      --raised:   #1c1926;
+      --ink:      #eae7f1;
+      --dim:      #9a93ab;
+      --rule:     #2d2839;
+      --accent:   #ab8cff;
+      --accent-w: #2a2140;
+      --refuse:   #f09079;
+      --refuse-w: #3a1f18;
+      --route:    #6ad2b6;
+      --route-w:  #12302a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:    #131118;
+    --raised:   #1c1926;
+    --ink:      #eae7f1;
+    --dim:      #9a93ab;
+    --rule:     #2d2839;
+    --accent:   #ab8cff;
+    --accent-w: #2a2140;
+    --refuse:   #f09079;
+    --refuse-w: #3a1f18;
+    --route:    #6ad2b6;
+    --route-w:  #12302a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 78ch; margin: 0 auto; padding: 0 28px 120px; }
+
+  header { padding: 72px 0 0; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-variation-settings: "opsz" 120;
+    font-weight: 600;
+    font-size: clamp(2.4rem, 6vw, 3.8rem);
+    line-height: 1.03;
+    letter-spacing: -.022em;
+    margin: 0 0 22px;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 1.18rem;
+    line-height: 1.52;
+    color: var(--dim);
+    margin: 0 0 30px;
+    max-width: 60ch;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .ahead {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-w);
+    padding: 15px 20px;
+    margin: 0 0 56px;
+    font-size: .93rem;
+    line-height: 1.55;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-variation-settings: "opsz" 40;
+    font-weight: 600;
+    font-size: 1.72rem;
+    line-height: 1.16;
+    letter-spacing: -.014em;
+    margin: 64px 0 6px;
+    text-wrap: balance;
+  }
+  h2 + .sub { color: var(--dim); margin: 0 0 26px; font-size: .97rem; }
+
+  h3 {
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 1.02rem;
+    margin: 32px 0 10px;
+    letter-spacing: -.005em;
+  }
+
+  p { margin: 0 0 15px; }
+  p.note { color: var(--dim); font-size: .93rem; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .875em;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: .06em .34em;
+  }
+
+  pre {
+    font-family: var(--mono);
+    font-size: .845rem;
+    line-height: 1.62;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 17px 20px;
+    overflow-x: auto;
+    margin: 0 0 20px;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: 1em; }
+  .cm { color: var(--dim); }
+  .kw { color: var(--accent); }
+
+  /* ------------------------------------------------------ the want table -- */
+
+  .wants { border-top: 2px solid var(--ink); margin: 0 0 8px; }
+  .want {
+    display: grid;
+    grid-template-columns: 1fr 12ch 10ch;
+    gap: 0 16px;
+    align-items: baseline;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .want .said { font-size: 1.02rem; }
+  .want .said b { font-weight: 600; }
+  .want .where, .want .which {
+    font-family: var(--mono);
+    font-size: .82rem;
+  }
+  .want .where { color: var(--accent); }
+  .want .which { color: var(--dim); }
+  .wanthead {
+    display: grid;
+    grid-template-columns: 1fr 12ch 10ch;
+    gap: 0 16px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  /* ----------------------------------------------------------- the rail --- */
+
+  .rail { margin: 8px 0 0; }
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 0 18px; }
+  .spine { position: relative; display: flex; justify-content: center; padding-top: 22px; }
+  .spine::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 50%;
+    width: 2px; margin-left: -1px; background: var(--rule);
+  }
+  .step:first-child .spine::before { top: 22px; }
+  .step:last-child  .spine::before { bottom: calc(100% - 32px); }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--paper); border: 2px solid var(--dim); flex: none;
+  }
+  .step.refuses .dot { border-color: var(--refuse); background: var(--refuse); }
+  .step.routes  .dot { border-color: var(--route);  background: var(--route); }
+  .card { padding: 14px 0 20px; border-bottom: 1px solid var(--rule); }
+  .step:last-child .card { border-bottom: 0; }
+  .name { font-family: var(--mono); font-weight: 600; font-size: 1.05rem; letter-spacing: -.01em; }
+  .for { color: var(--dim); font-size: .94rem; margin: 3px 0 10px; }
+  .for b { color: var(--ink); font-weight: 600; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-family: var(--mono); font-size: 11.5px; padding: 3px 8px;
+    border: 1px solid var(--rule); background: var(--raised);
+    color: var(--dim); white-space: nowrap;
+  }
+  .tag.gives { border-color: var(--accent); color: var(--accent); background: var(--accent-w); }
+  .tag.ref   { border-color: var(--refuse); color: var(--refuse); background: var(--refuse-w); }
+  .tag.rt    { border-color: var(--route);  color: var(--route);  background: var(--route-w); }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 22px; font-size: .86rem; color: var(--dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+  /* ------------------------------------------------------------- flow ---- */
+
+  ol.flow { counter-reset: f; list-style: none; padding: 0; margin: 8px 0 0; }
+  ol.flow > li {
+    counter-increment: f; position: relative;
+    padding: 0 0 26px 46px; border-left: 1px solid var(--rule); margin-left: 12px;
+  }
+  ol.flow > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  ol.flow > li::before {
+    content: counter(f); position: absolute; left: -13px; top: -2px;
+    width: 25px; height: 25px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    display: grid; place-items: center;
+  }
+  :root[data-theme="dark"] ol.flow > li::before { color: #16121f; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) ol.flow > li::before { color: #16121f; }
+  }
+  ol.flow h3 { margin: 0 0 6px; }
+  ol.flow p { margin: 0 0 9px; font-size: .95rem; }
+
+  .scroll { overflow-x: auto; margin: 0 0 20px; }
+  table { border-collapse: collapse; width: 100%; font-size: .91rem; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim); font-weight: 500; border-bottom-width: 2px;
+  }
+  td:first-child { font-family: var(--mono); font-size: .83rem; }
+  tr:last-child td { border-bottom: 0; }
+
+  .pull { border-top: 2px solid var(--ink); padding: 18px 0 0; margin: 34px 0; }
+  .pull p {
+    font-family: var(--display); font-variation-settings: "opsz" 30;
+    font-size: 1.22rem; line-height: 1.4; margin: 0; text-wrap: balance;
+  }
+  .pull .who {
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    letter-spacing: .08em; text-transform: uppercase; margin-top: 12px;
+  }
+
+  footer {
+    margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--rule);
+    color: var(--dim); font-size: .88rem;
+  }
+
+  @media (max-width: 660px) {
+    .want, .wanthead { grid-template-columns: 1fr; gap: 3px; }
+    .wanthead { display: none; }
+    .want .where::before { content: "at "; color: var(--dim); }
+    .step { grid-template-columns: 20px 1fr; gap: 0 14px; }
+  }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Lingtai · for people who want it to do something else</p>
+  <h1>Change what a pass does</h1>
+  <p class="standfirst">Lingtai walks a ticket through ten steps. <strong>What happens at each of
+    them is yours to decide</strong> — you write it as a plugin and declare it in your recipe.
+    This page starts from the thing you want, not from the shape of the code.</p>
+  <div class="ahead">
+    <b>This is ahead of the code.</b> It describes decision 0064, accepted and not yet built. The
+    page is here first so the target can be argued with while arguing is still cheap.
+  </div>
+</header>
+
+<h2>Start with what you want</h2>
+<p class="sub">Find your sentence. It tells you which step, and which plugin.</p>
+
+<div class="wants">
+  <div class="wanthead"><div>what you want</div><div>the step</div><div>the plugin</div></div>
+
+  <div class="want">
+    <div class="said">I want <b>my own command</b> to be the build, not <code>pnpm test</code></div>
+    <div class="where">build</div><div class="which">run</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>every refusal to come to me</b>, instead of buying another agent round</div>
+    <div class="where">proposed</div><div class="which">judge</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>a second reviewer</b> that only looks at database migrations</div>
+    <div class="where">review</div><div class="which">agent</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>a design written first</b>, before any code</div>
+    <div class="where">design</div><div class="which">agent</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>to be asked</b> before anything merges into my main branch</div>
+    <div class="where">merge</div><div class="which">human</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>only the tickets assigned to me</b>, and only bugs</div>
+    <div class="where">claim</div><div class="which">queue</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>dependencies installed</b> before the agent starts</div>
+    <div class="where">prepared</div><div class="which">run</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>a Slack message</b> when a ticket lands</div>
+    <div class="where">end</div><div class="which">your own</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>the branch cut from <code>develop</code></b>, with submodules</div>
+    <div class="where">admit</div><div class="which">worktree</div>
+  </div>
+  <div class="want">
+    <div class="said">I want <b>a hold</b> whenever the diff touches my deployment config</div>
+    <div class="where">proposed</div><div class="which">watch</div>
+  </div>
+</div>
+
+<p class="note">Most of those already exist — you declare them in your recipe and write no code at
+  all. You write a plugin when the thing you want is not on this list.</p>
+
+<h2>One want, all the way through</h2>
+<p class="sub">“I want a Slack message when a ticket lands.”</p>
+
+<p>Nothing that exists does this, so it is a plugin. It runs for effect after the pass has come to
+  rest — that is the <code>end</code> step — and what you want to say depends on how the ticket
+  ended, which <code>end</code> is the only step that knows.</p>
+
+<pre><code><span class="kw">export const</span> slack = definePlugin(<span class="kw">"slack"</span>, {
+  <span class="cm">// what a recipe may write</span>
+  fields: {
+    slack: z.strictObject({
+      channel: z.string(),
+      only: z.enum([<span class="kw">"landed"</span>, <span class="kw">"everything"</span>]).default(<span class="kw">"landed"</span>),
+    }),
+  },
+
+  <span class="cm">// where you run, and what you do there</span>
+  at: {
+    end: <span class="kw">async</span> ({ outcome, context, actions }) =&gt; {
+      <span class="kw">const</span> { channel, only } = read(actions);
+      <span class="kw">if</span> (only === <span class="kw">"landed"</span> &amp;&amp; outcome !== <span class="kw">"landed"</span>) <span class="kw">return</span> { ending: <span class="kw">"passed"</span> };
+      <span class="kw">await</span> post(channel, `${context.ticket} ${outcome}`);
+      <span class="kw">return</span> { ending: <span class="kw">"passed"</span> };
+    },
+  },
+});</code></pre>
+
+<p>Then in your recipe:</p>
+
+<pre><code>end:
+  - name: tell the team
+    slack:
+      channel: <span class="kw">"#releases"</span>
+      only: landed</code></pre>
+
+<div class="pull">
+  <p>The key you write — <code>slack:</code> — is what says which plugin this is. And
+    <code>at</code> is what says where you are allowed to write it: declare this one at
+    <code>build</code> and the recipe is refused, because it has no function for <code>build</code>.</p>
+  <div class="who">No table to register in — your code is the declaration</div>
+</div>
+
+<h2>The ten steps</h2>
+<p class="sub">Where your thing goes, and what it has to work with when it gets there.</p>
+
+<div class="legend">
+  <span><i class="swatch" style="background:var(--dim)"></i> reports what happened</span>
+  <span><i class="swatch" style="background:var(--refuse)"></i> can stop the pass</span>
+  <span><i class="swatch" style="background:var(--route)"></i> decides where it goes next</span>
+</div>
+
+<div class="rail">
+  <div class="step">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">claim</div>
+      <div class="for">Which ticket to take. <b>There is no ticket yet when you run</b> — you are
+        the one choosing it.</div>
+      <div class="facts"><span class="tag">kinds · labels · whose</span></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">admit</div>
+      <div class="for">Cutting the branch. <b>The worktree first exists here</b>, so this is the
+        first step with a commit to point at.</div>
+      <div class="facts"><span class="tag">base · submodules</span></div>
+    </div>
+  </div>
+  <div class="step refuses">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">prepared</div>
+      <div class="for">Getting the tree workable — install, generate, whatever it needs.
+        <b>The cheapest place to stop</b>: nothing has been paid for yet.</div>
+      <div class="facts"><span class="tag ref">can stop the pass</span></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">design</div>
+      <div class="for">A document before any code — <b>or nothing, which is a fine answer</b>. An
+        empty design is not a failure; the next step works from the ticket.</div>
+      <div class="facts"><span class="tag">the ticket</span></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">implement</div>
+      <div class="for">One agent doing the work. <b>It reports the commit it made</b> — everything
+        later is judged against that.</div>
+      <div class="facts"><span class="tag">the ticket · the design</span></div>
+    </div>
+  </div>
+  <div class="step refuses">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">build</div>
+      <div class="for">Is it green. <b>A red one skips the review</b> — no point paying an agent to
+        read a diff that does not compile.</div>
+      <div class="facts"><span class="tag ref">can stop the pass</span></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">review</div>
+      <div class="for">Read the diff and <b>say what you found</b>. You do not decide what it means
+        — the next step does.</div>
+      <div class="facts"><span class="tag">the diff</span></div>
+    </div>
+  </div>
+  <div class="step routes refuses">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">proposed</div>
+      <div class="for"><b>Where does it go now.</b> Back to the agent, on to the merge, or to you.
+        This is the only step that decides.</div>
+      <div class="facts">
+        <span class="tag gives">what refused</span>
+        <span class="tag gives">where it may go</span>
+        <span class="tag rt">decides where next</span>
+      </div>
+    </div>
+  </div>
+  <div class="step refuses">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">merge</div>
+      <div class="for">Landing it. <b>Say why if it will not land</b> — usually somebody else's
+        work landed first and the diff stopped being true.</div>
+      <div class="facts"><span class="tag ref">can stop the pass</span></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="spine"><span class="dot"></span></div>
+    <div class="card">
+      <div class="name">end</div>
+      <div class="for">Runs <b>however it ended</b> — landed, blocked, failed, closed — and cannot
+        stop anything, because it is already over. Close the issue, write a label, tell somebody.</div>
+      <div class="facts"><span class="tag gives">how it ended</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>What you tell the pass when you are done</h2>
+<p class="sub">Four things any step can say, and two more where they mean something.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>you say</th><th>and it means</th></tr></thead>
+  <tbody>
+    <tr><td>passed</td><td>carry on</td></tr>
+    <tr><td>held</td><td>a person is needed, and here is the question to ask them</td></tr>
+    <tr><td>did-not-finish</td><td><b>you could not tell</b> — you crashed, timed out, never got an answer</td></tr>
+    <tr><td>never-ran</td><td>you did not start at all</td></tr>
+    <tr><td>refused</td><td>you read it and it is wrong. <b>Only at the three that can stop the pass</b></td></tr>
+    <tr><td>routed</td><td>go here next. <b>Only at <code>proposed</code></b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="pull">
+  <p><em>Refused</em> and <em>did-not-finish</em> are the pair to get right. “I read it and it is
+    wrong” buys the agent another round to fix it. “I could not read it” does not — there is
+    nothing for the agent to fix, and sending it anyway spends money repairing a defect that is
+    not in the diff.</p>
+  <div class="who">The one mistake worth warning about twice</div>
+</div>
+
+<h2>Where a refusal goes is also yours</h2>
+<p class="sub">And the one thing that stays ours.</p>
+
+<p>At <code>proposed</code>, what you return <em>is</em> the decision. A project that wants to look
+  at every refusal itself, instead of paying for another round:</p>
+
+<pre><code>proposed:
+  - name: everything comes to me
+    judge: always-waiting</code></pre>
+
+<p><strong>What you do not choose is what it costs.</strong> Sending the work back spends another
+  round; your recipe says how many rounds a pass may buy and how many passes a ticket may buy. When
+  there is no budget left the pass comes to you anyway — <strong>and it tells you which limit ran
+  out</strong>, rather than quietly doing something else.</p>
+
+<p class="note">That is the one thing that cannot be yours. A plugin free to send the work anywhere
+  can loop for ever, and the bill is real. Coming to you is the one destination that costs nothing,
+  which is why it is the answer both when you ask for it and when the money runs out.</p>
+
+<h2>Turning it on</h2>
+<p class="sub">Five steps, and the fourth is the one people get wrong.</p>
+
+<ol class="flow">
+  <li>
+    <h3>Write it</h3>
+    <p>A schema for what your recipe may say, and an <code>at</code> for where you run.</p>
+  </li>
+  <li>
+    <h3>Register it</h3>
+    <p>Add it to the plugin set. What is not in it is not a plugin, and a recipe naming it is
+      refused as an unknown key.</p>
+    <p class="note">Plugins are code in the Lingtai tree today — there is no installing one from
+      elsewhere yet.</p>
+  </li>
+  <li>
+    <h3>Declare it in your recipe</h3>
+    <p>At a step your <code>at</code> covers. Your recipe is
+      <code>~/.lingtai/&lt;project&gt;/recipe.yml</code> — one per project, on the machine that runs
+      the work, <strong>not in your repository</strong>.</p>
+  </li>
+  <li>
+    <h3>Restart — and only step 2 needs it</h3>
+    <p><strong>Editing your recipe never needs a restart.</strong> It is read fresh on every pass;
+      change it and the next one sees it.</p>
+    <p><strong>New code does.</strong> The daemon holds the code it started with. So if you declare
+      a plugin it has not loaded, <em>every</em> pass is refused until it restarts — which looks
+      like the machine has died. <strong>Land the code, restart, then edit the recipe.</strong></p>
+  </li>
+  <li>
+    <h3>Watch one go through</h3>
+    <p><code>lingtai attach &lt;runId&gt;</code>, or the run log on the ticket's page.</p>
+  </li>
+</ol>
+
+<h2>If it does not work</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>what happened</th><th>what it means</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>“not a plugin”</td>
+      <td>You did not register it, or you misspelled the key.</td>
+    </tr>
+    <tr>
+      <td>“declared at <code>claim</code>, which it does not implement”</td>
+      <td>You put it at a step your <code>at</code> does not cover. The message tells you which
+        steps it does serve.</td>
+    </tr>
+    <tr>
+      <td>the whole recipe is refused, every pass</td>
+      <td>You edited the recipe before restarting. The daemon does not know this plugin yet.</td>
+    </tr>
+    <tr>
+      <td>it runs twice</td>
+      <td>That is a fix round — a pass can visit a step more than once. Look at the history you
+        were handed if you need to tell which visit you are on.</td>
+    </tr>
+    <tr>
+      <td>it is declared and nothing happens</td>
+      <td>This should be impossible: a plugin with no function for a step is refused before the
+        pass starts, never silently skipped.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  Decision <b>0064</b> — a plugin declares the steps it implements, and that is what makes it legal
+  there. Accepted 2026-09-26, not yet built.
+</footer>
+
+</div>
+
+</body>
+</html>
