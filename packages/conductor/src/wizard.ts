@@ -48,7 +48,7 @@ import { dirname } from "node:path";
 import { Recipe, backoffOf, baseOf, emitRecipe, excludeOf, kindsOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
 import { type Runnable, selectRunnable } from "./queue.ts";
-import { nothingChecks } from "./wizard-page.ts";
+import { CHECKING_STEPS, nothingChecks } from "./wizard-page.ts";
 
 export interface FirstPassOptions {
   client: GitHubClient;
@@ -118,7 +118,7 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
   if (recipe.steps.merge.length > 0) return null;
-  if (recipe.steps.proposed.length > 0) return null;
+  if (CHECKING_STEPS.some((step) => recipe.steps[step].length > 0)) return null;
   return nothingChecks(baseOf(recipe));
 }
 

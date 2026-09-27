@@ -370,15 +370,24 @@ describe("every step × kind cell runs or refuses", () => {
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["claim", "admit", "design", "implement", "build", "review"]);
+    expect(unimplemented).toEqual(["claim", "admit", "design", "implement"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
       // step's; the five that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
       const why = whyNoKindAt(step, "run");
       expect(why, `${step} is no longer unimplemented`).toContain(`no plugin implements \`${step}\``);
     }
-    expect(whyNoKindAt("build", "run")).toContain("the build is a `run:` action at `proposed`");
-    expect(whyNoKindAt("review", "run")).toContain("the review is an `agent:` action at `proposed`");
+    // **Both were opened on 2026-09-27 and their refusals went with them.** A
+    // `run:` at `build` and an `agent:` at `review` are what the recipe declares
+    // there now, so there is no sentence left to send a reader to `proposed` —
+    // `null` is the assertion, and a refusal coming back here again would mean a
+    // key was lost.
+    expect(whyNoKindAt("build", "run")).toBeNull();
+    expect(whyNoKindAt("review", "agent")).toBeNull();
+    // `run:` at `review` is still refused, and for a reason that outlives the
+    // move: a command cannot return findings, and findings are the whole of what
+    // `review` produces (0058 §3b).
+    expect(whyNoKindAt("review", "run")).toContain("review");
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
   });
 

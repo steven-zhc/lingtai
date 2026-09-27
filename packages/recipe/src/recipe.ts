@@ -115,12 +115,29 @@ export const runPlugin = definePlugin("run", {
    * the throw in a different file, and *accepted ⇒ runs* is the invariant
    * `conductor/unit/step-matrix.test.ts` walks every cell to hold.
    *
-   * So these are today's three, unchanged: **this ticket moves where legality
-   * is read from and widens nothing.** Opening `build` and `review` is
-   * [T5d](../../../doc/design/the-pipeline.md), and it is now two keys here
-   * rather than a row in a table somewhere else.
+   * **`build` is open since 2026-09-27, and it was one key.** Nothing else
+   * stood in the way: `runPass` resolves `actionsAt(step, actions)` at all ten
+   * and runs them through `runActionPipeline` *before* the body
+   * (`conductor/src/pass.ts:1443`), and `pass.ts:166` makes every step but
+   * `end` a `"verdicts"` step. `prepared` is the proof rather than the
+   * argument — its body is `async () => ({ ending: "passed" })`, character for
+   * character what `build`'s is, and a failing `pnpm install` refuses there all
+   * the same, because `pass.ts:1460` returns the pipeline's ending and never
+   * reaches the body.
+   *
+   * **`review` is deliberately not opened beside it.** `build` is in
+   * `REFUSING_STEPS` and `review` is not — *`review` returns findings and
+   * judges nothing* (0058 §3b, `pass.ts:109`) — so a command that fails at
+   * `review` has nowhere to put the failure until `proposed` has a judge to
+   * read it. That judge is `judgePlugin.at.proposed`, still `{}`, which is
+   * where the rest of [T5d](../../../doc/design/the-pipeline.md) went.
    */
-  at: { prepared: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
+  at: {
+    prepared: notBuiltYet,
+    build: notBuiltYet,
+    proposed: notBuiltYet,
+    merge: notBuiltYet,
+  },
 });
 
 /**
@@ -167,7 +184,19 @@ export const agentPlugin = definePlugin("agent", {
     prompt: z.string(),
   },
   /** Not `prepared`: nothing has been committed there, so there is no diff to read. */
-  at: { proposed: notBuiltYet, merge: notBuiltYet },
+  /**
+   * **`review` since 2026-09-27, and `pass.ts` was already written for it.**
+   * `pass.ts:1589` reads `if (spec.step === "review") return { ending:
+   * "passed" }` — a reviewer's `failed` is its findings and not a verdict about
+   * the step (0058 §3b), so they ride out on `results` and `proposed` reads them
+   * to decide there is a `findings` direction to judge at all. Declaring the
+   * cold reviewer here rather than at `proposed` is what makes that arrival a
+   * *routing* arrival instead of `proposed` refusing on its own behalf.
+   *
+   * `merge` stays for the re-verify after a moved base. `build` is not here: a
+   * `run:` belongs there, and an agent asked to build would be paid to read.
+   */
+  at: { review: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
 });
 
 /** Globs against the diff's file list; a match holds or fails. */

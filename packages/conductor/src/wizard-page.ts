@@ -182,6 +182,22 @@ export const CLOSE_ACTION: StepAction = { name: "close the ticket", when: "lande
  * being chosen. The page opens no pull request (0046), so on the page is the
  * only place a person reads it there.
  */
+/**
+ * **The steps whose declared actions check a diff before it merges**, in the
+ * order a pass reaches them.
+ *
+ * One list, because this question used to be written out at each site as
+ * `recipe.steps.proposed`, and the sites drifted the moment `build` opened:
+ * widening `nothingReadsIt` alone left the page's own copy reading `proposed`,
+ * so it told an operator *nothing checks a diff* while a full build ran at
+ * `build:`, and offered the person-approves remedy `wizard.ts` calls out as
+ * undoing the move. A second copy of the question is a second answer to it.
+ *
+ * `merge` is deliberately not here: its actions run *after* the verdicts this
+ * asks about, and `nothingReadsIt` reads it separately for that reason.
+ */
+export const CHECKING_STEPS = ["build", "review", "proposed"] as const;
+
 export function nothingChecks(base: string): string {
   return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${base}\`.`;
 }
