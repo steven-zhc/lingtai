@@ -1477,9 +1477,10 @@ because no plugin serves them and so no recipe can declare an action there
 ([0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4). The
 rest are `skipped` wherever that recipe declares nothing, which is a reading of a
 file and not a fact about the build: `build` and `review` opened on 2026-09-27,
-so on a recipe that declares at both it is `proposed` that goes dashed. Six on
-this repository's own cards either way — **and a reader counting a seventh live
-segment is reading a recipe, not finding a bug in the fold.**
+so on a recipe that declares at both it is `proposed` that goes dashed — six
+dashed on this repository's own cards either way, and **a reader who finds a
+different segment dashed than they remember is reading a recipe, not finding a
+bug in the fold.**
 
 `lingtai add` prints the same ten at onboarding (`for (const point of STEPS)` in
 `packages/conductor/src/onboard.ts`). Neither surface omits a step.
