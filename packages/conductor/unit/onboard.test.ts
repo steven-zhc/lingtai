@@ -91,6 +91,37 @@ describe("the base lingtai add records", () => {
     expect(found.refusal).toContain("repo.base");
   });
 
+  /**
+   * **And it names the line to go and change, which is not always `repo.base`**
+   * (`#268`).
+   *
+   * A recipe may declare the base at `admit` now, and `baseOf` prefers it — so
+   * a refusal that always said `repo.base` would send somebody to a key whose
+   * value is not the one printed two clauses earlier. The base in this recipe
+   * is `develop` from the step while `repo:` underneath says `main`, which is
+   * what makes the assertion about the *reading* and not about the fixture.
+   */
+  it("names the action, where the base is declared at `admit`", async () => {
+    const atAdmit = `${recipe("main")}
+steps:
+  admit:
+    - name: cut the branch
+      worktree:
+        base: develop
+`;
+    const found = await governing(
+      reader({ [`main:${RECIPE_PATH}`]: atAdmit, [`develop:${RECIPE_PATH}`]: atAdmit }),
+      { ref: "main", named: true },
+      SLUG,
+    );
+
+    expect(found.ok).toBe(false);
+    if (found.ok) return;
+    expect(found.refusal).toContain('the "cut the branch" action at `admit`');
+    expect(found.refusal).not.toContain("repo.base");
+    expect(found.refusal).toContain("develop");
+  });
+
   it("refuses when the branch the recipe names has no recipe on it", async () => {
     const found = await governing(
       reader({ [`main:${RECIPE_PATH}`]: recipe("develop") }),
