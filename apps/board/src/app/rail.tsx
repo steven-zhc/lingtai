@@ -96,10 +96,13 @@ function segTitle(p: StepProgress): string {
  * than trusting this sentence, which named three of the five for a day.)
  * That trade is the right way round: omitting a segment
  * loses the distinction 0016 §4 exists for, and clipping a word loses the
- * characters a reader can get back by hovering. Six of the ten are `skipped`
- * on every card today, because no pipeline is constructed at them — which is
- * exactly the thing a dashed outline is for, and exactly what a rail that drew
- * only the built ones would hide.
+ * characters a reader can get back by hovering. Five of the ten are `skipped`
+ * on every card today — no plugin implements them, so no recipe can construct
+ * a pipeline at them — which is exactly the thing a dashed outline is for, and
+ * exactly what a rail that drew only the built ones would hide. (`build` was
+ * the sixth until `#263` put `run:` at it; it is dashed while the recipe
+ * declares nothing there and drawn like any other step once one does, so the
+ * count here is *today's recipes* and not a property of the rail.)
  *
  * **One cell per action.** `prepared: [install]` draws one; `proposed` holds
  * `build` and `review` and draws two, each with its own verdict, so a step

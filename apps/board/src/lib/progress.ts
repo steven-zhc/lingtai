@@ -41,11 +41,21 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * configured and did not run is Lingtai's bug. Only showing all ten keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  *
- * **Six of the ten are `skipped` on every run today**, because nothing
- * constructs a pipeline at `claim`, `admit`, `design`, `implement`, `build` or
- * `review` (0058 §3 names them; its own plan builds them). That is the state
- * reading correctly rather than a gap: the recipe configures nothing there, so
- * nothing ran there, so `skipped` is what the fold owes a reader.
+ * **Five of the ten are `skipped` on every run today**, because no plugin
+ * implements `claim`, `admit`, `design`, `implement` or `review` — an action
+ * written at one of them is refused when the recipe resolves, so the recipe
+ * cannot configure a pipeline there however it is written (0058 §3 names the
+ * ten; its own plan builds them). That is the state reading correctly rather
+ * than a gap: nothing is configured there, so nothing ran there, so `skipped`
+ * is what the fold owes a reader.
+ *
+ * **`build` was the sixth until `#263`, and is now a recipe's decision like
+ * any other.** `runPlugin` declares itself at `build`, so `pnpm typecheck &&
+ * pnpm test` can be declared there — and a card whose run was given one draws
+ * `build` `pending`, `passed` or `failed` off the same `stateOf` below as
+ * `proposed`. It reads `skipped` only while the recipe declares nothing at it.
+ * **So a card showing a live `build` segment is the recipe working, not the
+ * fold miscounting**, and nothing here needs rebuilding to explain it.
  */
 export type StepState =
   | "skipped"
@@ -258,10 +268,14 @@ function stateOf(
   // that holds it.
   //
   // It read *four and not five* until the vocabulary widened, and the exclusion
-  // is still exactly one name. The six steps nothing constructs a pipeline for
-  // are reached by the line above rather than by this one: their `planned` is
+  // is still exactly one name. The steps nothing constructs a pipeline for are
+  // reached by the line above rather than by this one: their `planned` is
   // empty, so they are `skipped` before this rule is asked — an empty `actions`
-  // list is never an accusation.
+  // list is never an accusation. **That is a count off the plan and not off a
+  // list of step names**, which is why `#263` opening `run:` at `build` moved
+  // nothing here: a `build` the recipe declares nothing at has an empty
+  // `planned` and is skipped exactly as before, and one it declares a command
+  // at reaches this rule and is held to it like any other step.
   if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";

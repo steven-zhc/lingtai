@@ -1111,7 +1111,7 @@ export function whyNoKindAt(
  * sentence and three branches were written as `kind === …` with `prepared`
  * spelled inside them. Opening `run:` at `build` gave the function a third
  * step and those three branches answered for it, each with a sentence about a
- * point two steps earlier: `agent:` at `build` was told *nothing has been
+ * step two earlier: `agent:` at `build` was told *nothing has been
  * committed at `prepared`* on a line that said `build`, where the implementing
  * agent's commit is the very thing the step was handed. A refusal that names a
  * step the operator did not write is worse than no reason, because it is one
@@ -1170,7 +1170,7 @@ function whyNotAtBuild(kind: ActionKind): string {
   if (kind === "agent") {
     return (
       "`build`'s verdict is whether the commands passed, and `run:` is the only plugin declared " +
-      "here — so an agent's reading has nothing at this step to be. The ordering is the point: " +
+      "here — so an agent's reading has nothing at this step to be. The ordering is the reason: " +
       "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 puts `build` before " +
       "`review` so that no agent is paid to read a diff that does not compile, and a red `build` " +
       "refuses straight to `proposed` without reaching one. Declare the reviewer at `proposed`, " +
@@ -1183,7 +1183,7 @@ function whyNotAtBuild(kind: ActionKind): string {
       "`build`'s verdict is whether the commands passed, and `run:` is the only plugin declared " +
       "here — a match here would have nothing to hold. `build` refuses to `proposed`, which is " +
       "where the diff is judged and where `watch:` already serves: write the globs there, and " +
-      "`then: request-approval` holds at a point that can be answered"
+      "`then: request-approval` holds at a step that can be answered"
     );
   }
   return (

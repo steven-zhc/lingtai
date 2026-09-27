@@ -429,7 +429,9 @@ describe("a running card", () => {
       "skipped",
       "skipped",
       "passed",
-      // `design`, `implement`, `build`, `review` — the same.
+      // `design`, `implement`, `review` — the same. And `build`, which has a
+      // plugin since `#263` but nothing declared at it in this fixture: the
+      // fold reads the plan, so an empty one is `skipped` either way.
       "skipped",
       "skipped",
       "skipped",
@@ -555,8 +557,10 @@ describe("all ten steps, in every lane", () => {
    * draw fewer than ten.
    *
    * **Ten and not "the ones that are configured", which is the trap this file
-   * exists to hold shut.** Six of the ten are `skipped` on every card today,
-   * and dropping them would be the width argument winning an argument it is
+   * exists to hold shut.** Most of the ten are `skipped` on every card today —
+   * five always, because no plugin implements them, and `build` until a recipe
+   * declares a command at it (`#263`) — and dropping them would be the width
+   * argument winning an argument it is
    * not allowed to have: a bar that hides a `skipped` step cannot tell it from
    * a step that was configured and silently did not run, which is exactly
    * 0016 §4's failure and exactly what 0061 §5 forbids. What gives way for the
