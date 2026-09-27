@@ -856,18 +856,22 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
  * Where the work a step no plugin implements names is actually done today.
  *
  * The half of the refusal that is worth reading. *No plugin implements this
- * step* leaves an operator with a recipe key and no next move; *the build runs
- * as a `run:` action at `proposed`* is the line they can act on, and it is also
- * the thing that will stop being true the day a plugin declares itself at that
- * step — at which point this entry goes and an `at` key arrives in the same
- * diff.
+ * step* leaves an operator with a recipe key and no next move; *`conduct.ts`
+ * dispatches the implementing agent directly* is the line they can act on, and
+ * it is also the thing that stops being true the day a plugin declares itself
+ * at that step — at which point the entry goes and an `at` key arrives in the
+ * same diff.
+ *
+ * **`build` and `review` are the day that happened** (2026-09-27, `a417908`).
+ * Both said *it runs as an action at `proposed`*, both are served now, and both
+ * entries went with the keys that opened — the same diff the second half of the
+ * rule describes, in the other direction. Neither is reachable any more:
+ * `whyNoKindAt` reads this only where `pluginsAt` is empty.
  */
-const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review", string> = {
+const WHERE_INSTEAD: Record<"claim" | "design" | "implement", string> = {
   claim: "the queue picks the item by `source.kinds`, `source.exclude` and `runtime.assignee`",
   design: "there is no design step: the implementing agent is handed the issue body and works from it",
   implement: "`conduct.ts` dispatches the implementing agent directly, under `runtime.limits`",
-  build: "the build is a `run:` action at `proposed`",
-  review: "the review is an `agent:` action at `proposed`",
 };
 
 /**
@@ -1104,7 +1108,23 @@ export function whyNoKindAt(
   return `${wrongStep}: ${whyThatPair(step, kind)}`;
 }
 
-/** Why this plugin's output would mean nothing at this step, said in the step's own terms. */
+/**
+ * Why this plugin's output would mean nothing at this step, said in the step's
+ * own terms.
+ *
+ * **Answered by step first and by kind second, and the order is load-bearing.**
+ * Every branch here was written when `prepared` was the only step that served
+ * some kinds and refused others, so the three at the bottom name `prepared` in
+ * as many words. `build` and `review` opened on 2026-09-27 and joined that
+ * shape — an `agent:` at `build` stopped taking the *no plugin implements this
+ * step* branch and fell through to a sentence saying *nothing has been
+ * committed at `prepared`*, where in fact the agent has committed and the true
+ * reason is that `agentPlugin` has no `build` key. A refusal naming a step the
+ * operator never wrote, for a reason that is false where it is printed, is
+ * worse than no reason: `step-matrix.test.ts` pins the sentence at each of
+ * them rather than the keywords, because *contains the step name* passes on
+ * the opening clause alone and let exactly this through.
+ */
 function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "end") {
     return (
@@ -1117,6 +1137,23 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (kind === "close" || kind === "labels" || kind === "refs") {
     return "it is an effect rather than a verdict, and only the `end` step carries out effects";
+  }
+  if (step === "review") {
+    return (
+      "`review` returns findings and judges nothing (0058 §3b) — `pass.ts` makes its ending `passed` " +
+      "whatever the action said, so a verdict declared here is one the step throws away, and `agent:` " +
+      "is the only plugin that answers with findings rather than with a verdict. A command that decides " +
+      "whether the diff stands is a `run:` at `build`; a glob over it or a hold on it is `proposed`'s"
+    );
+  }
+  if (step === "build") {
+    return (
+      "`build` is the independent build of what was written (0058 §3), and what it asks of an action is " +
+      "a command's exit code — `run:` is the one plugin declared there, and none of the other three " +
+      "builds anything. An agent asked to would be paid to read, and a cold read of the diff is " +
+      "`review`; a glob over the diff's file list and a hold on it are questions about a change already " +
+      "built, which is `proposed`"
+    );
   }
   if (kind === "agent") {
     return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";

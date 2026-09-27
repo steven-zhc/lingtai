@@ -30,10 +30,17 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Twelve of the hundred and twenty cells run and **a hundred and eight
- * refuse**; seventy-two of those are the six steps no plugin implements, and
+ * Fourteen of the hundred and twenty cells run and **a hundred and six
+ * refuse**; forty-eight of those are the four steps no plugin implements, and
  * fifty are the five plugins that serve no step — overlapping each other by
- * thirty, because a `worktree:` action at `design` is both at once.
+ * twenty, because a `worktree:` action at `design` is both at once.
+ *
+ * **It was twelve and six until 2026-09-27**, when `runPlugin` took `build` and
+ * `agentPlugin` took `review` (`a417908`): two cells moved from refusing to
+ * running, and two steps left the column that refuses every kind. The counts
+ * are the arithmetic of the two closed sets and nothing asserts them, so they
+ * are the one thing in this file that can go quietly stale — the assertion
+ * thirteen paragraphs down names the four steps, and it is the one to believe.
  *
  * **`refs:` is the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
@@ -384,11 +391,57 @@ describe("every step × kind cell runs or refuses", () => {
     // key was lost.
     expect(whyNoKindAt("build", "run")).toBeNull();
     expect(whyNoKindAt("review", "agent")).toBeNull();
-    // `run:` at `review` is still refused, and for a reason that outlives the
-    // move: a command cannot return findings, and findings are the whole of what
-    // `review` produces (0058 §3b).
-    expect(whyNoKindAt("review", "run")).toContain("review");
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
+  });
+
+  /**
+   * **What the two steps that opened say to a kind they still refuse**, pinned
+   * as sentences rather than as keywords.
+   *
+   * This is the case the `build` half of `#263` was refused for twice. Opening
+   * `runPlugin.at.build` took `agent:`, `watch:` and `human:` at `build` out of
+   * the *no plugin implements this step* branch and dropped them into
+   * `whyThatPair`, whose three remaining branches were all written for
+   * `prepared` — so the refusal for an `agent:` at `build` read *nothing has
+   * been committed at `prepared`*, which names a step the operator did not
+   * write and is false where it is printed: at `build` the agent has committed.
+   * `review` gained the mirror of it, sending a `run:` there to a sentence
+   * about a hold that cannot be answered.
+   *
+   * **The generic walk above cannot catch this**, and that is why the case
+   * exists. Its cells assert the refusal *contains* the action, the kind and
+   * the step, and all six of these satisfy that on the opening clause —
+   * ``` `agent:` does not implement `build` ``` — with any reason at all behind
+   * it. So the reason is asserted here, and the two remedies are asserted with
+   * it, because *where do I write this instead* is the only part an operator
+   * can act on.
+   */
+  it("says why `build` and `review` are narrower than `proposed`, and where each kind goes", () => {
+    for (const kind of ["agent", "watch", "human"] as const) {
+      const why = whyNoKindAt("build", kind);
+      expect(why, `${kind} is no longer refused at build`).not.toBeNull();
+      expect(why).toContain("`build` is the independent build of what was written");
+      // The three sentences `prepared` owns, and `build` must not borrow.
+      expect(why).not.toContain("nothing has been committed");
+      expect(why).not.toContain("released back to the queue");
+      expect(why).not.toContain("`lingtai ask`");
+    }
+    // And it says where each of them goes instead: a cold read is `review`'s,
+    // a glob and a hold are `proposed`'s.
+    expect(whyNoKindAt("build", "agent")).toContain("a cold read of the diff is `review`");
+    expect(whyNoKindAt("build", "watch")).toContain("questions about a change already built, which is `proposed`");
+
+    for (const kind of ["run", "watch", "human"] as const) {
+      const why = whyNoKindAt("review", kind);
+      expect(why, `${kind} is no longer refused at review`).not.toBeNull();
+      expect(why).toContain("`review` returns findings and judges nothing");
+      expect(why).toContain("`agent:` is the only plugin that answers with findings");
+      expect(why).not.toContain("nothing has been committed");
+      expect(why).not.toContain("released back to the queue");
+    }
+    // The remedy, which is the half of `#263` that moved: a command that
+    // decides whether a diff stands has a step of its own now.
+    expect(whyNoKindAt("review", "run")).toContain("a `run:` at `build`");
   });
 
   /**
