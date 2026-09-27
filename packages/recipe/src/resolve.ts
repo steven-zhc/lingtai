@@ -21,7 +21,7 @@ import { parse as parseYaml } from "yaml";
 import { applyPreset } from "./presets.ts";
 import type { Plugin } from "./plugin.ts";
 import { PLUGINS, Recipe, discloseSteps } from "./recipe.ts";
-import { baseOf } from "./settings.ts";
+import { baseDeclaredAt, baseOf } from "./settings.ts";
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = ".lingtai/config.yaml";
@@ -323,8 +323,15 @@ function retiredKeys(raw: unknown): string[] {
 export function baseDivergence(resolved: ResolvedRecipe, slug: string): string | null {
   const declared = baseOf(resolved.recipe);
   if (declared === resolved.ref) return null;
+  // **Named where it is written, not where it used to be** (`#268`). The
+  // sentence exists to send somebody to one line in one file, and `base` has
+  // two spellings while `repo:` is still the fallback — so a refusal that said
+  // `repo.base` under a recipe declaring `admit` would name a key whose value
+  // is not the one in this message.
+  const at = baseDeclaredAt(resolved.recipe);
+  const where = at === null ? "repo.base" : `\`admit\`'s "${at}"`;
   return (
-    `recipe read from ${resolved.ref} declares repo.base: ${declared} — ` +
+    `recipe read from ${resolved.ref} declares ${where}: ${declared} — ` +
     "the rules and the merge target are different branches. " +
     `Re-register: lingtai add ${slug} --base ${declared}`
   );
