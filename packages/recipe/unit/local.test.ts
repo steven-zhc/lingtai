@@ -358,21 +358,29 @@ steps:
       );
     });
 
-    // The name before 0061, and the one somebody with an older file in front of
-    // them types. Refusing only the live name would drop this one in silence.
-    it("and so is the retired `gates:`, which is told it is retired", async () => {
-      await expect(resolveLocalRecipe("app", withMachine("gates:\n  merge: []\n"))).rejects.toThrow(
-        "`gates:` is what `steps:` was called before 0061",
-      );
-    });
-
-    it("so is one under a project's section, under either name", async () => {
+    it("so is one under a project's section", async () => {
       await expect(
         resolveLocalRecipe("app", withMachine("projects:\n  app:\n    steps:\n      merge: []\n")),
       ).rejects.toThrow(/projects\.app\.steps: a pass is not configured in the machine file/);
+    });
+
+    /**
+     * **The pre-0061 spelling is refused by the schema now, not by name**
+     * (`#247`). It was named here beside `steps:`, for somebody copying an
+     * older block across — and it is one of the four retired words, so it could
+     * not stay in `src/` and leave `doc/reference.md`'s allowlist empty.
+     *
+     * What it cost is the sentence and not the refusal: `projects.<name>` is a
+     * `strictObject`, so an unknown key under a project is still refused by its
+     * own name. At the top level the machine file is open by design — a section
+     * some other reader owns is not this reader's to refuse — so a `gates:`
+     * there is now ignored like any other stranger's block, which is the one
+     * thing this change gave up.
+     */
+    it("names an unknown key under a project's section, whatever it is called", async () => {
       await expect(
         resolveLocalRecipe("app", withMachine("projects:\n  app:\n    gates:\n      merge: []\n")),
-      ).rejects.toThrow(/projects\.app\.gates: a pass is not configured in the machine file/);
+      ).rejects.toThrow(/gates/);
     });
 
     it("and anything else the machine's runtime does not own", async () => {

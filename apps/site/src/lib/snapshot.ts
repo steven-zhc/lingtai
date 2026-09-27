@@ -28,7 +28,7 @@ import { repoRoot } from "./docs.ts";
  * publishes five cards still counts all forty.
  */
 
-/** The four lanes, as the board has them. Not five: `gates` folds into `running`. */
+/** The four lanes, as the board has them. Not five: `verifying` folds into `running`. */
 export type Lane = "queued" | "running" | "waiting" | "landed";
 
 export interface SnapshotCard {
@@ -137,7 +137,7 @@ export const SNAPSHOT_FILE = path.join(repoRoot, "apps", "site", "snapshot.json"
 export const LANE_CARDS = 5;
 
 /**
- * Which lane a state is shown in. Four lanes, not five — `gates` is a task
+ * Which lane a state is shown in. Four lanes, not five — `verifying` is a task
  * state and not a lane, because from an operator's seat "the agent is working"
  * and "the build is running" are the same fact (ADR 0016 §8).
  *
@@ -150,7 +150,7 @@ export const LANE_CARDS = 5;
 export const LANE_OF: Record<TaskState, Lane> = {
   queued: "queued",
   running: "running",
-  gates: "running",
+  verifying: "running",
   waiting: "waiting",
   landed: "landed",
   // Closed shares Landed's lane, as it does on the board: both are over, and

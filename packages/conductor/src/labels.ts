@@ -33,7 +33,7 @@ export const LINGTAI_LABEL_PREFIX = "lingtai:";
 export function labelsFor(state: LabelState): string[] {
   switch (state) {
     case "running":
-    case "gates":
+    case "verifying":
       return [`${LINGTAI_LABEL_PREFIX}working`];
     case "waiting":
       return [`${LINGTAI_LABEL_PREFIX}waiting`];

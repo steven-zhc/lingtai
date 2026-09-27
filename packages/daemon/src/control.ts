@@ -355,8 +355,8 @@ export async function withdrawShutdown(
  * board's chip and `lingtai doctor` — and only one of them is the daemon. A
  * claim folds as `running`, so this is the projection's own answer.
  *
- * `gates` counts as in flight and that is the boundary 0030 §1 draws: the
- * agent exiting is not the end of a pass, and an item whose gates are running
+ * `verifying` counts as in flight and that is the boundary 0030 §1 draws: the
+ * agent exiting is not the end of a pass, and an item whose steps are running
  * is one the drain is still waiting for.
  *
  * Empty is an ordinary answer: between passes there is nothing in flight, and
@@ -365,7 +365,7 @@ export async function withdrawShutdown(
 export async function inFlight(url?: string): Promise<string[]> {
   const tasks = await readTasks(url === undefined ? {} : { url }).catch(() => []);
   return tasks
-    .filter((t) => t.state === "running" || t.state === "gates")
+    .filter((t) => t.state === "running" || t.state === "verifying")
     .map((t) => `${t.project}#${t.issue}`);
 }
 

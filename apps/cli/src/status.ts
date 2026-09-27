@@ -154,16 +154,18 @@ export async function status(
 
     // **Where the rest went**, in the same breath as the number. A reader who
     // sees eight eligible and none runnable has to be told why, or the honest
-    // reading of the pair is "something is broken" (`#54`). `gates` folds into
-    // `running`: from an operator's seat they are the same fact.
+    // reading of the pair is "something is broken" (`#54`). `verifying` folds
+    // into `running`: from an operator's seat they are the same fact.
     //
-    // **The key is the projection's value, not this epic's word.** `gates` is what
-    // `task-view.ts` writes and what `LABEL_STATES` holds, and `#250` left that one
-    // standing on `#249`'s argument — so a `steps:` here matches nothing, and the
-    // `?? t.state` below prints the retired word as a label of its own.
+    // **The key is the projection's value and not a word this file picked.** It
+    // is what `task-view.ts` writes and what `LABEL_STATES` holds, and it was
+    // `gates` until `#247` renamed all three together — a lookup renamed ahead
+    // of the value it reads matches nothing, and the `?? t.state` below then
+    // prints the stored word as a label of its own, which is how `1 running,
+    // 1 gates` came to be one fact under two labels.
     const NAMES: Record<string, string> = {
       running: "running",
-      gates: "running",
+      verifying: "running",
       waiting: "waiting on you",
       landed: "landed",
     };

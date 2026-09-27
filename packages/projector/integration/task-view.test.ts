@@ -536,7 +536,7 @@ describe("task_view", () => {
 
     expect(card(tasks, 1)?.state).toBe("queued");
     expect(card(tasks, 2)?.state).toBe("running");
-    expect(card(tasks, 3)?.state).toBe("gates");
+    expect(card(tasks, 3)?.state).toBe("verifying");
     expect(card(tasks, 4)?.state).toBe("waiting");
     expect(card(tasks, 5)?.state).toBe("landed");
   });

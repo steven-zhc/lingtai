@@ -30,13 +30,13 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 | work item (8) | `WorkItemDiscovered` `WorkItemClaimed` `WorkItemReleased` `WorkItemBlocked` `WorkItemUnblocked` `WorkItemLinked` `WorkItemLanded` `WorkItemClosed` |
 | dispatch (1) | `DispatchRefused` |
 | run (10) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run |
-| gate (9) | `GatesResolved` `EndActionsResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateNeverRan` `GateDidNotFinish` `GateWaived` — the last two are the two ways a gate's agent ends without judging the diff: it never started ([0041](decisions/0041-a-gate-that-never-ran.md)), or it started and produced no receipt ([0057](decisions/0057-a-gate-that-did-not-finish.md)) |
+| step (9) | `StepsResolved` `EndActionsResolved` `StepRequested` `StepStarted` `StepPassed` `StepFailed` `StepNeverRan` `StepDidNotFinish` `StepWaived` — all eight of the `Step…` ones were `Gate…` until `#247`, which renamed them in the commit that reset the log, because 0061 §7 allows no migration for one. The last two are the two ways a step's agent ends without judging the diff: it never started ([0041](decisions/0041-a-gate-that-never-ran.md)), or it started and produced no receipt ([0057](decisions/0057-a-gate-that-did-not-finish.md)) |
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | finding (3) | `FindingAccepted` `FindingProposed` `FindingDeclined` — the minors a passing gate raised, and what a person then did with each one. `finding_backlog` is the projection that folds them (`#137`) |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
 | repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
 | fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
-| route (1) | `PassRouted` — where `proposed` sent a pass and why (`#271`). It carries **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a judge may choose `implement` and the pass still go to `waiting` because `rounds` is spent, and *the decision sent this to a person* and *the decision wanted another round and there was none* are the two sentences a person reads on the card. Written by the pass and not by whatever routed, because the budget is the workflow's ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3, [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §7). **It is not named `Gate…`** — the allowlist below may only shrink — so the log carries two vocabularies until the reset 0061 §7 spends, which is what a log with two eras looks like |
+| route (1) | `PassRouted` — where `proposed` sent a pass and why (`#271`). It carries **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a judge may choose `implement` and the pass still go to `waiting` because `rounds` is spent, and *the decision sent this to a person* and *the decision wanted another round and there was none* are the two sentences a person reads on the card. Written by the pass and not by whatever routed, because the budget is the workflow's ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3, [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §7). **It was never named `Gate…`** — the allowlist below could only shrink — so for three days the log carried two vocabularies, which is what a log with two eras looks like; `#247` ended that with the reset 0061 §7 spends |
 | restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 | control (5) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` `ConductorShutdownWithdrawn` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
@@ -225,15 +225,22 @@ task_view` — replay, never a repair by hand.
 Source: `LABEL_STATES` in `packages/domain/src/streams.ts:61`, re-exported as
 `TaskState` by `packages/projector/src/task-view.ts:65`.
 
-`queued` · `running` · `gates` · `waiting` · `landed`
+`queued` · `running` · `verifying` · `waiting` · `landed`
 
-**The board shows four**: `gates` folds into `running` (ADR 0016 §8). From an
-operator's seat "the agent is working" and "the build is running" are the same
-fact — the machine is busy and you are not needed. `waiting` is the lane the
-board exists for, and it stays its own.
+**The board shows four**: `verifying` folds into `running` (ADR 0016 §8). From
+an operator's seat "the agent is working" and "the build is running" are the
+same fact — the machine is busy and you are not needed. `waiting` is the lane
+the board exists for, and it stays its own.
 
 The state survives because it is a real distinction *in the log*; only the
 column is merged.
+
+**It was `gates` until `#247`**, and it is a *stored* value, so the rename is
+`lingtai projection rebuild task_view` and not only a diff. `#249` left it
+standing because the phase had no word under ten steps — `proposed` is a step
+rather than a phase; the word is what the pass does between an agent proposing
+completion and an item landing, and it is the one `verify-failed` carries for
+the way that phase ends badly.
 
 `queued` is the only one not driven by an event — it comes from GitHub, because
 Lingtai never decided which issues exist ([ADR 0012](decisions/0012-one-task-view.md)).
@@ -329,7 +336,7 @@ Not the recipe's, and each row says why.
 
 | Constant | Value | What it decides | Why it is not a recipe key |
 |---|---|---|---|
-| `EVIDENCE_LINES` / `EVIDENCE_BYTES` (`packages/actions/src/command.ts`) | `60` lines / `8000` bytes | the log tail a failed command keeps as its evidence, with up to a quarter as many bytes again of its start, on top of the tail rather than out of it, when it does not all fit | it is written into `GateFailed.evidence` — an **event payload**. A recipe may decide what a run is told; it may not decide how much a project writes into a log that is never rewritten. `runtime.budget.evidence` then clips that tail again on the way into a prompt, and that is the bound that is about cost |
+| `EVIDENCE_LINES` / `EVIDENCE_BYTES` (`packages/actions/src/command.ts`) | `60` lines / `8000` bytes | the log tail a failed command keeps as its evidence, with up to a quarter as many bytes again of its start, on top of the tail rather than out of it, when it does not all fit | it is written into `StepFailed.evidence` — an **event payload**. A recipe may decide what a run is told; it may not decide how much a project writes into a log that is never rewritten. `runtime.budget.evidence` then clips that tail again on the way into a prompt, and that is the bound that is about cost |
 | `DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts`) | `2` days | how long a landed task stays on the board — **a query, not a rebuild** | one board across every project, so no single recipe is the place to decide it. [0012](decisions/0012-one-task-view.md) settled the concept — *"Retention must not be in the projection, and this is the part that is easy to get wrong"* — and only the number was unrecorded |
 | `BUFFER_BYTES` (`packages/actions/src/command.ts`) | `2000000` bytes | above this, older output is dropped **while the command is still running** | a runaway process can print faster than anything reads it. This bounds memory, not meaning |
 | `RUN_LOG_MAX_BYTES` (`packages/agent/src/run-log.ts`) | `8000000` bytes | where a run's log file stops, saying so in itself on the line it stops at | it bounds a file on the operator's disk, not what a run is told or may spend. A trace line is about sixty bytes, so this is ~130,000 tool calls — the cap is not for the trace but for `#109`'s agent stream, which can be tens of megabytes for one run. Past this it stops being a file somebody opens to find out why a run failed ([0034](decisions/0034-the-run-log.md) §7) |
@@ -503,11 +510,11 @@ lets the log, the recipe and the board say where a pass is. What is left of
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
 
-## retired name — 4 words, and an allowlist that may only shrink
+## retired name — 4 words, and an allowlist that reached empty
 
-**This is the one section that describes code the repository is still moving
-away from.** Everything else here says what is true; this says what is *not* and
-has not finished being untrue. The pipeline epic
+**This is the one section that describes code the repository has moved away
+from.** Everything else here says what is true; this says what is no longer, and
+its allowlist is empty — `#247` closed it on 2026-09-27. The pipeline epic
 ([the-pipeline](design/the-pipeline.md)) renames the vocabulary over several
 tickets, and a rename spread over several tickets ends as two vocabularies for
 one thing unless something counts — which is
@@ -591,18 +598,15 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 661 occurrences in
-62 files**, counted 2026-09-26 — down from 1073 in 73 because `#250` had to
-carry the halves as far as compiling and asserting against a renamed `src/`,
-and no further. The 62nd is
-`conductor/unit/conduct-stands-the-conductor-down.test.ts`, which asserts on
-`GateNeverRan` and `GateDidNotFinish` by name because those are the event types
-the log carries today. They are
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 221 occurrences in
+45 files**, counted 2026-09-27 — down from 661 in 62 because `#247` had to
+carry the halves as far as compiling and asserting against a `src/` whose event
+types, payload fields and refusal reason had all moved, and no further. They are
 out because a name that survives only in a test is one no
 operator reads and no shipped code calls, and because a test names the thing it
 tests: `step-matrix.test.ts` is the test of a matrix that is called that because
 `#250` renamed the matrix, not ahead of it.
-**So `#233`'s acceptance is about `src/`**, and sweeping the halves is a ticket
+**So `#233`'s acceptance was about `src/`**, and sweeping the halves is a ticket
 of its own — not a grep on the day the last row here goes.
 
 **`at most`, and the test holds that number to the halves.** They are outside
@@ -716,145 +720,116 @@ the rule does not flag them.
 
 ### the allowlist
 
-**233 occurrences in 32 files, counted 2026-09-25** — and that sentence is
-counted by the test rather than remembered, so it is the size of the table below
-and not a number somebody forgot to lower when the table shrank.
+**0 occurrences in 0 files, counted 2026-09-27** — and that sentence is counted
+by the test rather than remembered, so it is the size of the table below and not
+a number somebody forgot to lower when the table shrank.
 
-**It came down from 739 in 69 files, and what is left is one thing: the log's
-own vocabulary.** `#250` substituted the four words everywhere they meant a
-step — the conductor, the board, the recipe, the CLI, the stylesheet and the
-copy a person reads — and stopped where the name is a fact about bytes that are
-already written down. That line is not this ticket's invention:
-`packages/domain/src/events.ts` has carried it since the field was named —
-*"the field is still spelled `gate` for the four steps that gate and for the six
-that do not. Renaming it would be a payload change on nine event types bought
-for nothing"* — and `#248` wrote the same sentence into `action.ts`. So what the
-table below now holds, and nothing else:
+**It is empty, and `#247` is what emptied it.** It came down 739 → 233 → 0.
+`#250` substituted the four words everywhere they meant a step — the conductor,
+the board, the recipe, the CLI, the stylesheet and the copy a person reads — and
+stopped where the name was a fact about bytes that were already written down.
+What it stopped at was the log's own vocabulary, and that line was not `#250`'s
+invention: `packages/domain/src/events.ts` had carried it since the field was
+named — *"the field is still spelled `gate` for the four steps that gate and for
+the six that do not. Renaming it would be a payload change on nine event types
+bought for nothing"* — and `#248` wrote the same sentence into `action.ts`.
 
-- **The eight event types** — `GateRequested`, `GateStarted`, `GatePassed`,
-  `GateFailed`, `GateNeverRan`, `GateDidNotFinish`, `GateWaived` and
-  `GatesResolved` — as the Zod schema, as the `type` string, and everywhere a
-  reader of the log names one. `gateBase` is the shared shape the eight are
-  built from and moves with them.
-- **The payload fields `gate` and `points`**, wherever they are written, read or
-  queried — including the SQL in `queries.ts` and `sqlite.ts`, which reaches
-  into the stored JSON by those names, and `finding_backlog`'s `gate` column,
-  which follows the field it folds. **A column is read by the name it was
-  declared under**, so the projector's two `toEntry`s say `row.gate` into a
-  `step` field: `#250` first renamed the read with the field and every backlog
-  entry came back `step: undefined`, which neither `pnpm typecheck` nor
-  `pnpm test` can see — `pg.QueryResultRow` and `ProjectionRow` are
-  index-signature types, and the only assertion is in the integration half.
-  `approve.ts`'s `splitStep` is the same trap with teeth: it is spread straight
-  into `parsePayload`, so returning `step` type-checks — the parameter is
-  `unknown` — and then Zod refuses every `approve` and every `waive` at run time.
-- **`gate-failed`**, the `RefusalReason` the merge lane has recorded since the
-  lane was built, that `judge:`'s `when:` reads, and that `#254`'s `merge` body
-  reports and its `proposed` body routes on — one value, read by the step that
-  writes it and the step that answers it.
-- **`gates`**, the `LabelState` and `task_view.state` value, and **the key every
-  reader of that value looks it up by** — `status.ts`'s `NAMES`, which folds it
-  into `running`. `#249` left the value standing on its own argument, which is in
-  `task-view.ts`: under ten steps that phase has no word yet, and renaming it to
-  a guess costs a rebuild now and a second when the pass rewrite picks the real
-  one. A lookup renamed ahead of the value it reads matches nothing and falls
-  through to printing the retired word, which is how `1 running, 1 gates` came
-  to be one fact under two labels.
-- **`gates:`**, the v1 recipe key `steps:` replaced. It is refused **by name**,
-  so the spelling is the refusal.
+**What moved was not the argument but the log.**
+[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 refuses a migration for
+the recipe file and for the log alike, so the only thing that could spend the
+history was a **reset**: [the-pipeline](design/the-pipeline.md)'s T5b folded the
+old log into [013](experiments/013-the-log-before-the-third-reset.md) on
+2026-09-27 and the cut followed the same day. A payload change on nine event
+types costs nothing against a store with no rows in it. So, in one commit:
 
-**All of it goes in one ticket, and that ticket is the log's**, whose shape
-[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 already names: a reset
-([the-pipeline](design/the-pipeline.md)'s T5) spends the history that makes
-renaming the eight expensive. A value on the log is renamed by the ticket that
-renames the log's own vocabulary, never ahead of it: the alternative is
-inventing a second word for a fact the events already carry, which is two
-vocabularies for one thing — 0058 §Context's defect, and the thing this ledger
-exists to make visible rather than to make impossible.
-
-Each row is one file, every retired token still in it, and **how many times the
-rule reads that token there**. The count is the entry and not decoration: a
-ledger of *distinct* names cannot see a second `gate` arrive in a file that
-already says `gate`, and every file this epic will touch already says it once.
-Keyed by name alone, `export const gate = "…the gate failed"` appended to
-`conduct.ts` — a new identifier and a new operator-facing string — is a name
-already recorded in a file already listed, and lands with nothing written down
-anywhere and no number moved.
-
-**The table is not a subset of the debt, it is exactly what the rule reads**:
-the test computes the same counts from `src/` and asserts they are these, so **a
-count too high is as red as a count too low**. A rename that landed and left its
-ledger standing is how *align the terms* becomes a sentence everybody agrees
-with and the last ticket discovers is untrue; a use added under a name already
-in the table is the same failure read from the other side.
-
-**So a retired name cannot arrive quietly, and what stops it is that there is
-nowhere quiet to put it.** One added to `src/` — a new name, or one more use of
-an old one — is red until this table says so, and saying so makes the sentence
-above it false until the number is raised too: two edits in this document, in
-one diff, one of them a line that says what it is counting. **The test is what
-makes that number true; a review is what makes it go down.** That division is
-the honest one: no test can tell a retired name that had to arrive from one that
-did not, and a test that claimed to would be refusing the diff that fixes
-something.
+- **The eight event types** are `StepsResolved`, `StepRequested`, `StepStarted`,
+  `StepPassed`, `StepFailed`, `StepNeverRan`, `StepDidNotFinish` and
+  `StepWaived`, as the Zod schema, as the `type` string, and everywhere a reader
+  of the log names one. `stepBase` is `stepBase` and moved with them.
+- **The payload fields** are `step` and `steps`, wherever they are written, read
+  or queried — including the SQL in `queries.ts` and `sqlite.ts`, which reaches
+  into the stored JSON by those names, and `finding_backlog`'s column, which
+  follows the field it folds. **A column is read by the name it was declared
+  under**, which is the trap `#250` fell into from the other side: it renamed the
+  read with the field over a column still declared `gate`, and every backlog
+  entry came back `step: undefined` with neither `pnpm typecheck` nor `pnpm test`
+  able to see it. `projector/unit/drift.test.ts` is the round trip that catches it
+  now.
+- **`verify-failed`** is the `RefusalReason` the merge lane records, and what
+  `judge:`'s `when:` reads. `gate-failed` was 0058 §3c's own complaint about
+  itself — *nothing conflicted, and no gate the recipe declared is what failed* —
+  and what does fail there is the lane's own verify after merging the base in.
+  **`conflict` stays, and that is the other half of the same decision**: the two
+  are one thing at two depths — the base came in, and either git could not merge
+  it or it merged and the result no longer holds — and `conflict` was already
+  saying what the lane found. It was the other one that named a machine part.
+- **`verifying`** is the `LabelState` and `task_view.state` value, and the key
+  every reader of it looks it up by — `status.ts`'s `NAMES`, `labelsFor`,
+  `stateInk`, the board's and the site's `COLUMN_OF`. `#249` left `gates`
+  standing because the phase had no word under ten steps; the word is what the
+  pass does between an agent proposing completion and an item landing, and it is
+  the one `verify-failed` already carries. **A lookup renamed ahead of the value
+  it reads matches nothing** and falls through to printing the stored word as a
+  label of its own, which is how `1 running, 1 gates` came to be one fact under
+  two labels — so all of them moved in this commit, and a live table needs
+  `lingtai projection rebuild task_view`.
+- **`gates:`, the v1 recipe key, is no longer refused by name.** It was, and the
+  spelling was the refusal — which made it a row here that nothing could delete.
+  `resolve.ts` refuses every top-level key `Recipe` does not declare instead, and
+  names it from the file rather than from its own source, so `gates:`, `gate:`
+  and every typo nobody thought of are all refused; `version: 1` is still refused
+  by name, by the version. What it cost is one sentence in one place: the machine
+  file is open at the top by design, so a `gates:` block typed into
+  `~/.lingtai/config.yml` is now ignored like any other stranger's, where
+  `steps:` there is still refused.
 
 **The baseline is this table, and there is deliberately no second copy of it in
 the test.** The other design reads better than it works — freeze today's
 `file → tokens` in the test file and refuse any pair it does not hold — because
 **this epic renames files**, by construction: `#248` moved five out of
 `packages/actions/src/` and `#250` moved the last three, each renamed by the
-ticket that renamed what was inside it. A frozen copy keyed by
-path reads a file that moved or was renamed as a widening that did not happen,
-and the only way back to green is to hand-edit
-the one table whose edits were supposed to be expensive — teaching, on the
-epic's ordinary path, exactly the habit it was added to prevent. Here a file
-that moves costs what any move costs: its row is edited, in the ledger a person
-is already reading, and nothing else moves.
+ticket that renamed what was inside it. A frozen copy keyed by path reads a file
+that moved or was renamed as a widening that did not happen, and the only way
+back to green is to hand-edit the one table whose edits were supposed to be
+expensive — teaching, on the epic's ordinary path, exactly the habit it was added
+to prevent.
 
-**`0 occurrences in 0 files` passes.** That is `#233`'s acceptance, and a test
-with a lower bound under it would red the `build` gate on the diff that finishes
-the job. Nothing guards against this table being read as empty by mistake,
-because nothing has to: while any debt is left in `src/` an empty parse fails
-the equality above, and when none is left an empty table is the truth.
+**Each row is one file, every retired token still in it, and how many times the
+rule reads that token there.** The count is the entry and not decoration: a
+ledger of *distinct* names cannot see a second `gate` arrive in a file that
+already says `gate`. **The table is not a subset of the debt, it is exactly what
+the rule reads**: the test computes the same counts from `src/` and asserts they
+are these, so **a count too high is as red as a count too low**. That is what
+makes the empty table below a claim rather than an omission — an allowlist
+nobody parses is how *align the terms* becomes a sentence everybody agrees with
+and the last ticket discovers is untrue.
+
+**So a retired name cannot arrive quietly, and what stops it is that there is
+nowhere quiet to put it.** One added to `src/` — a new name, or one more use of
+an old one — is red until this table says so, and saying so makes the sentence
+above it false until the number is raised too: two edits in this document, in one
+diff, one of them a line that says what it is counting. **The test is what makes
+that number true; a review is what makes it go down.** That division is the
+honest one: no test can tell a retired name that had to arrive from one that did
+not, and a test that claimed to would be refusing the diff that fixes something.
+
+**`0 occurrences in 0 files` passes, and today it is what the table says.** That
+is `#233`'s acceptance, reached by `#246` and `#247` between them, and a test
+with a lower bound under it would have redded the `build` gate on the diff that
+finished the job. Nothing guards against this table being read as empty by
+mistake, because nothing has to: while any debt was left in `src/` an empty parse
+failed the equality above, and now that none is left an empty table is the truth.
+**`is empty, which is the acceptance and not a count that got small`** is the
+case in `packages/domain/unit/retired-names.test.ts` that says so in its own
+right, so the day a row comes back it is a named failure rather than a number
+nobody was watching.
 
 | file | retired names in it |
 |---|---|
-| `apps/board/src/lib/board.ts` | `gates` ×1 |
-| `apps/board/src/lib/history.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×3 · `points` ×1 |
-| `apps/board/src/lib/progress.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×4 · `points` ×1 |
-| `apps/board/src/lib/recipe.ts` | `GatesResolved` ×1 |
-| `apps/board/src/lib/task.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GateNeverRan` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×4 |
-| `apps/cli/src/status.ts` | `gates` ×1 |
-| `apps/site/src/lib/snapshot.ts` | `gates` ×1 |
-| `packages/actions/src/action.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×3 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `gate` ×1 |
-| `packages/conductor/src/approve.ts` | `GateWaived` ×4 · `GatesResolved` ×2 · `gate` ×5 · `points` ×1 |
-| `packages/conductor/src/attempts.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×1 · `GateStarted` ×3 · `GateWaived` ×1 · `gate` ×5 |
-| `packages/conductor/src/attribution.ts` | `gate` ×2 |
-| `packages/conductor/src/judge.ts` | `gate` ×1 |
-| `packages/conductor/src/labels.ts` | `gates` ×1 |
-| `packages/conductor/src/pass-steps.ts` | `gate` ×2 |
-| `packages/conductor/src/conduct.ts` | `GatesResolved` ×2 · `gate` ×1 |
-| `packages/conductor/src/steps-resolved.ts` | `gate` ×1 · `points` ×1 |
-| `packages/daemon/src/control.ts` | `gates` ×1 |
-| `packages/domain/src/events.ts` | `GateDidNotFinish` ×3 · `GateFailed` ×3 · `GateNeverRan` ×2 · `GatePassed` ×3 · `GateRequested` ×3 · `GateStarted` ×3 · `GateWaived` ×3 · `GatesResolved` ×3 · `gate` ×3 · `gateBase` ×11 · `points` ×1 |
-| `packages/domain/src/run.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateRequested` ×3 · `GateStarted` ×1 · `GateWaived` ×2 · `gate` ×11 |
-| `packages/domain/src/streams.ts` | `gates` ×1 |
-| `packages/domain/src/upcast.ts` | `GateDidNotFinish` ×1 · `GateFailed` ×1 · `GatePassed` ×1 · `GateRequested` ×1 · `GateStarted` ×1 · `GateWaived` ×1 · `GatesResolved` ×1 · `gate` ×9 · `points` ×6 |
-| `packages/env/src/colour.ts` | `gates` ×1 |
-| `packages/event-store/src/queries.ts` | `GatesResolved` ×1 · `gate` ×1 · `point` ×3 · `points` ×1 |
-| `packages/event-store/src/sqlite.ts` | `GatesResolved` ×1 · `gate` ×1 · `point` ×3 · `points` ×1 |
-| `packages/projector/src/backlog.ts` | `GatePassed` ×2 · `gate` ×4 |
-| `packages/projector/src/postgres.ts` | `gate` ×1 |
-| `packages/projector/src/sqlite.ts` | `gate` ×1 |
-| `packages/projector/src/task-view.ts` | `GateDidNotFinish` ×2 · `GateFailed` ×2 · `GateNeverRan` ×2 · `GatePassed` ×2 · `GateWaived` ×2 · `gate` ×2 · `gates` ×1 |
-| `packages/recipe/src/local.ts` | `gates` ×4 |
-| `packages/recipe/src/recipe.ts` | `GatesResolved` ×1 · `gate` ×1 · `gates` ×1 |
-| `packages/recipe/src/resolve.ts` | `gates` ×3 |
-| `packages/repo/src/integrate.ts` | `gate` ×2 |
 
 ### ordinary English
 
-**0 of those 233 occurrences are the English word** — the table that stood here
+**0 of those 0 occurrences are the English word** — the table that stood here
 is gone, and that is what `#250` spent ten reworded sentences on. It listed nine
 (the tenth, `Point ${PREFIX}TEST_DATABASE_URL …` in `packages/env/src/index.ts`,
 it had missed), each one word in copy that was correct as it stood, and each the
@@ -937,7 +912,7 @@ written as a stand-in.
 | `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
-| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `gate-failed` are answered by the `same-worktree` built-in, which spends nothing. **An agent judge is not a name the schema takes yet**, so those three reach a person: see §`judge:` below |
+| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in, which spends nothing. **An agent judge is not a name the schema takes yet**, so those three reach a person: see §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
 **`agent:` is the one key that changed meaning rather than arriving** (`#245`,
@@ -1094,14 +1069,14 @@ and only one of them is a judgement worth an agent:
 ```
 reason              seen      what deciding actually is
 build   red           34      back to implement with the error — mechanical
-merge   gate-failed   26      back to implement with the new base — mechanical
+merge   verify-failed   26      back to implement with the new base — mechanical
 merge   conflict       6      text: resolve · intent: a person
 implement needs-input   —     interrupt, or go round stating the assumption
 review  findings      231     the lines or the approach   ← the judgement
 ```
 
 So `when:` is required and has no default — no entry can answer for all five —
-and `red` and `gate-failed` are answered by `same-worktree`, a **built-in**
+and `red` and `verify-failed` are answered by `same-worktree`, a **built-in**
 which is a synchronous function in `packages/conductor/src/judge.ts`. Being
 synchronous is the declaration that it spends nothing: nothing that dispatches
 an agent can answer without awaiting.
@@ -1111,7 +1086,7 @@ an agent can answer without awaiting.
 answers* — it is the list that has: `BUILT_IN` is a total record over the
 built-ins, so every one of those is answered, and **nothing dispatches an agent
 judge**. There is no `Runtime` and no prompt on the router's side of the call, so
-`judge: claude-code` would resolve, be recorded in `GatesResolved`, be printed by
+`judge: claude-code` would resolve, be recorded in `StepsResolved`, be printed by
 `lingtai add`, be drawn on the board — and never be asked anything, which is
 `#61` through the one door a replaceable plugin opens
 ([the-plugin-body.md](design/the-plugin-body.md) §5). It is refused where it is
@@ -1124,7 +1099,7 @@ person unless a recipe declares `judge: same-worktree` for it, which answers *th
 lines* always and never *the approach*. `conflict` and `needs-input` are the same
 shape. The ticket that lands the dispatch is what puts the runtimes back in the
 enum, and until it does the honest reading of this key is: **it closes the loop
-for `red` and `gate-failed`, and leaves the judgement with a person.**
+for `red` and `verify-failed`, and leaves the judgement with a person.**
 
 ```yaml
 proposed:
@@ -1208,7 +1183,7 @@ it by arithmetic rather than by anybody noticing.
 
 Not every plugin runs at every step, and for a year ten of the pairs said
 neither yes nor no: an action there was accepted by the schema, resolved into
-`GatesResolved`, printed by `lingtai add`, drawn on the board — and never
+`StepsResolved`, printed by `lingtai add`, drawn on the board — and never
 called (`#61`). `merge` was a sixteenth until `#58` built its pipeline. **The
 set is two-valued now**: a pair runs, or the recipe does not resolve and the
 refusal names the action, its kind, the step and why.
@@ -1372,21 +1347,22 @@ beside it.
 
 ## what the log says was *supposed* to happen
 
-`GatesResolved`, one per run, appended before anything is claimed. It names all
+`StepsResolved`, one per run, appended before anything is claimed. It names all
 ten steps and the ordered actions resolved for each — empty arrays included.
 
-**Ten is the schema's assertion and not a description of it**: `points` is
+**Ten is the schema's assertion and not a description of it**: `steps` is
 `.length(10)` (`packages/domain/src/events.ts`), pinned by *refuses a plan that
 is not all ten steps* in `packages/domain/unit/upcast.test.ts`. It was five
-until 2026-09-23, and it moved the way every field here moves — `schemaVer: 4`
-and a `3 → 4` step, which widens a stored five-step plan and gives the five the
-vocabulary did not have the `[]` those runs were in fact given. [0061](decisions/0061-the-recipe-is-the-pipeline.md)
-§7's reset ([the-pipeline](design/the-pipeline.md)'s T5) would have spent that
-history instead, and it has not run: a widening that waits for it refuses every
-plan in the store in the meantime, and `Too small: expected array to have
-exactly 10 items` — raised from `parsePayload`, rethrown unwrapped by
-`decodeRow` with no type, stream or seq on it — would be what a projector stops
-on for ever. The step dies at the reset with the other nine.
+until 2026-09-23, and it moved the way every field here moved — `schemaVer: 4`
+and a `3 → 4` step which widened a stored five-step plan — until
+[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7's reset
+([the-pipeline](design/the-pipeline.md)'s T5) spent that history on 2026-09-27.
+The type is at `schemaVer: 1` with no step under it now (`#247`): a store with
+no rows holds no five-step plan, so five is one answer here and not two. While
+the reset was still pending the widening was the only thing between the log and
+a projector stopped for ever — `Too small: expected array to have exactly 10
+items`, raised from `parsePayload` and rethrown unwrapped by `decodeRow` with no
+type, stream or seq on it.
 
 Without it the log could not distinguish "nothing was configured here" from
 "this point does not exist", because `ProjectConfigured` carries a config *hash*
@@ -1449,7 +1425,19 @@ Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
 Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/events.ts:86`.
 
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
-`gate-failed` · `no-commits` · `push-rejected` · `lane-busy`
+`verify-failed` · `no-commits` · `push-rejected` · `lane-busy`
+
+**`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
+in the same change and kept.** The old name was 0058 §3c's own complaint about
+itself — *nothing conflicted, and no gate the recipe declared is what failed* —
+because what fails there is the lane's own verify after merging the base in.
+Renaming one of a pair and leaving the other is half an enum, so the pair was
+the unit: `conflict` and `verify-failed` are one thing at two depths — the base
+came in, and either git could not merge it or it merged and the result no longer
+holds — and `conflict` was already saying what the lane found. It was the other
+one that named a machine part. Over the log before the reset, `merge` refused 32
+times: **26 of them this reason, 6 `conflict`**
+([012](experiments/012-where-the-turns-go.md)).
 
 `lane-busy` is **read and never written** since #194: the merge lane took a lock
 and told the loser this, and git's rejected push — `push-rejected` — is what
@@ -1533,7 +1521,7 @@ says an issue should look like against what GitHub says it does.
 The board and the task page draw **all ten steps**, always, marking an empty
 one `skipped` rather than leaving it out — `Segs` in `apps/board/src/app/rail.tsx`,
 over `foldProgress` in `apps/board/src/lib/progress.ts`, which folds
-`GatesResolved` against the verdicts that followed. A step not reached yet is
+`StepsResolved` against the verdicts that followed. A step not reached yet is
 `pending`; one configured, recorded nothing, on an item that landed is
 `never-ran`, hatched in the fail colour — that is where "configured but did not
 run" becomes visible. It used to be a `pending` count off a second fold,

@@ -4,7 +4,7 @@
  * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3).
  *
  * **The repository holds facts about itself; everything else is mine.** So the
- * recipe keeps `repo`, `source`, `env`, `gates` and `subscribers` — what this
+ * recipe keeps `repo`, `source`, `env`, `steps` and `subscribers` — what this
  * repository needs and how I want its work judged — and the two fields that
  * were facts about a machine sitting in a file about a project move out of it:
  *
@@ -12,7 +12,7 @@
  *   about this machine. **It moves; it does not go** — 0007 supports two
  *   runtimes, both can be signed in at once, and a choice nobody wrote down is
  *   the default this is here to refuse.
- * - `runtime.limits`, because more rounds does not lower quality — the gates
+ * - `runtime.limits`, because more rounds does not lower quality — the steps
  *   decide that. It costs more money, and that is the spender's call.
  *
  * Nothing here makes a request. The file is read on every resolve, as the
@@ -20,7 +20,7 @@
  *
  * **Both files refuse what belongs in the other, by name.** A key silently
  * dropped and a key that does not exist are different facts to whoever wrote
- * it (0016 §4), and `gates` in the machine file is the one that matters: a gate
+ * it (0016 §4), and `steps` in the machine file is the one that matters: a step
  * that reads as declared and holds nothing is a way to weaken a gate quietly.
  */
 import { readFile } from "node:fs/promises";
@@ -88,7 +88,7 @@ const MachineRuntime = z.strictObject({
  *
  * Not strict at the top: this file is the machine's (ports, a database URL —
  * doc/design/1.0.md), and a section some other reader owns is not this
- * reader's to refuse. `gates` is refused anyway, before the schema, because it
+ * reader's to refuse. `steps` is refused anyway, before the schema, because it
  * is the one key whose silent absence weakens something.
  */
 export const MachineConfig = z.object({
@@ -117,18 +117,21 @@ export class AgentUnresolvedError extends Error {
 }
 
 /**
- * **Both names, because the machine file is typed by hand.**
+ * **The live name, and only it, since `#247`.**
  *
- * `steps:` is where a pass is configured today; `gates:` is what it was called
- * before 0061 and is exactly what somebody with an older file in front of them
- * will write. Refusing only the live name would leave the retired one silently
- * dropped — 0016 §4's rule, and the one this whole file exists to keep.
+ * `steps:` is where a pass is configured, and a block under it here is a person
+ * who has put it in the wrong file — silently dropped without this, which is
+ * 0016 §4's failure and the one this whole file exists to keep out. The
+ * pre-0061 spelling was refused beside it until the log's vocabulary went; what
+ * it was for was somebody copying an old block across, and it is one of the
+ * four retired words, so it could not stay in `src/` and leave
+ * `doc/reference.md`'s allowlist empty. A recipe under `version: 1` is still
+ * refused by name, and by the version rather than by the key.
  */
-function stepsRefusal(at: string, key: string, project: string, home: string): string {
-  const retired = key === "gates" ? " — and `gates:` is what `steps:` was called before 0061" : "";
+function stepsRefusal(at: string, project: string, home: string): string {
   return (
     `${at}: a pass is not configured in the machine file — it is configured in the recipe, ` +
-    `${recipePath(project, home)}, under \`steps:\`${retired}. Nothing here was applied; ` +
+    `${recipePath(project, home)}, under \`steps:\`. Nothing here was applied; ` +
     "move the block there if it is meant to run"
   );
 }
@@ -157,16 +160,12 @@ export function parseMachineConfig(
 
   const problems: string[] = [];
   const top = raw as Record<string, unknown>;
-  for (const key of ["steps", "gates"]) {
-    if (key in top) problems.push(stepsRefusal(key, key, project, home));
-  }
+  if ("steps" in top) problems.push(stepsRefusal("steps", project, home));
   const projects = top["projects"];
   if (projects !== null && typeof projects === "object" && !Array.isArray(projects)) {
     for (const [name, scope] of Object.entries(projects as Record<string, unknown>)) {
       if (scope === null || typeof scope !== "object") continue;
-      for (const key of ["steps", "gates"]) {
-        if (key in scope) problems.push(stepsRefusal(`projects.${name}.${key}`, key, name, home));
-      }
+      if ("steps" in scope) problems.push(stepsRefusal(`projects.${name}.steps`, name, home));
     }
   }
   if (problems.length > 0) throw new MachineConfigInvalidError(path, problems);
@@ -242,9 +241,9 @@ export function provenanceSource(entry: string | undefined): string | null {
  * Whether an object carries a dotted path at all — not what it says there.
  *
  * **A key with nothing under it carries nothing**, and that is `applyPreset`'s
- * rule rather than a convenience here: `recipe["gates"] ?? preset.gates` takes
+ * rule rather than a convenience here: `recipe["steps"] ?? preset.steps` takes
  * the preset's for a `null` exactly as it does for an absent key, so a
- * `gates:` whose block has been commented out is a file that decided nothing
+ * `steps:` whose block has been commented out is a file that decided nothing
  * and must not be named as the source of what the preset decided (#218). The
  * intermediate segments have always read it this way; only the leaf did not.
  */
@@ -263,16 +262,16 @@ function carries(value: unknown, path: string): boolean {
  * underneath it, or the schema (#218).
  *
  * **Three origins and not two.** Every key here but `repo.base`, `source.kinds`
- * and `env.plantAt` has a schema default, and `gates` — the most consequential
+ * and `env.plantAt` has a schema default, and `steps` — the most consequential
  * of them, since it is what holds a run — can also come from a preset. A
  * resolved recipe reads the same in all three cases, so a reader told
- * `recipe.yml` for a `gates:` block that file does not contain opens it, finds
+ * `recipe.yml` for a `steps:` block that file does not contain opens it, finds
  * nothing, and cannot learn the answer anywhere: `extends: pnpm-workspace` is
- * a line about gates that never names them.
+ * a line about steps that never names them.
  *
  * **Asked at the level the merge happens at**, which is `applyPreset`'s rule
  * and not this function's invention: `repo` and `runtime` merge a key at a
- * time and `gates` replaces whole, so whichever of the two carries
+ * time and `steps` replaces whole, so whichever of the two carries
  * `runtime.budget` decides every number in it and the other's is not applied.
  * Hence the section — the first two segments — settles *who*, and only then
  * does the leaf inside it settle file-or-default.

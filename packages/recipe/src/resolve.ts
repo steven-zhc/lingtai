@@ -231,8 +231,8 @@ export function resolveSource(
     throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`], where);
   }
 
-  const retired = retiredKeys(applied.recipe);
-  if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where);
+  const unknown = unknownKeys(applied.recipe);
+  if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where);
 
   const parsed = Recipe.safeParse(applied.recipe);
   if (!parsed.success) {
@@ -256,46 +256,46 @@ export function resolveSource(
 }
 
 /**
- * Keys that used to mean something and now mean nothing, refused by name.
+ * Every top-level key `Recipe` does not declare, refused **by its own name**.
  *
- * `Recipe` is `z.object` and not `z.strictObject`, so a key it no longer knows
- * is **silently dropped** — and a repository that wrote `repair.maxAttempts: 3`
+ * `Recipe` is `z.object` and not `z.strictObject`, so a key it does not know is
+ * **silently dropped** — and a repository that wrote `repair.maxAttempts: 3`
  * would go on running with `rounds`' default while its own file said otherwise.
  * That is the failure this project keeps finding under another name: a setting
- * present, believed, and not connected to anything.
+ * present, believed, and not connected to anything (0016 §4).
  *
- * So the refusal is explicit, it names the replacement, and it happens before
- * validation — a recipe is a thing a person edits, and being told *this moved
- * to `runtime.limits.rounds`* is the difference between a two-minute fix and an
- * afternoon. Refusing rather than migrating is deliberate: the two old numbers
- * do not add up to the new one (0039 §3), so only the repository can say what
- * it meant.
+ * **The rule is the shape's and no longer a list** (`#247`). It was two cases,
+ * `repair:` and `gates:`, each written out — and `gates:` is one of the four
+ * retired words, so a list that spells it is a row in `doc/reference.md`'s
+ * allowlist and the last thing standing between that table and empty. Reading
+ * the keys off `Recipe.shape` refuses the same file and more: the name in the
+ * message comes from the file rather than from this source, so `gate:`,
+ * `gatess:` and every typo nobody thought of are named too.
  *
- * Removing an entry from here is safe once no recipe anywhere can still carry
- * the key; leaving one costs a string comparison per run.
+ * `repair:` keeps a sentence of its own because a name alone does not say where
+ * `repair.maxAttempts` went. Refusing rather than migrating is deliberate: the
+ * two old numbers do not add up to the new one (0039 §3), so only the
+ * repository can say what it meant. A key with no sentence is told what a
+ * recipe does declare, which is the answer for `gates:` as well: 0061 §1 says
+ * `steps:` replaced it rather than renaming it, and promoting a block that held
+ * five of the ten would leave the other five configured by nobody.
  */
-function retiredKeys(raw: unknown): string[] {
+function unknownKeys(raw: unknown): string[] {
   if (typeof raw !== "object" || raw === null) return [];
-  const out: string[] = [];
-  if ("repair" in raw) {
-    out.push(
-      "repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` " +
-        "are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. " +
-        "`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this " +
-        "repository wants a pass to spend; the two old ceilings do not add up to the new one, " +
-        "so Lingtai will not guess",
+  const declared = Object.keys(Recipe.shape);
+  return Object.keys(raw)
+    .filter((key) => !declared.includes(key))
+    .map((key) =>
+      key === "repair"
+        ? "repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` " +
+          "are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. " +
+          "`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this " +
+          "repository wants a pass to spend; the two old ceilings do not add up to the new one, " +
+          "so Lingtai will not guess"
+        : `${key}: a recipe has no such key, and nothing read it — a recipe declares ` +
+          `${declared.join(", ")}. Nothing here was applied; move the block under the key ` +
+          "that does run it, or delete it",
     );
-  }
-  if ("gates" in raw) {
-    out.push(
-      "gates: retired by ADR 0061 — a pass is ten steps and all ten are configurable, " +
-        "so the key is `steps:` and it names them in pass order: claim, admit, prepared, " +
-        "design, implement, build, review, proposed, merge, end. Rename the block. " +
-        "**It is refused rather than read as `steps:`** because `gates:` held five of the " +
-        "ten and silently promoting it would leave the other five configured by nobody",
-    );
-  }
-  return out;
 }
 
 /**
@@ -306,7 +306,7 @@ function retiredKeys(raw: unknown): string[] {
  * one — the branch recorded at `lingtai add` — and `repo.base` inside the file
  * it returns names another, which is what the worktree is cut from and what the
  * merge goes back into. When they disagree the run is right about everything
- * except the rules: it merges into `repo.base` under gates read from somewhere
+ * except the rules: it merges into `repo.base` under steps read from somewhere
  * else. A `human:` action at `merge` declared on one branch and not the other is
  * then a control that is declared and does not run.
  *

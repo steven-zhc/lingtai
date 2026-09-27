@@ -94,11 +94,11 @@ describe("the board's columns", () => {
     expect(queued?.problems).toBeUndefined();
   });
 
-  it("shows a task in gates as running, beside the state that shares the lane", () => {
-    const columns = toColumns([toCard(task("gates")), toCard(task("running"))]);
+  it("shows a task in verifying as running, beside the state that shares the lane", () => {
+    const columns = toColumns([toCard(task("verifying")), toCard(task("running"))]);
     const running = columns.find((c) => c.id === "running");
     expect(running?.cards.map((c) => c.taskId)).toEqual([
-      "wi-esctest-gates",
+      "wi-esctest-verifying",
       "wi-esctest-running",
     ]);
   });

@@ -115,7 +115,7 @@ describe("the four lanes", () => {
     const board = take([
       task({ state: "queued" }),
       task({ state: "running" }),
-      task({ state: "gates" }),
+      task({ state: "verifying" }),
       task({ state: "waiting" }),
       task({ state: "landed" }),
     ]);

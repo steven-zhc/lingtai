@@ -154,7 +154,7 @@ describe("labelsFor, at every state", () => {
   it("names one label per state and no label anywhere else", () => {
     expect(labelsFor("running")).toEqual(["lingtai:working"]);
     // `gates` is the same fact from an operator's seat: the machine has it.
-    expect(labelsFor("gates")).toEqual(["lingtai:working"]);
+    expect(labelsFor("verifying")).toEqual(["lingtai:working"]);
     // The one that was never reached.
     expect(labelsFor("waiting")).toEqual(["lingtai:waiting"]);
     // Both of these clear: a queued item has not been touched, and a landed one

@@ -119,7 +119,7 @@ describe("what a paint does", () => {
 
 describe("a state wears the colour of its lane on the board", () => {
   /** `LABEL_STATES`, in `packages/domain/src/streams.ts`. */
-  const LABEL_STATES = ["queued", "running", "gates", "waiting", "landed", "closed"];
+  const LABEL_STATES = ["queued", "running", "verifying", "waiting", "landed", "closed"];
 
   it("still knows every state the domain has", () => {
     const declared = readFileSync(resolve(root, "packages/domain/src/streams.ts"), "utf8");
@@ -136,7 +136,7 @@ describe("a state wears the colour of its lane on the board", () => {
     // `a-pass`, `a-run`, `a-sig` in `apps/board/src/app/page.tsx`.
     expect(stateInk("landed")("x")).toBe(paint.pass("x"));
     expect(stateInk("running")("x")).toBe(paint.accent("x"));
-    expect(stateInk("gates")("x")).toBe(paint.accent("x"));
+    expect(stateInk("verifying")("x")).toBe(paint.accent("x"));
     expect(stateInk("waiting")("x")).toBe(paint.signal("x"));
     // The board gives a plain queued card the neutral rule, not a colour.
     expect(stateInk("queued")).toBe(plain);

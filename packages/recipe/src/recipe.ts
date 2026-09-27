@@ -160,7 +160,7 @@ export const runPlugin = definePlugin("run", {
  * the line that is wrong. `z.enum` refuses it where it is written, by name, at
  * resolve: that is 0016 §4, and it is the shape
  * [#230](https://github.com/steven-zhc/lingtai/issues/230) hit when a leftover
- * `gates:` was dropped by a `z.object` with the suite green.
+ * a retired key was dropped by a `z.object` with the suite green.
  *
  * `model` is optional, and **absent means the runtime's own default** — which
  * is a thing a reader can be shown rather than a blank. Lingtai does not carry
@@ -1510,11 +1510,11 @@ const Version = z.number().int().superRefine((written, ctx) => {
     code: "custom",
     message:
       written === 1
-        ? "version: 1 is the recipe as it was before `steps:` replaced `gates:` — " +
-          "five of the ten steps could be configured and the other five could not " +
-          "(0061). There is no migration: rewrite this file as `version: 2`, with " +
-          "`steps:` naming the ten steps in pass order, each a list of plugins. " +
-          "A step the file leaves out runs nothing."
+        ? "version: 1 is the recipe as it was before 0061 — five of the ten steps " +
+          "could be configured and the other five could not, under a key `steps:` " +
+          "replaced rather than renamed. There is no migration: rewrite this file " +
+          "as `version: 2`, with `steps:` naming the ten steps in pass order, each " +
+          "a list of plugins. A step the file leaves out runs nothing."
         : `version: ${written} is not a recipe this Lingtai knows — it reads \`version: ${RECIPE_VERSION}\``,
   });
 });

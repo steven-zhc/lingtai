@@ -496,23 +496,28 @@ export const taskViewProjection: Projection = {
         }
 
         /**
-         * **The one stored value `#249` left carrying the retired word, and it
-         * is left on purpose.** The column beside it became `verdicts` and the
-         * four counts lost their prefix, because each of those names a thing
-         * that survives
-         * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md).
-         * This one names a *phase* — a run that is finished and having its
-         * verdicts taken — and under ten steps that phase has no word yet:
-         * `proposed` is a step rather than a phase, and `steps` says nothing.
-         * Renaming it to a guess costs a rebuild now and a second rebuild when
-         * the pass rewrite picks the real word, so it waits for that ticket.
+         * **`verifying`, and it was `gates` until `#247`.** The column beside
+         * it became `verdicts` and the four counts lost their prefix under
+         * `#250`, because each of those names a thing that survives
+         * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md);
+         * this one names a *phase*, and `#249` left it standing because the
+         * phase had no word — `proposed` is a step rather than a phase, and
+         * `steps` says nothing.
          *
-         * `LABEL_STATES`, `labelsFor` and the board's `COLUMN_OF` therefore do
-         * not move either: there is nothing for them to follow.
+         * The word the ten steps give it is what the pass does between an
+         * agent proposing completion and an item landing: `build`, `review`,
+         * and the lane's own re-verify against the base as it now stands. It is
+         * the same word `RefusalReason`'s `verify-failed` carries, which is the
+         * one way this phase ends badly and is not a conflict.
+         *
+         * **It is a stored value, so `lingtai projection rebuild task_view` is
+         * what an existing table needs** — and the reset means there is no such
+         * table to carry. `LABEL_STATES`, `labelsFor`, `stateInk` and the
+         * board's `COLUMN_OF` move with it.
          */
         case "RunProposedCompletion": {
           const d = event.data as PayloadOf<"RunProposedCompletion">;
-          await viaRun(ctx, event.streamId, seq, at, { state: "gates", head_sha: d.headSha });
+          await viaRun(ctx, event.streamId, seq, at, { state: "verifying", head_sha: d.headSha });
           break;
         }
 

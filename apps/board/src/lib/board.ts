@@ -41,7 +41,7 @@ import { projectFilter, type StepPlan, type ProjectFilter } from "@lingtai/condu
 import { foldProgress, type RunProgress } from "./progress.ts";
 
 /**
- * Four, not five. `gates` folded into `running` (ADR 0016 §8).
+ * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
  *
  * From an operator's seat "the agent is working" and "the build is running" are
  * the same fact — the machine is busy and you are not needed — so two lanes for
@@ -429,8 +429,8 @@ export function emptyNote(column: ColumnId, paused: boolean, project?: string): 
 export const COLUMN_OF: Record<TaskState, ColumnId> = {
   queued: "queued",
   running: "running",
-  // `gates` is a task state and no longer a lane; it belongs with `running`.
-  gates: "running",
+  // `verifying` is a task state and no longer a lane; it belongs with `running`.
+  verifying: "running",
   waiting: "waiting",
   landed: "landed",
   // Closed shares Landed's column and not Queued's. Both are over, and Landed

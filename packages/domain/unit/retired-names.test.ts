@@ -1189,6 +1189,34 @@ describe("the allowlist", () => {
    * rather than remembered, so correcting it is part of deleting a row — and
    * part of adding one, and part of raising a count by one.
    */
+  /**
+   * **The acceptance, asserted as itself rather than as a number that got
+   * small** (`#247`).
+   *
+   * The equality above is green on any ledger that matches `src/`, and it was
+   * green at 739, at 233 and at 0 alike — so *the epic is done* was a thing a
+   * reader had to work out by looking at the table. `#233`'s wording is *`0
+   * occurrences in 0 files`*, and this is that sentence as a case: it is the
+   * one that fails by name the day a retired word comes back, where the
+   * equality would only say the ledger and the code disagree.
+   *
+   * **It is deliberately not a lower bound and never was.** A test that refused
+   * an empty table would have redded the `build` gate on the diff that finished
+   * the job, which is why the section above says `0 occurrences in 0 files`
+   * passes. What this adds is the other direction: a row added back has to be
+   * argued for in a review rather than absorbed by a count nobody was watching.
+   */
+  it("is empty, which is the acceptance and not a count that got small", async () => {
+    const g = await glossary();
+    const found = await violations(g);
+
+    expect(size(g.allowlist), "doc/reference.md's allowlist is no longer empty").toEqual({
+      occurrences: 0,
+      files: 0,
+    });
+    expect([...found].flatMap(([file, hit]) => [...hit].map(([token, n]) => `${file} · ${token} ×${n}`)), "src/ carries a retired name again").toEqual([]);
+  });
+
   it("says how big it is, and that sentence is counted rather than remembered", async () => {
     const g = await glossary();
 
