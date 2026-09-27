@@ -68,17 +68,27 @@ export const PRESETS: Record<string, Preset> = {
       // `review` must be empty — no plugin declares itself there, so an
       // `agent:` at it is refused when the recipe resolves.
       //
-      // **`build` no longer must be, and this preset has not moved yet**
-      // (`#263`). `runPlugin` declares itself at `build`, so the entry under
-      // `proposed:` below is legal at the step it is named after — and that is
-      // where it belongs, because a red build at `proposed` reaches a person
-      // with no fix round bought while a red one at `build` refuses and buys
-      // one. Moving it is [T7](../../../doc/design/the-pipeline.md), which is
-      // the ticket that makes `init` and `add` propose a plugin for every step
-      // and owns what the wizard reads off `steps.proposed` to decide whether a
-      // build is configured at all. Until then this stays where every existing
-      // recipe on the machine has it, so that a preset and a real file do not
-      // disagree about where a build lives.
+      // **`build` no longer must be, and this preset has not moved** (`#263`).
+      // `runPlugin` declares itself at `build`, so the entry under `proposed:`
+      // below is legal at the step it is named after, and that is where a
+      // build belongs: a red one at `proposed` reaches a person with no fix
+      // round bought, and a red one at `build` refuses and buys one.
+      //
+      // **What holds it here is the wizard, not an argument about placement.**
+      // A preset is the wizard's starting draft and the wizard's write is not
+      // symmetrical with it: `wizard-page.ts` reads its tickable checks off
+      // `recipe.steps.proposed` (`:277`) and `applyDraft` writes the ticked
+      // ones back to `steps.proposed` (`:573`). Move this line to `build:`
+      // alone and a person onboarding a project is shown no check to tick,
+      // unticks nothing, and presses the button on a recipe with a build at
+      // `build` and whatever `applyDraft` just put at `proposed`. Moving the
+      // two together is [T7](../../../doc/design/the-pipeline.md).
+      //
+      // So this does **not** claim to agree with the recipes on this machine.
+      // `#263`'s own printed block moves both of them to `build:` and leaves
+      // `proposed: []`, and the day that is pasted a preset and a live recipe
+      // disagree about where a build lives — which is a real cost and a
+      // smaller one than a wizard that writes two.
       build: [],
       review: [],
       proposed: [
