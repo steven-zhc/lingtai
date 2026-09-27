@@ -251,7 +251,17 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
         <>
           {draft.checks.length === 0 ? <small>No scripts were found.</small> : null}
           {draft.checks.map((c) => (
-            <Tick key={c.id} label={c.label} on={c.ticked} flip={() => act({ type: "check", id: c.id })} />
+            <Tick
+              key={c.id}
+              label={c.label}
+              on={c.ticked}
+              // Which step it runs at, and the step it goes back to. The row is
+              // one list over `build`, `review` and `proposed`, so on a recipe
+              // that spreads its checks over two of them this is the only place
+              // a reader can tell which box is which.
+              title={`runs at \`${c.step}\`, and is written back there`}
+              flip={() => act({ type: "check", id: c.id })}
+            />
           ))}
           <AddLabel add={(run) => act({ type: "add-check", run })} placeholder="another command, e.g. make test" />
         </>

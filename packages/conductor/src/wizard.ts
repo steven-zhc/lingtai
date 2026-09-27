@@ -110,11 +110,16 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * What lands in this repository without anybody reading it, in one sentence —
  * null when somebody does.
  *
- * **The one place the wizard argues.** With no `gates.proposed` and `merge: []`
- * the whole chain is *an agent writes code, nothing checks it, it lands in the
- * base branch, nobody read it*, and many repositories have no tests. The
- * sentence is said on the last screen, because that is where somebody is
- * deciding.
+ * **The one place the wizard argues.** With nothing declared at any of
+ * `CHECKING_STEPS` and `merge: []` the whole chain is *an agent writes code,
+ * nothing checks it, it lands in the base branch, nobody read it*, and many
+ * repositories have no tests. The sentence is said on the last screen, because
+ * that is where somebody is deciding.
+ *
+ * **Three steps and not `proposed` alone**, from the one list `wizard-page.ts`
+ * exports and the page reads too: this guard is a safety net, and a net that
+ * looked at one of the three would go blind to a recipe whose build is declared
+ * at `build:` — reporting that nothing checks a diff over a full build (#263).
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
   if (recipe.steps.merge.length > 0) return null;
