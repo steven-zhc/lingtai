@@ -168,7 +168,7 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-nextloom-ai-admin-112");
     const judgement = reduceWorkItem([
       e("WorkItemBlocked", {
-        question: "held at the merge gate: agent/112 into develop",
+        question: "held at the merge step: agent/112 into develop",
         needsFrom: "human" as const,
         runId: "run-a",
         needs: "judgement" as const,
@@ -324,7 +324,7 @@ describe("reduceWorkItem", () => {
     const e = makeStream("wi-p-3");
     const bought = {
       runId: "run-a",
-      reason: "gate-failed" as const,
+      reason: "verify-failed" as const,
       detail: "policy: exit 1",
       fingerprint: "0123456789ab",
       attempt: 1,
@@ -332,11 +332,11 @@ describe("reduceWorkItem", () => {
     const released = [
       e("WorkItemClaimed", { runId: "run-a", worker: "w", title: null, kind: null }),
       e("RepairRequested", bought),
-      e("WorkItemReleased", { runId: "run-a", reason: "repairing gate-failed (attempt 1)" }),
+      e("WorkItemReleased", { runId: "run-a", reason: "repairing verify-failed (attempt 1)" }),
     ];
     expect(retiredRepairPending(released)).toEqual({
       after: "run-a",
-      reason: "gate-failed",
+      reason: "verify-failed",
       detail: "policy: exit 1",
       attempt: 1,
     });

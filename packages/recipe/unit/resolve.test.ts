@@ -415,7 +415,7 @@ env:
     expect(a.configHash).toBe("cefec6a9497a47f86eb56b9bd3b8d23fe78793bc34888ffad6dedf27f6399a85");
     // And the body on the event is the document that digest is of (0047 §2),
     // so the five are out of both or neither — a strip on one side only makes
-    // `hashRecipe(GatesResolved.recipe) === configHash` false.
+    // `hashRecipe(StepsResolved.recipe) === configHash` false.
     expect(Object.keys(canonicalRecipe(a.recipe)["steps"] as object).sort()).toEqual([
       "admit",
       "end",

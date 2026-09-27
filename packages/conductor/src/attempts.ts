@@ -217,16 +217,16 @@ export function attemptOutcome(
         break;
       }
 
-      case "GateStarted": {
-        const d = event.data as PayloadOf<"GateStarted">;
-        unfinished.add(`${d.gate}:${d.action}`);
+      case "StepStarted": {
+        const d = event.data as PayloadOf<"StepStarted">;
+        unfinished.add(`${d.step}:${d.action}`);
         break;
       }
 
-      case "GatePassed":
-      case "GateWaived": {
-        const d = event.data as PayloadOf<"GateStarted">;
-        unfinished.delete(`${d.gate}:${d.action}`);
+      case "StepPassed":
+      case "StepWaived": {
+        const d = event.data as PayloadOf<"StepStarted">;
+        unfinished.delete(`${d.step}:${d.action}`);
         break;
       }
 
@@ -241,9 +241,9 @@ export function attemptOutcome(
        * attempt is being tried again for the same reason a run that never
        * started is, and the failure block for it is empty on purpose.
        */
-      case "GateNeverRan": {
-        const d = event.data as PayloadOf<"GateNeverRan">;
-        unfinished.delete(`${d.gate}:${d.action}`);
+      case "StepNeverRan": {
+        const d = event.data as PayloadOf<"StepNeverRan">;
+        unfinished.delete(`${d.step}:${d.action}`);
         break;
       }
 
@@ -257,15 +257,15 @@ export function attemptOutcome(
        * tell the next one that a review died *inside* this diff — a fact about
        * the diff that nobody established.
        */
-      case "GateDidNotFinish": {
-        const d = event.data as PayloadOf<"GateDidNotFinish">;
-        unfinished.delete(`${d.gate}:${d.action}`);
+      case "StepDidNotFinish": {
+        const d = event.data as PayloadOf<"StepDidNotFinish">;
+        unfinished.delete(`${d.step}:${d.action}`);
         break;
       }
 
-      case "GateFailed": {
-        const d = event.data as PayloadOf<"GateFailed">;
-        const what = `${d.gate}:${d.action}`;
+      case "StepFailed": {
+        const d = event.data as PayloadOf<"StepFailed">;
+        const what = `${d.step}:${d.action}`;
         unfinished.delete(what);
         // A gate's refusal is the most specific thing on the stream, so the last
         // one wins over anything else recorded here.
@@ -294,7 +294,7 @@ export function attemptOutcome(
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */
 function findingsAppended(
   output: string,
-  findings: PayloadOf<"GateFailed">["findings"],
+  findings: PayloadOf<"StepFailed">["findings"],
   max: number,
 ): string {
   if (findings.length === 0) return output;

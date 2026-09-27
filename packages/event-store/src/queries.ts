@@ -22,7 +22,7 @@
  *
  * Every question here is *a fold that would be wrong to do in the process*. The
  * end audit compares every plan the log holds against every resolution, and a
- * `GatesResolved` carries the actions resolved at all ten steps. Answering it
+ * `StepsResolved` carries the actions resolved at all ten steps. Answering it
  * by reading those rows out and comparing them here would transfer — and zod-
  * parse — the whole history on every `lingtai doctor`, growing with the log for
  * ever, to produce a result that is one query returning nothing. So the interface is a list of *named questions* and not a query
@@ -101,7 +101,7 @@ export interface LogQueries {
    * the comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
    * promised, computed from the log alone.
    *
-   * `GatesResolved` on the run says the recipe asked for something at `end`;
+   * `StepsResolved` on the run says the recipe asked for something at `end`;
    * `EndActionsResolved` on the item's own stream, *for the outcome it
    * reached*, is the record that the point ran. The outcome matters: an item
    * that resolved `end` while it was blocked, came back and then landed has one
@@ -210,11 +210,11 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
            select distinct started.data->>'workItemId' as work_item
            from events started
            join events plan
-             on plan.stream_id = started.stream_id and plan.type = 'GatesResolved'
+             on plan.stream_id = started.stream_id and plan.type = 'StepsResolved'
            where started.type = 'RunStarted'
              and exists (
-               select 1 from jsonb_array_elements(plan.data->'points') point
-               where point->>'gate' = 'end' and jsonb_array_length(point->'actions') > 0
+               select 1 from jsonb_array_elements(plan.data->'steps') step
+               where step->>'step' = 'end' and jsonb_array_length(step->'actions') > 0
              )
          )
          select over.stream_id, over.outcome

@@ -287,7 +287,7 @@ export function Attempt({
  * wrong about what ran. So the line leads: proved by this run's hash, or head's
  * and why this run's could not be had, or nothing and why.
  *
- * The names are the log's (`GatesResolved`, through `progress`), and only the
+ * The names are the log's (`StepsResolved`, through `progress`), and only the
  * text is the recipe's. A point the log planned nothing at stays `skipped` and
  * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
  * rather than borrowing a command from a different action.

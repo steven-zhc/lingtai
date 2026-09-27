@@ -391,13 +391,13 @@ export interface Landing {
  *
  * **`notMerged` is a report and not a verdict**, which is the whole of *`merge`
  * reports a `reason` and a `detail` and decides nothing*: over the whole log it
- * has refused 32 times, **26 `gate-failed` and 6 `conflict`**, and the common
+ * has refused 32 times, **26 `verify-failed` and 6 `conflict`**, and the common
  * failure is that somebody else's work landed and the diff stopped being true.
  * That is a fact about the world. Whether it is worth another agent or a person
  * is the judge's at `proposed`, and the lane is not asked.
  *
  * `reason` is `RefusalReason` because those are the lane's own words and they are
- * already on the log — two of them, `conflict` and `gate-failed`, are also
+ * already on the log — two of them, `conflict` and `verify-failed`, are also
  * `JudgeWhen` values, and the other five are directions no judge is offered
  * (`JudgeWhen`'s own doc: they stop the lane before the diff is what is in
  * doubt).
@@ -562,7 +562,7 @@ export interface PassPorts {
    * **Answering costs money for one of the five and must not for the other four.**
    * A live implementation returns `noJudge` for a direction the recipe declared
    * nothing for, and the body falls back to `BUILT_IN_FOR` — so `red` and
-   * `gate-failed` are mechanical by default and no agent is paid to reach a
+   * `verify-failed` are mechanical by default and no agent is paid to reach a
    * conclusion a `switch` reaches. What a recipe *did* declare is asked, whichever
    * direction it is, because a declared judge nothing calls is `#61` again.
    */
@@ -653,7 +653,7 @@ export const END_UNRESOLVED = "end-unresolved";
  * `when:` is *the reason the last step gave* (`JudgeWhen`), and the reason is read
  * off **which step arrived** rather than off the ending's `because`: the pipeline
  * knows only that *something the recipe declared refused* and says
- * `action-refused` at every step alike, on purpose — writing `gate-failed` there
+ * `action-refused` at every step alike, on purpose — writing `verify-failed` there
  * would put a retired word back on a list that may only shrink (`endingOf`). So
  * the direction is the pass's to name, and it is named where the pass knows it:
  *
@@ -662,7 +662,7 @@ export const END_UNRESOLVED = "end-unresolved";
  * red           a command said no — `build`'s checks, and `prepared`'s install,
  *               which is the same kind of evidence one step earlier
  * conflict      the merge lane's own word
- * gate-failed   the merge lane's other one: the base moved and the re-verify
+ * verify-failed   the merge lane's other one: the base moved and the re-verify
  *               went red
  * findings      **not here.** `review` refuses nothing, so it never arrives —
  *               its findings are judged on `proposed`'s own way through
@@ -683,7 +683,7 @@ function directionOf(arriving: StepReached): JudgeWhen | null {
   if (ending.ending !== "refused") return null;
   if (arriving.step !== "merge") return "red";
   if (ending.because === "conflict") return "conflict";
-  return ending.because === "gate-failed" ? "gate-failed" : null;
+  return ending.because === "verify-failed" ? "verify-failed" : null;
 }
 
 /**
@@ -691,7 +691,7 @@ function directionOf(arriving: StepReached): JudgeWhen | null {
  * model to answer a question a `switch` answers.**
  *
  * The rule is `BUILT_IN["same-worktree"]`'s in [`judge.ts`](judge.ts) and the
- * argument is there: `red` and `gate-failed` were seen sixty times between them
+ * argument is there: `red` and `verify-failed` were seen sixty times between them
  * in fourteen days and not one of them was a judgement. A build that went red
  * says *this line is wrong* by construction; a merge whose re-verify went red on
  * the new base says *the base moved and the result is wrong*; in both the work is
@@ -979,7 +979,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    *    person wrote down and nothing calls is `#61` arriving through the one door
    *    this repository has decided it will not leave open;
    * 3. **the mechanical answer**, where it declared none — `BUILT_IN_FOR`, which is
-   *    `same-worktree` for `red` and `gate-failed` and nothing for the other three.
+   *    `same-worktree` for `red` and `verify-failed` and nothing for the other three.
    *    So the sixty refusals a year that are not judgements cost no agent;
    * 4. **a person**, for a direction with neither. `needs-input` is that today:
    *    0061 §3's yaml names `ask-or-assume` and nothing implements it, so a
@@ -1358,12 +1358,12 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      *
      * The lane is `ports.land` — merge the base in, re-verify against what landed
      * in the meantime, merge out, push — and its two answers are the step's two
-     * endings. Over the whole log it has refused 32 times, **26 `gate-failed` and
+     * endings. Over the whole log it has refused 32 times, **26 `verify-failed` and
      * 6 `conflict`**: the common failure is that somebody else's work landed and
      * the diff stopped being true, which is a fact about the world rather than a
      * verdict about the change. So the words travel and the decision does not
      * happen here — `proposed` is where a `conflict` is weighed and where a
-     * `gate-failed` buys the mechanical round.
+     * `verify-failed` buys the mechanical round.
      *
      * **It is one of `REFUSING_STEPS` all the same**, and the refusal is what pays
      * for the edge back: `onOffer` offers `build` from here, so an agent that
@@ -1416,7 +1416,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * has already happened.
      *
      * An empty plan is not an append. Both of the ways it can be empty are
-     * already decisions the log holds: nothing declared, which `GatesResolved`
+     * already decisions the log holds: nothing declared, which `StepsResolved`
      * records, and this outcome already resolved, which the item's own
      * `EndActionsResolved` records.
      */

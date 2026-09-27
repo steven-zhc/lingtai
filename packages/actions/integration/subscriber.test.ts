@@ -107,7 +107,7 @@ describe("what starts a process and what does not", () => {
     const s = build(async () => subjectOf("lingtai", "123"));
     await s.deliver(
       event("ApprovalRequested", `run-${crypto.randomUUID()}`, {
-        gate: "merge",
+        step: "merge",
         action: "approve",
         runId: "run-x",
         onSha: "abc",

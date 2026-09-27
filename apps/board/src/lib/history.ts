@@ -4,7 +4,7 @@
  * The history is where an event-sourced system is legible or is not, and it
  * was legible for six types out of forty. Everything else fell to a default
  * that printed `data.gate` when there was one and the empty string when there
- * was not, so `GatesResolved` — the plan ADR 0016 §4 rests on — rendered as a
+ * was not, so `StepsResolved` — the plan ADR 0016 §4 rests on — rendered as a
  * timestamp, a type name and nothing at all (#87).
  *
  * Two rules, and the second is the one that matters:
@@ -129,7 +129,7 @@ function list(v: unknown): string {
  * into two fields to end.
  */
 function stepAt(d: Payload): string {
-  return `${need(d, "gate")} · ${need(d, "action")}`;
+  return `${need(d, "step")} · ${need(d, "action")}`;
 }
 
 const FORMAT: Partial<Record<EventType, Formatter>> = {
@@ -219,11 +219,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * and it rendered as nothing — so a point that was configured and did not
    * run had no record on the page that says it should have.
    */
-  GatesResolved: (d) => {
-    const steps = d["points"];
+  StepsResolved: (d) => {
+    const steps = d["steps"];
     if (!Array.isArray(steps) || steps.length === 0) throw new Error("no steps");
-    return (steps as { gate: string; actions: string[] }[])
-      .map((p) => `${p.gate} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
+    return (steps as { step: string; actions: string[] }[])
+      .map((p) => `${p.step} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
       .join(" · ");
   },
   EndActionsResolved: (d) => {
@@ -244,19 +244,19 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     );
     return `${outcome}: ${said.join(" · ")}`;
   },
-  GateRequested: stepAt,
-  GateStarted: stepAt,
-  GatePassed: stepAt,
-  GateFailed: (d) => {
+  StepRequested: stepAt,
+  StepStarted: stepAt,
+  StepPassed: stepAt,
+  StepFailed: (d) => {
     const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
     return n > 0 ? `${stepAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : stepAt(d);
   },
-  GateNeverRan: (d) => `${stepAt(d)} — never ran: ${clip(d["detail"])}`,
+  StepNeverRan: (d) => `${stepAt(d)} — never ran: ${clip(d["detail"])}`,
   // One line, because the action ran once: 0057 §4's retry is deleted (`#234`),
   // and with it the *attempt 2, no more attempts* this line used to print about
   // a second attempt that never left the starting block.
-  GateDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d["detail"])}`,
-  GateWaived: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
+  StepDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d["detail"])}`,
+  StepWaived: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
   ApprovalRequested: (d) => `${stepAt(d)} — ${clip(need(d, "question"))}`,
   ApprovalGranted: (d) => `${stepAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,
   ApprovalRevoked: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,

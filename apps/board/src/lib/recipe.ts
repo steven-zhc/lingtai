@@ -35,7 +35,7 @@ type Resolved = Awaited<ReturnType<typeof currentRecipe>>;
  * prove that is the one the attempt was given (#190).
  *
  * **"The project's recipe" is two documents on that page.** The one at the head
- * of the base branch is what the *next* run gets; `GatesResolved.configHash`
+ * of the base branch is what the *next* run gets; `StepsResolved.configHash`
  * says which one *this* run got. A page that drew head's `build` under
  * yesterday's gates would be confidently wrong about what ran — `2d3353b` took
  * `pnpm test:db` out of `build`, and every run before it ran it. So a recipe
@@ -249,7 +249,7 @@ async function recipeAtSha(
  * The recipe an attempt was given, proved by its hash — or head's, named.
  *
  * **The hash check comes first and the fetch sits behind it**, not the other
- * way round. A run with no `GatesResolved` has nothing to prove against, so its
+ * way round. A run with no `StepsResolved` has nothing to prove against, so its
  * base commit is not fetched at all; a run with one is proved against the
  * recipe at `baseSha` and, failing that, against head's — the same document
  * does not stop being the same because it was read from a later commit.
@@ -275,7 +275,7 @@ export async function recipeOfRun(
 ): Promise<RunRecipe> {
   let why: string;
   if (run.configHash === null) {
-    why = "this run recorded no GatesResolved, so there is no hash to prove a recipe against";
+    why = "this run recorded no StepsResolved, so there is no hash to prove a recipe against";
   } else if (run.baseSha === null) {
     why = "this run recorded no base commit to read its recipe at";
   } else {

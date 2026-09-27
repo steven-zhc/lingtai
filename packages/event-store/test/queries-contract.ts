@@ -48,12 +48,12 @@ const MERGE = "b".repeat(40);
 /**
  * All ten steps, with actions only where a case asks for them.
  *
- * From `STEPS` rather than a list here: `GatesResolved` asserts `.length(10)`,
+ * From `STEPS` rather than a list here: `StepsResolved` asserts `.length(10)`,
  * so a fixture with its own copy of the names would be a schema failure the
  * day the set changes rather than a test that moved with it.
  */
 const plan = (steps: Record<string, string[]>) =>
-  STEPS.map((step) => ({ gate: step, actions: steps[step] ?? [] }));
+  STEPS.map((step) => ({ step: step, actions: steps[step] ?? [] }));
 
 export function describeLogQueriesContract(
   name: string,
@@ -86,9 +86,9 @@ export function describeLogQueriesContract(
         }),
       },
       {
-        type: "GatesResolved",
+        type: "StepsResolved",
         actor: "conductor",
-        data: parsePayload("GatesResolved", { runId, configHash: "seeded", points: plan(steps) }),
+        data: parsePayload("StepsResolved", { runId, configHash: "seeded", steps: plan(steps) }),
       },
     ]);
     return runId;

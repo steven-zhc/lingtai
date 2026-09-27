@@ -129,12 +129,14 @@ function toCard(row: pg.QueryResultRow): TaskCard {
 /**
  * A `finding_backlog` row → a backlog entry. Unchanged from `readBacklog`.
  *
- * **The column is `gate` and the field is `step`, and the pair is deliberate.**
- * The column follows the payload field it folds — `gate text not null` in
- * `backlog.ts`, off `GatePassed`'s own `gate` — and that spelling stays until
- * the log's vocabulary is renamed. Reading `row.step` here is a column no row
- * has got, so every entry came back with `step: undefined`, which `tsc` cannot
- * see through `pg.QueryResultRow`'s index signature.
+ * **The column and the field are both `step` since `#247`, and before it they
+ * were not.** The column follows the payload field it folds, and while that
+ * field was spelled `gate` the column was too: `#250` renamed the read with the
+ * field and left `gate text not null` standing, so every entry came back with
+ * `step: undefined` and nothing said so — `pg.QueryResultRow`'s index signature
+ * is what `tsc` cannot see through. A row read by a name the table has not got
+ * is silent in both directions, which is why `projector/unit/drift.test.ts`
+ * asserts the round trip rather than the spelling.
  */
 function toEntry(row: pg.QueryResultRow): BacklogEntry {
   return {
@@ -143,7 +145,7 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
     issue: row.issue,
     taskId: row.task_id,
     runId: row.run_id,
-    step: row.gate,
+    step: row.step,
     action: row.action,
     onSha: row.on_sha,
     file: row.file,

@@ -323,7 +323,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     Effect.gen(function* () {
       // The gates' verdict is the integrator's business only in that it refuses.
       if (!options.stepsPassed) {
-        return yield* refuse("gate-failed", options.stepDetail ?? "a step refused this diff");
+        return yield* refuse("verify-failed", options.stepDetail ?? "a step refused this diff");
       }
 
       const mirror = `${home}/repos/${options.project}.git`;
@@ -439,7 +439,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           // The gates ran against the agent's head. This is the different
           // question of whether it still works beside what landed since.
           return yield* refuse(
-            "gate-failed",
+            "verify-failed",
             `verification after merging ${options.base} in failed:\n${verified.evidence}`,
           );
         }

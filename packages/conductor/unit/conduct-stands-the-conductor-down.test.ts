@@ -253,8 +253,8 @@ describe("when an agent inside the pass produces no verdict", () => {
       costUsd: 0.42,
     });
     // And the reviewer judged nothing — `never-ran`, not a refusal of the diff.
-    const never = run.find((e) => e.type === "GateNeverRan")!;
-    expect(never.data).toMatchObject({ gate: "proposed", action: "review" });
+    const never = run.find((e) => e.type === "StepNeverRan")!;
+    expect(never.data).toMatchObject({ step: "proposed", action: "review" });
 
     const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
     expect(paused).toHaveLength(1);
@@ -287,7 +287,7 @@ describe("when an agent inside the pass produces no verdict", () => {
    * pause chip and `lingtai doctor` — which is `#133`'s own species of sentence
    * one agent further down.
    *
-   * The route is the mechanical one and it has to be: a `gate-failed` from the
+   * The route is the mechanical one and it has to be: a `verify-failed` from the
    * lane is what `BUILT_IN_FOR` answers `same-worktree` to, so `implement` is
    * offered and a round is spent. A refusal at `proposed` itself buys nothing —
    * `ARRIVE_AT_THE_ROUTER` does not include the step — and `conflict`,
@@ -302,7 +302,7 @@ describe("when an agent inside the pass produces no verdict", () => {
     ports.repo.integrate = () =>
       Effect.sync(() => {
         did.push("integrate");
-        return { ok: false, reason: "gate-failed", detail: "policy: this branch may not land" } as never;
+        return { ok: false, reason: "verify-failed", detail: "policy: this branch may not land" } as never;
       });
 
     /** The implementer works and is paid; the agent the round buys never starts. */
@@ -457,8 +457,8 @@ describe("when an agent inside the pass produces no verdict", () => {
     // And no round was bought to answer a judgement nobody made.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
     expect(run.map((e) => e.type)).not.toContain("FixRequested");
-    expect(run.find((e) => e.type === "GateDidNotFinish")!.data).toMatchObject({
-      gate: "proposed",
+    expect(run.find((e) => e.type === "StepDidNotFinish")!.data).toMatchObject({
+      step: "proposed",
       action: "review",
     });
   });

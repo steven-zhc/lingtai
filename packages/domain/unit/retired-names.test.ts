@@ -83,7 +83,7 @@ import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
-/** `GatesResolved` → `gates` · `resolved`; `checkpoint` → `checkpoint`, one word and safe. */
+/** `StepsResolved` → `steps` · `resolved`; `checkpoint` → `checkpoint`, one word and safe. */
 function words(token: string): string[] {
   return (token.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+/g) ?? []).map((w) => w.toLowerCase());
 }

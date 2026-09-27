@@ -212,7 +212,7 @@ describe("the pipeline", () => {
     // A verdict is about a diff, not about a ticket. Bind it to the commit and a
     // force-push invalidates the approval instead of inheriting it.
     expect(events).toHaveLength(3);
-    expect(events.map((e) => e.type)).toEqual(["GateRequested", "GateStarted", "GatePassed"]);
+    expect(events.map((e) => e.type)).toEqual(["StepRequested", "StepStarted", "StepPassed"]);
     for (const e of events) expect(e.data.onSha).toBe("sha-a");
   });
 
@@ -231,9 +231,9 @@ describe("the pipeline", () => {
     // `gate` is the step and `action` is what ran there — two fields, because
     // "the build failed" and "something at the `proposed` step failed" are different
     // questions and one name could not answer both.
-    const started = events.filter((e) => e.type === "GateStarted");
+    const started = events.filter((e) => e.type === "StepStarted");
     expect(started.map((e) => e.data.action)).toEqual(["build", "lint"]);
-    expect(started.map((e) => e.data.gate)).toEqual(["proposed", "proposed"]);
+    expect(started.map((e) => e.data.step)).toEqual(["proposed", "proposed"]);
   });
 
   /**
@@ -257,8 +257,8 @@ describe("the pipeline", () => {
     expect(result.ok).toBe(false);
     expect(result.failedAt).toBe("lint");
     expect(result.skipped).toEqual(["test"]);
-    expect(events.map((e) => e.data.gate)).not.toContain("test");
-    expect(events.at(-1)?.type).toBe("GateFailed");
+    expect(events.map((e) => e.data.step)).not.toContain("test");
+    expect(events.at(-1)?.type).toBe("StepFailed");
   });
 
   /**
@@ -267,7 +267,7 @@ describe("the pipeline", () => {
    * Stopping looks like the line above and means something else. The actions
    * after this one would ask the same account the same question and meet the
    * same wall, so continuing is pointless — but nothing here judged the diff,
-   * so no verdict may be appended about it. `GateNeverRan` is what is on the
+   * so no verdict may be appended about it. `StepNeverRan` is what is on the
    * log instead, and `neverRanAt` is how `endingOf` in
    * `packages/conductor/src/pass.ts` tells this ending from a refusal without
    * reading a sentence.
@@ -297,11 +297,11 @@ describe("the pipeline", () => {
     expect(result.skipped).toEqual(["test"]);
 
     const types = events.map((e) => e.type);
-    expect(types).toContain("GateNeverRan");
-    expect(types).not.toContain("GateFailed");
+    expect(types).toContain("StepNeverRan");
+    expect(types).not.toContain("StepFailed");
     // And the build's own verdict is untouched: one action did judge the diff.
-    expect(types.filter((t) => t === "GatePassed")).toHaveLength(1);
-    expect(events.at(-1)?.data).toMatchObject({ gate: "proposed", action: "review", onSha: "sha-a" });
+    expect(types.filter((t) => t === "StepPassed")).toHaveLength(1);
+    expect(events.at(-1)?.data).toMatchObject({ step: "proposed", action: "review", onSha: "sha-a" });
   });
 
   /**
@@ -358,21 +358,21 @@ describe("the pipeline", () => {
     expect(result.skipped).toEqual(["test"]);
 
     const types = events.map((e) => e.type);
-    expect(types).not.toContain("GateFailed");
-    expect(types).not.toContain("GateNeverRan");
+    expect(types).not.toContain("StepFailed");
+    expect(types).not.toContain("StepNeverRan");
     // The build's own verdict stands: one action did judge the diff.
-    expect(types.filter((t) => t === "GatePassed")).toHaveLength(1);
+    expect(types.filter((t) => t === "StepPassed")).toHaveLength(1);
 
     // One event for one run of the action, and one start for it: a second of
     // either would be the retry back, or a board drawing an attempt nobody made.
-    const didNot = events.filter((e) => e.type === "GateDidNotFinish");
+    const didNot = events.filter((e) => e.type === "StepDidNotFinish");
     expect(didNot.map((e) => e.data)).toEqual([
-      { gate: "proposed", action: "review", runId: context.runId, onSha: "sha-a", detail: said },
+      { step: "proposed", action: "review", runId: context.runId, onSha: "sha-a", detail: said },
     ]);
     expect(didNot[0]!.data).not.toHaveProperty("attempt");
     expect(didNot[0]!.data).not.toHaveProperty("retrying");
     expect(
-      events.filter((e) => e.type === "GateStarted" && e.data.action === "review"),
+      events.filter((e) => e.type === "StepStarted" && e.data.action === "review"),
     ).toHaveLength(1);
   });
 

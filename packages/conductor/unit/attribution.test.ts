@@ -37,7 +37,7 @@ describe("whose failure it is", () => {
    * than blaming Lingtai for a red build.
    */
   it("calls a merge conflict, a red gate and an empty branch the repository's", () => {
-    for (const reason of ["conflict", "gate-failed", "no-commits"] as const) {
+    for (const reason of ["conflict", "verify-failed", "no-commits"] as const) {
       expect(whoseFailure({ ...conflict, reason }), reason).toBe("repository");
     }
   });
@@ -94,7 +94,7 @@ describe("whose failure it is", () => {
       "dirty-base",
       "unpushed-base",
       "pending-migration",
-      "gate-failed",
+      "verify-failed",
       "no-commits",
       "push-rejected",
       "lane-busy",
@@ -159,7 +159,7 @@ describe("a refusal, read for a person", () => {
     "dirty-base",
     "unpushed-base",
     "pending-migration",
-    "gate-failed",
+    "verify-failed",
     "no-commits",
     "push-rejected",
     // Nothing writes this since #194 and everything still reads it: the value
@@ -201,7 +201,7 @@ describe("a refusal, read for a person", () => {
    * *never left with no path forward* failing for the opposite reason.
    */
   it("says why no agent is coming in the owner's own terms", () => {
-    expect(read("gate-failed").done).toContain("at the merge lane or at approval");
+    expect(read("verify-failed").done).toContain("at the merge lane or at approval");
     expect(read("dirty-base").done).toContain("Lingtai's own failure");
     expect(read("pending-migration").done).toContain("yours to answer");
   });
@@ -238,7 +238,7 @@ describe("a refusal, read for a person", () => {
    * checkout is not something requeueing walks past.
    */
   it("recommends nothing where nothing can honestly be recommended", () => {
-    for (const reason of ["gate-failed", "pending-migration", "dirty-base", "unpushed-base"]) {
+    for (const reason of ["verify-failed", "pending-migration", "dirty-base", "unpushed-base"]) {
       expect(read(reason).recommendation, reason).toBeNull();
     }
   });

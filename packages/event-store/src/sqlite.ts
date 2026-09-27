@@ -367,7 +367,7 @@ export function createPollingWaker(options: PollingWakerOptions): Waker {
  * anti-joins that return only the offending rows, and the reason they are
  * translated rather than replaced by a fold over `readAll` is the gate audit:
  * it compares fourteen event types' whole history against a plan, and
- * `GatePassed` carries an agent's entire review output. Reading those rows out
+ * `StepPassed` carries an agent's entire review output. Reading those rows out
  * to compare them here would transfer and validate tens of megabytes to produce
  * an empty list.
  *
@@ -395,12 +395,12 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
        SELECT DISTINCT json_extract(started.data, '$.workItemId') AS work_item
        FROM events started
        JOIN events plan
-         ON plan.stream_id = started.stream_id AND plan.type = 'GatesResolved'
+         ON plan.stream_id = started.stream_id AND plan.type = 'StepsResolved'
        WHERE started.type = 'RunStarted'
          AND EXISTS (
-           SELECT 1 FROM json_each(plan.data, '$.points') point
-           WHERE json_extract(point.value, '$.gate') = 'end'
-             AND json_array_length(point.value, '$.actions') > 0
+           SELECT 1 FROM json_each(plan.data, '$.steps') step
+           WHERE json_extract(step.value, '$.step') = 'end'
+             AND json_array_length(step.value, '$.actions') > 0
          )
      )
      SELECT over.streamId, over.outcome

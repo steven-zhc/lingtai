@@ -10,7 +10,7 @@
  * ```ts
  * store = createEventStore(client);          // a real pg client
  * await store.append(workItemId, 0, [ … ]);
- * (await store.read(runId)).filter((e) => e.type === "GateWaived")
+ * (await store.read(runId)).filter((e) => e.type === "StepWaived")
  * ```
  *
  * It appends events and reads them back. Nothing in it asserts anything about

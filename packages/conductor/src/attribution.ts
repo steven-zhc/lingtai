@@ -78,7 +78,7 @@ export type FailureOwner = "repository" | "lingtai" | "person";
  * project-level refusals are Lingtai's, and `IntegrationRefused` is the
  * repository's. A **gate** verdict needs no source of its own — a diff whose
  * gates refused reaches the integrator with `stepsPassed: false` and comes back
- * out as `gate-failed`, so the gates arrive here already in this vocabulary.
+ * out as `verify-failed`, so the gates arrive here already in this vocabulary.
  *
  * A **run** failure was deliberately not modelled, and that was the gap
  * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) closed. The
@@ -118,7 +118,7 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    */
   conflict: "repository",
   /** A gate refused this diff. The gates are the repository's. */
-  "gate-failed": "repository",
+  "verify-failed": "repository",
   /** The branch holds nothing the base does not. The repository's, and rare. */
   "no-commits": "repository",
   /** A person applies a migration. Not a failure; see `person` above. */
@@ -200,7 +200,7 @@ export function whoseFailure(failure: Failure): FailureOwner {
  * A total record over `RefusalReason`, for the reason `INTEGRATION_OWNER` is
  * one: a ninth reason will not compile until somebody writes the sentence and
  * decides whether it has a move. A reason with no move is the normal case and
- * not an oversight — `gate-failed` is a red diff, which is a judgement, and
+ * not an oversight — `verify-failed` is a red diff, which is a judgement, and
  * `dirty-base` is Lingtai's own checkout, which requeueing walks straight back
  * into.
  */
@@ -221,7 +221,7 @@ const REFUSAL_READING: Record<
         "it is cut from a base that has since moved",
     },
   },
-  "gate-failed": {
+  "verify-failed": {
     says: ({ branch, base }) => `a step refused ${branch}, so it was not merged into ${base}.`,
     // Nothing is recommended, deliberately. A red diff is the one case where
     // the judgement is genuinely a person's — approve it anyway, waive the

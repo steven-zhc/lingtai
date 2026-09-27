@@ -1214,7 +1214,7 @@ function say(titles: TitleBook, ref: string, what: string): string {
  *
  * The comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
  * promised, and the one that would have found #55 the day it happened.
- * `GatesResolved` names all ten steps and the actions resolved for each, so
+ * `StepsResolved` names all ten steps and the actions resolved for each, so
  * "the recipe asked for something at `end`" is in the log; `EndActionsResolved`
  * is the record that the step ran. An item that landed, whose run planned
  * actions at `end`, and whose stream holds no resolution, is a gate that was
@@ -1769,7 +1769,7 @@ export async function declaredEnvironment(
  * project registered *before* those existed can be, and nothing else would say
  * so: the divergence is invisible until a run merges into `repo.base` under
  * gates it read from somewhere else, and every event that run writes is
- * internally consistent — `GatesResolved` carries the hash of the recipe it
+ * internally consistent — `StepsResolved` carries the hash of the recipe it
  * obeyed, so `steps: end ran on what landed` compares a plan against itself and
  * finds nothing wrong. Comparing the plan's *origin* to the merge
  * target is the only thing that sees it, and this is where that happens without

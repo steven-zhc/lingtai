@@ -4,12 +4,12 @@
  * §5, `#137`).
  *
  * A `minor` does not refuse, and that is right. Before this it went from a
- * `GatePassed`'s `findings` into nothing at all: the gate passed, so nobody
+ * `StepPassed`'s `findings` into nothing at all: the gate passed, so nobody
  * opened it. This is the destination 0038 gives it — **a backlog a person
  * triages in batches, where accepting one opens an issue.**
  *
  * **It is a fold and nothing else.** No command writes here. An entry exists
- * because a `GatePassed` carried a minor; it is closed because a
+ * because a `StepPassed` carried a minor; it is closed because a
  * `FindingAccepted` or `FindingDeclined` says so, and an accepted one names
  * its issue once `FindingProposed` does. Dropping the table and
  * replaying the log produces the same rows, which is what
@@ -23,7 +23,7 @@
  * sighting — the run and gate an accepted issue cites as its origin. A declined
  * entry therefore stays declined, which is the whole of *does not ask again*.
  *
- * Only `GatePassed`. A `GateFailed`'s findings have somewhere to go already —
+ * Only `StepPassed`. A `StepFailed`'s findings have somewhere to go already —
  * a fix round, and then a person (0038 §1–§4) — and a minor on a failing gate
  * is in the prompt the fixing agent is handed.
  */
@@ -81,7 +81,7 @@ export const backlogProjection: Projection = {
         issue            text not null,
         task_id          text not null,
         run_id           text not null,
-        gate             text not null,
+        step             text not null,
         action           text not null,
         on_sha           text not null,
         file             text not null,
@@ -103,7 +103,7 @@ export const backlogProjection: Projection = {
       )`);
     await ctx.query("create index if not exists finding_backlog_status_idx on finding_backlog (status)");
 
-    // Which ticket a run belongs to. `GatePassed` is on the run's stream and
+    // Which ticket a run belongs to. `StepPassed` is on the run's stream and
     // names only the run; `RunStarted` names the work item. Kept here rather
     // than read from `task_view_run`, because another projection's table is
     // at another projection's checkpoint.
@@ -134,8 +134,8 @@ export const backlogProjection: Projection = {
           break;
         }
 
-        case "GatePassed": {
-          const d = event.data as PayloadOf<"GatePassed">;
+        case "StepPassed": {
+          const d = event.data as PayloadOf<"StepPassed">;
           const minors = d.findings.filter((f) => f.severity === "minor");
           if (minors.length === 0) break;
           const [link] = await ctx.query<{ task_id: string }>(
@@ -149,14 +149,14 @@ export const backlogProjection: Projection = {
           for (const f of minors) {
             const key = findingKey({
               issue: task.issue,
-              step: d.gate,
+              step: d.step,
               action: d.action,
               file: f.file,
               claim: f.claim,
             });
             await ctx.query(
               `insert into finding_backlog
-                 (project, key, issue, task_id, run_id, gate, action, on_sha, file, line,
+                 (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
                   severity, claim, failure_scenario, raised_seq, raised_at)
                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                on conflict (project, key) do nothing`,
@@ -166,7 +166,7 @@ export const backlogProjection: Projection = {
                 task.issue,
                 link.task_id,
                 d.runId,
-                d.gate,
+                d.step,
                 d.action,
                 d.onSha,
                 f.file,

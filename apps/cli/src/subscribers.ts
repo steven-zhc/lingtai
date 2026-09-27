@@ -262,7 +262,7 @@ export async function buildSubscribers(options: BuildSubscribersOptions): Promis
  * it.
  *
  * **A declared none is a sentence and not a blank line**, for the reason
- * `GatesResolved` records an empty point (0016 §4): a machine with no
+ * `StepsResolved` records an empty point (0016 §4): a machine with no
  * `subscribers:` anywhere and one whose notifier has stopped working look
  * identical from a quiet afternoon, and only the first of them is fine.
  *

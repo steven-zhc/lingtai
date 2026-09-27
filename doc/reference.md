@@ -145,7 +145,7 @@ are not — one per work item, run, lane and project, forever.
 appends to that stream while it runs, and a board recording an App would race a
 pass for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 18 chains, 23 steps
+## upcaster — 10 chains, 12 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -156,45 +156,49 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `ProjectConfigured` | 2 → 3 | `base` — defaulting to the repo's default branch is only right by convention, and admin's default was a feature branch. `null` means "ask GitHub", which is what those runs did. |
 | `Reconciled` | 1 → 2 | each finding gained `action` |
 | `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
-| `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `GateDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
+| `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
 | `WorkItemBlocked` | 1 → 2 | `needs` and `diagnosis` (`#83`). A block could say only *what is your question*, so a `human:` gate asking for a decision and a conflict nobody had looked at were the same event with a different string on it. Both null on a v1: the upcaster is handed a payload rather than a stream, and the question's wording is a convention of the three call sites and not a field |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
 | `FixRequested` | 1 → 2 | `of` — the `rounds` ceiling the round is counted against (`#146`). Zero means *not recorded*, and the number is not guessable: the recipe is read from the base branch every pass |
-| `GatesResolved` `GateRequested` `GateStarted` `GatePassed` `GateFailed` `GateWaived` `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` | 1 → 2 | the `diff` gate point became `proposed` ([0018](decisions/0018-the-proposed-point.md)). Nine types carry a `Step`, so nine move together — a payload whose `gate` is still `diff` would fail the enum rather than pass wrongly, which is why none can be skipped |
-| `GatesResolved` | 2 → 3 | `recipe`, the canonical recipe the run resolved against ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)). The step adds **nothing** — absent, not null and not `{}`, so *not recorded* stays distinguishable from *recorded, and empty* |
-| `GatesResolved` | 3 → 4 | `points` names all **ten** steps where it named five ([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3). The five the vocabulary did not have get `[]`, which is not a guess but what that recipe said: there was nothing at `claim`, `design`, `implement`, `build` or `review` to configure. Without it `.length(10)` refuses every plan this log holds |
-| `GateDidNotFinish` | 1 → 2 | `attempt` and `retrying` **removed** with 0057 §4's retry (`#234`). The second step that drops a field, and a step for `WorkItemClaimed`'s reason: the rows saying `attempt: 2, retrying: false` are not rewritten, so the reader is what stops believing them. There is nothing to recover — the retry those numbers described reused the crashed attempt's session id, so `claude` refused it in zero seconds having run nothing. This type is younger than 0018, so 1 never said `diff` |
-| `GatePassed` | 2 → 3 | `findings`, the shape `GateFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v2 pass gets `[]`, not a parse of that prose, which is untouched |
+| `StepDidNotFinish` | 1 → 2 | `attempt` and `retrying` **removed** with 0057 §4's retry (`#234`). The second step that drops a field, and a step for `WorkItemClaimed`'s reason: the rows saying `attempt: 2, retrying: false` are not rewritten, so the reader is what stops believing them. There is nothing to recover — the retry those numbers described reused the crashed attempt's session id, so `claude` refused it in zero seconds having run nothing. This type is younger than 0018, so 1 never said `diff` — which is why it is the one step in this group `#247` left standing |
+| `StepPassed` | 1 → 2 | `findings`, the shape `StepFailed` carries (`#135`). A `minor` does not refuse, so a passing review's findings had existed only as prose inside `evidence`. A v1 pass gets `[]`, not a parse of that prose, which is untouched. It was `2 → 3` until `#247`: the rename beneath it went and this step moved down rather than out |
 
-**The counts in this heading are counted off the table, never computed.** Nine
-of the eighteen chains are one row above, because ADR 0018 moved nine types
-together and reads as one fact; the heading still counts them as nine. It read
+**The counts in this heading are counted off the table, never computed.** Each
+of the **ten** chains below is its own row since `#247`; ADR 0018's nine types
+were one row, because they moved together and read as one fact. It read
 *15 chains, 17 steps* while `PromptEdited` and `FixRequested` were missing
 rows — a heading that is arithmetic on a number nobody re-derived is how a
 reader comes to believe four rows are stale and deletable.
 
-**The nine `1 → 2` steps go when the log goes, and not before.**
-[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 spends this history by
-**resetting** it — [the-pipeline](design/the-pipeline.md)'s T5, with T5b's fold
-of the log before it, neither landed. Until they are, the store holds
-`schemaVer: 1` rows of all nine, so the step stays and so do the nine
-`SCHEMA_VER`s that depend on it: lowering a version below what the writer
-stamped sends every stored row down `upcast`'s *the writer is newer than the
-reader* branch, which names the wrong party.
+**The nine `1 → 2` steps went when the log went**, on 2026-09-27 (`#247`).
+[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 said this history would
+be spent by **resetting** it rather than migrating it;
+[the-pipeline](design/the-pipeline.md)'s T5b folded the old log into
+[013](experiments/013-the-log-before-the-third-reset.md) and the cut followed.
+A store that holds no row holds none at version 1 either, so the nine
+`SCHEMA_VER`s and the nine steps beneath them came down in one commit — which
+is the only shape this was available in. At `StepPassed` the step could not have
+come down alone: that type sat at 3 with `findings` above the rename, and *an
+unbroken chain of steps for every type past version 1* makes a hole at 1 as loud
+as a missing step.
 
-**`GatesResolved`'s `3 → 4` is there for the same reason and was nearly not
-written.** The plan going from five steps to ten was to be paid for by that
-same reset, so it landed with no step and no version — and the reset is the
-thing that has not run. A `.length(10)` reached with nothing in between refuses
-every row this log holds, and the refusal is not survivable: `decodeRow`
-rethrows the `ZodError` bare, so a projector stops at the first such seq and
-never advances past it, rebuild included. *The reset will pay for it* is not a
-property a reader can have today. **The mechanism is untouched either way**
-([0001](decisions/0001-event-sourcing.md)): it was built before it was needed
+**`StepsResolved` came all the way down to 1 rather than to 3.** Its other two
+steps — a `recipe` nothing recorded before 0047, and a five-step plan widened to
+the ten 0058 §3 named — are about the same vanished rows, and both were written
+in the payload's old spelling: `points` of `gate`, which `#247` renamed to
+`steps` of `step`. Kept, they would have had to claim a history in words that
+history never used. What a lowered version costs while a row still stands at it
+is the reason none of this could be done early: every such row goes down
+`upcast`'s *the writer is newer than the reader* branch, which names the wrong
+party.
+
+**The mechanism is untouched, and that is the point**
+([0001](decisions/0001-event-sourcing.md)): it was built before it was needed,
 because the first upcaster is written under time pressure against real history,
-and a Lingtai whose log nobody may reset will want it.
+and a Lingtai whose log nobody may reset will want it. Ten chains still stand
+here for the types the rename never touched.
 
 Every other type is still at version 1. `SCHEMA_VER` is derived from `BUMPED` in
 `packages/domain/src/events.ts`; everything absent from it is 1.

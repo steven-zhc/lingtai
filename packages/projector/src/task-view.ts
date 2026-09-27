@@ -621,11 +621,11 @@ export const taskViewProjection: Projection = {
           break;
         }
 
-        case "GatePassed":
-        case "GateFailed":
-        case "GateNeverRan":
-        case "GateDidNotFinish":
-        case "GateWaived":
+        case "StepPassed":
+        case "StepFailed":
+        case "StepNeverRan":
+        case "StepDidNotFinish":
+        case "StepWaived":
         case "ApprovalRequested":
         case "ApprovalGranted":
         case "ApprovalRevoked": {
@@ -633,9 +633,9 @@ export const taskViewProjection: Projection = {
           // run an action of the same name; the run is there because two
           // attempts can run the same point, and without it the second silently
           // inherited the first's verdicts (#78).
-          const d = event.data as { gate: string; action: string; onSha: string; question?: string };
+          const d = event.data as { step: string; action: string; onSha: string; question?: string };
           const verdict = VERDICT[event.type];
-          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.gate}:${d.action}`, verdict);
+          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict);
           if (event.type === "ApprovalRequested") {
             await viaRun(ctx, event.streamId, seq, at, {
               state: "waiting",
@@ -709,18 +709,18 @@ export const taskViewProjection: Projection = {
  * and it went red, and a person said so anyway are three different facts.
  */
 const VERDICT: Record<string, string> = {
-  GatePassed: "passed",
-  GateFailed: "failed",
+  StepPassed: "passed",
+  StepFailed: "failed",
   // Neither, and that is the point: the gate's agent never started, so nothing
   // about this diff was judged (#133). Counted as neither passed nor failed, so
   // a card does not wear the red stripe for a review that never happened.
-  GateNeverRan: "never-ran",
+  StepNeverRan: "never-ran",
   // Neither either, and a different neither: the agent started and ended with
   // no receipt, so nothing about this diff was judged and nothing about the
   // account was learned (0057). Drawn as its own state rather than as a refusal
   // — 0016 §4's rule, which is what `#133` applied one row up.
-  GateDidNotFinish: "did-not-finish",
-  GateWaived: "waived",
+  StepDidNotFinish: "did-not-finish",
+  StepWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "approved",
   ApprovalRevoked: "pending",

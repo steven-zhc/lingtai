@@ -3,7 +3,7 @@
  * proved by its hash, or another one named as another one (#190).
  *
  * "The project's recipe" is two documents on that page: head's is what the next
- * run gets, and `GatesResolved.configHash` is which one this run got. So the
+ * run gets, and `StepsResolved.configHash` is which one this run got. So the
  * assertions are about the proof rather than the fetch — a recipe read at the
  * right sha and never compared would pass a fetch test and still be wrong the
  * day the file at that sha is not what the conductor resolved.
@@ -64,26 +64,26 @@ function e(type: string, data: unknown): Envelope {
 
 const claim: Claim = { runId: RUN, at: "2026-09-16T09:59:00.000Z", repair: false, released: null };
 
-/** A finished run, with `GatesResolved` naming `configHash` — or with none. */
+/** A finished run, with `StepsResolved` naming `configHash` — or with none. */
 function runWith(configHash: string | null): RunView {
   return foldRun(claim, 1, [
     e("RunStarted", { baseSha: BASE, configHash: configHash ?? "unrelated" }),
     ...(configHash === null
       ? []
       : [
-          e("GatesResolved", {
+          e("StepsResolved", {
             runId: RUN,
             configHash,
-            points: [
-              { gate: "admit", actions: [] },
-              { gate: "prepared", actions: [] },
-              { gate: "proposed", actions: ["build"] },
-              { gate: "merge", actions: [] },
-              { gate: "end", actions: [] },
+            steps: [
+              { step: "admit", actions: [] },
+              { step: "prepared", actions: [] },
+              { step: "proposed", actions: ["build"] },
+              { step: "merge", actions: [] },
+              { step: "end", actions: [] },
             ],
           }),
         ]),
-    e("GateCheckPassed", { gate: "proposed", action: "build", onSha: "c".repeat(40) }),
+    e("GateCheckPassed", { step: "proposed", action: "build", onSha: "c".repeat(40) }),
     e("RunFinished", { turns: 1, durationMs: 1, costUsd: 0, exitCode: 0 }),
   ]);
 }
@@ -163,7 +163,7 @@ describe("the recipe beside an attempt's actions", () => {
     expect(render({ ...run, recipe })).toContain("Not this run&#x27;s recipe");
   });
 
-  it("names head's recipe for a stream with no GatesResolved, and never fetches the base", async () => {
+  it("names head's recipe for a stream with no StepsResolved, and never fetches the base", async () => {
     const run = runWith(null);
     expect(run.configHash).toBeNull();
     const { client, asked, atHead } = fake({ [BASE]: RECIPE });
@@ -171,7 +171,7 @@ describe("the recipe beside an attempt's actions", () => {
     const recipe = await recipeOfRun(run, client, atHead);
 
     expect(recipe.of).toBe("head");
-    expect(recipe.of === "head" && recipe.why).toContain("no GatesResolved");
+    expect(recipe.of === "head" && recipe.why).toContain("no StepsResolved");
     // Nothing to prove against, so the base is not worth a round trip.
     expect(asked).toEqual([]);
   });

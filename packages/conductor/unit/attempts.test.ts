@@ -68,7 +68,7 @@ const claim = (runId: string): PayloadOf<"WorkItemClaimed"> => ({
 });
 
 const step = (action: string, onSha = "sha-1") => ({
-  gate: "proposed" as const,
+  step: "proposed" as const,
   action,
   runId: "run-2",
   onSha,
@@ -175,8 +175,8 @@ describe("attemptOutcome", () => {
         insertions: 120,
         deletions: 3,
       }),
-      e("GateStarted", step("build")),
-      e("GateFailed", {
+      e("StepStarted", step("build")),
+      e("StepFailed", {
         ...step("build"),
         evidence: "tsc: apps/board/src/lib/board.ts(12,5): error TS2322",
         findings: [],
@@ -200,7 +200,7 @@ describe("attemptOutcome", () => {
   it("lists a review gate's findings under its output", () => {
     const e = stream("run-2");
     const outcome = attemptOutcome([
-      e("GateFailed", {
+      e("StepFailed", {
         ...step("review"),
         evidence: "1 blocker",
         findings: [
@@ -235,14 +235,14 @@ describe("attemptOutcome", () => {
   });
 
   /**
-   * The ticket's "which point it died at": a `GateStarted` with no matching
+   * The ticket's "which point it died at": a `StepStarted` with no matching
    * verdict. There is no output to quote, and the fact is the finding — a fold
    * that only knows verdicts cannot say this, which is why this reads the
    * envelopes rather than `reduceRun`.
    */
   it("names the point a run died inside", () => {
     const e = stream("run-1");
-    const outcome = attemptOutcome([e("GateStarted", step("install"))], BUDGET);
+    const outcome = attemptOutcome([e("StepStarted", step("install"))], BUDGET);
 
     expect(outcome.evidence?.what).toBe("proposed:install");
     expect(outcome.evidence?.text).toContain("never returned a verdict");
@@ -251,8 +251,8 @@ describe("attemptOutcome", () => {
   it("says nothing about a gate that passed", () => {
     const e = stream("run-1");
     const outcome = attemptOutcome([
-      e("GateStarted", step("install")),
-      e("GatePassed", { ...step("install"), evidence: "ok", findings: [] }),
+      e("StepStarted", step("install")),
+      e("StepPassed", { ...step("install"), evidence: "ok", findings: [] }),
     ], BUDGET);
 
     expect(outcome.evidence).toBeNull();
@@ -279,7 +279,7 @@ describe("attemptBrief", () => {
         insertions: 120,
         deletions: 3,
       }),
-      run("GateFailed", {
+      run("StepFailed", {
         ...step("build"),
         evidence: "tsc: apps/board/src/lib/board.ts(12,5): error TS2322",
         findings: [],
@@ -367,7 +367,7 @@ describe("attemptBrief", () => {
     const attempts = priorAttempts(events);
     const run = stream("run-8");
     attempts[attempts.length - 1]!.outcome = attemptOutcome([
-      run("GateFailed", { ...step("build"), evidence: "x".repeat(10_000), findings: [] }),
+      run("StepFailed", { ...step("build"), evidence: "x".repeat(10_000), findings: [] }),
     ], BUDGET);
 
     const brief = attemptBrief(attempts, BUDGET);
@@ -441,7 +441,7 @@ describe("attemptBrief", () => {
         stream("wi-lingtai-169")("WorkItemReleased", { runId: "run-1", reason: "gates refused the diff" }),
       ]);
       attempts[0]!.outcome = attemptOutcome(
-        [run("GateFailed", { ...step("build"), evidence, findings: [] })],
+        [run("StepFailed", { ...step("build"), evidence, findings: [] })],
         budget,
       );
       return attemptBrief(attempts, budget);

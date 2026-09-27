@@ -14,7 +14,7 @@
  * *which of these*. `askJudge` is the seam between them, and it refuses an
  * answer outside the set by name rather than obeying it.
  *
- *     the pass refuses            reason: red · gate-failed · conflict ·
+ *     the pass refuses            reason: red · verify-failed · conflict ·
  *                                 needs-input · findings
  *       └── the workflow counts   stepsOnOffer → implement? claim? human
  *             └── the judge picks one of those, and nothing else
@@ -80,7 +80,7 @@ import type { BuiltInJudge, JudgeWhen, StepAction } from "@lingtai/recipe";
  * because `when:` is required and undefaulted, so no entry can answer for all
  * five. The first match wins where a file writes two for one direction — the
  * order in a step's list is the recipe's own (0061 §2) — and neither entry is
- * ignored quietly, because both are on the log in `GatesResolved` and on the
+ * ignored quietly, because both are on the log in `StepsResolved` and on the
  * board.
  *
  * **It decides nothing and spends nothing.** It answers *which judge*, never
@@ -368,7 +368,7 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
    * **The mechanical answer**: back to `implement`, in the worktree that is
    * already cut, with the error.
    *
-   * It is the whole of what `red` and `gate-failed` need — sixty of the
+   * It is the whole of what `red` and `verify-failed` need — sixty of the
    * refusals 0061 §3 measured, and not one of them a judgement. A build that
    * went red says *this line is wrong* by construction; a merge whose checks
    * went red on the new base says *the base moved and the result is wrong*; in
@@ -396,7 +396,7 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
  * measurement is the whole argument for the split —
  *
  *     red           34   back to implement with the error       mechanical
- *     gate-failed   26   back to implement with the new base    mechanical
+ *     verify-failed   26   back to implement with the new base    mechanical
  *     conflict       6   text: resolve · intent: a person
  *     needs-input    —   interrupt, or go round stating the assumption
  *     findings     231   the lines or the approach              ← the judgement
@@ -407,7 +407,7 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
  */
 export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   red: "same-worktree",
-  "gate-failed": "same-worktree",
+  "verify-failed": "same-worktree",
   conflict: null,
   "needs-input": null,
   findings: null,

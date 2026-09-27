@@ -30,7 +30,7 @@ function at(time: string, type: string, data: unknown): Envelope {
 }
 
 const step = (step: Step, action: string) => ({
-  gate: step,
+  step: step,
   action,
   runId: "run-59",
   onSha: "b1b8694",
@@ -54,18 +54,18 @@ const PLAN: StepPlan = new Map([
 function timeline(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-04T17:12:20Z", "GateRequested", step("prepared", "install")),
-    at("2026-09-04T17:12:20Z", "GateStarted", step("prepared", "install")),
-    at("2026-09-04T17:12:26Z", "GatePassed", { ...step("prepared", "install"), evidence: "ok", findings: [] }),
+    at("2026-09-04T17:12:20Z", "StepRequested", step("prepared", "install")),
+    at("2026-09-04T17:12:20Z", "StepStarted", step("prepared", "install")),
+    at("2026-09-04T17:12:26Z", "StepPassed", { ...step("prepared", "install"), evidence: "ok", findings: [] }),
     at("2026-09-04T17:12:30Z", "RunStarted", {
       workItemId: "wi-lingtai-59",
       invocation: { command: "claude", args: [], tier: "guarded", limits: { turns: 150, wallMs: 3_600_000 } },
     }),
-    at("2026-09-04T17:12:30Z", "GatesResolved", {
+    at("2026-09-04T17:12:30Z", "StepsResolved", {
       runId: "run-59",
       configHash: "abc",
-      points: STEPS.map((step) => ({
-        gate: step,
+      steps: STEPS.map((step) => ({
+        step: step,
         actions: (PLAN.get(step) ?? []).map((a) => a.name),
       })),
     }),
@@ -76,8 +76,8 @@ function timeline(): Envelope[] {
       durationMs: 492_000,
       costUsd: 2.19,
     }),
-    at("2026-09-04T17:20:43Z", "GateRequested", step("proposed", "build")),
-    at("2026-09-04T17:20:43Z", "GateStarted", step("proposed", "build")),
+    at("2026-09-04T17:20:43Z", "StepRequested", step("proposed", "build")),
+    at("2026-09-04T17:20:43Z", "StepStarted", step("proposed", "build")),
   ];
 }
 
@@ -113,7 +113,7 @@ describe("where a run has got to", () => {
   });
 
   /**
-   * The gap #79 measured: `RunFinished` at 17:20:42, `GateStarted` at 17:20:43.
+   * The gap #79 measured: `RunFinished` at 17:20:42, `StepStarted` at 17:20:43.
    * Nothing is executing in between, and saying so beats saying the agent is.
    */
   it("says so when the agent has finished and no point has started", () => {
@@ -139,11 +139,11 @@ describe("where a run has got to", () => {
   });
 
   /**
-   * `GatesResolved` is appended after `RunStarted`, which is after the prepare
+   * `StepsResolved` is appended after `RunStarted`, which is after the prepare
    * gates — so for the first seconds of a run the log has no plan, and the
    * recipe is the only thing that can say a point exists.
    */
-  it("names a configured point before GatesResolved has landed", () => {
+  it("names a configured point before StepsResolved has landed", () => {
     const first = timeline().slice(0, 3);
     const steps = foldProgress(first, PLAN)?.steps ?? [];
 
@@ -155,7 +155,7 @@ describe("where a run has got to", () => {
   it("reads a failure at a point as failed, whatever else that point did", () => {
     const failed = [
       ...timeline(),
-      at("2026-09-04T17:34:00Z", "GateFailed", {
+      at("2026-09-04T17:34:00Z", "StepFailed", {
         ...step("proposed", "build"),
         evidence: "2 tests failed",
         findings: [],

@@ -266,15 +266,15 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return { ...state, ...at, lifecycle: { status: "failed", kind: d.kind, detail: d.detail } };
     }
 
-    case "GateRequested":
-    case "GateStarted": {
-      const d = event.data as PayloadOf<"GateRequested">;
+    case "StepRequested":
+    case "StepStarted": {
+      const d = event.data as PayloadOf<"StepRequested">;
       return {
         ...state,
         ...at,
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
-          verdict: event.type === "GateRequested" ? "requested" : "running",
+          step: `${d.step}:${d.action}`,
+          verdict: event.type === "StepRequested" ? "requested" : "running",
           onSha: d.onSha,
           evidence: null,
           findings: [],
@@ -284,13 +284,13 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       };
     }
 
-    case "GatePassed": {
-      const d = event.data as PayloadOf<"GatePassed">;
+    case "StepPassed": {
+      const d = event.data as PayloadOf<"StepPassed">;
       return {
         ...state,
         ...at,
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "passed",
           onSha: d.onSha,
           evidence: d.evidence,
@@ -301,13 +301,13 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       };
     }
 
-    case "GateFailed": {
-      const d = event.data as PayloadOf<"GateFailed">;
+    case "StepFailed": {
+      const d = event.data as PayloadOf<"StepFailed">;
       return {
         ...state,
         ...at,
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "failed",
           onSha: d.onSha,
           evidence: d.evidence,
@@ -318,13 +318,13 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       };
     }
 
-    case "GateNeverRan": {
-      const d = event.data as PayloadOf<"GateNeverRan">;
+    case "StepNeverRan": {
+      const d = event.data as PayloadOf<"StepNeverRan">;
       return {
         ...state,
         ...at,
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "never-ran",
           onSha: d.onSha,
           // The runtime's own sentence: evidence that the agent never started,
@@ -338,17 +338,17 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       };
     }
 
-    case "GateDidNotFinish": {
-      const d = event.data as PayloadOf<"GateDidNotFinish">;
+    case "StepDidNotFinish": {
+      const d = event.data as PayloadOf<"StepDidNotFinish">;
       return {
         ...state,
         ...at,
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "did-not-finish",
           onSha: d.onSha,
           // The runtime's own sentence about the machinery, never about the
-          // diff — `GateNeverRan.detail`'s reason, one row along in 0057's
+          // diff — `StepNeverRan.detail`'s reason, one row along in 0057's
           // table. No findings, because there is no verdict to have them.
           evidence: d.detail,
           findings: [],
@@ -358,13 +358,13 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       };
     }
 
-    case "GateWaived": {
-      const d = event.data as PayloadOf<"GateWaived">;
+    case "StepWaived": {
+      const d = event.data as PayloadOf<"StepWaived">;
       return {
         ...state,
         ...at,
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "waived",
           onSha: d.onSha,
           evidence: null,
@@ -380,9 +380,9 @@ export function applyRun(state: RunState, event: Envelope): RunState {
       return {
         ...state,
         ...at,
-        lifecycle: { status: "awaiting-approval", step: `${d.gate}:${d.action}`, onSha: d.onSha, question: d.question },
+        lifecycle: { status: "awaiting-approval", step: `${d.step}:${d.action}`, onSha: d.onSha, question: d.question },
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "requested",
           onSha: d.onSha,
           evidence: null,
@@ -400,7 +400,7 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         ...at,
         lifecycle: { status: "gating", headSha: d.onSha },
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "passed",
           onSha: d.onSha,
           evidence: null,
@@ -429,12 +429,12 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         ...at,
         lifecycle: {
           status: "awaiting-approval",
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           onSha: d.onSha,
           question: `${d.by} withdrew the approval: ${d.reason}`,
         },
         steps: withStep(state, {
-          step: `${d.gate}:${d.action}`,
+          step: `${d.step}:${d.action}`,
           verdict: "requested",
           onSha: d.onSha,
           evidence: null,

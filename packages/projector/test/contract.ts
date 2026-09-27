@@ -147,10 +147,10 @@ const started = (workItemId: string) => ({
 });
 
 const stepPassed = (runId: string, findings: unknown[] = []) => ({
-  type: "GatePassed",
+  type: "StepPassed",
   actor: "conductor",
   data: {
-    gate: "proposed" as const,
+    step: "proposed" as const,
     action: "build",
     runId,
     onSha: "a".repeat(40),

@@ -92,8 +92,8 @@ describe("one attempt", () => {
   it("holds its own verdicts, so two attempts' gates are never one list", () => {
     const one = foldRun(CLAIM, 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
-      e(RUN_1, "GateFailed", {
-        gate: "proposed",
+      e(RUN_1, "StepFailed", {
+        step: "proposed",
         action: "build",
         onSha: "b".repeat(40),
         evidence: "error TS2741",
@@ -101,7 +101,7 @@ describe("one attempt", () => {
     ]);
     const two = foldRun({ ...CLAIM, runId: RUN_2 }, 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: "c".repeat(40) }),
-      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: "c".repeat(40) }),
+      e(RUN_2, "StepPassed", { step: "proposed", action: "build", onSha: "c".repeat(40) }),
     ]);
 
     expect(one.steps.map((g) => [g.step, g.state])).toEqual([["proposed:build", "failed"]]);
@@ -111,7 +111,7 @@ describe("one attempt", () => {
   /**
    * The gate that stopped the run has to appear on the page written for it.
    *
-   * `GateNeverRan` calls its text `detail` rather than `evidence`, because it is
+   * `StepNeverRan` calls its text `detail` rather than `evidence`, because it is
    * evidence about the account and never about the diff (#133). This fold read
    * `evidence` only, so the never-ran gate arrived with `evidence: null` — and
    * `Evidence` shows only gates that said something, so the one gate a person
@@ -120,8 +120,8 @@ describe("one attempt", () => {
   it("shows a never-ran gate's words, which it files under a different name", () => {
     const run = foldRun(CLAIM, 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: "b".repeat(40) }),
-      e(RUN_1, "GateNeverRan", {
-        gate: "proposed",
+      e(RUN_1, "StepNeverRan", {
+        step: "proposed",
         action: "review",
         onSha: "b".repeat(40),
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
@@ -170,7 +170,7 @@ describe("one attempt", () => {
 
   it("still shows all ten steps, including the ones nothing was configured at", () => {
     const run = foldRun(CLAIM, 1, [
-      e(RUN_1, "GatesResolved", { points: [{ gate: "proposed", actions: ["build"] }] }),
+      e(RUN_1, "StepsResolved", { steps: [{ step: "proposed", actions: ["build"] }] }),
     ]);
 
     // `progress.ts`'s fold, which is the one the rail reads (#189).

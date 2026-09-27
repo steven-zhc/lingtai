@@ -912,7 +912,7 @@ describe("the headline says what stopped the pass", () => {
      * never of what the pass bought.**
      *
      * `build` refuses A; round 1 commits B; the loop re-runs the pipeline and
-     * `build` refuses B — a second `GateFailed` on the log; round 2's fixer is
+     * `build` refuses B — a second `StepFailed` on the log; round 2's fixer is
      * killed. The point ran twice, on two different diffs, and said the same
      * thing both times, which is what `done` prints three lines under this
      * headline. Calling that one untested result is worth money to a person

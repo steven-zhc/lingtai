@@ -57,7 +57,7 @@ function at(time: string, type: string, data: unknown): Envelope {
 }
 
 const step = (step: Step, action: string) => ({
-  gate: step,
+  step: step,
   action,
   runId: "run-170",
   onSha: "b1b8694",
@@ -82,13 +82,13 @@ const PLAN: StepPlan = new Map([
   ["end", [{ name: "close the ticket", budgetMs: null }]],
 ]);
 
-/** `GatesResolved`, from a plan — the log's own record of what was configured. */
+/** `StepsResolved`, from a plan — the log's own record of what was configured. */
 const resolved = (plan: StepPlan) =>
-  at("2026-09-15T17:12:30Z", "GatesResolved", {
+  at("2026-09-15T17:12:30Z", "StepsResolved", {
     runId: "run-170",
     configHash: "abc",
-    points: STEPS.map((step) => ({
-      gate: step,
+    steps: STEPS.map((step) => ({
+      step: step,
       actions: (plan.get(step) ?? []).map((a) => a.name),
     })),
   });
@@ -97,9 +97,9 @@ const resolved = (plan: StepPlan) =>
 function running(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-15T17:12:20Z", "GateRequested", step("prepared", "install")),
-    at("2026-09-15T17:12:20Z", "GateStarted", step("prepared", "install")),
-    at("2026-09-15T17:12:26Z", "GatePassed", {
+    at("2026-09-15T17:12:20Z", "StepRequested", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "StepStarted", step("prepared", "install")),
+    at("2026-09-15T17:12:26Z", "StepPassed", {
       ...step("prepared", "install"),
       evidence: "ok",
       findings: [],
@@ -120,15 +120,15 @@ function running(): Envelope[] {
       durationMs: 492_000,
       costUsd: 5.92,
     }),
-    at("2026-09-15T17:20:43Z", "GateRequested", step("proposed", "build")),
-    at("2026-09-15T17:20:43Z", "GateStarted", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "StepRequested", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "StepStarted", step("proposed", "build")),
   ];
 }
 
 /** The same run, refused at the build. */
 const refused = (): Envelope[] => [
   ...running(),
-  at("2026-09-15T17:34:00Z", "GateFailed", {
+  at("2026-09-15T17:34:00Z", "StepFailed", {
     ...step("proposed", "build"),
     evidence: "2 tests failed",
     findings: [],
@@ -172,7 +172,7 @@ const fixSpent = (): Envelope[] => [
 /**
  * A pass every gate passed, and the merge lane refused.
  *
- * The scenario verbatim: `RunStarted, GatesResolved, RunFinished`, the build
+ * The scenario verbatim: `RunStarted, StepsResolved, RunFinished`, the build
  * and the review green — and then nothing at all, because `IntegrationRefused`
  * is appended to `int-lingtai-main` and never touches the run's stream. What
  * reaches the card is `task_view`'s doing: Waiting, and `conflict: base moved`
@@ -182,16 +182,16 @@ function refusedByTheLane(): Envelope[] {
   const upToTheAgent = running().slice(0, 6);
   return [
     ...upToTheAgent,
-    at("2026-09-15T17:20:43Z", "GateRequested", step("proposed", "build")),
-    at("2026-09-15T17:20:43Z", "GateStarted", step("proposed", "build")),
-    at("2026-09-15T17:21:10Z", "GatePassed", {
+    at("2026-09-15T17:20:43Z", "StepRequested", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "StepStarted", step("proposed", "build")),
+    at("2026-09-15T17:21:10Z", "StepPassed", {
       ...step("proposed", "build"),
       evidence: "ok",
       findings: [],
     }),
-    at("2026-09-15T17:21:11Z", "GateRequested", step("proposed", "review")),
-    at("2026-09-15T17:21:11Z", "GateStarted", step("proposed", "review")),
-    at("2026-09-15T17:22:00Z", "GatePassed", {
+    at("2026-09-15T17:21:11Z", "StepRequested", step("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "StepStarted", step("proposed", "review")),
+    at("2026-09-15T17:22:00Z", "StepPassed", {
       ...step("proposed", "review"),
       evidence: "no findings",
       findings: [],
@@ -211,10 +211,10 @@ function refusedByTheLane(): Envelope[] {
 function refusedAtPrepared(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-15T17:12:20Z", "GateRequested", step("prepared", "install")),
-    at("2026-09-15T17:12:20Z", "GateStarted", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "StepRequested", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "StepStarted", step("prepared", "install")),
     resolved(PLAN),
-    at("2026-09-15T17:12:26Z", "GateFailed", {
+    at("2026-09-15T17:12:26Z", "StepFailed", {
       ...step("prepared", "install"),
       evidence: "the lockfile is out of date",
       findings: [],
@@ -225,10 +225,10 @@ function refusedAtPrepared(): Envelope[] {
 /**
  * A run that recorded no plan at all: `RunStarted`, `RunFinished`, nothing else.
  *
- * A run that died before `GatesResolved` was appended, or one predating the
+ * A run that died before `StepsResolved` was appended, or one predating the
  * event. The fold falls back to the recipe being read *now*, which is exactly
  * the case the doctor's `planned` CTE cannot see, because it selects from
- * `GatesResolved` rows.
+ * `StepsResolved` rows.
  */
 function noPlanRecorded(): Envelope[] {
   seq = 0n;
@@ -255,7 +255,7 @@ function noPlanRecorded(): Envelope[] {
  * **The three items `lingtai doctor` used to name, as a fixture.**
  *
  * The comparison finds an item that landed whose last run's
- * `GatesResolved` named actions at a point and whose stream carries no gate
+ * `StepsResolved` named actions at a point and whose stream carries no gate
  * event there at all — no request, no verdict, no approval, no waiver. That is
  * #49, #53 and #55 at `merge`, and until #170 it reached the doctor as a FAIL
  * and the board as nothing whatever; since `#257` the doctor row is gone and
@@ -271,9 +271,9 @@ const MERGE_PLAN: StepPlan = new Map([
 function landedPastMerge(): Envelope[] {
   seq = 0n;
   return [
-    at("2026-09-15T17:12:20Z", "GateRequested", step("prepared", "install")),
-    at("2026-09-15T17:12:20Z", "GateStarted", step("prepared", "install")),
-    at("2026-09-15T17:12:26Z", "GatePassed", {
+    at("2026-09-15T17:12:20Z", "StepRequested", step("prepared", "install")),
+    at("2026-09-15T17:12:20Z", "StepStarted", step("prepared", "install")),
+    at("2026-09-15T17:12:26Z", "StepPassed", {
       ...step("prepared", "install"),
       evidence: "ok",
       findings: [],
@@ -294,16 +294,16 @@ function landedPastMerge(): Envelope[] {
       durationMs: 492_000,
       costUsd: 1.46,
     }),
-    at("2026-09-15T17:20:43Z", "GateRequested", step("proposed", "build")),
-    at("2026-09-15T17:20:43Z", "GateStarted", step("proposed", "build")),
-    at("2026-09-15T17:21:10Z", "GatePassed", {
+    at("2026-09-15T17:20:43Z", "StepRequested", step("proposed", "build")),
+    at("2026-09-15T17:20:43Z", "StepStarted", step("proposed", "build")),
+    at("2026-09-15T17:21:10Z", "StepPassed", {
       ...step("proposed", "build"),
       evidence: "ok",
       findings: [],
     }),
-    at("2026-09-15T17:21:11Z", "GateRequested", step("proposed", "review")),
-    at("2026-09-15T17:21:11Z", "GateStarted", step("proposed", "review")),
-    at("2026-09-15T17:22:00Z", "GatePassed", {
+    at("2026-09-15T17:21:11Z", "StepRequested", step("proposed", "review")),
+    at("2026-09-15T17:21:11Z", "StepStarted", step("proposed", "review")),
+    at("2026-09-15T17:22:00Z", "StepPassed", {
       ...step("proposed", "review"),
       evidence: "no findings",
       findings: [],
@@ -785,7 +785,7 @@ describe("the seven states", () => {
     expect(CSS).toMatch(/\.scell\.t-pass\s*\{[^}]*var\(--pass\)/);
     expect(CSS).toMatch(/\.scell\.t-fail\s*\{[^}]*var\(--fail\)/);
     expect(CSS).toMatch(/\.scell\.t-run\s*\{[^}]*var\(--accent\)/);
-    // A person's word standing in for a gate: the held colour, and an override
+    // A person's word standing in for a step: the held colour, and an override
     // of a red build must not look like a build that went green.
     expect(CSS).toMatch(/\.scell\.t-waived\s*\{[^}]*var\(--held\)/);
     expect(CSS).not.toMatch(/\.scell\.t-waived\s*\{[^}]*var\(--pass\)/);
@@ -861,7 +861,7 @@ describe("the hatch, and what may not draw it", () => {
   });
 
   /**
-   * The doctor's `planned` CTE selects from `GatesResolved` rows, so a stream
+   * The doctor's `planned` CTE selects from `StepsResolved` rows, so a stream
    * without one contributes nothing to it. Here such a stream falls back to the
    * recipe being read *now* — which may not be the one this run got — and a
    * recipe the run never saw cannot accuse it of skipping a step.

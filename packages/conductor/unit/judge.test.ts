@@ -114,7 +114,7 @@ describe("the set is the workflow's", () => {
     expect(stepsOnOffer({ ...EVERYTHING, when: "findings", restartsSpent: 1 })).not.toContain(
       "claim",
     );
-    for (const when of ["red", "gate-failed", "conflict", "needs-input"] as const) {
+    for (const when of ["red", "verify-failed", "conflict", "needs-input"] as const) {
       expect(stepsOnOffer({ ...EVERYTHING, when }), when).not.toContain("claim");
     }
     // Somebody else is waiting on this pass, and releasing the item would throw
@@ -346,8 +346,8 @@ describe("the mechanical directions spend nothing", () => {
    * awaiting, so a built-in that started spending money would fail here and in
    * the type checker at once.
    */
-  it("answers `red` and `gate-failed` with a built-in that returns without awaiting", () => {
-    for (const when of ["red", "gate-failed"] as const) {
+  it("answers `red` and `verify-failed` with a built-in that returns without awaiting", () => {
+    for (const when of ["red", "verify-failed"] as const) {
       const name = BUILT_IN_FOR[when];
       expect(name, `${when} has no built-in`).not.toBeNull();
       const answer = BUILT_IN[name!](brief(when, ["implement", "human"]));
@@ -451,7 +451,7 @@ describe("the judge the recipe declared", () => {
   /**
    * Two entries for one direction is a file a person can write, and the order in
    * a step's list is the recipe's own (0061 §2) — so the first wins, and neither
-   * is hidden: both are in `GatesResolved` and on the board.
+   * is hidden: both are in `StepsResolved` and on the board.
    */
   it("takes the first of two written for one direction", () => {
     const twice = StepMap.parse({

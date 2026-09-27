@@ -572,7 +572,7 @@ export const queuePlugin = definePlugin("queue", {
  * resolves.
  *
  * Two of the five are the merge lane's own words and mean there what they mean
- * here: `conflict` and `gate-failed` are `RefusalReason` in
+ * here: `conflict` and `verify-failed` are `RefusalReason` in
  * `packages/domain/src/events.ts`. The other three are the reasons the steps
  * 0058 §3 named will report when they are built (0061 §5) — `red` is `build`'s,
  * `findings` is `review`'s, and `needs-input` is an implementing agent that
@@ -584,7 +584,7 @@ export const queuePlugin = definePlugin("queue", {
  * what is in doubt, and offering a judge a direction nothing can arrive by is
  * the same mistake as offering it a step nothing can run.
  */
-export const JudgeWhen = z.enum(["red", "gate-failed", "conflict", "needs-input", "findings"]);
+export const JudgeWhen = z.enum(["red", "verify-failed", "conflict", "needs-input", "findings"]);
 export type JudgeWhen = z.infer<typeof JudgeWhen>;
 
 /**
@@ -626,7 +626,7 @@ export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
  *
  * **What it costs is the direction 0061 §3 calls the judgement.** `findings` was
  * seen 231 times in fourteen days and no built-in answers it, so it reaches a
- * person still; `red` and `gate-failed` were seen sixty times between them and
+ * person still; `red` and `verify-failed` were seen sixty times between them and
  * are mechanical, which is what this enum's one name is for. The dispatch is the
  * ticket that puts the runtimes back, and `doc/reference.md` §`judge:` says so
  * where an operator reads it.
@@ -890,7 +890,7 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Ste
  * was asking for. A plugin's `at` can only answer the first.
  *
  * **The guard `#61` bought survives the move, and only its source changed.**
- * Ten cells were once accepted here, resolved into `GatesResolved`, printed by
+ * Ten cells were once accepted here, resolved into `StepsResolved`, printed by
  * `lingtai add`, drawn on the board — and never called; `merge` was a
  * sixteenth until `#58` built its pipeline. *A control the log claims and the
  * code does not have is worse than an unimplemented one, because every signal
@@ -1138,7 +1138,7 @@ export function whyNoKindAt(
       "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
       `have a word for it, and no plugin's \`at\` carries that key yet.${instead} ` +
       "Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded " +
-      "in `GatesResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
+      "in `StepsResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
   }
 
@@ -1335,7 +1335,7 @@ function actionsAt(step: Step) {
        * Every declared action at a step runs (0065 §2), so two of these would
        * cut the same path twice — and `baseOf` would have to pick one, leaving
        * the other displayed on the board, hashed into `configHash` and recorded
-       * in `GatesResolved` while something else is what ran. That is `#61`'s
+       * in `StepsResolved` while something else is what ran. That is `#61`'s
        * shape reached through a duplicate rather than through a missing call
        * site, and it is the one plugin it can happen to: `worktree:` is the only
        * one that *makes* what the rest of the pass works in, so where a second

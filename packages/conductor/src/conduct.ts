@@ -59,7 +59,7 @@
  * recipe declares its judges at `proposed:`, one per `when:`, and this port is
  * where the entry matching the direction is looked up. Where it declares none the
  * answer is still `noJudge`, and what that costs is `BUILT_IN_FOR`'s: `red` and
- * `gate-failed` are mechanical and spend nothing, and a person is the floor under
+ * `verify-failed` are mechanical and spend nothing, and a person is the floor under
  * the other three.
  *
  * ## Four things a run acquires, and one scope each
@@ -1438,7 +1438,7 @@ export function runOnce(
        * chose against the offer.
        *
        * **`noJudge` where the recipe said nothing, which is still the ordinary
-       * answer.** `BUILT_IN_FOR` then answers `red` and `gate-failed` mechanically
+       * answer.** `BUILT_IN_FOR` then answers `red` and `verify-failed` mechanically
        * and spends nothing, and a person is the floor under `conflict`,
        * `needs-input` and `findings`. So a recipe with an empty `proposed:` behaves
        * exactly as it did before this existed (0064 §5: absent is not empty), and
@@ -1706,9 +1706,9 @@ export function runOnce(
                 yield* Effect.promise(() =>
                   appendNow(runId, [
                     {
-                      type: "GatesResolved",
+                      type: "StepsResolved",
                       actor: "conductor",
-                      data: parsePayload("GatesResolved", stepsResolved(runId, resolved)),
+                      data: parsePayload("StepsResolved", stepsResolved(runId, resolved)),
                     },
                   ]),
                 );
@@ -2480,10 +2480,10 @@ export function runOnce(
          * an agent stopped at `runtime.limits.turns` having committed twice — and
          * `admit`'s is a clone that did not finish. Asked there, `ApprovalRequested`
          * sets `task_view.awaitingSha`, `standing.tsx` draws **Approve**, and
-         * `refusingOn` (`approve.ts`) finds no `GateFailed`, `GateNeverRan` or
-         * `GateDidNotFinish` row to be refusing — because no gate ran — so one
+         * `refusingOn` (`approve.ts`) finds no `StepFailed`, `StepNeverRan` or
+         * `StepDidNotFinish` row to be refusing — because no gate ran — so one
          * click merges a half-finished diff the build and the cold reviewer never
-         * read, with no `note`, no `GateWaived` and nothing on the log saying
+         * read, with no `note`, no `StepWaived` and nothing on the log saying
          * anything was skipped. On a card whose own diagnosis reads *the limit is a
          * scope alarm … requeue*. The old engine appended no request on that ending
          * and Requeue was the only move offered; this is that, as a predicate
@@ -2500,7 +2500,7 @@ export function runOnce(
            * refused** — and naming it after that action destroys the thing it
            * exists to report.
            *
-           * `task-view.ts` folds `GateFailed` and `ApprovalRequested` through one
+           * `task-view.ts` folds `StepFailed` and `ApprovalRequested` through one
            * `setStep`, keyed `${runId}:${gate}:${action}`, with
            * `VERDICT.ApprovalRequested = "pending"`. So a `build` refused by a
            * `run:` action called `test` writes `verdicts[<run>:build:test] =
@@ -2521,7 +2521,7 @@ export function runOnce(
                 type: "ApprovalRequested",
                 actor: "conductor",
                 data: parsePayload("ApprovalRequested", {
-                  gate: stopped?.step ?? "proposed",
+                  step: stopped?.step ?? "proposed",
                   action: stopped === null ? "judge" : "unfixed",
                   runId,
                   // What is on origin, never what the walk last reported: see

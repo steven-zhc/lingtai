@@ -32,7 +32,7 @@ const minor = (claim: string, line: number) => ({
   severity: "minor" as const,
 });
 
-async function attempt(n: number, a: number, findings: unknown[], verdict = "GatePassed") {
+async function attempt(n: number, a: number, findings: unknown[], verdict = "StepPassed") {
   await store.append(run(n, a), 0, [
     {
       type: "RunStarted",
@@ -51,7 +51,7 @@ async function attempt(n: number, a: number, findings: unknown[], verdict = "Gat
     {
       type: verdict,
       actor: "conductor",
-      data: { gate: "proposed", action: "review", runId: run(n, a), onSha: `sha-${a}`, evidence: "ok", findings },
+      data: { step: "proposed", action: "review", runId: run(n, a), onSha: `sha-${a}`, evidence: "ok", findings },
     },
   ]);
 }
@@ -90,7 +90,7 @@ beforeAll(async () => {
     { ...minor("a major is not backlog", 30), severity: "major" },
   ]);
   // A failing gate's findings go to a fix round, not here.
-  await attempt(2, 1, [minor("on a failing gate", 5)], "GateFailed");
+  await attempt(2, 1, [minor("on a failing gate", 5)], "StepFailed");
   await fold();
 
   // The second attempt says the first thing again, lines moved and spacing changed.

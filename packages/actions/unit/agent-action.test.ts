@@ -532,7 +532,7 @@ describe("the action", () => {
 
   /**
    * The rubric's third tier (#135). A minor does not refuse, so the action passes
-   * — and before `GatePassed` carried findings, everything the reviewer said
+   * — and before `StepPassed` carried findings, everything the reviewer said
    * survived only as prose inside `evidence`. Asserted on the event the pipeline
    * emits, because the event is what a program reads back.
    */
@@ -548,12 +548,12 @@ describe("the action", () => {
 
     expect(result.ok).toBe(true);
     const passed = events.at(-1);
-    expect(passed?.type).toBe("GatePassed");
-    if (passed?.type !== "GatePassed") return;
+    expect(passed?.type).toBe("StepPassed");
+    if (passed?.type !== "StepPassed") return;
     expect(passed.data.findings).toEqual([minor]);
     // The prose stays: it is what a person reads.
     expect(passed.data.evidence).toContain("packages/actions/src/command.ts:313");
-    expect(parsePayload("GatePassed", passed.data)).toEqual(passed.data);
+    expect(parsePayload("StepPassed", passed.data)).toEqual(passed.data);
   });
 
   it("writes an empty array, not an absent field, on a pass with nothing to say", async () => {
@@ -566,7 +566,7 @@ describe("the action", () => {
     });
 
     const passed = events.at(-1);
-    expect(passed?.type).toBe("GatePassed");
+    expect(passed?.type).toBe("StepPassed");
     expect(passed?.data).toHaveProperty("findings", []);
   });
 

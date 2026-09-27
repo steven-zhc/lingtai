@@ -299,7 +299,7 @@ describe("a `no_log` field never leaves its plugin", () => {
 
   /**
    * **The body verifies against the hash beside it**, which is what a reader
-   * without trust in the writer does with `GatesResolved` (0047 §2) — and is
+   * without trust in the writer does with `StepsResolved` (0047 §2) — and is
    * `conductor/unit/recorded-recipe.test.ts`'s own move. It works only because
    * a stand-in stands in for itself: the body has been through `disclose`
    * already by the time anybody re-hashes it.

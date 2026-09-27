@@ -82,13 +82,13 @@ describe("a payload that carries a document", () => {
    */
   it("lifts a document wherever it sits, including nested and in an array", () => {
     const { raw, documents } = splitPayload({
-      kind: "gate-failed",
+      kind: "verify-failed",
       diagnosis: { raw: "error TS2345: …\n  at build.ts:4" },
       findings: [{ scenario: "given a\nthen b" }],
     });
     expect(documents.map((d) => d.field)).toEqual(["diagnosis.raw", "findings[0].scenario"]);
     expect(raw).not.toContain("\\n");
-    expect(raw).toContain('"kind": "gate-failed"');
+    expect(raw).toContain('"kind": "verify-failed"');
   });
 
   it("leaves a payload with no document exactly as it was stored", () => {

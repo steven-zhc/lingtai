@@ -102,7 +102,7 @@ function canonical(value: unknown): string {
  * hashes taken when `gates` had five keys. Widening `StepMap` to ten put five
  * more always-empty keys inside `canonical`, so the identical `recipe.yml`
  * hashed to something new — and there is no step from an old digest to a new
- * one the way `GatesResolved`'s `3 → 4` has one for a stored plan. The task
+ * one the way `StepsResolved`'s `3 → 4` has one for a stored plan. The task
  * page proves an attempt's recipe by comparing its recorded hash to the file
  * at the run's base commit (`apps/board/src/lib/recipe.ts`), so every attempt
  * already in the record would fail that comparison and be told, in a refusal,
@@ -155,7 +155,7 @@ function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unk
 
 /**
  * The recipe as `hashRecipe` sees it, as an object rather than a string: what
- * `GatesResolved` records beside the hash (0047 §2). The body and its hash on
+ * `StepsResolved` records beside the hash (0047 §2). The body and its hash on
  * one event is what lets a reader verify the body without trusting the writer —
  * `hashRecipe` of this is the `configHash` of the recipe it came from.
  */
@@ -310,7 +310,7 @@ function retiredKeys(raw: unknown): string[] {
  * else. A `human:` action at `merge` declared on one branch and not the other is
  * then a control that is declared and does not run.
  *
- * No audit after the fact can see that. `GatesResolved` is written from the same
+ * No audit after the fact can see that. `StepsResolved` is written from the same
  * recipe the run obeyed and carries that recipe's hash, so plan and execution
  * agree perfectly; it is the plan's *origin* that is wrong. Only this comparison,
  * made before anything is claimed, catches it — see

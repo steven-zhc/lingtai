@@ -143,7 +143,7 @@ export const signedInHere: SignedIn = signedInProbe([createClaudeCodeRuntime(), 
  * project was registered against stands in, and `baseDivergence` still
  * compares it with the recipe's `repo.base`.
  *
- * **`GatesResolved` does store a recipe, and it is not that snapshot** (0047
+ * **`StepsResolved` does store a recipe, and it is not that snapshot** (0047
  * §1). It records the recipe a run that is *over* was given, beside the hash it
  * is verified by — a record, like `baseSha`, and nothing resolves from it. What
  * this refuses is *deciding* from a copy; reading the log's copy here, or

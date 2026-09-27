@@ -115,7 +115,7 @@ export type Step = z.infer<typeof Step>;
  * The ten, in the order the loop reaches them.
  *
  * Exported as a tuple because "every step, in order" is a thing several places
- * need to iterate — `GatesResolved`, the board, `lingtai add` — and each writing
+ * need to iterate — `StepsResolved`, the board, `lingtai add` — and each writing
  * its own list is how one of them ends up missing a step and nobody notices.
  */
 export const STEPS = Step.options;
@@ -133,7 +133,7 @@ export const RefusalReason = z.enum([
   "dirty-base",
   "unpushed-base",
   "pending-migration",
-  "gate-failed",
+  "verify-failed",
   "no-commits",
   /**
    * Two integrations computed against one base, found where git finds it: the
@@ -630,7 +630,7 @@ export const RunFailed = z.object({
  * the only reader that could be misled is one who took the field's name for the
  * model rather than its type.
  */
-const gateBase = { gate: Step, action: z.string(), runId: z.string(), onSha: z.string() };
+const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.string() };
 
 /**
  * The plan for a run: all ten steps, and what will run at each.
@@ -655,7 +655,7 @@ const gateBase = { gate: Step, action: z.string(), runId: z.string(), onSha: z.s
  * **It is `schemaVer: 4`, and the step from 3 is the whole of what widening
  * this field cost.** 0061 §7 spends this history by *resetting* it, and that
  * reset is [the-pipeline](../../../doc/design/the-pipeline.md)'s T5, which has
- * not run — so every `GatesResolved` this log holds names five steps, and a
+ * not run — so every `StepsResolved` this log holds names five steps, and a
  * `.length(10)` reached with no step in between refuses all of them. Not at
  * the margin either: the refusal escapes `decodeRow` as a bare `ZodError`, so
  * the projectors stop at the first such seq and never advance past it, and
@@ -674,11 +674,11 @@ const gateBase = { gate: Step, action: z.string(), runId: z.string(), onSha: z.s
  * run's recipe is read from the base branch, as ever (0005) — and
  * `conductor/unit/recorded-recipe.test.ts` holds that line.
  */
-export const GatesResolved = z.object({
+export const StepsResolved = z.object({
   runId: z.string(),
   configHash: z.string(),
   /** Every step, in order, with the ordered action names resolved for it. */
-  points: z.array(z.object({ gate: Step, actions: z.array(z.string()) })).length(10),
+  steps: z.array(z.object({ step: Step, actions: z.array(z.string()) })).length(10),
   /**
    * `canonical(recipe)` as an object: parsed, `undefined` dropped, keys sorted —
    * exactly what `hashRecipe` hashes, so `hashRecipe(recipe) === configHash` and
@@ -736,8 +736,8 @@ export const EndActionsResolved = z.object({
   ),
 });
 
-export const GateRequested = z.object(gateBase);
-export const GateStarted = z.object(gateBase);
+export const StepRequested = z.object(stepBase);
+export const StepStarted = z.object(stepBase);
 
 /**
  * How bad a defect is, **worst first**.
@@ -774,7 +774,7 @@ export type Severity = (typeof SEVERITIES)[number];
  * One finding, as a reviewer reported it.
  *
  * Named and shared because a finding now travels: it is the evidence on a
- * `GateFailed`, it is what a fixing agent is handed verbatim, and it is what the
+ * `StepFailed`, it is what a fixing agent is handed verbatim, and it is what the
  * re-review is asked to re-check
  * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
  * Three copies of the shape would be three places for `failureScenario` to be
@@ -801,14 +801,14 @@ export type Finding = z.infer<typeof Finding>;
  * nothing to say carries an empty array, never an absent field
  * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
  */
-export const GatePassed = z.object({
-  ...gateBase,
+export const StepPassed = z.object({
+  ...stepBase,
   evidence: z.string(),
   findings: z.array(Finding),
 });
 
-export const GateFailed = z.object({
-  ...gateBase,
+export const StepFailed = z.object({
+  ...stepBase,
   evidence: z.string(),
   findings: z.array(Finding),
 });
@@ -824,9 +824,9 @@ export const GateFailed = z.object({
  * a reviewer: the build passed, the reviewer never ran, and what the log said
  * was that a review gate refused the diff (`#133`).
  *
- * **It is not `GateFailed` and must never be folded into one.** A failure is a
+ * **It is not `StepFailed` and must never be folded into one.** A failure is a
  * sentence about this diff and this is a sentence about the account — the
- * distinction the whole ticket turns on. Nor is it `GatePassed`: a green gate
+ * distinction the whole ticket turns on. Nor is it `StepPassed`: a green gate
  * for a diff nobody assessed is the other way to be wrong.
  *
  * `detail` is the runtime's own words, kept whole for the reason
@@ -834,10 +834,10 @@ export const GateFailed = z.object({
  * and 0031 §4 reads a reset time back out of it.
  *
  * Version 1, and it stays there. The **nine** types ADR 0018's rename moved —
- * `GatesResolved`, the four `Gate*` verdicts, `GateWaived` and the three
+ * `StepsResolved`, the four `Gate*` verdicts, `StepWaived` and the three
  * `Approval*` — are at 2 or above because each needed a step from 1; nothing
  * ever wrote one of *these* with the old name, so there is nothing to upcast.
- * `GateDidNotFinish` is younger still and never carried the old name either; it
+ * `StepDidNotFinish` is younger still and never carried the old name either; it
  * is at 2 for a reason of its own, which is `#234` dropping the two fields
  * 0057 §4's retry wrote and nothing to do with the rename. 0061 §7
  * will spend those nine steps along with the log they walk — **when the reset
@@ -845,27 +845,27 @@ export const GateFailed = z.object({
  * those numbers before then makes every stored row of those nine unreadable
  * and blames the writer for it.
  */
-export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
+export const StepNeverRan = z.object({ ...stepBase, detail: z.string() });
 
 /**
  * The gate's agent **started**, ended without a receipt, and so judged nothing
  * — [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1.
  *
  * The third of the three ways a gate's agent can end, and until this event the
- * log had two. A reviewer that crashed after twenty turns wrote `GateFailed`,
+ * log had two. A reviewer that crashed after twenty turns wrote `StepFailed`,
  * which is the event a reviewer that read the diff and refused it writes, and
  * everything downstream believed it: the conductor bought a fix round, and a
  * fixing agent was paid to answer a question nobody asked (`#196`,
  * `run-9e510ffc`). The difference existed only inside the `evidence` sentence,
  * and a sentence is not something `decideFix` or the board reads.
  *
- * **It is not `GateNeverRan` either, and that is 0057 §3.** *Never started*
+ * **It is not `StepNeverRan` either, and that is 0057 §3.** *Never started*
  * means an account-wide wall and stands the conductor down (0041); a crash is
  * local — a bad settings path, a broken binary, a reused session id (`#195`) —
  * and stopping the queue for it would be the same category error pointed the
  * other way.
  *
- * `detail` is the runtime's own words, whole, for the reason `GateNeverRan`'s
+ * `detail` is the runtime's own words, whole, for the reason `StepNeverRan`'s
  * is: they are about the machinery and never about the diff.
  *
  * **`attempt` and `retrying` are gone, and the retry they described with them**
@@ -883,14 +883,14 @@ export const GateNeverRan = z.object({ ...gateBase, detail: z.string() });
  * for `WorkItemClaimed`'s `leaseUntilMs` reason: no event is rewritten, so the
  * reader is what has to stop believing them.
  */
-export const GateDidNotFinish = z.object({ ...gateBase, detail: z.string() });
+export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() });
 
 /** Humans need an escape hatch. It is recorded, never silent. */
-export const GateWaived = z.object({ ...gateBase, by: z.string(), reason: z.string() });
+export const StepWaived = z.object({ ...stepBase, by: z.string(), reason: z.string() });
 
-export const ApprovalRequested = z.object({ ...gateBase, question: z.string(), artifacts: z.array(z.string()) });
-export const ApprovalGranted = z.object({ ...gateBase, by: z.string(), note: z.string() });
-export const ApprovalRevoked = z.object({ ...gateBase, by: z.string(), reason: z.string() });
+export const ApprovalRequested = z.object({ ...stepBase, question: z.string(), artifacts: z.array(z.string()) });
+export const ApprovalGranted = z.object({ ...stepBase, by: z.string(), note: z.string() });
+export const ApprovalRevoked = z.object({ ...stepBase, by: z.string(), reason: z.string() });
 
 // --------------------------------------------------------------- backlog ----
 
@@ -933,7 +933,7 @@ export const FindingAccepted = z.object({
  * decides which issue is the finding's, and nothing is left open that the log
  * does not name.
  *
- * The finding itself is not repeated: it is on the `GatePassed` the backlog
+ * The finding itself is not repeated: it is on the `StepPassed` the backlog
  * folded, and `key` is how the two are joined.
  */
 export const FindingProposed = z.object({
@@ -992,7 +992,7 @@ export const IntegrationSucceeded = z.object({
  * is what a refusal buys now.
  *
  * `#142` had already taken the conflict, which was the whole of what this was
- * for. What was left reaching it was a `gate-failed` — either a `proposed`
+ * for. What was left reaching it was a `verify-failed` — either a `proposed`
  * refusal carrying no criterion, the one `decideFix` declines to buy for, so
  * buying a whole *run* for it was the same decision made twice with opposite
  * answers, or a `merge:` gate, which runs after the round loop and reaches the
@@ -1935,7 +1935,7 @@ export const GitHubAppCreated = z.object({
  * subscriber's failure one outcome — *logged and dropped* — and dropping is
  * what makes the one failure a subscriber must not have invisible: a notifier
  * that has silently stopped notifying looks exactly like a quiet week. This is
- * the same argument 0016 §4 makes for `GatesResolved`, that a thing you cannot
+ * the same argument 0016 §4 makes for `StepsResolved`, that a thing you cannot
  * see is a thing you forget you never had.
  *
  * **It is a record and not a retry.** 0015's other rule stands: a subscriber is
@@ -1989,15 +1989,15 @@ export const EVENTS = {
   RunProposedCompletion,
   RunFinished,
   RunFailed,
-  GatesResolved,
+  StepsResolved,
   EndActionsResolved,
-  GateRequested,
-  GateStarted,
-  GatePassed,
-  GateFailed,
-  GateNeverRan,
-  GateDidNotFinish,
-  GateWaived,
+  StepRequested,
+  StepStarted,
+  StepPassed,
+  StepFailed,
+  StepNeverRan,
+  StepDidNotFinish,
+  StepWaived,
   ApprovalRequested,
   ApprovalGranted,
   ApprovalRevoked,
@@ -2070,40 +2070,36 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // 2: added `of` — the `rounds` ceiling the round is counted against, so a
   // fold can say *round 2 of 3* without reading a recipe (`#146`).
   FixRequested: 2,
-  // 2: the `diff` gate point became `proposed` (ADR 0018). Nine types carried
-  // a gate point when that landed, so nine of them move together — a payload
-  // whose `gate` is still `diff` would fail the enum rather than pass wrongly,
-  // which is why every one of them needs the step and none can be skipped.
+  // **Nine numbers came down here on 2026-09-27, and the reset is what made
+  // that legal** (`#247`). They were the `diff` gate point's rename (ADR 0018):
+  // nine types carried a point when it landed, so nine of them moved together
+  // and none could be skipped. 0061 §7 spends that history by *resetting* the
+  // log rather than migrating it, `the-pipeline.md`'s T5b folded it into
+  // [013](../../../doc/experiments/013-the-log-before-the-third-reset.md) and
+  // T5 cut it — and a store that holds no row at all holds none at version 1
+  // either. The nine steps came down with them, in `upcast.ts`.
   //
-  // **These numbers may not come down while the log holds rows at them.**
-  // 0061 §7 spends this history — the `diff` rename's — and the thing that
-  // spends it is the *reset*, `the-pipeline.md`'s T5, with T5b's fold before
-  // it, neither of them landed. A version lowered ahead of the reset
-  // sends every stored row down `upcast`'s `schemaVer > supported` branch,
-  // where the message says the writer is newer than the reader and the cause
-  // is that the reader's number was lowered.
+  // What a lowered number costs while a row still stands at it is worth keeping
+  // here, because it is the reason this could not be done early: every such row
+  // goes down `upcast`'s `schemaVer > supported` branch, whose message says the
+  // writer is newer than the reader — and the cause is that the reader's number
+  // was lowered under it.
   //
-  // 3: added `recipe`, the canonical recipe the run was resolved against (0047).
-  // 4: `points` names all ten steps where it named five (0058 §3). The reset
-  // that was to have spent this history has not run, so the log is still full
-  // of five-step plans and `.length(10)` would refuse every one of them on
-  // read; the step from 3 widens them, giving the five steps that did not
-  // exist the `[]` those runs were in fact given.
-  GatesResolved: 4,
-  GateRequested: 2,
-  GateStarted: 2,
-  // 3: added `findings`, the shape `GateFailed` carries, so a minor on a
+  // `StepsResolved` came all the way down rather than to 3: its other two steps
+  // are about the same vanished rows — a plan that named five steps where the
+  // schema now asks for ten, and a `recipe` nothing recorded before 0047 — and
+  // both are written in the payload's old spelling, `points` of `gate`, which
+  // this commit renamed to `steps` of `step`. Kept, they would have had to
+  // claim a history in words that history never used.
+  //
+  // 2: added `findings`, the shape `StepFailed` carries, so a minor on a
   // passing review is structured rather than prose inside `evidence` (#135).
-  GatePassed: 3,
-  GateFailed: 2,
+  StepPassed: 2,
   // 2: dropped `attempt` and `retrying` with the retry they described (`#234`,
   // 0057 §4). Nothing carried the `diff` point here — this type is younger than
-  // that rename — so 1 → 2 is the drop and not the rename's step.
-  GateDidNotFinish: 2,
-  GateWaived: 2,
-  ApprovalRequested: 2,
-  ApprovalGranted: 2,
-  ApprovalRevoked: 2,
+  // that rename — so 1 → 2 is the drop and not the rename's step, which is why
+  // it is the one number in this group that `#247` left standing.
+  StepDidNotFinish: 2,
 };
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

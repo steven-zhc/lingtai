@@ -13,7 +13,7 @@
  * line where that same run merged the branch. Everything that landed by any
  * other route — `lingtai approve`, the board's approve button — integrated,
  * appended `WorkItemLanded`, and stopped. The point was configured, the log
- * said so in `GatesResolved`, and it silently did not run. That is exactly the
+ * said so in `StepsResolved`, and it silently did not run. That is exactly the
  * half of the responsibility [ADR 0016](../../../doc/decisions/0016-the-settled-model.md)
  * §4 calls Lingtai's bug, and it went unnoticed for as long as it did because
  * every item that had ever landed had landed inline.
@@ -32,11 +32,11 @@
  * landed under a recipe whose only `end` action was `when: blocked` is
  * indistinguishable from one whose `end` point was never reached, and the
  * comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
- * promised — `GatesResolved` says `end` had actions, the item landed, nothing
+ * promised — `StepsResolved` says `end` had actions, the item landed, nothing
  * resolved — cannot be computed without guessing.
  *
  * A project that configures no `end` at all still writes nothing. There the
- * skip is the user's decision, and `GatesResolved` already records it.
+ * skip is the user's decision, and `StepsResolved` already records it.
  */
 import { workItemStream } from "@lingtai/domain";
 import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
@@ -93,7 +93,7 @@ export function resolveEndActions(
   outcome: TerminalOutcome,
 ): ToAppend[] {
   // Nothing declared is not this point's business: the skip is the user's
-  // decision, and `GatesResolved` already says the point was empty.
+  // decision, and `StepsResolved` already says the point was empty.
   if (actions.length === 0) return [];
 
   const already = events.some(
@@ -228,7 +228,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * were always there.
  *
  * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
- * promised, computed from the log alone.** `GatesResolved` names all ten steps
+ * promised, computed from the log alone.** `StepsResolved` names all ten steps
  * and the actions planned for each — `.length(10)` in the schema since 0058 §3
  * widened the vocabulary — so "the recipe asked for something at `end`" is a
  * fact in the log rather than in a recipe that may have changed since;

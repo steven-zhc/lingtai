@@ -3,12 +3,12 @@
  * them.**
  *
  * A plugin that wants a person emits its own `ApprovalRequested` through the
- * pipeline; a plugin that *refused* emits a `GateFailed` and nothing else, so
+ * pipeline; a plugin that *refused* emits a `StepFailed` and nothing else, so
  * the request that reaches a person over a refusal is `conduct.ts`'s own — and
  * the two events land in the same place.
  *
  * `task-view.ts` folds both through one `setStep`, keyed
- * `${runId}:${gate}:${action}`, with `VERDICT.GateFailed = "failed"` and
+ * `${runId}:${gate}:${action}`, with `VERDICT.StepFailed = "failed"` and
  * `VERDICT.ApprovalRequested = "pending"`. **So the name on the request is not
  * decoration.** Named after the action that refused, the request overwrites
  * that action's verdict with `pending`: the card's `failed` count drops to zero
@@ -70,8 +70,8 @@ describe("the approval a refusal reaches a person with", () => {
 
     expect(result).toMatchObject({ ok: "held", step: "proposed" });
 
-    const failed = run.find((e) => e.type === "GateFailed")!;
-    expect(failed.data).toMatchObject({ gate: "proposed", action: "review" });
+    const failed = run.find((e) => e.type === "StepFailed")!;
+    expect(failed.data).toMatchObject({ step: "proposed", action: "review" });
 
     const asked = run.find((e) => e.type === "ApprovalRequested")!;
     /**
@@ -89,8 +89,8 @@ describe("the approval a refusal reaches a person with", () => {
       (asked.data as { onSha: string }).onSha,
     );
     const key = (data: unknown) => {
-      const d = data as { gate: string; action: string };
-      return `${d.gate}:${d.action}`;
+      const d = data as { step: string; action: string };
+      return `${d.step}:${d.action}`;
     };
     // The whole of it: one key per verdict, so the `pending` cannot land on the
     // `failed`.

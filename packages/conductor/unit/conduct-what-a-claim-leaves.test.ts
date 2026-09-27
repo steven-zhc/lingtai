@@ -241,11 +241,11 @@ describe("when the agent meets the wall", () => {
    * that refuses).
    *
    * The wall is a `did-not-finish` at `implement`: the pass never reached `build`,
-   * `review`, `proposed` or `merge`, so no `GateFailed`, `GateNeverRan` or
-   * `GateDidNotFinish` row exists about it. `refusingOn` (`approve.ts`) therefore
+   * `review`, `proposed` or `merge`, so no `StepFailed`, `StepNeverRan` or
+   * `StepDidNotFinish` row exists about it. `refusingOn` (`approve.ts`) therefore
    * answers `[]`, and an `ApprovalRequested` here is a live **Approve** on the
    * board (`standing.tsx` draws one wherever `task_view.awaitingSha` is set) that
-   * merges a half-finished diff with no reason required, no `GateWaived` and
+   * merges a half-finished diff with no reason required, no `StepWaived` and
    * nothing on the log recording that the build and the cold reviewer were
    * skipped. On a card whose own diagnosis reads *the limit is a scope alarm …
    * requeue*. The old engine appended no request on this ending and Requeue was the

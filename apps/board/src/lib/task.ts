@@ -213,8 +213,8 @@ export interface RunView {
   baseSha: string | null;
   headSha: string | null;
   /**
-   * The recipe this run was given, as `GatesResolved` hashed it. Null where the
-   * stream has no `GatesResolved`, which is a run whose recipe nothing can
+   * The recipe this run was given, as `StepsResolved` hashed it. Null where the
+   * stream has no `StepsResolved`, which is a run whose recipe nothing can
    * prove (#190).
    */
   configHash: string | null;
@@ -881,18 +881,18 @@ export interface Claim {
 }
 
 const VERDICT: Record<string, string> = {
-  GateRequested: "pending",
-  GateStarted: "running",
-  GatePassed: "passed",
-  GateFailed: "failed",
+  StepRequested: "pending",
+  StepStarted: "running",
+  StepPassed: "passed",
+  StepFailed: "failed",
   /** No verdict, because the agent never started (#133) — not a refusal, and
    *  not a gate still running, which is what the absence of a line said. */
-  GateNeverRan: "never-ran",
+  StepNeverRan: "never-ran",
   /** No verdict either, and not the same absence: the agent started and ended
    *  with no receipt, which is local and ends the pass (0057 §1–3; §4's retry
    *  is deleted, `#234`). */
-  GateDidNotFinish: "did-not-finish",
-  GateWaived: "waived",
+  StepDidNotFinish: "did-not-finish",
+  StepWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "passed",
   ApprovalRevoked: "pending",
@@ -979,10 +979,10 @@ export function foldRun(
         started = true;
         baseSha = String(d["baseSha"] ?? "") || null;
         break;
-      // `GatesResolved` and not `RunStarted`, though both carry the hash: the
+      // `StepsResolved` and not `RunStarted`, though both carry the hash: the
       // gates on this page are the ones it named, so it is the one the recipe
       // beside them has to answer to (#190).
-      case "GatesResolved":
+      case "StepsResolved":
         configHash = String(d["configHash"] ?? "") || null;
         break;
       case "RunPrompted":
@@ -1038,15 +1038,15 @@ export function foldRun(
     }
 
     const verdict = VERDICT[e.type];
-    if (verdict && typeof d["gate"] === "string") {
+    if (verdict && typeof d["step"] === "string") {
       // `point:action` — see task-view. Two points may run an action of the
       // same name, and the page has to show both.
-      const key = `${String(d["gate"])}:${String(d["action"] ?? "")}`;
+      const key = `${String(d["step"])}:${String(d["action"] ?? "")}`;
       steps.set(key, {
         step: key,
         state: verdict,
         current: true,
-        // `GateNeverRan` calls it `detail` and not `evidence`, because it is
+        // `StepNeverRan` calls it `detail` and not `evidence`, because it is
         // evidence about the *account* and never about the diff — the same
         // distinction `RunFailed.detail` draws (#133). Read here rather than
         // renamed at the seam, because `Evidence` shows only gates that said
@@ -1060,7 +1060,7 @@ export function foldRun(
 
   for (const g of steps.values()) {
     const onSha = run.find(
-      (e) => (e.data as { gate?: string })?.gate === g.step && (e.data as { onSha?: string })?.onSha,
+      (e) => (e.data as { step?: string })?.step === g.step && (e.data as { onSha?: string })?.onSha,
     );
     const sha = (onSha?.data as { onSha?: string } | undefined)?.onSha ?? null;
     g.current = headSha === null || sha === null || sha === headSha;

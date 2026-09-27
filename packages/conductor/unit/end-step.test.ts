@@ -32,7 +32,7 @@ const resolved = (outcome: string, actions: unknown[] = []) =>
 
 describe("the end step", () => {
   it("says nothing when the recipe declares nothing", () => {
-    // The skip is the operator's decision, and `GatesResolved` already records
+    // The skip is the operator's decision, and `StepsResolved` already records
     // that the point was empty.
     expect(resolveEndActions([], [], "landed")).toEqual([]);
   });

@@ -104,11 +104,11 @@ describe("reduceRun", () => {
     const s = reduceRun([
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
-      e("GateRequested", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a" }),
-      e("GateStarted", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a" }),
-      e("GatePassed", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0", findings: [] }),
-      e("GateFailed", {
-        gate: "proposed", action: "review",
+      e("StepRequested", { step: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a" }),
+      e("StepStarted", { step: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a" }),
+      e("StepPassed", { step: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0", findings: [] }),
+      e("StepFailed", {
+        step: "proposed", action: "review",
         runId: "run-01JX",
         onSha: "sha-a",
         evidence: "1 finding",
@@ -145,9 +145,9 @@ describe("reduceRun", () => {
     const s = reduceRun([
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
-      e("GateStarted", { gate: "proposed", action: "review", runId: "run-01JX", onSha: "sha-a" }),
-      e("GateNeverRan", {
-        gate: "proposed",
+      e("StepStarted", { step: "proposed", action: "review", runId: "run-01JX", onSha: "sha-a" }),
+      e("StepNeverRan", {
+        step: "proposed",
         action: "review",
         runId: "run-01JX",
         onSha: "sha-a",
@@ -172,9 +172,9 @@ describe("reduceRun", () => {
     const approved = [
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
-      e("GatePassed", { gate: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0", findings: [] }),
+      e("StepPassed", { step: "proposed", action: "build", runId: "run-01JX", onSha: "sha-a", evidence: "exit 0", findings: [] }),
       e("ApprovalGranted", {
-        gate: "merge",
+        step: "merge",
         action: "human",
         runId: "run-01JX",
         onSha: "sha-a",
@@ -199,8 +199,8 @@ describe("reduceRun", () => {
     const s = reduceRun([
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
-      e("GateWaived", {
-        gate: "proposed", action: "review",
+      e("StepWaived", {
+        step: "proposed", action: "review",
         runId: "run-01JX",
         onSha: "sha-a",
         by: "human:steven",
@@ -219,7 +219,7 @@ describe("reduceRun", () => {
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
       e("ApprovalRequested", {
-        gate: "merge",
+        step: "merge",
         action: "human",
         runId: "run-01JX",
         onSha: "sha-a",
@@ -238,7 +238,7 @@ describe("reduceRun", () => {
     const granted = reduceRun([
       ...asked,
       e("ApprovalGranted", {
-        gate: "merge",
+        step: "merge",
         action: "human",
         runId: "run-01JX",
         onSha: "sha-a",
@@ -263,7 +263,7 @@ describe("reduceRun", () => {
       e("RunStarted", started),
       e("RunProposedCompletion", { headSha: "sha-a" }),
       e("ApprovalGranted", {
-        gate: "merge",
+        step: "merge",
         action: "human",
         runId: "run-01JX",
         onSha: "sha-a",
@@ -271,7 +271,7 @@ describe("reduceRun", () => {
         note: "",
       }),
       e("ApprovalRevoked", {
-        gate: "merge",
+        step: "merge",
         action: "human",
         runId: "run-01JX",
         onSha: "sha-a",

@@ -1,5 +1,5 @@
 /**
- * The recipe a run was given, on `GatesResolved` (#191, ADR 0047).
+ * The recipe a run was given, on `StepsResolved` (#191, ADR 0047).
  *
  * Three promises 0047 makes, and each is a test here rather than a sentence
  * there, because each fails silently:
@@ -54,13 +54,13 @@ function shuffled(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, shuffled(v)]));
 }
 
-describe("the recipe on GatesResolved", () => {
+describe("the recipe on StepsResolved", () => {
   it.each([
     ["this repository's own recipe", OWN],
     ["a recipe declaring every env surface", DECLARING],
   ])("is the body its configHash is the hash of — %s", async (_, source) => {
     const resolved = await resolve(source);
-    const payload = parsePayload("GatesResolved", stepsResolved("run-1", resolved));
+    const payload = parsePayload("StepsResolved", stepsResolved("run-1", resolved));
 
     expect(payload.recipe).toBeDefined();
     // Out through the log and back, keys in whatever order the store likes.
@@ -96,7 +96,7 @@ describe("the recipe on GatesResolved", () => {
     try {
       for (const source of [DECLARING, OWN]) {
         const appended = JSON.stringify(
-          parsePayload("GatesResolved", stepsResolved("run-1", await resolve(source))),
+          parsePayload("StepsResolved", stepsResolved("run-1", await resolve(source))),
         );
         for (const value of Object.values(values)) expect(appended).not.toContain(value);
         expect(appended).not.toContain("sentinel");
@@ -120,7 +120,7 @@ describe("the recipe on GatesResolved", () => {
  *
  * A reading of the source rather than of types, so it is a tripwire and not a
  * proof: it catches the three ways this codebase reads a payload — a parsed
- * `GatesResolved`, a binding made from one, and SQL over `events.data` — and
+ * `StepsResolved`, a binding made from one, and SQL over `events.data` — and
  * the checker is itself tested against each, so a pattern that stops matching
  * fails here rather than passing everything.
  */
@@ -141,31 +141,31 @@ describe("nothing decides from the recorded recipe", () => {
     const field = String.raw`\s*(?:\?\.|\.|\[\s*["'\`])\s*recipe\b`;
     // SQL: `data->'recipe'`, `data->>'recipe'`, `data #> '{recipe}'`.
     for (const m of src.matchAll(/->>?\s*'recipe'|#>>?\s*'\{recipe/g)) found.push(m[0]);
-    if (!/["'`]GatesResolved["'`]/.test(src)) return found;
+    if (!/["'`]StepsResolved["'`]/.test(src)) return found;
     // A parsed payload, read in place.
-    const parsed = new RegExp(String.raw`Payload\(\s*["'\`]GatesResolved["'\`][^;]*?\)` + field, "g");
+    const parsed = new RegExp(String.raw`Payload\(\s*["'\`]StepsResolved["'\`][^;]*?\)` + field, "g");
     for (const m of src.matchAll(parsed)) found.push(m[0]);
     // Anything bound on a line that names the event, then read — or destructured.
-    for (const m of src.matchAll(/(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=[^;]*["'`]GatesResolved["'`]/g)) {
+    for (const m of src.matchAll(/(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=[^;]*["'`]StepsResolved["'`]/g)) {
       const name = m[1]!;
       const read = new RegExp(String.raw`\b${name}\b(?:\s*(?:\?\.|\.)\s*data)?` + field, "g");
       for (const r of src.matchAll(read)) found.push(r[0]);
     }
-    for (const m of src.matchAll(/\{[^{}]*\brecipe\b[^{}]*\}\s*=[^;]*["'`]GatesResolved["'`]/g)) found.push(m[0]);
+    for (const m of src.matchAll(/\{[^{}]*\brecipe\b[^{}]*\}\s*=[^;]*["'`]StepsResolved["'`]/g)) found.push(m[0]);
     return found;
   }
 
   it("the checker sees each way a payload is read", () => {
     const reads = [
-      `const r = parseStoredPayload("GatesResolved", 3, e.data).recipe;`,
-      `const plan = events.filter((e) => e.type === "GatesResolved").at(-1);\nuse(plan?.data.recipe);`,
-      `const p = parsePayload("GatesResolved", row.data);\nuse(p["recipe"]);`,
-      `const { recipe } = parsePayload("GatesResolved", row.data);`,
-      `sql\`select data->'recipe' from events where type = 'GatesResolved'\``,
+      `const r = parseStoredPayload("StepsResolved", 3, e.data).recipe;`,
+      `const plan = events.filter((e) => e.type === "StepsResolved").at(-1);\nuse(plan?.data.recipe);`,
+      `const p = parsePayload("StepsResolved", row.data);\nuse(p["recipe"]);`,
+      `const { recipe } = parsePayload("StepsResolved", row.data);`,
+      `sql\`select data->'recipe' from events where type = 'StepsResolved'\``,
     ];
     for (const read of reads) expect(readsOfTheRecord(read), read).not.toEqual([]);
     // What the conductor legitimately does, and must not be mistaken for it.
-    expect(readsOfTheRecord(`const plan = events.filter((e) => e.type === "GatesResolved").at(-1);\nconst points = plan.data.points;\nconst x = resolved.recipe;`)).toEqual([]);
+    expect(readsOfTheRecord(`const plan = events.filter((e) => e.type === "StepsResolved").at(-1);\nconst points = plan.data.steps;\nconst x = resolved.recipe;`)).toEqual([]);
   });
 
   it.each(PACKAGES)("%s never reads it", (dir) => {

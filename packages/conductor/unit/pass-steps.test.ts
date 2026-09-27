@@ -382,11 +382,11 @@ describe("admit runs the `worktree:` plugin, and that is where the head comes fr
    * (`#268`).
    *
    * This is the half of `#268`'s first major finding that had to be closed: a
-   * `worktree:` at `admit` used to resolve, be recorded in `GatesResolved` as
+   * `worktree:` at `admit` used to resolve, be recorded in `StepsResolved` as
    * planned, and produce no verdict — so the item landed with a point the log
    * said was configured and never ran, which is the mark reserved for Lingtai's
    * own bug (0016 §4, and 0065 §5). It cannot arise now because the step runs
-   * what is declared there: the action produces `GateStarted` and a verdict like
+   * what is declared there: the action produces `StepStarted` and a verdict like
    * any other, and the `head` on the ending is the proof it did the work rather
    * than merely being listed.
    */
@@ -874,7 +874,7 @@ describe("proposed is the only step that routes, and one judge answers each when
 
   /**
    * The mechanical direction, and the whole of what keeps `proposed` from buying
-   * a model to answer a question a `switch` answers: `red` and `gate-failed` were
+   * a model to answer a question a `switch` answers: `red` and `verify-failed` were
    * seen sixty times between them in fourteen days and not one was a judgement.
    * Nothing was declared, so the built-in answered — and no judge was paid.
    */
@@ -1352,10 +1352,10 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
   });
 
   /**
-   * Over the whole log the lane has refused 32 times — **26 `gate-failed`, 6
+   * Over the whole log the lane has refused 32 times — **26 `verify-failed`, 6
    * `conflict`** — and the common failure is that somebody else's work landed and
    * the diff stopped being true. The step reports the lane's own words and the
-   * judge at `proposed` decides what they cost: a `gate-failed` is mechanical, so
+   * judge at `proposed` decides what they cost: a `verify-failed` is mechanical, so
    * the built-in sends it back to `implement` with the new base.
    */
   it("reports the lane's `reason` and `detail`, and the judge decides", async () => {
@@ -1364,7 +1364,7 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
       answers: {
         land: () => {
           const answer: Landed = refuses
-            ? { notMerged: { reason: "gate-failed", detail: "pnpm test failed on the new base" } }
+            ? { notMerged: { reason: "verify-failed", detail: "pnpm test failed on the new base" } }
             : { merged: MERGED };
           refuses = false;
           return answer;
@@ -1375,12 +1375,12 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
 
     expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({
       ending: "refused",
-      because: "gate-failed",
+      because: "verify-failed",
       at: null,
       detail: "pnpm test failed on the new base",
     });
     expect(asked.judge[0]).toMatchObject({
-      when: "gate-failed",
+      when: "verify-failed",
       evidence: "pnpm test failed on the new base",
     });
     expect(result.routes).toMatchObject([{ from: "merge", to: "implement" }]);

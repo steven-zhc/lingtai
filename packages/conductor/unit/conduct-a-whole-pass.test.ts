@@ -123,7 +123,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
      * The headline used to sit over `toContain` checks for six event types, and
      * every one of them survives a step being dropped: delete `design` from
      * `STEPS`, have `runPass` `continue` past a visit, let `stepsResolved`
-     * record five points, and `RunStarted`/`GatesResolved`/`RunFinished` are all
+     * record five points, and `RunStarted`/`StepsResolved`/`RunFinished` are all
      * still there. That is `#61`'s own shape — declared, recorded, drawn, never
      * fired — wearing the name of the test that would have caught it.
      *
@@ -145,14 +145,14 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
 
     // The plan the log records agrees with the walk: ten points, same order, so
     // *declared* and *ran* cannot drift apart unnoticed.
-    const resolved = (await store.read(result.runId)).find((e) => e.type === "GatesResolved")!;
-    expect((resolved.data as { points: { gate: string }[] }).points.map((p) => p.gate)).toEqual([
+    const resolved = (await store.read(result.runId)).find((e) => e.type === "StepsResolved")!;
+    expect((resolved.data as { steps: { step: string }[] }).steps.map((p) => p.step)).toEqual([
       ...STEPS,
     ]);
 
     const run = (await store.read(result.runId)).map((e) => e.type);
     expect(run).toContain("RunStarted");
-    expect(run).toContain("GatesResolved");
+    expect(run).toContain("StepsResolved");
     expect(run).toContain("RunFinished");
     expect(run).toContain("RunProducedDiff");
     expect(run).toContain("RunProposedCompletion");
@@ -251,7 +251,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const asked = run.filter((e) => e.type === "ApprovalRequested");
     expect(asked).toHaveLength(1);
     expect(asked[0]!.data).toMatchObject({
-      gate: "merge",
+      step: "merge",
       action: "approval",
       onSha: result.headSha,
     });
@@ -323,7 +323,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * So the item goes back to the queue instead, which is what the same rejection
    * did before the swap: the queue takes it again after the backoff and nobody
    * is asked to acknowledge a database blip. The one append in reach of this
-   * fixture is the pipeline's own `GateRequested` for the person declared at
+   * fixture is the pipeline's own `StepRequested` for the person declared at
    * `merge` — it is `emit`'s, from inside the walk, which is the whole class.
    */
   it("releases the item when the store refused an append the pass made, rather than holding a person", async () => {
@@ -333,7 +333,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === "GateRequested")) {
+        if (events.some((e) => e.type === "StepRequested")) {
           throw new Error("terminating connection due to administrator command");
         }
         return store.append(streamId, expected, events) as Promise<Envelope[]>;
@@ -387,7 +387,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * So the row is appended with `appendAt` and its refusal is said rather than
    * raised — `noteRefs`' rule, *the account never costs the thing it is an
    * account of* — and this is the test that a route nobody can read back is all
-   * that is lost. The pass routes because the lane refuses `gate-failed` once,
+   * that is lost. The pass routes because the lane refuses `verify-failed` once,
    * which is the mechanical round `BUILT_IN_FOR` answers, and lands on the round
    * it bought.
    */
@@ -413,7 +413,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         did.push("integrate");
         lane += 1;
         return lane === 1
-          ? ({ ok: false, reason: "gate-failed", detail: "the base moved under it" } as never)
+          ? ({ ok: false, reason: "verify-failed", detail: "the base moved under it" } as never)
           : ({ ok: true, mergeCommit: "c".repeat(40) } as never);
       });
     // And the agent the round buys commits something, or the pass stops at
@@ -513,8 +513,8 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * **A declared `worktree:` produces a verdict, which is `#268`'s first major
    * finding closed** (0065 §5).
    *
-   * It used to be recorded in `GatesResolved` as planned and then produce nothing
-   * at all: no `GateStarted`, no `GatePassed`, no waiver. So a landed item had a
+   * It used to be recorded in `StepsResolved` as planned and then produce nothing
+   * at all: no `StepStarted`, no `StepPassed`, no waiver. So a landed item had a
    * point the log said was configured and never ran, and the board drew it
    * `never-ran` — hatched in the fail colour, titled *configured and did not run,
    * which is Lingtai's bug* (0016 §4). That mark is reserved for Lingtai's own bug
@@ -549,13 +549,13 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(did).toContain("cut from origin/main with submodules");
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const planned = run.find((event) => event.type === "GatesResolved");
+    const planned = run.find((event) => event.type === "StepsResolved");
     expect(JSON.stringify(planned?.data)).toContain("cut the branch");
     const verdicts = run
-      .filter((event) => event.type === "GateStarted" || event.type === "GatePassed")
-      .map((event) => `${event.type} ${(event.data as { gate: string; action: string }).gate}:${(event.data as { action: string }).action}`);
-    expect(verdicts).toContain("GateStarted admit:cut the branch");
-    expect(verdicts).toContain("GatePassed admit:cut the branch");
+      .filter((event) => event.type === "StepStarted" || event.type === "StepPassed")
+      .map((event) => `${event.type} ${(event.data as { step: string; action: string }).step}:${(event.data as { action: string }).action}`);
+    expect(verdicts).toContain("StepStarted admit:cut the branch");
+    expect(verdicts).toContain("StepPassed admit:cut the branch");
   });
 
   /**

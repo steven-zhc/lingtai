@@ -140,7 +140,7 @@ describe("the evidence", () => {
   it("carries one line and names the attempt that holds the whole of it", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "StepFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     const standing = standingOf(
@@ -180,14 +180,14 @@ describe("the evidence", () => {
   it("names a step that never ran, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "StepFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     const two = foldRun(claim(RUN_2, "2026-09-08T04:00:00.000Z"), 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
-      e(RUN_2, "GateNeverRan", {
-        gate: "proposed",
+      e(RUN_2, "StepPassed", { step: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
+      e(RUN_2, "StepNeverRan", {
+        step: "proposed",
         action: "review",
         onSha: SHA,
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
@@ -222,19 +222,19 @@ describe("the evidence", () => {
    * reviewer never produced a verdict. And the line must not call it a refusal:
    * nothing judged the diff.
    *
-   * One `GateDidNotFinish`, because the action is run once (`#234`).
+   * One `StepDidNotFinish`, because the action is run once (`#234`).
    */
   it("names a step that did not finish, rather than an earlier attempt's refusal", () => {
     const one = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "StepFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     const two = foldRun(claim(RUN_2, "2026-09-08T04:00:00.000Z"), 2, [
       e(RUN_2, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_2, "GatePassed", { gate: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
-      e(RUN_2, "GateDidNotFinish", {
-        gate: "proposed",
+      e(RUN_2, "StepPassed", { step: "proposed", action: "build", onSha: SHA, evidence: "ok" }),
+      e(RUN_2, "StepDidNotFinish", {
+        step: "proposed",
         action: "review",
         onSha: SHA,
         detail: "the reviewer did not finish (crash): Error: Session ID 0f1e is already in use.",
@@ -275,11 +275,11 @@ describe("the evidence", () => {
     const FIXED = "c".repeat(40);
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GatePassed", { gate: "proposed", action: "review", onSha: SHA, evidence: "ok" }),
-      e(RUN_1, "GateFailed", { gate: "proposed", action: "test", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "StepPassed", { step: "proposed", action: "review", onSha: SHA, evidence: "ok" }),
+      e(RUN_1, "StepFailed", { step: "proposed", action: "test", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunProposedCompletion", { headSha: FIXED }),
-      e(RUN_1, "GateNeverRan", {
-        gate: "proposed",
+      e(RUN_1, "StepNeverRan", {
+        step: "proposed",
         action: "review",
         onSha: FIXED,
         detail: "You've hit your session limit · resets 2pm (America/Chicago)",
@@ -330,7 +330,7 @@ describe("the evidence", () => {
   it("walks back to the attempt that refused when the named one refused nothing", () => {
     const first = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
       e(RUN_1, "RunProposedCompletion", { headSha: SHA }),
-      e(RUN_1, "GateFailed", { gate: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
+      e(RUN_1, "StepFailed", { step: "proposed", action: "build", onSha: SHA, evidence: TAIL }),
       e(RUN_1, "RunFinished", { turns: 41, durationMs: 600_000, costUsd: 3.2, exitCode: 2 }),
     ]);
     // The repair, from a log written before `#143` retired the purchase: it
@@ -346,7 +346,7 @@ describe("the evidence", () => {
         e(ITEM, "WorkItemClaimed", { runId: RUN_1 }),
         // Retired, and still read: this is an old ticket's stream, and the
         // walk below has to work on one (`#143`).
-        e(ITEM, "RepairRequested", { runId: RUN_1, reason: "gate-failed", detail: TAIL, fingerprint: "x", attempt: 1 }),
+        e(ITEM, "RepairRequested", { runId: RUN_1, reason: "verify-failed", detail: TAIL, fingerprint: "x", attempt: 1 }),
         e(ITEM, "WorkItemReleased", { runId: RUN_1, reason: "repair" }),
         e(ITEM, "WorkItemClaimed", { runId: RUN_2 }),
         e(ITEM, "WorkItemBlocked", {
@@ -377,7 +377,7 @@ describe("the evidence", () => {
  */
 describe("the question", () => {
   const LOG = [
-    "the repair could not fix it — gate-failed: build: pnpm typecheck && pnpm test exited 2",
+    "the repair could not fix it — verify-failed: build: pnpm typecheck && pnpm test exited 2",
     "$ pnpm -r --if-present typecheck",
     "Scope: 15 of 16 workspace projects",
     "packages/domain typecheck$ tsc --noEmit",
@@ -400,7 +400,7 @@ describe("the question", () => {
     );
 
     expect(standing.question).toBe(
-      "the repair could not fix it — gate-failed: build: pnpm typecheck && pnpm test exited 2",
+      "the repair could not fix it — verify-failed: build: pnpm typecheck && pnpm test exited 2",
     );
     expect(standing.question).not.toContain("Scope: 15 of 16");
     expect(standing.question).not.toContain("tsc --noEmit");
@@ -440,7 +440,7 @@ describe("the move the block ends in", () => {
     // #92: they differ the moment a branch is repaired and approval re-requested
     // on a new head, and sending the wrong one refuses what the CLI accepts.
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
-      e(RUN_1, "ApprovalRequested", { gate: "proposed", action: "human", onSha: "b".repeat(40) }),
+      e(RUN_1, "ApprovalRequested", { step: "proposed", action: "human", onSha: "b".repeat(40) }),
       e(RUN_1, "RunProducedDiff", { headSha: SHA, branch: "agent/89", files: 2, insertions: 9, deletions: 1 }),
     ]);
     const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 }), blocked(RUN_1)], [run]);
@@ -455,8 +455,8 @@ describe("the move the block ends in", () => {
    */
   it("has nothing to approve once the approval was spent", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
-      e(RUN_1, "ApprovalRequested", { gate: "merge", action: "human", onSha: SHA }),
-      e(RUN_1, "ApprovalGranted", { gate: "merge", action: "human", onSha: SHA, by: "human:steven" }),
+      e(RUN_1, "ApprovalRequested", { step: "merge", action: "human", onSha: SHA }),
+      e(RUN_1, "ApprovalGranted", { step: "merge", action: "human", onSha: SHA, by: "human:steven" }),
     ]);
     const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 }), blocked(RUN_1)], [run]);
 
@@ -465,7 +465,7 @@ describe("the move the block ends in", () => {
 
   it("asks nothing of anybody while a run is still in flight", () => {
     const run = foldRun(claim(RUN_1, "2026-09-08T03:00:00.000Z"), 1, [
-      e(RUN_1, "ApprovalRequested", { gate: "proposed", action: "human", onSha: SHA }),
+      e(RUN_1, "ApprovalRequested", { step: "proposed", action: "human", onSha: SHA }),
     ]);
     const standing = standingOf([e(ITEM, "WorkItemClaimed", { runId: RUN_1 })], [run]);
 
@@ -595,7 +595,7 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", { gate: "proposed", action: "build", evidence: TAIL }),
+          e(RUN_2, "StepFailed", { step: "proposed", action: "build", evidence: TAIL }),
         ]),
       ],
     );
@@ -634,7 +634,7 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", { gate: "proposed", action: "build", evidence: TAIL }),
+          e(RUN_2, "StepFailed", { step: "proposed", action: "build", evidence: TAIL }),
         ]),
       ],
     );
@@ -675,8 +675,8 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", {
-            gate: "proposed",
+          e(RUN_2, "StepFailed", {
+            step: "proposed",
             action: "review",
             // `agent-gate.ts`'s `summarise` and its turns line.
             evidence: "major src/x.ts:4 — claim\n\n(12 turns · $0.40)",
@@ -728,7 +728,7 @@ describe("the block, rendered", () => {
       [
         foldRun(claim(RUN_2, "2026-09-08T03:00:00.000Z"), 1, [
           e(RUN_2, "RunStarted", { baseSha: SHA }),
-          e(RUN_2, "GateFailed", { gate: "proposed", action: "test", evidence: "" }),
+          e(RUN_2, "StepFailed", { step: "proposed", action: "test", evidence: "" }),
         ]),
       ],
     );
@@ -882,7 +882,7 @@ describe("the block, rendered", () => {
           failed: ["proposed:review"],
           diagnosis: {
             what: "agent/112 is at 293fe3a and the review step refused it.",
-            done: "a repair for gate-failed produced this diff",
+            done: "a repair for verify-failed produced this diff",
             raw: "the reviewer's answer was not readable as findings",
             recommendation: null,
           },
@@ -955,7 +955,7 @@ describe("the block, rendered", () => {
     const html = renderToStaticMarkup(
       <Standing
         subject={null}
-        standing={{ ...HELD, question: "gate-failed: build exited 2\nScope: 15 of 16 workspace projects" }}
+        standing={{ ...HELD, question: "verify-failed: build exited 2\nScope: 15 of 16 workspace projects" }}
         project="lingtai"
         issue={112}
         taskId="wi-lingtai-112"
@@ -966,7 +966,7 @@ describe("the block, rendered", () => {
     );
     // The view is what clips; a component that re-expanded it would be the
     // second copy of one fact design §2 is about.
-    expect(html).toContain("gate-failed: build exited 2");
+    expect(html).toContain("verify-failed: build exited 2");
   });
 });
 
@@ -1023,7 +1023,7 @@ describe("the moves the column ends in", () => {
 
   /**
    * #150: two of the four buttons left the card where it was. Reject appended
-   * `ApprovalRevoked` and the run asked again; Waive appended `GateWaived` and
+   * `ApprovalRevoked` and the run asked again; Waive appended `StepWaived` and
    * nothing read it. Approve absorbs the waiver, and neither is offered —
    * including on a card whose refusal is exactly what a waiver was for.
    */

@@ -8,8 +8,8 @@
  * burning money.
  *
  * **Nothing new is written down for this.** `RunStarted` opens the agent phase
- * and `RunFinished` closes it, `GatesResolved` names all ten steps, and the
- * last `GateStarted` with no matching verdict is the step the run is at. The
+ * and `RunFinished` closes it, `StepsResolved` names all ten steps, and the
+ * last `StepStarted` with no matching verdict is the step the run is at. The
  * recipe's timeout is the denominator, and it arrives already parsed as
  * `StepPlan` so that the board has no opinion about what `20m` is.
  *
@@ -67,12 +67,12 @@ export type StepState =
    * wants the account has to know which it has.
    *
    * The point was reached and its agent never started, so it judged nothing:
-   * `GateNeverRan`, and the evidence is on that event (#133). Or the plan the
+   * `StepNeverRan`, and the evidence is on that event (#133). Or the plan the
    * log recorded named actions here, the run recorded *none* of them, and the
    * item landed — `stateOf`'s rule since #170, and since `#257` the only place
    * that comparison is made. There is no gate event at this point
    * at all in the second, so there is nothing to read evidence off: anything
-   * reaching for one must find the `GateNeverRan` and cope with its absence,
+   * reaching for one must find the `StepNeverRan` and cope with its absence,
    * the way `task.ts`'s `never` line does.
    *
    * Not `failed` — a refusal is a sentence about the diff — and not `running`,
@@ -202,11 +202,11 @@ export function elapsed(ms: number): string {
 
 /** `point:action`, the key both the log and `task_view` use for a verdict. */
 function keyOf(data: Record<string, unknown>): string {
-  return `${String(data["gate"])}:${String(data["action"])}`;
+  return `${String(data["step"])}:${String(data["action"])}`;
 }
 
 function budgetOf(plan: StepPlan, data: Record<string, unknown>): number | null {
-  const step = plan.get(String(data["gate"]) as Step);
+  const step = plan.get(String(data["step"]) as Step);
   return step?.find((a) => a.name === String(data["action"]))?.budgetMs ?? null;
 }
 
@@ -222,10 +222,10 @@ function stateOf(
   planned: readonly string[],
   seen: readonly StepState[],
   /**
-   * The item landed, **and** `GatesResolved` is what named `planned`.
+   * The item landed, **and** `StepsResolved` is what named `planned`.
    *
    * Both halves, because the rule below is meant to be the strict comparison
-   * and not a looser one: the plan is the `GatesResolved` the run was given, so
+   * and not a looser one: the plan is the `StepsResolved` the run was given, so
    * a run whose stream has none accuses nothing — and here such a run is folded
    * against the recipe being read *now*, which may not be the one it got.
    * Calling a point that recipe configures `never-ran` would invent Lingtai's
@@ -314,7 +314,7 @@ export function foldProgress(
   /** `point:action` → where that action got to. */
   const verdicts = new Map<string, StepState>();
   let now: Phase | null = null;
-  /** The plan as the log recorded it, once `GatesResolved` has landed. */
+  /** The plan as the log recorded it, once `StepsResolved` has landed. */
   let resolved: Map<string, readonly string[]> | null = null;
   /**
    * The wall clock this run's agents are launched under, as `RunStarted`
@@ -387,13 +387,13 @@ export function foldProgress(
         if (now?.label === AGENT) now = null;
         break;
 
-      case "GatesResolved": {
-        const steps = (data["points"] ?? []) as { gate: string; actions: string[] }[];
-        resolved = new Map(steps.map((p) => [p.gate, p.actions]));
+      case "StepsResolved": {
+        const steps = (data["steps"] ?? []) as { step: string; actions: string[] }[];
+        resolved = new Map(steps.map((p) => [p.step, p.actions]));
         break;
       }
 
-      case "GateRequested": {
+      case "StepRequested": {
         const key = keyOf(data);
         // Never over a verdict: requested and started are appended back to back,
         // and a re-request after a force-push carries its own start.
@@ -401,33 +401,33 @@ export function foldProgress(
         break;
       }
 
-      case "GateStarted": {
+      case "StepStarted": {
         const key = keyOf(data);
         verdicts.set(key, "running");
         now = { label: key, since: event.at.toISOString(), budgetMs: budgetOf(plan, data) };
         break;
       }
 
-      case "GatePassed":
+      case "StepPassed":
         close(data, "passed");
         break;
 
-      case "GateFailed":
+      case "StepFailed":
         close(data, "failed");
         break;
 
-      case "GateNeverRan":
+      case "StepNeverRan":
         close(data, "never-ran");
         break;
 
-      case "GateDidNotFinish":
+      case "StepDidNotFinish":
         // One of these per action, because the action is run once (`#234`). A
         // point that ends here is one whose last word was this, which is what
         // the pass stopped on.
         close(data, "did-not-finish");
         break;
 
-      case "GateWaived":
+      case "StepWaived":
         close(data, "waived");
         break;
 
@@ -453,7 +453,7 @@ export function foldProgress(
   }
 
   const steps = STEPS.map((step) => {
-    // The log first, the recipe second. `GatesResolved` is appended after the
+    // The log first, the recipe second. `StepsResolved` is appended after the
     // `prepared` gates have already run, so for the first seconds of a run it
     // is the only thing that can say a point exists — and once it lands it is
     // the record, because a recipe read now may not be the one this run got.
@@ -467,7 +467,7 @@ export function foldProgress(
       planned,
       mine.map(([, v]) => v),
       // Landed, *and* against the plan the log says this run was given. A
-      // stream with no `GatesResolved` — one that died before it landed, one
+      // stream with no `StepsResolved` — one that died before it landed, one
       // predating the event — falls back to today's recipe above, and today's
       // recipe cannot accuse a run of skipping a point it was never given.
       over && recorded !== undefined,

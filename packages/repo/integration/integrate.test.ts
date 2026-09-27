@@ -193,7 +193,7 @@ describe("integrate", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toBe("gate-failed");
+    expect(result.reason).toBe("verify-failed");
     expect(result.detail).toContain("build exited 1");
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
@@ -213,7 +213,7 @@ describe("integrate", () => {
     if (result.ok) return;
     // The gates ran against the agent's head; this is the different question of
     // whether it still works beside what landed since.
-    expect(result.reason).toBe("gate-failed");
+    expect(result.reason).toBe("verify-failed");
     expect(result.detail).toContain("3 tests failed");
 
     const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });

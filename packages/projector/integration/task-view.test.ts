@@ -86,9 +86,9 @@ const released = (runId: string, reason: string) => ({
 const KILLED = "the run was killed by an operator timeout before it produced anything";
 
 const passed = (runId: string, step: string, action: string, onSha: string) => ({
-  type: "GatePassed",
+  type: "StepPassed",
   actor: "conductor",
-  data: { gate: step, action, runId, onSha, evidence: "exit 0", findings: [] },
+  data: { step: step, action, runId, onSha, evidence: "exit 0", findings: [] },
 });
 
 const started = (n: number) => ({
@@ -145,8 +145,8 @@ async function seed(): Promise<void> {
     started(3),
     { type: "RunProducedDiff", actor: "conductor", data: { branch: "agent/3", headSha: "sha-a", files: 3, insertions: 40, deletions: 2 } },
     { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-a" } },
-    { type: "GatePassed", actor: "conductor", data: { gate: "proposed", action: "build", runId: run(3), onSha: "sha-a", evidence: "exit 0", findings: [] } },
-    { type: "GateFailed", actor: "conductor", data: { gate: "proposed", action: "review", runId: run(3), onSha: "sha-a", evidence: "two findings", findings: [] } },
+    { type: "StepPassed", actor: "conductor", data: { step: "proposed", action: "build", runId: run(3), onSha: "sha-a", evidence: "exit 0", findings: [] } },
+    { type: "StepFailed", actor: "conductor", data: { step: "proposed", action: "review", runId: run(3), onSha: "sha-a", evidence: "two findings", findings: [] } },
   ]);
 
   // 4 — refused by the integrator.
@@ -186,19 +186,19 @@ async function seed(): Promise<void> {
     started(8),
     { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-8" } },
     {
-      type: "GateFailed",
+      type: "StepFailed",
       actor: "conductor",
-      data: { gate: "proposed", action: "build", runId: run(8), onSha: "sha-8", evidence: "exit 1", findings: [] },
+      data: { step: "proposed", action: "build", runId: run(8), onSha: "sha-8", evidence: "exit 1", findings: [] },
     },
     {
-      type: "GateWaived",
+      type: "StepWaived",
       actor: "human:steven",
-      data: { gate: "proposed", action: "build", runId: run(8), onSha: "sha-8", by: "human:steven", reason: "known flake" },
+      data: { step: "proposed", action: "build", runId: run(8), onSha: "sha-8", by: "human:steven", reason: "known flake" },
     },
     {
       type: "ApprovalGranted",
       actor: "human:steven",
-      data: { gate: "merge", action: "human", runId: run(8), onSha: "sha-8", by: "human:steven", note: "" },
+      data: { step: "merge", action: "human", runId: run(8), onSha: "sha-8", by: "human:steven", note: "" },
     },
   ]);
 
@@ -217,13 +217,13 @@ async function seed(): Promise<void> {
     {
       type: "ApprovalRequested",
       actor: "conductor",
-      data: { gate: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", question: "Merge?", artifacts: [] },
+      data: { step: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", question: "Merge?", artifacts: [] },
     },
     { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
     {
       type: "ApprovalGranted",
       actor: "human:steven",
-      data: { gate: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", by: "human:steven", note: "" },
+      data: { step: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", by: "human:steven", note: "" },
     },
   ]);
   await store.append(lane, 2, [
@@ -268,13 +268,13 @@ async function seed(): Promise<void> {
   ]);
   await appendRetired(wi(15), 3, "RepairRequested", {
     runId: attempt(15, "a"),
-    reason: "gate-failed",
+    reason: "verify-failed",
     detail: "policy: exit 1",
     fingerprint: "0123456789ab",
     attempt: 1,
   });
   await store.append(wi(15), 3, [
-    released(attempt(15, "a"), "repairing gate-failed (attempt 1)"),
+    released(attempt(15, "a"), "repairing verify-failed (attempt 1)"),
     claimedWith(attempt(15, "b")),
   ]);
   await store.append(attempt(15, "b"), 0, [
@@ -288,12 +288,12 @@ async function seed(): Promise<void> {
   await store.append(wi(16), 0, [discovered(16, "released for a repair, then deployed"), claimed(16)]);
   await appendRetired(wi(16), 3, "RepairRequested", {
     runId: run(16),
-    reason: "gate-failed",
+    reason: "verify-failed",
     detail: "policy: exit 1",
     fingerprint: "0123456789ab",
     attempt: 1,
   });
-  await store.append(wi(16), 3, [released(run(16), "repairing gate-failed (attempt 1)")]);
+  await store.append(wi(16), 3, [released(run(16), "repairing verify-failed (attempt 1)")]);
 
   // 10 — the branch was repaired and approval re-requested on the new head.
   //      The run produced `sha-10a` and is asking about `sha-10b`, which is
@@ -307,12 +307,12 @@ async function seed(): Promise<void> {
     {
       type: "ApprovalRequested",
       actor: "conductor",
-      data: { gate: "merge", action: "no-merge", runId: run(10), onSha: "sha-10a", question: "Merge?", artifacts: [] },
+      data: { step: "merge", action: "no-merge", runId: run(10), onSha: "sha-10a", question: "Merge?", artifacts: [] },
     },
     {
       type: "ApprovalRequested",
       actor: "conductor",
-      data: { gate: "merge", action: "repair", runId: run(10), onSha: "sha-10b", question: "Merge the repair?", artifacts: [] },
+      data: { step: "merge", action: "repair", runId: run(10), onSha: "sha-10b", question: "Merge the repair?", artifacts: [] },
     },
   ]);
   await store.append(wi(10), 2, [
@@ -389,9 +389,9 @@ async function seed(): Promise<void> {
     started(13),
     { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-13" } },
     {
-      type: "GateFailed",
+      type: "StepFailed",
       actor: "conductor",
-      data: { gate: "proposed", action: "review", runId: run(13), onSha: "sha-13", evidence: "one finding", findings: [] },
+      data: { step: "proposed", action: "review", runId: run(13), onSha: "sha-13", evidence: "one finding", findings: [] },
     },
     {
       type: "FixRequested",
@@ -418,9 +418,9 @@ async function seed(): Promise<void> {
     started(14),
     { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-14" } },
     {
-      type: "GateFailed",
+      type: "StepFailed",
       actor: "conductor",
-      data: { gate: "proposed", action: "review", runId: run(14), onSha: "sha-14", evidence: "still refused", findings: [] },
+      data: { step: "proposed", action: "review", runId: run(14), onSha: "sha-14", evidence: "still refused", findings: [] },
     },
   ]);
   await store.append(wi(14), 2, [

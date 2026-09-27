@@ -2,7 +2,7 @@
  * **A hundred and twenty cells, and each one runs or refuses by name.** There
  * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
- * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
+ * `StepsResolved`, printed by `lingtai add`, drawn on the board, and never
  * called (`#61`). **`admit` is a step that runs one kind since `#268`** —
  * `worktreePlugin` declares it, so a `worktree:` there is resolved *and* called,
  * and the other eleven kinds at that step refuse in `admit`'s own terms.
@@ -682,7 +682,7 @@ describe("every step × kind cell runs or refuses", () => {
     // comparison written in two packages: the fold decides what is *filed*, and
     // `verdictFor` decides what *refuses*. An implementer who follows this
     // refusal, replaces the fold's literal and stops leaves `verdictFor`
-    // returning `failed` for a major — `GateFailed`, no filing, a fix round
+    // returning `failed` for a major — `StepFailed`, no filing, a fix round
     // bought — under a recipe that reads as honoured. The refusal has to name
     // it, so this asserts it does.
     expect(why).toContain("verdictFor");

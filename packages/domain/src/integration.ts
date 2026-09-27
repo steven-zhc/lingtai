@@ -131,7 +131,7 @@ export function reduceIntegration(events: readonly Envelope[]): IntegrationState
 /**
  * Whether the **last** attempt on this base has reached a terminal event yet.
  *
- * A reading, not a gate: nothing consults it before attempting, and nothing has
+ * A reading, and nothing waits on it: nothing consults it before attempting, and nothing has
  * since the lane stopped taking a lock (#194).
  *
  * **It cannot answer *is anything merging right now*, and a caller that reads

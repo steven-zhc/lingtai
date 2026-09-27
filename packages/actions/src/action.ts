@@ -169,18 +169,18 @@ export interface Action {
 
 /** Emitted for every action, in order. The pipeline's whole output is events. */
 export type ActionEvent =
-  | { type: "GateRequested"; data: PayloadOf<"GateRequested"> }
-  | { type: "GateStarted"; data: PayloadOf<"GateStarted"> }
-  | { type: "GatePassed"; data: PayloadOf<"GatePassed"> }
-  | { type: "GateFailed"; data: PayloadOf<"GateFailed"> }
+  | { type: "StepRequested"; data: PayloadOf<"StepRequested"> }
+  | { type: "StepStarted"; data: PayloadOf<"StepStarted"> }
+  | { type: "StepPassed"; data: PayloadOf<"StepPassed"> }
+  | { type: "StepFailed"; data: PayloadOf<"StepFailed"> }
   /** The step was reached and produced no verdict, because its agent never
    *  started. Appended so that an action which did not judge is readable as that
    *  rather than as one still running. */
-  | { type: "GateNeverRan"; data: PayloadOf<"GateNeverRan"> }
+  | { type: "StepNeverRan"; data: PayloadOf<"StepNeverRan"> }
   /** The step was reached, its agent started and ended with no receipt, so
    *  nothing judged the diff. Appended once, because the action is run once
    *  (0057 §1, and §4's retry deleted by `#234`). */
-  | { type: "GateDidNotFinish"; data: PayloadOf<"GateDidNotFinish"> }
+  | { type: "StepDidNotFinish"; data: PayloadOf<"StepDidNotFinish"> }
   /** The same event `--no-merge` emits. One vocabulary for one idea. */
   | { type: "ApprovalRequested"; data: PayloadOf<"ApprovalRequested"> };
 
@@ -214,7 +214,7 @@ export interface PipelineResult {
   /**
    * Every verdict, with the findings behind it.
    *
-   * `findings` is carried here rather than left on the `GateFailed` event
+   * `findings` is carried here rather than left on the `StepFailed` event
    * because the caller acts on it: a refusal with findings buys a fixing agent
    * (0038 §1), and reading the log back to discover what the action it just ran
    * said would be a second source of truth for the same sentence.
@@ -259,12 +259,12 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
   const results: PipelineResult["results"] = [];
 
   for (const [index, action] of actions.entries()) {
-    // `gate:` is the **event payload's** field and stays that spelling until the
+    // `step:` is the **event payload's** field and stays that spelling until the
     // log's own vocabulary is renamed — it carries the step, and `action` beside
     // it carries this action's name.
-    const base = { gate: step, action: action.name, runId: context.runId, onSha: context.onSha };
+    const base = { step: step, action: action.name, runId: context.runId, onSha: context.onSha };
 
-    await emit({ type: "GateRequested", data: base });
+    await emit({ type: "StepRequested", data: base });
 
     /**
      * The start and the end on the run's log, for every kind (#153).
@@ -297,7 +297,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
      * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
      * §3c's judge, not a constant in a loop here.
      */
-    await emit({ type: "GateStarted", data: base });
+    await emit({ type: "StepStarted", data: base });
     const started = Date.now();
     context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`);
 
@@ -331,7 +331,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // Findings go on a pass as well as a refusal: a minor does not stop the
       // run, and a finding left only in `evidence` is one nothing can read (#135).
       await emit({
-        type: "GatePassed",
+        type: "StepPassed",
         data: { ...base, evidence: result.evidence, findings: result.findings },
       });
       continue;
@@ -344,7 +344,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // after this one would ask the same account the same question and meet
       // the same wall, which is 0031 §3 with a queue's worth of items replaced
       // by a recipe's worth of actions.
-      await emit({ type: "GateNeverRan", data: { ...base, detail: result.evidence } });
+      await emit({ type: "StepNeverRan", data: { ...base, detail: result.evidence } });
       return {
         ok: false,
         failedAt: null,
@@ -362,7 +362,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // event, because the action ran once — and it stops the pass rather than
       // the conductor, because a crash is local (0057 §3). `didNotFinishAt` is
       // a field rather than a sentence to be re-read.
-      await emit({ type: "GateDidNotFinish", data: { ...base, detail: result.evidence } });
+      await emit({ type: "StepDidNotFinish", data: { ...base, detail: result.evidence } });
       return {
         ok: false,
         failedAt: null,
@@ -394,7 +394,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     }
 
     await emit({
-      type: "GateFailed",
+      type: "StepFailed",
       data: { ...base, evidence: result.evidence, findings: result.findings },
     });
     return {

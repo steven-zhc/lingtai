@@ -68,17 +68,17 @@ async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise
  * questions. Splitting at the first colon, since a step never contains one.
  *
  * **It returns `gate`, because every caller spreads it straight into
- * `parsePayload`** and `gateBase` (`events.ts:609`) is still spelled `gate` —
+ * `parsePayload`** and `stepBase` (`events.ts:609`) is still spelled `gate` —
  * the half of the vocabulary that waits on the log's own rename. Returning
  * `step` here type-checks at all three call sites, because `parsePayload` takes
  * `unknown`, and then Zod refuses the append at run time: every `approve` and
  * every `waive` throws `Invalid option: expected one of "claim"|…`, which is a
  * held run nobody can land.
  */
-function splitStep(key: string): { gate: string; action: string } {
+function splitStep(key: string): { step: string; action: string } {
   const cut = key.indexOf(":");
-  if (cut < 0) return { gate: "merge", action: key };
-  return { gate: key.slice(0, cut), action: key.slice(cut + 1) };
+  if (cut < 0) return { step: "merge", action: key };
+  return { step: key.slice(0, cut), action: key.slice(cut + 1) };
 }
 
 /**
@@ -280,9 +280,9 @@ async function approveHolding(options: ApproveOptions, workItemId: string): Prom
       // with, carrying the approval's own reason — before the approval, so the
       // fold reads the refusal overruled and then the diff approved.
       ...refusing.map((key) => ({
-        type: "GateWaived" as const,
+        type: "StepWaived" as const,
         actor: options.by,
-        data: parsePayload("GateWaived", { ...splitStep(key), runId, onSha, by: options.by, reason: note }),
+        data: parsePayload("StepWaived", { ...splitStep(key), runId, onSha, by: options.by, reason: note }),
       })),
       {
         type: "ApprovalGranted",
@@ -520,7 +520,7 @@ async function requeueHolding(
 }
 
 /**
- * Waiving a gate: merging past a verdict, on the record.
+ * Waiving a step: merging past a verdict, on the record.
  *
  * **A waiver is never silent.** It records who and why, and both go on the
  * card. That is the entire difference between this and the thing it replaces —
@@ -562,12 +562,12 @@ export async function waive(options: {
   // board's card once sent `"build"` for whatever had refused, so a waived
   // `review` was recorded as a waived `build` — a verdict about a gate that
   // never said anything. Reported means a verdict on any sha, or a place in the
-  // run's last `GatesResolved` plan: `lingtai waive` exists to close a planned
+  // run's last `StepsResolved` plan: `lingtai waive` exists to close a planned
   // gate that never reported, and `end` is left out because it has no verdict.
-  const plan = events.filter((e) => e.type === "GatesResolved").at(-1);
+  const plan = events.filter((e) => e.type === "StepsResolved").at(-1);
   const planned = plan
-    ? parsePayload("GatesResolved", plan.data).points.flatMap((p) =>
-        p.gate === "end" ? [] : p.actions.map((a) => `${p.gate}:${a}`),
+    ? parsePayload("StepsResolved", plan.data).steps.flatMap((p) =>
+        p.step === "end" ? [] : p.actions.map((a) => `${p.step}:${a}`),
       )
     : [];
   if (!run.steps[options.step] && !planned.includes(options.step)) {
@@ -591,9 +591,9 @@ export async function waive(options: {
 
   await store.append(runId, run.version, [
     {
-      type: "GateWaived",
+      type: "StepWaived",
       actor: options.by,
-      data: parsePayload("GateWaived", {
+      data: parsePayload("StepWaived", {
         ...splitStep(options.step),
         runId,
         onSha: run.headSha,

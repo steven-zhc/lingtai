@@ -95,7 +95,7 @@ describe("a log", () => {
 
   it("stays raw all the way through a history row", () => {
     const row = renderToStaticMarkup(
-      <HistoryRow line={toLine(e("RunFailed", { kind: "gate-failed", detail: TYPECHECK }))} />,
+      <HistoryRow line={toLine(e("RunFailed", { kind: "verify-failed", detail: TYPECHECK }))} />,
     );
     expect(row).toContain("_not_");
     expect(row).not.toContain("<em>");

@@ -214,7 +214,7 @@ const WITHHELD = "no_log:sha256:";
  *
  * Why a digest rather than nothing at all is at the head of this file — a
  * deleted field takes the difference between two documents out of the hash that
- * is their identity (0047 §2). With one, `GatesResolved`'s body still records
+ * is their identity (0047 §2). With one, `StepsResolved`'s body still records
  * that the action carried a token, a rotated credential is a `configHash` that
  * changed, and the board's own walk says *this field differs* without saying
  * what it differs to.

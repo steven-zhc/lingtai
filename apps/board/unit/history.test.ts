@@ -172,24 +172,24 @@ describe("a line of history", () => {
   });
 
   it("names the action on a gate row, not only the point", () => {
-    const build = e("GateStarted", { gate: "prepared", action: "build", runId: "run-1", onSha: "abc" });
-    const lint = e("GateStarted", { gate: "prepared", action: "lint", runId: "run-1", onSha: "abc" });
+    const build = e("StepStarted", { step: "prepared", action: "build", runId: "run-1", onSha: "abc" });
+    const lint = e("StepStarted", { step: "prepared", action: "lint", runId: "run-1", onSha: "abc" });
     expect(summarise(build)).toBe("prepared · build");
     // Three gates at one point used to render as three identical rows.
     expect(summarise(build)).not.toBe(summarise(lint));
   });
 
-  it("renders the plan GatesResolved carries, including the empty points", () => {
+  it("renders the plan StepsResolved carries, including the empty points", () => {
     const said = summarise(
-      e("GatesResolved", {
+      e("StepsResolved", {
         runId: "run-1",
         configHash: "3f8a1c2b9d04",
-        points: [
-          { gate: "admit", actions: [] },
-          { gate: "prepared", actions: ["build", "lint"] },
-          { gate: "proposed", actions: ["review"] },
-          { gate: "merge", actions: [] },
-          { gate: "end", actions: ["comment", "close"] },
+        steps: [
+          { step: "admit", actions: [] },
+          { step: "prepared", actions: ["build", "lint"] },
+          { step: "proposed", actions: ["review"] },
+          { step: "merge", actions: [] },
+          { step: "end", actions: ["comment", "close"] },
         ],
       }),
     );

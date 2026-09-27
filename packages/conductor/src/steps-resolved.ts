@@ -14,8 +14,8 @@ export function stepsResolved(runId: string, resolved: ResolvedRecipe) {
     configHash: resolved.configHash,
     // `points` and `gate` are the payload's own spelling and stay until the
     // log's vocabulary is renamed (events.ts:603).
-    points: STEPS.map((step) => ({
-      gate: step,
+    steps: STEPS.map((step) => ({
+      step: step,
       actions: resolved.recipe.steps[step].map((a) => a.name),
     })),
     // A record of what this run was decided by, and never read back to decide

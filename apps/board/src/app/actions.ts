@@ -7,7 +7,7 @@
  * installation: resume. They are the same shape, which is the point.
  *
  * **Two, and not four** (#150). Reject appended `ApprovalRevoked` and the run
- * went straight back to asking, and Waive appended `GateWaived` and nothing
+ * went straight back to asking, and Waive appended `StepWaived` and nothing
  * read it: two buttons that left the card where it was. A waiver is now what
  * Approve records, with its reason, for every gate still refusing.
  *

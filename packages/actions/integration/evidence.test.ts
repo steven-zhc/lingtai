@@ -8,7 +8,7 @@
  * escape in it would pass a regex that misses the ones vitest actually writes.
  *
  * **In `integration/`**: the last assertion drives the fixture through a real
- * `createProcessAction`, so the stripping is pinned at the `GateFailed` event and
+ * `createProcessAction`, so the stripping is pinned at the `StepFailed` event and
  * not at `tail` — which is the whole of what 0043 claims. That spawns a shell,
  * and an OS process is outside the system
  * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). Nothing
@@ -78,11 +78,11 @@ describe("escapes vitest does not write", () => {
 
 describe("the stored evidence", () => {
   /**
-   * `GateFailed.data.evidence` is the record: the card renders it and
+   * `StepFailed.data.evidence` is the record: the card renders it and
    * `attempts.ts` quotes it into the fix prompt under `budget.evidence`. So
    * the claim is pinned at the event, through a real process, not at `tail`.
    */
-  it("carries no escape from a failing command into GateFailed", async () => {
+  it("carries no escape from a failing command into StepFailed", async () => {
     const events: ActionEvent[] = [];
     await runActionPipeline({
       step: "proposed",
@@ -97,8 +97,8 @@ describe("the stored evidence", () => {
       emit: (e) => void events.push(e),
     });
 
-    const failed = events.find((e) => e.type === "GateFailed");
-    if (failed?.type !== "GateFailed") throw new Error("the action did not fail");
+    const failed = events.find((e) => e.type === "StepFailed");
+    if (failed?.type !== "StepFailed") throw new Error("the action did not fail");
     expect(failed.data.evidence).not.toContain(ESC);
     expect(failed.data.evidence).toContain(sentence);
   });

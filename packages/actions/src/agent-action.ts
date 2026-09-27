@@ -332,7 +332,7 @@ export function parseFindings(text: string | null): { findings: ActionFinding[];
  * `packages/conductor/src/backlog.ts` is that one comparison as a function, and
  * when a step reads the `backlog:` plugin **both** of these have to be handed
  * the recipe's value: wire the fold alone and a `major` still fails the action
- * here, `GateFailed` is still emitted, the fold never sees it, and a recipe
+ * here, `StepFailed` is still emitted, the fold never sees it, and a recipe
  * that said a major costs nothing has bought a fix round.
  *
  * The ladder is `SEVERITIES` and the bar is a position in it, so a severity

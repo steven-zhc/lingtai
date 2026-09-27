@@ -46,7 +46,7 @@ function primaryMove(recommended: Recommended | undefined): "approve" | "requeue
  *
  * **One button, and the waiver is inside it** (#150). There were three beside
  * it: Reject appended `ApprovalRevoked` and the run asked again; Waive appended
- * `GateWaived`, which `approve()` never read — so explaining an overruled
+ * `StepWaived`, which `approve()` never read — so explaining an overruled
  * refusal took two clicks and not explaining it took one. Now `approve()` reads
  * the refusing gates off the run itself, waives each with this reason in the
  * same append, and refuses without one. Nothing here names a gate.

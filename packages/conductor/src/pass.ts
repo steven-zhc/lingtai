@@ -412,7 +412,7 @@ export type ActionOutcome = PipelineResult["results"][number];
  * `build`'s verdict and `review`'s findings, neither of which is a `StepEnding`
  * — a review that found a blocker and a review that found nothing both end
  * `passed`. That is the reason `PipelineResult.results` carries findings rather
- * than leaving them on `GateFailed`, one layer up: reading the log back to
+ * than leaving them on `StepFailed`, one layer up: reading the log back to
  * discover what the action just said would be a second source of truth for one
  * sentence.
  *
@@ -613,7 +613,7 @@ export const NOT_BUILT_YET: StepBodies = {
    * inventing the judgement 0061 §3 reserves for a plugin.
    *
    * **The body that asks a judge is `bodiesFor`'s** ([`pass-steps.ts`](pass-steps.ts),
-   * `#254`) — one `judge:` per `when:`, `red` and `gate-failed` mechanically
+   * `#254`) — one `judge:` per `when:`, `red` and `verify-failed` mechanically
    * back to `implement`, `findings` the one worth an agent, each choosing from
    * `offering` and nothing else. What it keeps is this row's floor: an arrival
    * no judge can answer still reaches a person.
@@ -633,7 +633,7 @@ export const NOT_BUILT_YET: StepBodies = {
   /**
    * **Refuses**, and reports a `reason` and a `detail` rather than deciding —
    * the lane is `bodiesFor`'s port, and over the whole log it has refused 32
-   * times: 26 `gate-failed`, 6 `conflict`. Somebody else's work landed and the
+   * times: 26 `verify-failed`, 6 `conflict`. Somebody else's work landed and the
    * diff stopped being true, which is a fact about the world rather than a
    * verdict about the change.
    */
@@ -1576,7 +1576,7 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   if (result.failedAt !== null) {
     const said = {
       // *Something the recipe declared refused*, which is all the pipeline
-      // knows. The log spells this `gate-failed` today — `RefusalReason` in
+      // knows. The log spells this `verify-failed` today — `RefusalReason` in
       // `@lingtai/domain`, and 0058 §3c's own example of a machine-readable
       // reason — and that spelling is the retired vocabulary `#232`'s allowlist
       // is down to nothing on, with `#233` renaming the value itself. Writing
@@ -1598,7 +1598,7 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
     // is worth nothing to the round it buys.
     //
     // Nothing is dropped and nothing is quiet about it: the action's own
-    // verdict is on `results` and `GateFailed` is already on the log, which is
+    // verdict is on `results` and `StepFailed` is already on the log, which is
     // what a `proposed` reads to decide there is a `findings` direction to
     // judge at all. What it costs is `runActionPipeline`'s own rule — the
     // pipeline stops at the first action that did not pass, so a second

@@ -87,7 +87,7 @@ describe("a closed work item", () => {
  * terminal outcome (0044).
  *
  * The first cut of `close()` appended `WorkItemClosed` and stopped. That is
- * 0016 §4's shape — the point was configured, `GatesResolved` said so, and it
+ * 0016 §4's shape — the point was configured, `StepsResolved` said so, and it
  * silently did not run — and its visible cost was a manual step: `lingtai
  * close` ended the ticket on the log and left the GitHub issue open for
  * somebody to close by hand afterwards. Both halves are asserted here, against

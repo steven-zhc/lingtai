@@ -117,7 +117,7 @@ describe("the pipeline, when an action wants a person", () => {
     // The same event the flag emits, so the two never become two vocabularies
     // for one idea.
     expect(types).toContain("ApprovalRequested");
-    expect(types).not.toContain("GateFailed");
+    expect(types).not.toContain("StepFailed");
     // And it stops, for the same reason a failure stops: the actions after it are
     // about a diff that is not going anywhere yet.
     expect(result.skipped).toEqual(["after"]);
@@ -131,7 +131,7 @@ describe("the pipeline, when an action wants a person", () => {
 
     expect(result.failedAt).toBe("build");
     expect(result.heldAt).toBeNull();
-    expect(types).toContain("GateFailed");
+    expect(types).toContain("StepFailed");
     expect(types).not.toContain("ApprovalRequested");
   });
 });

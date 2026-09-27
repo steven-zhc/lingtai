@@ -189,34 +189,37 @@ describe("parseStoredPayload", () => {
 });
 
 /**
- * The rename that made this file earn its keep: the `diff` point became
- * `proposed` (ADR 0018).
+ * **The rename that made this file earn its keep, and the reset that spent it.**
  *
- * Nine types carry a `Step`, and the enum no longer contains the old value —
- * so a stored row is not merely stale, it is unparseable without the step.
- * That is the good version of this failure and the reason the rename was
- * affordable: it cannot pass wrongly.
+ * ADR 0018's `diff` point became `proposed`, nine types carried a `Step` when
+ * it landed, and the step could not be skipped at any of them: the enum no
+ * longer holds the old value, so a stored row was unparseable rather than
+ * merely stale. That is the good version of the failure, and it is why the
+ * rename was affordable.
  *
- * **It outlives the vocabulary going to ten.**
+ * **What is asserted here now is that all nine are gone** (`#247`).
  * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 spends
- * this history rather than upcasting it, and the thing that spends it is the
- * **reset** — `the-pipeline.md`'s T5, with T5b's fold before it, neither
- * landed. Until they are, the store holds `schemaVer: 1` rows of all nine, and
- * the step and the nine versions that depend on it stay. The tests below are
- * what fails if either comes down early.
+ * that history by *resetting* the log rather than upcasting it;
+ * `the-pipeline.md`'s T5b folded it into
+ * [013](../../../doc/experiments/013-the-log-before-the-third-reset.md) and T5
+ * cut it. A store with no rows holds none at version 1, so the nine versions
+ * and the nine steps came down together — which is the only shape this was
+ * ever available in: at `StepPassed` the step could not come down alone while
+ * `findings` sat above it, because *an unbroken chain of steps for every type
+ * past version 1* at the top of this file makes a hole at 1 as loud as a
+ * missing step.
  *
- * And at `GatePassed` it cannot come down at all while `2 → 3` stands: that
- * type is at 3, and *has an unbroken chain of steps for every type past
- * version 1* at the top of this file requires a step at 1. The argument in
- * full is on `stepRenamed` in `upcast.ts`.
+ * The cases below are what fails if a version or a step comes back without the
+ * other, and what fails if `StepsResolved` is bumped again with no step under
+ * it.
  */
-describe("the gate point rename", () => {
+describe("the nine steps the reset spent", () => {
   const STEP_CARRYING = [
-    "GateRequested",
-    "GateStarted",
-    "GatePassed",
-    "GateFailed",
-    "GateWaived",
+    "StepRequested",
+    "StepStarted",
+    "StepPassed",
+    "StepFailed",
+    "StepWaived",
     "ApprovalRequested",
     "ApprovalGranted",
     "ApprovalRevoked",
@@ -224,111 +227,78 @@ describe("the gate point rename", () => {
 
   const base = { action: "build", runId: "run-01JX", onSha: "sha-a" };
   const extra: Record<(typeof STEP_CARRYING)[number], object> = {
-    GateRequested: {},
-    GateStarted: {},
-    GatePassed: { evidence: "exit 0" },
-    GateFailed: { evidence: "exit 1", findings: [] },
-    GateWaived: { by: "human:steven", reason: "known flake" },
+    StepRequested: {},
+    StepStarted: {},
+    StepPassed: { evidence: "exit 0", findings: [] },
+    StepFailed: { evidence: "exit 1", findings: [] },
+    StepWaived: { by: "human:steven", reason: "known flake" },
     ApprovalRequested: { question: "Merge?", artifacts: ["diff"] },
     ApprovalGranted: { by: "human:steven", note: "" },
     ApprovalRevoked: { by: "human:steven", reason: "force-push" },
   };
 
-  /** What a later step adds on the way up; the rename touches nothing else. */
-  const later: Partial<Record<(typeof STEP_CARRYING)[number], object>> = {
-    GatePassed: { findings: [] },
-  };
+  /**
+   * **The assertion the ticket is about, and it is the pair rather than either
+   * half.** A version left standing with its step deleted makes every row of
+   * that type unreadable; a step left standing under a lowered version is dead
+   * code a reader will trust. `StepPassed` is the one of the nine still past 1,
+   * and what it is past 1 *for* is `findings` and not the rename.
+   */
+  it.each([...STEP_CARRYING, "StepsResolved"] as const)(
+    "has no step from 1 for %s, because no row stands at 1",
+    (type) => {
+      expect(
+        UPCASTERS[type]?.[1] === undefined || type === "StepPassed",
+        `${type} still carries 0018's step, which the reset spent`,
+      ).toBe(true);
+    },
+  );
 
-  it.each(STEP_CARRYING)("moves a v1 %s from diff to proposed", (type) => {
-    const v1 = { ...base, ...extra[type], gate: "diff" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type], gate: "proposed" });
-  });
-
-  it.each(STEP_CARRYING)("leaves a v1 %s at another step alone", (type) => {
-    const v1 = { ...base, ...extra[type], gate: "merge", action: "human" };
-    expect(parseStoredPayload(type, 1, v1)).toEqual({ ...v1, ...later[type] });
+  it("left only StepPassed past version 1, and findings is what it is past it for", () => {
+    for (const type of [...STEP_CARRYING, "StepsResolved"] as const) {
+      expect(SCHEMA_VER[type], `${type}`).toBe(type === "StepPassed" ? 2 : 1);
+    }
   });
 
   /**
-   * **The row today's log actually holds, and the one a lowered `SCHEMA_VER`
-   * breaks.** Nothing on this log is below the current version of these nine
-   * except by way of the rename, and everything at the current version has to
-   * read back unchanged — so a build whose number is *under* what the writer
-   * stamped takes `upcast`'s `schemaVer > supported` branch and throws
-   * `the writer is newer than the reader` about a reader that was lowered.
-   *
    * `toEqual` and not `not.toThrow`, which is the half the name promises and
    * the weaker assertion did not check: a step keyed at the current version —
    * or a `parsePayload` that drops a field on the way out — returns a mutated
-   * payload without raising anything, and *unchanged* is the word this test
-   * is here for. Its neighbours in this describe all compare.
+   * payload without raising anything, and *unchanged* is the word this test is
+   * here for.
    */
   it.each(STEP_CARRYING)("reads a %s stamped by this build back unchanged", (type) => {
-    const current = { ...base, ...extra[type], ...later[type], gate: "proposed" };
+    const current = { ...base, ...extra[type], step: "proposed" };
     expect(parseStoredPayload(type, SCHEMA_VER[type], current)).toEqual(current);
   });
 
-  /**
-   * The nested one. `GatesResolved` is the event the board reads to show an
-   * unconfigured step as `skipped`, so a half-upcast here would not throw — it
-   * would render a run as having a step nobody has ever heard of.
-   *
-   * On the `1 → 2` step alone and not on `upcast`, because the chain's two
-   * halves are separate facts: this step moves the point and keeps the list
-   * the length it found it, and the `3 → 4` step below widens that list to
-   * ten (the case after next). Walking the whole chain here would assert both
-   * at once and hide which of them a regression broke.
-   */
-  it("moves the point inside a v1 GatesResolved and keeps every point, in order", () => {
-    const v1 = {
-      runId: "run-01JX",
-      configHash: "abc",
-      points: [
-        { gate: "admit", actions: [] },
-        { gate: "prepared", actions: ["install"] },
-        { gate: "diff", actions: ["build", "review"] },
-        { gate: "merge", actions: [] },
-        { gate: "end", actions: ["close the ticket"] },
-      ],
-    };
+  /** All ten since 0058 §3; `.length(10)` is what the schema asserts. */
+  const steps = [...STEPS].map((step) => ({ step, actions: [] as string[] }));
 
-    const up = UPCASTERS.GatesResolved![1]!(v1) as {
-      points: { gate: string; actions: string[] }[];
-    };
-    expect(up.points.map((p) => p.gate)).toEqual(["admit", "prepared", "proposed", "merge", "end"]);
-    expect(up.points[2]!.actions).toEqual(["build", "review"]);
+  it("reads a ten-step plan back unchanged, recipe and all", () => {
+    const plan = { runId: "run-01JX", configHash: "abc", steps, recipe: {} };
+    expect(parseStoredPayload("StepsResolved", SCHEMA_VER.StepsResolved, plan)).toEqual(plan);
   });
 
-  /** All ten since 0058 §3; `.length(10)` is what the schema asserts. */
-  const steps = [
-    "claim",
-    "admit",
-    "prepared",
-    "design",
-    "implement",
-    "build",
-    "review",
-    "proposed",
-    "merge",
-    "end",
-  ].map((step) => ({ gate: step, actions: [] }));
-
   /**
-   * #191, 0047 §3: the recipe was never recorded on a v1 or v2 event, and the
-   * upcast does not pretend it was. Absent — not null, not `{}` — so a reader
-   * can tell *not recorded* from *recorded, and empty*.
+   * #191, 0047 §3: `recipe` is absent — not null, not `{}` — on a plan that did
+   * not record one, so a reader can tell *not recorded* from *recorded, and
+   * empty*. Nothing upcasts into it any more, and nothing may: a recipe is read
+   * from the base branch every pass (0005), so the one it had then is not the
+   * one it has now.
    */
-  it("adds no recipe to a v1 or v2 GatesResolved, and absent is not empty", () => {
-    const stored = { runId: "run-01JX", configHash: "abc", points: steps };
+  it("keeps absent and empty apart on the recipe", () => {
+    const without = parseStoredPayload("StepsResolved", 1, {
+      runId: "run-01JX",
+      configHash: "abc",
+      steps,
+    });
+    expect("recipe" in without).toBe(false);
 
-    for (const ver of [1, 2]) {
-      const up = parseStoredPayload("GatesResolved", ver, stored);
-      expect("recipe" in up, `v${ver}`).toBe(false);
-      expect(up.recipe).toBeUndefined();
-    }
-
-    const empty = parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, {
-      ...stored,
+    const empty = parseStoredPayload("StepsResolved", 1, {
+      runId: "run-01JX",
+      configHash: "abc",
+      steps,
       recipe: {},
     });
     expect("recipe" in empty).toBe(true);
@@ -336,67 +306,15 @@ describe("the gate point rename", () => {
   });
 
   /**
-   * **The row this log is actually full of, at every version it holds one at.**
-   *
-   * Every `GatesResolved` appended before 2026-09-23 names the five steps the
-   * vocabulary had, and the schema asserts ten. Without the `3 → 4` step the
-   * `.length(10)` refuses all of them on read, and nothing catches it kindly:
-   * `decodeRow` rethrows the `ZodError` bare, so the `task_view` and
-   * `finding_backlog` projectors stop at the first such seq and never advance
-   * past it — a rebuild included — and `reduceRun` dies on any pre-existing
-   * run, which is `lingtai approve` and every task page.
-   *
-   * Parameterised over 1, 2 and 3 because a stored row is at any of them and
-   * they all reach `parsePayload` through this one chain.
-   */
-  it.each([1, 2, 3])("widens a v%i five-step plan to all ten, keeping what it named", (ver) => {
-    const stored = {
-      runId: "run-01JX",
-      configHash: "abc",
-      points: [
-        { gate: "admit", actions: [] },
-        { gate: "prepared", actions: ["install"] },
-        // The spelling that version actually wrote: `diff` until 0018.
-        { gate: ver === 1 ? "diff" : "proposed", actions: ["build", "review"] },
-        { gate: "merge", actions: [] },
-        { gate: "end", actions: ["close the ticket"] },
-      ],
-    };
-
-    const up = parseStoredPayload("GatesResolved", ver, stored);
-
-    expect(up.points.map((p) => p.gate)).toEqual([...STEPS]);
-    // What that run was given is untouched, and in the enum's order.
-    expect(up.points.find((p) => p.gate === "prepared")?.actions).toEqual(["install"]);
-    expect(up.points.find((p) => p.gate === "proposed")?.actions).toEqual(["build", "review"]);
-    expect(up.points.find((p) => p.gate === "end")?.actions).toEqual(["close the ticket"]);
-    // And the five the vocabulary did not have are empty, which is what that
-    // recipe said about them: there was nothing there to configure.
-    for (const step of ["claim", "design", "implement", "build", "review"] as const) {
-      expect(up.points.find((p) => p.gate === step)?.actions, step).toEqual([]);
-    }
-  });
-
-  /**
    * The count is the assertion 0047 rests on — *what a run was given is on the
-   * log* — so a payload **stamped by this build** that records five steps or
-   * eleven is refused rather than read as a run that was configured
-   * differently. A *stored* five is not that payload: it is the case above,
-   * and the step from 3 is what keeps the two apart.
+   * log* — so a plan that records five steps or eleven is refused rather than
+   * read as a run that was configured differently. **There is no stored five
+   * any more**: the step that widened one is gone with the rows it was written
+   * for, so five is now one answer and not two.
    */
   it("refuses a plan that is not all ten steps", () => {
-    const short = { runId: "run-01JX", configHash: "abc", points: steps.slice(0, 5) };
-    expect(() => parseStoredPayload("GatesResolved", SCHEMA_VER.GatesResolved, short)).toThrow();
-  });
-
-  it("moved all nine past v1, and none of them is still there", () => {
-    for (const type of [...STEP_CARRYING, "GatesResolved"] as const) {
-      expect(SCHEMA_VER[type], `${type} carries a Step and must be past v1`).toBeGreaterThanOrEqual(2);
-      expect(
-        UPCASTERS[type]?.[1],
-        `${type} is past v1 with no step from 1 — the log's rows are at 1`,
-      ).toBeTypeOf("function");
-    }
+    const short = { runId: "run-01JX", configHash: "abc", steps: steps.slice(0, 5) };
+    expect(() => parseStoredPayload("StepsResolved", SCHEMA_VER.StepsResolved, short)).toThrow();
   });
 });
 
@@ -407,23 +325,26 @@ describe("the gate point rename", () => {
  * recorded only as prose inside `evidence`. The step adds an empty array rather
  * than parsing that prose back: `evidence` is untouched and still says what it
  * said, and a severity read out of a string is a claim nobody recorded.
+ *
+ * It is `1 → 2` since `#247` and was `2 → 3`: the rename beneath it is gone
+ * with the log it was written for, and this step moved down rather than out.
  */
 describe("a pass with findings", () => {
-  const v2 = {
-    gate: "proposed",
+  const v1 = {
+    step: "proposed",
     action: "review",
     runId: "run-01JX",
     onSha: "sha-a",
     evidence: "minor packages/actions/src/command.ts:313 — readResult treats every readFile failure as empty",
   };
 
-  it("walks a v2 GatePassed up with an empty findings array and its prose intact", () => {
-    expect(parseStoredPayload("GatePassed", 2, v2)).toEqual({ ...v2, findings: [] });
+  it("walks a v1 StepPassed up with an empty findings array and its prose intact", () => {
+    expect(parseStoredPayload("StepPassed", 1, v1)).toEqual({ ...v1, findings: [] });
   });
 
-  it("leaves a v3 GatePassed and its findings alone", () => {
-    const v3 = {
-      ...v2,
+  it("leaves a v2 StepPassed and its findings alone", () => {
+    const v2 = {
+      ...v1,
       findings: [
         {
           file: "packages/actions/src/command.ts",
@@ -434,11 +355,11 @@ describe("a pass with findings", () => {
         },
       ],
     };
-    expect(parseStoredPayload("GatePassed", 3, v3)).toEqual(v3);
+    expect(parseStoredPayload("StepPassed", 2, v2)).toEqual(v2);
   });
 
-  it("is at v3", () => {
-    expect(SCHEMA_VER.GatePassed).toBe(3);
+  it("is at v2", () => {
+    expect(SCHEMA_VER.StepPassed).toBe(2);
   });
 });
 
@@ -446,7 +367,7 @@ describe("a pass with findings", () => {
  * The first step that removes a field ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)).
  *
  * Most chains add one and say `null` where history is silent. Two go the other
- * way — this one and `GateDidNotFinish` 1 → 2 below (`#234`) — and the reason
+ * way — this one and `StepDidNotFinish` 1 → 2 below (`#234`) — and the reason
  * this is a step rather than nothing at all is that the log holds thousands of
  * `leaseUntilMs` timestamps and **no event is rewritten**. The reader is what
  * stops believing them, and the tests here are the ones a replay of that
@@ -510,7 +431,7 @@ describe("the lease, dropped on read", () => {
  */
 describe("the retry's two fields, dropped on read", () => {
   const stored = {
-    gate: "proposed" as const,
+    step: "proposed" as const,
     action: "review",
     runId: "run-f8dc341e",
     onSha: "b198b57",
@@ -519,19 +440,19 @@ describe("the retry's two fields, dropped on read", () => {
 
   it("drops both fields from a v1 event and touches nothing else", () => {
     const v1 = { ...stored, attempt: 2, retrying: false };
-    expect(parseStoredPayload("GateDidNotFinish", 1, v1)).toEqual(stored);
+    expect(parseStoredPayload("StepDidNotFinish", 1, v1)).toEqual(stored);
   });
 
   it("leaves a v2 event alone", () => {
-    expect(parseStoredPayload("GateDidNotFinish", 2, stored)).toEqual(stored);
+    expect(parseStoredPayload("StepDidNotFinish", 2, stored)).toEqual(stored);
   });
 
   it("is at v2, which is the drop and not 0018's rename", () => {
-    expect(SCHEMA_VER.GateDidNotFinish).toBe(2);
+    expect(SCHEMA_VER.StepDidNotFinish).toBe(2);
     // Nothing ever wrote one of these with the `diff` point — the type is
     // younger than that rename — so a v1 `gate` is already `proposed` and the
     // step must not be the renamer.
-    expect(UPCASTERS.GateDidNotFinish?.[1]?.({ ...stored, gate: "proposed", attempt: 1 })).toEqual(stored);
+    expect(UPCASTERS.StepDidNotFinish?.[1]?.({ ...stored, step: "proposed", attempt: 1 })).toEqual(stored);
   });
 });
 
@@ -583,7 +504,7 @@ describe("a block, widened past the question", () => {
  * nothing re-derived it** (`#234`).
  *
  * The heading and the sentence under the table both carry the chain count, and
- * adding `GateDidNotFinish` moved the heading to *18 chains, 23 steps* and left
+ * adding `StepDidNotFinish` moved the heading to *18 chains, 23 steps* and left
  * the prose reading *seventeen* — which is the exact failure the sentence
  * itself warns about, *a heading that is arithmetic on a number nobody
  * re-derived*, with a green suite under it. A reader who cannot tell which
@@ -600,6 +521,11 @@ describe("doc/reference.md's upcaster counts", () => {
 
   /** The document spells its counts, so the test has to read them that way. */
   const SPELLED: Record<string, number> = {
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
     fifteen: 15,
     sixteen: 16,
     seventeen: 17,
@@ -619,10 +545,10 @@ describe("doc/reference.md's upcaster counts", () => {
   });
 
   it("keeps the prose under the table on the heading's number", async () => {
-    const prose = /of the ([a-z-]+) chains are one row above/.exec(
+    const prose = /of the \*\*([a-z-]+)\*\* chains below is its own row/.exec(
       (await reference()).replace(/\n/g, " "),
     );
-    expect(prose, "doc/reference.md no longer says how many of the chains 0018 moved").not.toBeNull();
+    expect(prose, "doc/reference.md no longer says how many chains the table holds").not.toBeNull();
     expect(
       SPELLED[prose![1]!],
       `doc/reference.md spells "${prose![1]}" and the table has ${chains} chains` +
