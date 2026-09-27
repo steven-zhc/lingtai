@@ -104,7 +104,7 @@ and it is why the list below is shorter than the one a migration needs.**
                  T5c  the citations of the deleted engine, re-pointed  ✓ #260
                  T5d  `build:` and `review:` accept nothing yet        ✓ a417908
                  T5e  `judge:` is declarable at `proposed`             ✓ #274
-                 T5b  013 — the log before the reset       ← moved out, with the reset
+                 T5b  013 — the log before the reset, and the reset       ✓ 2026-09-27
                  T6   the rail draws ten
 
 3   configure    T7   init and add propose plugins for every step
@@ -114,7 +114,9 @@ and it is why the list below is shorter than the one a migration needs.**
 
 —   the vocabulary, alongside:
                  #232 the glossary, and an allowlist that may only shrink  ✓
-                 #233 the allowlist is empty — the epic's last acceptance
+                 #246 the 873 in src/ that needed no reset               ✓
+                 #247 the eight event types, with the reset               ✓
+                 #233 the allowlist is empty — the epic's last acceptance ✓
 
 —   the gate's contents (0060), independent of all of the above:
                  T10  a root vitest config, unit and integration

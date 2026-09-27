@@ -39,7 +39,7 @@ patch.
 | `watch` | Globs against the diff's file list. The migration hold that caught #117, generalised, and `tamper`. |
 | `human` | Waits for a person. Identical event shape; the verdict arrives from the board. |
 
-All four emit `GatePassed` / `GateFailed` / `GateWaived`, all carry `onSha`, all
+All four emit `StepPassed` / `StepFailed` / `StepWaived`, all carry `onSha`, all
 are declared in configuration. Adding a CI check, a second reviewer, a security
 scan — a configuration line, not a code change.
 
@@ -133,7 +133,7 @@ may still be in flight, and which names whichever attempted last while two are
                                                     │                 ▼
                                     Unblocked       │              Gating
                                  ┌──────────────────┘              │    │
-                                 │                     GateFailed  │    │ ApprovalRequested
+                                 │                     StepFailed  │    │ ApprovalRequested
                               Blocked ◀────────────────────────────┘    ▼
                                  ▲                                 Waiting on you
                                  │ IntegrationRefused                    │ ApprovalGranted
@@ -147,7 +147,7 @@ may still be in flight, and which names whichever attempted last while two are
 Every arrow is an event. Every arrow that used to produce silence — the six
 `return 1` paths in `integrate()` — is now `IntegrationRefused` with a typed
 reason: `conflict`, `dirty-base`, `unpushed-base`, `pending-migration`,
-`gate-failed`, `no-commits`, `push-rejected` — and `lane-busy`, which is read
+`verify-failed`, `no-commits`, `push-rejected` — and `lane-busy`, which is read
 and never written since #194 took the merge lane's lock away.
 
 **That diagram spans all three aggregates, and no single reducer produces it.**
@@ -174,7 +174,7 @@ which is the authority. Notable additions over what the old loop could express:
 | `RunContextExhausted` | compaction means the item was scoped too large — a metric |
 | `WorkItemLinked` | connects a filed bug to the merge that caused it |
 | `DispatchRefused` | capability matching said no; never silently downgrade a tier |
-| `GateWaived` | the human escape hatch, recorded |
+| `StepWaived` | the human escape hatch, recorded |
 
 ### Projections
 

@@ -209,7 +209,7 @@ steps:
   proposed:
     - when: findings
       backlog: minor          # at or below this is filed (#137), and buys no round
-    - when: red | gate-failed
+    - when: red | verify-failed
       judge: same-worktree    # built in, spends nothing
     - when: findings
       judge: claude-code      # the one that thinks
@@ -612,7 +612,7 @@ subscribers:                                           findings: 5
     run: node apps/cli/src/notify.ts             proposed:
     env: []                                        - when: findings
   - name: telegram                                   backlog: minor
-    on: [5]                                        - when: red | gate-failed
+    on: [5]                                        - when: red | verify-failed
     run: node packages/telegram/src/cli.ts           judge: same-worktree
     env: [2]                                       - when: findings
 runtime:                                             judge: claude-code

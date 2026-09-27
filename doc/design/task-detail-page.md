@@ -260,11 +260,11 @@ recipe one click further.
 `RECORD_ROWS` stays four (#152).
 
 **Which recipe is the whole of it.** Head's recipe is what the *next* run gets;
-`GatesResolved.configHash` is which one *this* run got, and
+`StepsResolved.configHash` is which one *this* run got, and
 `.lingtai/config.yaml` moves (`2d3353b` took `pnpm test:db` out of `build` the
 day this was written). So the page reads the recipe at the run's `baseSha` and
 shows it only when it hashes to the run's `configHash`. When it cannot prove
-that — a mismatch, a base it cannot read, a stream with no `GatesResolved` — it
+that — a mismatch, a base it cannot read, a stream with no `StepsResolved` — it
 shows head's recipe **under a sentence saying it is head's and why**, never
 bare. Head's recipe that hashes the same is the same document, and is proved.
 A point the log planned nothing at stays `skipped` and grows no command.

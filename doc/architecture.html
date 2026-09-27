@@ -783,12 +783,12 @@
         was supposed to wait for a person. It never ran. Two changes to <code>main</code> merged
         with no approval, five seconds after their build gate passed.</p>
       <p>The point was declared, printed by <code>lingtai add</code>, recorded in
-        <code>GatesResolved</code> and rendered on the board. All of that reads as evidence that it
+        <code>StepsResolved</code> and rendered on the board. All of that reads as evidence that it
         works. <b>Configured and did not run</b> is the failure this system names as its own bug,
         and this is the most expensive instance of it so far.</p>
       <p>The point builds a pipeline like every other now (<code>conduct.ts</code>), and
         <code>gate-audit.ts</code> makes the same comparison for every gating point: an item that
-        landed, whose <code>GatesResolved</code> planned actions at a point, and whose run recorded
+        landed, whose <code>StepsResolved</code> planned actions at a point, and whose run recorded
         no verdict there. <b>That check is the part that generalises</b> — the fix closes one
         instance, the comparison closes the class. The landings from before the fix are still on the
         log, so <code>lingtai doctor</code> still names them, which is the correct behaviour for a
@@ -939,7 +939,7 @@
         plain, and <code>GitHubClient</code>, because the board, the daemon and four commands use
         it. Each is its own ticket, and worth doing only if something asks for it.</p>
       <p><b><code>admit</code> runs nothing.</b> It is one of the ten steps, resolved into
-        <code>GatesResolved</code> and drawn on the board, and no pipeline is built for it. That is
+        <code>StepsResolved</code> and drawn on the board, and no pipeline is built for it. That is
         the same sentence as <code>#58</code>'s, which is why <code>gate-audit</code> includes it
         rather than excepting it.</p>
       <p><b><code>seq</code> is not gapless.</b> A Postgres sequence claims a value when the

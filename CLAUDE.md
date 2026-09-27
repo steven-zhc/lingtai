@@ -154,7 +154,7 @@ it is **a block a person can fill rather than one they are waiting for**:
 `judgePlugin.at` carries `proposed`, and the router takes the one entry whose
 `when:` matches the reason the last step gave — `judgeDeclaredAt` in
 `packages/conductor/src/judge.ts`, handed `recipe.steps.proposed` by
-`conduct.ts`. Declare nothing and nothing changes: `red` and `gate-failed` are
+`conduct.ts`. Declare nothing and nothing changes: `red` and `verify-failed` are
 answered mechanically by `BUILT_IN_FOR` as they always were, and a person is the
 floor under the other three.
 

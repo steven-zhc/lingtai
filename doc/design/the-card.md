@@ -146,7 +146,7 @@ false one is worse than none. All three halves of it:
 
 | | |
 |---|---|
-| the plan named actions here | and **`GatesResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything: a fold with no `GatesResolved` to read accuses nothing |
+| the plan named actions here | and **`StepsResolved` is the plan**, never the recipe being read now — a stream without one is folded against a recipe the run never saw, which cannot accuse it of skipping anything: a fold with no `StepsResolved` to read accuses nothing |
 | the run recorded none | no request, no verdict, no approval, no waiver |
 | **the item landed** | and not merely that it is over. The pipeline stops at the first refusal (`0041 §4`), so a **closed** item's later steps recorded nothing because nothing should have run in them — and `closed` shares the Landed column, which is how the two get confused. `WorkItemLanded` is the anchor and nothing looser is |
 

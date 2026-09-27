@@ -1359,7 +1359,7 @@ so can any gate the run planned and never reported, which is how a step the
 pipeline never reached is answered on the record. A name that is
 neither is refused by listing the gates there are. `--reason` is required and is
 never filled in for you: *recorded, never silent* is the whole of what makes a
-waiver acceptable. It appends the same `GateWaived` `approve --note` does,
+waiver acceptable. It appends the same `StepWaived` `approve --note` does,
 bound to the head it listed the gates on, so a branch that moves in between is
 refused rather than waived unread.
 

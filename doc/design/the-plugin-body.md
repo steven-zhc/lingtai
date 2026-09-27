@@ -63,7 +63,7 @@ refusal is `spec.refuses`, and no plugin may hold that.
 findings, **neither of which is a `StepEnding`** — a review that found a blocker
 and a review that found nothing both end `passed`. `findingsIn`
 (`pass.ts:1346`) reads them off `results` to build the next lap's `recheck`, and
-`GatePassed` and `GateFailed` carry them onto the log (`action.ts:303`).
+`StepPassed` and `StepFailed` carry them onto the log (`action.ts:303`).
 
 A body returning `EndingAt<S>` and nothing else drops both. That is not a
 refactor with a behavioural side effect; it is *an action that ran but whose
@@ -318,7 +318,7 @@ proposed:
     when: red
   - name: a merge whose re-verify went red is the same fix on a moved base
     judge: same-worktree
-    when: gate-failed
+    when: verify-failed
 ```
 
 `conflict`, `needs-input` and `findings` are left undeclared, and that is this

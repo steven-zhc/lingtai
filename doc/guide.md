@@ -229,7 +229,7 @@ that never refuses and a point that never runs look identical from outside, and
 this project has been on the wrong side of that for long enough to write the
 workaround into its own instructions. `lingtai doctor` carries `steps: end ran
 on what landed`, the board's bar has a `never-ran` mark of its own for a step
-that was configured and did not run, and `GatesResolved` is an
+that was configured and did not run, and `StepsResolved` is an
 event rather than a convention so that an unconfigured point renders as
 `skipped` on the board and in `lingtai status` — **never omitted**. A check you
 cannot see is a check you will forget you never had.
@@ -322,7 +322,7 @@ checkable.
 came from, and that attempt holds the whole of it — *"printing the failing gate
 twice is how two copies of one fact come to disagree."* What a failed command
 keeps is 60 lines / 8,000 bytes (`packages/actions/src/command.ts:32-33`), written
-into `GateFailed.evidence`, which is an event payload and therefore never
+into `StepFailed.evidence`, which is an event payload and therefore never
 rewritten.
 
 **4. The run log, if the item has not landed.** `pnpm lingtai attach <runId>`,
