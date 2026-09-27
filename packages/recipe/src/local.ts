@@ -33,7 +33,7 @@ import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { backoffOf, baseOf, excludeOf, kindsOf, limitsFor } from "./settings.ts";
+import { backoffOf, baseDeclaredAt, baseOf, excludeOf, kindsOf, limitsFor } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -440,8 +440,16 @@ export async function resolveLocalRecipe(
     recipeValues[`runtime.budget.${key}`] = String(value);
   }
   const from = originIn(wrote, resolved.preset, path);
+  // **Which spelling answered, where a setting has two** (`#268`). `repo.base`
+  // is the key either way — it is what every reader of this map asks for — and
+  // the *source* is where a person has to go to change it. A row that said the
+  // file while the value came off `admit`'s declaration would send somebody to
+  // edit a line that no longer does anything.
+  const declaredAt = baseDeclaredAt(recipe);
   for (const [key, value] of Object.entries(recipeValues))
-    provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;
+    provenance[key] =
+      `${value}${PROVENANCE_ARROW}${from(key)}` +
+      (key === "repo.base" && declaredAt !== null ? `, at \`admit\`'s "${declaredAt}"` : "");
   return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance };
 }
 

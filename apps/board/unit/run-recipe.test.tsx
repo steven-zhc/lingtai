@@ -524,9 +524,10 @@ describe("what the page may render of an action", () => {
  * builds its actions `as never` because the page is being driven rather than the
  * schema; so the guard is a walk.
  *
- * `refs:` is why: five of the plugins before it refuse at every step, so a
- * missing case for one of those would have been a row nothing could reach, and
- * the habit that grew from that is what this case breaks.
+ * `refs:` is why: the plugins before it refuse at every step, so a missing case
+ * for one of those would have been a row nothing could reach, and the habit
+ * that grew from that is what this case breaks. **`worktree:` is what it was
+ * worth**: `admit` takes one since `#268`, and the row was already written.
  */
 describe("describeAction, over the closed set", () => {
   /** One action per plugin, as a resolved recipe would hold it. */

@@ -63,11 +63,27 @@ import type { Recipe } from "./recipe.ts";
  * something to refuse when the body lands, and never something to silently
  * merge.
  */
-function cutAt(recipe: Recipe): { base: string; submodules: boolean } | null {
+function cutAt(recipe: Recipe): { name: string; worktree: { base: string; submodules: boolean } } | null {
   for (const action of recipe.steps.admit) {
-    if ("worktree" in action) return action.worktree;
+    if ("worktree" in action) return action;
   }
   return null;
+}
+
+/**
+ * **The name of the action the base came from, or `null` for `repo:`** — for a
+ * reading that has to say *which*.
+ *
+ * `lingtai doctor` and `lingtai add` print a `repo.base` row with its source
+ * beside it, and while both spellings exist a row that named the file and not
+ * the step would be true and useless: a person editing `repo:` under a recipe
+ * that declares `admit` would change nothing and be shown a row that had not
+ * moved. That is 0016 §4 — a key silently not applied is the failure, not the
+ * key being wrong — so the one place that knows which spelling answered is
+ * also what says so.
+ */
+export function baseDeclaredAt(recipe: Recipe): string | null {
+  return cutAt(recipe)?.name ?? null;
 }
 
 /** What one agent run at `step` may spend. */
@@ -78,7 +94,7 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits
 
 /** The branch a pass cuts from and lands on. */
 export function baseOf(recipe: Recipe): string {
-  return cutAt(recipe)?.base ?? recipe.repo.base;
+  return cutAt(recipe)?.worktree.base ?? recipe.repo.base;
 }
 
 /**
@@ -92,7 +108,7 @@ export function baseOf(recipe: Recipe): string {
  * which is the disagreement `cutAt` exists not to allow.
  */
 export function submodulesOf(recipe: Recipe): boolean {
-  return cutAt(recipe)?.submodules ?? recipe.repo.submodules;
+  return cutAt(recipe)?.worktree.submodules ?? recipe.repo.submodules;
 }
 
 /**
