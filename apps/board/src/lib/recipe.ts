@@ -508,11 +508,13 @@ export function describeAction(
       const what = a.branch ? "agent/<n> and every agent/<n>-attempt-<k>" : "every agent/<n>-attempt-<k>";
       return { does: `deletes ${what} from origin when it lands`, bound: "runs for effect, and cannot be undone" };
     }
-    // The two the pass calls itself, so no step in the recipe can hold one
-    // today — `whyNoKindAt` refuses both everywhere. A reading with no case
-    // for them would be a `switch` that returns `undefined` the moment the
+    // **And this is the case that was written for a step that could not hold
+    // one, and now does** (`#268`). The comment here said *a reading with no
+    // case for them would be a `switch` that returns `undefined` the moment the
     // ticket after this one wires them up, on a page nobody would think to
-    // re-test; the closed set is read here, so the set is what this answers.
+    // re-test* — `admit` takes a `worktree:` since `#268`, and this row drew it
+    // on the first pass after the restart without anybody touching this file.
+    // `merge:` below is still the other case, on the same footing.
     case "worktree": {
       const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>;
       return {

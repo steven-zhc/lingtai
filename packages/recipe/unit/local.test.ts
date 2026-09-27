@@ -60,6 +60,35 @@ describe("resolveLocalRecipe", () => {
   });
 
   /**
+   * **The row says which spelling answered** (`#268`).
+   *
+   * `base` has two homes while both shapes exist — `repo:` and a `worktree:`
+   * at `admit` — and the `←` half of a provenance row is read as *where to go
+   * and change it* (#218). So a recipe that declares the step gets a row
+   * naming the step: without that, somebody who edited `repo.base` under this
+   * recipe would change nothing, be shown a row that had not moved, and
+   * conclude the tool was reading some other file. The value is the
+   * declaration's, which is what makes the row worth reading at all.
+   */
+  it("says the base came off `admit`, where a recipe declares one there", async () => {
+    const declared = RECIPE.replace(
+      "steps:\n",
+      'steps:\n  admit:\n    - name: cut the branch\n      worktree:\n        base: release\n',
+    );
+    const resolved = await resolveLocalRecipe("app", {
+      home: HOME,
+      signedIn: signed("claude-code"),
+      read: files({ [recipePath("app", HOME)]: declared }),
+    });
+    expect(resolved.provenance?.["repo.base"]).toBe(
+      `release ← ${HOME}/app/recipe.yml, at \`admit\`'s "cut the branch"`,
+    );
+    // And the ref the recipe was read from is the declared one too, because
+    // that is `baseOf` as well.
+    expect(resolved.ref).toBe("release");
+  });
+
+  /**
    * **A schema default is not this file, and provenance may not say it is.**
    * `source.backoff` and every number in `runtime.budget` have one, so the
    * resolved recipe reads `1h` and `attempts 5` whether the file mentions them
