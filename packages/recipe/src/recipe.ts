@@ -1110,10 +1110,10 @@ export function whyNoKindAt(
  * was the only other one with a plugin — so *the kind* was enough to pick a
  * sentence and three branches were written as `kind === …` with `prepared`
  * spelled inside them. Opening `run:` at `build` gave the function a third
- * step and those three branches answered for it, each with a sentence about a
- * step two earlier: `agent:` at `build` was told *nothing has been
- * committed at `prepared`* on a line that said `build`, where the implementing
- * agent's commit is the very thing the step was handed. A refusal that names a
+ * step and those three branches answered for it, each naming a step three
+ * earlier: `agent:` at `build` was told *nothing has been committed at
+ * `prepared`* on a line that said `build`, where the implementing agent's
+ * commit is the very thing the step was handed. A refusal that names a
  * step the operator did not write is worse than no reason, because it is one
  * they will go and check.
  *
@@ -1151,9 +1151,10 @@ function whyThatPair(step: Step, kind: ActionKind): string {
 /**
  * The three that `build` refuses, and **none of them for `prepared`'s reason**.
  *
- * `prepared`'s three all turn on *nothing has been committed*. That is the one
- * sentence which cannot be said here: `implement` returns the commit as its
- * own `head`, and `build` is the next step to run. So each of these says what
+ * `prepared`'s three all turn on there being nothing yet — no diff to read,
+ * no file list to match, a hold that is a release because the item goes back
+ * to the queue unworked. None of that is sayable here: `implement` returns
+ * the commit as its own `head`, and `build` is the next step to run. So each of these says what
  * is actually true at `build` — the step takes one kind of verdict, a command's
  * exit code, and `run:` is the only plugin declared at it — and then where the
  * kind does belong, which is the half an operator can act on.
