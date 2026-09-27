@@ -327,7 +327,7 @@ describe("the judge chooses, and cannot widen anything", () => {
     for (const ceiling of ["rounds", "restarts"] as const) {
       const problems = readFields(judgePlugin, {
         name: "the lines or the approach",
-        judge: "claude-code",
+        judge: "same-worktree",
         when: "findings",
         [ceiling]: 9,
       }).problems!;

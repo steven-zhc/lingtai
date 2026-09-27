@@ -736,12 +736,13 @@ describe("the one `claim` will hold", () => {
 });
 
 /**
- * **The one `proposed` will hold, and the only one of the five with design
- * content** (`#238`, [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ * **The one `proposed` holds** (`#238`, `#274`,
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
  *
- * `judge:` is a name for the decision `onOffer` and `Ceilings` make in
- * `packages/conductor/src/pass.ts`, and like the four above it is read by no
- * step yet. What is different is that two
+ * `judge:` was one of the five names for code the pass called itself, and is the
+ * first of them a step reads: `judgePlugin.at` carries `proposed` since `#274`,
+ * and `judgeDeclaredAt` in `packages/conductor/src/judge.ts` is what reads it.
+ * What is different about it is that two
  * rules have to hold before it can ever be read, and both are in the schema
  * rather than in prose — the other half of each, the set a judge is handed and
  * the refusal of an answer outside it, is
@@ -749,12 +750,10 @@ describe("the one `claim` will hold", () => {
  */
 describe("the one `proposed` will hold", () => {
   /**
-   * **And the one `proposed` will hold** (`#238`,
+   * **And the one `proposed` holds** (`#238`, `#274`,
    * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
    *
-   * `judge:` is a name for the decision `onOffer` and `Ceilings` make in
-   * `packages/conductor/src/pass.ts` and is read by no step either, but it is the one of the five with design content:
-   * two rules make a replaceable judge safe, and both are in the schema rather
+   * Two rules make a replaceable judge safe, and both are in the schema rather
    * than in prose.
    *
    * **One entry per `when:`** — required and undefaulted, so no entry can
@@ -772,22 +771,22 @@ describe("the one `proposed` will hold", () => {
     expect(judgePlugin.declares).toEqual(["name", "judge", "when"]);
 
     expect(
-      judgePlugin.schema.parse({ name: "the approach", judge: "claude-code", when: "findings" }),
-    ).toEqual({ name: "the approach", judge: "claude-code", when: "findings" });
+      judgePlugin.schema.parse({ name: "the approach", judge: "same-worktree", when: "findings" }),
+    ).toEqual({ name: "the approach", judge: "same-worktree", when: "findings" });
 
     // No default: a judge that said nothing about which direction it answers
     // would be the one judge for all five this split exists to prevent.
-    expect(judgePlugin.schema.safeParse({ name: "any", judge: "claude-code" }).success).toBe(false);
+    expect(judgePlugin.schema.safeParse({ name: "any", judge: "same-worktree" }).success).toBe(false);
     // And `when:`'s vocabulary is this step's, not `end`'s: a `landed` judge is
     // an outcome where a reason belongs (0061 §3).
-    expect(judgePlugin.schema.safeParse({ name: "any", judge: "claude-code", when: "landed" }).success).toBe(
+    expect(judgePlugin.schema.safeParse({ name: "any", judge: "same-worktree", when: "landed" }).success).toBe(
       false,
     );
 
     for (const ceiling of ["rounds", "restarts"] as const) {
       const problems = readFields(judgePlugin, {
         name: "the approach",
-        judge: "claude-code",
+        judge: "same-worktree",
         when: "findings",
         [ceiling]: 9,
       }).problems!;
@@ -799,25 +798,36 @@ describe("the one `proposed` will hold", () => {
   });
 
   /**
-   * **A judge the schema accepts is a judge something answers.** The built-ins
-   * are `BUILT_IN` in `packages/conductor/src/judge.ts`, a total record over
-   * this list, so the two lists cannot come apart; an agent judge is a runtime
-   * and nothing else. 0061 §3's example yaml also names `ask-or-assume`, and it
-   * is in neither list because nothing implements it — a name the schema takes
-   * and no code answers is `#61` arriving through the door a replaceable plugin
-   * opens.
+   * **A judge the schema accepts is a judge something answers**, and since `#274`
+   * that sentence costs the runtimes.
+   *
+   * The built-ins are `BUILT_IN` in `packages/conductor/src/judge.ts`, a total
+   * record over `BUILT_IN_JUDGES`, so those two lists cannot come apart. A
+   * runtime judge is **an agent, paid for a judgement**, and nothing dispatches
+   * one: `judgeDeclaredAt` answers a *name* the pass applies, and there is no
+   * `Runtime` and no prompt on that side of the line
+   * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5). While the
+   * plugin served no step the wider enum cost nothing, because every cell was
+   * refused; with `at.proposed` open it would be a cell that resolves, is printed
+   * by `lingtai add`, drawn on the board — and never called. So `claude-code` is
+   * refused here beside `ask-or-assume`, for one reason and not two: **nothing
+   * implements it yet**. `doc/reference.md` §`judge:` says the same to an operator,
+   * and the day the dispatch lands this list grows with it.
    */
-  it("accepts the built-ins that exist and the runtimes, and no invented name", () => {
+  it("accepts the built-ins that exist, and no name nothing answers", () => {
     expect(BUILT_IN_JUDGES).toEqual(["same-worktree"]);
-    for (const name of [...BUILT_IN_JUDGES, ...RuntimeId.options]) {
+    for (const name of BUILT_IN_JUDGES) {
       expect(
         judgePlugin.schema.safeParse({ name: "j", judge: name, when: "red" }).success,
         name,
       ).toBe(true);
     }
-    expect(judgePlugin.schema.safeParse({ name: "j", judge: "ask-or-assume", when: "needs-input" }).success).toBe(
-      false,
-    );
+    for (const unanswered of [...RuntimeId.options, "ask-or-assume"]) {
+      expect(
+        judgePlugin.schema.safeParse({ name: "j", judge: unanswered, when: "needs-input" }).success,
+        unanswered,
+      ).toBe(false);
+    }
   });
 });
 

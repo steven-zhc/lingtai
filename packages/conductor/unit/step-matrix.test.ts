@@ -65,6 +65,12 @@
  * emptied `admit`'s body in one diff, which is the shape a wiring has to take —
  * both halves, or the step runs its plugins *and* its own copy of the work.
  *
+ * **And the other direction is not an exception to it** (`#274`). `judge:` is
+ * accepted at `proposed` now, so the rule it is held to is the one every accepted
+ * cell is held to — *something reads it* — and the reader is not the pipeline:
+ * `judgeDeclaredAt` is, as `resolveEndActions` is `end`'s. `runsAt` below asks
+ * each cell's own consumer for exactly that reason.
+ *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
  * - **runs** — the thing that consumes that point builds a gate for it, with
@@ -91,23 +97,23 @@ import {
   verdictFor,
 } from "@lingtai/actions";
 import { resolveEndActions } from "../src/end-step.ts";
-import { BUILT_IN_FOR } from "../src/judge.ts";
+import { BUILT_IN_FOR, judgeDeclaredAt } from "../src/judge.ts";
 import { NOT_BUILT_YET } from "../src/pass.ts";
 import { decideBacklog } from "../src/backlog.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
  * hold them — **and four of them are actions no resolved recipe can hold**,
- * because `merge:`, `queue:`, `judge:` and `backlog:` are refused at all ten
- * steps. That is the point of writing them: the cell has to be *refused by name*
- * rather than *unrepresentable*, and an action the schema never sees is a column
- * this file would walk with nothing in it.
+ * because `worktree:`, `merge:`, `queue:` and
+ * `backlog:` are refused at all ten steps. That is the point of writing them: the cell has to be
+ * *refused by name* rather than *unrepresentable*, and an action the schema
+ * never sees is a column this file would walk with nothing in it.
  *
- * **`worktree:` was the fifth and is not one any more** (`#268`): the row below
- * is what an operator pastes at `admit`, it resolves, and it runs. Its
- * `submodules: false` is written out because the plugin requires it — a block
- * that named only its base used to take `false` from a schema and override
- * `repo.submodules` in silence.
+ * **`judge:` is legal at exactly one of the ten since `#274`**, and its action is
+ * written with the name the schema takes: `same-worktree`, the one built-in. It
+ * said `claude-code` while every cell was refused, which cost nothing then and
+ * would now walk this column with a value `JudgeName` refuses — the cell would
+ * read as *refused by name* and never test the one that runs.
  */
 const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
@@ -131,7 +137,7 @@ const ACTION: Record<ActionKind, StepAction> = {
       assignee: { login: "steven-zhc", take: "mine" },
     },
   },
-  judge: { name: "the lines or the approach", judge: "claude-code", when: "findings" },
+  judge: { name: "the lines or the approach", judge: "same-worktree", when: "findings" },
   backlog: { name: "the minors", backlog: "minor" },
 };
 
@@ -206,6 +212,22 @@ function runsAt(step: Step, kind: ActionKind): boolean {
       const resolved = resolveEndActions([], [ACTION[kind]], "landed");
       const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? [];
       return named.some((a) => a.name === ACTION[kind].name);
+    }
+    /**
+     * **`judge:`'s consumer is the router, and asking the pipeline for it would
+     * read as a silent drop** (`#274`).
+     *
+     * `actionsFromRecipe` builds no action for a judge — it produces no verdict
+     * and is asked once per arrival rather than once per entry — so the question
+     * *does anything read this cell* has to be put to `judgeDeclaredAt`, exactly
+     * as `end`'s is put to `resolveEndActions` above. Asked at every step, and
+     * false at nine of them because the line below throws there first: the cell
+     * has to be refused *and* unread away from `proposed`.
+     */
+    if (kind === "judge") {
+      actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP);
+      const read = judgeDeclaredAt([ACTION[kind] as StepAction], "findings");
+      return read?.named === ACTION[kind].name;
     }
     return actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP).some(
       (step) => step.name === ACTION[kind].name,
@@ -515,6 +537,13 @@ describe("every step × kind cell runs or refuses", () => {
    * the document's §5 argues from, and a plugin added or a key opened moves them:
    * T5d puts `run` at `build` and `agent` at `review`, and this row is where a
    * reader learns the argument still holds.
+   *
+   * **`#274` is the case §5 wrote about, arrived.** It predicted *`#267` would
+   * make `proposed` five*, and the five are below — four whose function is an
+   * *action's*, called once per declared entry by `runActionPipeline`, and
+   * `judge:`, whose answer is the step's own, read once per arrival. So the
+   * counts moved and the argument did not: `at`'s value still cannot be
+   * `StepBody<S>`, and `notBuiltYet` is still what every key carries.
    */
   it("gives a step one body and several plugins, which is what `at`'s value cannot be one of", () => {
     const serving = new Map(
@@ -526,7 +555,7 @@ describe("every step × kind cell runs or refuses", () => {
       "merge",
       "end",
     ]);
-    expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human"]);
+    expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human", "judge"]);
     expect(serving.get("end")).toEqual(["close", "labels", "refs"]);
     // And exactly one body per step, which is the other half of the sentence.
     expect(Object.keys(NOT_BUILT_YET).sort()).toEqual([...STEPS].sort());
@@ -572,31 +601,56 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
-   * **`proposed`'s judges reduce by `when:`, and the refusal carries the rule
-   * that costs money if it is got wrong** (`#238`).
+   * **`judge:` is declarable at `proposed` and nowhere else, and the refusal at
+   * the other nine carries the rule that costs money if it is got wrong**
+   * (`#238`, `#274`).
    *
-   * The reduction is the same kind of sentence `claim`'s is — one entry per
-   * direction, matched against the reason the last step gave, rather than every
-   * entry having to pass — but the clause worth pinning is the other one: **the
-   * workflow counts and the judge chooses** (0061 §3). A judge that could carry
-   * its own `rounds` could answer *back to `implement`* for ever and nothing
-   * would report a fault, so the refusal a person meets says which side of the
-   * line the ceilings are on, and names the module that computes the set.
+   * It was the same sentence at all ten while the plugin served nothing. Now the
+   * cell at `proposed` is **null** — the whole of what `#274` opens — and the
+   * other nine are a sentence about the *pair*: the router is `proposed`, a
+   * refusal at this step travels there (`ARRIVE_AT_THE_ROUTER`), and a judge here
+   * would be a second router at a step still deciding its own ending.
+   *
+   * The reduction rides along with it, because that is where somebody who wrote
+   * one at the wrong step reads it: one entry per direction, matched against the
+   * reason the last step gave, rather than every entry having to pass. And the
+   * clause worth pinning is the other one — **the workflow counts and the judge
+   * chooses** (0061 §3): a judge that could carry its own `rounds` could answer
+   * *back to `implement`* for ever and nothing would report a fault.
    */
-  it("says how `proposed` will reduce its judges, and who counts", () => {
-    const why = whyNoKindAt("proposed", "judge");
-    expect(why, "`judge:` is no longer refused at proposed").not.toBeNull();
+  it("declares `judge:` at `proposed`, and says at the other nine why it is not theirs", () => {
+    // The one cell this ticket opened: accepted, and something reads it.
+    expect(whyNoKindAt("proposed", "judge")).toBeNull();
+    expect(runsAt("proposed", "judge")).toBe(true);
+
+    const why = whyNoKindAt("merge", "judge");
+    expect(why, "`judge:` is no longer refused at merge").not.toBeNull();
+    expect(why).toContain("`judge:` does not implement `merge`");
+    expect(why).toContain("it serves `proposed`");
+    expect(why).toContain("only step that routes");
+    expect(why).toContain("ARRIVE_AT_THE_ROUTER");
     expect(why).toContain("the workflow counts, the judge chooses");
     expect(why).toContain("one judge per direction");
     expect(why).toContain("refused by name");
     expect(why).toContain("not only on what is left to spend");
-    // Where the decision is made today, and where the set it will be handed
-    // already is — both file references, so they go red if either moves.
-    expect(why).toContain("packages/conductor/src/fix.ts");
-    expect(why).toContain("packages/conductor/src/restart.ts");
-    expect(why).toContain("packages/conductor/src/judge.ts");
-    // A fact about the plugin, so it is the same sentence at all ten steps.
-    for (const step of STEPS) expect(whyNoKindAt(step, "judge")).toBe(why);
+    // The reason is a fact about the pair and not about the step, so every step
+    // some plugin serves gives the same one — under an opening clause that names
+    // the step the operator actually wrote.
+    const reason = why!.slice(why!.indexOf(": ") + 2);
+    for (const step of ["prepared", "build", "review", "merge"] as const) {
+      expect(whyNoKindAt(step, "judge"), step).toBe(
+        `\`judge:\` does not implement \`${step}\` — it serves \`proposed\`: ${reason}`,
+      );
+    }
+    // `end`'s own sentence names `judge:`'s `when:` in order to say what picks
+    // the three effects out, and that is the more useful half there.
+    expect(whyNoKindAt("end", "judge")).toContain("what picks");
+    // And a step nobody implements answers as the step, exactly as it does for
+    // `close:` there: *no plugin implements `claim`* is the first thing wrong,
+    // and a judge is not what would fix it.
+    for (const step of ["claim", "admit", "design", "implement"] as const) {
+      expect(whyNoKindAt(step, "judge"), step).toContain(`no plugin implements \`${step}\``);
+    }
   });
 
   /**

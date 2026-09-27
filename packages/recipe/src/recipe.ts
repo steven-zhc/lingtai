@@ -607,16 +607,31 @@ export const BUILT_IN_JUDGES = ["same-worktree"] as const;
 export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
 
 /**
- * Who decides a direction: a built-in above, or a runtime — an agent, paid for
- * a judgement.
+ * Who decides a direction — **the built-ins, and no runtime yet** (`#274`).
  *
- * One enum rather than a union of two, so the refusal lists every legal name in
- * one sentence, and read off the two lists rather than written a third time.
- * Which of the five directions is worth an agent is the whole of 0061 §3's
- * measurement: `red` and `gate-failed` were seen sixty times between them and
- * are mechanical, `findings` was seen 231 times and is the judgement.
+ * It was `[...BUILT_IN_JUDGES, ...RuntimeId.options]` while the plugin served no
+ * step, where the wider enum cost nothing: every cell was refused, so no recipe
+ * could write any of the names. `at.proposed` is open now, and the two lists stop
+ * being alike — `same-worktree` is a function the router calls
+ * (`judgeDeclaredAt`, `packages/conductor/src/judge.ts`), and `claude-code` is
+ * **an agent, paid for a judgement**, which needs a `Runtime` and a prompt that
+ * nothing on this side of the line has
+ * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5).
+ *
+ * So the runtimes came out rather than resolving into a cell nothing answers:
+ * that is `BUILT_IN_JUDGES`'s own rule applied to the other list — *the enum says
+ * what the code does, and grows when the code does* — and it is refused at the
+ * line it is written, at resolve, before a worktree and before any money, rather
+ * than at an arrival at `proposed` after both are spent.
+ *
+ * **What it costs is the direction 0061 §3 calls the judgement.** `findings` was
+ * seen 231 times in fourteen days and no built-in answers it, so it reaches a
+ * person still; `red` and `gate-failed` were seen sixty times between them and
+ * are mechanical, which is what this enum's one name is for. The dispatch is the
+ * ticket that puts the runtimes back, and `doc/reference.md` §`judge:` says so
+ * where an operator reads it.
  */
-export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options]);
+export const JudgeName = z.enum(BUILT_IN_JUDGES);
 export type JudgeName = z.infer<typeof JudgeName>;
 
 /**
@@ -654,13 +669,30 @@ export type JudgeName = z.infer<typeof JudgeName>;
  */
 export const judgePlugin = definePlugin("judge", {
   fields: {
-    /** A built-in, which spends nothing, or a runtime, which is an agent and a prompt. */
+    /** A built-in, which spends nothing. A runtime is not a name yet (`JudgeName`). */
     judge: JudgeName,
     /** The direction it answers. Required, undefaulted: one entry per `when:`. */
     when: JudgeWhen,
   },
-  /** No step reads it — the pass's own ceilings decide. `CALLED_DIRECTLY.judge` says where. */
-  at: {},
+  /**
+   * **`proposed` since `#274`, and it is the one step that routes** (0058 §3b).
+   *
+   * The key is the whole of what makes it legal there, and the reader is the
+   * router rather than the pipeline: `judgeDeclaredAt`
+   * (`packages/conductor/src/judge.ts`) takes the entry whose `when:` matches the
+   * reason the last step gave, `conduct.ts` hands it `recipe.steps.proposed` at
+   * `ports.judge`, and the pass applies its answer. So a `judge:` here never
+   * becomes an `Action` — `actionsFromRecipe` passes it by for the reason `close:`
+   * at `end` is resolved rather than run — and that is why opening the key is not
+   * `#61`: the cell resolves *and* something calls it.
+   *
+   * **Nowhere else, and the reason is `ARRIVE_AT_THE_ROUTER`** (`pass.ts:913`).
+   * A refusal at `build`, `review` or `merge` *travels* to `proposed` carrying its
+   * reason; the judge is asked once, there, about wherever the pass got to. A
+   * `judge:` declared at the refusing step would be a second router at a step that
+   * has not finished deciding what its own ending is.
+   */
+  at: { proposed: notBuiltYet },
 });
 
 /**
@@ -748,12 +780,11 @@ export const backlogPlugin = definePlugin("backlog", {
  * instead. That is the same two-valued rule a step nothing implements is held
  * to — **naming a thing is not wiring it** — read down the other axis.
  *
- * **It was five until `#268`, and `worktree:` is the one that left.** It
- * declares `admit` above, so the count here shrinks every time one of 0061 §3's
- * names is wired rather than staying the closed set it reads as — `#268` is the
- * precedent, and `CALLED_DIRECTLY` below is the four that are still waiting.
- * The numeral is counted off `PLUGINS` by
- * `packages/conductor/unit/step-matrix.test.ts` rather than remembered.
+ * **It was five until `#274`.** `judge:` was one of them and is the first to
+ * leave: `at: { proposed: notBuiltYet }`, a router that reads the entry whose
+ * `when:` matches, and its `CALLED_DIRECTLY` entry deleted in the same diff —
+ * which is what that rule promised would happen and what makes the other four
+ * a statement about today rather than a permanent shape.
  *
  * The twelfth was `assignee:`, and it is not missing: 0063 §3 makes it a field
  * of `queue:` rather than a plugin beside it, because the two answer one
@@ -920,13 +951,13 @@ const FIRST_YIELDS =
   "reordering the list is how a person changes priority";
 
 /**
- * **What `proposed` will do with the judges it is given**, and the half of it
- * that costs money if it is got wrong.
+ * **Why a `judge:` belongs at `proposed` and nowhere else**, and what `proposed`
+ * does with the ones it is given.
  *
- * `FIRST_YIELDS`'s sibling, and written for the same reason: the reduction is
- * the step's and the step does not do it yet, so the one moment somebody about
- * to wire it meets the rule is this refusal. A `REDUCES_AT` table nothing read
- * would be `#61` one level up.
+ * `FIRST_YIELDS`'s sibling with the tense changed: `proposed` **reads** its
+ * judges since `#274`, so this is no longer a promise about a step that does not
+ * do it yet — it is the sentence somebody who wrote one at the wrong step is
+ * answered with, and the reduction is what they get when they move it.
  *
  * The clause that is not a reduction is the one worth the sentence. **The
  * workflow counts and the judge chooses** (0061 §3) — a judge is handed the set
@@ -935,9 +966,13 @@ const FIRST_YIELDS =
  * rather than obeyed. That is §8's rule once more: *a step refuses a plugin it
  * cannot run* becomes *a step refuses a destination it did not offer*.
  */
-const WORKFLOW_COUNTS =
-  "When a step does read it, `proposed` takes the one entry whose `when:` matches the reason the " +
-  "last step gave — one judge per direction, and only the `findings` one is a judgement worth an " +
+const ONLY_PROPOSED_ROUTES =
+  "`proposed` is the only step that routes (0058 §3b), and a judge is asked there once about " +
+  "wherever the pass got to: a refusal at this step *travels* to it carrying its reason " +
+  "(`ARRIVE_AT_THE_ROUTER` in `packages/conductor/src/pass.ts`), so a `judge:` here would be a " +
+  "second router at a step that has not finished deciding what its own ending is. Written at " +
+  "`proposed` it is read — `proposed` takes the one entry whose `when:` matches the reason the " +
+  "last step gave, one judge per direction, and only the `findings` one is a judgement worth an " +
   "agent — and **the workflow counts, the judge chooses** (0061 §3): the workflow reads `rounds` " +
   "and `restarts`, works out which steps are on offer, and hands the judge that set. The set " +
   "depends on how far the pass got and not only on what is left to spend, so a judge answers " +
@@ -949,7 +984,7 @@ const WORKFLOW_COUNTS =
  * nothing about where the pass goes**, and the distinction is the whole of why
  * it is said here.
  *
- * `FIRST_YIELDS` and `WORKFLOW_COUNTS`'s sibling, written for their reason: the
+ * `FIRST_YIELDS` and `ONLY_PROPOSED_ROUTES`'s sibling, written for their reason: the
  * reduction is the step's and the step does not do it yet, so the refusal is
  * the one place somebody about to wire it meets the rule.
  *
@@ -990,19 +1025,19 @@ const FILES_AND_ROUTES_NOTHING =
  * becomes `steps:` this entry goes and an `at` key arrives on the plugin in
  * the same diff.
  *
- * **It was five until `#268`, and `worktree:` is what left** — `worktreePlugin`
- * declares `admit` now, so the plugin the pass calls itself became the plugin
- * the recipe calls, and the entry went with the key exactly as the paragraph
- * above says it must (0065 §4). It is also the precedent for the other four:
- * `CALLED_DIRECTLY` is a list of defaults that are not plugins yet, and it
- * shrinks by one every time one of them is wired.
+ * **`judge:` was the fifth and is the day that happened** (`#274`). It served no
+ * step while the pass's own ceilings decided every direction; it serves
+ * `proposed`, the router reads the entry whose `when:` matches, and so its entry
+ * here went with the key that opened — the second half of the rule above, paid
+ * out. What was true of it is `ONLY_PROPOSED_ROUTES` now, which is a sentence
+ * about the pair rather than about the plugin, because it is only wrong *at the
+ * other nine steps*.
  *
- * `assignee:` is not on this list and never was one of the entries: it had a row
- * in 0061 §3 and appeared in no other list, which is the case
- * [`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2 wrote the rule
- * about, and 0063 §3 then made it a field of `queue:` rather than a plugin — so
- * the cell it would have had does not exist, and what was true of it is carried
- * by `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
+ * `assignee:` was the sixth and the case that document wrote the rule about —
+ * it had a row in 0061 §3 and appeared in no other list. It is gone from here
+ * because 0063 §3 made it a field of `queue:` rather than a plugin, so the cell
+ * it would have had does not exist; what was true of it is now carried by
+ * `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
   merge:
@@ -1016,14 +1051,6 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
     "file, from `runtime.assignee` on the machine's own file (0046 §3), which is that field's v1 name " +
     "until 0063 §4 inverts the refusal — and `claimWorkItem` in " +
     `\`packages/conductor/src/claim.ts\` is what then takes the one that survives. ${FIRST_YIELDS}`,
-  judge:
-    "the pass decides it itself, from the two ceilings — `onOffer` in " +
-    "`packages/conductor/src/pass.ts` puts another round in the same worktree back on the offer while " +
-    "`runtime.limits.rounds` are left, and a fresh approach while `runtime.limits.restarts` are; the " +
-    "same two questions are `decideFix` in `packages/conductor/src/fix.ts` and `decideRestart` in " +
-    "`packages/conductor/src/restart.ts`, and no " +
-    "recipe can see that decision, name it or replace it. What a step will hand a judge is already a " +
-    `module of its own: \`stepsOnOffer\` in \`packages/conductor/src/judge.ts\`. ${WORKFLOW_COUNTS}`,
   backlog:
     "**the bar is in two places and wiring one of them changes nothing.** `verdictFor` in " +
     "`packages/actions/src/agent-action.ts` decides what **refuses**, off a hard-coded blocker-or-major; " +
@@ -1141,12 +1168,13 @@ export function whyNoKindAt(
  * them rather than the keywords, because *contains the step name* passes on
  * the opening clause alone and let exactly this through.
  *
- * **`admit` joined the same shape on the same terms** (`#268`): opening
- * `worktreePlugin.at.admit` took `run:`, `agent:`, `watch:` and `human:` there
- * out of the *no plugin implements this step* branch, and without a branch of
- * their own all four would have fallen through to a sentence about `prepared`.
- * The remedy that branch carried is the one an operator can act on and is kept
- * word for word: a question asked before anything is spent is `lingtai ask`.
+ * **`judge:` is answered by kind before any step but `end`** (`#274`), and that
+ * is the one inversion of the order above. Every other branch says *what this
+ * step asks of an action*, and a judge is not an action: it is asked once a step
+ * has already decided, so the true reason is the same at `prepared`, `build`,
+ * `review` and `merge` alike — the router is `proposed`, and a refusal here
+ * travels to it. `end` keeps its own sentence because it is the one that names
+ * `judge:`'s `when:` in order to say what picks the three effects out.
  */
 function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "end") {
@@ -1158,6 +1186,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
       "these three out is the kind and never the shape"
     );
   }
+  if (kind === "judge") return ONLY_PROPOSED_ROUTES;
   if (kind === "close" || kind === "labels" || kind === "refs") {
     return "it is an effect rather than a verdict, and only the `end` step carries out effects";
   }
