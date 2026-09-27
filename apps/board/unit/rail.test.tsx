@@ -629,12 +629,13 @@ describe("a card stopped on a person", () => {
    * the live line has.
    *
    * **Qualified `step:action`, which the live line is not and this one has to
-   * be.** `build` and `review` are two of this repository's action names at
-   * `proposed` and, since the vocabulary went to ten, two of the labels on the
-   * bar above — drawn grey and dashed, because no pipeline is constructed at
-   * them. A bare `build refused` sent an operator to the `build` label, which
-   * is empty and always will be. The live line keeps dropping the step because
-   * its own label is lit; nothing is lit under a refusal.
+   * be.** `build` and `review` are action names as well as, since the
+   * vocabulary went to ten, labels on the bar above — so a bare `build refused`
+   * sent an operator to the `build` label, which was empty while this
+   * repository ran its build as an action at `proposed`. It is a step a recipe
+   * may declare at since 2026-09-27, and the pair reads `build:build` there:
+   * redundant, and still never wrong. The live line keeps dropping the step
+   * because its own label is lit; nothing is lit under a refusal.
    */
   it("says what refused it, under the segment that says so", () => {
     const html = blocked();

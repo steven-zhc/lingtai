@@ -43,8 +43,9 @@
  * because every precedent in this file is the other case.
  *
  * That is the property this file is here to hold, and it holds it down both
- * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
- * pipeline has not yet constructed must refuse every kind until it has, and the
+ * axes: **naming a thing is not wiring it.** A step 0058 named that no plugin
+ * serves yet must refuse every kind until one does — `claim`, `design` and
+ * `implement`, since `build` and `review` were taken on 2026-09-27 — and the
  * five plugins that are names for code the conductor calls itself must be
  * refused at every step until the recipe is what tells it to. A `design:` block
  * a recipe could write and nothing would run is `#61` with a new spelling; so

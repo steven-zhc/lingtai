@@ -241,11 +241,12 @@ operator the agent had just finished, under a segment that was red.
 
 **The refusal is the one reading that keeps the step name**, and ten is why.
 The live line drops it because its own label is lit and says which; a refusal
-lights nothing, and `build` and `review` — the two actions this repository
-configures at `proposed` — are now also two labels on the same bar, drawn grey
-and dashed because no pipeline is constructed at them. `build refused` under a
-`build` label that is empty and always will be is an operator hunting a failure
-at a step that cannot have one.
+lights nothing, and `build` and `review` are action names as well as two labels
+on the same bar. `build refused` under a `build` label that was empty — which it
+was, while this repository ran its build as an action at `proposed` — is an
+operator hunting a failure at a step that had none. `build` is a step a recipe
+may declare at since 2026-09-27, so the pair can read `build:build`: redundant,
+and still never wrong.
 
 The fourth is `nothing running`, and it is the one the run's own stream cannot
 name. *In flight between two steps* and *stopped, by something that is not on

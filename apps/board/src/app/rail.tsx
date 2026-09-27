@@ -156,12 +156,15 @@ export function Segs({
  *
  * **`step:action`, and the qualifier is not decoration.** This read `build
  * refused` while the bar had five segments and none of them was called
- * `build`. It has ten now, and `build` and `review` — the two action names this
- * repository configures at `proposed` — are *also* two of the labels, drawn
- * grey and dashed because no pipeline is constructed at them. An operator
- * reading `build refused` looked for the `build` label, found it empty, and
- * either disbelieved the sentence or went hunting a failure at a step that
- * cannot have one. The live line above may still drop the step, because its
+ * `build`. It has ten now, and `build` and `review` are *also* two of the
+ * labels — so an action of either name is a word that appears twice on one bar,
+ * once as a step and once as what ran. An operator reading a bare `build
+ * refused` looked for the `build` label, found it empty — which it was, while
+ * this repository ran its build as an action at `proposed` — and either
+ * disbelieved the sentence or went hunting a failure at a step that had none.
+ * The pair is what closes that, and it still is where the two now agree: a
+ * build declared at `build:` refuses as `build:build`, which is redundant and
+ * never wrong. The live line above may still drop the step, because its
  * own label is lit and eight columns of highlight say which; a refusal lights
  * nothing, so it says the pair.
  */

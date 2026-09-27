@@ -148,9 +148,9 @@ which four produce a verdict, two run for effect, and six are names for code
 the pass calls itself and no step yet reads
 ([reference](reference.md#gate-action--12-keys-of-which-4-produce-a-verdict)).
 The design question a repository actually faces is not which steps exist; it is
-what to hang on them — and today that is four of the ten, because nothing
-constructs a pipeline at the other six. The rest of this section is about those
-four.
+what to hang on them — and today that is six of the ten, because no plugin serves
+`claim`, `admit`, `design` or `implement`. It was four until 2026-09-27, when
+`build` and `review` opened. The rest of this section is about the six.
 
 **A gate runs once per attempt, not once per item.** This is the arithmetic
 nobody does. `wi-lingtai-87` was claimed three times and `wi-lingtai-89` twice

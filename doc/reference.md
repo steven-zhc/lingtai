@@ -481,12 +481,14 @@ rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
-**Six of the ten are empty here and empty everywhere, and that is what the last
-column is for.** Nothing constructs a pipeline for `claim`, `admit`, `design`,
-`implement`, `build` or `review`, so an action declared at one is refused when
-the recipe resolves rather than accepted and skipped (`#61`). Today's build and
-review run as actions at `proposed`, and today's implementing agent is
-dispatched by `conduct.ts` directly. They are all ten steps regardless — the
+**Four of the ten are empty here and empty everywhere, and that is what the last
+column is for.** No plugin serves `claim`, `admit`, `design` or `implement`, so
+an action declared at one is refused when the recipe resolves rather than
+accepted and skipped (`#61`). It was six until 2026-09-27: `build` and `review`
+are served now (`runPlugin` and `agentPlugin`'s own `at` keys), so a build
+declared at `build:` runs there and whether a step is empty is a reading of that
+recipe. Today's implementing agent is still dispatched by `conduct.ts` directly.
+They are all ten steps regardless — the
 closed set is about the places in the pass, not about what is built today — and
 naming them is what lets the log, the recipe and the board say where a pass is.
 Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
