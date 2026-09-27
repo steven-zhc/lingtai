@@ -8,10 +8,12 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { Recipe, editRecipe, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, editRecipe, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
 import { passCeiling } from "../src/filter.ts";
 import {
   type WizardState,
+  CHECKING_STEPS,
+  COMMAND_STEPS,
   applyDraft,
   changesFrom,
   fastLine,
@@ -311,6 +313,114 @@ describe("a check the scan did not find", () => {
 
     expect(after.steps.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
     expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.proposed"]);
+  });
+});
+
+/**
+ * **The checks row is one row and three keys**, since `runPlugin` took `build`
+ * and `agentPlugin` took `review` on 2026-09-27 (`#263`).
+ *
+ * Widening the read alone is the bug this file is here to hold shut, and it is
+ * worse than the one it fixes: the page would read a build declared at
+ * `build:`, write every ticked check to `proposed:`, and move it back — with no
+ * refusal, no diff to read, and the machine's recipe quietly undone by whoever
+ * next pressed Save on an unrelated row. So the read and the write are asserted
+ * together at every step, and a check's `step` is what carries it home.
+ */
+describe("a check lives at the step it was declared at", () => {
+  const REVIEWER = { name: "review", agent: "claude-code", prompt: "read the diff" };
+  const BUILD = { name: "build", run: "pnpm typecheck && pnpm test", timeout: "20m", env: [] };
+
+  const moved = (steps: object) =>
+    Recipe.parse({
+      version: 2,
+      repo: { base: "main" },
+      source: { kinds: ["bug"] },
+      env: { required: [], plantAt: ".env.local" },
+      steps: { build: [], review: [], proposed: [], ...steps },
+      runtime: { agent: "claude-code" },
+    });
+
+  /**
+   * `COMMAND_STEPS` is written out in `wizard-page.ts` because that file is
+   * bundled for the browser and may not import the plugin set. This is what
+   * holds it to the plugin instead of to a memory: a step `runPlugin` opens or
+   * closes fails here rather than in a save that throws in front of an
+   * operator.
+   */
+  it("offers a typed-in command only the steps `run:` actually serves", () => {
+    expect(COMMAND_STEPS).toEqual(CHECKING_STEPS.filter((step) => servesStep(runPlugin, step)));
+    expect(COMMAND_STEPS).not.toContain("review");
+  });
+
+  it("reads a build at `build:` and a reviewer at `review:`, and writes both back where they were", () => {
+    const recipe = moved({ build: [BUILD], review: [REVIEWER] });
+    const state = updateState({ slug: "acme/tool", recipe });
+
+    expect(state.draft.checks.map((c) => [c.step, c.label])).toEqual([
+      ["build", "build — pnpm typecheck && pnpm test"],
+      ["review", "review"],
+    ]);
+    // The read: a recipe that checks at two steps and declares nothing at
+    // `proposed:` is not a recipe that checks nothing.
+    expect(state.noChecksFound).toBe(false);
+    expect(mergeArgument(state)).toBeNull();
+    expect(mergeConsequence(state.draft)).not.toContain("Nothing checks a diff");
+    // And the write: a save that changes no row changes no key.
+    expect(changesFrom(recipe, applyDraft(recipe, state))).toEqual([]);
+  });
+
+  it("unticking the build at `build:` empties that key and leaves `review:` alone", () => {
+    const recipe = moved({ build: [BUILD], review: [REVIEWER] });
+    const state = updateState({ slug: "acme/tool", recipe });
+    const after = Recipe.parse(applyDraft(recipe, play(state, { type: "check", id: state.draft.checks[0]!.id })));
+
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.build"]);
+    expect(after.steps.build).toEqual([]);
+    expect(after.steps.review).toEqual(recipe.steps.review);
+  });
+
+  /**
+   * **The save the first widening would have thrown on.** A managed repository
+   * that has followed the new docs for its reviewer and left the preset's build
+   * where it was gives `checks[0]` at `review`, and sending a typed-in command
+   * there is refused by the schema — *the "check" action is a "run" at the
+   * "review" step*. `editExisting` parses at `finish.ts:114`, so that refusal
+   * is a `finishWizard` catch and a raw Zod dump, and the check cannot be added
+   * at all. `homeStep` can only answer a step `run:` serves.
+   */
+  it("puts a typed-in command at `proposed:` when that is where the commands are, never at `review:`", () => {
+    const recipe = moved({ review: [REVIEWER], proposed: [BUILD] });
+    const state = play(updateState({ slug: "acme/tool", recipe }), { type: "add-check", run: "pnpm lint" });
+    const after = Recipe.parse(applyDraft(recipe, state));
+
+    expect(after.steps.proposed).toEqual([BUILD, { name: "check", run: "pnpm lint", timeout: "20m", env: [] }]);
+    expect(after.steps.review).toEqual(recipe.steps.review);
+    expect(after.steps.build).toEqual([]);
+  });
+
+  it("puts a typed-in command beside the build once the build has moved to `build:`", () => {
+    const recipe = moved({ build: [BUILD], review: [REVIEWER] });
+    const state = play(updateState({ slug: "acme/tool", recipe }), { type: "add-check", run: "pnpm lint" });
+    const after = Recipe.parse(applyDraft(recipe, state));
+
+    expect(after.steps.build).toEqual([BUILD, { name: "check", run: "pnpm lint", timeout: "20m", env: [] }]);
+    expect(after.steps.proposed).toEqual([]);
+  });
+
+  /**
+   * A recipe that has not moved is written exactly as it was — which is what
+   * makes this a widening rather than a change of behaviour, and is the
+   * *behaves exactly as it does today* half of `#263`.
+   */
+  it("still answers `proposed` for a recipe that declares nothing at a checking step", () => {
+    const recipe = moved({});
+    const state = play(updateState({ slug: "acme/tool", recipe }), { type: "add-check", run: "make test" });
+    const after = Recipe.parse(applyDraft(recipe, state));
+
+    expect(updateState({ slug: "acme/tool", recipe }).noChecksFound).toBe(true);
+    expect(after.steps.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
+    expect(after.steps.build).toEqual([]);
   });
 });
 

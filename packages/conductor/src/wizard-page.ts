@@ -128,6 +128,16 @@ export interface Check {
   ticked: boolean;
   /** The gate as the recipe has it, when the check came from a recipe rather than a scan. */
   action?: StepAction;
+  /**
+   * **The step it was read from, so a save puts it back there.** Absent for a
+   * check the page invented — those go to `homeStep`'s answer.
+   *
+   * It is the field that makes the widened read safe. Reading three steps and
+   * writing one would relocate a build declared at `build:` into `proposed:`
+   * the moment somebody pressed Save, undoing the move `#263` is about with no
+   * refusal and no diff to read: worse than the sentence it fixes.
+   */
+  step?: CheckStep;
 }
 
 export interface Limits {
@@ -175,14 +185,6 @@ export const APPROVE_ACTION: StepAction = { name: "approve", human: "Merge this?
 export const CLOSE_ACTION: StepAction = { name: "close the ticket", when: "landed", close: true };
 
 /**
- * The sentence for a chain nothing reads, or null when something does.
- *
- * `wizard.ts`'s `nothingReadsIt` says it on the CLI's last screen; this is the
- * same sentence, kept here so the page can say it while the answer is still
- * being chosen. The page opens no pull request (0046), so on the page is the
- * only place a person reads it there.
- */
-/**
  * **The steps whose declared actions check a diff before it merges**, in the
  * order a pass reaches them.
  *
@@ -198,6 +200,35 @@ export const CLOSE_ACTION: StepAction = { name: "close the ticket", when: "lande
  */
 export const CHECKING_STEPS = ["build", "review", "proposed"] as const;
 
+/** One of them: the step a check on the page was read from, and returns to. */
+export type CheckStep = (typeof CHECKING_STEPS)[number];
+
+/**
+ * **Where a check the page invented may be written**, and the whole of why it
+ * is not `CHECKING_STEPS`.
+ *
+ * `review` checks a diff, so it belongs in the list above — but what checks
+ * there is an `agent:`, and `run:` does not serve `review`. A command typed
+ * into the checks row and sent there builds a recipe `Recipe.parse` refuses by
+ * name (*the "check" action is a "run" at the "review" step*), so
+ * `editExisting` throws where it parses and the check cannot be added at all.
+ * The reading and the writing are two questions, and this is the second one.
+ *
+ * Written out rather than read off `runPlugin.at`: this file is bundled for the
+ * browser and imports nothing from `@lingtai/recipe` but types and its two leaf
+ * modules. `wizard-page.test.ts` reads the plugin's own `at` and fails on a
+ * divergence, so the list is held to it rather than remembered.
+ */
+export const COMMAND_STEPS = ["build", "proposed"] as const;
+
+/**
+ * The sentence for a chain nothing reads, or null when something does.
+ *
+ * `wizard.ts`'s `nothingReadsIt` says it on the CLI's last screen; this is the
+ * same sentence, kept here so the page can say it while the answer is still
+ * being chosen. The page opens no pull request (0046), so on the page is the
+ * only place a person reads it there.
+ */
 export function nothingChecks(base: string): string {
   return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${base}\`.`;
 }
@@ -251,13 +282,14 @@ export function onboardState(input: {
   doubts?: readonly string[];
 }): WizardState {
   const { recipe } = input;
-  const picked = recipe.steps.proposed.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
+  const declared = CHECKING_STEPS.flatMap((step) => recipe.steps[step]);
+  const picked = declared.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
   const ordered = [
     ...picked.flatMap((run) => input.scripts.filter((s) => s.guessed && s.run === run)),
     ...input.scripts.filter((s) => !(s.guessed && picked.includes(s.run))),
   ];
   const checks = ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run) }));
-  const noChecksFound = recipe.steps.proposed.length === 0;
+  const noChecksFound = declared.length === 0;
   return {
     mode: "onboard",
     slug: input.slug,
@@ -288,14 +320,20 @@ export function onboardState(input: {
  */
 export function updateState(input: { slug: string; recipe: Recipe }): WizardState {
   const { recipe } = input;
-  const noChecksFound = recipe.steps.proposed.length === 0;
+  // Every checking step, each check remembering which one it came off — the
+  // row is one list to a reader and three keys in the file, and `applyDraft`
+  // needs the second to put an edited one back where it was.
+  const checks: Check[] = CHECKING_STEPS.flatMap((step) =>
+    recipe.steps[step].map((action, i) => ({
+      id: `${step}.${i}:${action.name}`,
+      label: "run" in action ? `${action.name} — ${action.run}` : action.name,
+      ticked: true,
+      action,
+      step,
+    })),
+  );
+  const noChecksFound = checks.length === 0;
   const unread = noChecksFound && !recipe.steps.merge.some((a) => "human" in a);
-  const checks = recipe.steps.proposed.map((action, i) => ({
-    id: `${i}:${action.name}`,
-    label: "run" in action ? `${action.name} — ${action.run}` : action.name,
-    ticked: true,
-    action,
-  }));
   return {
     mode: "update",
     slug: input.slug,
@@ -475,7 +513,7 @@ export function limitsSentence(limits: Limits): { ok: true; sentence: string } |
   return { ok: true, sentence: passCeiling({ ...limits, wallMs }) };
 }
 
-/** Whether any check is ticked — what `steps.proposed` will run. */
+/** Whether any check is ticked — what the `CHECKING_STEPS` will run between them. */
 function anyCheck(draft: Draft): boolean {
   return draft.checks.some((c) => c.ticked);
 }
@@ -561,12 +599,17 @@ export function finishRefusals(state: WizardState): string[] {
 export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
   const { draft } = state;
   const ticked = draft.checks.filter((c) => c.ticked);
-  const proposed: StepAction[] =
-    state.mode === "update"
-      ? ticked.flatMap((c) => (c.action === undefined ? [] : [c.action]))
-      : ticked.length === 0
-        ? []
-        : [{ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] }];
+  const home = homeStep(recipe);
+  // Emptied first and refilled from the ticks, so unticking the last check at
+  // a step clears that key rather than leaving it as the file had it.
+  const checked: Record<CheckStep, StepAction[]> = { build: [], review: [], proposed: [] };
+  if (state.mode === "update") {
+    for (const check of ticked) {
+      if (check.action !== undefined) checked[check.step ?? home].push(check.action);
+    }
+  } else if (ticked.length > 0) {
+    checked[home].push({ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] });
+  }
 
   const humans = recipe.steps.merge.filter((a) => "human" in a);
   const merge = draft.personApproves
@@ -586,7 +629,7 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
     repo: { ...recipe.repo, base: draft.base.trim(), submodules: draft.submodules },
     source: { ...recipe.source, kinds: [...draft.kinds], exclude: [...draft.exclude] },
     env: { ...recipe.env, required: [...draft.envRequired] },
-    steps: { ...recipe.steps, proposed, merge, end },
+    steps: { ...recipe.steps, ...checked, merge, end },
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
@@ -595,12 +638,36 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
   };
 }
 
+/**
+ * **Where a check the page invented is written**: the first `COMMAND_STEPS`
+ * entry this recipe already runs a command at, and `proposed` when it runs
+ * none — which is where every check went before `build` opened, so a recipe
+ * that has not moved is written exactly as it was.
+ *
+ * **The recipe and not the draft**, so the answer does not move as boxes are
+ * ticked: a person who unticks the build at `build:` and types a replacement
+ * gets it back at `build:`, rather than relocated by the act of retyping it.
+ *
+ * It can only answer a step `run:` serves, which is the whole of why
+ * `COMMAND_STEPS` is a second list. `review` holds a check — an `agent:` — and
+ * a command sent there is refused by the schema, so an answer of `review` here
+ * would be a save that throws instead of a save that writes.
+ */
+function homeStep(recipe: Recipe): CheckStep {
+  return COMMAND_STEPS.find((step) => recipe.steps[step].some((a) => "run" in a)) ?? "proposed";
+}
+
 /** Every path the page can change, narrowest first where a row is several values. */
 const PATHS: readonly (readonly string[])[] = [
   ["repo", "base"],
   ["repo", "submodules"],
   ["source", "kinds"],
   ["source", "exclude"],
+  // The checks row is one row and three keys: a build at `build:`, a cold
+  // reviewer at `review:`, whatever is left at `proposed:`. Each is its own
+  // path so that editing one of them writes one of them.
+  ["steps", "build"],
+  ["steps", "review"],
   ["steps", "proposed"],
   ["env", "required"],
   ["runtime", "agent"],
