@@ -265,6 +265,16 @@ ${clipped}
  * A finding without a failure scenario is **dropped, not repaired**. The rule is
  * in the prompt and enforcing it here is what makes it true rather than
  * aspirational.
+ *
+ * **Where the answer starts is not the first brace in it** (`#272`). It used to
+ * be `indexOf("{")`, which is the *prose's* brace whenever the reviewer quoted
+ * the code — and the more precisely it quoted, the likelier that was. `#262`'s
+ * reviewer verified every citation in the diff, wrote
+ * `` `StepPassed` = `{ending:"passed"}` `` on the way, answered `{"findings":[]}`
+ * and had a clean review read as unreadable; a person waived it. So every brace
+ * is a candidate, tried last first, because the object is what the answer *ends*
+ * in. A truncated answer still parses at no position and is still refused: that
+ * difference is the only thing the refusal below is for.
  */
 export function parseFindings(text: string | null): { findings: ActionFinding[]; parsed: boolean } {
   if (!text) return { findings: [], parsed: false };
@@ -272,8 +282,9 @@ export function parseFindings(text: string | null): { findings: ActionFinding[];
   const candidates: string[] = [];
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
   for (const block of fenced) candidates.push(block.replace(/```(?:json)?/g, "").replace(/```/g, ""));
-  const brace = text.indexOf("{");
-  if (brace >= 0) candidates.push(text.slice(brace));
+  // Last brace first: the outer object's own `{` is reached after the braces
+  // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
+  for (let i = text.length - 1; i >= 0; i--) if (text[i] === "{") candidates.push(text.slice(i));
   candidates.push(text);
 
   for (const candidate of candidates) {

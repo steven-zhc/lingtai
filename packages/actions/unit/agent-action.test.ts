@@ -344,6 +344,69 @@ describe("reading the reviewer's answer", () => {
     });
     expect(parseFindings(null).parsed).toBe(false);
   });
+
+  /**
+   * **`#262`'s answer, prose and all** (`#272`).
+   *
+   * The reviewer verified every citation in the diff — `endingOf`, `StepWork`,
+   * `StepBody`, the package graph, the twelve plugins' `notBuiltYet` values,
+   * that the commit avoided GitHub's closing verbs — and said `{"findings":[]}`.
+   * `indexOf("{")` found the brace in `` `{ending:"passed"}` `` instead, so the
+   * candidate was that fragment followed by a paragraph of English; there was no
+   * fence to fall back to, and a clean review was refused with *the reviewer's
+   * answer was not readable as findings*. A person had to waive it.
+   *
+   * **This punished exactly the behaviour the prompt asks for**: the more
+   * precisely a reviewer quotes the code, the more braces its prose carries.
+   */
+  it("reads an answer whose prose quotes a brace, because it ends in findings", () => {
+    const answer = [
+      "I checked every citation in the diff against the files.",
+      "",
+      '- `endingOf` at `pass.ts:1473` maps each event to what the table says: `StepPassed` = `{ending:"passed"}`,',
+      '  `StepFailed` = `{ending:"failed"}`. Both hold.',
+      "- `StepWork` is at `440` and `StepBody` at `532`, as the diff claims.",
+      "- The package graph holds: nothing new is imported across the seam.",
+      "- All twelve plugins carry a `notBuiltYet` value.",
+      "- The commit body mentions `#231` with no closing verb beside it.",
+      "",
+      "Nothing to report.",
+      "",
+      '{"findings":[]}',
+    ].join("\n");
+
+    const { findings, parsed } = parseFindings(answer);
+
+    // `parsed` is the whole point: an empty list is an answer, and this one was
+    // read as a refusal for want of knowing where it started.
+    expect(parsed).toBe(true);
+    expect(findings).toEqual([]);
+  });
+
+  it("reads a finding under prose that quotes a brace, nested braces and all", () => {
+    // And this is why it is *every* brace rather than `lastIndexOf` alone: the
+    // last brace in a non-empty answer opens the last finding, not the object.
+    const { findings, parsed } = parseFindings(
+      `The ending table says \`{ending:"passed"}\`, which is where this goes wrong.\n\n` +
+        JSON.stringify({ findings: [finding()] }),
+    );
+
+    expect(parsed).toBe(true);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("still refuses an answer truncated mid-object", () => {
+    // `#253`'s attempt 1, where the answer was cut off mid-JSON and was readable
+    // only by luck. Scanning every brace must not turn *cannot be read* into a
+    // green action: no position in a truncated object parses, and that is the
+    // whole of the difference the refusal downstream is for.
+    const { findings, parsed } = parseFindings(
+      `Here is what I found.\n\n{"findings":[{"file":"pass.ts","line":1473,"severity":"major","claim":"the ending is`,
+    );
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+  });
 });
 
 describe("the verdict", () => {
