@@ -833,17 +833,17 @@ export const StepFailed = z.object({
  * `RunFailed.detail` is: it is the evidence the classification refused to read,
  * and 0031 §4 reads a reset time back out of it.
  *
- * Version 1, and it stays there. The **nine** types ADR 0018's rename moved —
- * `StepsResolved`, the four `Gate*` verdicts, `StepWaived` and the three
- * `Approval*` — are at 2 or above because each needed a step from 1; nothing
- * ever wrote one of *these* with the old name, so there is nothing to upcast.
- * `StepDidNotFinish` is younger still and never carried the old name either; it
- * is at 2 for a reason of its own, which is `#234` dropping the two fields
- * 0057 §4's retry wrote and nothing to do with the rename. 0061 §7
- * will spend those nine steps along with the log they walk — **when the reset
- * happens**, which is `the-pipeline.md`'s T5 and has not: a reader lowering
- * those numbers before then makes every stored row of those nine unreadable
- * and blames the writer for it.
+ * Version 1, and it never left. The **nine** types ADR 0018's rename moved —
+ * `StepsResolved`, the four verdicts, `StepWaived` and the three `Approval*` —
+ * sat at 2 or above because each needed a step from 1, and nothing ever wrote
+ * one of *these* with the old name, so this type had nothing to upcast and
+ * nothing to lower. 0061 §7 spent those nine steps along with the log they
+ * walked when the reset landed on 2026-09-27 (`#247`), and all nine came back
+ * to 1 with them; while a single stored row still stood at 1, lowering those
+ * numbers would have made every one of them unreadable and blamed the writer
+ * for it. `StepDidNotFinish` is younger still and never carried the old name
+ * either; it is at 2 for a reason of its own, which is `#234` dropping the two
+ * fields 0057 §4's retry wrote and nothing to do with the rename.
  */
 export const StepNeverRan = z.object({ ...stepBase, detail: z.string() });
 
@@ -1147,12 +1147,13 @@ const Destination = z.union([Step, z.literal("waiting")]);
  * matters most — the one where the change landed — the file is deleted and *why
  * this pass bought a round* was on the log nowhere.
  *
- * **It is not named `Gate…`**, and that is the one thing about it that is not
- * about routing. The retired-name allowlist may only shrink
+ * **It was never named `Gate…`**, and that is the one thing about it that is
+ * not about routing. The retired-name allowlist could only shrink
  * (`doc/reference.md`), so a new type carrying the retired word could not be
- * added at all; the log therefore holds two vocabularies until the reset 0061 §7
- * spends, which is correct rather than untidy — a log records history and this
- * history has two eras.
+ * added at all; for three days the log held two vocabularies, which was correct
+ * rather than untidy — a log records history and that history had two eras.
+ * `#247` ended it with the reset 0061 §7 spends, and this type is now the
+ * spelling every other one has.
  *
  * **`chose` and `to` are separated because they answer different questions.**
  * 0064 §7 keeps the budget with the workflow rather than with the plugin that
