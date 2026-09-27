@@ -21,7 +21,7 @@ import { parse as parseYaml } from "yaml";
 import { applyPreset } from "./presets.ts";
 import type { Plugin } from "./plugin.ts";
 import { PLUGINS, Recipe, discloseSteps } from "./recipe.ts";
-import { baseDeclaredAt, baseOf } from "./settings.ts";
+import { baseOf, whereTheBaseIs } from "./settings.ts";
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = ".lingtai/config.yaml";
@@ -327,11 +327,11 @@ export function baseDivergence(resolved: ResolvedRecipe, slug: string): string |
   // sentence exists to send somebody to one line in one file, and `base` has
   // two spellings while `repo:` is still the fallback — so a refusal that said
   // `repo.base` under a recipe declaring `admit` would name a key whose value
-  // is not the one in this message.
-  const at = baseDeclaredAt(resolved.recipe);
-  const where = at === null ? "repo.base" : `\`admit\`'s "${at}"`;
+  // is not the one in this message. `whereTheBaseIs` and not a phrasing of its
+  // own: `lingtai add` and `lingtai doctor` say the same thing, and two
+  // wordings for one fact is two places to forget when `repo:` goes.
   return (
-    `recipe read from ${resolved.ref} declares ${where}: ${declared} — ` +
+    `recipe read from ${resolved.ref} declares ${whereTheBaseIs(resolved.recipe)}: ${declared} — ` +
     "the rules and the merge target are different branches. " +
     `Re-register: lingtai add ${slug} --base ${declared}`
   );

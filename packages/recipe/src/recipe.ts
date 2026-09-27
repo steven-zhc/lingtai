@@ -997,8 +997,8 @@ const FILES_AND_ROUTES_NOTHING =
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
  *
- * Why these five are declared at all before anything reads them: a plugin no
- * list carries is a plugin no step refuses
+ * Why a plugin is declared at all before anything reads it: a plugin no list
+ * carries is a plugin no step refuses
  * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2). Outside
  * the closed set, `queue:` written under `end:` is *an action naming no
  * plugin* — a true refusal with the wrong subject, and the cell nobody
@@ -1006,16 +1006,19 @@ const FILES_AND_ROUTES_NOTHING =
  * becomes `steps:` this entry goes and an `at` key arrives on the plugin in
  * the same diff.
  *
- * `assignee:` was the sixth and the case that document wrote the rule about —
- * it had a row in 0061 §3 and appeared in no other list. It is gone from here
- * because 0063 §3 made it a field of `queue:` rather than a plugin, so the cell
- * it would have had does not exist; what was true of it is now carried by
- * `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
+ * `assignee:` is the case that document wrote the rule about — it had a row in
+ * 0061 §3 and appeared in no other list, and while this table held five it
+ * would have been a sixth. It is in neither count: 0063 §3 made it a field of
+ * `queue:` rather than a plugin, so the cell it would have had does not exist,
+ * and what was true of it is now carried by `queue:`'s sentence below, which
+ * names `assigneeSkip` beside the other two.
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
   merge:
     "the merge lane runs it itself once everything before it has passed — `integrate` in " +
-    "`packages/repo/src/integrate.ts`, which is handed `repo.base` rather than reading a base of its own",
+    "`packages/repo/src/integrate.ts`, which is handed whatever `baseOf` answered — a `worktree:` " +
+    "at `admit` where a recipe declares one and `repo.base` where it does not — rather than " +
+    "reading a base of its own",
   queue:
     "the queue asks GitHub itself, before a pass exists to have steps — `runnableNow` and " +
     "`considerIssue` in `packages/conductor/src/discover.ts`, from `source.kinds`, `source.exclude` and " +

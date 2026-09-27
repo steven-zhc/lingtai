@@ -88,6 +88,24 @@ export function baseDeclaredAt(recipe: Recipe): string | null {
   return cutAt(recipe)?.name ?? null;
 }
 
+/**
+ * **What to call the place the base is written**, for a message that tells
+ * somebody to go and change it (`#268`).
+ *
+ * `baseDeclaredAt`'s one phrasing, here rather than at each caller, for the
+ * reason the whole file is here: `repo.base` is one of two spellings now and a
+ * message that always said the first would name a line whose value is not the
+ * one it just printed — the operator edits it, nothing changes, and the row
+ * they run to find out why repeats the wrong name back at them. `lingtai add`
+ * says this in three messages and `lingtai doctor` in one, and they say it
+ * from the same function so that the day `repo:` goes there is one sentence to
+ * delete.
+ */
+export function whereTheBaseIs(recipe: Recipe): string {
+  const at = baseDeclaredAt(recipe);
+  return at === null ? "repo.base" : `the "${at}" action at \`admit\``;
+}
+
 /** What one agent run at `step` may spend. */
 export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits"] {
   void step;

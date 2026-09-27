@@ -34,7 +34,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from "@lingtai/domain";
-import { RECIPE_PATH, RecipeMissingError, baseDeclaredAt, baseDivergence, baseOf, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
+import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, whereTheBaseIs, type ReadAtRef, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
 import { signedInHere } from "./projects.ts";
 import { STEPS, type Tier, parsePayload } from "@lingtai/domain";
 import {
@@ -195,20 +195,6 @@ export type Governing =
  * returned as a refusal instead: it is a branch this command chose to follow,
  * and the message has to say that is what happened.
  */
-/**
- * **What to call the place the base is written**, for a message that tells
- * somebody to go and change it (`#268`).
- *
- * `repo.base` is one of two spellings now — a `worktree:` at `admit` is the
- * other, and `baseOf` prefers it — so a refusal that always said `repo.base`
- * would name a line whose value is not the one it just printed. Three messages
- * below say it, and they say it from here.
- */
-function whereTheBaseIs(recipe: Recipe): string {
-  const at = baseDeclaredAt(recipe);
-  return at === null ? "repo.base" : `the "${at}" action at \`admit\``;
-}
-
 export async function governing(
   read: ReadAtRef,
   from: { ref: string; named: boolean },

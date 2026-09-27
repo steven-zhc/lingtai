@@ -101,11 +101,18 @@ import { decideBacklog } from "../src/backlog.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
- * hold them — **and the last five are actions no resolved recipe can hold**,
- * because `worktree:`, `merge:`, `queue:`, `judge:` and
- * `backlog:` are refused at all ten steps. That is the point of writing them: the cell has to be
- * *refused by name* rather than *unrepresentable*, and an action the schema
- * never sees is a column this file would walk with nothing in it.
+ * hold them — **and the last four are actions no resolved recipe can hold**,
+ * because `merge:`, `queue:`, `judge:` and `backlog:` are refused at all ten
+ * steps. That is the point of writing them: the cell has to be *refused by
+ * name* rather than *unrepresentable*, and an action the schema never sees is
+ * a column this file would walk with nothing in it.
+ *
+ * **`worktree:` was the fifth of them and is not one** (`#268`). `admit` is in
+ * its `at`, so a resolved recipe *can* hold it and `whyNoKindAt("admit",
+ * "worktree")` is `null` — which the case below asserts, and which this block
+ * said the opposite of for as long as it went on counting five. It is written
+ * here now for the ordinary reason the first seven are: its column has a cell
+ * that is accepted.
  */
 const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },

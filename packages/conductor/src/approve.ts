@@ -520,6 +520,24 @@ async function requeueHolding(
 }
 
 /**
+ * The two steps whose declarations a waiver may not name.
+ *
+ * Nothing either of them declares ever reports a verdict on the run's stream,
+ * so there is nothing at them for a person to override — and `lingtai waive`
+ * is an override and not a note. `end`'s actions are effects, carried out and
+ * recorded as `EndActionsResolved`; `admit`'s `worktree:` is a setting the
+ * step's own work reads (`#268`), and `actionsFromRecipe` builds no action for
+ * it, because a branch name is not a verdict.
+ *
+ * The board keeps the same two apart from the same comparison and says more
+ * about why — `READ_NOT_RUN` in `apps/board/src/lib/progress.ts`. Two copies
+ * rather than one import, because the board may not depend on the conductor
+ * for a constant; the day either list changes, the other's tests are what say
+ * so.
+ */
+const NOTHING_TO_WAIVE: ReadonlySet<string> = new Set(["admit", "end"]);
+
+/**
  * Waiving a gate: merging past a verdict, on the record.
  *
  * **A waiver is never silent.** It records who and why, and both go on the
@@ -568,13 +586,13 @@ export async function waive(options: {
   // recorded as `EndActionsResolved`; `admit`'s `worktree:` is a setting the
   // step's own work reads (`#268`) — `actionsFromRecipe` builds no action for
   // it, so there is no verdict to override and a waiver naming it would be a
-  // person's word standing in for a gate that was never asked. The board draws
+  // person's word standing in for a point that was never asked. The board draws
   // the same two apart from the same rule, and says why at `READ_NOT_RUN` in
   // `apps/board/src/lib/progress.ts`.
   const plan = events.filter((e) => e.type === "GatesResolved").at(-1);
   const planned = plan
     ? parsePayload("GatesResolved", plan.data).points.flatMap((p) =>
-        p.gate === "end" || p.gate === "admit" ? [] : p.actions.map((a) => `${p.gate}:${a}`),
+        NOTHING_TO_WAIVE.has(p.gate) ? [] : p.actions.map((a) => `${p.gate}:${a}`),
       )
     : [];
   if (!run.steps[options.step] && !planned.includes(options.step)) {

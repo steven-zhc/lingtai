@@ -141,7 +141,9 @@ export const signedInHere: SignedIn = signedInProbe([createClaudeCodeRuntime(), 
  *
  * `base` becomes `ref`: the file has no branch of its own, so the branch this
  * project was registered against stands in, and `baseDivergence` still
- * compares it with the recipe's `repo.base`.
+ * compares it with the base the recipe declares — `baseOf`, which since `#268`
+ * is a `worktree:` at `admit` where there is one and `repo.base` where there
+ * is not.
  *
  * **`GatesResolved` does store a recipe, and it is not that snapshot** (0047
  * §1). It records the recipe a run that is *over* was given, beside the hash it

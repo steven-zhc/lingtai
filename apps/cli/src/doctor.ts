@@ -46,7 +46,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
-import { baseDivergence, baseOf, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
+import { baseDivergence, baseOf, limitsFor, machinePath, recipePath, whereTheBaseIs, type Recipe } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1807,7 +1807,17 @@ export async function recipeGovernsItsBase(
           : {
               name: label,
               status: "ok",
-              detail: `read from ${resolved.ref}, and repo.base says ${baseOf(resolved.recipe)}`,
+              // **`whereTheBaseIs` and not `repo.base` in so many words**
+              // (`#268`). A recipe declaring `worktree: {base: main}` at
+              // `admit` while `repo.base` still reads `develop` passes this
+              // row — `baseDivergence` compares the value `baseOf` returned,
+              // and it agrees. Naming the line that did *not* answer is how an
+              // operator comes to edit `repo.base`, see nothing change, run
+              // doctor to find out why, and be told `repo.base` says the value
+              // they did not write. That is the same defect `baseDivergence`
+              // and `governing`'s three messages were fixed for, on the one
+              // path where nothing is wrong.
+              detail: `read from ${resolved.ref}, and ${whereTheBaseIs(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
             },
       );
     } catch (err) {
