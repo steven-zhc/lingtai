@@ -1213,10 +1213,14 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * Its work is entirely its plugins', which is `prepared`'s argument again: the
      * build is `run:` carrying the commands (0061 §3), the loop has run them by
      * the time this is called, and a second build written here would be the
-     * reimplementation 0061 §3 exists to prevent. No plugin declares itself at
-     * `build` yet, and none does until the conductor runs this file — turning a
-     * declared list into a runnable action is `actionsAt`'s, at the caller, which
-     * is why this body needs no `at` key opened.
+     * reimplementation 0061 §3 exists to prevent.
+     *
+     * **`runPlugin` declares itself at `build` since 2026-09-27** (`a417908`), and
+     * this body did not have to change for it — which was the claim. A step whose
+     * work is entirely its plugins' needs an `at` key and nothing else: `runPass`
+     * resolves `actionsAt(step, actions)` at all ten and runs them through
+     * `runActionPipeline` before any body, and returns the pipeline's ending
+     * without reaching the body when it did not pass.
      */
     build: async (): Promise<StepPassed> => ({ ending: "passed" }),
 

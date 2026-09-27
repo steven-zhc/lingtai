@@ -1150,9 +1150,10 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
   /** 0058 §3b: back to `implement`, in the same worktree, and on through. */
   it("walks the spine again from where the judge sent it", async () => {
     let refusals = 0;
-    // Declared nowhere, because no plugin declares itself at `build` and the
-    // schema refuses an action at a step nothing implements (`#61`). The action
-    // arrives through `actionsAt`, the caller's seam and not the recipe's.
+    // Injected through `actionsAt` rather than declared in the recipe, because
+    // what this exercises is the caller's seam: `runPass` is handed a list and
+    // must run it, whoever built it. A recipe *may* declare a `run:` at `build`
+    // since `a417908`, and the contract here is the same either way.
     const recipe = recipeWith({});
     const { bodies } = watching({ proposed: routerSaying(() => "implement") });
     const actionsAt: PassOptions["actionsAt"] = (step) =>
@@ -1211,9 +1212,10 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
    * spends.*
    */
   it("stops buying rounds once the ceiling is spent", async () => {
-    // Declared nowhere, because no plugin declares itself at `build` and the
-    // schema refuses an action at a step nothing implements (`#61`). The action
-    // arrives through `actionsAt`, the caller's seam and not the recipe's.
+    // Injected through `actionsAt` rather than declared in the recipe, because
+    // what this exercises is the caller's seam: `runPass` is handed a list and
+    // must run it, whoever built it. A recipe *may* declare a `run:` at `build`
+    // since `a417908`, and the contract here is the same either way.
     const recipe = recipeWith({});
     const { bodies } = watching({
       // The replaced judge that would loop for ever if it could.
@@ -1535,9 +1537,9 @@ describe("a body can read what the steps before it said", () => {
    * nothing both end `passed`. `emit` is write-only, so `reached` is the only
    * way the router sees them without reading the log back.
    *
-   * No plugin declares itself at `build` or `review` yet, so the producer here
-   * is `prepared`, the one refusing step that takes a `run:` today. What is
-   * being checked is the contract, and it does not change when those two `at`
+   * The producer here is `prepared`, and it stays `prepared` now that `build`
+   * and `review` are open too (`a417908`): what is being checked is the
+   * contract, and it did not change when those two `at`
    * keys open.
    */
   it("hands a later step the verdicts and findings of the earlier ones", async () => {
