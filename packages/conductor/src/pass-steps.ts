@@ -49,7 +49,7 @@
  *
  * **Two of the ports are not waiting on that at all**, and they are the other
  * half of the same fact: `judge:` at `proposed` and `merge:` at `merge` are two
- * of the five plugins whose `at` is `{}`, and `CALLED_DIRECTLY` is
+ * of the four plugins whose `at` is `{}`, and `CALLED_DIRECTLY` is
  * what their cells are refused with — *they name code the pass calls itself.* So
  * `ports.judge` and `ports.land` are not stand-ins for a plugin that will exist;
  * they are the seam that plugin was always going to be reached through.
@@ -519,11 +519,20 @@ export interface PassPorts {
    * — and the body holds the answer to it, so a judge that answers outside the set
    * is refused by name rather than obeyed (0061 §8).
    *
-   * **It is a port and not a plugin for the reason `queue:` and `worktree:` are.**
-   * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no step
+   * **It is a port and not a plugin for the reason `queue:` is** — and no longer
+   * for the reason `worktree:` was, which is the whole of what `#268` changed
+   * about this paragraph. `judge:` is one of the four plugins whose `at` is `{}`,
+   * so it serves no step
    * at all, and `CALLED_DIRECTLY` is what its ten cells are refused with: the plugin names
    * code the pass calls itself. So `actionsAt` will not build one, and this is
    * where a caller that has resolved the recipe's entries answers instead.
+   *
+   * **`worktree:` is what this row looks like once it is wired**, and it is the
+   * precedent rather than a sibling: the key opened at `admit`, the entry left
+   * `CALLED_DIRECTLY`, `ports.cut` went, and the body emptied — in one diff,
+   * because 0065 §7's *two things must not both run* is what a half-migrated step
+   * costs. The day `judgePlugin` declares `proposed`, `ports.judge` goes the same
+   * way and `#274` is the ticket.
    *
    * **Answering costs money for one of the five and must not for the other four.**
    * A live implementation returns `noJudge` for a direction the recipe declared

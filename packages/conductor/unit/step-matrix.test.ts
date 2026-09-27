@@ -395,7 +395,7 @@ describe("every step × kind cell runs or refuses", () => {
     expect(unimplemented).toEqual(["claim", "design", "implement"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
-      // step's; the five that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
+      // step's; the four that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
       const why = whyNoKindAt(step, "run");
       expect(why, `${step} is no longer unimplemented`).toContain(`no plugin implements \`${step}\``);
     }

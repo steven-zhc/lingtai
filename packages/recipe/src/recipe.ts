@@ -741,12 +741,19 @@ export const backlogPlugin = definePlugin("backlog", {
  * the same set by the same rules — a key, a schema, and an `at` saying which
  * steps it serves.
  *
- * **Five of them serve no step, and they say so themselves** (0064 §4).
- * `worktree:`, `merge:`, `queue:`, `judge:` and `backlog:` are
+ * **Four of them serve no step, and they say so themselves** (0064 §4).
+ * `merge:`, `queue:`, `judge:` and `backlog:` are
  * names for code the pass calls directly today, so their `at` is `{}` and
  * every step refuses them, by a sentence that says where that code is called
  * instead. That is the same two-valued rule a step nothing implements is held
  * to — **naming a thing is not wiring it** — read down the other axis.
+ *
+ * **It was five until `#268`, and `worktree:` is the one that left.** It
+ * declares `admit` above, so the count here shrinks every time one of 0061 §3's
+ * names is wired rather than staying the closed set it reads as — `#268` is the
+ * precedent, and `CALLED_DIRECTLY` below is the four that are still waiting.
+ * The numeral is counted off `PLUGINS` by
+ * `packages/conductor/unit/step-matrix.test.ts` rather than remembered.
  *
  * The twelfth was `assignee:`, and it is not missing: 0063 §3 makes it a field
  * of `queue:` rather than a plugin beside it, because the two answer one

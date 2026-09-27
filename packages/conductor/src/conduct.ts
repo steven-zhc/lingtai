@@ -1424,7 +1424,7 @@ export function runOnce(
       /**
        * `proposed` — **nothing, and `noJudge` is the truthful answer** (0061 §3).
        *
-       * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no
+       * `judge:` is one of the four plugins whose `at` is `{}`, so it serves no
        * step and `whyNoKindAt` refuses the cell at all ten: the recipe *schema* rejects a
        * `judge:` entry, so there is no declared judge for this to resolve. What
        * follows is what the body does with it — `BUILT_IN_FOR` answers `red` and
