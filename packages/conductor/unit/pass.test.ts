@@ -1150,9 +1150,10 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
   /** 0058 §3b: back to `implement`, in the same worktree, and on through. */
   it("walks the spine again from where the judge sent it", async () => {
     let refusals = 0;
-    // Declared nowhere, because no plugin declares itself at `build` and the
-    // schema refuses an action at a step nothing implements (`#61`). The action
-    // arrives through `actionsAt`, the caller's seam and not the recipe's.
+    // Declared nowhere, though `#263` made a `run:` at `build` legal: the
+    // action arrives through `actionsAt`, the caller's seam, because what this
+    // asserts is the loop and not the resolve — an `Action` here is a canned
+    // verdict rather than a command anything spawns.
     const recipe = recipeWith({});
     const { bodies } = watching({ proposed: routerSaying(() => "implement") });
     const actionsAt: PassOptions["actionsAt"] = (step) =>
@@ -1211,9 +1212,10 @@ describe("a route back into the spine resumes there, and the loop is bounded", (
    * spends.*
    */
   it("stops buying rounds once the ceiling is spent", async () => {
-    // Declared nowhere, because no plugin declares itself at `build` and the
-    // schema refuses an action at a step nothing implements (`#61`). The action
-    // arrives through `actionsAt`, the caller's seam and not the recipe's.
+    // Declared nowhere, though `#263` made a `run:` at `build` legal: the
+    // action arrives through `actionsAt`, the caller's seam, because what this
+    // asserts is the loop and not the resolve — an `Action` here is a canned
+    // verdict rather than a command anything spawns.
     const recipe = recipeWith({});
     const { bodies } = watching({
       // The replaced judge that would loop for ever if it could.
@@ -1535,10 +1537,10 @@ describe("a body can read what the steps before it said", () => {
    * nothing both end `passed`. `emit` is write-only, so `reached` is the only
    * way the router sees them without reading the log back.
    *
-   * No plugin declares itself at `build` or `review` yet, so the producer here
-   * is `prepared`, the one refusing step that takes a `run:` today. What is
-   * being checked is the contract, and it does not change when those two `at`
-   * keys open.
+   * The producer here is `prepared`, and it stays `prepared` now that `#263`
+   * has opened `build` to a `run:`: what is being checked is the contract, and
+   * it did not change when that `at` key opened — nor will it when `review`'s
+   * does.
    */
   it("hands a later step the verdicts and findings of the earlier ones", async () => {
     const finding: ActionFinding = {
