@@ -46,6 +46,11 @@ export type FastRowId =
   | "repo.submodules"
   | "source.kinds"
   | "source.exclude"
+  /**
+   * The checks row, which is every `CHECKING_STEPS` and not `proposed` alone
+   * (#263). The id is where they all used to live, and is left as it is because
+   * it names a row on a page rather than a key in a recipe.
+   */
   | "steps.proposed"
   | "env.required"
   | "runtime.agent"
@@ -126,6 +131,13 @@ export interface Check {
   /** What is shown: the command, or the gate's name. */
   label: string;
   ticked: boolean;
+  /**
+   * **Which step it came from, and the step it goes back to.** The row reads
+   * every `CHECKING_STEPS` as one list, so without this a check read from
+   * `build:` would be written back to `proposed:` by the next save — the move
+   * #263 made, undone by opening the page.
+   */
+  step: CheckingStep;
   /** The gate as the recipe has it, when the check came from a recipe rather than a scan. */
   action?: StepAction;
 }
@@ -175,14 +187,6 @@ export const APPROVE_ACTION: StepAction = { name: "approve", human: "Merge this?
 export const CLOSE_ACTION: StepAction = { name: "close the ticket", when: "landed", close: true };
 
 /**
- * The sentence for a chain nothing reads, or null when something does.
- *
- * `wizard.ts`'s `nothingReadsIt` says it on the CLI's last screen; this is the
- * same sentence, kept here so the page can say it while the answer is still
- * being chosen. The page opens no pull request (0046), so on the page is the
- * only place a person reads it there.
- */
-/**
  * **The steps whose declared actions check a diff before it merges**, in the
  * order a pass reaches them.
  *
@@ -193,13 +197,63 @@ export const CLOSE_ACTION: StepAction = { name: "close the ticket", when: "lande
  * `build:`, and offered the person-approves remedy `wizard.ts` calls out as
  * undoing the move. A second copy of the question is a second answer to it.
  *
+ * **The read and the write moved together** (#263), and they had to: the checks
+ * row is editable, so a page that read three steps and saved one would have
+ * relocated a build out of `build:` and into `proposed:` on the first save —
+ * quietly undoing the move instead of merely lying about it. `Check.step` is
+ * what carries each one home.
+ *
  * `merge` is deliberately not here: its actions run *after* the verdicts this
  * asks about, and `nothingReadsIt` reads it separately for that reason.
  */
 export const CHECKING_STEPS = ["build", "review", "proposed"] as const;
 
+export type CheckingStep = (typeof CHECKING_STEPS)[number];
+
+/**
+ * The sentence for a chain nothing reads, or null when something does.
+ *
+ * `wizard.ts`'s `nothingReadsIt` says it on the CLI's last screen; this is the
+ * same sentence, kept here so the page can say it while the answer is still
+ * being chosen. The page opens no pull request (0046), so on the page is the
+ * only place a person reads it there.
+ */
 export function nothingChecks(base: string): string {
   return `Nothing checks a diff before it merges. Every ticket goes from an agent straight into \`${base}\`.`;
+}
+
+/**
+ * The checks the recipe declares, across every `CHECKING_STEPS`, each
+ * remembering the step it came from.
+ *
+ * **The order is `CHECKING_STEPS`'s, which is the order a pass reaches them**,
+ * so the row reads the way the pass runs — a build, then the reviewer that gets
+ * its diff, then whatever `proposed:` still holds.
+ */
+function checksIn(recipe: Recipe): Check[] {
+  return CHECKING_STEPS.flatMap((step) =>
+    recipe.steps[step].map((action, i) => ({
+      id: `${step}:${i}:${action.name}`,
+      label: "run" in action ? `${action.name} — ${action.run}` : action.name,
+      ticked: true,
+      step,
+      action,
+    })),
+  );
+}
+
+/**
+ * Where a check with no step of its own belongs: **where this recipe's checks
+ * already are**, and `proposed` when it has none.
+ *
+ * A command typed into the row joins the step the others are at rather than
+ * starting a second half of the build somewhere else. A recipe that checks
+ * nothing yet gets `proposed`, which is where the preset and `proposeRecipe`
+ * still put a build — so a repository onboarding today is written exactly as it
+ * is written now.
+ */
+function homeStep(checks: readonly Check[]): CheckingStep {
+  return checks[0]?.step ?? "proposed";
 }
 
 /**
@@ -251,13 +305,15 @@ export function onboardState(input: {
   doubts?: readonly string[];
 }): WizardState {
   const { recipe } = input;
-  const picked = recipe.steps.proposed.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
+  const declared = checksIn(recipe);
+  const step = homeStep(declared);
+  const picked = declared.flatMap((c) => (c.action !== undefined && "run" in c.action ? c.action.run.split(" && ") : []));
   const ordered = [
     ...picked.flatMap((run) => input.scripts.filter((s) => s.guessed && s.run === run)),
     ...input.scripts.filter((s) => !(s.guessed && picked.includes(s.run))),
   ];
-  const checks = ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run) }));
-  const noChecksFound = recipe.steps.proposed.length === 0;
+  const checks = ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run), step }));
+  const noChecksFound = declared.length === 0;
   return {
     mode: "onboard",
     slug: input.slug,
@@ -288,14 +344,9 @@ export function onboardState(input: {
  */
 export function updateState(input: { slug: string; recipe: Recipe }): WizardState {
   const { recipe } = input;
-  const noChecksFound = recipe.steps.proposed.length === 0;
+  const checks = checksIn(recipe);
+  const noChecksFound = checks.length === 0;
   const unread = noChecksFound && !recipe.steps.merge.some((a) => "human" in a);
-  const checks = recipe.steps.proposed.map((action, i) => ({
-    id: `${i}:${action.name}`,
-    label: "run" in action ? `${action.name} — ${action.run}` : action.name,
-    ticked: true,
-    action,
-  }));
   return {
     mode: "update",
     slug: input.slug,
@@ -403,10 +454,11 @@ export function wizardReducer(state: WizardState, move: WizardMove): WizardState
       if (draft.checks.some((c) => c.id === id)) {
         return withChecks(state, draft.checks.map((c) => (c.id === id ? { ...c, ticked: true } : c)));
       }
+      const step = homeStep(draft.checks);
       const check: Check =
         state.mode === "update"
-          ? { id, label: `check — ${run}`, ticked: true, action: { name: "check", run, timeout: "20m", env: [] } }
-          : { id, label: run, ticked: true };
+          ? { id, label: `check — ${run}`, ticked: true, step, action: { name: "check", run, timeout: "20m", env: [] } }
+          : { id, label: run, ticked: true, step };
       return withChecks(state, [...draft.checks, check]);
     }
     case "env":
@@ -475,7 +527,12 @@ export function limitsSentence(limits: Limits): { ok: true; sentence: string } |
   return { ok: true, sentence: passCeiling({ ...limits, wallMs }) };
 }
 
-/** Whether any check is ticked — what `steps.proposed` will run. */
+/**
+ * Whether any check is ticked — what the `CHECKING_STEPS` will run between them.
+ *
+ * **It reads the ticks and not one step**, which is the whole of why the page
+ * stopped saying *nothing checks a diff* over a full build at `build:`.
+ */
 function anyCheck(draft: Draft): boolean {
   return draft.checks.some((c) => c.ticked);
 }
@@ -557,16 +614,28 @@ export function finishRefusals(state: WizardState): string[] {
  *
  * Only the rows the page shows are set; everything else — presets, admit and
  * prepared gates, a merge `watch`, the prompt — comes through as it was.
+ *
+ * **A check goes back to the step it came from** (#263). The checks row is one
+ * list over every `CHECKING_STEPS`, so a save that wrote them all to `proposed`
+ * would move a build out of `build:` the first time somebody opened the page —
+ * worse than the false sentence widening the *read* alone was there to fix. A
+ * step no check came from is left exactly as the recipe had it, which is what
+ * keeps this a no-op for a recipe that declares nothing at `build`.
  */
 export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
   const { draft } = state;
-  const ticked = draft.checks.filter((c) => c.ticked);
-  const proposed: StepAction[] =
-    state.mode === "update"
-      ? ticked.flatMap((c) => (c.action === undefined ? [] : [c.action]))
-      : ticked.length === 0
-        ? []
-        : [{ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] }];
+  const checked: Partial<Record<CheckingStep, StepAction[]>> = {};
+  for (const step of CHECKING_STEPS) {
+    const mine = draft.checks.filter((c) => c.step === step);
+    if (mine.length === 0) continue;
+    const ticked = mine.filter((c) => c.ticked);
+    checked[step] =
+      state.mode === "update"
+        ? ticked.flatMap((c) => (c.action === undefined ? [] : [c.action]))
+        : ticked.length === 0
+          ? []
+          : [{ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] }];
+  }
 
   const humans = recipe.steps.merge.filter((a) => "human" in a);
   const merge = draft.personApproves
@@ -586,7 +655,7 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
     repo: { ...recipe.repo, base: draft.base.trim(), submodules: draft.submodules },
     source: { ...recipe.source, kinds: [...draft.kinds], exclude: [...draft.exclude] },
     env: { ...recipe.env, required: [...draft.envRequired] },
-    steps: { ...recipe.steps, proposed, merge, end },
+    steps: { ...recipe.steps, ...checked, merge, end },
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
@@ -595,12 +664,21 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
   };
 }
 
-/** Every path the page can change, narrowest first where a row is several values. */
+/**
+ * Every path the page can change, narrowest first where a row is several values.
+ *
+ * **Three of them for the checks row**, in `CHECKING_STEPS` order: it is one row
+ * and up to three steps, and a change is reported against the step it happened
+ * at, so unticking the cold reviewer at `review:` says `steps.review` and leaves
+ * the build's line alone.
+ */
 const PATHS: readonly (readonly string[])[] = [
   ["repo", "base"],
   ["repo", "submodules"],
   ["source", "kinds"],
   ["source", "exclude"],
+  ["steps", "build"],
+  ["steps", "review"],
   ["steps", "proposed"],
   ["env", "required"],
   ["runtime", "agent"],

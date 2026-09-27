@@ -288,7 +288,9 @@ describe("a check the scan did not find", () => {
     const state = onboardState({ slug: "acme/tool", recipe: scanned([]), scripts: [], labels: [] });
     const added = play(state, { type: "add-check", run: "cargo test" });
 
-    expect(added.draft.checks).toEqual([{ id: "cargo test", label: "cargo test", ticked: true }]);
+    // `proposed`, because this recipe declares no check anywhere for it to join
+    // — which is what keeps a repository onboarding today written as it is now.
+    expect(added.draft.checks).toEqual([{ id: "cargo test", label: "cargo test", ticked: true, step: "proposed" }]);
     expect(mergeArgument(added)).toBeNull();
     expect(applyDraft(scanned([]), added).steps.proposed).toEqual([
       { name: "build", run: "cargo test", timeout: "20m", env: [] },
@@ -366,6 +368,96 @@ describe("an existing recipe", () => {
 
     expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.proposed"]);
     expect(after.steps.proposed).toEqual(recipe.steps.proposed.slice(1));
+  });
+});
+
+/**
+ * **A recipe whose build has moved to `build:`** — the shape
+ * `~/.lingtai/lingtai/recipe.yml` has had since `a417908`, and the one this
+ * page used to be blind to (#263).
+ *
+ * Two claims, and the second is the one with teeth. The page must not say
+ * *nothing checks a diff* over a full build; and a **save must leave the build
+ * where it is**, because the row is editable and a write that went to `proposed`
+ * would undo the move the first time somebody opened the page — a worse bug
+ * than the false sentence.
+ */
+describe("a recipe that checks at `build` and `review`", () => {
+  const moved =
+    "version: 2\n" +
+    "repo:\n  base: main\n" +
+    "source:\n  kinds: [bug]\n" +
+    "env:\n  plantAt: .env.local\n" +
+    "steps:\n" +
+    "  build:\n" +
+    "    - name: build\n      run: pnpm typecheck && pnpm test\n      timeout: 15m\n      env: []\n" +
+    "  review:\n" +
+    "    - name: review\n      agent: claude-code\n      prompt: read the diff\n" +
+    "  proposed: []\n" +
+    "  merge: []\n" +
+    "runtime:\n  agent: claude-code\n";
+
+  const loaded = async () => {
+    const { recipe } = await resolveRecipe(async () => moved, "main");
+    return { recipe, state: updateState({ slug: "acme/shop", recipe }) };
+  };
+
+  it("offers both as checks, and says nothing about nothing checking", async () => {
+    const { state } = await loaded();
+
+    expect(state.noChecksFound).toBe(false);
+    expect(state.draft.checks.map((c) => [c.step, c.label, c.ticked])).toEqual([
+      ["build", "build — pnpm typecheck && pnpm test", true],
+      ["review", "review", true],
+    ]);
+    // The merge question is settled, not reopened: `merge: []` is an answer
+    // here, because something does check the diff.
+    expect(openDecision(state)).toBeNull();
+    expect(mergeArgument(state)).toBeNull();
+    expect(mergeConsequence(state.draft)).toBe("A diff lands in `main` when the checks pass, and nobody reads it first.");
+    expect(fastLine(state.draft, "steps.proposed")).toBe("build — pnpm typecheck && pnpm test && review");
+  });
+
+  it("a save moves nothing, and an unticked check goes back to its own step", async () => {
+    const { recipe, state } = await loaded();
+    expect(changesFrom(recipe, applyDraft(recipe, state))).toEqual([]);
+
+    const reviewer = state.draft.checks[1]!;
+    const after = applyDraft(recipe, play(state, { type: "check", id: reviewer.id }));
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.review"]);
+    expect(after.steps.build).toEqual(recipe.steps.build);
+    expect(after.steps.proposed).toEqual([]);
+  });
+
+  it("a command typed in joins the build rather than starting a second one at `proposed`", async () => {
+    const { recipe, state } = await loaded();
+    const after = applyDraft(recipe, play(state, { type: "add-check", run: "pnpm lint" }));
+
+    expect(changesFrom(recipe, after).map((c) => c.path.join("."))).toEqual(["steps.build"]);
+    expect(after.steps.build).toEqual([
+      ...recipe.steps.build,
+      { name: "check", run: "pnpm lint", timeout: "20m", env: [] },
+    ]);
+    expect(after.steps.proposed).toEqual([]);
+  });
+
+  it("unticking every check is what starts the argument, across all three steps", async () => {
+    const { recipe, state } = await loaded();
+    const off = play(
+      state,
+      { type: "check", id: state.draft.checks[0]!.id },
+      { type: "check", id: state.draft.checks[1]!.id },
+    );
+
+    expect(mergeArgument(off)).toContain("Nothing checks a diff before it merges.");
+    // And the page argues rather than letting it through: the merge answer it
+    // loaded as settled is unsettled again.
+    expect(openDecision(off)).toBe("steps.merge");
+    expect(off.draft.personApproves).toBe(true);
+
+    const after = applyDraft(recipe, off);
+    expect(after.steps.build).toEqual([]);
+    expect(after.steps.review).toEqual([]);
   });
 });
 
