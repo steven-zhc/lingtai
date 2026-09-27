@@ -1,6 +1,6 @@
 # 0065 — The default at a step is a plugin, and an unconfigured step runs it
 
-**Status** proposed · **Date** 2026-09-27 · **Changes**
+**Status** accepted · **Date** 2026-09-27 · **Changes**
 [0061](0061-the-recipe-is-the-pipeline.md) §5's *what an omitted step resolves
 to* · **Makes load-bearing** [0064](0064-a-plugin-declares-the-steps-it-implements.md) §5's
 *absent is not empty*
