@@ -139,34 +139,34 @@ about the declared one, which is how #58 stayed hidden for four days.
 So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
-**And since #256 the recipe's own `proposed:` is the wrong home for either of
-them — and the right home refuses them, so do not move them yet.** The conductor
-runs the ten steps now, so `proposed` is the router and not the gate: a step whose
-own plugins refused has nothing to route (`ARRIVE_AT_THE_ROUTER` does not include
-it), and a red `pnpm test` declared there stops the pass for a person with **no
-fix round bought**, where the five gate points bought one. The build belongs at
-`build:` and the cold reviewer at `review:` — and **a `recipe.yml` edited that way
-stops every pass before it claims anything.** **No plugin declares itself at
-`build` or at `review`** — since #261 that is each plugin's own `at` in
-`packages/recipe/src/recipe.ts` and not a table beside the schema (0064 §4) —
-so `resolveRecipe` refuses a `run:` at `build` and an `agent:` at `review` by
-name and `conduct.ts` returns `stage: "recipe"` for every ticket — a daemon
-restarted onto it takes nothing at all until somebody puts the two lines back.
+**The build is at `build:` and the cold reviewer at `review:` since 2026-09-27
+(`a417908`, T5d), and `proposed:` is `[]` on purpose.** They shared `proposed:`
+because it was the only step a `run:` or an `agent:` could legally be declared
+at — never a judgement that they belong together. Since #256 `proposed` is the
+router and not the gate, and a step whose own plugins refused has nothing to
+route (`ARRIVE_AT_THE_ROUTER` does not include it): a red `pnpm test` declared
+there stopped the pass for a person with **no fix round bought**, where the five
+gate points bought one. At `build:` it refuses — `build` is one of
+`REFUSING_STEPS` — and buys the round again.
 
-The refusal's own reason is what is left to fix rather than the recipe: it says
-*no plugin implements `build`*, and what makes that worth fixing is that since
-#256 nothing else stands in the way —
-`runPass` resolves `actionsAt(step, actions)` at all ten steps, so the only thing
-standing between a declared build and a `build` step that runs it is two keys
-on `runPlugin` and `agentPlugin`. Opening them is
-[T5d](doc/design/the-pipeline.md), and until it lands
-`proposed:` is where the build and the reviewer have to stay and the first red
-build of the night is a person's to answer.
+`proposed: []` is written out rather than left absent (0064 §5): it is empty
+because it is **waiting for a judge**, and #274 is what fills it. Until then a
+refused review arrives at `proposed` as a *routing* arrival with no judge to
+read it, so the round is still unbought for a reviewer's findings — what the
+move fixed is that they arrive as findings rather than as `proposed` refusing on
+its own behalf.
+
+Both are the plugins' own `at` in `packages/recipe/src/recipe.ts`, which is
+where legality lives since #261 (0064 §4), and `conductor/unit/step-matrix.test.ts`
+walks every step × kind cell. A recipe that moves them somewhere a plugin does
+not serve is refused by name when it resolves and `conduct.ts` answers
+`stage: "recipe"` for every ticket, so a daemon restarted onto one takes nothing
+at all — the refusal says which step the plugin does serve.
 
 **There is no exception, and `tamper` is not one.** What stands between an agent
-and `main` here is `proposed` — the build and the cold reviewer — and neither is
-a person. `merge: []` means nothing holds at the merge point; `proposed` holds
-nothing for a *person* either.
+and `main` here is `build` and `review` — the build and the cold reviewer — and
+neither is a person. `merge: []` means nothing holds at the merge point; neither
+of those two holds anything for a *person* either.
 
 `tamper` (#31) is built, tested, and **has lost its subject**: since #180 the
 recipe is `~/.lingtai/<project>/recipe.yml`, outside every worktree, so there is
