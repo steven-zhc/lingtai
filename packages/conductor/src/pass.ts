@@ -713,10 +713,11 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
 /**
  * What `proposed`'s own visit is judging: nothing refused.
  *
- * Named because two things ask `onOffer` about that visit — the offer it is
- * handed, and `refusedBy` asking what it would have offered with something to
- * spend — and an object literal written twice is two chances for them to disagree
- * about what a way-through arrival is.
+ * Named because `onOffer` takes an ending and the way-through visit has not
+ * reached one: `runPass` asks it what would be on offer *if nothing refused*
+ * before the body runs, then asks again with the ending the body returned. A
+ * bare `{ ending: "passed" }` at the first of those two calls would not say
+ * which of the two questions it is asking.
  */
 const PASSED_THROUGH: StepPassed = { ending: "passed" };
 
@@ -1473,8 +1474,10 @@ async function runStep(
       actions,
       refuses: spec.refuses,
       reached,
-      // `StepWork<Step>`'s three conditional fields distribute to
-      // `X | null` and `readonly Destination[]`, so none of them needs a cast.
+      // `StepWork<Step>`'s three conditional fields distribute over the whole
+      // union, so each widens to both of its branches — `StepReached | null`,
+      // `Offer | NoOffer`, `TerminalOutcome | null` — and `Reaching` carries a
+      // field assignable to each, so none of them needs a cast.
       arriving: reaching.arriving,
       offering: reaching.offering,
       outcome: reaching.outcome,

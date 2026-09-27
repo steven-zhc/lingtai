@@ -244,10 +244,21 @@ at all.
 
     pnpm lingtai restart "picking up the judge at proposed"
 
-**`lingtai` — what the default already does, now said out loud.** Both entries
-are the mechanical directions, and `BUILT_IN_FOR` answers both identically today,
-so pasting this changes no behaviour. That is the point: it is the first version
-of these two that a person can *edit*.
+**Neither block below can be pasted today, and the restart is not what is
+missing.** `judgePlugin`'s `at` is `{}` (`packages/recipe/src/recipe.ts:624`),
+which under 0064 §4 is a declaration and not an omission — *no step reads a
+`judge:` action* — so `resolveRecipe` refuses one **anywhere**, naming
+`CALLED_DIRECTLY.judge` to say where the code is instead, and `conduct.ts`
+answers `stage: "recipe"` and takes no ticket at all until the block comes back
+out. The failure the restart above answers is the *other* one: an `at` that
+gained a key in code the running daemon has not loaded. This is a key no version
+of the code has yet — which is why the sequence is *code, restart, paste*, and
+why the code is first.
+
+**`lingtai` — what the default already does, said out loud.** Both entries are
+the mechanical directions and `BUILT_IN_FOR` answers both identically, so on the
+day the body lands this changes no behaviour. That is the point: it is the first
+version of these two that a person can *edit*.
 
 ```yaml
 proposed:
@@ -267,8 +278,8 @@ calls the one judgement worth an agent — it wants `judge: claude-code`, which
 wants the dispatch §5 says is not there yet.
 
 **`nextloom-ai-admin` — every refusal reaches a person, which is what a managed
-repository that is not Lingtai should almost certainly say.** And this block
-**cannot be written today**: 0064 §7's own worked example names
+repository that is not Lingtai should almost certainly say.** This block carries
+a second reason on top of the empty `at`: 0064 §7's own worked example names
 `judge: always-waiting`, and `BUILT_IN_JUDGES` has one entry and it is not that.
 
 ```yaml
