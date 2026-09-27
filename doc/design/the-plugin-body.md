@@ -235,6 +235,28 @@ second home for them. Nothing else changed — not `conduct.ts`'s
 `repo.provision` call, not one of the callers that ask for a base — because
 `settings.ts` exists for exactly this move and says so at its head.
 
+**The fallback is per field and not per declaration**, which is the one thing
+that took two attempts to get right. `base` is required in a `worktree:`, so a
+declaration always moves it; `submodules` is `.optional()`, so a block that is
+silent about it has said nothing about it and `repo.submodules` goes on
+answering. Reducing both off the one declaration is tidier and turns *I did not
+say* into *I said off* — see the blocks in §6, where that is spelled out at the
+point somebody is about to paste one.
+
+**A declared `worktree:` is read and never run, and two readers had to be told
+so.** The name reaches `GatesResolved.points` — it is what the recipe declares
+at that step — and no `GateStarted` ever follows it, because
+`actionsFromRecipe` builds nothing for a branch name. The board's `stateOf`
+compares the plan against the verdicts and would have drawn `admit` hatched in
+the fail colour on every landed run, which is the one mark reserved for Lingtai
+having not run something it configured (0016 §4); `admit` joins `end` in
+`READ_NOT_RUN` for that reason, and `rail.tsx` carries the sentence the tone
+cannot. `lingtai waive` is the same comparison one command over: a waiver
+naming a setting would be a person's word standing in for a point that was
+never asked, so `approve.ts` keeps the same two out of its planned list. **Both
+exclusions end the day `admit` has a body** — a point that runs and reports
+belongs under those rules, not beside them.
+
 **The other half is the body, and it is blocked where `#267` was blocked.**
 
 - **§1 does not bite.** `worktree:` never becomes an `Action` — it is one of
@@ -312,19 +334,31 @@ admit:
       submodules: false
 ```
 
-`nextloom-ai-admin` — **the same block with that project's own two values**,
-and they are to be copied from its file's `repo:` block rather than assumed: a
-base written from memory is a pass cut from the wrong branch, which is the one
-failure at this step that is loud on the first run rather than quiet
-(`#268`'s *watch out*).
+`nextloom-ai-admin` — **the same block with that project's own base**, copied
+from its file's `repo:` block rather than assumed: a base written from memory
+is a pass cut from the wrong branch, which is the one failure at this step that
+is loud on the first run rather than quiet (`#268`'s *watch out*).
 
 ```yaml
 admit:
   - name: cut the branch
     worktree:
       base: <whatever that file's `repo.base` says>
-      submodules: <whatever that file's `repo.submodules` says>
 ```
+
+**`submodules` is left out on purpose, and leaving it out is the safe move.**
+It is `.optional()` in the plugin rather than defaulted, so a block that does
+not write it does not move it: `submodulesOf` goes on reading
+`repo.submodules`, whatever that file says. Writing it is only worth doing to
+*change* it. The version of this field that carried `.default(false)` is the
+one `#268`'s first attempt was refused for — the smallest legal block then
+meant `submodules: false` out loud, so a project whose `repo:` still said
+`true` would be cut with empty submodule directories, fail every test that
+imports one, and refuse at `build` reading as the agent's fault. The `lingtai`
+block above writes it only because that project's value is `false` either way,
+and the row on the run's recipe page says which of the three happened —
+*without submodules*, *submodules and all*, or *submodules as repo.submodules
+says*.
 
 **`repo:` stays in both files for now.** It is what a recipe that declares
 nothing at `admit` falls back to, so deleting it is a separate step that wants
