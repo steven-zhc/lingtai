@@ -79,6 +79,11 @@ export const FAST_ROWS: readonly { id: FastRowId; label: string; why: string }[]
     why: "labels only; a wrong one is visible on the queue screen and one tick away",
   },
   {
+    // **One row, and since `#263` three keys** — `build:`, `review:` and
+    // `proposed:`, which is `CHECKING_STEPS`. The id keeps the name it was
+    // given when `proposed` was the only step a check could be declared at:
+    // renaming it moves nothing and touches every `FastRowId` switch, and a
+    // person reads the label. `applyDraft` is where the three are written.
     id: "steps.proposed",
     label: "checks",
     why: "every script is listed with the guess ticked, so a dropped half is an unticked box you can see",

@@ -110,11 +110,11 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * What lands in this repository without anybody reading it, in one sentence —
  * null when somebody does.
  *
- * **The one place the wizard argues.** With no `gates.proposed` and `merge: []`
- * the whole chain is *an agent writes code, nothing checks it, it lands in the
- * base branch, nobody read it*, and many repositories have no tests. The
- * sentence is said on the last screen, because that is where somebody is
- * deciding.
+ * **The one place the wizard argues.** With nothing at any of the
+ * `CHECKING_STEPS` and `merge: []` the whole chain is *an agent writes code,
+ * nothing checks it, it lands in the base branch, nobody read it*, and many
+ * repositories have no tests. The sentence is said on the last screen, because
+ * that is where somebody is deciding.
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
   if (recipe.steps.merge.length > 0) return null;
