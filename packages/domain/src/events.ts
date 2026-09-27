@@ -608,7 +608,7 @@ export const RunFailed = z.object({
   detail: z.string(),
 });
 
-// ------------------------------------------------------------------ gate ----
+// --------------------------------------------------------------- verdicts ----
 
 /**
  * Verification, code review and human approval are one primitive: a named
@@ -617,18 +617,26 @@ export const RunFailed = z.object({
  * an approval instead of inheriting it, which a label could never do.
  */
 /**
- * `gate` is the step; `action` is what ran there.
+ * `step` is the step; `action` is what ran there.
  *
  * Two fields rather than one because "the build failed" and "something at the
  * `proposed` step failed" are different questions, and a single name could not
  * answer both. `onSha` binds the verdict to a commit, which is what makes a force-push
  * invalidate it by arithmetic rather than by anybody noticing.
  *
- * **The field is still spelled `gate` for the four steps that gate and for the
- * six that do not.** Renaming it would be a payload change on nine event types
- * bought for nothing: what the field holds is a `Step`, the schema says so, and
- * the only reader that could be misled is one who took the field's name for the
- * model rather than its type.
+ * **The field was spelled `gate` until `#247` and the argument for leaving it
+ * was that it cost a payload change on nine event types and bought nothing.**
+ * What paid for it was the reset: the log this repository runs on was replaced on
+ * 2026-09-27 ([013](../../../doc/experiments/013-the-log-before-the-third-reset.md)),
+ * so there were no stored payloads to keep faith with and the nine upcasters went
+ * with the old names rather than being written for them. An upcaster is
+ * registered *by type name*, which is why a rename of the types had nowhere to
+ * put one while a log held them — and why this could only ever land beside a
+ * reset.
+ *
+ * `splitStep` in `conductor/src/approve.ts` returns the same spelling and must
+ * keep doing so: it spreads into `parsePayload`, which takes `unknown`, so a
+ * drift between the two compiles and is refused at append time.
  */
 const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.string() };
 

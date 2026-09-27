@@ -67,13 +67,15 @@ async function deciding<T>(workItemId: string, busy: () => T, act: () => Promise
  * build failed" and "something at the `proposed` step failed" are different
  * questions. Splitting at the first colon, since a step never contains one.
  *
- * **It returns `gate`, because every caller spreads it straight into
- * `parsePayload`** and `stepBase` (`events.ts:609`) is still spelled `gate` —
- * the half of the vocabulary that waits on the log's own rename. Returning
- * `step` here type-checks at all three call sites, because `parsePayload` takes
- * `unknown`, and then Zod refuses the append at run time: every `approve` and
- * every `waive` throws `Invalid option: expected one of "claim"|…`, which is a
- * held run nobody can land.
+ * **It returns `step`, and `stepBase` is spelled `step` to match** — both since
+ * `#247`, in the same diff, because they have to move together. Every caller
+ * spreads this straight into `parsePayload`, which takes `unknown`, so a
+ * disagreement between the two type-checks at all three call sites and is then
+ * refused by Zod at run time: `Invalid option: expected one of "claim"|…` on
+ * every `approve` and every `waive`, which is a held run nobody can land.
+ *
+ * That is the failure this comment used to describe as a reason *not* to rename.
+ * It is now the reason the two names may not drift apart again.
  */
 function splitStep(key: string): { step: string; action: string } {
   const cut = key.indexOf(":");

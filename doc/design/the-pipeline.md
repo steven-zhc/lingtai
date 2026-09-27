@@ -387,7 +387,13 @@ bail has nothing left to bail from.
       commit the two pages gave a reader opposite answers about the size of a
       closed set. A prose line has no geometry to redraw, so a translated page
       moves with its original or the divergence is a bug rather than a plan
-- [ ] Everything 012 measured is in a file before the log that carried it is reset
+- [x] Everything 012 measured is in a file before the log that carried it is reset
+      — 012 is that file and predates the reset, and
+      [013](../experiments/013-the-log-before-the-third-reset.md) is the fold
+      taken on the day (2026-09-27). 013 deliberately re-measures nothing from
+      012 and says so under *what this did not ask*: the old database is kept
+      and queryable, so the questions nobody asked are still answerable rather
+      than lost
 
 ## 6. Related
 
