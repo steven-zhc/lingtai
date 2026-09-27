@@ -34,7 +34,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from "@lingtai/domain";
-import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type ResolvedRecipe } from "@lingtai/recipe";
+import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, baseWrittenAt, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type ResolvedRecipe } from "@lingtai/recipe";
 import { signedInHere } from "./projects.ts";
 import { STEPS, type Tier, parsePayload } from "@lingtai/domain";
 import {
@@ -202,17 +202,20 @@ export async function governing(
 ): Promise<Governing> {
   const resolved = await resolveRecipe(read, from.ref);
   const declared = baseOf(resolved.recipe);
+  // The key as this recipe writes it: `repo.base`, or `worktree:`'s at `admit`
+  // where the setting has moved onto the step that owns it (`#268`).
+  const wrote = baseWrittenAt(resolved.recipe);
   if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null };
 
   if (from.named) {
     return {
       ok: false,
       refusal:
-        `--base ${from.ref}, but ${RECIPE_PATH} there declares repo.base: ${declared}. ` +
-        "--base says which branch to read the recipe from; repo.base says which branch " +
+        `--base ${from.ref}, but ${RECIPE_PATH} there declares ${wrote}: ${declared}. ` +
+        `--base says which branch to read the recipe from; ${wrote} says which branch ` +
         "it governs, and this command will not overrule either. " +
         `Re-run without --base to take ${declared} from the recipe, ` +
-        `or fix repo.base on ${from.ref}.`,
+        `or fix ${wrote} on ${from.ref}.`,
     };
   }
 
@@ -223,7 +226,7 @@ export async function governing(
     return {
       ok: false,
       refusal:
-        `${RECIPE_PATH} on ${from.ref} declares repo.base: ${declared}, ` +
+        `${RECIPE_PATH} on ${from.ref} declares ${wrote}: ${declared}, ` +
         `so the recipe was read from ${declared} — ${(err as Error).message}`,
     };
   }
@@ -279,16 +282,17 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
     return 1;
   }
   if (options.base?.named && options.base.ref !== baseOf(resolved.recipe)) {
+    const wrote = baseWrittenAt(resolved.recipe);
     log(
-      `--base ${options.base.ref}, but ${recipePath(repo)} declares repo.base: ${baseOf(resolved.recipe)}. ` +
+      `--base ${options.base.ref}, but ${recipePath(repo)} declares ${wrote}: ${baseOf(resolved.recipe)}. ` +
         "This command will not overrule either — re-run without --base to take the recipe's, " +
-        "or fix repo.base in the file.",
+        `or fix ${wrote} in the file.`,
     );
     return 1;
   }
   // Past this point these are one branch, and this one is the file's.
   const base = baseOf(resolved.recipe);
-  log(`base: ${base} — the recipe's repo.base`);
+  log(`base: ${base} — the recipe's ${baseWrittenAt(resolved.recipe)}`);
   for (const [key, from] of Object.entries(resolved.provenance ?? {})) {
     if (key.startsWith("runtime.")) log(`  ${key.padEnd(24)} ${from}`);
   }

@@ -44,7 +44,16 @@
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { Recipe } from "../src/recipe.ts";
-import { assigneeOf, backoffOf, baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "../src/settings.ts";
+import {
+  assigneeOf,
+  backoffOf,
+  baseOf,
+  baseWrittenAt,
+  excludeOf,
+  kindsOf,
+  limitsFor,
+  submodulesOf,
+} from "../src/settings.ts";
 
 const WRITTEN = {
   version: 2,
@@ -134,6 +143,30 @@ describe("the accessors", () => {
     });
     expect(silent.success).toBe(false);
     expect(JSON.stringify(silent.error?.issues)).toContain("submodules");
+  });
+
+  /**
+   * **And the three readings that print the key name get the one the file uses**
+   * (`#268`).
+   *
+   * `baseDivergence`'s refusal, `lingtai doctor`'s base row and `lingtai add`'s
+   * disagreement all end with *fix this key* — so a message naming `repo.base` at
+   * a recipe that declares `worktree:` at `admit` sends a person to a line the
+   * conductor does not read, which is the reader-drift this file's guard is about
+   * arriving through a sentence instead.
+   */
+  it("names the key the recipe actually wrote the base at", () => {
+    expect(baseWrittenAt(RECIPE)).toBe("repo.base");
+    expect(
+      baseWrittenAt(
+        Recipe.parse({
+          ...WRITTEN,
+          steps: {
+            admit: [{ name: "cut the branch", worktree: { base: "1.0", submodules: false } }],
+          },
+        }),
+      ),
+    ).toContain("worktree.base");
   });
 
   /** One cut per step, so *the first* and *the only* are the same entry. */
