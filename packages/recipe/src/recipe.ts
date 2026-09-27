@@ -308,34 +308,44 @@ export const refsPlugin = definePlugin("refs", {
  * [`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §1 writes, and
  * that file is the target T3 is checked against.
  *
- * **`base` is written here and nowhere else, and that is what this plugin is
- * for.** `repo.base` is where it is written today; when the file becomes
- * `steps:` this is where it moves, and the merge lane goes on being *handed*
- * it rather than declaring it a second time (§4). Until then no step accepts
- * this key — `whyNoKindAt` refuses it at all ten — so the two are not two
- * homes for one setting; they are one home and the name of the one it will
- * become.
+ * **`base` is written here, and `repo.base` is the same setting's v1
+ * spelling** (`#268`). This is the home 0061 §4 gives it; `baseOf` in
+ * [`settings.ts`](settings.ts) is the one place that knows a file may still
+ * write the other, and every reader — the merge lane, `lingtai doctor`,
+ * `lingtai add`, the board, the wizard — asks that one question. So the two are
+ * not two homes for one setting, and a declaration here cannot disagree with
+ * what the merge lane lands on: the lane goes on being *handed* the base rather
+ * than declaring one of its own (§4).
  *
- * `submodules` keeps `repo.submodules`'s default and its reason: `git worktree
- * add` leaves submodule directories empty, and the tests that import one then
- * fail in a way that reads as the agent's fault.
+ * **`submodules` is required and is not defaulted**, which is the one way this
+ * declaration differs from the `repo:` block it replaces. `git worktree add`
+ * leaves submodule directories empty, and the tests that import one then fail in
+ * a way that reads as the agent's fault — so a `worktree:` that named only its
+ * base and took `false` from a schema would be that failure arriving *because*
+ * somebody configured the step, with `repo.submodules: true` sitting unread two
+ * blocks up. A recipe that does not say is refused by name instead (`#268`).
  */
 export const worktreePlugin = definePlugin("worktree", {
   fields: {
     worktree: z.strictObject({
       /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
       base: z.string(),
-      submodules: z.boolean().default(false),
+      /** Whether the tree gets them. Written out on purpose — see above. */
+      submodules: z.boolean(),
     }),
   },
   /**
-   * **It serves no step, and that is the declaration rather than an omission**
-   * (0064 §4). It is 0061 §3's *name* for code the pass calls itself, so a
-   * recipe writing it anywhere is refused with `CALLED_DIRECTLY.worktree` —
-   * which says where the code is instead. The day `admit` reads one, this
-   * gains a key and that entry goes, in the same diff.
+   * **`admit`, and it is the first of 0061 §3's five names to become a key**
+   * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §4, `#268`).
+   *
+   * What runs is `createWorktreeAction` in `@lingtai/actions`, over the cut
+   * `conduct.ts` hands it — and a recipe that declares nothing at `admit` runs
+   * the same action off `baseOf`/`submodulesOf`, because 0065 §2 makes the
+   * default an entry in the plugin system rather than a body beside it. So
+   * `CALLED_DIRECTLY.worktree` is gone with this key, in the one diff its own
+   * comment asked for.
    */
-  at: {},
+  at: { admit: notBuiltYet },
 });
 
 /**
@@ -964,7 +974,7 @@ const FILES_AND_ROUTES_NOTHING =
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
  *
- * Why these five are declared at all before anything reads them: a plugin no
+ * Why these four are declared at all before anything reads them: a plugin no
  * list carries is a plugin no step refuses
  * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2). Outside
  * the closed set, `queue:` written under `end:` is *an action naming no
@@ -973,16 +983,21 @@ const FILES_AND_ROUTES_NOTHING =
  * becomes `steps:` this entry goes and an `at` key arrives on the plugin in
  * the same diff.
  *
- * `assignee:` was the sixth and the case that document wrote the rule about —
- * it had a row in 0061 §3 and appeared in no other list. It is gone from here
- * because 0063 §3 made it a field of `queue:` rather than a plugin, so the cell
- * it would have had does not exist; what was true of it is now carried by
- * `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
+ * **It was five until `#268`, and `worktree:` is what left** — `worktreePlugin`
+ * declares `admit` now, so the plugin the pass calls itself became the plugin
+ * the recipe calls, and the entry went with the key exactly as the paragraph
+ * above says it must (0065 §4). It is also the precedent for the other four:
+ * `CALLED_DIRECTLY` is a list of defaults that are not plugins yet, and it
+ * shrinks by one every time one of them is wired.
+ *
+ * `assignee:` is not on this list and never was one of the entries: it had a row
+ * in 0061 §3 and appeared in no other list, which is the case
+ * [`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2 wrote the rule
+ * about, and 0063 §3 then made it a field of `queue:` rather than a plugin — so
+ * the cell it would have had does not exist, and what was true of it is carried
+ * by `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
-  worktree:
-    "`conduct.ts` cuts it itself, at `admit`'s port rather than from a recipe cell, from " +
-    "`repo.base` and `repo.submodules` — `provisionWorktree` in `packages/repo/src/worktree.ts`",
   merge:
     "the merge lane runs it itself once everything before it has passed — `integrate` in " +
     "`packages/repo/src/integrate.ts`, which is handed `repo.base` rather than reading a base of its own",
@@ -1040,14 +1055,15 @@ function servedBy(plugin: Plugin): string {
  *
  * **Three kinds of no, and they are asked in this order.**
  *
- * - **A plugin no step reads** — `worktree:`, `merge:`, `queue:`, `judge:` and
- *   `backlog:`, which serve nothing and are refused everywhere for one reason.
- *   Asked first, because a sentence about the *step* would be the less useful
- *   half of the truth at all ten: *no plugin implements `admit`* is right and
- *   leaves a reader looking for the code that cuts their worktree, which
- *   `CALLED_DIRECTLY` names. It is sharpest at `claim`, where the step's own
- *   sentence and the plugin's are about the same plugin — and only the
- *   plugin's says where `discover.ts` is.
+ * - **A plugin no step reads** — `merge:`, `queue:`, `judge:` and `backlog:`,
+ *   which serve nothing and are refused everywhere for one reason. Asked first,
+ *   because a sentence about the *step* would be the less useful half of the
+ *   truth at all ten: *no plugin implements `claim`* is right and leaves a reader
+ *   looking for the code that picks their ticket, which `CALLED_DIRECTLY` names.
+ *   It is sharpest there, where the step's own sentence and the plugin's are
+ *   about the same plugin — and only the plugin's says where `discover.ts` is.
+ *   **`worktree:` was the fifth until `#268`** and is now a key at `admit`, which
+ *   is what this branch shrinking by one looks like.
  * - **A step no plugin implements**, which is the sentence the table could not
  *   say (0064 §1). An empty row read as *this step takes nothing*, which is
  *   indistinguishable from *nobody has built it* — and that ambiguity is how
@@ -1079,13 +1095,6 @@ export function whyNoKindAt(
   // presence or absence of a key, and this is the sentence that difference
   // buys — one somebody can act on, because it names what to write instead.
   if (pluginsAt(step, plugins).length === 0) {
-    if (step === "admit") {
-      return (
-        "no plugin implements `admit` — the step is in the closed set and nothing declares itself " +
-        "there, so an action here would be resolved, printed, and never called. A question that has " +
-        "to be asked before anything is spent is `lingtai ask`, which holds the item in the queue instead"
-      );
-    }
     // One sentence per step and not one for the group: *nobody implements it*
     // is the same refusal at all five, and **where the work actually happens
     // today** is different at each — the only part an operator can act on.
@@ -1124,6 +1133,13 @@ export function whyNoKindAt(
  * worse than no reason: `step-matrix.test.ts` pins the sentence at each of
  * them rather than the keywords, because *contains the step name* passes on
  * the opening clause alone and let exactly this through.
+ *
+ * **`admit` joined the same shape on the same terms** (`#268`): opening
+ * `worktreePlugin.at.admit` took `run:`, `agent:`, `watch:` and `human:` there
+ * out of the *no plugin implements this step* branch, and without a branch of
+ * their own all four would have fallen through to a sentence about `prepared`.
+ * The remedy that branch carried is the one an operator can act on and is kept
+ * word for word: a question asked before anything is spent is `lingtai ask`.
  */
 function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "end") {
@@ -1153,6 +1169,16 @@ function whyThatPair(step: Step, kind: ActionKind): string {
       "builds anything. An agent asked to would be paid to read, and a cold read of the diff is " +
       "`review`; a glob over the diff's file list and a hold on it are questions about a change already " +
       "built, which is `proposed`"
+    );
+  }
+  if (step === "admit") {
+    return (
+      "`admit` cuts the branch a pass owns and does nothing else (0058 §3), so the only plugin it " +
+      "carries is the one that cuts — `worktree:`, which is the key `worktreePlugin` declares there. " +
+      "There is no worktree until this step has made one, so a command has nowhere to run and belongs " +
+      "at `prepared`, and nothing has been written, so an agent has no diff to read and a glob no file " +
+      "list to match. A question that has to be asked before anything is spent is `lingtai ask`, which " +
+      "holds the item in the queue rather than a run that has already paid for a clone"
     );
   }
   if (kind === "agent") {
@@ -1237,6 +1263,8 @@ function actionsAt(step: Step) {
     .array(z.unknown())
     .transform((written, ctx) => {
       const resolved: StepAction[] = [];
+      /** Where each accepted `worktree:` was written, for the refusal below. */
+      const cuts: number[] = [];
       written.forEach((action, i) => {
         const named = pluginsNamed(action, PLUGINS);
         const plugin = pluginNaming(action, PLUGINS);
@@ -1261,8 +1289,38 @@ function actionsAt(step: Step) {
           }
           return;
         }
+        if (kind === "worktree") cuts.push(i);
         resolved.push(read.value as StepAction);
       });
+      /**
+       * **One cut, and a second `worktree:` is refused rather than merged**
+       * (`#268`).
+       *
+       * Every declared action at a step runs (0065 §2), so two of these would
+       * cut the same path twice — and `baseOf` would have to pick one, leaving
+       * the other displayed on the board, hashed into `configHash` and recorded
+       * in `GatesResolved` while something else is what ran. That is `#61`'s
+       * shape reached through a duplicate rather than through a missing call
+       * site, and it is the one plugin it can happen to: `worktree:` is the only
+       * one that *makes* what the rest of the pass works in, so where a second
+       * `run:` is two commands, a second `worktree:` is two answers to one
+       * question. Which was meant is not Lingtai's to guess.
+       */
+      for (const i of cuts.slice(1)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [i],
+          message: kindRefusedAt(
+            step,
+            "worktree",
+            nameOf(written[i]),
+            `the "${step}" step already cuts a worktree at entry ${cuts[0]}, and a step cuts one or ` +
+              "none. Two of them would cut the same path twice, and the base a reading shows would " +
+              "not be the base the pass was cut from",
+            REFUSED_WHEN_IT_RESOLVED,
+          ),
+        });
+      }
       return resolved;
     })
     .default([]);

@@ -13,12 +13,18 @@
  * the old system approval was a label, and a label survives any amount of
  * rewriting.
  *
- * Four kinds of action produce a verdict — `run`, `agent`, `watch`, `human` —
- * and all four are implemented. `run` and `human` need nothing from the caller;
- * `agent` needs a reviewer and `watch` needs the diff's file list, and
- * `conduct.ts` supplies both. A kind whose dependency is missing is refused by
- * name rather than skipped — see `from-recipe.ts`. The pipeline, the events and
- * `onSha` are the same for all four.
+ * Five kinds of action produce a verdict — `run`, `agent`, `watch`, `human`,
+ * `worktree` — and all five are implemented. `run` and `human` need nothing from
+ * the caller; `agent` needs a reviewer, `watch` needs the diff's file list and
+ * `worktree` needs the cut, and `conduct.ts` supplies all three. A kind whose
+ * dependency is missing is refused by name rather than skipped — see
+ * `from-recipe.ts`. The pipeline, the events and `onSha` are the same for all
+ * five.
+ *
+ * **`worktree` is the one that makes rather than judges**, and it is why
+ * `ActionResult` carries a `head`: `admit` is where the tree is cut, so it is
+ * where `onSha` gets a value at all
+ * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#268`).
  *
  * `close` and `labels` are the other two kinds. They are effects rather than
  * verdicts, they only run at `end`, and they never reach this interface.
@@ -85,6 +91,19 @@ export interface ActionResult {
    */
   evidence: string;
   findings: ActionFinding[];
+  /**
+   * **Where this action left the worktree**, and absent on every kind that only
+   * judged one (0065 §2, `#268`).
+   *
+   * One action produces it — the `worktree` kind, at `admit` — and it is on the
+   * result rather than inferred by the caller because the caller runs no git:
+   * `LeftTheTreeAt` in `packages/conductor/src/pass.ts` is the same field one
+   * layer up, and the step that moved the tree is the only thing that knows.
+   *
+   * It is not the head a verdict is *about* — that is `ActionContext.onSha`, and
+   * for this action it is the base the pass arrived carrying.
+   */
+  head?: string;
 }
 
 export interface ActionContext {
@@ -143,8 +162,8 @@ export interface ActionContext {
 
 export interface Action {
   readonly name: string;
-  /** Which action shape produced it: `run`, `agent`, `watch` or `human`. */
-  readonly kind: "run" | "agent" | "watch" | "human";
+  /** Which action shape produced it: `run`, `agent`, `watch`, `human` or `worktree`. */
+  readonly kind: "run" | "agent" | "watch" | "human" | "worktree";
   run(context: ActionContext): Promise<ActionResult>;
 }
 
@@ -200,7 +219,14 @@ export interface PipelineResult {
    * (0038 §1), and reading the log back to discover what the action it just ran
    * said would be a second source of truth for the same sentence.
    */
-  results: { action: string; verdict: ActionVerdict; evidence: string; findings: ActionFinding[] }[];
+  results: {
+    action: string;
+    verdict: ActionVerdict;
+    evidence: string;
+    findings: ActionFinding[];
+    /** Where the action left the worktree, where it moved it. `ActionResult.head`. */
+    head?: string;
+  }[];
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[];
 }
@@ -294,6 +320,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       verdict: result.verdict,
       evidence: result.evidence,
       findings: result.findings,
+      // Spread rather than assigned, so *the tree did not move* reaches the
+      // caller as an absent key and not as an explicit `undefined`: `endingOf`
+      // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
+      // same reason.
+      ...(result.head === undefined ? {} : { head: result.head }),
     });
 
     if (result.verdict === "passed") {

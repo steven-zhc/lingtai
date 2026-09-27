@@ -34,16 +34,18 @@
  * `unit/` and the `build` point runs them
  * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).
  *
- * **Why a port and not a plugin.** 0061 §3 puts `queue:` at `claim`,
- * `worktree:` at `admit` and `agent:` at `design` and `implement`, and those four
- * plugin names exist — `PLUGINS` in `@lingtai/recipe` carries them. What does
- * not exist is a plugin declaring itself there: no plugin's `at` carries
- * `claim`, `admit`, `design` or `implement` (0064 §4), and `whyNoKindAt`
- * refuses every one by name, saying where that code is called from instead.
- * **Naming a thing is not wiring it**, and until a plugin claims the step, the
- * step's own work is its body's. A port is what keeps that honest: the body
- * still cannot act, so the day a plugin claims it the body loses the call and
- * keeps the rule.
+ * **Why a port and not a plugin, at the three that are still ports.** 0061 §3
+ * puts `queue:` at `claim`, `worktree:` at `admit` and `agent:` at `design` and
+ * `implement`, and those four plugin names exist — `PLUGINS` in
+ * `@lingtai/recipe` carries them. **`worktree:` is wired and the other three are
+ * not**: `worktreePlugin.at` carries `admit` since `#268`, so that step's body
+ * is empty and `ports.cut` is gone, while no plugin's `at` carries `claim`,
+ * `design` or `implement` and `whyNoKindAt` refuses every kind at those three by
+ * name, saying where the code is called from instead. **Naming a thing is not
+ * wiring it**, and until a plugin claims the step, the step's own work is its
+ * body's. A port is what keeps that honest: the body still cannot act, so the
+ * day a plugin claims it the body loses the call and keeps the rule — which is
+ * what `admit` losing it looked like.
  *
  * **Two of the ports are not waiting on that at all**, and they are the other
  * half of the same fact: `judge:` at `proposed` and `merge:` at `merge` are two
@@ -62,18 +64,25 @@
  *
  * ## What travels between the steps, and how
  *
- * Three facts are made at one step and needed at a later one, and `StepWork`
- * carries none of them:
+ * Two facts are made at one step and needed at a later one, and `StepWork`
+ * carries neither:
  *
  * ```
  * the item        claim → design, implement, merge, end   the ticket's own text
- * the worktree    admit → design, implement, merge         where an agent works
  * the design      design → implement                      and `""` is an answer
  * ```
  *
  * They are held by `bodiesFor`, cleared at `claim` so one closure may conduct one
  * pass after another, rather than on the ports, which stay stateless and
  * therefore fakeable one method at a time.
+ *
+ * **It was three until `#268`, and the worktree is what left.** `admit` cut it in
+ * a body, so the path was a fact this file had to hold and hand on; since
+ * `worktreePlugin` declares `admit` (0065 §4) the cut is an action's, and the
+ * only closure that can have the path is the one whose dep made it —
+ * `conduct.ts`'s `cutTree`. So `Brief` does not carry a worktree either: an
+ * implementation is handed a ticket, a design and why it is being run again, and
+ * it already knows where it works.
  *
  * **What the loop already carries is read off `StepWork` and never kept here**,
  * and there are three of those. The head: a step that moved the tree says so on
@@ -154,18 +163,19 @@ export interface Claimed {
  * **A step stopped and asked** — 0058 §3c's `needs-input`, and the only
  * `did-not-finish` with anywhere to go.
  *
- * One shape rather than a case written three times, because exactly three steps
- * can produce it — `admit`, `design` and `implement`
+ * One shape rather than a case written twice, because exactly two *bodies* can
+ * produce it — `design` and `implement`
  * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3b's
- * second drawing) — and the judge at `proposed` answers all three the same way:
+ * second drawing) — and the judge at `proposed` answers both the same way:
  * `waiting` with the question, or that step again with *state your assumption*.
  *
- * It is on `Cut` though nothing cuts a worktree and asks a question today, and
- * that is deliberate rather than the `#61` shape it resembles: this is the
- * contract for a port **somebody else writes**, not a record of what has
- * happened. Leaving the case off `admit` would make one of 0058's own edges
- * unreachable by construction, which is a worse silence than an unused case — a
- * port cannot report what its type cannot say.
+ * **`admit` was the third and is a plugin's now** (`#268`). The edge is not gone
+ * and the shape is not this one: `CutAnswer` in `@lingtai/actions` keeps its own
+ * `asked` branch for the same reason this one was written — a port cannot report
+ * what its type cannot say — and what it costs has changed with the move. A
+ * question from a plugin is the pipeline's `needs-approval`, so `endingOf` reads
+ * it as `held` and it stops for a person directly, rather than arriving at the
+ * judge as `needs-input`. Nothing produces it at `admit` today either way.
  */
 export interface Asked {
   /** What the step wants answered, in words a person reads (0043). */
@@ -305,13 +315,6 @@ export type Taken =
    */
   | { readonly mayHold: { readonly workItemId: string; readonly detail: string } };
 
-/** What `admit` got when it cut the tree to work in. */
-export type Cut =
-  | { readonly worktree: Worktree }
-  | Asked
-  /** `RepoFailed`'s words: no mirror, no base ref, a clone that did not finish. */
-  | { readonly notCut: string };
-
 /**
  * What `design` produced — **and `""` is an answer rather than a skip.**
  *
@@ -341,7 +344,6 @@ export interface Brief {
    * sits in the one thing that could make it. A typo fix costs no design.
    */
   readonly design: string;
-  readonly worktree: Worktree;
   /**
    * **Why this step is being run a second time**, or `null` on the way through.
    *
@@ -361,7 +363,7 @@ export interface Brief {
 }
 
 /**
- * What `merge` was asked to land, and it is the same three facts `IntegrateOptions`
+ * What `merge` was asked to land, and it is two of the facts `IntegrateOptions`
  * asks for under its own names.
  *
  * There is no *did the steps pass* here, and that absence is the sequence:
@@ -369,10 +371,16 @@ export interface Brief {
  * otherwise would be a lane told something the pass cannot be in a position to
  * say. `context.onSha` is `headSha` — **the commit the steps gave their verdicts
  * about**, which is what makes the merge the one the review was of.
+ *
+ * **There is no worktree here either, and `#268` is what took it off.** It was
+ * passed and never read: `integrate` is handed the base, the branch and the head
+ * sha, and it works on the mirror rather than in the tree the agent worked in. So
+ * it was a third fact this file had to carry from `admit` to `merge` in order to
+ * hand it to something that ignored it — and the cut being a plugin's is what
+ * made that visible.
  */
 export interface Landing {
   readonly claimed: Claimed;
-  readonly worktree: Worktree;
   readonly context: ActionContext;
 }
 
@@ -490,16 +498,6 @@ export interface PassPorts {
    * of the mutual exclusion (`claim.ts`).
    */
   take(): Promise<Taken>;
-  /**
-   * `admit` — cut the worktree, at the base the recipe names. `repo.provision`.
-   *
-   * `again` is beside the item rather than inside a `Brief` because there is no
-   * brief at `admit`: the worktree an agent is briefed on is what this step
-   * makes. It carries the same thing for the same reason — a step routed back to
-   * must be run differently, and `admit` is one of the three that can ask
-   * (`SentBack`).
-   */
-  cut(claimed: Claimed, again: SentBack | null): Promise<Cut>;
   /**
    * `design` — a document, before any code, or nothing.
    *
@@ -833,8 +831,6 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * only the first of those.
    */
   let onStream: string | null = null;
-  /** The tree, from `admit`. Null until it has been cut. */
-  let worktree: Worktree | null = null;
   /**
    * What `design` produced. `""` is the answer *this needs no design*, and is
    * every pass today — so it starts as the answer rather than as `null`, because
@@ -847,10 +843,15 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * What a step needs and the step before it made — or a throw naming which.
    *
    * A programming error about the workflow rather than something that happened to
-   * a diff: `implement` is reached only after `admit` passed, and `admit` passes
-   * only with a worktree. `runStep` catches it and reports it as the visit's own
+   * a diff: `implement` is reached only after `claim` passed, and `claim` passes
+   * only with an item. `runStep` catches it and reports it as the visit's own
    * `did-not-finish`, so the pass still reaches `end` — which is the rule the
    * whole skeleton is arranged around.
+   *
+   * **The worktree used to be the other thing it guarded** and is
+   * `conduct.ts`'s `cutTree` since `#268`, which raises the same error in the
+   * same words for the same reason — the closure that holds a fact is the one
+   * that can say it is missing.
    */
   const madeBy = <T>(what: string, at: string, value: T | null): T => {
     if (value === null) {
@@ -904,7 +905,6 @@ export function bodiesFor(ports: PassPorts): StepBodies {
   ): Brief => ({
     ticket: madeBy(step, "item", claimed).ticket,
     design,
-    worktree: madeBy(step, "worktree", worktree),
     again: sentBackTo(step, work.reached),
     context: work.context,
   });
@@ -1052,7 +1052,6 @@ export function bodiesFor(ports: PassPorts): StepBodies {
       // item the pass before had landed.
       claimed = null;
       onStream = null;
-      worktree = null;
       design = "";
       const answer = await ports.take();
       if ("taken" in answer) {
@@ -1081,34 +1080,34 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     },
 
     /**
-     * Start work on it — **and the worktree is cut here, so this is where the
-     * `head` a pass is judged against first has a value.**
+     * Start work on it — **and this is the fourth of the ten whose body is
+     * nothing beyond its plugins** (`#268`).
      *
-     * The base sha is returned on the ending rather than kept in the closure
-     * beside the worktree, because it is the loop's business and not this file's:
-     * `onSha` is *the commit this verdict is about*, `stepsOn()` shows a verdict
-     * only where it equals the item's head, and a pass that judged the wrong one
-     * has paid for every verdict and can show none of them.
+     * It cut the worktree here until `worktreePlugin` declared `admit`
+     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §4). What
+     * cuts it now is a `worktree:` action — the one a recipe declares there, or
+     * the one `conduct.ts`'s `defaultsAt` supplies where a recipe declares
+     * nothing — and the loop has run it by the time this is called, so a second
+     * cut written here would be the reimplementation 0061 §3 exists to prevent.
+     * That is `prepared`'s row, at the step that makes the tree `prepared`
+     * installs into.
      *
-     * It cannot refuse. A clone that did not finish is not a judgement about the
-     * change — nothing has been written yet — so it is 0057's class and the pass
-     * stops rather than buying a round to fix a repository.
+     * **The `head` still comes out of this step and now comes out of the
+     * action.** `onSha` is *the commit this verdict is about*, `stepsOn()` shows a
+     * verdict only where it equals the item's head, and a pass that judged the
+     * wrong one has paid for every verdict and can show none of them — so the one
+     * thing that knows where the tree was left says so, and `endingOf` carries it
+     * onto this step's ending (`ActionResult.head`, `LeftTheTreeAt`).
+     *
+     * **It still cannot refuse, and that is the pipeline's rule rather than this
+     * body's.** A clone that did not finish is not a judgement about the change —
+     * nothing has been written yet — so the action answers `did-not-finish` and
+     * 0057's class is what reaches the pass: no fix round, and the pass stops
+     * rather than buying a round to fix a repository. `admit` is not one of
+     * `REFUSING_STEPS`, so a `failed` verdict here could not become a refusal
+     * either.
      */
-    admit: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish> => {
-      const answer = await ports.cut(madeBy("admit", "item", claimed), sentBackTo("admit", reached));
-      if ("worktree" in answer) {
-        worktree = answer.worktree;
-        return { ending: "passed", head: answer.worktree.baseSha };
-      }
-      if ("asked" in answer) return asking(answer.asked);
-      return {
-        ending: "did-not-finish",
-        because: "worktree",
-        at: null,
-        // The head is the caller's base still, so the detail is all a person has.
-        detail: `${answer.notCut} (nothing was cut at ${context.onSha.slice(0, 12)})`,
-      };
-    },
+    admit: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
      * The tree is ready to be worked in — **and this is the one of the six whose
@@ -1323,7 +1322,6 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     merge: async ({ context }): Promise<StepPassed | StepRefused> => {
       const answer = await ports.land({
         claimed: madeBy("merge", "item", claimed),
-        worktree: madeBy("merge", "worktree", worktree),
         context,
       });
       if ("merged" in answer) return { ending: "passed" };

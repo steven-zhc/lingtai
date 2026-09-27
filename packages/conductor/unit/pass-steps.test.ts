@@ -13,7 +13,14 @@
  * the `build` point run it ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
  * §1).
  */
-import type { Action, ActionContext, ActionFinding, ActionResult } from "@lingtai/actions";
+import {
+  createWorktreeAction,
+  type Action,
+  type ActionContext,
+  type ActionFinding,
+  type ActionResult,
+  type CutAnswer,
+} from "@lingtai/actions";
 import type { Envelope, PayloadOf, ToAppend } from "@lingtai/domain";
 import type { Worktree } from "@lingtai/repo";
 import { StepMap, type StepAction } from "@lingtai/recipe";
@@ -32,7 +39,6 @@ import {
   bodiesFor,
   type Brief,
   type Claimed,
-  type Cut,
   type Drafted,
   type Judged,
   type Judging,
@@ -107,7 +113,14 @@ const recipeWith = (steps: Record<string, unknown> = {}): PassOptions["recipe"] 
 /** What the fake ports were asked, so a test can read the brief a step built. */
 interface Asks {
   take: number;
-  cut: { claimed: Claimed; again: SentBack | null }[];
+  /**
+   * What each `worktree:` action was asked to cut — its `base` and `submodules`,
+   * which is the whole of what the cut is handed since `#268`.
+   *
+   * Beside the ports rather than on them: `admit`'s work is a plugin's now, so
+   * what a test reads back is the action's argument and not a port call.
+   */
+  cut: { base: string; submodules: boolean }[];
   draft: Brief[];
   dispatch: Brief[];
   /** Every brief a judge was handed, which is what *spends an agent* looks like. */
@@ -119,7 +132,8 @@ interface Asks {
 
 interface Answers {
   take?: Taken | (() => Taken);
-  cut?: Cut | (() => Cut);
+  /** What the cut answers. Cut at `CUT_AT`, by default. */
+  cut?: CutAnswer;
   draft?: Drafted | (() => Drafted);
   dispatch?: Worked | ((brief: Brief) => Worked);
   /** Nothing declared, by default: the built-ins and the person are what answer. */
@@ -150,10 +164,6 @@ function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks 
     take: async () => {
       asked.take += 1;
       return of(answers.take, { taken: ITEM }, undefined);
-    },
-    cut: async (claimed, again) => {
-      asked.cut.push({ claimed, again });
-      return of(answers.cut, { worktree: TREE }, undefined);
     },
     draft: async (brief) => {
       asked.draft.push(brief);
@@ -194,14 +204,37 @@ async function pass(
   } = {},
 ): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
   const { ports, asked } = portsAnswering(options.answers);
+  /**
+   * **`admit`'s default, as `conduct.ts`'s `defaultsAt` supplies it** (0065 §3).
+   *
+   * The body is empty since `#268`, so a pass whose recipe declares nothing at
+   * `admit` cuts nothing unless the caller substitutes — and *the caller
+   * substitutes* is the decision, not a detail of the conductor. Mirrored here
+   * rather than imported, because importing `conduct.ts` would bring a GitHub
+   * client and a store into a file whose whole claim is that nothing leaves the
+   * system.
+   */
+  const cutting = (): Action =>
+    createWorktreeAction(
+      { name: "cut the branch", base: "main", submodules: false },
+      {
+        cut: async (spec) => {
+          asked.cut.push(spec);
+          return options.answers?.cut ?? { head: CUT_AT, where: TREE.path };
+        },
+      },
+    );
   const result = await runPass({
     recipe: recipeWith(options.steps),
     context,
     emit: () => {},
     bodies: bodiesFor(ports),
     ceilings: options.ceilings,
-    actionsAt: (step, actions) =>
-      options.actions?.[step] ?? actions.map((a) => canned(a.name, PASSED)),
+    actionsAt: (step, actions) => {
+      if (options.actions?.[step] !== undefined) return options.actions[step];
+      if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
+      return step === "admit" ? [cutting()] : [];
+    },
   });
   return { result, asked, ports };
 }
@@ -232,7 +265,7 @@ describe("claim picks the ticket, and cannot refuse", () => {
       "end:passed",
     ]);
     expect(asked.take).toBe(1);
-    expect(asked.cut[0]?.claimed).toEqual(ITEM);
+    expect(asked.cut).toEqual([{ base: "main", submodules: false }]);
     expect(asked.dispatch[0]?.ticket).toEqual(ITEM.ticket);
     // `end` resolves onto the stream `claim` named, and nowhere else.
     expect(asked.read).toEqual([ITEM.workItemId]);
@@ -321,7 +354,7 @@ describe("claim picks the ticket, and cannot refuse", () => {
 
 // ------------------------------------------------------------------ admit ----
 
-describe("admit cuts the tree, and that is where the head comes from", () => {
+describe("admit runs the `worktree:` plugin, and that is where the head comes from", () => {
   it("advances `onSha` to the base it cut, so every later visit is judged there", async () => {
     const judged: { step: string; onSha: string }[] = [];
     const watching = (step: string): Action => ({
@@ -344,46 +377,84 @@ describe("admit cuts the tree, and that is where the head comes from", () => {
     expect(asked.dispatch[0]?.context.onSha).toBe(CUT_AT);
   });
 
+  /**
+   * **A declared `worktree:` is what runs, and `admit` runs nothing else**
+   * (`#268`).
+   *
+   * This is the half of `#268`'s first major finding that had to be closed: a
+   * `worktree:` at `admit` used to resolve, be recorded in `GatesResolved` as
+   * planned, and produce no verdict — so the item landed with a point the log
+   * said was configured and never ran, which is the mark reserved for Lingtai's
+   * own bug (0016 §4, and 0065 §5). It cannot arise now because the step runs
+   * what is declared there: the action produces `GateStarted` and a verdict like
+   * any other, and the `head` on the ending is the proof it did the work rather
+   * than merely being listed.
+   */
+  it("cuts from what the recipe declares, and the head is the action's", async () => {
+    const asked: { base: string; submodules: boolean }[] = [];
+    const declared = createWorktreeAction(
+      { name: "cut the branch", base: "1.0", submodules: true },
+      {
+        cut: async (spec) => {
+          asked.push(spec);
+          return { head: CUT_AT, where: TREE.path };
+        },
+      },
+    );
+    const { result } = await pass({
+      steps: { admit: [{ name: "cut the branch", worktree: { base: "1.0", submodules: true } }] },
+      actions: { admit: [declared] },
+    });
+
+    expect(asked).toEqual([{ base: "1.0", submodules: true }]);
+    expect(result.steps[1]).toMatchObject({
+      step: "admit",
+      ending: { ending: "passed", head: CUT_AT },
+      results: [{ action: "cut the branch", verdict: "passed" }],
+    });
+  });
+
   it("stops the pass when the tree could not be cut, and buys nothing", async () => {
     const { result, asked } = await pass({ answers: { cut: { notCut: "no such base ref" } } });
 
     expect(walk(result)).toEqual(["claim:passed", "admit:did-not-finish", "end:passed"]);
+    // The action's name rather than `null`, which is the one thing that changed
+    // when the work left the body: `endingOf` names what did not finish.
     expect(result.stoppedAt?.ending).toMatchObject({
       ending: "did-not-finish",
-      because: "worktree",
+      because: "did-not-finish",
+      at: "cut the branch",
+      detail: expect.stringContaining("no such base ref"),
     });
     // Not `needs-input`, so it does not reach the router: there is no question in
-    // a clone that did not finish (0057 §2).
+    // a clone that did not finish (0057 §2). And no head, so `onSha` is still the
+    // base the caller handed in — nothing was cut.
     expect(result.routes).toEqual([]);
+    expect(result.stoppedAt?.ending).not.toHaveProperty("head");
     expect(asked.draft).toEqual([]);
   });
 
-  it("asks, and the question is what a person is left holding", async () => {
+  /**
+   * **A question from the plugin holds the item, where the body's reached the
+   * judge** (`#268`).
+   *
+   * `CutAnswer.asked` is the same affordance `Asked` was — 0058 §3b's edge out of
+   * `admit` for a step that stopped and asked — and a plugin asks with the one
+   * verdict the pipeline has for it: `needs-approval`, which `endingOf` reads as
+   * `held`. So it rests here rather than at `waiting`, and `held` is on the
+   * endings that do not arrive at the router *because the recipe already asked a
+   * person*. Nothing produces it at `admit` today, which is why this is the test
+   * that says what would happen.
+   */
+  it("holds the item when the cut asks a question", async () => {
     const { result } = await pass({ answers: { cut: { asked: "which base — main or 1.0?" } } });
 
-    expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:did-not-finish",
-      "proposed:routed",
-      "end:passed",
-    ]);
+    expect(walk(result)).toEqual(["claim:passed", "admit:held", "end:passed"]);
     expect(result.stoppedAt).toEqual({
       step: "admit",
-      ending: {
-        ending: "did-not-finish",
-        because: NEEDS_INPUT,
-        at: null,
-        detail: "which base — main or 1.0?",
-      },
+      ending: { ending: "held", at: "cut the branch", question: "which base — main or 1.0?" },
     });
-    expect(result.rested).toBe("waiting");
-  });
-
-  it("is handed no reason to be run again on the way through", async () => {
-    const { asked } = await pass();
-
-    expect(asked.cut).toHaveLength(1);
-    expect(asked.cut[0]?.again).toBeNull();
+    expect(result.routes).toEqual([]);
   });
 });
 
@@ -1143,8 +1214,10 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
   it("lands, and is handed the head the steps gave their verdicts about", async () => {
     const { result, asked } = await pass();
 
+    // Two facts and not three: the lane was handed a worktree it never read
+    // until `#268` took it off `Landing`.
     expect(asked.land).toEqual([
-      { claimed: ITEM, worktree: TREE, context: expect.objectContaining({ onSha: COMMITTED }) },
+      { claimed: ITEM, context: expect.objectContaining({ onSha: COMMITTED }) },
     ]);
     expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({ ending: "passed" });
     expect(outcomeOf(result)).toBe("landed");
@@ -1265,13 +1338,16 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
  *
  * `never-ran` is the one ending with no `because`, and that is its own argument:
  * it is the wall about the *account* rather than about the diff, told apart by a
- * field rather than by a sentence (0031 §1).
+ * field rather than by a sentence (0031 §1). **`held` is the other**, and it is
+ * the same argument: the recipe asked a person, so the question is on the ending
+ * and there is nothing to report a reason *about*. A question at `admit` is one
+ * of those since `#268` — it is the `worktree:` plugin's `needs-approval` — so
+ * what the row below asserts for it is the question rather than a `because`.
  */
 describe("every step that does not simply pass reports a reason", () => {
   it.each([
     { what: "a claim nobody could take", answers: { take: { passedOver: "no kind label" } } as Answers },
     { what: "a tree that was not cut", answers: { cut: { notCut: "no such base ref" } } as Answers },
-    { what: "a question at `admit`", answers: { cut: { asked: "which base?" } } as Answers },
     { what: "a question at `implement`", answers: { dispatch: { asked: "which file?" } } as Answers },
     { what: "an agent with no receipt", answers: { dispatch: { stopped: "the budget went" } } as Answers },
     {
@@ -1287,6 +1363,15 @@ describe("every step that does not simply pass reports a reason", () => {
 
     expect(reported.length).toBeGreaterThan(0);
     for (const ending of reported) expect(ending.because).not.toBe("");
+  });
+
+  /** And the two that report a question instead, which is the same obligation. */
+  it("names the question where a step held instead of reporting", async () => {
+    const { result } = await pass({ answers: { cut: { asked: "which base?" } } });
+
+    const held = result.steps.map((visit) => visit.ending).filter((e) => e.ending === "held");
+    expect(held).toEqual([{ ending: "held", at: "cut the branch", question: "which base?" }]);
+    expect(outcomeOf(result)).toBe("blocked");
   });
 });
 
