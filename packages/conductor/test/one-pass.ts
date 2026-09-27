@@ -116,6 +116,25 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
 /**
+ * **The block `#268` tells a person to paste**, and the `[]` it replaces.
+ *
+ * `worktreePlugin` serves `admit` since `#268`, so the cut is a declaration a
+ * recipe can carry — and the two recipes on this machine both write `admit: []`,
+ * which is what an operator would be pasting over. Both shapes have to cut the
+ * same tree from the same base or the migration is 0065 §6's silent failure with
+ * this repository as the subject.
+ */
+export const cutAtAdmit = (declared: string) => `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  admit: ${declared}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
+/**
  * The same, with a cold reviewer at `proposed` and no round to patch with.
  *
  * `rounds: 0` and a non-zero `restarts` is the configuration
@@ -414,6 +433,11 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
       provision: (o) =>
         Effect.sync(() => {
           did.push(`provision ${o.runId}`);
+          // What it was asked to cut, on its own line so the `provision <runId>`
+          // assertions above stay exact matches: since `#268` the base and the
+          // submodules come off the `worktree:` action rather than off `repo:`,
+          // and *which values reached the cut* is the claim a pasted block needs.
+          did.push(`cut from origin/${o.base}${o.submodules ? " with submodules" : ""}`);
           return { path: `/tmp/fake/${o.runId}`, branch: `agent/${o.runId}`, baseSha: "a".repeat(40) } as never;
         }),
       remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
