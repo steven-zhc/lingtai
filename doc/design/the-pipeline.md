@@ -102,7 +102,8 @@ and it is why the list below is shorter than the one a migration needs.**
                  T4b  pass.ts — build, review, proposed, merge             ✓ #254
                  T5   the conductor runs pass.ts; run-once.ts is deleted  ✓ #256
                  T5c  the citations of the deleted engine, re-pointed  ✓ #260
-                 T5d  `build:` and `review:` accept nothing yet        ← opened by T5
+                 T5d  `build:` and `review:` accept nothing yet        ✓ a417908
+                 T5e  `judge:` is declarable at `proposed`             ✓ #274
                  T5b  013 — the log before the reset       ← moved out, with the reset
                  T6   the rail draws ten
 
@@ -251,7 +252,18 @@ value rather than declaring it again.*
 | why now | The pass runs ten steps and the recipe can only describe five of them, which is the same gap read from the other side: a step the log, the board and `lingtai add` all name, that a person cannot configure. |
 | result | **It was the two `at` keys and nothing else in the pass.** `runPass` runs a step's declared actions through `runActionPipeline` *before* the body (`pass.ts:1443`), `pass.ts:166` makes every step but `end` a `"verdicts"` step, and `pass.ts:1460` returns the pipeline's ending without reaching the body — `prepared` is the proof rather than the argument, its body being `async () => ({ ending: "passed" })`, character for character what `build`'s and `review`'s are. `review` needed no new handling either: `pass.ts:1589` already read `if (spec.step === "review") return { ending: "passed" }`, a reviewer's `failed` being its findings and not a verdict about the step (0058 §3b). |
 | result | **What it cost was everything the move made false**, which the plan did not measure and two attempts at `#263` were refused for. `whyThatPair`'s three branches were all written for `prepared`, so an `agent:` at `build` was refused with *nothing has been committed at `prepared`*; the wizard page's own copy of *does anything check this diff* still read `steps.proposed`, and widening its read without moving its write would have relocated a build out of `build:` on the next Save; and eight prose sites said six of the ten steps are skipped. |
-| result | **`proposed:` holds nothing yet, not judges.** `judgePlugin.at` is still `{}`, so a refused review arrives at `proposed` as a routing arrival with no judge to read it. That is [`#274`](https://github.com/steven-zhc/lingtai/issues/274), and it is what `proposed: []` in this machine's recipe is waiting for — written out rather than absent, which is 0064 §5. |
+| result | **`proposed:` held nothing but judges after it, and could hold none until [`#274`](https://github.com/steven-zhc/lingtai/issues/274).** `judgePlugin.at` was `{}`, so a refused review arrived at `proposed` as a routing arrival with no judge to read it. `#274` is **T5e** below and is landed: the key is open, `judgeDeclaredAt` reads the entry whose `when:` matches, and `proposed: []` in this machine's recipe is now a block a person can fill rather than one they are waiting for — still written out rather than absent, which is 0064 §5. |
+
+| | |
+|---|---|
+| **T5e** | `judge:` is declarable at `proposed`, so a refusal buys the fix round already paid for · **landed as `#274`** |
+| kind | `tech-debt` |
+| blocked by | T5d |
+| what | One `at` key — `proposed` on `judgePlugin` — plus the reader that makes it not `#61`: `judgeDeclaredAt` in `packages/conductor/src/judge.ts` takes the entry whose `when:` matches, and `conduct.ts`'s `ports.judge` hands it `recipe.steps.proposed`. The pass applies the built-in it names, so `chose` and the spent ceiling stay where `#271` put them. |
+| what it cost | **$14.19, measured twice on consecutive tickets.** `#267` and `#263` each refused at the cold reviewer with findings and parked at `lingtai:waiting` with `runtime.limits.rounds: 3` unspent, because `proposed` answered `waiting` on every routing arrival — there was no judge to ask which way to go. Both were fixed by a person. |
+| watch out | **Two things had to be true and only one of them is this ticket.** The refusal has to *travel* — T5d, `ARRIVE_AT_THE_ROUTER` — and there has to be a judge to ask. An attempt that opened the key while the build and the reviewer were still at `proposed:` would have changed nothing at all. |
+| result | **`JudgeName` narrowed to the built-ins in the same diff.** It was the built-ins plus the runtimes, which cost nothing while every cell was refused; with the key open, `judge: claude-code` would resolve and never be called, because nothing dispatches an agent judge ([the-plugin-body.md](the-plugin-body.md) §5). So the loop is closed for `red` and `gate-failed`, and `findings` — the direction 0061 §3 measured at 231 refusals — still reaches a person unless a recipe sends it back to the same worktree. |
+| result | **The body did not move, and that is the ticket rather than a shortfall.** `#267` asked for `pass-steps.ts`'s `proposed` body to become `at.proposed`'s value; §5 of [the-plugin-body.md](the-plugin-body.md) is why it cannot be yet — a step has one body and `proposed` has five plugins. The cell is reachable without it. |
 
 | | |
 |---|---|

@@ -22,6 +22,14 @@ there**. This page is for somebody who wants to write one.
 > per entry you declared — while a plugin supplying a step's own answer is
 > called once a visit. Both are real and they are not the same signature. Until
 > that is decided, read the example as the shape of the first kind.
+>
+> **`judge:` is the one plugin whose declaration is read today, and not as a
+> body** (`#274`). Its `at` carries `proposed`, its value is `notBuiltYet` like
+> every other, and what reads the entry is a lookup the router calls —
+> `judgeDeclaredAt` in `packages/conductor/src/judge.ts`, which answers *which
+> built-in*, not *which step*. So the `judge:` example below is still the shape
+> being built towards; what is live is the key, the refusals, and one built-in
+> name (`same-worktree`).
 
 ## A plugin is two halves
 
@@ -185,7 +193,10 @@ runs, what happened has happened.
 ## A step-specific example: deciding where a refusal goes
 
 `proposed` is the one step that routes, and after 0064 **its plugin's return
-value is the route**. A project that wants every refusal to reach a person:
+value is the route**. A project that wants every refusal to reach a person — read
+as the shape being built towards, per the note at the top: `judge:` is declarable
+at `proposed` today and `judgeDeclaredAt` reads it, but what it may name is a
+built-in and not a body, and `always-waiting` is not one of them yet:
 
 ```ts
 export const alwaysWaiting = definePlugin("judge", {
