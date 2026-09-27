@@ -17,7 +17,8 @@ there**. This page is for somebody who wants to write one.
 > [design/the-plugin-body.md](design/the-plugin-body.md) is what they are.
 >
 > **The fourth is the one that changes the shape below.** A step has exactly one
-> body and `proposed` and `merge` have four plugins each, so `at`'s value is not
+> body while `proposed` has five plugins declaring themselves at it and `merge`
+> four, so `at`'s value is not
 > one kind of function: the `"*"` written below is *an action's* — called once
 > per entry you declared — while a plugin supplying a step's own answer is
 > called once a visit. Both are real and they are not the same signature. Until

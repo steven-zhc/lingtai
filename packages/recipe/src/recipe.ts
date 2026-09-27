@@ -773,18 +773,19 @@ export const backlogPlugin = definePlugin("backlog", {
  * the same set by the same rules — a key, a schema, and an `at` saying which
  * steps it serves.
  *
- * **Four of them serve no step, and they say so themselves** (0064 §4).
- * `merge:`, `queue:`, `judge:` and `backlog:` are
+ * **Three of them serve no step, and they say so themselves** (0064 §4).
+ * `merge:`, `queue:` and `backlog:` are
  * names for code the pass calls directly today, so their `at` is `{}` and
  * every step refuses them, by a sentence that says where that code is called
  * instead. That is the same two-valued rule a step nothing implements is held
  * to — **naming a thing is not wiring it** — read down the other axis.
  *
- * **It was five until `#274`.** `judge:` was one of them and is the first to
- * leave: `at: { proposed: notBuiltYet }`, a router that reads the entry whose
- * `when:` matches, and its `CALLED_DIRECTLY` entry deleted in the same diff —
- * which is what that rule promised would happen and what makes the other four
- * a statement about today rather than a permanent shape.
+ * **It was five, and two have left by the same door.** `worktree:` went first,
+ * to `admit` (`#268`), and `judge:` is the second: `at: { proposed: notBuiltYet }`,
+ * a router that reads the entry whose `when:` matches, and its `CALLED_DIRECTLY`
+ * entry deleted in the same diff (`#274`) — which is what that rule promised would
+ * happen and what makes the other three a statement about today rather than a
+ * permanent shape.
  *
  * The twelfth was `assignee:`, and it is not missing: 0063 §3 makes it a field
  * of `queue:` rather than a plugin beside it, because the two answer one

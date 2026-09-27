@@ -50,7 +50,7 @@
  * **Two of the ports are not waiting on that at all**, and they are the other
  * half of the same fact: `ports.judge` and `ports.land` are not stand-ins for a
  * plugin that will exist; they are the seam that plugin is reached *through*.
- * `merge:` is still one of the four whose `at` is `{}` — `CALLED_DIRECTLY` says
+ * `merge:` is still one of the three whose `at` is `{}` — `CALLED_DIRECTLY` says
  * the lane runs itself — and `judge:` is the one that stopped being (`#274`):
  * `judgePlugin.at` carries `proposed`, and what a caller hands `ports.judge` is
  * `judgeDeclaredAt(recipe.steps.proposed, when)`. The port did not change shape

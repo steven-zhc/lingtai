@@ -25,8 +25,9 @@ from the discovery.
 **The ticket after it was `#267`**, and it narrowed the subject from the four
 runnable kinds to one plugin — `judge:` at `proposed`, 0064 §7. That clears two
 of the three (§4) and finds a fourth thing the narrower subject makes visible:
-**a step has exactly one body, and `proposed` already has four plugins declaring
-themselves at it** (§5). So `at`'s value is not one kind of function, and that is
+**a step has exactly one body, and `proposed` has five plugins declaring
+themselves at it** (§5) — four when `#267` read it, and `judge:` itself since
+`#274`. So `at`'s value is not one kind of function, and that is
 the decision, rather than the cycle being the only obstacle. `#267`'s own *watch
 out* — the budget half — needed none of it and is landed.
 
@@ -148,7 +149,7 @@ runnable kinds, and it says so by clearing two of the three above.
   `ActionContext` and `ActionFinding` they are built from. §3's two ways out are
   the same two ways out.
 
-## 5. And one `#267` finds that `#262` did not: a step has one body and `proposed` has four plugins
+## 5. And one `#267` finds that `#262` did not: a step has one body and `proposed` has five plugins
 
 This is the one that makes *`at`'s value is `StepBody<thatStep>`* wrong rather
 than merely unreachable.
