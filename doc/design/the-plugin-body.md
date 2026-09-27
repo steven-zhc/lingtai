@@ -158,9 +158,10 @@ A step does not have one plugin. Since `#261` the keys say so, read off the
 twelve `at`s and not off a table:
 
 ```
-claim admit design implement   —                        0
-prepared                       run                      1
-build review                   —                        0   ← T5d
+claim design implement         —                        0
+admit                          worktree                 1   ← #268
+prepared build                 run                      1
+review                         agent                    1
 proposed                       run · agent · watch · human   4
 merge                          run · agent · watch · human   4
 end                            close · labels · refs         3
@@ -189,8 +190,12 @@ two things, and the plugin says which. Either the record is keyed by kind —
 `at: { proposed: { step: … } }` against `at: { "*": { action: … } }` — or the
 step-body plugins are a separate declaration from the action plugins, and
 `servesStep` answers a different question for each. The second matches what is
-true today: `judge:`, `queue:`, `worktree:`, `merge:` and `backlog:` are not
-actions and never were, and 0064 §2 opens by saying exactly that.
+true today: `judge:`, `queue:`, `merge:` and `backlog:` are not actions and never
+were, and 0064 §2 opens by saying exactly that. **`worktree:` was the fifth on
+that list and `#268` settled it the other way**: it *is* an action — a
+`WorktreeActionDeps` and an `ActionResult` like the other four kinds — so the cut
+runs once per declared entry through `runActionPipeline`, and what made it look
+like a step's own function was only that `admit`'s body used to call it.
 
 ### And an agent judge has no dispatch on that side of the line
 
@@ -224,8 +229,12 @@ between them was, and the sentence a person gets names it. That had to be true
 **before** a plugin could return any destination, and it is the half a plugin
 must never be given.
 
-**T5d is not blocked by any of this.** It adds `build` to `runPlugin.at` and
-`review` to `agentPlugin.at` — two keys, and the keys half is built.
+**T5d was not blocked by any of this and has landed.** It added `build` to
+`runPlugin.at` and `review` to `agentPlugin.at` — two keys — on 2026-09-27
+(`a417908`), and `#268` added `admit` to `worktreePlugin.at` the same way. Neither
+needed any of §5's decision, which is the evidence for the paragraph above: a key
+opens and the step's body empties, and what `at`'s *value* should be is a separate
+question that only a step-body plugin forces.
 
 ## The block a person pastes, the day the body lands
 
@@ -262,7 +271,6 @@ version of these two that a person can *edit*.
 
 ```yaml
 proposed:
-  # …the build and the cold reviewer stay here until T5d…
   - name: a red build is the agent's to fix, in the worktree it is already in
     judge: same-worktree
     when: red

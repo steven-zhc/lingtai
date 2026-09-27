@@ -465,7 +465,7 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | Step | When | May refuse? | Built? |
 |---|---|---|---|
 | `claim` | the queue picks the item | no | not yet |
-| `admit` | work starts on it; the worktree is cut here | no plugin implements it — see *step × kind* below | not yet |
+| `admit` | work starts on it; the worktree is cut here, by the `worktree:` the recipe declares or the one the default supplies | no | yes |
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
 | `design` | a document, before any code — or nothing, which is an answer | no | not yet |
 | `implement` | one agent, in that worktree | no | not yet |
@@ -475,20 +475,23 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | `merge` | after `proposed` passes, before the merge lane | yes | yes |
 | `end` | the work item reached any terminal outcome | **no** | yes |
 
-`prepared`, `build`, `review` and `proposed` run the recipe's actions; `merge`
-holds when a `human` action asks or when `--no-merge` does; `end` runs too, its
-actions being effects rather than verdicts. The conductor calls GitHub and appends the outcome; what
+`admit`, `prepared`, `build`, `review` and `proposed` run the recipe's actions;
+`merge` holds when a `human` action asks or when `--no-merge` does; `end` runs
+too, its actions being effects rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
-**Four of the ten are empty here and empty everywhere, and that is what the
-last column is for.** No plugin implements `claim`, `admit`, `design` or
-`implement`, so an action declared at one is refused when the recipe resolves
-rather than accepted and skipped (`#61`) — today's implementing agent is
-dispatched by `conduct.ts` directly. It was six until 2026-09-27, when
-`runPlugin` took `build` and `agentPlugin` took `review`: the build and the cold
-reviewer had shared `proposed:` because it was the only door open, and each has
-its own step now. They are all ten steps regardless — the closed set is about
+**Three of the ten are empty here and empty everywhere, and that is what the
+last column is for.** No plugin implements `claim`, `design` or `implement`, so
+an action declared at one is refused when the recipe resolves rather than
+accepted and skipped (`#61`) — today's implementing agent is dispatched by
+`conduct.ts` directly. It was six until 2026-09-27, when `runPlugin` took
+`build` and `agentPlugin` took `review`: the build and the cold reviewer had
+shared `proposed:` because it was the only door open, and each has its own step
+now. `admit` was the fourth until `#268` gave the cut to `worktreePlugin` and
+emptied that body — the first of 0061 §3's five names for the pass's own calls to
+become a key, and the shape the other four move in
+([0065](decisions/0065-the-default-is-a-plugin.md) §4). They are all ten steps regardless — the closed set is about
 the places in the pass, not about what is built today — and naming them is what
 lets the log, the recipe and the board say where a pass is. What is left of
 0058's own plan is [the-pipeline](design/the-pipeline.md).
@@ -927,7 +930,7 @@ written as a stand-in.
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
 | `labels:` | — same | a GitHub client |
 | `refs:` | — same, and the only effect that **deletes**: the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on `origin`, with `branch: true` taking `agent/<n>` too. Its `when:` is `landed` and the schema admits no other value | a GitHub client that can list and delete refs |
-| `worktree:` | — it cuts the branch the pass owns. No step reads it yet | the mirror, and `base` |
+| `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
 | `judge:` | — it says which step is next when something refuses. No step reads it yet | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `gate-failed` are answered by the `same-worktree` built-in, which spends nothing |
@@ -964,11 +967,19 @@ line that already said the dispatched runtime. The alternative was the silent pi
 0046 §3 exists to refuse — a cold review running on the dispatched runtime with
 nothing anywhere recording that the named one was not used.
 
-**The last five are names for code that already runs, and no step accepts one**
-(`#235`, `#236`, `#237`, `#238`). `worktree:` is `provisionWorktree` in
-`packages/repo/src/worktree.ts` and `merge:` is the integrator,
-`packages/repo/src/integrate.ts`; `conduct.ts` calls both itself, from
-`repo.base`. `queue:` is `runnableNow` and `considerIssue` in
+**`worktree:` was one of the five and is the first of them wired** (`#268`,
+[0065](decisions/0065-the-default-is-a-plugin.md) §4). `worktreePlugin.at`
+carries `admit`, so a recipe declares the cut there and `admit`'s body is empty;
+a recipe that declares nothing at `admit` runs the same action off `baseOf` and
+`submodulesOf`, which is 0065 §2's *the default is an entry in the plugin system
+rather than a code path beside it*. `base` is therefore written at `admit` or
+under `repo:` — one setting, two spellings, and `settings.ts` is the only thing
+that knows which a file used.
+
+**The other four are names for code that already runs, and no step accepts one**
+(`#235`, `#236`, `#237`, `#238`). `merge:` is the integrator,
+`packages/repo/src/integrate.ts`, which `conduct.ts` calls itself and hands the
+base. `queue:` is `runnableNow` and `considerIssue` in
 `packages/conductor/src/discover.ts`, with its `assignee` field `assigneeSkip`
 beside them together with `claimWorkItem` in `packages/conductor/src/claim.ts`,
 which takes the one that survives; the queue pass calls those itself, before a
@@ -985,12 +996,12 @@ decides what *refuses* — beside `acceptFinding` and `declineFinding` in
 take that value or neither does**: replace the fold's literal alone and a major
 still fails the step, is never filed, and buys the fix round the recipe said it
 would not, which is why the refusal says so. So a recipe
-cannot yet say any of the five: each declares `at: {}`, so every step refuses
+cannot yet say any of the four: each declares `at: {}`, so every step refuses
 it. They are declared
 anyway because **a plugin no list carries is a plugin no step refuses**
 ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3,
 [`the-v2-recipe.md`](design/the-v2-recipe.md) §3.2): outside the closed set,
-`worktree:` written under `end:` is refused as *an action naming no plugin*,
+`queue:` written under `end:` is refused as *an action naming no plugin*,
 which is true and about the wrong thing. Inside it, the refusal says where that
 code is called today. **`assignee:` was the plugin that rule was written about**
 — it had a row in 0061 §3 and appeared in no other list, so it was precisely
@@ -1050,9 +1061,10 @@ level up. The sentence lives in `whyNoKindAt`'s refusal, where somebody about to
 wire it meets it, and `packages/conductor/unit/step-matrix.test.ts` pins it.
 
 **`merge:` has no `base:` of its own, and that is the design rather than a gap**
-(0061 §4). `base` is one value that flows — written once, under `repo:` today
-and under `admit`'s `worktree:` when the file becomes `steps:` — and
-`worktree.ts:133` and `integrate.ts:73` both take it as a parameter. A second
+(0061 §4). `base` is one value that flows — written once, at `admit`'s
+`worktree:` or under `repo:`, which is the same setting's v1 spelling, with
+`baseOf` the only reader of either — and `worktree.ts:133` and `integrate.ts:73`
+both take it as a parameter. A second
 declaration would manufacture a disagreement between what a pass cut and what
 it lands, which cannot happen today. `merge:`'s one field is `strategy`, and it
 has one legal value because `integrate.ts:417` offers one: `git merge
@@ -1193,17 +1205,20 @@ each says the part an operator can act on:
   [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named are
   these: the queue's filter for `claim`, the issue body for `design`, and
   `conduct.ts`'s own dispatch for `implement`. `build` and `review` were here
-  until 2026-09-27 and are served now. `admit` is the fourth, and a question
-  that must be asked *before* anything is spent is `lingtai ask`, which holds the
-  item in the queue and is answered without a worktree
+  until 2026-09-27 and are served now, and **`admit` was the fourth until
+  `#268`** — `worktree:` serves it, so the eleven other kinds there are refused
+  in `admit`'s own terms instead, with the same remedy: a question that must be
+  asked *before* anything is spent is `lingtai ask`, which holds the item in the
+  queue and is answered without a worktree
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
-- **A plugin that serves no step at all** — `worktree:`, `merge:`, `queue:`,
-  `judge:` and `backlog:`, whose `at` is `{}`. All five are names 0061 §3 gives
-  code the pass already runs, and the recipe is not yet what tells it to. Asked
+- **A plugin that serves no step at all** — `merge:`, `queue:`, `judge:` and
+  `backlog:`, whose `at` is `{}`. All four are names 0061 §3 gives
+  code the pass already runs, and the recipe is not yet what tells it to.
+  **`worktree:` was the fifth and left the list with `#268`.** Asked
   first, and the same sentence at all ten steps, because it is a fact about the
-  plugin: *nothing implements `admit`* is true and leaves a reader hunting for
-  the code that cuts their worktree. `CALLED_DIRECTLY` names it instead, and it
-  is sharpest at `claim`, where the step's sentence and the plugin's are about
+  plugin: *nothing implements `claim`* is true and leaves a reader hunting for
+  the code that picks their ticket. `CALLED_DIRECTLY` names it instead, and it
+  is sharpest there, where the step's sentence and the plugin's are about
   the same plugin and only the plugin's says which file to open. The last three
   carry one more clause, and it is the only part of those refusals that is not
   a fact about today's code — what the step will do with the list when it reads

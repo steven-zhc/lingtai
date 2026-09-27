@@ -88,7 +88,7 @@ field.
 | step | also handed | may return | it is for |
 |---|---|---|---|
 | `claim` | — | pass · hold · did-not-finish · never-ran | picking the ticket. **There is no work item yet** |
-| `admit` | — | pass · hold · did-not-finish · never-ran | starting work on it. The worktree first exists here, so this is where `head` first has a value |
+| `admit` | — | pass · hold · did-not-finish · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
 | `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
 | `design` | — | pass · hold · did-not-finish · never-ran | a document before any code — **or nothing, which is an answer** |
 | `implement` | — | pass · hold · did-not-finish · never-ran | one agent in the worktree. It reports the `head` it committed |
@@ -123,6 +123,26 @@ can move the pass.
 wrong* buys a fix round; *I could not read it* does not, because there is nothing
 for the next agent to fix. A plugin that crashed and reported `refused` sends an
 agent to repair a defect that is not in the diff.
+
+### `worktree:` is the one that makes rather than judges
+
+Every other kind is handed `context.onSha` and says yes or no about it. The
+`worktree:` action at `admit` is where `onSha` gets a value at all, so its result
+carries a fifth field:
+
+```ts
+{ verdict: "passed", evidence, findings: [], head }   // where it left the tree
+```
+
+`head` reaches the step's ending as `LeftTheTreeAt.head` and the loop carries it
+to every visit after — so *the tree moved* survives the body rather than being
+replaced by it, and a body reporting a head of its own wins (`implement`'s does).
+Absent means the tree did not move, which is every other action.
+
+A cut that did not happen answers `did-not-finish` and never `failed`: nothing has
+been written, so there is nothing to have judged, and `admit` is not one of the
+four steps that may refuse anyway. A cut that needs a person answers
+`needs-approval`, which reaches the pass as `held`.
 
 ### `end` is the one that runs for effect
 

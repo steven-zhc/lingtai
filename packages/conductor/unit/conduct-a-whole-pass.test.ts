@@ -27,6 +27,8 @@ import { describe, expect, it } from "vitest";
 import {
   HUMAN_AT_MERGE,
   PROJECT,
+  RECIPE,
+  cutAtAdmit,
   fakeGitHub,
   fakePorts,
   memoryStore,
@@ -455,5 +457,102 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
       did.some((line) => line.startsWith("note route merge \u2192 implement:") && line.includes("same-worktree")),
     ).toBe(true);
     expect(did.some((line) => line.startsWith("note route the 1 route(s) were not appended"))).toBe(true);
+  });
+
+  /**
+   * **The cut is a plugin's, and the three shapes a recipe can be in cut the same
+   * tree** (`#268`, [0065](../../../doc/decisions/0065-the-default-is-a-plugin.md)
+   * §2–4).
+   *
+   * This is the wiring `pass-steps.test.ts` cannot see: `defaultsAt` is
+   * `conduct.ts`'s and so is the `cut` that every one of the three reaches. The
+   * three rows are the migration, in order — what a recipe says today (`admit:
+   * []`, in both recipes on this machine), what a recipe that never mentioned the
+   * step says, and the block `#268` tells a person to paste.
+   *
+   * **`[]` and an omitted key are the same at this seam and both cut**, which is
+   * the safe direction and the reason the paste is optional: 0065 §2's *`[]` runs
+   * nothing* needs a refusal on the file's own bytes before it can mean anything,
+   * and until then a diff that read `[]` as *cut nothing* would have stopped every
+   * pass on this machine at the first step that needs a tree.
+   */
+  it.each([
+    { what: "`admit: []`, as both recipes on this machine have it", steps: cutAtAdmit("[]") },
+    { what: "no `admit:` key at all", steps: RECIPE },
+    {
+      what: "the `worktree:` block a person pastes",
+      steps: cutAtAdmit("\n    - name: cut the branch\n      worktree: { base: main, submodules: false }"),
+    },
+  ])("cuts from origin/main with $what", async ({ steps }) => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], steps),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    expect(did).toContain("cut from origin/main");
+    expect(did.filter((line) => line.startsWith("cut from"))).toHaveLength(1);
+    expect(did).toContain(`provision ${result.runId}`);
+  });
+
+  /**
+   * **A declared `worktree:` produces a verdict, which is `#268`'s first major
+   * finding closed** (0065 §5).
+   *
+   * It used to be recorded in `GatesResolved` as planned and then produce nothing
+   * at all: no `GateStarted`, no `GatePassed`, no waiver. So a landed item had a
+   * point the log said was configured and never ran, and the board drew it
+   * `never-ran` — hatched in the fail colour, titled *configured and did not run,
+   * which is Lingtai's bug* (0016 §4). That mark is reserved for Lingtai's own bug
+   * and would have been permanently on, on every landed run, for every operator
+   * who followed this ticket's own instructions.
+   *
+   * The step runs what is declared there now, so the verdict exists by
+   * construction. `admit:cut the branch` is the key `task_view` and the board both
+   * use, and the pair below is the whole proof: it was planned, and it ran.
+   */
+  it("records a declared `worktree:` as planned and then passes it", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    await once(
+      {
+        project,
+        client: fakeGitHub([], cutAtAdmit("\n    - name: cut the branch\n      worktree: { base: main, submodules: true }")),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    // The declaration is what reached the cut, submodules included — the value
+    // `repo.submodules: false` two blocks up no longer answers for it.
+    expect(did).toContain("cut from origin/main with submodules");
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const planned = run.find((event) => event.type === "GatesResolved");
+    expect(JSON.stringify(planned?.data)).toContain("cut the branch");
+    const verdicts = run
+      .filter((event) => event.type === "GateStarted" || event.type === "GatePassed")
+      .map((event) => `${event.type} ${(event.data as { gate: string; action: string }).gate}:${(event.data as { action: string }).action}`);
+    expect(verdicts).toContain("GateStarted admit:cut the branch");
+    expect(verdicts).toContain("GatePassed admit:cut the branch");
   });
 });

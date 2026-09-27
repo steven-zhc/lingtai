@@ -1553,14 +1553,22 @@ export function runOnce(
        * default did* are the same pass, which is what makes the block safe to
        * paste.
        *
-       * **`[]` runs nothing, and that is the trap 0065 §6 names.** A step the
-       * file omits reaches here; a step the file writes `[]` at does not, because
-       * `actionsAt` only substitutes for an *empty* declared list and an omitted
-       * key resolves to `[]` too. So the substitution is keyed on the list being
-       * empty and the distinction between *absent* and *empty* is the recipe's to
-       * make one level up — `resolveRecipe` is where 0065 §6's refusal goes, and
-       * until it lands the printed block is what carries it. Only `admit` has a
-       * row, so no other step's `[]` changes meaning today.
+       * **`[]` and an omitted key are the same thing here, and 0065 §2's *`[]`
+       * runs nothing* is not built.** `StepMap` resolves both to `[]` (0061 §5:
+       * *the file may omit a step; the resolved recipe may not*), so by the time a
+       * list reaches this seam the difference is gone — the refusal that would
+       * keep them apart belongs at resolve, on the file's own bytes, and 0065 §6
+       * is where it is written down. Until it lands, an `admit: []` runs the
+       * default.
+       *
+       * **That is the safe direction and it is deliberate**, because the other
+       * reading is 0065 §6's silent failure with this repository's own recipe as
+       * the subject: `admit: []` means *skipped* in every recipe on the machine
+       * today, and a diff that made it mean *cut nothing* would stop every pass
+       * at the first step that needs a tree, in a daemon nobody had told to
+       * expect it. So the block below is safe to paste and safe not to paste, and
+       * the day `[]` starts meaning nothing is a version bump and a refusal
+       * rather than a change of behaviour under an unchanged file.
        */
       const defaultsAt = (step: Step): readonly Action[] => {
         if (step !== "admit") return [];
