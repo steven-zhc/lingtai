@@ -184,6 +184,7 @@ mentions at all: **`@lingtai/repo`** (git, worktrees, the merge lane),
 | [010](experiments/010-the-log-before-the-second-reset.md) | What was in the log before ADR 0019 reset it? | 56 events, `seq` 10 to 65, kept because it is the only copy |
 | [011](experiments/011-patching-versus-starting-over.md) | When a reviewer keeps refusing, is another round or a fresh start cheaper? | the fresh start, decisively — and it needed none of its rounds ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 | [012](experiments/012-where-the-turns-go.md) | Every ticket takes 100+ turns and the tokens go fast — where do they go? | cost is linear in turns at ~$0.10; half the turns are the fix loop, and `review` feeds all of it, refusing 3× for every acceptance |
+| [013](experiments/013-the-log-before-the-third-reset.md) | The log before the third reset, **folded rather than archived** — 13,481 events, 51 types, 184 items, 344 runs, and six types are 56% of it. 007 and 010 transcribed because each was the only copy; the old database is kept this time, so this is a pointer and not an archive. Its longest section is *what this did not ask*. |
 
 ## Open
 
