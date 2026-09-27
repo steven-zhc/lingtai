@@ -37,17 +37,25 @@
  * **Why a port and not a plugin.** 0061 §3 puts `queue:` at `claim`,
  * `worktree:` at `admit` and `agent:` at `design` and `implement`, and those four
  * plugin names exist — `PLUGINS` in `@lingtai/recipe` carries them. What does
- * not exist is a plugin declaring itself there: no plugin's `at` carries
- * `claim`, `admit`, `design` or `implement` (0064 §4), and `whyNoKindAt`
- * refuses every one by name, saying where that code is called from instead.
+ * not exist is a plugin *body* at any of them: no plugin's `at` carries
+ * `claim`, `design` or `implement` (0064 §4), and `whyNoKindAt` refuses every
+ * one by name, saying where that code is called from instead.
  * **Naming a thing is not wiring it**, and until a plugin claims the step, the
  * step's own work is its body's. A port is what keeps that honest: the body
  * still cannot act, so the day a plugin claims it the body loses the call and
  * keeps the rule.
  *
+ * **`admit` is the one that has started, and it shows what *claiming a step*
+ * costs in two halves** (`#268`). `worktree:` declares itself there, so a
+ * recipe says what a pass is cut from — but the value of that key is
+ * `notBuiltYet`, so `ports.cut` is still what cuts and the declaration reaches
+ * it as a *setting*, through `baseOf` and `submodulesOf`. The configuration
+ * half moved and the dispatch half did not, and
+ * [the-plugin-body.md](../../../doc/design/the-plugin-body.md) §§3, 5–6 is why.
+ *
  * **Two of the ports are not waiting on that at all**, and they are the other
  * half of the same fact: `judge:` at `proposed` and `merge:` at `merge` are two
- * of the five plugins whose `at` is `{}`, and `CALLED_DIRECTLY` is
+ * of the four plugins whose `at` is `{}`, and `CALLED_DIRECTLY` is
  * what their cells are refused with — *they name code the pass calls itself.* So
  * `ports.judge` and `ports.land` are not stand-ins for a plugin that will exist;
  * they are the seam that plugin was always going to be reached through.
@@ -493,6 +501,12 @@ export interface PassPorts {
   /**
    * `admit` — cut the worktree, at the base the recipe names. `repo.provision`.
    *
+   * **And since `#268` the recipe does name it here**: a `worktree:` at `admit`
+   * carries the base and the submodules, `baseOf` and `submodulesOf` read it,
+   * and a recipe that declares none falls back to `repo:`. The port is
+   * unchanged because the caller resolves both before it builds one — which is
+   * what it means for the plugin's `at.admit` to be a key with no body yet.
+   *
    * `again` is beside the item rather than inside a `Brief` because there is no
    * brief at `admit`: the worktree an agent is briefed on is what this step
    * makes. It carries the same thing for the same reason — a step routed back to
@@ -521,8 +535,8 @@ export interface PassPorts {
    * — and the body holds the answer to it, so a judge that answers outside the set
    * is refused by name rather than obeyed (0061 §8).
    *
-   * **It is a port and not a plugin for the reason `queue:` and `worktree:` are.**
-   * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no step
+   * **It is a port and not a plugin for the reason `queue:` is.**
+   * `judge:` is one of the four plugins whose `at` is `{}`, so it serves no step
    * at all, and `CALLED_DIRECTLY` is what its ten cells are refused with: the plugin names
    * code the pass calls itself. So `actionsAt` will not build one, and this is
    * where a caller that has resolved the recipe's entries answers instead.

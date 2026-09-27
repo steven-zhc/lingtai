@@ -1190,16 +1190,20 @@ each says the part an operator can act on:
   The five steps [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3
   named are these: the queue's filter for `claim`, the issue body for `design`,
   `conduct.ts`'s own dispatch for `implement`, and the `proposed` step's
-  actions for `build` and `review`. `admit` is the sixth, and a question that
-  must be asked *before* anything is spent is `lingtai ask`, which holds the
-  item in the queue and is answered without a worktree
+  actions for `build` and `review`. **`admit` was the sixth and is not one any
+  more** (`#268`): `worktree:` declares itself there, so a recipe says what a
+  pass is cut from. What is refused at `admit` now is the four runnable kinds,
+  by the step's own sentence — a step runs its plugins *before* its own work,
+  and `admit`'s own work is making the tree, so there is nowhere to run one.
+  A question that must be asked *before* anything is spent is still `lingtai
+  ask`, which holds the item in the queue and is answered without a worktree
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
-- **A plugin that serves no step at all** — `worktree:`, `merge:`, `queue:`,
-  `judge:` and `backlog:`, whose `at` is `{}`. All five are names 0061 §3 gives
+- **A plugin that serves no step at all** — `merge:`, `queue:`, `judge:` and
+  `backlog:`, whose `at` is `{}`. All four are names 0061 §3 gives
   code the pass already runs, and the recipe is not yet what tells it to. Asked
   first, and the same sentence at all ten steps, because it is a fact about the
-  plugin: *nothing implements `admit`* is true and leaves a reader hunting for
-  the code that cuts their worktree. `CALLED_DIRECTLY` names it instead, and it
+  plugin: *nothing implements `claim`* is true and leaves a reader hunting for
+  the queue. `CALLED_DIRECTLY` names the file instead, and it
   is sharpest at `claim`, where the step's sentence and the plugin's are about
   the same plugin and only the plugin's says which file to open. The last three
   carry one more clause, and it is the only part of those refusals that is not
@@ -1210,6 +1214,12 @@ each says the part an operator can act on:
   workflow counting the rounds and restarts and the judge only choosing from
   what it is offered (0061 §3). The day a step reads one, its entry in
   `CALLED_DIRECTLY` goes and an `at` key arrives on the plugin in the same diff.
+  **`worktree:` is the one that has done it** (`#268`), and it is worth reading
+  for the shape: the reader came first — `baseOf` and `submodulesOf` in
+  `settings.ts` — and the key and the deleted entry came with it. What did
+  *not* come is a body: `at.admit`'s value is still `notBuiltYet`, so `admit`
+  is a step whose **setting** the recipe declares and whose work is still the
+  pass's own ([the-plugin-body.md](design/the-plugin-body.md) §6).
 
 Where each step's list comes from. **There is one call site, and it names its
 step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runPass`, which
