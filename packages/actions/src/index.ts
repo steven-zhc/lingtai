@@ -27,6 +27,12 @@ export {
 } from "./agent-action.ts";
 export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
 export { createWatchAction, type WatchActionDeps, type WatchActionSpec } from "./watch-action.ts";
+export {
+  createWorktreeAction,
+  type CutAnswer,
+  type WorktreeActionDeps,
+  type WorktreeActionSpec,
+} from "./worktree-action.ts";
 export { actionsFromRecipe, ActionUnavailableError, type ActionDeps } from "./from-recipe.ts";
 export {
   runCommand,

@@ -120,8 +120,10 @@ import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
   type Action,
   type ActionEvent,
+  type CutAnswer,
   actionsFromRecipe,
   createHumanAction,
+  createWorktreeAction,
 } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
 import {
@@ -165,7 +167,6 @@ import {
 import {
   type Brief,
   type Claimed,
-  type Cut,
   type Drafted,
   type Judged,
   type Landed,
@@ -857,8 +858,32 @@ export function runOnce(
        */
       let mergeCommit: string | null = null;
       const landedAt = (): string | null => mergeCommit;
-      /** The tree, once `admit`'s port has cut it. */
+      /** The tree, once `admit`'s `worktree:` action has cut it. */
       let worktree: Worktree | null = null;
+      /**
+       * That tree, for the step that briefs an agent on it — or a throw naming
+       * what did not run.
+       *
+       * **It is this file's fact rather than the pass's since `#268`.** The cut
+       * is the `worktree:` plugin's now (0065 §2), `cut` below is the dep it
+       * runs, and this closure is what that dep fills — so `Brief` no longer
+       * carries a copy of a path only the conductor can have made. `implement`
+       * is reached only after `admit` passed and `admit` passes only on a cut,
+       * so null here is the pass's own bookkeeping gone wrong and not something
+       * that happened to a diff: `runStep` catches the throw and reports the
+       * visit as its own `did-not-finish`, which is what `madeBy` in
+       * `pass-steps.ts` does for the two facts that still travel in its closure.
+       */
+      const cutTree = (): Worktree => {
+        if (worktree === null) {
+          throw new Error(
+            "the `implement` step has no worktree — `admit`'s `worktree:` action did not cut one, " +
+              "and the spine says it did. This is the pass's own bookkeeping and not a judgement " +
+              "about the change.",
+          );
+        }
+        return worktree;
+      };
       /** The item, once `claim`'s port has taken it. */
       let took: Claimed | null = null;
       /**
@@ -1296,14 +1321,25 @@ export function runOnce(
       };
 
       /**
-       * `admit` — cut the worktree, at the base the recipe names.
+       * `admit` — cut the worktree, at the base **the action names**.
+       *
+       * **The dep of a plugin rather than a port of a step, since `#268`.**
+       * `worktreePlugin` declares `admit` (0065 §4), so what calls this is
+       * `createWorktreeAction` in `@lingtai/actions`, over the `base` and
+       * `submodules` the action carries — which is `worktree:`'s at `admit` where
+       * a recipe declares one and `defaultsAt`'s off `repo:` where it does not.
+       * Read off the argument and never off `recipe` here, so that the tree this
+       * cuts is the one the reading of the recipe says it cut.
        *
        * The path is `cwd`, computed before the pass: see this file's opening. A
        * clone that did not finish is not a judgement about the change — nothing
-       * has been written yet — so it is `notCut`, which the body reports as 0057's
-       * class rather than as a refusal buying a round to fix a repository.
+       * has been written yet — so it is `notCut`, which the action reports as
+       * 0057's class rather than as a refusal buying a round to fix a repository.
        */
-      const cut = async (_claimed: Claimed): Promise<Cut> => {
+      const cut = async (spec: {
+        readonly base: string;
+        readonly submodules: boolean;
+      }): Promise<CutAnswer> => {
         /**
          * The cold reviewer's own settings, with no hook in them. `wiring`'s
          * settings and `wiring.env` are one thing and the `agent` gate had only
@@ -1349,10 +1385,10 @@ export function runOnce(
               project,
               owner: options.client.owner,
               repo: options.client.repo,
-              base,
+              base: spec.base,
               branch,
               runId,
-              submodules: submodulesOf(recipe),
+              submodules: spec.submodules,
               plantAt: recipe.env.plantAt,
               env: env.values,
               token: options.token,
@@ -1366,7 +1402,10 @@ export function runOnce(
         worktree = provisioned.right;
         lease = provisioned.right.remoteHead;
         log(`worktree ${provisioned.right.path} at ${provisioned.right.baseSha.slice(0, 7)}`);
-        return { worktree: provisioned.right };
+        // `head` is the whole of what moves `onSha`, and the action puts it on
+        // its result for the pass to read (`ActionResult.head`). The `Worktree`
+        // itself stays here, where the finalizer that removes it already is.
+        return { head: provisioned.right.baseSha, where: provisioned.right.path };
       };
 
       /**
@@ -1452,6 +1491,9 @@ export function runOnce(
             return names.split("\n").filter(Boolean);
           },
         },
+        // The fourth, and the one that makes rather than judges: `admit`'s
+        // `worktree:` action cuts through this (0065 §2, `#268`).
+        worktree: { cut },
       };
 
       /**
@@ -1491,9 +1533,53 @@ export function runOnce(
         return held;
       };
 
+      /**
+       * **What runs at a step the recipe says nothing about** — that step's
+       * *default plugin*, and nothing else
+       * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2–3).
+       *
+       * The default is an entry in the plugin system rather than a code path
+       * beside it: the workflow guarantees the ten steps turn and no step has a
+       * built-in implementation, so the behaviour a recipe gets for free arrives
+       * here by name and is replaceable by writing one line in the file.
+       *
+       * **`admit` is the first row, and `#268` is what put it here.** `admit`
+       * used to cut the worktree in its body, from `repo.base` and
+       * `repo.submodules`, where no recipe could see, name or replace it. Now the
+       * body is empty and this is what an unconfigured `admit` runs — the same
+       * action a declared `worktree:` builds, over the same values, because
+       * `baseOf` and `submodulesOf` are the one place that knows which spelling a
+       * file used. So *the default cut* and *a pasted block that says what the
+       * default did* are the same pass, which is what makes the block safe to
+       * paste.
+       *
+       * **`[]` runs nothing, and that is the trap 0065 §6 names.** A step the
+       * file omits reaches here; a step the file writes `[]` at does not, because
+       * `actionsAt` only substitutes for an *empty* declared list and an omitted
+       * key resolves to `[]` too. So the substitution is keyed on the list being
+       * empty and the distinction between *absent* and *empty* is the recipe's to
+       * make one level up — `resolveRecipe` is where 0065 §6's refusal goes, and
+       * until it lands the printed block is what carries it. Only `admit` has a
+       * row, so no other step's `[]` changes meaning today.
+       */
+      const defaultsAt = (step: Step): readonly Action[] => {
+        if (step !== "admit") return [];
+        return [
+          createWorktreeAction(
+            { name: "cut the branch", base, submodules: submodulesOf(recipe) },
+            { cut },
+          ),
+        ];
+      };
+
       const actionsAt = (step: Step, actions: readonly StepAction[]): readonly Action[] => {
         const declared = actionsFromRecipe(step, actions, stepDeps);
-        return step === "merge" ? [...declared, ...alsoHeldAtMerge()] : declared;
+        // **A default replaces what would have run; a hold composes with it**
+        // (0065 §3). That is why `alsoHeldAtMerge` stays outside the substitution
+        // and appends either way: `--no-merge` holds a recipe that declares
+        // nothing at `merge` exactly as it holds one that declares a person.
+        const running = declared.length > 0 ? declared : defaultsAt(step);
+        return step === "merge" ? [...running, ...alsoHeldAtMerge()] : running;
       };
 
       /**
@@ -1531,7 +1617,7 @@ export function runOnce(
        * is a person, not the queue.
        */
       const firstDispatch = async (brief: Brief): Promise<Worked> => {
-        const tree = brief.worktree;
+        const tree = cutTree();
         const wired = await Effect.runPromise(
           Effect.either(host.wire({ runId, hookBinary: options.hookBinary, home })),
         );
@@ -1726,7 +1812,7 @@ export function runOnce(
        * they are appended here, from the step that spends the round.
        */
       const fixRound = async (brief: Brief, again: NonNullable<Brief["again"]>): Promise<Worked> => {
-        const tree = brief.worktree;
+        const tree = cutTree();
         const round = brief.context.round ?? 1;
         const findings = brief.context.recheck ?? [];
         const from = again.printed?.step ?? "proposed";
@@ -1904,7 +1990,9 @@ export function runOnce(
         return { notMerged: { reason: result.reason, detail: result.detail } };
       };
 
-      const ports: PassPorts = { take, cut, draft, dispatch, judge, land, readEnd, recordEnd };
+      // **Seven, and `cut` is not one of them since `#268`**: `admit`'s work is a
+      // `worktree:` action, reached through `stepDeps` like every other plugin's.
+      const ports: PassPorts = { take, draft, dispatch, judge, land, readEnd, recordEnd };
 
       // ---- the pass ----------------------------------------------------------
       // Ten steps, and the claim is the first of them. Everything above this line

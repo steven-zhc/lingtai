@@ -3,7 +3,9 @@
  * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
  * `GatesResolved`, printed by `lingtai add`, drawn on the board, and never
- * called (`#61`).
+ * called (`#61`). **`admit` is a step that runs one kind since `#268`** —
+ * `worktreePlugin` declares it, so a `worktree:` there is resolved *and* called,
+ * and the other eleven kinds at that step refuse in `admit`'s own terms.
  *
  * **There is no matrix any more, and the cells are still there** (`#261`).
  * `KINDS_AT` was a hand-written table of which of the twelve plugins each of
@@ -30,17 +32,20 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Fourteen of the hundred and twenty cells run and **a hundred and six
- * refuse**; forty-eight of those are the four steps no plugin implements, and
- * fifty are the five plugins that serve no step — overlapping each other by
- * twenty, because a `worktree:` action at `design` is both at once.
+ * Fifteen of the hundred and twenty cells run and **a hundred and five
+ * refuse**; thirty-six of those are the three steps no plugin implements, and
+ * forty are the four plugins that serve no step — overlapping each other by
+ * twelve, because a `queue:` action at `design` is both at once.
  *
  * **It was twelve and six until 2026-09-27**, when `runPlugin` took `build` and
- * `agentPlugin` took `review` (`a417908`): two cells moved from refusing to
- * running, and two steps left the column that refuses every kind. The counts
- * are the arithmetic of the two closed sets and nothing asserts them, so they
- * are the one thing in this file that can go quietly stale — the assertion
- * thirteen paragraphs down names the four steps, and it is the one to believe.
+ * `agentPlugin` took `review` (`a417908`), and fourteen until `worktreePlugin`
+ * took `admit` (`#268`): each opening moves a cell from refusing to running and
+ * can take a whole step or a whole plugin out of a column that refused
+ * everything. **The counts are asserted** — *the arithmetic of the two closed
+ * sets is what the paragraph above says* is a case a few rows down, so a key
+ * opened anywhere goes red here rather than leaving a stale numeral in a
+ * docblock. It is the one thing in this file that used to be able to go quietly
+ * stale, and it did, twice.
  *
  * **`refs:` is the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
@@ -50,12 +55,15 @@
  * because every precedent in this file is the other case.
  *
  * That is the property this file is here to hold, and it holds it down both
- * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
+ * axes: **naming a thing is not wiring it.** The steps 0058 named and the
  * pipeline has not yet constructed must refuse every kind until it has, and the
- * five plugins that are names for code the conductor calls itself must be
- * refused at every step until the recipe is what tells it to. A `design:` block
- * a recipe could write and nothing would run is `#61` with a new spelling; so
- * is a `worktree:` one, and so is a `backlog:` one.
+ * plugins that are names for code the conductor calls itself must be refused at
+ * every step until the recipe is what tells it to. A `design:` block a recipe
+ * could write and nothing would run is `#61` with a new spelling, and so is a
+ * `backlog:` one. **A `worktree:` one was the example here for four columns'
+ * worth of tickets and is now the counter-example**: `#268` opened the key and
+ * emptied `admit`'s body in one diff, which is the shape a wiring has to take —
+ * both halves, or the step runs its plugins *and* its own copy of the work.
  *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
@@ -89,11 +97,17 @@ import { decideBacklog } from "../src/backlog.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
- * hold them — **and the last five are actions no resolved recipe can hold**,
- * because `worktree:`, `merge:`, `queue:`, `judge:` and
- * `backlog:` are refused at all ten steps. That is the point of writing them: the cell has to be
- * *refused by name* rather than *unrepresentable*, and an action the schema
- * never sees is a column this file would walk with nothing in it.
+ * hold them — **and four of them are actions no resolved recipe can hold**,
+ * because `merge:`, `queue:`, `judge:` and `backlog:` are refused at all ten
+ * steps. That is the point of writing them: the cell has to be *refused by name*
+ * rather than *unrepresentable*, and an action the schema never sees is a column
+ * this file would walk with nothing in it.
+ *
+ * **`worktree:` was the fifth and is not one any more** (`#268`): the row below
+ * is what an operator pastes at `admit`, it resolves, and it runs. Its
+ * `submodules: false` is written out because the plugin requires it — a block
+ * that named only its base used to take `false` from a schema and override
+ * `repo.submodules` in silence.
  */
 const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
@@ -159,6 +173,7 @@ const EVERY_DEP: ActionDeps = {
   // Built, never run — building is the whole of what this file asserts.
   agent: {} as unknown as AgentActionDeps,
   watch: { changedFiles: async () => [] },
+  worktree: { cut: async () => ({ head: "0".repeat(40), where: "/nowhere" }) },
 };
 const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
   prepared: { env: () => ({}) },
@@ -377,7 +392,7 @@ describe("every step × kind cell runs or refuses", () => {
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["claim", "admit", "design", "implement"]);
+    expect(unimplemented).toEqual(["claim", "design", "implement"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
       // step's; the five that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
@@ -391,7 +406,47 @@ describe("every step × kind cell runs or refuses", () => {
     // key was lost.
     expect(whyNoKindAt("build", "run")).toBeNull();
     expect(whyNoKindAt("review", "agent")).toBeNull();
+    // **And `admit` left the same list on the same terms** (`#268`): the step has
+    // a plugin now, so the refusal for every *other* kind there is about the pair
+    // rather than about a step nobody built — and it keeps the remedy that branch
+    // carried, which is the only part an operator can act on.
+    expect(whyNoKindAt("admit", "worktree")).toBeNull();
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
+    expect(whyNoKindAt("admit", "run")).not.toContain("no plugin implements `admit`");
+    expect(whyNoKindAt("admit", "run")).not.toContain("nothing has been committed at `prepared`");
+  });
+
+  /**
+   * **The arithmetic the header argues from, asserted rather than remembered.**
+   *
+   * Every count in this file's opening is a product of the two closed sets, and
+   * twice now a key opened somewhere and left a numeral behind: `a417908` moved
+   * two cells and six places went on saying five or six, and `#268` moves a third.
+   * A docblock cannot go red, so the numbers live here and the prose quotes them.
+   */
+  it("runs fifteen of the hundred and twenty cells and refuses a hundred and five", () => {
+    const cellsThatRun = STEPS.flatMap((step) =>
+      PLUGINS.filter((plugin) => servesStep(plugin, step)),
+    );
+    expect(STEPS.length * PLUGINS.length).toBe(120);
+    expect(cellsThatRun).toHaveLength(15);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(105);
+
+    // The two classes the header decomposes the refusals into, and their overlap.
+    const stepsNobodyImplements = STEPS.filter((step) =>
+      PLUGINS.every((plugin) => !servesStep(plugin, step)),
+    );
+    const pluginsServingNothing = PLUGINS.filter((plugin) => plugin.serves.length === 0);
+    expect(stepsNobodyImplements).toHaveLength(3);
+    expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual([
+      "merge",
+      "queue",
+      "judge",
+      "backlog",
+    ]);
+    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(36);
+    expect(pluginsServingNothing.length * STEPS.length).toBe(40);
+    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(12);
   });
 
   /**

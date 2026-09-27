@@ -22,6 +22,16 @@
  * reaches any of these, so every value is present and an absent one is a bug in
  * the schema rather than something to paper over here.
  *
+ * **`baseOf` and `submodulesOf` are the first two to have actually moved, and
+ * they are still one question each** (`#268`, 0065). A recipe may write them at
+ * `admit` as `worktree:`'s fields or under `repo:`, which is the same setting's
+ * v1 spelling — so these two read the step first and `repo:` second, and that is
+ * a **spelling** rather than a fallback: both are present on a resolved recipe,
+ * and which of them a file wrote is exactly the knowledge this file exists to
+ * hold alone. Every reader asks the accessor, so the merge lane lands on what
+ * the tree was cut from whichever spelling was used, and there is no place for
+ * the two to disagree.
+ *
  * **There is one accessor per setting 0061 §4 moves, and the set is closed by
  * that list rather than by what a caller happened to need.** It was three for a
  * while — `limitsFor`, `baseOf`, `kindsOf` — and the other three settings in
@@ -47,20 +57,40 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits
   return recipe.runtime.limits;
 }
 
+/**
+ * The `worktree:` this recipe declares at `admit`, or null where it declares
+ * none and `repo:` is what says it.
+ *
+ * `find` and not a reduction over several, because a step cuts one worktree or
+ * none: `StepMap` refuses a second `worktree:` at a step by name when the recipe
+ * resolves, so *the first one* and *the only one* are the same entry here.
+ */
+function cutAt(recipe: Recipe): { base: string; submodules: boolean } | null {
+  const declared = recipe.steps.admit.find((action) => "worktree" in action);
+  return declared === undefined ? null : declared.worktree;
+}
+
 /** The branch a pass cuts from and lands on. */
 export function baseOf(recipe: Recipe): string {
-  return recipe.repo.base;
+  return cutAt(recipe)?.base ?? recipe.repo.base;
 }
 
 /**
  * Whether the worktree a pass is cut into gets the submodules.
  *
- * `baseOf`'s sibling and it moves with it: both are `worktree:`'s fields under
+ * `baseOf`'s sibling and it moved with it: both are `worktree:`'s fields under
  * 0061 §4, and a caller that asks for one usually asks for the other in the
  * next line (`conduct.ts`'s `repo.provision` call is exactly that pair).
+ *
+ * **A declared `worktree:` must name it** — `worktreePlugin`'s schema has no
+ * default for `submodules`, so there is no third answer between *the step said*
+ * and *`repo:` said*. A block that named only its base would otherwise take
+ * `false` from a schema while `repo.submodules: true` sat two blocks up unread,
+ * and the symptom of that is every test that imports a submodule failing in a
+ * way that reads as the agent's fault.
  */
 export function submodulesOf(recipe: Recipe): boolean {
-  return recipe.repo.submodules;
+  return cutAt(recipe)?.submodules ?? recipe.repo.submodules;
 }
 
 /**

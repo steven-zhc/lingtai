@@ -199,9 +199,12 @@ function after(step: Step): Step | null {
  * the step that moved the tree says so, and the loop carries it to every visit
  * after it.
  *
- * Absent is *the tree did not move*, which is eight of the ten and every ending
- * the pipeline produces — `endingOf` never sets it, because an action's verdict
- * is about the head it was handed.
+ * Absent is *the tree did not move*, which is eight of the ten and all but one
+ * of the endings the pipeline produces. **The exception is `admit`'s, and it is
+ * `#268`'s** — the cut is a `worktree:` action now (0065 §4), so the one action
+ * that *makes* a tree rather than judging one reports where it left it on
+ * `ActionResult.head` and `endingOf` carries it here. Every other verdict is
+ * about the head it was handed and sets nothing.
  */
 export interface LeftTheTreeAt {
   /** The commit the step's own work left the worktree at, when it moved it. */
@@ -1434,6 +1437,16 @@ async function runStep(
 ): Promise<StepReached> {
   const actions = options.recipe.steps[spec.step];
   let results: readonly ActionOutcome[] = [];
+  /**
+   * **Where the step's plugins left the worktree, kept across the body** (`#268`).
+   *
+   * A body owns the outcome rules and says which ending an answer is; *the tree
+   * moved to here* is not one of those, and `admit`'s body is empty. So the fact
+   * survives the body rather than being replaced by it, and a body that reports a
+   * head of its own wins — `implement`'s does, and its commit is later than
+   * anything its plugins could have said.
+   */
+  let leftTheTreeAt: LeftTheTreeAt = {};
 
   try {
     // A routing arrival runs the router and not the inspection — `StepWork
@@ -1454,6 +1467,7 @@ async function runStep(
       // Assigned before the body runs, so a body that throws still reports what
       // its own plugins said.
       results = result.results;
+      leftTheTreeAt = headFrom(result);
       const ending = endingOf(spec, result);
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.
@@ -1484,7 +1498,11 @@ async function runStep(
       context: reaching.context,
       emit: options.emit,
     });
-    return { step: spec.step, ending: theWorkflowsToSay(spec, ending, reaching), results };
+    return {
+      step: spec.step,
+      ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...ending }, reaching),
+      results,
+    };
   } catch (error) {
     return { step: spec.step, ending: threw(spec, error), results };
   }
@@ -1603,6 +1621,30 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
       "action. That is a pipeline that stopped for a reason it did not name, and a pass cannot " +
       "report it — see `PipelineResult` in packages/actions/src/action.ts.",
   );
+}
+
+/**
+ * **Where the step's own plugins left the worktree**, or nothing where none of
+ * them moved it (`#268`).
+ *
+ * One kind produces it — `worktree:`, at `admit` — so the last one that said
+ * anything is the answer, and there can only be one of those: `StepMap` refuses
+ * a second `worktree:` at a step when the recipe resolves. Read only on the
+ * passing branch, because the tree a refused pipeline was cut into is the one
+ * the arrival already carries: a cut that did not happen is
+ * `did-not-finish`, and its head is the base the pass came in on.
+ *
+ * Spread rather than assigned, so that *the tree did not move* stays an absent
+ * key — `record` in `runPass` advances `onSha` on `!== undefined`, and an
+ * explicit `undefined` would read the same to it and differently to a reader.
+ *
+ * Read by `runStep` and not by `endingOf`, because it must survive the body: a
+ * step whose plugins passed goes on to its body, and the body's ending is what
+ * the visit reports.
+ */
+function headFrom(result: PipelineResult): { head?: string } {
+  const moved = result.results.filter((each) => each.head !== undefined).at(-1);
+  return moved?.head === undefined ? {} : { head: moved.head };
 }
 
 /**

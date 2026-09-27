@@ -13,6 +13,7 @@ import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
 import { createProcessAction } from "./process-action.ts";
+import { createWorktreeAction, type WorktreeActionDeps } from "./worktree-action.ts";
 
 /**
  * What the actions that are not pure processes need from the caller.
@@ -24,6 +25,17 @@ import { createProcessAction } from "./process-action.ts";
 export interface ActionDeps {
   agent?: AgentActionDeps;
   watch?: WatchActionDeps;
+  /**
+   * The cut a `worktree:` action runs — `provisionWorktree`, as the conductor
+   * already calls it (0065 §2, `#268`).
+   *
+   * Optional for the reason the other two are: `lingtai doctor` and the config
+   * tests build actions to check that a recipe *can* be built, and have no
+   * machine to cut a tree on. Absent, a `worktree:` action is refused by name
+   * rather than becoming a step that passes having cut nothing — which at
+   * `admit` is a pass that briefs an agent on a directory that does not exist.
+   */
+  worktree?: WorktreeActionDeps;
   /**
    * The declared names of a `run:` action → the whole environment its process
    * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
@@ -131,6 +143,20 @@ export function actionsFromRecipe(
       // Compiles the globs here, so a bad pattern refuses at configuration time
       // rather than becoming a watch that quietly matches nothing.
       return createWatchAction({ name: action.name, watch: action.watch, then: action.then }, deps.watch);
+    }
+
+    if ("worktree" in action) {
+      if (!deps.worktree) {
+        throw new ActionUnavailableError(action.name, kind, "no cut was supplied to actionsFromRecipe");
+      }
+      // `base` and `submodules` are both read, and `submodules` is required by
+      // `worktreePlugin`'s schema rather than defaulted there: a block that
+      // named only the base would otherwise cut a tree with empty submodule
+      // directories and read as the agent breaking the tests (`#268`).
+      return createWorktreeAction(
+        { name: action.name, base: action.worktree.base, submodules: action.worktree.submodules },
+        deps.worktree,
+      );
     }
 
     if ("human" in action) {

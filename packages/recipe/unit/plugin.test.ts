@@ -46,6 +46,7 @@ import {
   readFields,
   refsPlugin,
   runPlugin,
+  servesStep,
   whyNoKindAt,
   withheld,
   worktreePlugin,
@@ -501,17 +502,40 @@ describe("a plugin declares the steps it serves", () => {
   });
 });
 
-describe("the two the pass calls itself", () => {
-  it("is refused at every one of the ten steps, and names the file instead", () => {
+describe("the one the pass calls itself, and the one it stopped calling", () => {
+  it("refuses `merge:` at every one of the ten steps, and names the file instead", () => {
     for (const step of STEPS) {
-      for (const kind of ["worktree", "merge"] as const) {
-        expect(whyNoKindAt(step, kind), `${step} × ${kind} is accepted`).not.toBeNull();
-      }
+      expect(whyNoKindAt(step, "merge"), `${step} × merge is accepted`).not.toBeNull();
     }
 
-    expect(whyNoKindAt("admit", "worktree")).toContain("packages/repo/src/worktree.ts");
-    expect(whyNoKindAt("admit", "worktree")).toContain("repo.base");
     expect(whyNoKindAt("merge", "merge")).toContain("packages/repo/src/integrate.ts");
+  });
+
+  /**
+   * **`worktree:` was the other one and `#268` wired it** — the day `admit` read
+   * one, the plugin gained a key and `CALLED_DIRECTLY.worktree` went, in the one
+   * diff its own comment asked for (0065 §4).
+   *
+   * So the three claims here: legal at `admit`, refused at the other nine, and
+   * no sentence left anywhere sending a reader to `worktree.ts` for it — a
+   * refusal that still named the code the pass calls itself would be telling an
+   * operator their declaration is not read when it is what runs. Where somebody
+   * implements the step the refusal also says where this plugin *does* serve;
+   * where nobody does, the step's own sentence answers first and is the more
+   * useful half (`whyNoKindAt`).
+   */
+  it("makes `worktree:` legal at `admit` and at no other step", () => {
+    expect(whyNoKindAt("admit", "worktree")).toBeNull();
+    for (const step of STEPS.filter((each) => each !== "admit")) {
+      const why = whyNoKindAt(step, "worktree");
+      expect(why, `${step} × worktree is accepted`).not.toBeNull();
+      expect(why).not.toContain("packages/repo/src/worktree.ts");
+      if (PLUGINS.some((plugin) => servesStep(plugin, step))) {
+        expect(why, step).toContain("it serves `admit`");
+      } else {
+        expect(why, step).toContain(`no plugin implements \`${step}\``);
+      }
+    }
   });
 
   /**
@@ -543,10 +567,25 @@ describe("the two the pass calls itself", () => {
 
   /** The values today's code is called with, and no others. */
   it("carries what the code it wraps is configured by, and nothing more", () => {
-    expect(worktreePlugin.schema.parse({ name: "cut", worktree: { base: "main" } })).toEqual({
-      name: "cut",
-      worktree: { base: "main", submodules: false },
-    });
+    expect(
+      worktreePlugin.schema.parse({ name: "cut", worktree: { base: "main", submodules: false } }),
+    ).toEqual({ name: "cut", worktree: { base: "main", submodules: false } });
+
+    /**
+     * **`submodules` is required, and that is `#268`'s second major finding
+     * closed.**
+     *
+     * It used to be `.default(false)`, so the smallest legal block — a `base:`
+     * and nothing else — made `submodulesOf` answer the schema's `false` while
+     * `repo.submodules: true` sat two blocks up unread. The worktree was cut with
+     * empty submodule directories, every test that imports one failed, and the
+     * pass refused at `build` reading as the agent breaking the tests. There was
+     * no refusal and no line anywhere saying the value had stopped being read. So
+     * a block that does not say is refused by name instead.
+     */
+    const silent = worktreePlugin.schema.safeParse({ name: "cut", worktree: { base: "main" } });
+    expect(silent.success).toBe(false);
+    expect(JSON.stringify(silent.error?.issues)).toContain("submodules");
 
     // One strategy, because `integrate.ts` offers one. A second value here
     // would be a behaviour this repository does not have, declared as though
