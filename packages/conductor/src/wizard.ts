@@ -115,10 +115,34 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * base branch, nobody read it*, and many repositories have no tests. The
  * sentence is said on the last screen, because that is where somebody is
  * deciding.
+ *
+ * **It asks every step that can judge what an agent wrote, and that is four
+ * rather than two** (`#263`). It read `proposed` and `merge` alone, which was
+ * every such step on the day it was written — nothing implemented `build` or
+ * `review`, so a check declared at either was refused when the recipe
+ * resolved and the two keys could only ever be empty. `#263` puts `run:` at
+ * `build`, and the recipe this repository asks an operator to paste moves
+ * `pnpm typecheck && pnpm test` there and leaves `proposed: []`. Read two
+ * keys, and a project with a full build gate running on every pass is told on
+ * the last screen that nothing checks a diff before it merges — and offered
+ * the remedy of adding a check at `proposed`, which is the placement `#263`
+ * exists to get away from.
+ *
+ * **A guard's blind spot is not a stale comment.** Everything else the key's
+ * opening made untrue was prose; this one makes the sentence wrong in the
+ * direction that costs, because the fix it proposes undoes the move.
+ *
+ * `review` is in the list though no plugin serves it yet, and that is not
+ * speculation: the question this asks is *would anything read the diff*, and
+ * a `review` list is empty at the schema until the key opens. It is the same
+ * reading either way, and it is right on the day [T5d](../../../doc/design/the-pipeline.md)'s
+ * other half lands rather than one ticket later. `prepared` is the step left
+ * out on purpose — it runs before `implement`, so whatever it checks is not
+ * what the agent wrote.
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
-  if (recipe.steps.merge.length > 0) return null;
-  if (recipe.steps.proposed.length > 0) return null;
+  const judging = ["build", "review", "proposed", "merge"] as const;
+  if (judging.some((step) => recipe.steps[step].length > 0)) return null;
   return nothingChecks(baseOf(recipe));
 }
 

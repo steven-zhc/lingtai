@@ -562,6 +562,12 @@ describe("the recipe the button writes", () => {
   /**
    * The one place the wizard argues. With a check at `proposed` there is
    * something between an agent and the base branch, so nothing is said.
+   *
+   * **This is the wizard's own recipe, and it is one of four steps the guard
+   * now reads** (`#263`). `build`, `review`, `proposed` and `merge` all count,
+   * because a check at `build` is where `#263` asks an operator to put it;
+   * the step-by-step rows are `unit/nothing-reads-it.test.ts`, which does not
+   * need a client or a file to ask them.
    */
   it("warns only when nothing at all reads a diff", () => {
     expect(nothingReadsIt(recipe)).toBeNull();
