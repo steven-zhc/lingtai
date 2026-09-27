@@ -1,10 +1,12 @@
 # The plugin body — what stands between `at`'s keys and `at`'s values
 
-**Status** a finding, not a plan · **Date** 2026-09-26 · **About**
+**Status** a finding, not a plan · **Date** 2026-09-26, §6 added 2026-09-27 ·
+**About**
 [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §§2–3, 5,
-7 and the two tickets that were to build them
+7 and the three tickets that were to build them
 ([#262](https://github.com/steven-zhc/lingtai/issues/262),
-[#267](https://github.com/steven-zhc/lingtai/issues/267))
+[#267](https://github.com/steven-zhc/lingtai/issues/267),
+[#268](https://github.com/steven-zhc/lingtai/issues/268))
 
 `#261` landed 0064's first half: `at`'s **keys** are what make a plugin legal at
 a step, `definePlugin` takes them, `whyNoKindAt` reads them, and the table is
@@ -158,8 +160,9 @@ A step does not have one plugin. Since `#261` the keys say so, read off the
 twelve `at`s and not off a table:
 
 ```
-claim admit design implement   —                        0
-prepared                       run                      1
+claim design implement         —                        0
+admit                          worktree                      1   ← #268
+prepared                       run                           1
 build review                   —                        0   ← T5d
 proposed                       run · agent · watch · human   4
 merge                          run · agent · watch · human   4
@@ -184,6 +187,11 @@ often they are called and by whom*, so a call site that read `at[step]` and
 invoked it would have to know which kind it had — and knowing that from the key
 alone is the table 0064 deleted, read down a third axis.
 
+**And `#268` found a fourth that is not a function at all** (§6): a `worktree:`
+at `admit` is a **setting** — the base a pass is cut from — read by
+`settings.ts` when the recipe resolves and acted on by code that was already
+running. It is the one kind that needs no decision, because nothing calls it.
+
 **The decision `#267` needs, stated so it can be made:** `at`'s value is one of
 two things, and the plugin says which. Either the record is keyed by kind —
 `at: { proposed: { step: … } }` against `at: { "*": { action: … } }` — or the
@@ -207,6 +215,122 @@ So a `judge:` body that only answered the built-ins would accept
 `judge: claude-code` at resolve and run nothing for it — `#61`, through the door
 this repository has decided it will not leave open.
 
+## 6. `worktree:` at `admit`, and the half of a step that can move without either decision
+
+`#268` is `#262` narrowed a third time — *move `pass-steps.ts`'s `admit` body
+into `worktreePlugin`'s `at.admit`* — and it is the first of the three where
+something shipped. What shipped is **not** the body. It is worth separating the
+two, because the ticket's own *Problem* row is about the half that did move:
+
+> `admit` cuts the worktree, from `repo.base` and `repo.submodules` at the
+> recipe's top level. A project cannot say *cut it differently* because there
+> is nowhere to say it.
+
+**That half is configuration, and it needed no decision at all.** `worktree:`
+declares `at: { admit: notBuiltYet }`, so a recipe may write the base and the
+submodules on the step that owns them; `baseOf` and `submodulesOf` in
+`packages/recipe/src/settings.ts` read the declaration and fall back to
+`repo:`, which is therefore the v1 spelling of those two fields rather than a
+second home for them. Nothing else changed — not `conduct.ts`'s
+`repo.provision` call, not the eleven callers that ask for a base — because
+`settings.ts` exists for exactly this move and says so at its head.
+
+**The other half is the body, and it is blocked where `#267` was blocked.**
+
+- **§1 does not bite.** `worktree:` never becomes an `Action` — it is one of
+  0064 §2's eight — so nothing in it translates a `PipelineResult` and nothing
+  decides what its own `failed` means.
+- **§2 does not bite in its own form.** `admit` holds one `worktree:` entry,
+  and `settings.ts` takes the first: a pass cuts one tree, so there is no
+  reduction over several to invent.
+- **§3 bites harder than it did for `judge:`.** A built-in judge is a pure
+  function and could live anywhere; an `admit` body cannot. It has to call
+  `provisionWorktree` in `@lingtai/repo` and `host.unhookedSettings` in
+  `@lingtai/agent`, and return an `EndingAt<"admit">` from
+  `@lingtai/conductor`. `@lingtai/recipe` depends on `@lingtai/domain`,
+  `@lingtai/env`, picomatch, yaml and zod. So this is §3's *what the caller
+  binds into the plugin's function* demonstrated rather than predicted: `at`'s
+  value here is a **constructor over the worktree provisioner**, never a body
+  that could be written beside the schema.
+- **§5 bites in its weakest form and its strongest at once.** `admit` has one
+  plugin, so there is no *which of the four am I* to answer — and the type that
+  would have to change is `PluginSteps`, which all twelve plugins share, so
+  opening `at`'s value for `admit` opens it for `run:`'s `"*"` in the same
+  line. The decision is not avoidable by picking a narrow step.
+
+### The fourth kind, and why `#61`'s guard survives it
+
+So `admit` is now a step whose **setting** a recipe declares and whose work is
+still the pass's own. That is a kind §5 did not have: not an action's function,
+not an effect, not the step's body — a value read once when the recipe
+resolves, by code that was already running.
+
+The guard that has to survive is `#61`'s — *accepted, resolved, drawn, and
+never called.* It survives because the declaration genuinely has a reader, and
+`packages/conductor/unit/step-matrix.test.ts` is where that is held: `runsAt`
+had two doors, the action pipeline and `end`'s resolver, and it has a third
+now. The cell asserts `baseOf` answers with the declaration **and** that it
+differs from what `repo:` says underneath, so a reader that quietly ignored the
+step would fail rather than pass by agreeing.
+
+`actionsFromRecipe` is where the shape shows: it drops a `worktree:` entry
+rather than building an `Action` for it and rather than throwing, which is the
+one thing in this diff that reads as the rule at the head of that file being
+bent. It is not — *an action that is silently absent is worse than a run that
+will not start* is about a declaration with **no** reader, and this one has one
+named two lines above it.
+
+### The blocks a person pastes, and what they change
+
+**Nothing, and that is the point.** Both blocks below say what each recipe's
+`repo:` block already says, so the first pass after pasting cuts the same tree
+from the same branch. What they buy is that the value is now on the step that
+owns it, and editable there.
+
+The recipes are `~/.lingtai/<project>/recipe.yml`, one per project on the
+machine that conducts, outside every worktree; an agent cannot reach them and
+`#268` did not edit them. **The sequence is *code, restart, paste*** and the
+restart is not optional: `PLUGINS` and each plugin's `at` are module constants
+the daemon loaded at start, so a recipe naming `worktree:` at `admit` is
+refused at resolve by a daemon that has not restarted — **every** pass, with
+`conduct.ts` answering `stage: "recipe"` and taking nothing at all.
+
+    pnpm lingtai restart "picking up the base at admit"
+
+**Unlike §5's judge blocks, these two can actually be pasted** once that
+restart has happened: the key exists in the code and `settings.ts` reads it.
+
+`lingtai` — the values are `main` and `false`, which is what
+[`.lingtai/config.yaml`](../../.lingtai/config.yaml) records as the reason each
+is what it is:
+
+```yaml
+admit:
+  - name: cut the branch from main, without submodules
+    worktree:
+      base: main
+      submodules: false
+```
+
+`nextloom-ai-admin` — **the same block with that project's own two values**,
+and they are to be copied from its file's `repo:` block rather than assumed: a
+base written from memory is a pass cut from the wrong branch, which is the one
+failure at this step that is loud on the first run rather than quiet
+(`#268`'s *watch out*).
+
+```yaml
+admit:
+  - name: cut the branch
+    worktree:
+      base: <whatever that file's `repo.base` says>
+      submodules: <whatever that file's `repo.submodules` says>
+```
+
+**`repo:` stays in both files for now.** It is what a recipe that declares
+nothing at `admit` falls back to, so deleting it is a separate step that wants
+the schema to stop requiring it — and that is the ticket that finishes 0063 §2
+for these two fields rather than this one.
+
 ## What is landable before either decision
 
 Nothing in `#262`'s *Done when* list, and nothing in `#267`'s first two rows.
@@ -226,6 +350,9 @@ must never be given.
 
 **T5d is not blocked by any of this.** It adds `build` to `runPlugin.at` and
 `review` to `agentPlugin.at` — two keys, and the keys half is built.
+
+**And neither is a plugin whose step reads it as a setting**, which is what
+`#268` landed at `admit` — §6.
 
 ## The block a person pastes, the day the body lands
 

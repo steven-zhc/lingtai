@@ -22,6 +22,15 @@ there**. This page is for somebody who wants to write one.
 > per entry you declared — while a plugin supplying a step's own answer is
 > called once a visit. Both are real and they are not the same signature. Until
 > that is decided, read the example as the shape of the first kind.
+>
+> **And there is a third kind, which one plugin already is** (`#268`).
+> `worktree:` declares `at: { admit: notBuiltYet }`: the key makes it legal at
+> `admit`, and what reads it is neither a pipeline nor the step's body but
+> `baseOf` and `submodulesOf` in `packages/recipe/src/settings.ts` — a
+> **setting**, read once when the recipe resolves. So a plugin can be wired to
+> a step today without a body, as long as something genuinely reads what a
+> recipe writes; what it cannot do is *act*. If your plugin is configuration
+> that some existing code should obey, that is the shape available now.
 
 ## A plugin is two halves
 

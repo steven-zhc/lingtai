@@ -178,9 +178,10 @@ export type NotBuiltYet = typeof notBuiltYet;
  * **The steps a plugin serves**, and the whole of what makes it legal at one
  * (0064 §4).
  *
- * `Partial`, so a plugin that serves nothing writes `{}` — that is the five
+ * `Partial`, so a plugin that serves nothing writes `{}` — that is the four
  * 0061 §3 names for code the pass calls itself, and their refusal is
- * `CALLED_DIRECTLY`'s rather than a row in a table. A key that is neither a
+ * `CALLED_DIRECTLY`'s rather than a row in a table. It was five until `#268`
+ * gave `admit` a reader for `worktree:`. A key that is neither a
  * step nor `"*"` does not compile, and `definePlugin` refuses it at import as
  * well, because a declaration reaching here from JavaScript has had no
  * compiler.
