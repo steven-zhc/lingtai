@@ -32,10 +32,10 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Fifteen of the hundred and twenty cells run and **a hundred and five
+ * Sixteen of the hundred and twenty cells run and **a hundred and four
  * refuse**; thirty-six of those are the three steps no plugin implements, and
- * forty are the four plugins that serve no step — overlapping each other by
- * twelve, because a `queue:` action at `design` is both at once.
+ * thirty are the three plugins that serve no step — overlapping each other by
+ * nine, because a `queue:` action at `design` is both at once.
  *
  * **It was twelve and six until 2026-09-27**, when `runPlugin` took `build` and
  * `agentPlugin` took `review` (`a417908`), and fourteen until `worktreePlugin`
@@ -446,13 +446,13 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs fifteen of the hundred and twenty cells and refuses a hundred and five", () => {
+  it("runs sixteen of the hundred and twenty cells and refuses a hundred and four", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
     expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(15);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(105);
+    expect(cellsThatRun).toHaveLength(16);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(104);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
@@ -463,12 +463,11 @@ describe("every step × kind cell runs or refuses", () => {
     expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual([
       "merge",
       "queue",
-      "judge",
       "backlog",
     ]);
     expect(stepsNobodyImplements.length * PLUGINS.length).toBe(36);
-    expect(pluginsServingNothing.length * STEPS.length).toBe(40);
-    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(12);
+    expect(pluginsServingNothing.length * STEPS.length).toBe(30);
+    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(9);
   });
 
   /**
@@ -637,7 +636,7 @@ describe("every step × kind cell runs or refuses", () => {
     // some plugin serves gives the same one — under an opening clause that names
     // the step the operator actually wrote.
     const reason = why!.slice(why!.indexOf(": ") + 2);
-    for (const step of ["prepared", "build", "review", "merge"] as const) {
+    for (const step of ["admit", "prepared", "build", "review", "merge"] as const) {
       expect(whyNoKindAt(step, "judge"), step).toBe(
         `\`judge:\` does not implement \`${step}\` — it serves \`proposed\`: ${reason}`,
       );
@@ -648,7 +647,7 @@ describe("every step × kind cell runs or refuses", () => {
     // And a step nobody implements answers as the step, exactly as it does for
     // `close:` there: *no plugin implements `claim`* is the first thing wrong,
     // and a judge is not what would fix it.
-    for (const step of ["claim", "admit", "design", "implement"] as const) {
+    for (const step of ["claim", "design", "implement"] as const) {
       expect(whyNoKindAt(step, "judge"), step).toContain(`no plugin implements \`${step}\``);
     }
   });
