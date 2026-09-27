@@ -48,8 +48,8 @@ import type { Recipe } from "./recipe.ts";
  * `worktree:` is declared at `admit` since `#268`, so `base` and `submodules`
  * have two spellings while both shapes exist: the plugin's, on the step that
  * owns it, and `repo:`, which is the v1 one. This is the one place that knows
- * — exactly as the head of this file promises — so the eleven callers that ask
- * `baseOf(recipe)` did not change, and neither did `conduct.ts`'s
+ * — exactly as the head of this file promises — so not one of the callers that
+ * ask `baseOf(recipe)` changed, and neither did `conduct.ts`'s
  * `repo.provision` call.
  *
  * **The declaration wins and `repo:` is the fallback**, which is what makes a
