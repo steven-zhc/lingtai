@@ -46,7 +46,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
-import { baseDivergence, baseOf, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
+import { baseDivergence, baseOf, baseWrittenAt, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
 import { type RecordedRefusal, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1807,7 +1807,12 @@ export async function recipeGovernsItsBase(
           : {
               name: label,
               status: "ok",
-              detail: `read from ${resolved.ref}, and repo.base says ${baseOf(resolved.recipe)}`,
+              // The key as this recipe writes it: since `#268` the base may be
+              // `worktree:`'s at `admit`, and a row naming the other line is a
+              // row that sends a reader to something nothing reads.
+              detail:
+                `read from ${resolved.ref}, and ` +
+                `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
             },
       );
     } catch (err) {

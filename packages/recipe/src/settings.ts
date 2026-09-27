@@ -76,6 +76,21 @@ export function baseOf(recipe: Recipe): string {
 }
 
 /**
+ * **Which line of this recipe says the base**, for the three readings that print
+ * the key beside the value (`#268`).
+ *
+ * `baseDivergence`'s refusal, `lingtai doctor`'s base row and `lingtai add`'s
+ * disagreement all name a key so that an operator knows which line to edit, and
+ * all three said `repo.base` unconditionally. Against a recipe that has moved the
+ * setting onto `admit` that sends a person to a line the conductor does not read
+ * — the one failure mode this whole file exists to prevent, arriving through a
+ * message rather than through a reader.
+ */
+export function baseWrittenAt(recipe: Recipe): string {
+  return cutAt(recipe) === null ? "repo.base" : "steps.admit's worktree.base";
+}
+
+/**
  * Whether the worktree a pass is cut into gets the submodules.
  *
  * `baseOf`'s sibling and it moved with it: both are `worktree:`'s fields under

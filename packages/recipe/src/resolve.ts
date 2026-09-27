@@ -21,7 +21,7 @@ import { parse as parseYaml } from "yaml";
 import { applyPreset } from "./presets.ts";
 import type { Plugin } from "./plugin.ts";
 import { PLUGINS, Recipe, discloseSteps } from "./recipe.ts";
-import { baseOf } from "./settings.ts";
+import { baseOf, baseWrittenAt } from "./settings.ts";
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = ".lingtai/config.yaml";
@@ -324,7 +324,10 @@ export function baseDivergence(resolved: ResolvedRecipe, slug: string): string |
   const declared = baseOf(resolved.recipe);
   if (declared === resolved.ref) return null;
   return (
-    `recipe read from ${resolved.ref} declares repo.base: ${declared} — ` +
+    // The key as this recipe writes it, not as v1 wrote it: a refusal that names
+    // `repo.base` at a recipe declaring `worktree:` at `admit` sends a person to
+    // the line nothing reads (`#268`).
+    `recipe read from ${resolved.ref} declares ${baseWrittenAt(resolved.recipe)}: ${declared} — ` +
     "the rules and the merge target are different branches. " +
     `Re-register: lingtai add ${slug} --base ${declared}`
   );
