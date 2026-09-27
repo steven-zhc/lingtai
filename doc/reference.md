@@ -469,24 +469,27 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
 | `design` | a document, before any code — or nothing, which is an answer | no | not yet |
 | `implement` | one agent, in that worktree | no | not yet |
-| `build` | the independent build of what was written | yes | not yet |
+| `build` | the independent build of what was written | yes | yes |
 | `review` | reads the diff, returns findings, judges nothing | no | not yet |
 | `proposed` | the agent stopped and there are commits — a change has been proposed | yes | yes |
 | `merge` | after `proposed` passes, before the merge lane | yes | yes |
 | `end` | the work item reached any terminal outcome | **no** | yes |
 
-`prepared` and `proposed` run the recipe's actions; `merge` holds when a `human`
-action asks or when `--no-merge` does; `end` runs too, its actions being effects
-rather than verdicts. The conductor calls GitHub and appends the outcome; what
+`prepared`, `build` and `proposed` run the recipe's actions; `merge` holds when
+a `human` action asks or when `--no-merge` does; `end` runs too, its actions
+being effects rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
-**Six of the ten are empty here and empty everywhere, and that is what the last
-column is for.** Nothing constructs a pipeline for `claim`, `admit`, `design`,
-`implement`, `build` or `review`, so an action declared at one is refused when
-the recipe resolves rather than accepted and skipped (`#61`). Today's build and
-review run as actions at `proposed`, and today's implementing agent is
-dispatched by `conduct.ts` directly. They are all ten steps regardless — the
+**Five of the ten are empty here and empty everywhere, and that is what the last
+column is for.** No plugin declares itself at `claim`, `admit`, `design`,
+`implement` or `review`, so an action declared at one is refused when the
+recipe resolves rather than accepted and skipped (`#61`). Today's review runs
+as an action at `proposed`, and today's implementing agent is dispatched by
+`conduct.ts` directly. **`build` was the sixth until `#263`**: `runPlugin`
+declares itself there, so the build is declared at the step it names — which
+is also what makes a red one buy a fix round again, since `proposed` is the
+router and a step whose own plugins refused has nothing to route. They are all ten steps regardless — the
 closed set is about the places in the pass, not about what is built today — and
 naming them is what lets the log, the recipe and the board say where a pass is.
 Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
@@ -1162,7 +1165,7 @@ declaration is what makes it legal there.**
 
 ```ts
 definePlugin("close", { fields: { … }, at: { end: … } });        // one step
-definePlugin("run",   { fields: { … }, at: { prepared: …, proposed: …, merge: … } });
+definePlugin("run",   { fields: { … }, at: { prepared: …, build: …, proposed: …, merge: … } });
 definePlugin("queue", { fields: { … }, at: {} });                // none — see below
 ```
 
@@ -1184,16 +1187,19 @@ each says the part an operator can act on:
 - **A plugin declared where it does not serve.** *`close:` does not implement
   `proposed` — it serves `end`.* The plugin carries where it does belong, so
   the refusal is not homework.
-- **A step no plugin implements.** *No plugin implements `build` — today the
-  build is a `run:` action at `proposed`.* That sentence was unwritable under
-  the table, because an empty row could not tell *not yet* from *not ever*.
-  The five steps [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3
-  named are these: the queue's filter for `claim`, the issue body for `design`,
-  `conduct.ts`'s own dispatch for `implement`, and the `proposed` step's
-  actions for `build` and `review`. `admit` is the sixth, and a question that
-  must be asked *before* anything is spent is `lingtai ask`, which holds the
-  item in the queue and is answered without a worktree
-  ([`ask.ts`](../packages/conductor/src/ask.ts)).
+- **A step no plugin implements.** *No plugin implements `review` — today the
+  review is an `agent:` action at `proposed`.* That sentence was unwritable
+  under the table, because an empty row could not tell *not yet* from *not
+  ever*. The steps [0058](decisions/0058-lingtai-is-a-development-pipeline.md)
+  §3 named that still say it are these: the queue's filter for `claim`, the
+  issue body for `design`, `conduct.ts`'s own dispatch for `implement`, and the
+  `proposed` step's actions for `review`. `admit` is the fifth, and a question
+  that must be asked *before* anything is spent is `lingtai ask`, which holds
+  the item in the queue and is answered without a worktree
+  ([`ask.ts`](../packages/conductor/src/ask.ts)). **`build` was here until
+  `#263`** — T5d's first half opened `build` on `runPlugin`, so the step is
+  implemented, and the sentence that named `proposed` came out with the key
+  that went in.
 - **A plugin that serves no step at all** — `worktree:`, `merge:`, `queue:`,
   `judge:` and `backlog:`, whose `at` is `{}`. All five are names 0061 §3 gives
   code the pass already runs, and the recipe is not yet what tells it to. Asked

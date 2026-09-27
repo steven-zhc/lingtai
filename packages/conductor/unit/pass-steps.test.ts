@@ -555,18 +555,20 @@ describe("design produces a document, or nothing, and nothing is an answer", () 
 
 describe("implement dispatches the one agent, and reports what it committed", () => {
   /**
-   * Declared at `proposed` rather than at `build`, because no plugin declares
-   * itself at `build` and the recipe schema refuses an action at a step nothing
-   * implements — the same `#61` rule this pass is arranged around, one layer out.
-   * The point is the head either way: whatever runs after `implement` is judged
-   * against what `implement` committed.
+   * **Declared at `build`, which is where a build goes since `#263`.** It was
+   * at `proposed` until then, because no plugin declared itself at `build` and
+   * the schema refuses an action at a step nothing implements — the `#61` rule
+   * this pass is arranged around, one layer out. The point is the head either
+   * way: whatever runs after `implement` is judged against what `implement`
+   * committed, and the step it is declared at only decides which of the two
+   * names it.
    */
   it("moves the head to the commit, and what runs after it is judged there", async () => {
     const judged: string[] = [];
     const { result } = await pass({
-      steps: { proposed: [{ name: "test", run: "pnpm test" }] },
+      steps: { build: [{ name: "test", run: "pnpm test" }] },
       actions: {
-        proposed: [
+        build: [
           {
             name: "test",
             kind: "run",

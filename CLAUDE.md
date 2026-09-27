@@ -140,28 +140,30 @@ So the question to ask before a run is not *did I pass the flag* but *what does
 `merge:` say today*, and `lingtai add` prints the answer.
 
 **And since #256 the recipe's own `proposed:` is the wrong home for either of
-them — and the right home refuses them, so do not move them yet.** The conductor
-runs the ten steps now, so `proposed` is the router and not the gate: a step whose
-own plugins refused has nothing to route (`ARRIVE_AT_THE_ROUTER` does not include
-it), and a red `pnpm test` declared there stops the pass for a person with **no
-fix round bought**, where the five gate points bought one. The build belongs at
-`build:` and the cold reviewer at `review:` — and **a `recipe.yml` edited that way
-stops every pass before it claims anything.** **No plugin declares itself at
-`build` or at `review`** — since #261 that is each plugin's own `at` in
-`packages/recipe/src/recipe.ts` and not a table beside the schema (0064 §4) —
-so `resolveRecipe` refuses a `run:` at `build` and an `agent:` at `review` by
-name and `conduct.ts` returns `stage: "recipe"` for every ticket — a daemon
-restarted onto it takes nothing at all until somebody puts the two lines back.
+them.** The conductor runs the ten steps now, so `proposed` is the router and not
+the gate: a step whose own plugins refused has nothing to route
+(`ARRIVE_AT_THE_ROUTER` does not include it), and a red `pnpm test` declared
+there stops the pass for a person with **no fix round bought**, where the five
+gate points bought one. The build belongs at `build:` and the cold reviewer at
+`review:`.
 
-The refusal's own reason is what is left to fix rather than the recipe: it says
-*no plugin implements `build`*, and what makes that worth fixing is that since
-#256 nothing else stands in the way —
-`runPass` resolves `actionsAt(step, actions)` at all ten steps, so the only thing
-standing between a declared build and a `build` step that runs it is two keys
-on `runPlugin` and `agentPlugin`. Opening them is
-[T5d](doc/design/the-pipeline.md), and until it lands
-`proposed:` is where the build and the reviewer have to stay and the first red
-build of the night is a person's to answer.
+**The build may move now; the reviewer may not.** #263 opened `build` on
+`runPlugin` — since #261 that is each plugin's own `at` in
+`packages/recipe/src/recipe.ts` and not a table beside the schema (0064 §4) — so
+`resolveRecipe` accepts a `run:` at `build`, and a red one refuses at a step that
+may refuse and buys its fix round at `proposed` again. **`agentPlugin` has no
+`review` key**, so an `agent:` at `review:` is still refused by name and
+`conduct.ts` returns `stage: "recipe"` for every ticket — a daemon restarted onto
+a recipe edited that way takes nothing at all until the line goes back.
+
+**And the order is *code, restart, paste*, in that order, for the half that can
+move.** `PLUGINS` and each plugin's `at` are module constants the daemon loaded at
+start (0010 removes the build, not the restart); the recipe is read on every pass.
+So a `build:` block pasted onto a daemon running code from before #263 is refused
+at resolve on *every* pass until it restarts, which is the same standstill from
+the other direction. Opening `review` is the rest of
+[T5d](doc/design/the-pipeline.md), and until it lands the cold reviewer stays at
+`proposed:` and the first set of findings of the night is a person's to answer.
 
 **There is no exception, and `tamper` is not one.** What stands between an agent
 and `main` here is `proposed` — the build and the cold reviewer — and neither is

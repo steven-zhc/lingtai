@@ -159,15 +159,17 @@ twelve `at`s and not off a table:
 
 ```
 claim admit design implement   —                        0
-prepared                       run                      1
-build review                   —                        0   ← T5d
+prepared build                 run                      1
+review                         —                        0   ← T5d's second half
 proposed                       run · agent · watch · human   4
 merge                          run · agent · watch · human   4
 end                            close · labels · refs         3
 ```
 
 So three of the ten steps already have more than one plugin declaring themselves
-there, and `#267` would make `proposed` five. **`at`'s value cannot be the
+there, and `#267` would make `proposed` five. (`#263` opened `build` and moved a
+zero to a one, which leaves this argument exactly where it was: what it turns on
+is the steps with *several*.) **`at`'s value cannot be the
 step's body**, because four of those five are not bodies of the step at all:
 
 - a `run:` or an `agent:` at `proposed` is **an action's** function — called once
@@ -225,7 +227,10 @@ between them was, and the sentence a person gets names it. That had to be true
 must never be given.
 
 **T5d is not blocked by any of this.** It adds `build` to `runPlugin.at` and
-`review` to `agentPlugin.at` — two keys, and the keys half is built.
+`review` to `agentPlugin.at` — two keys, and the keys half is built. **The first
+of the two landed as [#263](https://github.com/steven-zhc/lingtai/issues/263)**,
+which is the evidence for the sentence rather than a restatement of it: a key
+opened, no body moved, and nothing above this line changed.
 
 ## The block a person pastes, the day the body lands
 
