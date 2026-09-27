@@ -415,9 +415,9 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
 .scell.t-waived { background: var(--held); }
 /* Configured, not reached yet. Quiet, because nothing is wrong. */
 .scell.t-pending { background: var(--rule); }
-/* Nothing configured — `admit: []`, `merge: []`, and the five steps 0058 §3
-   names that nothing constructs a pipeline for yet. No fill at all, so the step
-   keeps its place in the sequence without claiming anything happened in it. */
+/* Nothing configured — `merge: []`, and the four steps no plugin implements,
+   which can never be configured at all. No fill, so the step keeps its place in
+   the sequence without claiming anything happened in it. */
 .scell.t-skipped { background: transparent; border: 1px dashed var(--rule-2); }
 /* **Configured, and did not run** — the one segment that breaks the bar's
    rhythm, and the only place the fail colour appears with no verdict behind it.

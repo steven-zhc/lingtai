@@ -555,11 +555,11 @@ describe("design produces a document, or nothing, and nothing is an answer", () 
 
 describe("implement dispatches the one agent, and reports what it committed", () => {
   /**
-   * Declared at `proposed` rather than at `build`, because no plugin declares
-   * itself at `build` and the recipe schema refuses an action at a step nothing
-   * implements — the same `#61` rule this pass is arranged around, one layer out.
-   * The point is the head either way: whatever runs after `implement` is judged
-   * against what `implement` committed.
+   * Declared at `proposed` rather than at `build`, and since 2026-09-27 either
+   * would resolve — `runPlugin` serves both. The point is the head either way:
+   * whatever runs after `implement` is judged against what `implement`
+   * committed, and which step declares it is the caller's seam and not this
+   * claim.
    */
   it("moves the head to the commit, and what runs after it is judged there", async () => {
     const judged: string[] = [];

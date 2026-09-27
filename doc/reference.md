@@ -1186,14 +1186,15 @@ each says the part an operator can act on:
 - **A plugin declared where it does not serve.** *`close:` does not implement
   `proposed` — it serves `end`.* The plugin carries where it does belong, so
   the refusal is not homework.
-- **A step no plugin implements.** *No plugin implements `build` — today the
-  build is a `run:` action at `proposed`.* That sentence was unwritable under
-  the table, because an empty row could not tell *not yet* from *not ever*.
-  The five steps [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3
-  named are these: the queue's filter for `claim`, the issue body for `design`,
-  `conduct.ts`'s own dispatch for `implement`, and the `proposed` step's
-  actions for `build` and `review`. `admit` is the sixth, and a question that
-  must be asked *before* anything is spent is `lingtai ask`, which holds the
+- **A step no plugin implements.** *No plugin implements `design` — today
+  there is no design step: the implementing agent is handed the issue body and
+  works from it.* That sentence was unwritable under the table, because an
+  empty row could not tell *not yet* from *not ever*. Three of the steps
+  [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named are
+  these: the queue's filter for `claim`, the issue body for `design`, and
+  `conduct.ts`'s own dispatch for `implement`. `build` and `review` were here
+  until 2026-09-27 and are served now. `admit` is the fourth, and a question
+  that must be asked *before* anything is spent is `lingtai ask`, which holds the
   item in the queue and is answered without a worktree
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
 - **A plugin that serves no step at all** — `worktree:`, `merge:`, `queue:`,

@@ -425,7 +425,7 @@ describe("a running card", () => {
     const html = render({}, running());
 
     expect(segments(html)).toEqual([
-      // `claim` — nothing constructs a pipeline at it, so nothing is configured.
+      // `claim` — no plugin implements it, so nothing can be configured there.
       "skipped",
       "skipped",
       "passed",
