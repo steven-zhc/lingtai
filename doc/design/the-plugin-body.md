@@ -260,9 +260,17 @@ the mechanical directions and `BUILT_IN_FOR` answers both identically, so on the
 day the body lands this changes no behaviour. That is the point: it is the first
 version of these two that a person can *edit*.
 
+**And since `a417908` this block is the whole of `proposed:` rather than an
+addition to it.** T5d landed: the build is at `build:` and the cold reviewer at
+`review:`, which is not a tidy-up — it is what makes these entries reachable at
+all. `ARRIVE_AT_THE_ROUTER` (`pass.ts:913`) lists the seven steps whose refusal
+*travels* to the router, and `proposed` is not one of them, because it **is** the
+router. So a build refusing at `proposed:` set `stoppedAt` and broke the loop
+before `ports.judge` was ever called (`pass.ts:1330`) — the judge could not have
+been asked no matter what was written here. Refusing at `build:` arrives.
+
 ```yaml
 proposed:
-  # …the build and the cold reviewer stay here until T5d…
   - name: a red build is the agent's to fix, in the worktree it is already in
     judge: same-worktree
     when: red
