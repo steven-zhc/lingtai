@@ -41,11 +41,17 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * configured and did not run is Lingtai's bug. Only showing all ten keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  *
- * **Six of the ten are `skipped` on every run today**, because nothing
- * constructs a pipeline at `claim`, `admit`, `design`, `implement`, `build` or
- * `review` (0058 §3 names them; its own plan builds them). That is the state
- * reading correctly rather than a gap: the recipe configures nothing there, so
- * nothing ran there, so `skipped` is what the fold owes a reader.
+ * **Four of the ten can only ever be `skipped`**: `claim`, `admit`, `design`
+ * and `implement`, which no plugin serves, so no recipe can declare an action
+ * at them (each plugin's own `at` in `packages/recipe/src/recipe.ts`, 0064 §4).
+ * **Every other step is `skipped` when this recipe declares nothing there**,
+ * which is a reading of a recipe and not a fact about the build — `build` and
+ * `review` opened on 2026-09-27, so a card whose recipe puts its build at
+ * `build:` draws that segment live and it is `proposed` that goes dashed. Six
+ * either way on this repository's own cards, and a reader counting them is
+ * reading the recipe rather than finding a bug. In both cases the state is
+ * reading correctly rather than covering a gap: nothing was configured there,
+ * so nothing ran there, so `skipped` is what the fold owes a reader.
  */
 export type StepState =
   | "skipped"
@@ -258,10 +264,11 @@ function stateOf(
   // that holds it.
   //
   // It read *four and not five* until the vocabulary widened, and the exclusion
-  // is still exactly one name. The six steps nothing constructs a pipeline for
-  // are reached by the line above rather than by this one: their `planned` is
-  // empty, so they are `skipped` before this rule is asked — an empty `actions`
-  // list is never an accusation.
+  // is still exactly one name. A step this recipe declares nothing at is
+  // reached by the line above rather than by this one: its `planned` is empty,
+  // so it is `skipped` before this rule is asked — an empty `actions` list is
+  // never an accusation. Which steps those are moves with a recipe, and this
+  // rule does not move with it.
   if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";

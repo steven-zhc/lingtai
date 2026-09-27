@@ -266,12 +266,15 @@ describe("what will happen", () => {
       "merge",
       "end",
     ]);
-    // Seven of the ten, from two lists that do not overlap: `admit` and
-    // `merge`, which this recipe leaves empty, and the five 0058 §3 names that
-    // nothing constructs a pipeline for — `claim`, `design`, `implement`,
-    // `build`, `review`. Two plus five, with nothing counted twice, so
-    // building one of the five takes this list and the count down by one. The
-    // sibling assertion below counts the same seven in rendered HTML.
+    // Seven of the ten, from two lists that do not overlap: the four no plugin
+    // serves — `claim`, `admit`, `design`, `implement` — and `build`, `review`
+    // and `merge`, which a recipe may declare at and *this* recipe leaves empty.
+    // Four plus three, with nothing counted twice — and the second list is a
+    // reading of this file rather than of the build, so it moves when the file
+    // does: the machine's own recipe has had its build at `build:` and its
+    // reviewer at `review:` since 2026-09-27, which leaves `proposed` empty
+    // instead and six here rather than seven. The sibling assertion below counts
+    // the same seven in rendered HTML.
     expect(PLAN.steps.filter((p) => p.skipped).map((p) => p.step)).toEqual([
       "claim",
       "admit",
@@ -302,11 +305,10 @@ describe("what will happen", () => {
     expect(html).toContain("prepared");
     expect(html).toContain("install");
     expect(html).toContain("close the ticket");
-    // Seven times: `admit` and `merge`, which this recipe leaves empty, and
-    // the five 0058 §3 names that nothing constructs a pipeline for. Each
-    // stated rather than omitted — which is the whole of 0016 §4, and is why
-    // the number here goes up with the vocabulary rather than the bar losing
-    // rows to keep it at two.
+    // Seven times: the four no plugin serves, and `build`, `review` and `merge`,
+    // which this recipe leaves empty. Each stated rather than omitted — which is
+    // the whole of 0016 §4, and is why the number here goes up with the
+    // vocabulary rather than the bar losing rows to keep it at two.
     expect(html.match(/<span class="pill">skipped<\/span>/g)).toHaveLength(7);
     expect(html).toContain("150 turns · 1h · guarded · 2 round(s) back · then straight to you");
   });

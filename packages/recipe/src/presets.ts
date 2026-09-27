@@ -65,9 +65,20 @@ export const PRESETS: Record<string, Preset> = {
       ],
       design: [],
       implement: [],
-      // Empty, and today they must be: the build below runs as a `run:` action
-      // at `proposed`, which is where the pipeline actually constructs it
-      // (0058 §3 names these steps; the pass that runs them is its next ticket).
+      // Empty, and **no longer because they must be**. `runPlugin` serves
+      // `build` and `agentPlugin` serves `review` since 2026-09-27 (their own
+      // `at` keys in `recipe.ts`), and this machine's own recipe declares its
+      // build at `build:` and its cold reviewer at `review:` accordingly — so a
+      // `run:` written here would run.
+      //
+      // The build below stays at `proposed` for a reason that is not a
+      // technical one: a preset is merged whole underneath a file whose author
+      // wrote `extends:` and nothing about steps (`applyPreset` takes
+      // `recipe["steps"] ?? preset.steps`), so moving this line moves a gate
+      // inside runs nobody asked to change. This repository moved its own by
+      // hand, one file, on purpose; whoever owns a repository that extends this
+      // moves that one the same way. What this comment must not say again is
+      // that the later point is where the pipeline *can* construct it.
       build: [],
       review: [],
       proposed: [

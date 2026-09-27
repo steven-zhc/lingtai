@@ -121,7 +121,7 @@ carries the distinction the sentence above demands:
 | `failed` | filled, `--fail` |
 | `waived` | filled, `--held`. Never green — an override of a red build must not look like a green one |
 | `pending` | flat `--rule`. Quiet, because nothing is wrong |
-| `skipped` | dashed outline, no fill. Nothing configured (`admit: []`, `merge: []`, and the six steps no pipeline is constructed at); it keeps its place without claiming anything happened in it |
+| `skipped` | dashed outline, no fill. Nothing configured — a step this recipe declares nothing at (`merge: []`), or one of the four no plugin serves (`claim`, `admit`, `design`, `implement`); it keeps its place without claiming anything happened in it |
 | `never-ran` | hatched, `--fail`. The one segment that breaks the bar's rhythm, and the only place the fail colour appears with no verdict behind it |
 | `did-not-finish` | the same hatch. The agent *started* here and produced no receipt ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
 
@@ -158,16 +158,22 @@ it is decided and where a test holds it.
 words: `end`'s record is `EndActionsResolved` on the work item's stream, which
 this fold does not read. A silent `end` here is a question the run's stream
 cannot answer rather than a step that did not run. It read *four and not five*
-before `#227` and the exclusion is still exactly one name — the six steps
-nothing constructs a pipeline for never reach this rule, because their plan is
-empty and `skipped` answers them first.
+before `#227` and the exclusion is still exactly one name — a step this recipe
+declares nothing at never reaches this rule, because its plan is empty and
+`skipped` answers it first.
 
 ## What ten cost, and what it did not
 
-**A segment, never.** Six of the ten — `claim`, `admit`, `design`, `implement`,
-`review` and `build` — are `skipped` on every card this repository draws today,
-because nothing constructs a pipeline at them yet (0058 §3 names them; its own
-plan builds them). Drawing only the four that are configured would fit
+**A segment, never.** Four of the ten — `claim`, `admit`, `design` and
+`implement` — are `skipped` on every card anybody draws, because no plugin serves
+them, so no recipe can declare an action there
+([0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4, and
+each plugin's own `at` in `packages/recipe/src/recipe.ts`). The rest are
+`skipped` wherever *that* recipe declares nothing, which is a reading of a file
+and not a fact about the build: `build` and `review` opened on 2026-09-27 and
+this machine's recipe declares at both, so `proposed` is the one drawn dashed on
+this repository's own cards and the count is still six. Drawing only the four
+that are configured would fit
 comfortably and would be the exact failure 0016 §4 exists to prevent: a step
 omitted for width is indistinguishable from one that was configured and silently
 did not run. `rail.test.tsx` asserts ten segments in all three lanes for that

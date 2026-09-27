@@ -169,6 +169,13 @@ test && pnpm test:db`, and a detector that reads `scripts.test` produces `pnpm
 test` — **silently dropping the database half that `#158` split out**. Listing
 every script turns that failure into an unticked box you can see.
 
+**The row is one list over three steps, and it writes each check back to its
+own.** What checks a diff before it merges is `build`, `review` or `proposed` —
+`CHECKING_STEPS` in `wizard-page.ts` — since `build` and `review` opened on
+2026-09-27, so the row reads all three and a check carries the step it came from
+(`Check.step`). A page that read three and saved one would move a build out of
+`build:` the first time somebody opened it.
+
 Both managed repositories are monorepos, so this is the normal case, not the edge.
 
 ### Slow
@@ -205,8 +212,9 @@ hours are exact; those are what is shown.
 
 ### The one place a default flips
 
-If the scan finds **no checks at all** — no test, no typecheck, nothing for
-`gates.proposed` — then with `merge: []` the whole chain is *an agent writes
+If the scan finds **no checks at all** — no test, no typecheck, nothing declared
+at any step that checks a diff (`build`, `review`, `proposed`) — then with
+`merge: []` the whole chain is *an agent writes
 code, nothing checks it, it lands in the base branch, nobody read it*. Many
 repositories have no tests, so this is not hypothetical.
 

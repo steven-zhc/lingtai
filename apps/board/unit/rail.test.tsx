@@ -425,11 +425,12 @@ describe("a running card", () => {
     const html = render({}, running());
 
     expect(segments(html)).toEqual([
-      // `claim` — nothing constructs a pipeline at it, so nothing is configured.
+      // `claim` — no plugin serves it, so nothing can be configured there.
       "skipped",
       "skipped",
       "passed",
-      // `design`, `implement`, `build`, `review` — the same.
+      // `design` and `implement` — the same; `build` and `review`, which a
+      // recipe may declare at since 2026-09-27, because this fixture's does not.
       "skipped",
       "skipped",
       "skipped",
@@ -555,8 +556,10 @@ describe("all ten steps, in every lane", () => {
    * draw fewer than ten.
    *
    * **Ten and not "the ones that are configured", which is the trap this file
-   * exists to hold shut.** Six of the ten are `skipped` on every card today,
-   * and dropping them would be the width argument winning an argument it is
+   * exists to hold shut.** Most of the ten are `skipped` on any one card — four
+   * always, because no plugin serves `claim`, `admit`, `design` or `implement`,
+   * and the rest wherever the recipe declares nothing — and dropping them would
+   * be the width argument winning an argument it is
    * not allowed to have: a bar that hides a `skipped` step cannot tell it from
    * a step that was configured and silently did not run, which is exactly
    * 0016 §4's failure and exactly what 0061 §5 forbids. What gives way for the

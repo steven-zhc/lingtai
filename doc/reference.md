@@ -1469,9 +1469,15 @@ run" becomes visible. It used to be a `pending` count off a second fold,
 It was five until 2026-09-23 — the count moved with the vocabulary and the rule
 did not, because the rule never counted. `apps/board/unit/rail.test.tsx` asserts
 ten segments in all three lanes that fold, so **an operator counting ten
-segments on a card is looking at correct behaviour**, and six of them are
-`skipped` on every card this repository draws because nothing constructs a
-pipeline at them yet.
+segments on a card is looking at correct behaviour**. Four of them — `claim`,
+`admit`, `design`, `implement` — are `skipped` on every card anybody draws,
+because no plugin serves them and so no recipe can declare an action there
+([0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4). The
+rest are `skipped` wherever that recipe declares nothing, which is a reading of a
+file and not a fact about the build: `build` and `review` opened on 2026-09-27,
+so on a recipe that declares at both it is `proposed` that goes dashed. Six on
+this repository's own cards either way — **and a reader counting a seventh live
+segment is reading a recipe, not finding a bug in the fold.**
 
 `lingtai add` prints the same ten at onboarding (`for (const point of STEPS)` in
 `packages/conductor/src/onboard.ts`). Neither surface omits a step.
