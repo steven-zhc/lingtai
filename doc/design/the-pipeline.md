@@ -250,6 +250,58 @@ value rather than declaring it again.*
 | watch out | **The rows are not `proposed`'s.** `human:` at `build` would be a person asked before anything was judged and `watch:` belongs where the diff is judged, so widening either row to `proposed`'s four is not the change — a plugin is opened at a step because that step's body does something with it. |
 | why now | The pass runs ten steps and the recipe can only describe five of them, which is the same gap read from the other side: a step the log, the board and `lingtai add` all name, that a person cannot configure. |
 
+#### The block a person pastes, now that `build` is open (`#263`)
+
+**The recipes are not edited by the ticket and cannot be**: they are
+`~/.lingtai/<project>/recipe.yml`, one per project on the machine that conducts,
+outside every worktree. There are two — `lingtai` and `nextloom-ai-admin`.
+
+**The sequence is *code, restart, paste*, and the restart is not optional.**
+`PLUGINS` and each plugin's `at` are module constants the daemon loaded at start
+(0010's *the source runs unbuilt* removes the build, not the restart), while the
+recipe is read on every pass. So a `build:` block on a daemon that has not loaded
+`#263` is refused at resolve on **every** pass until it restarts, which is
+`conduct.ts` answering `stage: "recipe"` and taking nothing at all.
+
+    pnpm lingtai restart "picking up the build at build"
+
+**`lingtai`** — the whole of the change is which key the existing entry sits
+under. Its comments go with it; only the two lines below are new or moved.
+
+```yaml
+  build:
+    - name: build
+      run: pnpm typecheck && pnpm test
+      timeout: 20m
+      env: []
+
+  proposed:
+    # …the cold reviewer stays here until T5d's second half…
+    - name: review
+      agent: claude-code
+      prompt: |
+        …
+```
+
+**`nextloom-ai-admin`** — the same move, and it has no reviewer to leave behind,
+so its `proposed:` becomes empty rather than shorter.
+
+```yaml
+  build:
+    - name: build
+      run: pnpm typecheck && pnpm lint && pnpm test
+      timeout: 15m
+
+  proposed: []
+```
+
+**What the paste buys is the fix round.** At `proposed` a red build is a step
+whose own plugins refused, and `proposed` is the router — there is nothing to
+route, so it stops the pass for a person with no round bought. At `build` it is
+a refusal at a refusing step, `endingOf` reads it as one, and the loop takes it
+to `proposed` with a round to spend. Leaving the line where it is costs about
+$3.40 of agent time per red build, paid in a person's attention instead.
+
 | | |
 |---|---|
 | **T6** | The rail marks where a fix round is — **half done by `#227`** |

@@ -65,9 +65,20 @@ export const PRESETS: Record<string, Preset> = {
       ],
       design: [],
       implement: [],
-      // Empty, and today they must be: the build below runs as a `run:` action
-      // at `proposed`, which is where the pipeline actually constructs it
-      // (0058 §3 names these steps; the pass that runs them is its next ticket).
+      // `review` must be empty — no plugin declares itself there, so an
+      // `agent:` at it is refused when the recipe resolves.
+      //
+      // **`build` no longer must be, and this preset has not moved yet**
+      // (`#263`). `runPlugin` declares itself at `build`, so the entry under
+      // `proposed:` below is legal at the step it is named after — and that is
+      // where it belongs, because a red build at `proposed` reaches a person
+      // with no fix round bought while a red one at `build` refuses and buys
+      // one. Moving it is [T7](../../../doc/design/the-pipeline.md), which is
+      // the ticket that makes `init` and `add` propose a plugin for every step
+      // and owns what the wizard reads off `steps.proposed` to decide whether a
+      // build is configured at all. Until then this stays where every existing
+      // recipe on the machine has it, so that a preset and a real file do not
+      // disagree about where a build lives.
       build: [],
       review: [],
       proposed: [
