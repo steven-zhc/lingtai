@@ -26,12 +26,14 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   HUMAN_AT_MERGE,
+  JUDGED,
   PROJECT,
   fakeGitHub,
   fakePorts,
   memoryStore,
   once,
   project,
+  refusingRuntime,
   runtime,
   streams,
 } from "../test/one-pass.ts";
@@ -455,5 +457,92 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
       did.some((line) => line.startsWith("note route merge \u2192 implement:") && line.includes("same-worktree")),
     ).toBe(true);
     expect(did.some((line) => line.startsWith("note route the 1 route(s) were not appended"))).toBe(true);
+  });
+
+  /**
+   * **The judge the recipe declared is asked, and the round it asks for is
+   * bought** (`#274`).
+   *
+   * This is the only test that can say the *wiring* holds, which is this file's
+   * whole subject: `conduct.ts`'s `ports.judge` is
+   * `judgeDeclaredAt(recipe.steps.proposed, on.when) ?? { noJudge: true }`, and
+   * everything either side of that line is asserted elsewhere — the lookup in
+   * `judge.test.ts`, what the body does with the answer in `pass-steps.test.ts`.
+   * Neither of them can see whether the conductor hands the recipe's own
+   * `proposed:` list to it, and a port that answered `noJudge` for ever would pass
+   * both: `findings` has no built-in, so the pass would park at `waiting` exactly
+   * as `#267` and `#263` did with `rounds: 3` unspent.
+   *
+   * So what is asserted is the round: **two agents implemented, one review
+   * refused each of them, and the route that joins them names the line of the
+   * recipe that chose.** The second refusal has no round left and reaches a
+   * person, which is the ceiling still bounding a declared judge (0064 §7).
+   */
+  it("buys the round a declared judge asked for, from the recipe's own `proposed:`", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const ports = fakePorts(did, store);
+
+    /** How many times each of the two agents ran, told apart by the run id. */
+    const ran = { implement: 0, review: 0 };
+    const counting: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        const reviewing = request.runId.includes(":review:");
+        ran[reviewing ? "review" : "implement"] += 1;
+        return refusingRuntime.run(request);
+      },
+    };
+    // The round's agent has to commit something, or the pass stops at `implement`
+    // with nothing to review: the fixture answers one sha for ever, and a round
+    // that left the head where it was is a round with no diff in it.
+    const git = ports.repo.git;
+    ports.repo.git = (args, o) =>
+      args[0] === "rev-parse" && ran.review > 0 ? Effect.succeed("d".repeat(40)) : git(args, o);
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED),
+        runtime: counting,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    // The round was bought: a second implementing agent ran, and a second review
+    // read what it wrote.
+    expect(ran).toEqual({ implement: 2, review: 2 });
+
+    // And the route says who chose, by the name of the entry in the recipe — the
+    // line a person edits, not the built-in a person would have to grep for.
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const routed = run.filter((e) => e.type === "PassRouted").map((e) => e.data as {
+      from: string;
+      to: string;
+      chose: string;
+      why: string;
+      ceiling: string | null;
+    });
+    expect(routed.map((row) => `${row.from} \u2192 ${row.to}`)).toEqual([
+      "proposed \u2192 implement",
+      "proposed \u2192 waiting",
+    ]);
+    expect(routed[0]!.why).toContain('"the lines, until the rounds are spent" judge');
+    expect(routed[0]!.why).toContain("the recipe declares `judge: same-worktree`");
+    expect(routed[0]!.ceiling).toBeNull();
+    // The second arrival wanted the same round and there was none: a declared
+    // judge is bounded by the workflow's numbers and never above them (0064 §7).
+    expect(routed[1]).toMatchObject({ chose: "implement", to: "waiting", ceiling: "rounds" });
+
+    // So the pass rests with a person at the router, and the item says so.
+    expect(result).toMatchObject({ ok: "held", step: "proposed" });
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemBlocked");
   });
 });

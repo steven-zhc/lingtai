@@ -161,6 +161,40 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
 /**
+ * **The cold reviewer at `review:` and a judge at `proposed:`** — the shape this
+ * repository's own recipe takes once `#274` has landed, with one round to spend.
+ *
+ * The two keys are the whole fixture. `a417908` moved the reviewer to `review:`
+ * so that its findings *travel* to the router (`ARRIVE_AT_THE_ROUTER`), and
+ * `judge: same-worktree / when: findings` is what the router then has to ask:
+ * `findings` has no built-in, so without the entry the pass parks at `waiting`
+ * with the round unspent, which is what `#267` and `#263` each cost $7 and $14 to
+ * discover.
+ *
+ * `rounds: 1` is the shortest arrangement that shows both: the first refusal buys
+ * the round the recipe asked for, and the second has nothing left and reaches a
+ * person.
+ */
+export const JUDGED = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  review:
+    - name: cold reviewer
+      agent: claude-code
+      prompt: look for races
+  proposed:
+    - name: the lines, until the rounds are spent
+      judge: same-worktree
+      when: findings
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
+`;
+
+/**
  * A person declared at `merge`, and nothing else asking — which is the recipe
  * this repository has had since the day it was self-hosted.
  *

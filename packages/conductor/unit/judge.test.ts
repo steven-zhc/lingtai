@@ -28,7 +28,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActionFinding } from "@lingtai/actions";
 import { STEPS } from "@lingtai/domain";
-import { BUILT_IN_JUDGES, JudgeWhen, judgePlugin, readFields } from "@lingtai/recipe";
+import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from "@lingtai/recipe";
 import {
   BUILT_IN,
   BUILT_IN_FOR,
@@ -38,6 +38,7 @@ import {
   type JudgeBrief,
   askJudge,
   briefFor,
+  judgeDeclaredAt,
   stepsOnOffer,
 } from "../src/judge.ts";
 
@@ -383,5 +384,82 @@ describe("the mechanical directions spend nothing", () => {
   it("implements every built-in name the recipe accepts, and no others", () => {
     expect(Object.keys(BUILT_IN).sort()).toEqual([...BUILT_IN_JUDGES].sort());
     expect(BUILT_IN_JUDGES).not.toContain("ask-or-assume");
+  });
+});
+
+/**
+ * **What the recipe declared, which is the half that is called** (`#274`).
+ *
+ * `judgeDeclaredAt` is the whole of the reading: *`proposed` takes the one entry
+ * whose `when:` matches the reason the last step gave* (0061 §3). It decides
+ * nothing and spends nothing — it answers *which judge*, and the pass applies the
+ * rule — so what these cases are about is the lookup being the one 0061 §3
+ * describes, and the entries being read as entries rather than as shapes.
+ */
+describe("the judge the recipe declared", () => {
+  const entry = (name: string, when: JudgeWhen) =>
+    StepMap.parse({ proposed: [{ name, judge: "same-worktree", when }] }).proposed;
+
+  /** One per direction, matched on `when:`, and the name comes back with it. */
+  it("takes the entry whose `when:` matches, and says which line it was", () => {
+    const declared = entry("a red build is the agent's to fix", "red");
+    expect(judgeDeclaredAt(declared, "red")).toEqual({
+      built: "same-worktree",
+      named: "a red build is the agent's to fix",
+    });
+    // And nothing for the other four, which is what makes one entry per
+    // direction a reduction rather than a default: `BUILT_IN_FOR` answers the
+    // other mechanical one and a person is the floor under the three that cost.
+    for (const when of JudgeWhen.options.filter((w) => w !== "red")) {
+      expect(judgeDeclaredAt(declared, when), when).toBeNull();
+    }
+  });
+
+  /**
+   * **A recipe that declared nothing is the ordinary case**, and it has to answer
+   * *nothing* rather than something harmless: `noJudge` is what makes the pass
+   * fall back to `BUILT_IN_FOR`, so a step's empty list must not resolve to a
+   * judge the recipe never wrote (0064 §5 — absent is not empty).
+   */
+  it("answers nothing for a step that declared none", () => {
+    for (const when of JudgeWhen.options) {
+      expect(judgeDeclaredAt([], when), when).toBeNull();
+      expect(judgeDeclaredAt(StepMap.parse({}).proposed, when), when).toBeNull();
+    }
+  });
+
+  /**
+   * **The key is the discriminator, and this is the case `#238` cost.** `when:`
+   * is `close:`'s field and `labels:`' too, and while `end`'s guard matched on
+   * `"when" in action` a judge action walked into its resolver. So the match here
+   * is on `judge`, and an `agent:` or a `human:` beside it at `proposed` — which
+   * is what this repository's own recipe holds — is not a judge for any
+   * direction.
+   */
+  it("reads the key rather than the shape, so nothing else at the step is a judge", () => {
+    const beside = StepMap.parse({
+      proposed: [
+        { name: "the lines or the approach", judge: "same-worktree", when: "findings" },
+        { name: "tamper", watch: ["**/recipe.yml"], then: "fail" },
+        { name: "approval", human: "merge this?" },
+      ],
+    }).proposed;
+    expect(judgeDeclaredAt(beside, "findings")?.named).toBe("the lines or the approach");
+    expect(judgeDeclaredAt(beside, "red")).toBeNull();
+  });
+
+  /**
+   * Two entries for one direction is a file a person can write, and the order in
+   * a step's list is the recipe's own (0061 §2) — so the first wins, and neither
+   * is hidden: both are in `GatesResolved` and on the board.
+   */
+  it("takes the first of two written for one direction", () => {
+    const twice = StepMap.parse({
+      proposed: [
+        { name: "first", judge: "same-worktree", when: "red" },
+        { name: "second", judge: "same-worktree", when: "red" },
+      ],
+    }).proposed;
+    expect(judgeDeclaredAt(twice, "red")?.named).toBe("first");
   });
 });

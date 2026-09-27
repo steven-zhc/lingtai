@@ -26,7 +26,7 @@ import {
   type PassOptions,
   type PassResult,
 } from "../src/pass.ts";
-import { BUILT_IN, BUILT_IN_FOR } from "../src/judge.ts";
+import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from "../src/judge.ts";
 import {
   END_UNRESOLVED,
   bodiesFor,
@@ -782,6 +782,26 @@ describe("proposed is the only step that routes, and one judge answers each when
   });
 
   /**
+   * **`conduct.ts`'s own `ports.judge`, line for line** (`#274`).
+   *
+   * The live port is
+   * `judgeDeclaredAt(recipe.steps.proposed, on.when) ?? { noJudge: true }`, and
+   * the cases below that hand this to `answers.judge` are therefore about the
+   * recipe rather than about a fake: what is declared at `proposed:` is what the
+   * pass gets. A `Judged` written out by hand would assert the body and say
+   * nothing about the one line that makes a declared judge reachable.
+   */
+  const theRecipesJudge =
+    (steps: Record<string, unknown>) =>
+    (on: Judging): Judged =>
+      judgeDeclaredAt(recipeWith(steps).steps.proposed, on.when) ?? { noJudge: true };
+
+  /** A `judge:` entry, as a recipe writes one. */
+  const declaring = (when: string, name: string) => ({
+    proposed: [{ name, judge: "same-worktree", when }],
+  });
+
+  /**
    * The mechanical direction, and the whole of what keeps `proposed` from buying
    * a model to answer a question a `switch` answers: `red` and `gate-failed` were
    * seen sixty times between them in fourteen days and not one was a judgement.
@@ -841,6 +861,114 @@ describe("proposed is the only step that routes, and one judge answers each when
     });
     expect(asked.dispatch[1]?.context.recheck).toEqual([]);
     expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * **A red build at `build:` reaches the router and buys the round the recipe's
+   * own judge asked for** (`#274`) — the thing `#267` and `#263` each spent a
+   * ticket proving was broken, at $14.19 between them with nothing landed.
+   *
+   * Two halves, and both had to be true. The refusal has to *travel*: `build` is
+   * in `ARRIVE_AT_THE_ROUTER` and `proposed` is not, so the same commands
+   * declared at `proposed:` — where this repository's recipe had them until
+   * `a417908` — set `stoppedAt` and broke the loop before any judge was asked.
+   * And there has to be a judge to ask, which is the cell this ticket opened:
+   * the route below is `judgeDeclaredAt`'s answer over a real `proposed:` list,
+   * through the one line `conduct.ts` holds.
+   *
+   * The destination is the same one the default gives for a `red`, and that is
+   * the point rather than a weakness: the first version of these entries a person
+   * can *edit* changes no behaviour. What it changes is whose sentence is on the
+   * card — the recipe's line, by name.
+   */
+  it("buys a round for a red build from the judge the recipe declared", async () => {
+    const steps = declaring("red", "a red build is the agent's to fix, where it already is");
+    let red = true;
+    const { result, asked } = await pass({
+      steps,
+      answers: { judge: theRecipesJudge(steps) },
+      actions: {
+        build: [
+          {
+            name: "typecheck",
+            kind: "run",
+            run: async () => {
+              const answer = red ? RED : PASSED;
+              red = false;
+              return answer;
+            },
+          },
+        ],
+      },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    expect(walk(result).slice(5)).toEqual([
+      "build:refused",
+      "proposed:routed",
+      "implement:passed",
+      "build:passed",
+      "review:passed",
+      "proposed:passed",
+      "merge:passed",
+      "end:passed",
+    ]);
+    expect(asked.judge.map((on) => on.when)).toEqual(["red"]);
+    expect(result.routes).toEqual([
+      {
+        from: "build",
+        chose: "implement",
+        to: "implement",
+        // The recipe's line, named — not the built-in's name, which is what a
+        // person would have to grep the source for to find the entry to edit.
+        why: expect.stringContaining('the "a red build is the agent\'s to fix, where it already is" judge'),
+        ceiling: null,
+      },
+    ]);
+    // And it says what it declares rather than calling a `red` mechanical: the
+    // same rule applied because a person wrote it down, not because nothing did.
+    expect(result.routes[0]?.why).toContain("the recipe declares `judge: same-worktree`");
+    expect(result.routes[0]?.why).not.toContain("is mechanical");
+    // The agent that bought the round was shown what failed, which is the whole
+    // of what the round is for.
+    expect(asked.dispatch[1]?.again?.printed).toEqual({ step: "build", detail: RED.evidence });
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * **And the direction that was costing the money**: `findings` has no built-in,
+   * so an undeclared one parks at `waiting` with every round unspent — `#267` and
+   * `#263`, both fixed by a person. Declared, the same arrival buys the round.
+   *
+   * Both halves are asserted in one case on purpose: *absent is not empty* (0064
+   * §5) is the claim, and it is only a claim if the two recipes are run against
+   * the same refusal. `rounds: 1` and one review that refuses, twice over.
+   */
+  it("buys a round for a reviewer's findings where the recipe declares one, and holds where it does not", async () => {
+    const steps = declaring("findings", "the lines, until the rounds are spent");
+    const spend = {
+      ...checked(PASSED, REVIEW_REFUSED),
+      ceilings: { rounds: 1, restartsLeft: 0 } as PassOptions["ceilings"],
+    };
+
+    const declared = await pass({ ...spend, steps, answers: { judge: theRecipesJudge(steps) } });
+    // `review`'s findings arrive on the way through, so the router is `proposed`
+    // itself and the round goes back to `implement`.
+    expect(declared.asked.judge.map((on) => on.when)).toEqual(["findings", "findings"]);
+    expect(declared.result.routes[0]).toMatchObject({ from: "proposed", to: "implement" });
+    expect(declared.asked.dispatch).toHaveLength(2);
+    // The findings are what the round was bought on, and what the agent is
+    // briefed with — an empty `recheck` here would be a round spent on nothing.
+    expect(declared.asked.dispatch[1]?.context.recheck).toEqual([BLOCKER]);
+    // The second refusal has no round left, so it rests with a person: a
+    // declared judge is bounded by the ceiling, never above it (0064 §7).
+    expect(declared.result.rested).toBe("waiting");
+    expect(declared.result.routes[1]?.why).toContain("`rounds` is spent");
+
+    const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} });
+    expect(nothing.result.routes[0]?.to).toBe("waiting");
+    expect(nothing.result.routes[0]?.why).toContain("no `judge:` is declared");
+    expect(nothing.asked.dispatch).toHaveLength(1);
   });
 
   /**
