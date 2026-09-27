@@ -30,10 +30,13 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Twelve of the hundred and twenty cells run and **a hundred and eight
- * refuse**; seventy-two of those are the six steps no plugin implements, and
+ * Thirteen of the hundred and twenty cells run and **a hundred and seven
+ * refuse**; sixty of those are the five steps no plugin implements, and
  * fifty are the five plugins that serve no step — overlapping each other by
- * thirty, because a `worktree:` action at `design` is both at once.
+ * twenty-five, because a `worktree:` action at `design` is both at once.
+ * It was twelve and a hundred and eight until `#263` opened `build` on
+ * `runPlugin`, which is T5d's first half: a step leaving that list takes a
+ * column's worth of refusals with it.
  *
  * **`refs:` is the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
@@ -43,7 +46,7 @@
  * because every precedent in this file is the other case.
  *
  * That is the property this file is here to hold, and it holds it down both
- * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
+ * axes: **naming a thing is not wiring it.** Every step 0058 named that the
  * pipeline has not yet constructed must refuse every kind until it has, and the
  * five plugins that are names for code the conductor calls itself must be
  * refused at every step until the recipe is what tells it to. A `design:` block
@@ -365,19 +368,29 @@ describe("every step × kind cell runs or refuses", () => {
    * reason that had nothing to do with what it was asking for. An `at` can
    * only say the first, so the second is now a sentence of its own, and it
    * carries `WHERE_INSTEAD`'s half — the only part an operator can act on.
+   *
+   * **There are five of them since `#263` and there were six**: `runPlugin`
+   * declares itself at `build`, so that step's refusal and its
+   * `WHERE_INSTEAD` line came out together — which is what the doc on that
+   * constant says has to happen, and this is the case that fails if only one
+   * of the two ever does.
    */
   it("says a step no plugin implements, and where that work happens today", () => {
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["claim", "admit", "design", "implement", "build", "review"]);
+    expect(unimplemented).toEqual(["claim", "admit", "design", "implement", "review"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
       // step's; the five that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
       const why = whyNoKindAt(step, "run");
       expect(why, `${step} is no longer unimplemented`).toContain(`no plugin implements \`${step}\``);
     }
-    expect(whyNoKindAt("build", "run")).toContain("the build is a `run:` action at `proposed`");
+    // And `build` is not among them any more, which is the other half of the
+    // same diff: the step accepts the `run:` the recipe was writing at
+    // `proposed`, so there is no refusal left for a line about `proposed` to
+    // be the useful half of.
+    expect(whyNoKindAt("build", "run")).toBeNull();
     expect(whyNoKindAt("review", "run")).toContain("the review is an `agent:` action at `proposed`");
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
   });
@@ -396,8 +409,12 @@ describe("every step × kind cell runs or refuses", () => {
    *
    * Asserted here rather than left in the document because the counts are what
    * the document's §5 argues from, and a plugin added or a key opened moves them:
-   * T5d puts `run` at `build` and `agent` at `review`, and this row is where a
-   * reader learns the argument still holds.
+   * T5d's first half put `run` at `build` (`#263`) and its second puts `agent`
+   * at `review`, and this row is where a reader learns the argument still
+   * holds. **`build` moved a zero to a one and left the argument alone**, which
+   * is the useful thing it says: what §5 turns on is the steps with *several*,
+   * and a step with exactly one plugin is no more able to make that plugin its
+   * body than a step with four.
    */
   it("gives a step one body and several plugins, which is what `at`'s value cannot be one of", () => {
     const serving = new Map(
@@ -409,6 +426,7 @@ describe("every step × kind cell runs or refuses", () => {
       "merge",
       "end",
     ]);
+    expect(serving.get("build")).toEqual(["run"]);
     expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human"]);
     expect(serving.get("end")).toEqual(["close", "labels", "refs"]);
     // And exactly one body per step, which is the other half of the sentence.

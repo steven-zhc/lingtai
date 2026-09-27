@@ -104,7 +104,21 @@ export const runPlugin = definePlugin("run", {
     env: ExtensionEnvNames,
   },
   /**
-   * **Three steps written out rather than `"*"`, and the reason is `end`.**
+   * **`build` is here since T5d's first half, and it is the whole of what that
+   * step does** (`#263`).
+   *
+   * `build`'s body in `pass-steps.ts` is `({ ending: "passed" })` and holds no
+   * work: *the build is `run:` carrying the commands* (0061 §3), and the loop
+   * has run them by the time the body is called. So the key is not a widening
+   * of what the plugin may do — it is where the work a recipe already writes
+   * was always meant to be declared. **Nothing else had to move**: `runPass`
+   * resolves `actionsAt(step, actions)` at all ten steps since `#256`, `build`
+   * is one of `REFUSING_STEPS` so `endingOf` reads a red command here as a
+   * refusal, and the loop takes that refusal to `proposed` with a fix round
+   * bought. Where a refusal goes is the pass's, and this plugin says nothing
+   * about it.
+   *
+   * **Four steps written out rather than `"*"`, and the reason is `end`.**
    *
    * `"*"` is 0064 §3's second true thing and the shape this plugin wants the
    * day its body moves here: a command at `build` and a command at `proposed`
@@ -115,12 +129,19 @@ export const runPlugin = definePlugin("run", {
    * the throw in a different file, and *accepted ⇒ runs* is the invariant
    * `conductor/unit/step-matrix.test.ts` walks every cell to hold.
    *
-   * So these are today's three, unchanged: **this ticket moves where legality
-   * is read from and widens nothing.** Opening `build` and `review` is
-   * [T5d](../../../doc/design/the-pipeline.md), and it is now two keys here
-   * rather than a row in a table somewhere else.
+   * The other half of [T5d](../../../doc/design/the-pipeline.md) is `review` on
+   * `agentPlugin`, and it is one key there rather than anything here.
+   *
+   * **Opening the key changes no behaviour on its own.** A recipe with nothing
+   * declared at `build` runs nothing there and the step passes, exactly as it
+   * did — what changes is that a recipe *may* declare it, and the recipes are
+   * `~/.lingtai/<project>/recipe.yml`, outside every worktree. The sequence is
+   * *code, restart, paste*: `at` is a module constant the daemon loaded at
+   * start (0010 removes the build, not the restart), so a recipe naming a step
+   * the running daemon's `at` does not carry is refused at resolve on every
+   * pass until it restarts.
    */
-  at: { prepared: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
+  at: { prepared: notBuiltYet, build: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
 });
 
 /**
@@ -832,12 +853,17 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
  * the thing that will stop being true the day a plugin declares itself at that
  * step — at which point this entry goes and an `at` key arrives in the same
  * diff.
+ *
+ * **`build` was the fifth entry and `#263` is the diff that sentence describes**:
+ * `runPlugin` declares itself at `build`, so the step is implemented, the
+ * refusal it had no longer exists, and the line that named `proposed` came out
+ * beside the key going in. `review` is the last one still waiting on its half
+ * of [T5d](../../../doc/design/the-pipeline.md).
  */
-const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "build" | "review", string> = {
+const WHERE_INSTEAD: Record<"claim" | "design" | "implement" | "review", string> = {
   claim: "the queue picks the item by `source.kinds`, `source.exclude` and `runtime.assignee`",
   design: "there is no design step: the implementing agent is handed the issue body and works from it",
   implement: "`conduct.ts` dispatches the implementing agent directly, under `runtime.limits`",
-  build: "the build is a `run:` action at `proposed`",
   review: "the review is an `agent:` action at `proposed`",
 };
 

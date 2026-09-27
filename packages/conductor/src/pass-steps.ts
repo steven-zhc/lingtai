@@ -1213,10 +1213,21 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * Its work is entirely its plugins', which is `prepared`'s argument again: the
      * build is `run:` carrying the commands (0061 §3), the loop has run them by
      * the time this is called, and a second build written here would be the
-     * reimplementation 0061 §3 exists to prevent. No plugin declares itself at
-     * `build` yet, and none does until the conductor runs this file — turning a
-     * declared list into a runnable action is `actionsAt`'s, at the caller, which
-     * is why this body needs no `at` key opened.
+     * reimplementation 0061 §3 exists to prevent.
+     *
+     * **And since `#263` a recipe can say so**: `runPlugin` declares itself
+     * `at: { build }`, so `pnpm typecheck && pnpm test` belongs at `build:`
+     * rather than at `proposed:` — which is where this repository's own recipe
+     * had it, and where a red one reached a person with no fix round bought.
+     * Nothing about *this* body moved, because there was nothing in it to move:
+     * turning a declared list into a runnable action is `actionsAt`'s, at the
+     * caller, and what the step then does with the verdict is `endingOf`'s two
+     * lines above. **The plugin reports `refused`; where a refusal goes stays
+     * the pass's** — 0058 §2's *the workflow fixes which steps may refuse* is
+     * the half 0064 §6 reserves, and a key on a plugin does not reach it.
+     *
+     * A recipe that declares nothing here still runs nothing and still passes,
+     * which is 0016 §4 and is why the key costs nothing to open.
      */
     build: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
