@@ -50,15 +50,18 @@
  * same rules, in one function, with the *choice* lifted out where a plugin can
  * be put in its place.
  *
- * **Nothing calls it yet, and that is the same fact `whyNoKindAt` states about
- * the plugin.** Since `#256` the back edges are bounded by `Ceilings` and
- * offered by `onOffer` (`pass.ts`), and `conduct.ts` asks neither `decideFix`
- * nor `decideRestart`; `judge:` is refused at all ten steps until the ticket
- * that makes the recipe file `steps:`. What is here is the half that had to exist
- * before that ticket could be written safely — because the offered set is the
- * bound, and a bound invented at the same time as the thing it bounds is a
- * bound nobody checked. **Naming a thing is not wiring it**, and neither is
- * building the guard first.
+ * **`judgeDeclaredAt` is the half that is called** (`#274`), and it is the
+ * smallest thing that could be: `judgePlugin.at` carries `proposed`,
+ * `conduct.ts` hands this `recipe.steps.proposed` at `ports.judge`, and the pass
+ * applies what it answers. The rest of the file is still ahead of its callers —
+ * `askJudge` waits for a judge that *chooses*, which is a runtime and a dispatch
+ * (`JudgeName` has no runtime in it yet), and `stepsOnOffer` is `onOffer`'s rule
+ * in this file's vocabulary until T5 makes the two `Destination`s one.
+ *
+ * What is here early is the half that had to exist before the wiring could be
+ * written safely — because the offered set is the bound, and a bound invented at
+ * the same time as the thing it bounds is a bound nobody checked. **Naming a
+ * thing is not wiring it**, and neither is building the guard first.
  *
  * Everything here is a decision and nothing here does I/O, for `fix.ts`'s
  * reason: a rule about spending money that lives inside an `if` in a
@@ -66,7 +69,44 @@
  */
 import type { ActionFinding } from "@lingtai/actions";
 import { STEPS, type Step } from "@lingtai/domain";
-import type { BuiltInJudge, JudgeWhen } from "@lingtai/recipe";
+import type { BuiltInJudge, JudgeWhen, StepAction } from "@lingtai/recipe";
+
+/**
+ * **What the recipe declared for this direction, or null** — the whole of what
+ * `judge:` at `proposed` is read by (`#274`).
+ *
+ * *`proposed` takes the one entry whose `when:` matches the reason the last step
+ * gave* (0061 §3), and that sentence is the function: one judge per direction,
+ * because `when:` is required and undefaulted, so no entry can answer for all
+ * five. The first match wins where a file writes two for one direction — the
+ * order in a step's list is the recipe's own (0061 §2) — and neither entry is
+ * ignored quietly, because both are on the log in `GatesResolved` and on the
+ * board.
+ *
+ * **It decides nothing and spends nothing.** It answers *which judge*, never
+ * *which step*: the name comes back for the caller to apply, so the rule that
+ * `same-worktree` is — back to `implement` where that is on offer, a person where
+ * it is not — stays in the one place the pass already reads it
+ * (`MECHANICALLY` in `pass-steps.ts`, held to `BUILT_IN` above cell for cell by
+ * `pass-steps.test.ts`). A second copy of it here would be the divergence that
+ * test exists to catch, written on purpose.
+ *
+ * `named` is the entry's `name:`, so a refusal or a card can say which line of
+ * the recipe to edit rather than which built-in disagreed.
+ */
+export function judgeDeclaredAt(
+  actions: readonly StepAction[],
+  when: JudgeWhen,
+): { readonly built: BuiltInJudge; readonly named: string } | null {
+  for (const action of actions) {
+    // The key is the discriminator, as everywhere else a `StepAction` is read
+    // (`pluginNaming`): `when` alone is `close:`'s and `labels:`' field too, and
+    // matching on it is how a judge action once reached `end`'s resolver (`#238`).
+    if (!("judge" in action) || action.when !== when) continue;
+    return { built: action.judge, named: action.name };
+  }
+  return null;
+}
 
 /**
  * Where a pass may go from a refusal, and **`human` is not a step**.

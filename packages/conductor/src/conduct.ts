@@ -45,19 +45,22 @@
  * cut       repo.provision                   the worktree, as long as the pass
  * draft     nothing, and `""` is the answer   no cell is open at `design`
  * dispatch  the hook, the agent, the receipt  and a fix round, when a round was bought
- * judge     nothing, and `noJudge` is why     the schema refuses a `judge:` cell
+ * judge     judgeDeclaredAt                  the recipe's own `proposed:` judges
  * land      repo.integrate                    the merge lane
  * readEnd   store.read                        the item's own stream
  * recordEnd held for the ending's append       what `end` resolved, never alone
  * ```
  *
- * **Two of them answer *nothing is declared* and that is the truthful answer
- * rather than a stub.** No plugin declares itself at `design` and `judge:`
- * declares itself nowhere, so `whyNoKindAt` refuses both (`recipe.ts`) — neither a design nor a judge
- * can be written in a recipe today — a port that pretended otherwise would be
- * `#61`'s shape with the pieces swapped. What a direction with no judge costs is
- * `BUILT_IN_FOR`'s: `red` and `gate-failed` are mechanical and spend nothing,
- * and a person is the floor under the other three.
+ * **One of them answers *nothing is declared*, and that is the truthful answer
+ * rather than a stub.** No plugin declares itself at `design`, so `whyNoKindAt`
+ * refuses every cell there (`recipe.ts`) and a design cannot be written in a
+ * recipe at all; a port that pretended otherwise would be `#61`'s shape with the
+ * pieces swapped. **`judge` stopped being the second of those in `#274`**: a
+ * recipe declares its judges at `proposed:`, one per `when:`, and this port is
+ * where the entry matching the direction is looked up. Where it declares none the
+ * answer is still `noJudge`, and what that costs is `BUILT_IN_FOR`'s: `red` and
+ * `gate-failed` are mechanical and spend nothing, and a person is the floor under
+ * the other three.
  *
  * ## Four things a run acquires, and one scope each
  *
@@ -168,6 +171,7 @@ import {
   type Cut,
   type Drafted,
   type Judged,
+  type Judging,
   type Landed,
   type Landing,
   type PassPorts,
@@ -175,6 +179,7 @@ import {
   type Worked,
   bodiesFor,
 } from "./pass-steps.ts";
+import { judgeDeclaredAt } from "./judge.ts";
 
 import type { ProjectState } from "@lingtai/domain";
 import { extensionEnv, productionPatterns, runnableEnv } from "@lingtai/agent-env";
@@ -1383,17 +1388,30 @@ export function runOnce(
       const draft = async (): Promise<Drafted> => ({ document: "" });
 
       /**
-       * `proposed` — **nothing, and `noJudge` is the truthful answer** (0061 §3).
+       * `proposed` — **the judge the recipe declared for this direction** (`#274`,
+       * 0061 §3).
        *
-       * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no
-       * step and `whyNoKindAt` refuses the cell at all ten: the recipe *schema* rejects a
-       * `judge:` entry, so there is no declared judge for this to resolve. What
-       * follows is what the body does with it — `BUILT_IN_FOR` answers `red` and
-       * `gate-failed` mechanically and spends nothing, and a person is the floor
-       * under `conflict`, `needs-input` and `findings`. So the floor `#253` set
-       * holds, and no agent is paid to reach a conclusion a `switch` reaches.
+       * One line, and it is the line that makes the cell reachable: `judgePlugin.at`
+       * carries `proposed`, `recipe.steps.proposed` is what resolved there, and
+       * `judgeDeclaredAt` takes the entry whose `when:` matches the reason the last
+       * step gave. Nothing is dispatched and nothing is counted here — the answer is
+       * a *name*, and `bodiesFor`'s `judged` applies the rule and records what it
+       * chose against the offer.
+       *
+       * **`noJudge` where the recipe said nothing, which is still the ordinary
+       * answer.** `BUILT_IN_FOR` then answers `red` and `gate-failed` mechanically
+       * and spends nothing, and a person is the floor under `conflict`,
+       * `needs-input` and `findings`. So a recipe with an empty `proposed:` behaves
+       * exactly as it did before this existed (0064 §5: absent is not empty), and
+       * the floor `#253` set holds either way.
+       *
+       * **What a declared judge buys is the round the ceilings already paid for.**
+       * `#267` and `#263` each refused at `review` and parked at `waiting` with
+       * `rounds: 3` unspent — $14.19 between them — because there was no judge to
+       * ask which way to go.
        */
-      const judge = async (): Promise<Judged> => ({ noJudge: true });
+      const judge = async (on: Judging): Promise<Judged> =>
+        judgeDeclaredAt(recipe.steps.proposed, on.when) ?? { noJudge: true };
 
       /** `end` — the work item's own stream, read this late on purpose. */
       const readEnd = (stream: string) => store.read(stream);

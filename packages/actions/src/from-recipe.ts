@@ -66,13 +66,28 @@ export class ActionUnavailableError extends Error {
  * in the schema: a recipe cannot reach this with a cell that does not run, and
  * a caller constructing actions in code gets the same sentence rather than an
  * action that silently does nothing.
+ *
+ * **Not every legal cell is an action, and `judge:` at `proposed` is the first
+ * that is not** (`#274`). The pipeline runs a list and reads a verdict off each
+ * entry; a judge produces neither — it answers *which step is next*, once per
+ * arrival, and the router asks it (`judgeDeclaredAt` in
+ * `packages/conductor/src/judge.ts`, through `ports.judge`). So it is passed over
+ * here rather than refused or wrapped, which is the shape `close:` at `end`
+ * already has: a cell whose consumer is a resolver and never `runActionPipeline`.
+ *
+ * **Passed over is not dropped, and the difference is that something else reads
+ * it.** A skip nothing consumed would be `#61` wearing this function's name, so
+ * the reader is asserted rather than described: `conductor/unit/step-matrix.test.ts`
+ * walks `proposed × judge` through `judgeDeclaredAt` exactly as it walks `end`'s
+ * effects through `resolveEndActions`, and `conduct.ts`'s one line handing it
+ * `recipe.steps.proposed` is pinned there too.
  */
 export function actionsFromRecipe(
   step: Step,
   actions: readonly StepAction[],
   deps: ActionDeps = {},
 ): Action[] {
-  return actions.map((action) => {
+  return actions.flatMap((action) => {
     const kind = kindOfAction(action);
 
     // The step's own answer first: "there is no diff at `prepared`" is a
@@ -81,6 +96,11 @@ export function actionsFromRecipe(
     if (wrongStep !== null) {
       throw new ActionUnavailableError(action.name, kind, wrongStep, step);
     }
+
+    // The router's, not the pipeline's — and the only cell that is legal here and
+    // is no action. `whyNoKindAt` above has already refused it at the other nine
+    // steps, so this is `proposed` and nothing else.
+    if ("judge" in action) return [];
 
     if ("run" in action) {
       if (!deps.env) {

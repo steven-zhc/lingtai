@@ -46,11 +46,13 @@
  * keeps the rule.
  *
  * **Two of the ports are not waiting on that at all**, and they are the other
- * half of the same fact: `judge:` at `proposed` and `merge:` at `merge` are two
- * of the five plugins whose `at` is `{}`, and `CALLED_DIRECTLY` is
- * what their cells are refused with — *they name code the pass calls itself.* So
- * `ports.judge` and `ports.land` are not stand-ins for a plugin that will exist;
- * they are the seam that plugin was always going to be reached through.
+ * half of the same fact: `ports.judge` and `ports.land` are not stand-ins for a
+ * plugin that will exist; they are the seam that plugin is reached *through*.
+ * `merge:` is still one of the four whose `at` is `{}` — `CALLED_DIRECTLY` says
+ * the lane runs itself — and `judge:` is the one that stopped being (`#274`):
+ * `judgePlugin.at` carries `proposed`, and what a caller hands `ports.judge` is
+ * `judgeDeclaredAt(recipe.steps.proposed, when)`. The port did not change shape
+ * for it, which was the claim.
  *
  * **Why plain promises rather than [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)'s
  * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
@@ -443,6 +445,12 @@ type Arrival = Omit<Judging, "offering">;
  * What the recipe's `judge:` for that direction answered, or that it declared
  * none.
  *
+ * **Three answers, and they are three kinds of decider rather than three
+ * outcomes.** `built` is a judge the recipe declared and the pass applies (`#274`,
+ * and every judge a recipe can name today); `next` is a judge that *chose*, which
+ * is an agent and awaits a dispatch nothing builds yet; `noJudge` is the recipe
+ * saying nothing for this direction.
+ *
  * **`noJudge` is not a failure and is the ordinary answer for four of the five.**
  * `BUILT_IN_FOR` is what the body falls back to — the mechanical directions are
  * answered there, synchronously, spending nothing — and where that is `null` too,
@@ -457,6 +465,23 @@ export type Judged =
       readonly named: string;
       /** The judge's own words, which is what `waiting` displays (0043). */
       readonly why: string;
+    }
+  | {
+      /**
+       * **A built-in the recipe declared for this direction** — the answer
+       * `judgeDeclaredAt` gives, and the whole of what a `judge:` entry can be
+       * today (`#274`).
+       *
+       * A name and not a destination, because the rule that name stands for is
+       * the pass's: `MECHANICALLY` is `BUILT_IN`'s in this file's vocabulary, it
+       * is what the mechanical fallback already applies, and it is where `chose`
+       * and the spent ceiling are recorded (`#271`). A port that answered
+       * `next` for a built-in would be a second copy of that rule with the
+       * card's own distinction missing from it.
+       */
+      readonly built: BuiltInJudge;
+      /** The entry's `name:`, so the sentence says which line of the recipe chose. */
+      readonly named: string;
     }
   | { readonly noJudge: true };
 
@@ -521,11 +546,13 @@ export interface PassPorts {
    * — and the body holds the answer to it, so a judge that answers outside the set
    * is refused by name rather than obeyed (0061 §8).
    *
-   * **It is a port and not a plugin for the reason `queue:` and `worktree:` are.**
-   * `judge:` is one of the five plugins whose `at` is `{}`, so it serves no step
-   * at all, and `CALLED_DIRECTLY` is what its ten cells are refused with: the plugin names
-   * code the pass calls itself. So `actionsAt` will not build one, and this is
-   * where a caller that has resolved the recipe's entries answers instead.
+   * **It is a port and not an action, and since `#274` that is the distinction
+   * rather than a stand-in.** `judgePlugin.at` carries `proposed`, so a recipe
+   * declares its judges there — and `actionsFromRecipe` still builds none, because
+   * a judge produces no verdict and is asked once per arrival rather than once per
+   * entry. What a live implementation does with the declared list is
+   * `judgeDeclaredAt` (`judge.ts`): take the entry whose `when:` matches, and
+   * answer with the built-in it names.
    *
    * **Answering costs money for one of the five and must not for the other four.**
    * A live implementation returns `noJudge` for a direction the recipe declared
@@ -969,56 +996,77 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     // these*, and what the ceilings took away is not its business (`Judging`).
     const on: Judging = { ...arrival, offering: offer.affordable };
     const answer = await ports.judge(on);
-    if ("noJudge" in answer) {
-      const built = BUILT_IN_FOR[on.when];
-      if (built === null) {
+    if ("next" in answer) {
+      if (!on.offering.includes(answer.next)) {
         return toAPerson(
-          `no \`judge:\` is declared for a "${on.when}" and there is no built-in that answers one, ` +
-            `so ${about} is held for a person rather than the workflow choosing from ` +
-            `${listing(on.offering)} on its own (0061 §3)`,
+          `the "${answer.named}" judge answered "${answer.next}" for ${about}, and that is not one ` +
+            `of the steps it was offered — ${listing(on.offering)}` +
+            // Which half it failed, where that is a number rather than the shape
+            // of the arrival: a `restarts` a person can raise reads differently
+            // from a `claim` that was never on a mechanical direction's offer.
+            `${becauseSpent(answer.next, offer)}. A judge chooses which of the ` +
+            "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
+            "rounds and restarts spent to work them out (0061 §3). The pass is held for a person, " +
+            "because a judge that answered outside the set is not one to ask a second time",
+          // The judge's answer is on the log as what was chosen, and `to` says a
+          // person got it instead: an overruled judge and a judge that asked for a
+          // person are not the same thing to read back.
+          answer.next,
         );
       }
-      const mechanical = MECHANICALLY[built];
-      const afforded = on.offering.includes(mechanical.wants);
-      const next = afforded ? mechanical.wants : mechanical.orElse;
-      return {
-        ending: "routed",
-        to: next,
-        // What it would have answered with everything on offer, so that a
-        // `waiting` the rounds bought and a `waiting` somebody chose are two
-        // different rows on the log (`RouteTaken.chose`).
-        //
-        // **It is in the sentence only where a ceiling is what refused it**, and
-        // `becauseSpent` is that distinction (0064 §7). A step no number would
-        // have offered stays out of the words, which is `#271`'s rule —
-        // naming one invites the reader to ask for it (`pass-steps.test.ts`'s
-        // *offers the judge a person and a restart, and never `implement`*) —
-        // while a spent `rounds` is a line somebody can raise and so is said.
-        chose: mechanical.wants,
-        why:
-          `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
-          `there and the remedy is to fix it where it stands — and of ${listing(on.offering)} it ` +
-          `chose \`${next}\`${afforded ? "" : becauseSpent(mechanical.wants, offer)}`,
-      };
+      return { ending: "routed", to: answer.next, why: answer.why };
     }
-    if (!on.offering.includes(answer.next)) {
+
+    /**
+     * **A built-in, and the two ways one is reached are one branch** (`#274`).
+     *
+     * The recipe declared it for this direction — `judgeDeclaredAt`, through
+     * `ports.judge` — or it declared nothing and `BUILT_IN_FOR` is the mechanical
+     * default. Those differ in *which directions they answer* and in nothing else:
+     * a declared `same-worktree` for a `findings` is the same rule applied to an
+     * arrival the default leaves for a person, so the rule is applied once, here,
+     * where `chose` and the spent ceiling are recorded (`#271`).
+     */
+    const declared = "built" in answer ? answer : null;
+    const built = declared?.built ?? BUILT_IN_FOR[on.when];
+    if (built === null) {
       return toAPerson(
-        `the "${answer.named}" judge answered "${answer.next}" for ${about}, and that is not one ` +
-          `of the steps it was offered — ${listing(on.offering)}` +
-          // Which half it failed, where that is a number rather than the shape
-          // of the arrival: a `restarts` a person can raise reads differently
-          // from a `claim` that was never on a mechanical direction's offer.
-          `${becauseSpent(answer.next, offer)}. A judge chooses which of the ` +
-          "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
-          "rounds and restarts spent to work them out (0061 §3). The pass is held for a person, " +
-          "because a judge that answered outside the set is not one to ask a second time",
-        // The judge's answer is on the log as what was chosen, and `to` says a
-        // person got it instead: an overruled judge and a judge that asked for a
-        // person are not the same thing to read back.
-        answer.next,
+        `no \`judge:\` is declared for a "${on.when}" and there is no built-in that answers one, ` +
+          `so ${about} is held for a person rather than the workflow choosing from ` +
+          `${listing(on.offering)} on its own (0061 §3)`,
       );
     }
-    return { ending: "routed", to: answer.next, why: answer.why };
+    const mechanical = MECHANICALLY[built];
+    const afforded = on.offering.includes(mechanical.wants);
+    const next = afforded ? mechanical.wants : mechanical.orElse;
+    return {
+      ending: "routed",
+      to: next,
+      // What it would have answered with everything on offer, so that a
+      // `waiting` the rounds bought and a `waiting` somebody chose are two
+      // different rows on the log (`RouteTaken.chose`).
+      //
+      // **It is in the sentence only where a ceiling is what refused it**, and
+      // `becauseSpent` is that distinction (0064 §7). A step no number would
+      // have offered stays out of the words, which is `#271`'s rule —
+      // naming one invites the reader to ask for it (`pass-steps.test.ts`'s
+      // *offers the judge a person and a restart, and never `implement`*) —
+      // while a spent `rounds` is a line somebody can raise and so is said.
+      chose: mechanical.wants,
+      why:
+        // Whose choice it was, in the words a person reads on the card: a line of
+        // the recipe, named, or the default that spends nothing where the recipe
+        // said nothing. *Mechanical* is the argument for the default and is not
+        // said over a declaration — a recipe may declare one for `findings`,
+        // which is the direction 0061 §3 calls the judgement.
+        (declared === null
+          ? `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
+            "there and the remedy is to fix it where it stands"
+          : `the "${declared.named}" judge on ${about}: the recipe declares ` +
+            `\`judge: ${built}\` for a "${on.when}"`) +
+        ` — and of ${listing(on.offering)} it ` +
+        `chose \`${next}\`${afforded ? "" : becauseSpent(mechanical.wants, offer)}`,
+    };
   };
 
   /** 0058 §3c, and the one `because` the workflow itself reads. */
