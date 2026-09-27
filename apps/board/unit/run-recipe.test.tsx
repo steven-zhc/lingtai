@@ -573,6 +573,31 @@ describe("describeAction, over the closed set", () => {
       describeAction({ name: "sweep", refs: true, branch: true, when: "landed" } as never).does,
     ).toContain("agent/<n> and every");
   });
+
+  /**
+   * **And the one field whose absence is a third reading** (`#268`).
+   *
+   * `worktree.submodules` is `.optional()` rather than `.default(false)`,
+   * because the smallest legal block must not mean *off*: a project whose
+   * `repo:` still says `true` would be cut with empty submodule directories
+   * and refuse at `build` reading as the agent's fault. This row is what an
+   * operator checks *after pasting that block*, so the row drawing an absent
+   * field as a written `false` would confirm the override back to them in the
+   * one place they went to look for it.
+   */
+  it("says whether submodules were decided here or left to `repo:`", () => {
+    const said = (worktree: object) => describeAction({ name: "cut", worktree } as never).does;
+
+    expect(said({ base: "main" })).toBe(
+      "cuts the branch from origin/main, submodules as repo.submodules says",
+    );
+    expect(said({ base: "main", submodules: false })).toBe(
+      "cuts the branch from origin/main, without submodules",
+    );
+    expect(said({ base: "main", submodules: true })).toBe(
+      "cuts the branch from origin/main, submodules and all",
+    );
+  });
 });
 
 /**

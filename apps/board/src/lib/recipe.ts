@@ -516,9 +516,21 @@ export function describeAction(
     // on the first pass after the restart without anybody touching this file.
     // `merge:` below is still the other case, on the same footing.
     case "worktree": {
-      const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>;
+      const a = action as Extract<StepAction, { worktree: { base: string; submodules?: boolean } }>;
+      // **Three readings and not two**, because `submodules` is optional here
+      // and absent is not `false` (`#268`). This row is what an operator checks
+      // after pasting the block, so it has to distinguish *I turned them off*
+      // from *I said nothing, and `repo.submodules` is still what decides* —
+      // printing the second as the first is the silent override this field was
+      // made `.optional()` to prevent, shown back as confirmation of itself.
+      const subs =
+        a.worktree.submodules === undefined
+          ? ", submodules as repo.submodules says"
+          : a.worktree.submodules
+            ? ", submodules and all"
+            : ", without submodules";
       return {
-        does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ", submodules and all" : ""}`,
+        does: `cuts the branch from origin/${a.worktree.base}${subs}`,
         bound: "no clock — it is the directory the work happens in",
       };
     }

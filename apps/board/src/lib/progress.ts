@@ -204,6 +204,42 @@ function budgetOf(plan: StepPlan, data: Record<string, unknown>): number | null 
 }
 
 /**
+ * The steps whose plan this fold may not compare against verdicts.
+ *
+ * **Two names, two different reasons, and neither is *we would rather not
+ * accuse ourselves*.** The rule below is the one mark reserved for Lingtai's
+ * own bug (0016 §4), so what earns a place here is a point whose actions were
+ * **never going to produce a verdict on this stream** — not one that might
+ * have and did not.
+ *
+ * - `end` — its verdicts are `EndActionsResolved`, on the *work item's*
+ *   stream. They exist; this fold cannot see them, and `lingtai doctor`
+ *   checks them where they are.
+ * - `admit` — its one plugin is **read rather than run** (`#268`). A
+ *   `worktree:` says what the pass is cut from; `actionsFromRecipe` builds
+ *   nothing for it, because a branch name is not a verdict, and `conduct.ts`
+ *   cuts the tree at the step's own port off `baseOf` and `submodulesOf`. So
+ *   the name reaches `GatesResolved.points` — it is what the recipe declares
+ *   there — and no `GateStarted` ever follows it. Without this entry every
+ *   landed run of a recipe that declares the block draws `admit` hatched in
+ *   the fail colour, permanently, saying Lingtai did not run something it
+ *   configured. It did; there was nothing to run.
+ *
+ * **`admit` leaves this set the day the step has a body**, which is the half
+ * `#268` could not land — `worktreePlugin`'s `at.admit` is `notBuiltYet`
+ * ([the-plugin-body.md](../../../../doc/design/the-plugin-body.md) §3). A
+ * point that runs and reports belongs under the rule, not beside it.
+ *
+ * What both then read as is `pending`, by the count at the foot of `stateOf`,
+ * and `pending` is *configured, not reached yet* — not quite true of either.
+ * It is the lesser wrong of the two available: a flat grey rule that overstates
+ * how much is still coming, against a hatch in the fail colour that accuses
+ * Lingtai of a bug it does not have. `rail.tsx`'s `segTitle` carries the
+ * sentence the tone cannot.
+ */
+const READ_NOT_RUN: ReadonlySet<Step> = new Set<Step>(["admit", "end"]);
+
+/**
  * One point's state, from what the plan said and what the log reports.
  *
  * Ordered worst-first, the way the card's stripe is: a failure is the answer
@@ -250,19 +286,18 @@ function stateOf(
   // landed, against the plan this run was given* puts the fail colour on a
   // pipeline that was working.
   //
-  // **Every step but `end`**, and the exclusion is a fact about where the
-  // record lives: `end`'s is `EndActionsResolved` on the *work item's* stream
-  // (`end-step.ts`), and this fold reads the run's. A silent
-  // `end` here is a question this stream cannot answer, not a step that did not
-  // run — `lingtai doctor` has its own check for that one, against the stream
-  // that holds it.
+  // **Every step but the two in `READ_NOT_RUN`**, and each is excluded for a
+  // fact about where its record lives rather than for convenience. `end`'s is
+  // `EndActionsResolved` on the *work item's* stream (`end-step.ts`), and this
+  // fold reads the run's. A silent `end` here is a question this stream cannot
+  // answer, not a step that did not run — `lingtai doctor` has its own check
+  // for that one, against the stream that holds it.
   //
-  // It read *four and not five* until the vocabulary widened, and the exclusion
-  // is still exactly one name. The six steps nothing constructs a pipeline for
-  // are reached by the line above rather than by this one: their `planned` is
-  // empty, so they are `skipped` before this rule is asked — an empty `actions`
-  // list is never an accusation.
-  if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
+  // The five steps nothing constructs a pipeline for are reached by the line
+  // above rather than by this one: their `planned` is empty, so they are
+  // `skipped` before this rule is asked — an empty `actions` list is never an
+  // accusation.
+  if (onRecord && !READ_NOT_RUN.has(step) && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";
   const settled = seen.filter((s) => s === "passed" || s === "waived");

@@ -780,6 +780,52 @@ describe("the seven states", () => {
     expect(CSS).toMatch(/\.scell\.t-pending\s*\{[^}]*background:\s*var\(--rule\)/);
   });
 
+  /**
+   * **And the one point that is configured, does not report, and is not our
+   * bug** (`#268`).
+   *
+   * A `worktree:` at `admit` is what a recipe says the pass is cut from. It is
+   * read — `baseOf` and `submodulesOf` — and never run: `actionsFromRecipe`
+   * builds nothing for it, because a branch name is not a verdict, so no
+   * `GateStarted` and no `GatePassed` ever carry its name. But it *is* in the
+   * recipe at that step, so `GatesResolved.points` names it, and the rule above
+   * would then draw `admit` hatched in the fail colour on **every landed run of
+   * every project that pastes the block** — the one mark reserved for Lingtai
+   * having not run something it configured, permanently on.
+   *
+   * `end` is excluded from that rule by name and `admit` now is too
+   * (`READ_NOT_RUN`), which is what this pins: the same fixture that draws
+   * `merge` hatched must not draw `admit` hatched, and the reason it does not
+   * has to be on the segment where a person will look for it.
+   */
+  it("does not call `admit`'s declaration a point that did not run", () => {
+    const declared: StepPlan = new Map([
+      ...MERGE_PLAN,
+      ["admit", [{ name: "cut the branch", budgetMs: null }]],
+    ]);
+    // The plan the *log* recorded is what `stateOf` compares against, so the
+    // fixture's own `GatesResolved` is the one that has to name it — passing
+    // `declared` in only supplies budgets.
+    const events = landedPastMerge().map((e) =>
+      e.type === "GatesResolved" ? resolved(declared) : e,
+    );
+    const html = renderToStaticMarkup(
+      <LandedRow
+        card={card({ state: "landed" }, events, declared, true)}
+        showProject={false}
+        issue={null}
+      />,
+    );
+
+    // Not the hatch, and not `merge`'s answer on the same rail and the same run.
+    expect(cellsAt(html, "admit")).toEqual(["t-pending"]);
+    expect(cellsAt(html, "merge")).toEqual(["t-never"]);
+    // And the tone's silence is made up for in words, because `pending` on a
+    // run that landed eight minutes in is the part a reader would query.
+    expect(html).toContain("read rather than run");
+    expect(html).not.toContain("admit: cut the branch — configured and did not run");
+  });
+
   it("fills passed, failed, running and waived, and never waived in green", () => {
     expect(CSS).toMatch(/\.scell\.t-pass\s*\{[^}]*var\(--pass\)/);
     expect(CSS).toMatch(/\.scell\.t-fail\s*\{[^}]*var\(--fail\)/);

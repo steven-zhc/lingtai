@@ -563,11 +563,18 @@ export async function waive(options: {
   // `review` was recorded as a waived `build` — a verdict about a gate that
   // never said anything. Reported means a verdict on any sha, or a place in the
   // run's last `GatesResolved` plan: `lingtai waive` exists to close a planned
-  // gate that never reported, and `end` is left out because it has no verdict.
+  // gate that never reported, and two steps are left out because nothing they
+  // declare ever reports one. `end`'s actions are effects, carried out and
+  // recorded as `EndActionsResolved`; `admit`'s `worktree:` is a setting the
+  // step's own work reads (`#268`) — `actionsFromRecipe` builds no action for
+  // it, so there is no verdict to override and a waiver naming it would be a
+  // person's word standing in for a gate that was never asked. The board draws
+  // the same two apart from the same rule, and says why at `READ_NOT_RUN` in
+  // `apps/board/src/lib/progress.ts`.
   const plan = events.filter((e) => e.type === "GatesResolved").at(-1);
   const planned = plan
     ? parsePayload("GatesResolved", plan.data).points.flatMap((p) =>
-        p.gate === "end" ? [] : p.actions.map((a) => `${p.gate}:${a}`),
+        p.gate === "end" || p.gate === "admit" ? [] : p.actions.map((a) => `${p.gate}:${a}`),
       )
     : [];
   if (!run.steps[options.step] && !planned.includes(options.step)) {

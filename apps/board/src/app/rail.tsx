@@ -72,6 +72,14 @@ function segTitle(p: StepProgress): string {
   if (p.state === "did-not-finish") {
     return `${p.step}: ${p.planned.join(", ")} — its agent started and produced no verdict (0057)`;
   }
+  // **`admit`'s declaration is read and not run** (`#268`), so its cell is
+  // `pending` on a run that is long over — `progress.ts`'s `READ_NOT_RUN` says
+  // why, and why `pending` is the least wrong tone available. The tone cannot
+  // carry that; this can, and a point a reader hovers because it looks stuck is
+  // exactly where the sentence is owed.
+  if (p.step === "admit" && p.state === "pending") {
+    return `admit: ${p.planned.join(", ")} — read rather than run: it says what the pass was cut from, so there is no verdict here`;
+  }
   return `${p.step}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
 }
 
