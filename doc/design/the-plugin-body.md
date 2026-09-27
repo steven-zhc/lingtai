@@ -1,6 +1,10 @@
 # The plugin body — what stands between `at`'s keys and `at`'s values
 
-**Status** a finding, not a plan · **Date** 2026-09-26 · **About**
+**Status** a finding, not a plan — and one of its four is answered
+([#274](https://github.com/steven-zhc/lingtai/issues/274): the `judge:` **key** is
+open at `proposed` and a lookup reads it; `at`'s *value* is still `notBuiltYet`,
+which is what the rest of this page is about) · **Date** 2026-09-26 ·
+**About**
 [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §§2–3, 5,
 7 and the two tickets that were to build them
 ([#262](https://github.com/steven-zhc/lingtai/issues/262),
@@ -158,17 +162,19 @@ A step does not have one plugin. Since `#261` the keys say so, read off the
 twelve `at`s and not off a table:
 
 ```
-claim design implement         —                        0
-admit                          worktree                 1   ← #268
-prepared build                 run                      1
-review                         agent                    1
-proposed                       run · agent · watch · human   4
-merge                          run · agent · watch · human   4
-end                            close · labels · refs         3
+claim design implement         —                                      0
+admit                          worktree                              1   ← #268
+prepared                       run                                    1
+build                          run                                    1   ← T5d
+review                         agent                                  1   ← T5d
+proposed                       run · agent · watch · human · judge    5   ← #274
+merge                          run · agent · watch · human            4
+end                            close · labels · refs                  3
 ```
 
-So three of the ten steps already have more than one plugin declaring themselves
-there, and `#267` would make `proposed` five. **`at`'s value cannot be the
+So three of the ten steps have more than one plugin declaring themselves
+there, and `#274` made `proposed` five — the case this section predicted, arrived.
+**`at`'s value cannot be the
 step's body**, because four of those five are not bodies of the step at all:
 
 - a `run:` or an `agent:` at `proposed` is **an action's** function — called once
@@ -177,7 +183,10 @@ step's body**, because four of those five are not bodies of the step at all:
 - a `close:` at `end` is an **effect** — not called by any pipeline, resolved
   against the outcome by `resolveEndActions` and carried out by `tell.ts`;
 - a `judge:` at `proposed` would be the **step's** function — called once per
-  visit, producing the ending itself.
+  visit, producing the ending itself. Which is why `#274` did not put one there:
+  `at.proposed` carries `notBuiltYet` like every other key, and the thing that
+  reads the declaration is a lookup the *router* calls (`judgeDeclaredAt`). The
+  cell is open and this decision is still open with it.
 
 Three kinds of function under one key, and 0064 §3 says there is one. That is not
 a typing difficulty to be worked around with a union: the three differ in *how
@@ -199,25 +208,48 @@ like a step's own function was only that `admit`'s body used to call it.
 
 ### And an agent judge has no dispatch on that side of the line
 
-`JudgeName` is `BUILT_IN_JUDGES | RuntimeId` — `same-worktree`, `claude-code`,
+`JudgeName` was `BUILT_IN_JUDGES | RuntimeId` — `same-worktree`, `claude-code`,
 `codex`. A declared `judge: same-worktree` is a pure function and could live
 anywhere. A declared `judge: claude-code` is **an agent, paid for a judgement**,
 and dispatching one needs a `Runtime` from `@lingtai/agent` and a prompt: it is
 §3's *what the caller binds into the plugin's function*, which is the clause that
-makes `at`'s value a constructor rather than a body. `ports.judge` is that seam
-today, in `conduct.ts`, and it answers `noJudge` because the schema refuses the
-cell.
+makes `at`'s value a constructor rather than a body. `ports.judge` is that seam,
+in `conduct.ts`.
 
-So a `judge:` body that only answered the built-ins would accept
-`judge: claude-code` at resolve and run nothing for it — `#61`, through the door
-this repository has decided it will not leave open.
+So a `judge:` that only answered the built-ins would accept `judge: claude-code`
+at resolve and run nothing for it — `#61`, through the door this repository has
+decided it will not leave open.
+
+**`#274` resolved that by narrowing the enum, which is the same rule read the
+other way.** `JudgeName` is `z.enum(BUILT_IN_JUDGES)` now: one legal name,
+answered by a synchronous function, and a runtime refused at the line it is
+written. *The enum says what the code does, and grows when the code does*
+(`BUILT_IN_JUDGES`), so the day the dispatch lands the runtimes go back in with
+it. The cost is stated where an operator reads it — `doc/reference.md`
+§`judge:` — and it is the direction 0061 §3 calls the judgement: **`findings`
+has no built-in, so it still reaches a person.**
+
+**What that did *not* need is either decision above.** The reader is
+`judgeDeclaredAt` in `packages/conductor/src/judge.ts` and it is a lookup — *the
+one entry whose `when:` matches* — so `at.proposed` carries `notBuiltYet` like
+every other key, `judgePlugin` stays where the twelve are declared, and §§1–3 and
+§5 are all still open. The body did not move; the key opened, and something read
+it. `pass-steps.ts`'s `proposed` still decides, which is what keeps `chose` and
+the spent ceiling on the card (`#271`).
 
 ## What is landable before either decision
 
-Nothing in `#262`'s *Done when* list, and nothing in `#267`'s first two rows.
+**`#274` is the answer to this section and is landed**: `judge:` is declarable at
+`proposed`, and nothing below had to be decided for it. What made that possible is
+that the ticket wanted *the cell reachable* and read the body's move as the way to
+get there; the key and a reader are the way to get there, and the body is a
+separate question this page is still about.
+
+Nothing else. Nothing in `#262`'s *Done when* list, and nothing in `#267`'s
+second row.
 `#262`'s first three are the decision in §1 and §3; its fourth — *a test asserts
 the call site is never reached with an absent body* — needs a body to be absent
-from. `#267`'s are §3 and §5. `at`'s values are `notBuiltYet` until then, and
+from. `#267`'s remaining one is §3 and §5. `at`'s values are `notBuiltYet` still, and
 that symbol is doing the job 0064 §5 asks of it: it cannot be called, by the type
 and by the runtime.
 
@@ -236,9 +268,10 @@ needed any of §5's decision, which is the evidence for the paragraph above: a k
 opens and the step's body empties, and what `at`'s *value* should be is a separate
 question that only a step-body plugin forces.
 
-## The block a person pastes, the day the body lands
+## The block a person pastes, now that the key is open
 
-`#267` asks for this and for the recipes not to be edited: they are
+`#267` asked for this and `#274` opened the cell it needed; both ask for the
+recipes not to be edited: they are
 `~/.lingtai/<project>/recipe.yml`, one per project on the machine that conducts,
 outside every worktree, and an agent cannot reach them. There are two on this
 machine — `lingtai` and `nextloom-ai-admin`.
@@ -253,21 +286,21 @@ at all.
 
     pnpm lingtai restart "picking up the judge at proposed"
 
-**Neither block below can be pasted today, and the restart is not what is
-missing.** `judgePlugin`'s `at` is `{}` (`packages/recipe/src/recipe.ts:624`),
-which under 0064 §4 is a declaration and not an omission — *no step reads a
-`judge:` action* — so `resolveRecipe` refuses one **anywhere**, naming
-`CALLED_DIRECTLY.judge` to say where the code is instead, and `conduct.ts`
-answers `stage: "recipe"` and takes no ticket at all until the block comes back
-out. The failure the restart above answers is the *other* one: an `at` that
-gained a key in code the running daemon has not loaded. This is a key no version
-of the code has yet — which is why the sequence is *code, restart, paste*, and
-why the code is first.
+**That restart is the whole of what stands between `#274` landing and these
+blocks working**, and it is now the ordinary case rather than the hypothetical
+one. `judgePlugin.at` carries `proposed` in the merged code; a daemon that
+started before the merge has the `{}` it loaded, and under 0064 §4 that is a
+declaration and not an omission — *no step reads a `judge:` action* — so
+`resolveRecipe` refuses the entry, `conduct.ts` answers `stage: "recipe"`, and it
+takes **no ticket at all** until either the process restarts or the block comes
+back out. Paste before the restart and the queue stops; that is why the sequence
+is *code, restart, paste*, in that order.
 
 **`lingtai` — what the default already does, said out loud.** Both entries are
-the mechanical directions and `BUILT_IN_FOR` answers both identically, so on the
-day the body lands this changes no behaviour. That is the point: it is the first
-version of these two that a person can *edit*.
+the mechanical directions and `BUILT_IN_FOR` answers both identically, so this
+changes no behaviour. That is the point: it is the first version of these two that
+a person can *edit* — and what the log says changes, because the route names the
+entry rather than the built-in (`#274`).
 
 **And since `a417908` this block is the whole of `proposed:` rather than an
 addition to it.** T5d landed: the build is at `build:` and the cold reviewer at
@@ -295,9 +328,11 @@ calls the one judgement worth an agent — it wants `judge: claude-code`, which
 wants the dispatch §5 says is not there yet.
 
 **`nextloom-ai-admin` — every refusal reaches a person, which is what a managed
-repository that is not Lingtai should almost certainly say.** This block carries
-a second reason on top of the empty `at`: 0064 §7's own worked example names
+repository that is not Lingtai should almost certainly say.** And it is the one
+block `#274` did **not** make pastable: 0064 §7's own worked example names
 `judge: always-waiting`, and `BUILT_IN_JUDGES` has one entry and it is not that.
+Nothing in that project's recipe is the wrong shape — the name is simply one no
+code answers, and *that* is what the schema refuses.
 
 ```yaml
 proposed:
@@ -308,11 +343,15 @@ proposed:
 ```
 
 *The enum says what the code does, and grows when the code does*
-(`BUILT_IN_JUDGES`). So the ticket that lands the body lands one more built-in
-beside it — a `BuiltIn` returning a person, which is synchronous and therefore
-spends nothing by its type — or that project writes `rounds: 0` instead, which
-0064 §7 is careful to say is **not** the same thing: a ceiling makes every
-spending choice unaffordable, and a plugin choosing a person is a choice.
+(`BUILT_IN_JUDGES`). So a ticket adds one more built-in beside it — a `BuiltIn`
+returning a person, which is synchronous and therefore spends nothing by its type
+— or that project writes `rounds: 0` instead, which 0064 §7 is careful to say is
+**not** the same thing: a ceiling makes every spending choice unaffordable, and a
+plugin choosing a person is a choice. It is also what that project has today by
+declaring nothing at all, which is the cheapest of the three: with no entry for a
+direction the router falls to `BUILT_IN_FOR`, and a person is the floor under
+`conflict`, `needs-input` and `findings` (0064 §5 — absent is not empty, and here
+they read the same).
 
 ## Related
 
@@ -327,3 +366,6 @@ spending choice unaffordable, and a plugin choosing a person is a choice.
 - [writing-a-plugin.md](../writing-a-plugin.md) — the page whose *half built*
   note is what §§1–3 are the other half of.
 - [the-pipeline.md](the-pipeline.md) — T5d, and the `endingOf` finding at T5.
+- [reference.md](../reference.md) §`judge:` — what an operator may write there
+  today, and the sentence `#274` owes them: one legal name, and the judgement
+  still a person's.

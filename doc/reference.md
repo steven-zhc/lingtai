@@ -933,7 +933,7 @@ written as a stand-in.
 | `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
-| `judge:` | — it says which step is next when something refuses. No step reads it yet | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `gate-failed` are answered by the `same-worktree` built-in, which spends nothing |
+| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `gate-failed` are answered by the `same-worktree` built-in, which spends nothing. **An agent judge is not a name the schema takes yet**, so those three reach a person: see §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
 **`agent:` is the one key that changed meaning rather than arriving** (`#245`,
@@ -967,26 +967,25 @@ line that already said the dispatched runtime. The alternative was the silent pi
 0046 §3 exists to refuse — a cold review running on the dispatched runtime with
 nothing anywhere recording that the named one was not used.
 
-**`worktree:` was one of the five and is the first of them wired** (`#268`,
-[0065](decisions/0065-the-default-is-a-plugin.md) §4). `worktreePlugin.at`
-carries `admit`, so a recipe declares the cut there and `admit`'s body is empty;
-a recipe that declares nothing at `admit` runs the same action off `baseOf` and
-`submodulesOf`, which is 0065 §2's *the default is an entry in the plugin system
-rather than a code path beside it*. `base` is therefore written at `admit` or
-under `repo:` — one setting, two spellings, and `settings.ts` is the only thing
-that knows which a file used.
+**`worktree:` and `judge:` were two of the five and are the two now wired**
+(`#268`, `#274`, [0065](decisions/0065-the-default-is-a-plugin.md) §4).
+`worktreePlugin.at` carries `admit`, so a recipe declares the cut there and
+`admit`'s body is empty; a recipe that declares nothing at `admit` runs the same
+action off `baseOf` and `submodulesOf`, which is 0065 §2's *the default is an
+entry in the plugin system rather than a code path beside it*. `base` is
+therefore written at `admit` or under `repo:` — one setting, two spellings, and
+`settings.ts` is the only thing that knows which a file used. `judgePlugin.at`
+carries `proposed`, the one step that routes, and the router reads the entry
+whose `when:` matches the reason the last step gave.
 
-**The other four are names for code that already runs, and no step accepts one**
-(`#235`, `#236`, `#237`, `#238`). `merge:` is the integrator,
+**The other three are names for code that already runs, and no step accepts one**
+(`#235`, `#236`, `#238`). `merge:` is the integrator,
 `packages/repo/src/integrate.ts`, which `conduct.ts` calls itself and hands the
 base. `queue:` is `runnableNow` and `considerIssue` in
 `packages/conductor/src/discover.ts`, with its `assignee` field `assigneeSkip`
 beside them together with `claimWorkItem` in `packages/conductor/src/claim.ts`,
 which takes the one that survives; the queue pass calls those itself, before a
-pass exists to have steps at all. `judge:` is the decision the pass's ceilings
-make — `Ceilings` and `onOffer` in `packages/conductor/src/pass.ts`, which are
-the same two questions `decideFix` in `packages/conductor/src/fix.ts` and
-`decideRestart` in `packages/conductor/src/restart.ts` answer. `backlog:` is **two
+pass exists to have steps at all. `backlog:` is **two
 literals and not one** — the `minor` in `backlogProjection`,
 `packages/projector/src/backlog.ts`, which decides what is *filed*, and the
 blocker-or-major in `verdictFor`, `packages/actions/src/agent-action.ts`, which
@@ -1003,7 +1002,21 @@ anyway because **a plugin no list carries is a plugin no step refuses**
 [`the-v2-recipe.md`](design/the-v2-recipe.md) §3.2): outside the closed set,
 `queue:` written under `end:` is refused as *an action naming no plugin*,
 which is true and about the wrong thing. Inside it, the refusal says where that
-code is called today. **`assignee:` was the plugin that rule was written about**
+code is called today.
+
+**`judge:` was the fifth of them until `#274`, and it is the first to leave.**
+`judgePlugin.at` carries `proposed`; `judgeDeclaredAt` in
+`packages/conductor/src/judge.ts` takes the entry whose `when:` matches; and its
+row in `CALLED_DIRECTLY` went in the same diff, which is what the rule above
+promises will happen rather than an exception to it. The ceilings did not move
+with it — `Ceilings` and `onOffer` in `packages/conductor/src/pass.ts` still
+decide what a judge may choose *from*, and `decideFix` in
+`packages/conductor/src/fix.ts` and `decideRestart` in
+`packages/conductor/src/restart.ts` are the same two questions asked in the
+modules 0061 §3 lifts them out of. **The workflow counts; the judge chooses**, and
+only the second half is now a recipe's to write.
+
+**`assignee:` was the plugin that rule was written about**
 — it had a row in 0061 §3 and appeared in no other list, so it was precisely
 the cell nobody had decided — and
 [0063](decisions/0063-every-setting-is-the-recipes.md) §3 has since made it a
@@ -1087,10 +1100,42 @@ So `when:` is required and has no default — no entry can answer for all five �
 and `red` and `gate-failed` are answered by `same-worktree`, a **built-in**
 which is a synchronous function in `packages/conductor/src/judge.ts`. Being
 synchronous is the declaration that it spends nothing: nothing that dispatches
-an agent can answer without awaiting. The set of legal names is the built-ins
-that exist plus the runtimes, so a recipe cannot name a judge no code answers —
-0061 §3's example also writes `ask-or-assume`, and it is in neither list
-because nothing implements it.
+an agent can answer without awaiting.
+
+**`same-worktree` is the only legal name today, and a runtime is not one**
+(`#274`). The rule has not changed — *a recipe cannot name a judge no code
+answers* — it is the list that has: `BUILT_IN` is a total record over the
+built-ins, so every one of those is answered, and **nothing dispatches an agent
+judge**. There is no `Runtime` and no prompt on the router's side of the call, so
+`judge: claude-code` would resolve, be recorded in `GatesResolved`, be printed by
+`lingtai add`, be drawn on the board — and never be asked anything, which is
+`#61` through the one door a replaceable plugin opens
+([the-plugin-body.md](design/the-plugin-body.md) §5). It is refused where it is
+written instead, at resolve, before a worktree and before any money. `ask-or-assume`
+from 0061 §3's example is out for the same one reason.
+
+**What that costs is the direction worth the most.** `findings` — 231 refusals in
+fourteen days, *the lines or the approach* — has no built-in, so it reaches a
+person unless a recipe declares `judge: same-worktree` for it, which answers *the
+lines* always and never *the approach*. `conflict` and `needs-input` are the same
+shape. The ticket that lands the dispatch is what puts the runtimes back in the
+enum, and until it does the honest reading of this key is: **it closes the loop
+for `red` and `gate-failed`, and leaves the judgement with a person.**
+
+```yaml
+proposed:
+  - name: a red build is the agent's to fix, in the worktree it is already in
+    judge: same-worktree
+    when: red
+```
+
+**One thing had to be true before any of this could be reached**, and it is not
+about judges: the build and the cold reviewer have to be declared at `build:` and
+`review:` rather than at `proposed:`. `ARRIVE_AT_THE_ROUTER` is the seven steps
+whose refusal *travels* to `proposed`, and `proposed` is not among them because it
+**is** the router — so a check refusing there stops the pass with no judge asked
+and no round bought, whatever is written above (`a417908`,
+[the-pipeline.md](design/the-pipeline.md) T5d).
 
 The second rule is the expensive one:
 
@@ -1211,23 +1256,29 @@ each says the part an operator can act on:
   asked *before* anything is spent is `lingtai ask`, which holds the item in the
   queue and is answered without a worktree
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
-- **A plugin that serves no step at all** — `merge:`, `queue:`, `judge:` and
-  `backlog:`, whose `at` is `{}`. All four are names 0061 §3 gives
+- **A plugin that serves no step at all** — `merge:`, `queue:` and
+  `backlog:`, whose `at` is `{}`. All three are names 0061 §3 gives
   code the pass already runs, and the recipe is not yet what tells it to.
-  **`worktree:` was the fifth and left the list with `#268`.** Asked
+  **`worktree:` and `judge:` were on this list and left it**, with `#268` and
+  `#274`. Asked
   first, and the same sentence at all ten steps, because it is a fact about the
   plugin: *nothing implements `claim`* is true and leaves a reader hunting for
   the code that picks their ticket. `CALLED_DIRECTLY` names it instead, and it
   is sharpest there, where the step's sentence and the plugin's are about
-  the same plugin and only the plugin's says which file to open. The last three
+  the same plugin and only the plugin's says which file to open. Two of them
   carry one more clause, and it is the only part of those refusals that is not
   a fact about today's code — what the step will do with the list when it reads
   it: **at `claim` the first plugin that yields a work item wins**, rather than
-  every one having to pass as at `prepared` (0061 §2), and at `proposed` **the
-  one entry whose `when:` matches the reason the last step gave**, with the
-  workflow counting the rounds and restarts and the judge only choosing from
-  what it is offered (0061 §3). The day a step reads one, its entry in
+  every one having to pass as at `prepared` (0061 §2), and `backlog:` routes
+  nothing and files at or below the bar. The day a step reads one, its entry in
   `CALLED_DIRECTLY` goes and an `at` key arrives on the plugin in the same diff.
+  **`judge:` was the fifth and is the day that happened** (`#274`): it serves
+  `proposed`, so it is refused by the *first* shape above now — *`judge:` does
+  not implement `merge` — it serves `proposed`* — and that refusal carries the
+  clause its `CALLED_DIRECTLY` row used to, because a judge written at the wrong
+  step is exactly who needs it: at `proposed` the one entry whose `when:` matches
+  the reason the last step gave, with the workflow counting the rounds and
+  restarts and the judge only choosing from what it is offered (0061 §3).
 
 Where each step's list comes from. **There is one call site, and it names its
 step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runPass`, which

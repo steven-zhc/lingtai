@@ -149,12 +149,25 @@ there stopped the pass for a person with **no fix round bought**, where the five
 gate points bought one. At `build:` it refuses — `build` is one of
 `REFUSING_STEPS` — and buys the round again.
 
-`proposed: []` is written out rather than left absent (0064 §5): it is empty
-because it is **waiting for a judge**, and #274 is what fills it. Until then a
-refused review arrives at `proposed` as a *routing* arrival with no judge to
-read it, so the round is still unbought for a reviewer's findings — what the
-move fixed is that they arrive as findings rather than as `proposed` refusing on
-its own behalf.
+`proposed: []` is written out rather than left absent (0064 §5), and since #274
+it is **a block a person can fill rather than one they are waiting for**:
+`judgePlugin.at` carries `proposed`, and the router takes the one entry whose
+`when:` matches the reason the last step gave — `judgeDeclaredAt` in
+`packages/conductor/src/judge.ts`, handed `recipe.steps.proposed` by
+`conduct.ts`. Declare nothing and nothing changes: `red` and `gate-failed` are
+answered mechanically by `BUILT_IN_FOR` as they always were, and a person is the
+floor under the other three.
+
+**`same-worktree` is the only name the schema takes, so `findings` is still a
+person's** unless the recipe answers *the lines* for it always. A runtime judge
+is not a legal name — nothing dispatches one — and `judge: claude-code` is refused
+when the recipe resolves, which means `conduct.ts` answers `stage: "recipe"` and
+the daemon claims nothing until the line goes. **A judge is pasted onto the
+conducting machine's own file after a restart, never before one**: the `at` key is
+a module constant the running daemon loaded at start, and a recipe naming a plugin
+at a step *its* copy does not serve is refused every pass
+([doc/design/the-plugin-body.md](doc/design/the-plugin-body.md) — *code, restart,
+paste*).
 
 Both are the plugins' own `at` in `packages/recipe/src/recipe.ts`, which is
 where legality lives since #261 (0064 §4), and `conductor/unit/step-matrix.test.ts`
