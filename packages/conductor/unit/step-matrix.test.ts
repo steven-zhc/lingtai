@@ -30,10 +30,20 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Twelve of the hundred and twenty cells run and **a hundred and eight
- * refuse**; seventy-two of those are the six steps no plugin implements, and
- * fifty are the five plugins that serve no step — overlapping each other by
- * thirty, because a `worktree:` action at `design` is both at once.
+ * **Thirteen** of the hundred and twenty cells run and **a hundred and seven
+ * refuse**; sixty of those are the five steps no plugin implements, and forty
+ * are the four plugins that serve no step — overlapping each other by twenty,
+ * because a `merge:` action at `design` is both at once.
+ *
+ * **The thirteenth is `admit` × `worktree:`, and it is the first cell that
+ * runs through neither door below** (`#268`). `admit` is the first of the six
+ * unimplemented steps to gain a plugin, and what that plugin is is *the base a
+ * pass is cut from* — a setting, read by `baseOf` and `submodulesOf` and acted
+ * on by `conduct.ts`'s `repo.provision`. So the cell runs, nothing builds an
+ * `Action` for it, and `runsAt` has a third door for the same reason it has a
+ * second one at `end`: what this file asserts is *something reads it*, and the
+ * number of places that can be is a fact about the code rather than about the
+ * rule.
  *
  * **`refs:` is the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
@@ -45,10 +55,16 @@
  * That is the property this file is here to hold, and it holds it down both
  * axes: **naming a thing is not wiring it.** The five steps 0058 named and the
  * pipeline has not yet constructed must refuse every kind until it has, and the
- * five plugins that are names for code the conductor calls itself must be
+ * four plugins that are names for code the conductor calls itself must be
  * refused at every step until the recipe is what tells it to. A `design:` block
- * a recipe could write and nothing would run is `#61` with a new spelling; so
- * is a `worktree:` one, and so is a `backlog:` one.
+ * a recipe could write and nothing would run is `#61` with a new spelling, and
+ * so is a `backlog:` one.
+ *
+ * **`worktree:` is the first to stop being one**, and it went the way the
+ * other four will: a reader first, then the `at` key, in one diff (`#268`).
+ * Its value is still `notBuiltYet`, so what the recipe tells is `settings.ts`
+ * and not a body — which is the distinction the cell below is asserted
+ * against.
  *
  * This walks every step × kind pair and asserts one of exactly two things:
  *
@@ -62,10 +78,13 @@ import { describe, expect, it } from "vitest";
 import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from "@lingtai/domain";
 import {
   type ActionKind,
+  type Recipe,
   type StepAction,
   StepMap,
   PLUGINS,
+  baseOf,
   servesStep,
+  submodulesOf,
   whyNoKindAt,
 } from "@lingtai/recipe";
 import {
@@ -180,6 +199,19 @@ function runsAt(step: Step, kind: ActionKind): boolean {
   // A throw is a refusal and not a run, which is the answer this asks for; the
   // refusals themselves are asserted by name below.
   try {
+    if (kind === "worktree") {
+      // **The third door** (`#268`). A `worktree:` is not an action and never
+      // was (0064 §2): it is the base `admit` cuts from, so what *runs* it is
+      // `settings.ts` answering with the declaration rather than with the
+      // `repo:` block underneath. Both values are asserted, and both differ
+      // from what `repo:` says, so a reader that quietly ignored the step
+      // would fail here rather than pass by returning the same answer.
+      const declared = {
+        steps: { admit: [ACTION.worktree] },
+        repo: { base: "not-this-one", submodules: true },
+      } as unknown as Recipe;
+      return step === "admit" && baseOf(declared) === "main" && submodulesOf(declared) === false;
+    }
     if (step === "end") {
       const resolved = resolveEndActions([], [ACTION[kind]], "landed");
       const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? [];
@@ -370,7 +402,7 @@ describe("every step × kind cell runs or refuses", () => {
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["claim", "admit", "design", "implement", "build", "review"]);
+    expect(unimplemented).toEqual(["claim", "design", "implement", "build", "review"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
       // step's; the five that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
@@ -379,7 +411,50 @@ describe("every step × kind cell runs or refuses", () => {
     }
     expect(whyNoKindAt("build", "run")).toContain("the build is a `run:` action at `proposed`");
     expect(whyNoKindAt("review", "run")).toContain("the review is an `agent:` action at `proposed`");
-    expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
+  });
+
+  /**
+   * **`admit` was the sixth of them, and it is the first to leave** (`#268`).
+   *
+   * It leaves with one plugin and not with a body, which is the whole of what
+   * this case is for: `worktree:` says what the pass is cut from, `settings.ts`
+   * reads it, and `conduct.ts` goes on doing the cutting. So the step stops
+   * being one *nothing implements* and does not become one whose behaviour is
+   * a plugin's function — `at`'s value is still `notBuiltYet`
+   * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §§3, 5).
+   *
+   * And the four runnable kinds are refused there by a sentence of the step's
+   * own, which they were not before: under *no plugin implements `admit`* the
+   * reason was that nobody had built it. The reason now is that there is
+   * nowhere to run — a step's plugins run before its own work, and `admit`'s
+   * own work is making the tree.
+   */
+  it("says why `admit` takes a base and nothing that runs", () => {
+    expect(whyNoKindAt("admit", "worktree")).toBeNull();
+    for (const kind of ["run", "agent", "watch", "human"] as const) {
+      const why = whyNoKindAt("admit", kind);
+      expect(why, `admit × ${kind} is accepted`).not.toBeNull();
+      expect(why).toContain("before there is a tree to run it in");
+      expect(why).toContain("`prepared` is the step that runs in the new worktree");
+    }
+    // The one that used to carry the whole sentence: a question asked before
+    // anything is spent is still the queue's and not a `human:` here.
+    expect(whyNoKindAt("admit", "human")).toContain("`lingtai ask`");
+  });
+
+  /**
+   * **And the cell that runs is read rather than run** (`#268`).
+   *
+   * The matrix row above says `admit` × `worktree:` is accepted and that
+   * something consumes it; this says *what*, because the two answers a pipeline
+   * could give are both wrong. `actionsFromRecipe` builds nothing for it — a
+   * branch name is not a verdict — and it must not throw either, which is what
+   * it did for every kind that reached its last line before this ticket.
+   */
+  it("reads `admit`'s declaration rather than building an action out of it", () => {
+    expect(actionsFromRecipe("admit", [ACTION.worktree], EVERY_DEP)).toEqual([]);
+    // And a step's list is not all-or-nothing: the drop is this one entry's.
+    expect(() => actionsFromRecipe("admit", [ACTION.worktree], {})).not.toThrow();
   });
 
   /**

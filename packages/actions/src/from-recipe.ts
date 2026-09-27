@@ -60,6 +60,19 @@ export class ActionUnavailableError extends Error {
 /**
  * The step's actions, or a refusal naming the first one it cannot run.
  *
+ * **Fewer than it was handed, where a step's declaration is not an action.**
+ * `worktree:` at `admit` is the one such today (`#268`): it is a *setting* —
+ * the base a pass is cut from — read by `baseOf` and `submodulesOf` and acted
+ * on by `conduct.ts`'s `repo.provision`, not a verdict a pipeline can produce.
+ * That is `close:` at `end`'s shape one step earlier, and it is 0064 §2's
+ * opening sentence — eight of the twelve plugins are never `Action`s.
+ *
+ * **Dropped here rather than silently anywhere**, which is the distinction the
+ * head of this file is about: this is the one function that turns a
+ * declaration into something runnable, and a declaration with a reader
+ * somewhere else is exactly what it must *not* refuse. `step-matrix.test.ts`
+ * is where *something reads it* is held, for this cell and for `end`'s three.
+ *
  * **The step is an argument because the answer depends on it** (`#61`). Each
  * plugin's own `at` in `@lingtai/recipe` is which step × kind cells run (0064
  * §4), `whyNoKindAt` is the one reading of it, and it is asked here as well as
@@ -72,7 +85,7 @@ export function actionsFromRecipe(
   actions: readonly StepAction[],
   deps: ActionDeps = {},
 ): Action[] {
-  return actions.map((action) => {
+  return actions.flatMap((action) => {
     const kind = kindOfAction(action);
 
     // The step's own answer first: "there is no diff at `prepared`" is a
@@ -81,6 +94,11 @@ export function actionsFromRecipe(
     if (wrongStep !== null) {
       throw new ActionUnavailableError(action.name, kind, wrongStep, step);
     }
+
+    // Not an action, and it has already been read: `admit`'s own work cuts the
+    // tree from it. Returning it as something to run would mean inventing a
+    // verdict for a branch name.
+    if ("worktree" in action) return [];
 
     if ("run" in action) {
       if (!deps.env) {

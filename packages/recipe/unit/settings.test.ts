@@ -73,6 +73,41 @@ describe("the accessors", () => {
   });
 
   /**
+   * **And the first two that have actually moved** (`#268`, 0063 §2).
+   *
+   * `worktree:` is declared at `admit` since `#268`, so a recipe has two
+   * spellings for the branch a pass is cut from and `settings.ts` is the one
+   * place that knows which — the promise at the head of that file, collected.
+   * These three cases are what makes it collectable: the declaration wins,
+   * `repo:` is what a recipe that declares nothing falls back to, and **the
+   * pair is read off one declaration**, so a recipe cannot cut its base from
+   * the step and its submodules from `repo:`.
+   */
+  it("read `base` and `submodules` off the step that owns them", () => {
+    const declared = Recipe.parse({
+      ...WRITTEN,
+      steps: { admit: [{ name: "cut the branch", worktree: { base: "main" } }] },
+    });
+    expect(baseOf(declared)).toBe("main");
+    // `repo:` says `true` and the declaration does not say it at all, so this
+    // is the plugin's own default rather than the block underneath showing
+    // through — which is what *one declaration, not one each* means.
+    expect(submodulesOf(declared)).toBe(false);
+  });
+
+  /**
+   * **A recipe with nothing at `admit` behaves exactly as it did**, which is
+   * the whole of what makes `#268` safe to land before any recipe on the
+   * machine has been edited: the code goes in, the daemon restarts, and
+   * nothing about the next pass changes until somebody writes the block.
+   */
+  it("fall back to `repo:` where the step declares nothing", () => {
+    expect(RECIPE.steps.admit).toEqual([]);
+    expect(baseOf(RECIPE)).toBe("develop");
+    expect(submodulesOf(RECIPE)).toBe(true);
+  });
+
+  /**
    * **The seventh, and the one whose v1 name is not `source:`'s** (`#244`,
    * 0063 §3). `assignee` is `queue:`'s fourth field and a person writes it in
    * the machine file under `runtime:`, so where it is read from and where it

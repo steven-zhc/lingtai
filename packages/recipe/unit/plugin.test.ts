@@ -422,26 +422,6 @@ describe("the six behind the contract", () => {
 });
 
 /**
- * **The branch a pass owns, cut and landed** (`#235`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
- *
- * Both are names for code that already runs — `provisionWorktree` and the
- * integrator — and neither is read from the recipe yet. So what these cases
- * hold is the pair of properties that makes declaring them now worth anything:
- *
- * - **Refused at all ten steps, by a sentence that says where the code is.**
- *   Outside the closed set the refusal would be *names no plugin*, which is
- *   true and about the wrong thing; inside it, an operator is told which file
- *   cuts their worktree today. That the *schema* carries that sentence — the
- *   action, its plugin, its step — is asserted of all twenty cells by
- *   `packages/conductor/unit/step-matrix.test.ts`, which walks the closed set
- *   rather than a list of its own; what is here is the sentence itself.
- * - **`merge:` declares no `base:`.** `base` is one value that flows (§4), and
- *   a second declaration would manufacture a disagreement between what a pass
- *   cut and what it lands — which cannot happen today and is not made possible
- *   here.
- */
-/**
  * **`at`, and the two sentences a plugin author meets** (0064 §4, `#261`).
  *
  * Driven over a plugin of its own rather than over the closed set, for the
@@ -501,16 +481,65 @@ describe("a plugin declares the steps it serves", () => {
   });
 });
 
-describe("the two the pass calls itself", () => {
-  it("is refused at every one of the ten steps, and names the file instead", () => {
+/**
+ * **The branch a pass owns, cut and landed** (`#235`,
+ * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3) — **and
+ * they are no longer the same case** (`#268`).
+ *
+ * `worktree:` is declared at `admit` now and `merge:` is still a name for code
+ * the lane runs itself, so the pair that used to be *refused at all ten steps,
+ * by a sentence that says where the code is* has come apart. What each half
+ * holds:
+ *
+ * - **`worktree:` is legal at `admit` and refused at the other nine**, by the
+ *   ordinary sentence a plugin declared at the wrong step gets — *it serves
+ *   `admit`* — rather than by `CALLED_DIRECTLY`'s, which said `conduct.ts`
+ *   cuts it from `repo.base` and stopped being true. It still is cut by
+ *   `conduct.ts`: what changed is where the two values come from
+ *   (`settings.ts`), which is why the key could be opened without `at`'s value
+ *   being decided.
+ * - **`merge:` is refused at all ten, by a sentence that says where the code
+ *   is.** Outside the closed set the refusal would be *names no plugin*, which
+ *   is true and about the wrong thing; inside it, an operator is told which
+ *   file lands their branch. That the *schema* carries that sentence — the
+ *   action, its plugin, its step — is asserted of every cell by
+ *   `packages/conductor/unit/step-matrix.test.ts`, which walks the closed set
+ *   rather than a list of its own; what is here is the sentence itself.
+ * - **`merge:` declares no `base:`.** `base` is one value that flows (§4), and
+ *   a second declaration would manufacture a disagreement between what a pass
+ *   cut and what it lands — which cannot happen today and is not made possible
+ *   here. `worktree:` gaining a step is exactly when that would have happened:
+ *   the base moved onto `admit` and the lane goes on being handed it.
+ */
+describe("the branch a pass owns", () => {
+  it("takes `worktree:` at `admit`, and refuses it at the other nine", () => {
+    expect(whyNoKindAt("admit", "worktree")).toBeNull();
     for (const step of STEPS) {
-      for (const kind of ["worktree", "merge"] as const) {
-        expect(whyNoKindAt(step, kind), `${step} × ${kind} is accepted`).not.toBeNull();
-      }
+      if (step === "admit") continue;
+      expect(whyNoKindAt(step, "worktree"), `${step} × worktree is accepted`).not.toBeNull();
     }
 
-    expect(whyNoKindAt("admit", "worktree")).toContain("packages/repo/src/worktree.ts");
-    expect(whyNoKindAt("admit", "worktree")).toContain("repo.base");
+    // **And the sentence is the pair's at the three steps where it can be.**
+    // `whyNoKindAt` asks *does anybody implement this step* before *does this
+    // plugin*, so at the five nobody implements a `worktree:` gets the step's
+    // own sentence and at `end` it gets `end`'s — which is the ordering being
+    // right rather than this refusal being wrong: a reader at `claim` is
+    // looking for the queue, not for where their base is declared.
+    for (const step of ["prepared", "proposed", "merge"] as const) {
+      const why = whyNoKindAt(step, "worktree");
+      expect(why).toContain("`worktree:` does not implement");
+      expect(why).toContain("it serves `admit`");
+      expect(why).toContain("`admit` is the step that cuts it");
+      // The half that is about the pair rather than about the step: the base
+      // flows to the lane, so a second one here is not a thing to write.
+      expect(whyNoKindAt("merge", "worktree")).toContain("handed that same base");
+    }
+  });
+
+  it("refuses `merge:` at every one of the ten steps, and names the file instead", () => {
+    for (const step of STEPS) {
+      expect(whyNoKindAt(step, "merge"), `${step} × merge is accepted`).not.toBeNull();
+    }
     expect(whyNoKindAt("merge", "merge")).toContain("packages/repo/src/integrate.ts");
   });
 
