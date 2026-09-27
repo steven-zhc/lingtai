@@ -133,9 +133,14 @@ last blocker closes, with no hold to remove.
 
 **T0 was here, and it is gone.** It asked for a model of plugins that are only
 correct together. Reading the code retired it: `base` is not two settings that
-must agree, it is **one value that flows** — `recipe.repo.base` is the only
-place it is written, and `worktree.ts:133` and `integrate.ts:73` both take it
-as a parameter. The disagreement the ticket existed to prevent cannot happen.
+must agree, it is **one value that flows** — one place in the file writes it and
+`worktree.ts:133` and `integrate.ts:73` both take it as a parameter. The
+disagreement the ticket existed to prevent cannot happen. Since #268 that one
+place has two *spellings* — `worktree.base` at `admit`, and `repo.base`, which
+is the same setting's v1 name — and `baseOf` in `packages/recipe/src/settings.ts`
+is the only reader of either, so the sentence above is unchanged: a recipe still
+cannot say one thing to the cut and another to the lane, because the lane is
+handed what `baseOf` answered rather than asking a second time.
 What is left is `prepared`'s `pnpm install` against `build`'s `pnpm typecheck`:
 two free-text commands, where catching *npm in one and pnpm in the other* needs
 a system that understands commands. **A plugin offers a capability; a person who
