@@ -91,6 +91,69 @@ describe("the accessors", () => {
   });
 
   /**
+   * **The two that have actually moved, read at both of their spellings**
+   * (`#268`, 0065).
+   *
+   * `worktree:`'s fields at `admit` are where 0061 §4 puts the base and the
+   * submodules, and `repo:` is the same setting's v1 name — so these two are the
+   * first accessors that answer a *step* rather than a block, and they are the
+   * proof that the move is a change to `settings.ts` and to nothing else. Every
+   * reader downstream — the cut, the merge lane, `lingtai doctor`, `lingtai add`,
+   * the board, the wizard — asks the accessor, so there is nowhere for the two
+   * spellings to disagree.
+   */
+  it("read the base and the submodules off `admit` where the recipe declares them", () => {
+    const declared = Recipe.parse({
+      ...WRITTEN,
+      steps: { admit: [{ name: "cut the branch", worktree: { base: "1.0", submodules: false } }] },
+    });
+
+    expect(baseOf(declared)).toBe("1.0");
+    // `repo.submodules` is `true` in `WRITTEN`, and the declaration is what runs:
+    // a step that says is not overridden by the block it replaces.
+    expect(submodulesOf(declared)).toBe(false);
+    // And the `repo:` block is still there, untouched — one setting, two
+    // spellings, and the accessor is the only thing that knows.
+    expect(declared.repo).toEqual({ base: "develop", submodules: true });
+  });
+
+  /**
+   * **A `worktree:` that does not name `submodules` never reaches an accessor**
+   * (`#268`).
+   *
+   * The plugin requires it, so there is no third answer between *the step said*
+   * and *`repo:` said*. It used to default to `false`, which made the smallest
+   * legal block override `repo.submodules: true` in silence — and the symptom was
+   * every test that imports a submodule failing, at `build`, reading as the agent
+   * breaking the tests.
+   */
+  it("refuses a `worktree:` that leaves `submodules` out, rather than defaulting it", () => {
+    const silent = Recipe.safeParse({
+      ...WRITTEN,
+      steps: { admit: [{ name: "cut the branch", worktree: { base: "1.0" } }] },
+    });
+    expect(silent.success).toBe(false);
+    expect(JSON.stringify(silent.error?.issues)).toContain("submodules");
+  });
+
+  /** One cut per step, so *the first* and *the only* are the same entry. */
+  it("refuses a second `worktree:` at `admit` by name", () => {
+    const twice = Recipe.safeParse({
+      ...WRITTEN,
+      steps: {
+        admit: [
+          { name: "cut the branch", worktree: { base: "main", submodules: false } },
+          { name: "cut from release", worktree: { base: "release", submodules: false } },
+        ],
+      },
+    });
+    expect(twice.success).toBe(false);
+    const said = JSON.stringify(twice.error?.issues);
+    expect(said).toContain("cut from release");
+    expect(said).toContain("already cuts a worktree");
+  });
+
+  /**
    * Not an implementation detail: the step is unread *today* and the two calls
    * are not the same question, so a caller passing the step it is at is right
    * both before 0061 §4's move and after it.

@@ -585,7 +585,10 @@ export function finishRefusals(state: WizardState): string[] {
   if (state.draft.kinds.length === 0) {
     refusals.push("source.kinds is empty — no issue would ever be work. Tick at least one kind.");
   }
-  if (state.draft.base.trim() === "") refusals.push("repo.base is empty — work has to land on a branch.");
+  // Not `repo.base` by name: the value may be `worktree:`'s at `admit`, and a
+  // refusal that named the key the file does not use would send a person to the
+  // wrong line (`#268`).
+  if (state.draft.base.trim() === "") refusals.push("the base is empty — work has to land on a branch.");
   for (const d of DECISIONS) {
     if (!state.settled.includes(d.id)) refusals.push(`${d.question} is not answered yet.`);
   }
@@ -629,12 +632,31 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
       : [...recipe.steps.end, CLOSE_ACTION]
     : recipe.steps.end.filter((a) => !closesOnLand(a));
 
+  /**
+   * **The base row is written where `baseOf` reads it, which is two places**
+   * (`#268`).
+   *
+   * A recipe that declares a `worktree:` at `admit` has its base and its
+   * submodules *there*, and `repo:` is the v1 spelling of the same setting — so a
+   * page that wrote only `repo.base` would report the base as changed, write it,
+   * hash it, say *a diff lands in `release` when the checks pass*, and then cut
+   * the next worktree from `main`. The wizard's own read-back guard cannot catch
+   * it: the recipe it hashes against has the same stale declaration. So the edit
+   * goes to whichever spelling the file uses, and the other is left exactly as it
+   * was rather than being filled in as a second home.
+   */
+  const admit = recipe.steps.admit.map((action) =>
+    "worktree" in action
+      ? { ...action, worktree: { base: draft.base.trim(), submodules: draft.submodules } }
+      : action,
+  );
+
   return {
     ...recipe,
     repo: { ...recipe.repo, base: draft.base.trim(), submodules: draft.submodules },
     source: { ...recipe.source, kinds: [...draft.kinds], exclude: [...draft.exclude] },
     env: { ...recipe.env, required: [...draft.envRequired] },
-    steps: { ...recipe.steps, ...checked, merge, end },
+    steps: { ...recipe.steps, admit, ...checked, merge, end },
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
@@ -666,6 +688,10 @@ function homeStep(recipe: Recipe): CheckStep {
 const PATHS: readonly (readonly string[])[] = [
   ["repo", "base"],
   ["repo", "submodules"],
+  // The same row's other spelling: `worktree:` at `admit` carries the base and
+  // the submodules where a recipe has moved them, and `baseOf` reads it first
+  // (`#268`). One path, because the two fields are one map and one row.
+  ["steps", "admit"],
   ["source", "kinds"],
   ["source", "exclude"],
   // The checks row is one row and three keys: a build at `build:`, a cold

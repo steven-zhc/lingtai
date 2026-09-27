@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { Recipe, editRecipe, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
+import { Recipe, baseOf, editRecipe, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
 import { passCeiling } from "../src/filter.ts";
 import {
   type WizardState,
@@ -421,6 +421,73 @@ describe("a check lives at the step it was declared at", () => {
     expect(updateState({ slug: "acme/tool", recipe }).noChecksFound).toBe(true);
     expect(after.steps.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
     expect(after.steps.build).toEqual([]);
+  });
+});
+
+/**
+ * **The base row, when the recipe has moved it onto `admit`** (`#268`).
+ *
+ * `baseOf` reads a `worktree:` at `admit` before it reads `repo.base`, so a page
+ * that wrote only `repo:` would report the base as changed, write it, pass its
+ * own read-back guard — the drafted recipe it hashes against has the same stale
+ * declaration — and answer *a diff lands in `release` when the checks pass*,
+ * while the next pass went on cutting from `main`. The edit was written,
+ * acknowledged and never applied, and nothing refused: `baseDivergence` cannot
+ * see it either, because the base it compares against *is* `baseOf`'s.
+ */
+describe("the base, at whichever of its two spellings the file uses", () => {
+  const declaring = (base: string, submodules = false) =>
+    Recipe.parse({
+      version: 2,
+      repo: { base: "main" },
+      source: { kinds: ["bug"] },
+      env: { plantAt: ".env" },
+      steps: { admit: [{ name: "cut the branch", worktree: { base, submodules } }] },
+      runtime: { agent: "claude-code" },
+    });
+
+  it("writes the declaration when there is one, and says which path changed", () => {
+    const recipe = declaring("main");
+    // The file checks nothing, so the merge question is asked; answered as the
+    // file has it, which keeps `steps.merge` off the change list.
+    const state = play(
+      updateState({ slug: "acme/shop", recipe }),
+      { type: "set", draft: { personApproves: false } },
+      { type: "set", draft: { base: "release" } },
+    );
+
+    const after = Recipe.parse(applyDraft(recipe, state));
+    expect(baseOf(after)).toBe("release");
+    expect(after.steps.admit).toEqual([
+      { name: "cut the branch", worktree: { base: "release", submodules: false } },
+    ]);
+    // Both spellings are on the change list, because both moved: the file keeps
+    // the one it had and the other is written beside it rather than invented.
+    expect(changesFrom(recipe, after).map((change) => change.path.join("."))).toEqual([
+      "repo.base",
+      "steps.admit",
+    ]);
+  });
+
+  it("reads the declaration back into the draft, submodules included", () => {
+    const state = updateState({ slug: "acme/shop", recipe: declaring("release", true) });
+    expect(state.draft.base).toBe("release");
+    expect(state.draft.submodules).toBe(true);
+  });
+
+  it("leaves `admit` alone where the recipe declares nothing there", () => {
+    const recipe = scanned();
+    const state = play(updateState({ slug: "acme/shop", recipe }), {
+      type: "set",
+      draft: { base: "release" },
+    });
+
+    const after = Recipe.parse(applyDraft(recipe, state));
+    expect(after.steps.admit).toEqual([]);
+    expect(baseOf(after)).toBe("release");
+    expect(changesFrom(recipe, after).map((change) => change.path.join("."))).toEqual([
+      "repo.base",
+    ]);
   });
 });
 
