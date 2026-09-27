@@ -314,8 +314,8 @@ export const refsPlugin = definePlugin("refs", {
  * therefore the v1 spelling of these two fields rather than a second home for
  * them, exactly as `source:` is the v1 spelling of three of `queue:`'s four.
  * **`settings.ts` is the one place that knows which**: `baseOf` and
- * `submodulesOf` ask the step first and `repo:` second, so the eleven callers
- * that want a base — the merge lane included — go on being *handed* one rather
+ * `submodulesOf` ask the step first and `repo:` second, so every caller that
+ * wants a base — the merge lane included — goes on being *handed* one rather
  * than declaring it a second time (§4).
  *
  * `submodules` keeps `repo.submodules`'s default and its reason: `git worktree

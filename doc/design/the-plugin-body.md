@@ -232,7 +232,7 @@ submodules on the step that owns them; `baseOf` and `submodulesOf` in
 `packages/recipe/src/settings.ts` read the declaration and fall back to
 `repo:`, which is therefore the v1 spelling of those two fields rather than a
 second home for them. Nothing else changed — not `conduct.ts`'s
-`repo.provision` call, not the eleven callers that ask for a base — because
+`repo.provision` call, not one of the callers that ask for a base — because
 `settings.ts` exists for exactly this move and says so at its head.
 
 **The other half is the body, and it is blocked where `#267` was blocked.**
