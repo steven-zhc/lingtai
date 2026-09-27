@@ -1101,7 +1101,26 @@ export function whyNoKindAt(
   return `${wrongStep}: ${whyThatPair(step, kind)}`;
 }
 
-/** Why this plugin's output would mean nothing at this step, said in the step's own terms. */
+/**
+ * Why this plugin's output would mean nothing at this step, said in the step's
+ * own terms.
+ *
+ * **Every branch is a step's, and the step has to be asked before the kind.**
+ * Until `#263` only two steps ever reached here — `end`, and `prepared`, which
+ * was the only other one with a plugin — so *the kind* was enough to pick a
+ * sentence and three branches were written as `kind === …` with `prepared`
+ * spelled inside them. Opening `run:` at `build` gave the function a third
+ * step and those three branches answered for it, each with a sentence about a
+ * point two steps earlier: `agent:` at `build` was told *nothing has been
+ * committed at `prepared`* on a line that said `build`, where the implementing
+ * agent's commit is the very thing the step was handed. A refusal that names a
+ * step the operator did not write is worse than no reason, because it is one
+ * they will go and check.
+ *
+ * So `build` has its own three below. T5d's other half will do this again
+ * from the far side — the day `agent:` opens at `review`, `run:` at `review`
+ * reaches here and needs a block of its own rather than one of these.
+ */
 function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "end") {
     return (
@@ -1115,6 +1134,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   if (kind === "close" || kind === "labels" || kind === "refs") {
     return "it is an effect rather than a verdict, and only the `end` step carries out effects";
   }
+  if (step === "build") return whyNotAtBuild(kind);
   if (kind === "agent") {
     return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";
   }
@@ -1125,6 +1145,52 @@ function whyThatPair(step: Step, kind: ActionKind): string {
     "a hold at `prepared` cannot be answered — the run is released back to the queue and the " +
     "question goes with it, so the item would re-claim, re-install and ask again on every pass. " +
     "Ask before the claim with `lingtai ask`, or at `proposed`, where there is a diff to approve"
+  );
+}
+
+/**
+ * The three that `build` refuses, and **none of them for `prepared`'s reason**.
+ *
+ * `prepared`'s three all turn on *nothing has been committed*. That is the one
+ * sentence which cannot be said here: `implement` returns the commit as its
+ * own `head`, and `build` is the next step to run. So each of these says what
+ * is actually true at `build` — the step takes one kind of verdict, a command's
+ * exit code, and `run:` is the only plugin declared at it — and then where the
+ * kind does belong, which is the half an operator can act on.
+ *
+ * **And none of them mentions `prepared` to say it is not the reason.** An
+ * operator who wrote `build` is holding one line and a message about it; a
+ * clause ruling out a step they did not write is a second thing to check, and
+ * the whole complaint against the old behaviour was that it sent them to check
+ * one. The comparison belongs here, and the test that the three never carry
+ * `prepared`'s words is `step-matrix.test.ts`'s *says why `build` is narrower
+ * than `proposed`*.
+ */
+function whyNotAtBuild(kind: ActionKind): string {
+  if (kind === "agent") {
+    return (
+      "`build`'s verdict is whether the commands passed, and `run:` is the only plugin declared " +
+      "here — so an agent's reading has nothing at this step to be. The ordering is the point: " +
+      "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 puts `build` before " +
+      "`review` so that no agent is paid to read a diff that does not compile, and a red `build` " +
+      "refuses straight to `proposed` without reaching one. Declare the reviewer at `proposed`, " +
+      "which `agent:` serves today, or at `review` once " +
+      "[T5d](doc/design/the-pipeline.md)'s other half puts that key on this plugin"
+    );
+  }
+  if (kind === "watch") {
+    return (
+      "`build`'s verdict is whether the commands passed, and `run:` is the only plugin declared " +
+      "here — a match here would have nothing to hold. `build` refuses to `proposed`, which is " +
+      "where the diff is judged and where `watch:` already serves: write the globs there, and " +
+      "`then: request-approval` holds at a point that can be answered"
+    );
+  }
+  return (
+    "`build`'s verdict is whether the commands passed, and `run:` is the only plugin declared " +
+    "here, so there is nothing at this step for a person to answer. The question is early rather " +
+    "than wrong — `proposed` is where the build's verdict and a review's findings are both in " +
+    "hand, and it is the step `human:` serves"
   );
 }
 

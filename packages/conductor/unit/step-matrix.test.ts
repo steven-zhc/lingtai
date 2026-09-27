@@ -331,6 +331,49 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
+   * **`build` is narrower than `proposed` for a different reason, and the row
+   * above is why that has to be asserted here** (`#263`).
+   *
+   * The `build × agent|watch|human` cells of the matrix only check that the
+   * refusal contains the action, the kind and the step. All three passed on
+   * the day `#263` opened `run:` at `build` — and all three were wrong: with
+   * `build` implemented, those kinds stopped taking the *nobody implements this
+   * step* branch and fell through to the three that were written for
+   * `prepared`, so `agent:` at `build` was refused because *nothing has been
+   * committed at `prepared`*. A sentence about a step the operator did not
+   * write, and false where it was printed: `implement` returns the commit and
+   * `build` is the next step to run.
+   *
+   * So the keyword is not the assertion. Each of the three is pinned to the
+   * reason that is true at `build`, and each is checked for **not** carrying
+   * `prepared`'s — which is the half that would have caught it.
+   */
+  it("says why `build` is narrower than `proposed`, and never in `prepared`'s words", () => {
+    const at = (kind: "agent" | "watch" | "human") => whyNoKindAt("build", kind) ?? "";
+
+    // The step's own fact, in all three: one plugin, and the verdict is a command's.
+    for (const kind of ["agent", "watch", "human"] as const) {
+      expect(at(kind), kind).toContain("`build`'s verdict is whether the commands passed");
+      expect(at(kind), kind).toContain("`run:` is the only plugin declared");
+      // And where the kind does live, which is the half an operator acts on.
+      expect(at(kind), kind).toContain("`proposed`");
+      // `prepared`'s three sentences, none of which is sayable here — and the
+      // step itself is not named to be ruled out, which is the same rule.
+      expect(at(kind), kind).not.toContain("`prepared`");
+      expect(at(kind), kind).not.toMatch(/nothing has been committed/);
+      expect(at(kind), kind).not.toMatch(/released back to the queue/);
+    }
+
+    // Then the reason each one is its own, rather than one sentence for three.
+    expect(at("agent")).toContain("no agent is paid to read a diff that does not compile");
+    expect(at("watch")).toContain("a match here would have nothing to hold");
+    expect(at("human")).toContain("nothing at this step for a person to answer");
+
+    // And the plugin the step does take is not refused at all.
+    expect(whyNoKindAt("build", "run")).toBeNull();
+  });
+
+  /**
    * **The refusal a plugin author gets, and it names the step they should have
    * written** (`#261`).
    *
