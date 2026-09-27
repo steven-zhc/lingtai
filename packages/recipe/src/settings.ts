@@ -41,6 +41,35 @@
 import type { Step } from "@lingtai/domain";
 import type { Recipe } from "./recipe.ts";
 
+/**
+ * **The first setting to actually move, and this is where the move is** (0063
+ * §2, `#268`).
+ *
+ * `worktree:` is declared at `admit` since `#268`, so `base` and `submodules`
+ * have two spellings while both shapes exist: the plugin's, on the step that
+ * owns it, and `repo:`, which is the v1 one. This is the one place that knows
+ * — exactly as the head of this file promises — so the eleven callers that ask
+ * `baseOf(recipe)` did not change, and neither did `conduct.ts`'s
+ * `repo.provision` call.
+ *
+ * **The declaration wins and `repo:` is the fallback**, which is what makes a
+ * recipe that declares nothing at `admit` behave exactly as it did. It is not
+ * two homes for one setting: `repo:` is the older name for this one, and it
+ * goes the day the last recipe on a machine has moved.
+ *
+ * The first entry rather than a reduction over several, because a pass cuts
+ * one worktree: what a step does with several plugins is the step's (0061 §2)
+ * and `admit` has no body that could reduce them yet — so a second entry is
+ * something to refuse when the body lands, and never something to silently
+ * merge.
+ */
+function cutAt(recipe: Recipe): { base: string; submodules: boolean } | null {
+  for (const action of recipe.steps.admit) {
+    if ("worktree" in action) return action.worktree;
+  }
+  return null;
+}
+
 /** What one agent run at `step` may spend. */
 export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits"] {
   void step;
@@ -49,18 +78,21 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits
 
 /** The branch a pass cuts from and lands on. */
 export function baseOf(recipe: Recipe): string {
-  return recipe.repo.base;
+  return cutAt(recipe)?.base ?? recipe.repo.base;
 }
 
 /**
  * Whether the worktree a pass is cut into gets the submodules.
  *
- * `baseOf`'s sibling and it moves with it: both are `worktree:`'s fields under
+ * `baseOf`'s sibling and it moved with it: both are `worktree:`'s fields under
  * 0061 §4, and a caller that asks for one usually asks for the other in the
- * next line (`conduct.ts`'s `repo.provision` call is exactly that pair).
+ * next line (`conduct.ts`'s `repo.provision` call is exactly that pair). So
+ * they are read off **one** declaration and never one each — a recipe that
+ * said `base` at `admit` and `submodules` at `repo:` would cut half from each,
+ * which is the disagreement `cutAt` exists not to allow.
  */
 export function submodulesOf(recipe: Recipe): boolean {
-  return recipe.repo.submodules;
+  return cutAt(recipe)?.submodules ?? recipe.repo.submodules;
 }
 
 /**
