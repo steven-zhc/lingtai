@@ -73,14 +73,21 @@ export type Tier = z.infer<typeof Tier>;
  * rather than smoothed over: a separate concept for it would cost more than the
  * imprecision does.
  *
- * **Five of the ten have code behind them today and five do not.** `claim`,
- * `design`, `implement`, `build` and `review` name work a pass already does and
- * no pipeline is constructed at any of them — today's build and review run as
- * actions at `proposed`. A recipe that names an action at one of the five is
- * refused when it resolves, which is the plugins' own rule (0064 §4) and not an
- * exception to it: the vocabulary is what the model may *say*, and what a
- * plugin declares itself at is what the code will *run*. The two are allowed to
- * differ only in the direction that is loud.
+ * **Six of the ten have a plugin declared at them and four do not.** `claim`,
+ * `admit`, `design` and `implement` name work a pass already does — the queue
+ * picks the item, the worktree is cut, the implementing agent is dispatched by
+ * `conduct.ts` — and no plugin's `at` carries one of those keys. A recipe that
+ * names an action at one of the four is refused when it resolves, which is the
+ * plugins' own rule (0064 §4) and not an exception to it: the vocabulary is
+ * what the model may *say*, and what a plugin declares itself at is what the
+ * code will *run*. The two are allowed to differ only in the direction that is
+ * loud.
+ *
+ * **It was four and six until 2026-09-27**, when `runPlugin` took `build` and
+ * `agentPlugin` took `review` (`a417908`). The build and the cold reviewer had
+ * shared `proposed:` because it was the only door open, never because they
+ * belong together; each has its own step now, and the two that opened are the
+ * two this paragraph used to name.
  *
  * `proposed` was called `diff` until
  * [ADR 0018](../../../doc/decisions/0018-the-proposed-point.md). Stored events

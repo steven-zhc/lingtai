@@ -148,9 +148,10 @@ which four produce a verdict, two run for effect, and six are names for code
 the pass calls itself and no step yet reads
 ([reference](reference.md#gate-action--12-keys-of-which-4-produce-a-verdict)).
 The design question a repository actually faces is not which steps exist; it is
-what to hang on them — and today that is four of the ten, because nothing
-constructs a pipeline at the other six. The rest of this section is about those
-four.
+what to hang on them — and today that is six of the ten, because no plugin
+implements `claim`, `admit`, `design` or `implement`. It was four until
+2026-09-27, when `build` and `review` were each opened to a plugin; the rest of
+this section works through the points in the order the loop runs them.
 
 **A gate runs once per attempt, not once per item.** This is the arithmetic
 nobody does. `wi-lingtai-87` was claimed three times and `wi-lingtai-89` twice
@@ -168,16 +169,19 @@ refusal reads `stopped at prepare: the install action refused` — *"Nothing
 expensive ran; that is the point of failing here."* Anything you can discover
 before the agent starts, discover before the agent starts.
 
-**`proposed` is the check you would not merge without, and nothing else.** Here
-it is one action: `pnpm typecheck && pnpm test`, 20-minute timeout. And because
-this repository's `merge` point is empty (below), that one action is **the only
-thing between an agent and `main`** — which the recipe says in as many words, so
-that nobody has to derive it. A `proposed` list that has grown to five actions
-is five things every attempt pays for; if one of them has never refused, it is
-not protecting you, and you should find out whether it is even running before
-you keep it.
+**`build` is the check you would not merge without, and nothing else.** Here it
+is one action: `pnpm typecheck && pnpm test`, 20-minute timeout. It sat at
+`proposed:` until 2026-09-27, because `proposed` was the only step a `run:`
+could legally be declared at — never a judgement that a build belongs with the
+routing. And because this repository's `merge` point is empty (below), that one
+action and the cold reviewer below it are **all that is between an agent and
+`main`** — which the recipe says in as many words, so that nobody has to derive
+it. A checking list that has grown to five actions is five things every attempt
+pays for; if one of them has never refused, it is not protecting you, and you
+should find out whether it is even running before you keep it.
 
-**An `agent:` reviewer earns its cost when self-review does not.** The claim
+**`review` is an `agent:` reviewer, and it earns its cost when self-review does
+not.** The claim
 being tested in [experiment 001](experiments/001-cold-review-issue-58.md) was
 that self-review after ~89 turns of committed reasoning is not a second opinion.
 `nextloom-ai-admin#58` had passed self-review, `verify.sh`, CI and a human read,

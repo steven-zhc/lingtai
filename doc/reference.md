@@ -469,27 +469,29 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
 | `design` | a document, before any code — or nothing, which is an answer | no | not yet |
 | `implement` | one agent, in that worktree | no | not yet |
-| `build` | the independent build of what was written | yes | not yet |
-| `review` | reads the diff, returns findings, judges nothing | no | not yet |
+| `build` | the independent build of what was written | yes | yes |
+| `review` | reads the diff, returns findings, judges nothing | no | yes |
 | `proposed` | the agent stopped and there are commits — a change has been proposed | yes | yes |
 | `merge` | after `proposed` passes, before the merge lane | yes | yes |
 | `end` | the work item reached any terminal outcome | **no** | yes |
 
-`prepared` and `proposed` run the recipe's actions; `merge` holds when a `human`
-action asks or when `--no-merge` does; `end` runs too, its actions being effects
-rather than verdicts. The conductor calls GitHub and appends the outcome; what
+`prepared`, `build`, `review` and `proposed` run the recipe's actions; `merge`
+holds when a `human` action asks or when `--no-merge` does; `end` runs too, its
+actions being effects rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
-**Six of the ten are empty here and empty everywhere, and that is what the last
-column is for.** Nothing constructs a pipeline for `claim`, `admit`, `design`,
-`implement`, `build` or `review`, so an action declared at one is refused when
-the recipe resolves rather than accepted and skipped (`#61`). Today's build and
-review run as actions at `proposed`, and today's implementing agent is
-dispatched by `conduct.ts` directly. They are all ten steps regardless — the
-closed set is about the places in the pass, not about what is built today — and
-naming them is what lets the log, the recipe and the board say where a pass is.
-Building them is 0058's own plan ([the-pipeline](design/the-pipeline.md)).
+**Four of the ten are empty here and empty everywhere, and that is what the
+last column is for.** No plugin implements `claim`, `admit`, `design` or
+`implement`, so an action declared at one is refused when the recipe resolves
+rather than accepted and skipped (`#61`) — today's implementing agent is
+dispatched by `conduct.ts` directly. It was six until 2026-09-27, when
+`runPlugin` took `build` and `agentPlugin` took `review`: the build and the cold
+reviewer had shared `proposed:` because it was the only door open, and each has
+its own step now. They are all ten steps regardless — the closed set is about
+the places in the pass, not about what is built today — and naming them is what
+lets the log, the recipe and the board say where a pass is. What is left of
+0058's own plan is [the-pipeline](design/the-pipeline.md).
 
 `proposed` was called `diff` until
 [0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
@@ -1469,9 +1471,10 @@ run" becomes visible. It used to be a `pending` count off a second fold,
 It was five until 2026-09-23 — the count moved with the vocabulary and the rule
 did not, because the rule never counted. `apps/board/unit/rail.test.tsx` asserts
 ten segments in all three lanes that fold, so **an operator counting ten
-segments on a card is looking at correct behaviour**, and six of them are
-`skipped` on every card this repository draws because nothing constructs a
-pipeline at them yet.
+segments on a card is looking at correct behaviour**, and four of them are
+`skipped` on every card anybody draws, because no plugin implements them. It
+was six until 2026-09-27, when `build` and `review` were opened to a plugin
+each; this repository declares both, so they draw live here.
 
 `lingtai add` prints the same ten at onboarding (`for (const point of STEPS)` in
 `packages/conductor/src/onboard.ts`). Neither surface omits a step.

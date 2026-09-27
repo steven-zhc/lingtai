@@ -65,9 +65,15 @@ export const PRESETS: Record<string, Preset> = {
       ],
       design: [],
       implement: [],
-      // Empty, and today they must be: the build below runs as a `run:` action
-      // at `proposed`, which is where the pipeline actually constructs it
-      // (0058 §3 names these steps; the pass that runs them is its next ticket).
+      // **Empty by choice since 2026-09-27, and no longer by necessity.**
+      // `runPlugin` serves `build` and `agentPlugin` serves `review`, so a
+      // recipe may declare the build here — this machine's own does. What a
+      // *preset* hands a repository nobody has thought about yet is a separate
+      // decision from where this repository puts its own build, and moving it
+      // would rewrite the first recipe of every project onboarded after it. So
+      // the one command stays at `proposed:` below until somebody decides that
+      // on its own terms, and the wizard's `homeStep` reads where the commands
+      // actually are rather than assuming this answer.
       build: [],
       review: [],
       proposed: [

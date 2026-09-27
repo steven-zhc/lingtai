@@ -555,8 +555,9 @@ describe("all ten steps, in every lane", () => {
    * draw fewer than ten.
    *
    * **Ten and not "the ones that are configured", which is the trap this file
-   * exists to hold shut.** Six of the ten are `skipped` on every card today,
-   * and dropping them would be the width argument winning an argument it is
+   * exists to hold shut.** Four of the ten are `skipped` on every card whatever
+   * the recipe says — six until `build` and `review` were opened on 2026-09-27
+   * — and dropping them would be the width argument winning an argument it is
    * not allowed to have: a bar that hides a `skipped` step cannot tell it from
    * a step that was configured and silently did not run, which is exactly
    * 0016 §4's failure and exactly what 0061 §5 forbids. What gives way for the
