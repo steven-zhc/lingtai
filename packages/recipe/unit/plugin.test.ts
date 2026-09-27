@@ -572,10 +572,19 @@ describe("the branch a pass owns", () => {
 
   /** The values today's code is called with, and no others. */
   it("carries what the code it wraps is configured by, and nothing more", () => {
+    // **`submodules` stays absent, and that is the assertion** (`#268`). A
+    // `.default(false)` here would make the smallest legal block say the off
+    // value out loud, and `submodulesOf` would stop reading `repo.submodules`
+    // — silently, on a project whose file still says `true`.
     expect(worktreePlugin.schema.parse({ name: "cut", worktree: { base: "main" } })).toEqual({
       name: "cut",
-      worktree: { base: "main", submodules: false },
+      worktree: { base: "main" },
     });
+    // Written out, it is carried: absent and `false` are two different things
+    // here, which is the whole reason the field is `.optional()`.
+    expect(
+      worktreePlugin.schema.parse({ name: "cut", worktree: { base: "main", submodules: true } }),
+    ).toEqual({ name: "cut", worktree: { base: "main", submodules: true } });
 
     // One strategy, because `integrate.ts` offers one. A second value here
     // would be a behaviour this repository does not have, declared as though

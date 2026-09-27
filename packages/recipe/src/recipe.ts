@@ -318,16 +318,29 @@ export const refsPlugin = definePlugin("refs", {
  * wants a base — the merge lane included — goes on being *handed* one rather
  * than declaring it a second time (§4).
  *
- * `submodules` keeps `repo.submodules`'s default and its reason: `git worktree
- * add` leaves submodule directories empty, and the tests that import one then
- * fail in a way that reads as the agent's fault.
+ * **`submodules` has no default here, and that is the difference between a
+ * field and a spelling of one.** `repo.submodules` defaults to `false`; a
+ * `.default(false)` on *this* one would make the smallest legal block —
+ * `worktree: {base: main}` — mean `submodules: false` out loud, so a project
+ * whose file still reads `repo: {submodules: true}` would be cut with empty
+ * submodule directories and refuse at `build` reading as the agent breaking
+ * the tests. That is exactly the failure the comment on `repo.submodules`
+ * exists to prevent, arriving through the key meant to preserve it. So the two
+ * fields fall back **one each**: a field a `worktree:` does not write is a
+ * field it does not move, and `submodulesOf` goes on reading `repo:` for it.
  */
 export const worktreePlugin = definePlugin("worktree", {
   fields: {
     worktree: z.strictObject({
       /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
       base: z.string(),
-      submodules: z.boolean().default(false),
+      /**
+       * Absent means **`repo.submodules`**, and never `false` — see the block
+       * above. `git worktree add` leaves submodule directories empty, and the
+       * tests that import one then fail in a way that reads as the agent's
+       * fault, so the one value this field must not invent is the off one.
+       */
+      submodules: z.boolean().optional(),
     }),
   },
   /**

@@ -78,21 +78,44 @@ describe("the accessors", () => {
    * `worktree:` is declared at `admit` since `#268`, so a recipe has two
    * spellings for the branch a pass is cut from and `settings.ts` is the one
    * place that knows which — the promise at the head of that file, collected.
-   * These three cases are what makes it collectable: the declaration wins,
-   * `repo:` is what a recipe that declares nothing falls back to, and **the
-   * pair is read off one declaration**, so a recipe cannot cut its base from
-   * the step and its submodules from `repo:`.
+   * These cases are what makes it collectable: the declaration wins, `repo:`
+   * is what a recipe that declares nothing falls back to, and **the fallback
+   * is per field** — a `worktree:` moves what it writes and nothing else.
    */
   it("read `base` and `submodules` off the step that owns them", () => {
     const declared = Recipe.parse({
       ...WRITTEN,
-      steps: { admit: [{ name: "cut the branch", worktree: { base: "main" } }] },
+      steps: {
+        admit: [{ name: "cut the branch", worktree: { base: "main", submodules: false } }],
+      },
     });
     expect(baseOf(declared)).toBe("main");
-    // `repo:` says `true` and the declaration does not say it at all, so this
-    // is the plugin's own default rather than the block underneath showing
-    // through — which is what *one declaration, not one each* means.
+    // Written out in the block, so it answers even though `repo:` says the
+    // opposite: an explicit `false` is a value and not an absence.
     expect(submodulesOf(declared)).toBe(false);
+  });
+
+  /**
+   * **The smallest legal block moves the base and nothing else** — the one
+   * case a `.default(false)` on `worktree.submodules` got wrong, and the
+   * reason that field is `.optional()` instead (`#268`).
+   *
+   * `repo.submodules` exists because `git worktree add` leaves submodule
+   * directories empty and every test that imports one then fails *as though
+   * the agent had broken it*. So the value this must never invent is the off
+   * one: an operator who moves the base onto the step and says nothing about
+   * submodules has said nothing about submodules. There is no refusal and no
+   * provenance row that could have caught this — the base is unchanged, so
+   * `baseDivergence` sees nothing — which is why it is pinned here.
+   */
+  it("leave `repo.submodules` reading where the declaration is silent about it", () => {
+    const declared = Recipe.parse({
+      ...WRITTEN,
+      steps: { admit: [{ name: "cut the branch", worktree: { base: "main" } }] },
+    });
+    expect(declared.repo.submodules).toBe(true);
+    expect(baseOf(declared)).toBe("main");
+    expect(submodulesOf(declared)).toBe(true);
   });
 
   /**

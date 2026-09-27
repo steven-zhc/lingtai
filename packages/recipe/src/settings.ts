@@ -63,7 +63,9 @@ import type { Recipe } from "./recipe.ts";
  * something to refuse when the body lands, and never something to silently
  * merge.
  */
-function cutAt(recipe: Recipe): { name: string; worktree: { base: string; submodules: boolean } } | null {
+function cutAt(
+  recipe: Recipe,
+): { name: string; worktree: { base: string; submodules?: boolean } } | null {
   for (const action of recipe.steps.admit) {
     if ("worktree" in action) return action;
   }
@@ -102,10 +104,25 @@ export function baseOf(recipe: Recipe): string {
  *
  * `baseOf`'s sibling and it moved with it: both are `worktree:`'s fields under
  * 0061 §4, and a caller that asks for one usually asks for the other in the
- * next line (`conduct.ts`'s `repo.provision` call is exactly that pair). So
- * they are read off **one** declaration and never one each — a recipe that
- * said `base` at `admit` and `submodules` at `repo:` would cut half from each,
- * which is the disagreement `cutAt` exists not to allow.
+ * next line (`conduct.ts`'s `repo.provision` call is exactly that pair).
+ *
+ * **They fall back one each, and that asymmetry is the whole of this
+ * function.** `base` is required in a `worktree:`, so a declaration always
+ * moves it; `submodules` is optional there *on purpose* (see the plugin), so
+ * the smallest legal block —
+ *
+ *     admit:
+ *       - name: cut the branch
+ *         worktree:
+ *           base: main
+ *
+ * — moves the base and leaves `repo.submodules` reading. Reducing both off the
+ * one declaration would have been tidier and is the version that broke: it
+ * turns *I did not say* into *I said off*, and a project whose file still says
+ * `submodules: true` is then cut with empty submodule directories, fails every
+ * test that imports one, and refuses at `build` reading as the agent's fault.
+ * A key silently not applied is 0016 §4's failure, and a key silently applied
+ * as its opposite is the same failure with worse evidence.
  */
 export function submodulesOf(recipe: Recipe): boolean {
   return cutAt(recipe)?.worktree.submodules ?? recipe.repo.submodules;
