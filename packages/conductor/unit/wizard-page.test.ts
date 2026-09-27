@@ -441,6 +441,28 @@ describe("a recipe that checks at `build` and `review`", () => {
     expect(after.steps.proposed).toEqual([]);
   });
 
+  it("a scanned script goes to the step the proposal declared it at, and leaves the rest alone", async () => {
+    const { recipe } = await resolveRecipe(async () => moved, "main");
+    const state = onboardState({ slug: "acme/shop", recipe, scripts: SCRIPTS, labels: [] });
+
+    expect(state.draft.checks.map((c) => [c.label, c.ticked, c.step])).toEqual([
+      ["pnpm typecheck", true, "build"],
+      ["pnpm test", true, "build"],
+      // Nothing picked it, so it joins the step the picked ones are at rather
+      // than becoming a second half of the build somewhere else.
+      ["pnpm dev", false, "build"],
+    ]);
+
+    const after = applyDraft(recipe, state);
+    expect(after.steps.build).toEqual([
+      { name: "build", run: "pnpm typecheck && pnpm test", timeout: "20m", env: [] },
+    ]);
+    // No check came from `review`, so the reviewer the file declares is not this
+    // row's to remove.
+    expect(after.steps.review).toEqual(recipe.steps.review);
+    expect(after.steps.proposed).toEqual([]);
+  });
+
   it("unticking every check is what starts the argument, across all three steps", async () => {
     const { recipe, state } = await loaded();
     const off = play(

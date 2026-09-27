@@ -306,13 +306,25 @@ export function onboardState(input: {
 }): WizardState {
   const { recipe } = input;
   const declared = checksIn(recipe);
-  const step = homeStep(declared);
-  const picked = declared.flatMap((c) => (c.action !== undefined && "run" in c.action ? c.action.run.split(" && ") : []));
+  const runsAt = declared.flatMap((c) =>
+    c.action !== undefined && "run" in c.action ? c.action.run.split(" && ").map((run) => [run, c.step] as const) : [],
+  );
+  const picked = runsAt.map(([run]) => run);
   const ordered = [
     ...picked.flatMap((run) => input.scripts.filter((s) => s.guessed && s.run === run)),
     ...input.scripts.filter((s) => !(s.guessed && picked.includes(s.run))),
   ];
-  const checks = ordered.map((s) => ({ id: s.run, label: s.run, ticked: s.guessed && picked.includes(s.run), step }));
+  // A script the proposal already declares belongs to the step it was declared
+  // at; one the scan found and nothing picked joins whichever step the picked
+  // ones are at, `proposed` when there are none.
+  const home = homeStep(declared);
+  const stepOf = (run: string): CheckingStep => runsAt.find(([r]) => r === run)?.[1] ?? home;
+  const checks = ordered.map((s) => ({
+    id: s.run,
+    label: s.run,
+    ticked: s.guessed && picked.includes(s.run),
+    step: stepOf(s.run),
+  }));
   const noChecksFound = declared.length === 0;
   return {
     mode: "onboard",
