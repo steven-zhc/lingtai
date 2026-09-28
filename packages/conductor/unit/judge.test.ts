@@ -27,12 +27,13 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ActionFinding } from "@lingtai/actions";
-import { STEPS } from "@lingtai/domain";
+import { RuntimeId, STEPS } from "@lingtai/domain";
 import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from "@lingtai/recipe";
 import {
   BUILT_IN,
   BUILT_IN_FOR,
   DESTINATIONS,
+  type BuiltIn,
   type Destination,
   type Judge,
   type JudgeBrief,
@@ -341,6 +342,38 @@ describe("the judge chooses, and cannot widen anything", () => {
 
 describe("the mechanical directions spend nothing", () => {
   /**
+   * **A built-in cannot dispatch, and the type checker is what says so** (`#277`).
+   *
+   * `Judge` returns `Destination | Promise<Destination>` because an agent judge
+   * is a dispatch; `BuiltIn` returns `Destination` and nothing else, and that
+   * narrowing is the whole of what `judge: same-worktree` promises a person about
+   * money. Nothing that awaits a process can be written to this type, so a
+   * built-in that started spending would stop compiling rather than start
+   * costing — which is the property `#277` had to add a runtime judge *beside*
+   * rather than by widening this.
+   *
+   * `@ts-expect-error` is itself the assertion: it fails the build the day the
+   * line below starts type-checking. The `Judge` beneath it is the same body
+   * accepted, so what is being pinned is the difference between the two types and
+   * not some quirk of an async arrow.
+   */
+  it("will not compile a built-in that awaits a dispatch", () => {
+    // @ts-expect-error — a `Promise<Destination>` is not a `Destination`, and
+    // that refusal is what `judge: same-worktree` means by *spends nothing*.
+    const spender: BuiltIn = async (): Promise<Destination> => "human";
+    const dispatched: Judge = async (): Promise<Destination> => "human";
+
+    // Both exist at runtime; only one of them is a name the schema accepts.
+    expect(typeof spender).toBe("function");
+    expect(typeof dispatched).toBe("function");
+    // And every built-in there is answers without a promise, which is the same
+    // claim read off the values rather than off the type.
+    for (const built of Object.values(BUILT_IN)) {
+      expect(built(brief("red", ["implement", "human"]))).not.toBeInstanceOf(Promise);
+    }
+  });
+
+  /**
    * **Synchronous is the declaration**, and it is why this is an assertion
    * rather than a comment: nothing that dispatches an agent can answer without
    * awaiting, so a built-in that started spending money would fail here and in
@@ -397,8 +430,35 @@ describe("the mechanical directions spend nothing", () => {
  * describes, and the entries being read as entries rather than as shapes.
  */
 describe("the judge the recipe declared", () => {
-  const entry = (name: string, when: JudgeWhen) =>
-    StepMap.parse({ proposed: [{ name, judge: "same-worktree", when }] }).proposed;
+  const entry = (name: string, when: JudgeWhen, judge = "same-worktree") =>
+    StepMap.parse({ proposed: [{ name, judge, when }] }).proposed;
+
+  /**
+   * **A runtime comes back as a runtime, and that is what makes it a dispatch**
+   * (`#277`).
+   *
+   * The two members of `Declared` are two kinds of decider rather than two
+   * spellings: a `built` is a name the pass applies where it reads it, spending
+   * nothing, and a `runtime` is an agent — there is nothing else a caller can do
+   * with one but dispatch it, which is the property that stops `judge:
+   * claude-code` resolving into a cell nothing calls. The split is
+   * `isBuiltInJudge`'s and so is read off `BUILT_IN_JUDGES`, not off a name
+   * spelled again here.
+   */
+  it("says which half of the enum the entry named, so a runtime cannot be applied", () => {
+    for (const runtime of RuntimeId.options) {
+      expect(judgeDeclaredAt(entry("the lines or the approach", "findings", runtime), "findings")).toEqual({
+        runtime,
+        named: "the lines or the approach",
+      });
+    }
+    for (const built of BUILT_IN_JUDGES) {
+      expect(judgeDeclaredAt(entry("mechanical", "red", built), "red")).toEqual({
+        built,
+        named: "mechanical",
+      });
+    }
+  });
 
   /** One per direction, matched on `when:`, and the name comes back with it. */
   it("takes the entry whose `when:` matches, and says which line it was", () => {

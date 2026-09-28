@@ -1983,13 +1983,26 @@ describe("the pass has one caller, and it is `conduct.ts`", () => {
    * filling in that file's own contract — and nothing but `conduct.ts` may import
    * either. The pattern is `one-store.test.ts`'s: a rule nobody keeps by reading
    * a comment is a failing test.
+   *
+   * **An `import type` is not a caller** (`#277`). The rule is about the engine —
+   * a second file that can call `runPass`, or build the bodies, or reach a port —
+   * and a type is none of those: it is erased before anything runs.
+   * `judge-agent.ts` builds the prompt a runtime judge is given and reads its
+   * answer, so it wants to say *a `Destination`* and *a `Judging`* in its own
+   * signatures, and saying them a second time in its own file is the divergence
+   * this rule exists to prevent rather than an instance of it. So the match is on
+   * a **value** import, which is every import that is not `import type` — and
+   * `import { type Ceilings, runPass }` is one, because that file can call.
    */
   it.each([
     { module: "pass.ts", allowed: ["pass-steps.ts", "conduct.ts"] },
     { module: "pass-steps.ts", allowed: ["conduct.ts"] },
   ])("$module is imported only by $allowed", ({ module, allowed }) => {
     const src = fileURLToPath(new URL("../src", import.meta.url));
-    const imports = new RegExp(`["']\\./${module.replace(".", "\\.")}["']`);
+    // `[^;]*?` keeps the match inside one statement: without it the lazy span
+    // starts at some earlier value import and runs on to this specifier, and
+    // every file with any import at all is an offender.
+    const imports = new RegExp(`import(?!\\s+type\\b)[^;]*?["']\\./${module.replace(".", "\\.")}["']`);
 
     const offenders = readdirSync(src)
       .filter((f) => f.endsWith(".ts") && f !== module && !allowed.includes(f))

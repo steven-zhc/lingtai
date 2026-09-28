@@ -129,8 +129,8 @@ export const runPlugin = definePlugin("run", {
    * `REFUSING_STEPS` and `review` is not — *`review` returns findings and
    * judges nothing* (0058 §3b, `pass.ts:109`) — so a command that fails at
    * `review` has nowhere to put the failure until `proposed` has a judge to
-   * read it. That judge is `judgePlugin.at.proposed`, still `{}`, which is
-   * where the rest of [T5d](../../../doc/design/the-pipeline.md) went.
+   * read it. That judge is `judgePlugin.at.proposed`, open since `#274`, which
+   * is where the rest of [T5d](../../../doc/design/the-pipeline.md) went.
    */
   at: {
     prepared: notBuiltYet,
@@ -653,32 +653,52 @@ export const BUILT_IN_JUDGES = ["same-worktree"] as const;
 export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
 
 /**
- * Who decides a direction — **the built-ins, and no runtime yet** (`#274`).
+ * Who decides a direction — **the built-ins, and the runtimes beside them**
+ * (`#277`).
  *
- * It was `[...BUILT_IN_JUDGES, ...RuntimeId.options]` while the plugin served no
- * step, where the wider enum cost nothing: every cell was refused, so no recipe
- * could write any of the names. `at.proposed` is open now, and the two lists stop
- * being alike — `same-worktree` is a function the router calls
- * (`judgeDeclaredAt`, `packages/conductor/src/judge.ts`), and `claude-code` is
- * **an agent, paid for a judgement**, which needs a `Runtime` and a prompt that
- * nothing on this side of the line has
- * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5).
+ * It was this list while the plugin served no step, where the wider enum cost
+ * nothing because every cell was refused; `#274` opened `at.proposed` and took the
+ * runtimes out, on the one rule that governs both lists — *the enum says what the
+ * code does, and grows when the code does* — because a `judge: claude-code` would
+ * have resolved into a cell nothing dispatched. **The code does it now**, so the
+ * list grows back: `judgeDeclaredAt` (`packages/conductor/src/judge.ts`) answers a
+ * runtime as a runtime, and `conduct.ts`'s `ports.judge` is the seam where the
+ * `Runtime` and the prompt are ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5).
  *
- * So the runtimes came out rather than resolving into a cell nothing answers:
- * that is `BUILT_IN_JUDGES`'s own rule applied to the other list — *the enum says
- * what the code does, and grows when the code does* — and it is refused at the
- * line it is written, at resolve, before a worktree and before any money, rather
- * than at an arrival at `proposed` after both are spent.
+ * **The two halves of the enum are two kinds of decider and not two spellings.**
+ * A `BuiltInJudge` is a synchronous function and spends nothing, which is what its
+ * own list promises; a `RuntimeId` here is **an agent, paid for a judgement**, and
+ * a pass that declares one buys a dispatch every time that direction arrives.
+ * `isBuiltInJudge` below is how a reader tells them apart, and nothing else should
+ * be comparing a name to `"same-worktree"` by hand.
  *
- * **What it costs is the direction 0061 §3 calls the judgement.** `findings` was
- * seen 231 times in fourteen days and no built-in answers it, so it reaches a
- * person still; `red` and `verify-failed` were seen sixty times between them and
- * are mechanical, which is what this enum's one name is for. The dispatch is the
- * ticket that puts the runtimes back, and `doc/reference.md` §`judge:` says so
- * where an operator reads it.
+ * **What it buys is the direction 0061 §3 calls the judgement.** `findings` was
+ * seen 231 times in fourteen days and no built-in answers it — every one of those
+ * reached a person with the rounds unspent — and it is the one arrival where *the
+ * lines are wrong* and *the approach is wrong* are different answers. `red` and
+ * `verify-failed` were seen sixty times between them and are mechanical, which is
+ * what `BUILT_IN_JUDGES`'s one name is for: declaring a runtime for either is
+ * paying an agent to reach a conclusion a `switch` reaches.
+ *
+ * `ask-or-assume` from 0061 §3's example is still out, and for the reason this
+ * list has always had: nothing implements it.
  */
-export const JudgeName = z.enum(BUILT_IN_JUDGES);
+export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options]);
 export type JudgeName = z.infer<typeof JudgeName>;
+
+/**
+ * Which half of `JudgeName` a name is — **a function rather than a comparison
+ * anybody writes twice**.
+ *
+ * The distinction is what decides whether answering costs money, so it is read
+ * off `BUILT_IN_JUDGES` in one place: a second built-in added to that list is
+ * spending nothing here on the day it is added, and a hand-written
+ * `name === "same-worktree"` somewhere else would be the cell that stayed a
+ * dispatch.
+ */
+export function isBuiltInJudge(name: JudgeName): name is BuiltInJudge {
+  return (BUILT_IN_JUDGES as readonly string[]).includes(name);
+}
 
 /**
  * **Which step is next when something refuses** — a name for the decision
@@ -715,7 +735,7 @@ export type JudgeName = z.infer<typeof JudgeName>;
  */
 export const judgePlugin = definePlugin("judge", {
   fields: {
-    /** A built-in, which spends nothing. A runtime is not a name yet (`JudgeName`). */
+    /** A built-in, which spends nothing, or a runtime, which is a dispatch (`JudgeName`). */
     judge: JudgeName,
     /** The direction it answers. Required, undefaulted: one entry per `when:`. */
     when: JudgeWhen,

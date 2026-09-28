@@ -38,6 +38,7 @@ import {
   notBuiltYet,
   discloseSteps,
   hashRecipe,
+  isBuiltInJudge,
   judgePlugin,
   mergePlugin,
   noLog,
@@ -854,36 +855,50 @@ describe("the one `proposed` will hold", () => {
   });
 
   /**
-   * **A judge the schema accepts is a judge something answers**, and since `#274`
-   * that sentence costs the runtimes.
+   * **A judge the schema accepts is a judge something answers**, which is the
+   * rule this list has always been held to — and `#277` is that rule letting the
+   * runtimes back in rather than an exception to it.
    *
    * The built-ins are `BUILT_IN` in `packages/conductor/src/judge.ts`, a total
    * record over `BUILT_IN_JUDGES`, so those two lists cannot come apart. A
-   * runtime judge is **an agent, paid for a judgement**, and nothing dispatches
-   * one: `judgeDeclaredAt` answers a *name* the pass applies, and there is no
-   * `Runtime` and no prompt on that side of the line
-   * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5). While the
-   * plugin served no step the wider enum cost nothing, because every cell was
-   * refused; with `at.proposed` open it would be a cell that resolves, is printed
-   * by `lingtai add`, drawn on the board — and never called. So `claude-code` is
-   * refused here beside `ask-or-assume`, for one reason and not two: **nothing
-   * implements it yet**. `doc/reference.md` §`judge:` says the same to an operator,
-   * and the day the dispatch lands this list grows with it.
+   * runtime judge is **an agent, paid for a judgement**, and what answers one is
+   * `askTheAgent` in `conduct.ts` — the `Runtime`, the settings and the prompt
+   * that `#274` took the names out for not having
+   * ([the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5). So every
+   * name here is called by something, which is the property, and the two halves
+   * differ only in what being called *costs*: `isBuiltInJudge` is what tells them
+   * apart and `judgeDeclaredAt` is what asks.
+   *
+   * **`ask-or-assume` stays out, and now it is alone there.** 0061 §3's example
+   * names it for `needs-input` and nothing implements it — the one door this
+   * repository has decided it will not leave open, with one name behind it
+   * instead of three.
    */
-  it("accepts the built-ins that exist, and no name nothing answers", () => {
+  it("accepts every name something answers, and no name nothing answers", () => {
     expect(BUILT_IN_JUDGES).toEqual(["same-worktree"]);
-    for (const name of BUILT_IN_JUDGES) {
+    for (const answered of [...BUILT_IN_JUDGES, ...RuntimeId.options]) {
       expect(
-        judgePlugin.schema.safeParse({ name: "j", judge: name, when: "red" }).success,
-        name,
+        judgePlugin.schema.safeParse({ name: "j", judge: answered, when: "red" }).success,
+        answered,
       ).toBe(true);
     }
-    for (const unanswered of [...RuntimeId.options, "ask-or-assume"]) {
-      expect(
-        judgePlugin.schema.safeParse({ name: "j", judge: unanswered, when: "needs-input" }).success,
-        unanswered,
-      ).toBe(false);
-    }
+    expect(
+      judgePlugin.schema.safeParse({ name: "j", judge: "ask-or-assume", when: "needs-input" })
+        .success,
+    ).toBe(false);
+  });
+
+  /**
+   * **Which half of the enum a name is, read in one place.**
+   *
+   * The split decides whether answering spends a run, so a second reader that
+   * compared a name to `"same-worktree"` by hand would be the cell that stayed a
+   * dispatch on the day a second built-in was added. `isBuiltInJudge` is the
+   * whole of the test, and it is `BUILT_IN_JUDGES`'s membership and nothing else.
+   */
+  it("says which names spend nothing, off the built-in list itself", () => {
+    for (const built of BUILT_IN_JUDGES) expect(isBuiltInJudge(built), built).toBe(true);
+    for (const runtime of RuntimeId.options) expect(isBuiltInJudge(runtime), runtime).toBe(false);
   });
 });
 
