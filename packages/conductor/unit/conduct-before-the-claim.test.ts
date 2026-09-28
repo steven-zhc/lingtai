@@ -237,6 +237,58 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
     expect(did).toEqual([]);
     expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
   });
+
+  /**
+   * **And a `judge:` is a runtime too since `#277`** — the same rule again, at
+   * the plugin that arrived after it was written.
+   *
+   * A judge is dispatched on `options.runtime` exactly as a cold reviewer is, so
+   * a `judge: codex` here would have its judgement bought from Claude Code with
+   * nothing on the log saying the named runtime was not used. That is the same
+   * silent pick, so it is the same refusal, before the claim, naming the key —
+   * `judge` and not `agent`, because the remedy is a line an operator has to
+   * find (`#245`).
+   *
+   * **A built-in `judge:` is not a runtime and is passed over**, which is the
+   * other half: `REVIEWED` with `judge: same-worktree` resolves and runs, because
+   * a built-in is a function and no second dispatch.
+   */
+  it("refuses before the claim when a step's judge: names the other runtime", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const judged = (judge: string) =>
+      REVIEWED.replace(
+        "    - name: review\n      agent: claude-code\n      prompt: look for races",
+        `    - name: the lines or the approach\n      judge: ${judge}\n      when: findings`,
+      );
+    const run = (recipe: string) =>
+      once(
+        {
+          project,
+          client: fakeGitHub([], recipe),
+          runtime,
+          issue: 7,
+          hookBinary: "/tmp/fake/lingtai-hook",
+          prompt: "fix {{issue}}",
+          home: "/tmp/fake-home",
+          store,
+        },
+        fakePorts(did, store),
+      );
+
+    const wrong = await run(judged("codex"));
+    expect(wrong).toMatchObject({ ok: false, stage: "recipe", workItemId: null });
+    expect((wrong as { detail: string }).detail).toContain(
+      'steps.proposed\'s "the lines or the approach" action names judge codex',
+    );
+    expect((wrong as { detail: string }).detail).toContain("this conductor runs claude-code");
+    expect(did).toEqual([]);
+
+    // The built-in names no runtime, so there is nothing for this check to
+    // disagree with and the recipe gets past it.
+    const built = await run(judged("same-worktree"));
+    expect(built).not.toMatchObject({ stage: "recipe" });
+  });
 });
 
 
