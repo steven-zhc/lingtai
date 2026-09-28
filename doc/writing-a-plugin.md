@@ -270,6 +270,15 @@ thing that bounds it (0065 §7). A ticket whose shape is obvious from the issue
 pays for a document nobody reads, which is why the prompt this action is built
 with says an empty answer is the common one.
 
+**It runs in the worktree `implement` will run in**, writable and with no hook,
+like the cold reviewer — so it is *asked* not to commit and nothing stops it. What
+makes that harmless is not the prompt: `implement`'s receipt (0057 §2) is measured
+against the head *its own* agent found rather than against the base the tree was
+cut at, so a document committed at `design` cannot stand in for work the
+implementing agent did not do. Anything a drafting agent writes into the tree is
+still turns nobody reads — what travels to `implement` is the document it
+*returned*.
+
 ## What stays the workflow's
 
 **You choose the destination; you do not choose what it costs.**
