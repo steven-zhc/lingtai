@@ -53,10 +53,15 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * 2026-09-27 (`a417908`); `worktreePlugin` took `admit` (`#268`) and
  * `queuePlugin` took `claim` (`#269`). The last two are unlike the first two
  * here: each runs a **default** action where the recipe declares nothing
- * (0065 §2), so they have a plan and a verdict on every run rather than only on
- * a recipe that configured them. A `claim` segment reading `failed` is the take
- * declining — `passed-over`, `not-claimed` — and not a point nobody configured,
- * which is what this comment used to say was impossible.
+ * (0065 §2), so a **verdict** is recorded at them on every run rather than only
+ * on a recipe that configured them — while the *plan* stays empty, because
+ * `stepPlan` reads `recipe.steps[step]` and a default is written nowhere in the
+ * file. `stateOf` is what keeps that pair honest: `skipped` wants an empty plan
+ * **and** nothing seen, so a point the recipe leaves empty and a default filled
+ * draws the verdict it got, with the action named among the ones the plan did
+ * not. A `claim` segment reading `failed` is the take declining —
+ * `passed-over`, `not-claimed` — and not a point nobody configured, which is
+ * what this comment used to say was impossible.
  */
 export type StepState =
   | "skipped"
