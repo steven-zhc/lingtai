@@ -14,12 +14,13 @@
  * §1).
  */
 import type { RunOutcome, Runtime } from "@lingtai/agent";
-import type { QueueActionDeps } from "@lingtai/actions";
+import type { QueueActionDeps, WorkActionDeps } from "@lingtai/actions";
 import {
   createAgentAction,
   createDraftAction,
   createMergeAction,
   createQueueAction,
+  createWorkAction,
   createWorktreeAction,
   type Action,
   type ActionContext,
@@ -253,7 +254,7 @@ interface Answers {
 
 function portsAnswering(
   answers: Answers = {},
-): { ports: PassPorts; asked: Asks; taking: QueueActionDeps } {
+): { ports: PassPorts; asked: Asks; taking: QueueActionDeps; working: WorkActionDeps } {
   const asked: Asks = {
     take: [],
     cut: [],
@@ -307,13 +308,31 @@ function portsAnswering(
     },
   };
 
-  const ports: PassPorts = {
-    item: () => took,
-    onStream: () => onStream,
-    dispatch: async (brief) => {
+  /**
+   * **The dispatch, as the `agent:` action at `implement` runs it** (`#266`).
+   *
+   * Beside the ports rather than on them, for `cut`'s and `draft`'s reason: the
+   * one agent is a plugin's now, so what a test reads back is what the action was
+   * handed and not a port call. The brief is assembled here because it is
+   * assembled in `conduct.ts` — the ticket off the item the take left, the design
+   * and the *why again* off the context `runStep` filled — so the assertions below
+   * are about the same object the conductor builds.
+   */
+  const working: WorkActionDeps = {
+    work: async (_spec, context) => {
+      const brief: Brief = {
+        ticket: (took ?? ITEM).ticket,
+        design: context.design ?? "",
+        again: context.again ?? null,
+        context,
+      };
       asked.dispatch.push(brief);
       return of(answers.dispatch, { committed: COMMITTED }, brief);
     },
+  };
+
+  const ports: PassPorts = {
+    onStream: () => onStream,
     judge: async (on) => {
       asked.judge.push(on);
       return of(answers.judge, { noJudge: true }, on);
@@ -328,7 +347,7 @@ function portsAnswering(
       if (answers.recordThrows) throw answers.recordThrows;
     },
   };
-  return { ports, asked, taking };
+  return { ports, asked, taking, working };
 }
 
 /** One run of the whole pass, with whatever the recipe declares and the ports say. */
@@ -340,7 +359,7 @@ async function pass(
     ceilings?: PassOptions["ceilings"];
   } = {},
 ): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
-  const { ports, asked, taking } = portsAnswering(options.answers);
+  const { ports, asked, taking, working } = portsAnswering(options.answers);
   /**
    * **`claim`'s, `admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt`
    * supplies them** (0065 §3).
@@ -400,6 +419,17 @@ async function pass(
         limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
       },
     );
+  /**
+   * **`implement`'s default, as `conduct.ts`'s `defaultsAt` supplies it**
+   * (`#266`).
+   *
+   * Unlike `design`'s, this one is a default and not a declaration: the port it
+   * replaced dispatched on every pass, so a recipe that says nothing at
+   * `implement` still buys the one agent — which is what *behaves exactly as it
+   * does today* means for the step that writes the code.
+   */
+  const writing = (): Action =>
+    createWorkAction({ name: "write the change", prompt: "" }, working);
   const landing = (): Action =>
     createMergeAction(
       { name: "land the branch", strategy: "merge-commit" },
@@ -427,6 +457,7 @@ async function pass(
       if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
       if (step === "claim") return [claiming()];
       if (step === "admit") return [cutting()];
+      if (step === "implement") return [writing()];
       return step === "merge" ? [landing()] : [];
     },
   });
@@ -955,7 +986,7 @@ describe("implement dispatches the one agent, and reports what it committed", ()
    */
   it("is told why it is being run again, and what it asked the first time", async () => {
     let asks = true;
-    const { ports, asked, taking } = portsAnswering({
+    const { ports, asked, taking, working } = portsAnswering({
       dispatch: () => {
         const answer: Worked = asks ? { asked: "which of the two files?" } : { committed: COMMITTED };
         asks = false;
@@ -978,7 +1009,11 @@ describe("implement dispatches the one agent, and reports what it committed", ()
       // `claim`'s default, because the body takes nothing since `#269` and a pass
       // that claimed no item cannot brief an agent.
       actionsAt: (step, actions) =>
-        step === "claim" ? [claiming] : actions.map((a) => canned(a.name, PASSED)),
+        step === "claim"
+          ? [claiming]
+          : step === "implement"
+            ? [createWorkAction({ name: "write the change", prompt: "" }, working)]
+            : actions.map((a) => canned(a.name, PASSED)),
     });
 
     expect(walk(result)).toEqual([
