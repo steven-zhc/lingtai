@@ -855,6 +855,97 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
   });
 
   /**
+   * **A design agent can ask, and the question reaches a person** (`#294`,
+   * 0058 §3c).
+   *
+   * The clause was decided, drawn and routed for and nothing could produce the
+   * token: `ARRIVE_AT_THE_ROUTER` carries `design`, `goesToTheRouter` admits a
+   * `did-not-finish` whose `because` is `needs-input`, `the-pass.py` draws the fan
+   * — and `createDraftAction` had three branches, none of which set it. So a design
+   * agent that found the ticket unanswerable wrote its doubts into the document and
+   * handed them to the implementer, which is the one reader that cannot answer them.
+   *
+   * **This is the whole path and not the action's branch**, which is what makes it
+   * worth a pass: the answer is parsed, the ending carries the token, the loop lets
+   * it past `goesToTheRouter`, `directionOf` calls it a `needs-input`,
+   * `BUILT_IN_FOR` has no built-in for one, and `DRAFTED` declares no `judge:` — so
+   * a person is the floor `#253` set, and what they are handed is the question.
+   *
+   * **Asserted on `events` and never on the run log** (0034): a run log is a trace
+   * kept only while something is owed an explanation, and a question a person has
+   * to answer outlives it.
+   */
+  it("carries a design agent's question to a person when nothing at `proposed` answers it", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const asked =
+      "The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?";
+    /** Answers a question at `design` and a document nowhere — `design` is all `DRAFTED` declares. */
+    const asking: Runtime = {
+      ...runtime,
+      run: async (request) =>
+        request.runId.includes(":design:")
+          ? {
+              exitCode: 0,
+              turns: 2,
+              durationMs: 1234,
+              costUsd: 0.21,
+              failure: null,
+              text: `I cannot design this yet.\n\n\`\`\`question\n${asked}\n\`\`\``,
+              sessionId: "sess-design",
+            }
+          : {
+              exitCode: 0,
+              turns: 3,
+              durationMs: 1234,
+              costUsd: 0.42,
+              failure: null,
+              text: "done",
+              sessionId: "sess-1",
+            },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], DRAFTED),
+        runtime: asking,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    // The step that stopped it is `design` and not the router: what a person reads
+    // is the step that did not pass, and where it was sent is `routes` (`take`).
+    expect(result).toMatchObject({ ok: "held", step: "design" });
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const stopped = run.find((e) => e.type === "StepDidNotFinish")!;
+    // The token is not on this event — `because` is the pass's, and what the log
+    // carries is the words. The routing it bought is the assertion below.
+    expect(stopped.data).toMatchObject({ step: "design", action: "draft" });
+    expect((stopped.data as { detail: string }).detail).toBe(asked);
+
+    // **And a person has it.** `WorkItemBlocked` is what the card reads, and
+    // `raw` is the arriving step's own detail — the question, whole.
+    const blocked = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === "WorkItemBlocked")!
+      .data as { needs: string; question: string; diagnosis: { raw: string } };
+    expect(blocked.diagnosis.raw).toBe(asked);
+    expect(blocked.question).toContain(asked);
+
+    // Nothing was written and nothing landed: a question costs the pass and no
+    // round, which is the half 0058 §3b calls *arriving at the router and refusing
+    // are different things*.
+    expect(run.map((e) => e.type)).not.toContain("RunProposedCompletion");
+    expect(did).not.toContain("integrate");
+  });
+
+  /**
    * **A commit made before `implement` is not `implement`'s receipt** (`#265`, 0057
    * §2).
    *

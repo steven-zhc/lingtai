@@ -54,7 +54,14 @@
  */
 import type { Runtime } from "@lingtai/agent";
 import { REFUSED_ABOUT, SEVERITIES, type RefusedAbout, type Severity } from "@lingtai/domain";
-import type { Action, ActionContext, ActionFinding, ActionResult } from "./action.ts";
+import {
+  NEEDS_INPUT,
+  type Action,
+  type ActionContext,
+  type ActionFinding,
+  type ActionResult,
+  type SentBack,
+} from "./action.ts";
 
 export interface AgentActionSpec {
   name: string;
@@ -571,8 +578,8 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
 }
 
 /**
- * What a `design:` agent is told, and **the whole of it is that it may answer
- * nothing** (0058 §3, `#265`).
+ * What a `design:` agent is told, and **the whole of it is the three things it
+ * may answer** (0058 §3 and §3c, `#265`, `#294`).
  *
  * The reviewer's three fixed blocks are absent because none of them is about a
  * change that has not been written: there is no severity to rate, no finding to
@@ -596,8 +603,37 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
  * So the paragraph in the prompt is there for the money rather than for the
  * correctness: a design agent that edits the tree is one whose turns went
  * somewhere the next agent will not read.
+ *
+ * **The three states, and the third is the one `#294` added.** Absent, empty and
+ * a question: a document, *this change needs no design*, and *I cannot design
+ * this until somebody answers X*. The first two were here from the day the step
+ * was, and the block that teaches the third is written so it cannot eat the
+ * second — a question is announced by a fence and by nothing else, because *the
+ * common answer is silence* and a parse that read silence as a question would
+ * stop every trivial ticket for a person.
+ *
+ * **And the bar between a question and a preference is in the prompt rather than
+ * in the parse**, because no parse can tell them apart: *I would probably put it
+ * in `x.ts`* and *the ticket asks for two incompatible things and does not say
+ * which wins* are the same shape to a regular expression and opposite answers to
+ * a reader. So the prompt states the test — *what would you have to be told* —
+ * and `createDraftAction` takes the agent at its word, which is `parseFindings`'s
+ * own rule about severity read the other way round (0031 §1).
  */
-export function buildDesignPrompt(spec: AgentActionSpec, issue: ReviewIssue): string {
+export function buildDesignPrompt(
+  spec: AgentActionSpec,
+  issue: ReviewIssue,
+  /**
+   * Why this step is being run a second time, or null on the way through.
+   *
+   * The other half of 0058 §3c's sentence: a judge may answer a design's question
+   * with *that step again*, and a design agent handed the round with no memory of
+   * asking would ask it again — one round bought, the same question, and a person
+   * at the end of it anyway. `sentBackTo` in `packages/conductor/src/pass.ts` is
+   * what computes it, off this pass's own visits.
+   */
+  again: SentBack | null = null,
+): string {
   return `You are writing the design note for a change nobody has written yet. You
 have the ticket and the worktree it will be made in, and nothing has been
 committed. What you write is handed to the agent that does the work, beside the
@@ -620,15 +656,135 @@ whose shape is obvious from the ticket does not need a design, and a document
 written anyway is a paragraph the implementing agent will work from instead of
 from the issue. If this is one of those, reply with nothing at all.
 
+## When the ticket cannot be designed as it stands
+
+Some tickets cannot be answered with a document, however long you read: they ask
+for two incompatible things and do not say which wins, or the shape turns on
+something only the person who opened it knows. **Ask, rather than writing your
+doubts into the document.** A doubt in the document is handed to the agent that
+writes the code, which is the one reader who cannot answer it.
+
+To ask, reply with exactly this and nothing else:
+
+\`\`\`question
+the one thing somebody has to tell you before you could write the design
+\`\`\`
+
+**A question is not a doubt, and the bar is high.** *I would probably put it in
+\`x.ts\`* is a design decision — make it, and write it down; that is what this
+step is for. *The ticket asks for two incompatible things and does not say which
+wins* is a question. The test: if you cannot say what you would have to be
+**told** before you could write the document, you do not have a question — you
+have a preference, and the document is where preferences go.
+
+One question, not a list, and only where the document is impossible without the
+answer. It stops the pass: either a person answers it, or you are asked again and
+told to state your assumption instead.
+
 Read whatever you need to in this worktree. **Do not change it**: do not edit a
 file, do not run a command that writes one, and do not commit. The agent that
 does the work runs in this same worktree after you and starts from what you
 return, not from what you left behind — so anything you write here is turns
 nobody reads.
 
-Reply with the document and nothing else: no preamble, no summary of what you
-read, no offer to continue.
-${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ""}`;
+Reply with the document and nothing else, or with the \`question\` block and
+nothing else: no preamble, no summary of what you read, no offer to continue.
+${again === null ? "" : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ""}`;
+}
+
+/**
+ * **You asked, somebody answered, and the answer is *design it anyway*** —
+ * 0058 §3c's second half, and the only thing that makes it worth more than the
+ * first (`#294`).
+ *
+ * A judge that routes a `needs-input` back to `design` has bought a round, and
+ * the round is worth nothing if the agent it buys arrives with no memory of the
+ * question: it reads the same ticket, finds the same gap, and asks the same
+ * thing. So what the judge said travels, and the instruction it travels with is
+ * the one the ADR names — *state your assumption* — because an assumption written
+ * into the document is a thing the implementer and the cold reviewer can both see
+ * and argue with, where a second question is the pass stopping twice over one
+ * ticket.
+ *
+ * `asked` is null where the round was bought on something other than a question,
+ * which at this step is nothing today: `design`'s only route to the router is
+ * `needs-input`. It is written for the null anyway, because the field is
+ * `SentBack`'s and not this step's.
+ */
+function sentBackBlock(again: SentBack): string {
+  return `## You are at this step a second time
+
+${again.asked === null ? "" : `You asked:\n\n${again.asked}\n\n`}The answer: ${again.why}
+
+**Do not ask again.** Write the design on a stated assumption: say which reading
+you took and why, in the document, where the agent that writes the code and the
+reviewer that reads it both see it. An assumption on the page is something either
+of them can disagree with; a second question is this ticket stopping twice.`;
+}
+
+/**
+ * **What a design agent answered — and there are three of those, not two**
+ * (`#294`).
+ *
+ * `parseFindings`'s opposite number and deliberately nothing like it in size: a
+ * reviewer answers a list of structured things and this answers one of three
+ * states, so the contract is a fence rather than a schema. **A question is
+ * announced and a document is not**, which is the only arrangement that keeps the
+ * state the step already had: *answering with nothing is a real answer, and it is
+ * the common one* (`buildDesignPrompt`), so silence has to stay a document — an
+ * announced document would make every unannounced empty answer ambiguous, and
+ * `""` is the answer a typo fix gives.
+ *
+ * So the three are told apart by what the answer **is**:
+ *
+ * ```
+ * ""                       the change needs no design          → a document, empty
+ * anything else            the design                          → a document
+ * a ```question fence      what somebody has to answer first   → a question
+ * ```
+ *
+ * **And `unreadable` is not a fourth state, it is the absence of one** (`#279`).
+ * An answer that opened the fence and never closed it, or closed it around
+ * nothing, has announced a question and not asked one — and the branch that does
+ * not exist is the one where that silently becomes a document: a design note
+ * reading ```` ```question ```` followed by the agent's real difficulty, handed to
+ * `implement` as the shape of the change. That is `#279`'s failure in this step's
+ * spelling, so it is refused in its own word rather than passed as an empty one.
+ */
+export type Drafted =
+  | { readonly kind: "document"; readonly document: string }
+  | { readonly kind: "question"; readonly question: string }
+  | { readonly kind: "unreadable"; readonly answer: string };
+
+/** The fence that announces a question, on its own line, and nothing else does. */
+const OPENS_A_QUESTION = /^[ \t]*```question[ \t]*$/m;
+/** The fence that closes it. Any closing fence, because the block holds prose. */
+const CLOSES_THE_FENCE = /^[ \t]*```[ \t]*$/m;
+
+/**
+ * Which of the three a design agent's answer is. `Drafted` is the argument.
+ *
+ * Lenient about where the fence appears, for the reason `parseFindings` is
+ * lenient about where the JSON is: a model that says *I cannot design this until*
+ * and then opens the fence has asked a question, and refusing it over a preamble
+ * would spend the turns and throw the answer away. Strict about the fence itself,
+ * because that is the whole signal — an unclosed one is `unreadable` rather than a
+ * document that begins with a code fence.
+ */
+export function parseDraft(text: string | null): Drafted {
+  const answer = (text ?? "").trim();
+  // Before the fence is looked for, because silence is a document and the common
+  // one: a question is something the agent did, and it did nothing.
+  if (answer === "") return { kind: "document", document: "" };
+
+  const opened = OPENS_A_QUESTION.exec(answer);
+  if (opened === null) return { kind: "document", document: answer };
+
+  const inside = answer.slice(opened.index + opened[0].length);
+  const closed = CLOSES_THE_FENCE.exec(inside);
+  if (closed === null) return { kind: "unreadable", answer };
+  const question = inside.slice(0, closed.index).trim();
+  return question === "" ? { kind: "unreadable", answer } : { kind: "question", question };
 }
 
 /**
@@ -644,25 +800,37 @@ ${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ""}`;
  * decision removes rather than one it may add. `actionsFromRecipe` is where the
  * step picks between them.
  *
- * **Three answers, and they are three of the body's four** (`pass-steps.ts` before
- * `#265`). A document — including the empty one, which is `passed` and not a skip.
- * A runtime that never started, which is about the account and stands the
- * conductor down (0031 §3). One that started and left no receipt, which buys no
- * round and stands the pass down (0057 §2).
+ * **Five answers** (`pass-steps.ts` before `#265`). A document — including the
+ * empty one, which is `passed` and not a skip. A runtime that never started,
+ * which is about the account and stands the conductor down (0031 §3). One that
+ * started and left no receipt, which buys no round and stands the pass down
+ * (0057 §2).
  *
- * **The fourth was `asked`, and no runtime could reach it.** `Drafted` carried an
- * `Asked` case for 0058 §3b's edge — `design` is on `ARRIVE_AT_THE_ROUTER`, so a
- * question there would have bought a decision at `proposed` — and the live port
- * that fed it returned `{ document: "" }` and nothing else, so the case was never
- * once constructed in this repository's log. An `ActionResult` has no shape for a
- * question, only `needs-approval`, which holds for a person rather than asking a
- * judge; giving one to this kind is a decision about the whole plugin system and
- * not about `design`. Until somebody makes it, a design agent with a question
- * writes it in the document, which is the thing `implement` reads.
+ * **The fourth is `needs-input`, and until `#294` no runtime could reach it.**
+ * 0058 §3c names `design` as one of the three steps that may end asking,
+ * `ARRIVE_AT_THE_ROUTER` carries `design`, `goesToTheRouter` admits the ending
+ * and `the-pass.py` draws the fan — and this function had no branch that produced
+ * the token, so a design agent that found the ticket unanswerable had one move:
+ * write its doubts into the document and hand them to the implementer, which is
+ * the shape the step exists to avoid. That is `#61`'s shape — decided, drawn,
+ * routed for, and unreachable.
  *
- * There is no fifth either way: a design is not a judgement about a diff, there
- * being no diff, so this action cannot refuse and `design` is not one of
- * `REFUSING_STEPS`.
+ * **It arrives in the answer and not through the hook**, which is the difference
+ * between this step and `implement`. An implementer is a long run that may need to
+ * stop mid-flight, so `hook-socket.ts` appends `RunAwaitingInput` and
+ * `work-action.ts` turns `asked` into this same token. A design agent is one
+ * question and one answer, and it runs `unhookedSettings` — the call the cold
+ * reviewer gets — so hooking it would change what the step *is* as well as what it
+ * can say. Its shape is `review`'s: an answer the action parses (`parseDraft`).
+ *
+ * **The fifth is `unreadable`, and it is the one that must not be quiet**
+ * (`#279`). An answer that announced a question and did not carry one is not an
+ * empty document, and the difference is what reaches `implement`.
+ *
+ * There is no sixth: a design is not a judgement about a diff, there being no
+ * diff, so `design` is not one of `REFUSING_STEPS` — which is why the `failed`
+ * this returns for an unreadable answer arrives at the step as a `did-not-finish`
+ * (`endingOf` in `pass.ts`) and buys nothing, exactly as `#279` wants.
  */
 export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
   return {
@@ -680,7 +848,10 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
       const outcome = await deps.runtime.run({
         runId: draftId,
         cwd: context.cwd,
-        prompt: buildDesignPrompt(spec, issue),
+        // `context.again` is the pass's own fold over its visits (`sentBackTo`),
+        // and it is null on every way through — which is every pass but one a
+        // judge sent back here.
+        prompt: buildDesignPrompt(spec, issue, context.again ?? null),
         ...(spec.model === undefined ? {} : { model: spec.model }),
         settingsPath: deps.settingsPath,
         log: context.log,
@@ -704,8 +875,57 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         };
       }
 
-      const document = (outcome.text ?? "").trim();
+      const drafted = parseDraft(outcome.text);
       const cost = outcome.costUsd === null ? "" : ` · $${outcome.costUsd.toFixed(2)}`;
+
+      if (drafted.kind === "question") {
+        /**
+         * **0058 §3c, reachable** (`#294`). `did-not-finish` and not `failed`: the
+         * agent judged nothing, so no round is charged for the asking, and
+         * `because` is what carries it past `goesToTheRouter` to `proposed` —
+         * where `BUILT_IN_FOR["needs-input"]` is null, so a person holds it with
+         * the question unless a recipe declared a judge for the direction.
+         *
+         * **The question alone on `evidence`, with no turn count spliced in.**
+         * This string is three things at once: the sentence a person reads off the
+         * card, the evidence a judge weighs, and — where the judge sends the pass
+         * back here — `SentBack.asked`, which is quoted verbatim into the next
+         * design prompt. A cost appended to it would be read back to an agent as
+         * part of its own question. `createWorkAction` carries `asked` the same
+         * bare way, and what the turns cost is on the run log.
+         */
+        return {
+          verdict: "did-not-finish",
+          because: NEEDS_INPUT,
+          evidence: drafted.question,
+          findings: [],
+        };
+      }
+
+      if (drafted.kind === "unreadable") {
+        /**
+         * The reviewer's branch one function up, in this step's spelling
+         * (`#279`): an announced question that was never asked is neither of the
+         * two answers, and the branch that does not exist is the one where it
+         * becomes a silently empty document — or worse, a document whose first
+         * line is a fence and whose body is the difficulty the agent could not
+         * state.
+         *
+         * `failed` and `unreadable: true` rather than a bare `did-not-finish`,
+         * because the flag is what a log can be asked and a sentence is not. It
+         * costs nothing extra: `design` does not refuse (`REFUSING_STEPS`), so
+         * `endingOf` reports the step `did-not-finish` with no route to the
+         * router, and the pass rests for a person carrying the answer.
+         */
+        return {
+          verdict: "failed",
+          evidence: `the design agent announced a question and did not ask one — the \`question\` block was empty or never closed, so the answer is neither a design nor a question:\n${drafted.answer.slice(0, 2_000)}`,
+          findings: [],
+          unreadable: true,
+        };
+      }
+
+      const document = drafted.document;
       return {
         verdict: "passed",
         // The distinction the board wants and `implement` does not: an empty

@@ -113,14 +113,21 @@ export interface ActionResult {
    * **Why this action said no, in its own machine-readable word** — and absent on
    * every kind whose *no* means nothing more than *no* (0065 §2, `#270`).
    *
-   * One action produces it — the `merge` kind, at `merge` — and it is on the
-   * result rather than derived by the caller because the caller runs no git:
-   * `conflict` and `verify-failed` are the lane's own words, they are already on
-   * the log as `RefusalReason`, and `directionOf` in
-   * `packages/conductor/src/pass.ts` routes on them. The pipeline knows only that
-   * *something the recipe declared refused* and `endingOf` spells that
-   * `action-refused`, which is right for the other five kinds and would lose the
-   * direction for this one.
+   * The `merge` kind produces it at `merge`, and it is on the result rather than
+   * derived by the caller because the caller runs no git: `conflict` and
+   * `verify-failed` are the lane's own words, they are already on the log as
+   * `RefusalReason`, and `directionOf` in `packages/conductor/src/pass.ts` routes
+   * on them. The pipeline knows only that *something the recipe declared refused*
+   * and `endingOf` spells that `action-refused`, which is right for the other five
+   * kinds and would lose the direction for this one.
+   *
+   * **And `NEEDS_INPUT`, on a `did-not-finish`, from the two `agent` actions that
+   * can be asked a question** — `createWorkAction` when its agent stopped
+   * mid-flight through the hook, and `createDraftAction` when its answer was a
+   * question rather than a document (`#294`). Same rule, one ending along: *an
+   * agent started and left no receipt* and *an agent asked something* are one
+   * verdict, they cost different money, and the caller reads a field rather than
+   * a sentence (0031 §1).
    *
    * Never a substitute for `evidence`. That is the words a person reads (0043);
    * this is the token a judge reads, and 0058 §3c asks for both.
@@ -130,8 +137,10 @@ export interface ActionResult {
    * **This action's answer could not be read at all** — absent on every kind that
    * has no answer to read, and on an `agent` whose answer parsed (`#279`).
    *
-   * One kind produces it, the `agent` kind, and it is `parseFindings`'s own
-   * `parsed` flag arriving where the decision is made. *Could not read it* and
+   * One kind produces it, the `agent` kind, and it is that kind's own parse
+   * arriving where the decision is made — `parseFindings`'s `parsed` flag where a
+   * reviewer answered, and `parseDraft`'s `unreadable` where a design agent
+   * announced a question and asked none (`#294`). *Could not read it* and
    * *read it, it was empty* both left this interface as `findings: []`, so
    * `carriesACriterion` one layer up said *nothing an agent could be held to*
    * about an answer that had four findings in it and was one closing brace short

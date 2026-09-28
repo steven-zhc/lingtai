@@ -10,12 +10,15 @@ import { sessionIdFor } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
 import { REFUSED_ABOUT, SEVERITIES, parsePayload } from "@lingtai/domain";
 import {
+  buildDesignPrompt,
   buildReviewPrompt,
   createAgentAction,
+  createDraftAction,
+  parseDraft,
   parseFindings,
   verdictFor,
 } from "../src/agent-action.ts";
-import { type ActionEvent, runActionPipeline } from "../src/action.ts";
+import { NEEDS_INPUT, type ActionEvent, runActionPipeline } from "../src/action.ts";
 import { REVIEW_THAT_DID_NOT_PARSE } from "../test/fixtures/review-269-attempt-3.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
@@ -924,5 +927,158 @@ describe("the action", () => {
 
     await action.run(context);
     expect(fetched).toBe(0);
+  });
+});
+
+/**
+ * **The drafting agent's three answers, and the one that is none of them**
+ * (`#294`, 0058 §3c).
+ *
+ * `design` is on `ARRIVE_AT_THE_ROUTER`, `goesToTheRouter` admits a
+ * `did-not-finish` whose `because` is `needs-input`, and `the-pass.py` draws the
+ * fan — and until this ticket no branch in `createDraftAction` produced the token,
+ * so a design agent that could not answer the ticket had one move: write its
+ * doubts into the document and hand them to the implementer, which is the shape
+ * the step exists to avoid.
+ *
+ * **Three states and they are driven here together**, because the trap is that
+ * they collapse into two. *Answering with nothing is a real answer, and it is the
+ * common one* — a typo fix needs no design — so a parse that read silence as a
+ * question would stop every trivial ticket for a person, and one that read an
+ * announced-but-unasked question as a document would hand `implement` a design
+ * note that is really a difficulty (`#279`).
+ */
+describe("the drafting agent's answer", () => {
+  const drafter = (reply: RunOutcome) =>
+    createDraftAction(
+      { name: "draft", prompt: "" },
+      {
+        runtime: reviewer(reply),
+        issue: async () => ISSUE,
+        diff: async () => "",
+        settingsPath: "/tmp/settings.json",
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    );
+
+  it("is a design when it is a document", async () => {
+    const result = await drafter(outcome({ text: "Put it in `packages/recipe`." })).run(context);
+
+    expect(result.verdict).toBe("passed");
+    expect(result.document).toBe("Put it in `packages/recipe`.");
+    expect(result.evidence).toContain("packages/recipe");
+    // Neither of the other two, said out loud: this is the state the other two
+    // are most likely to be mistaken for.
+    expect(result.because).toBeUndefined();
+    expect(result.unreadable).toBeUndefined();
+  });
+
+  it("is *this change needs no design* when it is empty", async () => {
+    const result = await drafter(outcome({ text: "  \n " })).run(context);
+
+    expect(result.verdict).toBe("passed");
+    // `""` and not absent: *the agent answered that this change needs none* and
+    // *nothing here drafts* are one brief to `implement`, and the key is what
+    // `designFrom` tells them apart by.
+    expect(result.document).toBe("");
+    expect(result.evidence).toContain("no design: this change needs none");
+    expect(result.because).toBeUndefined();
+  });
+
+  it("is a question when it is a question, and that is 0058 §3c's token", async () => {
+    const asked = "The ticket asks for a hold at `merge` and for nothing to hold there. Which wins?";
+    const result = await drafter(
+      outcome({ text: `I cannot design this.\n\n\`\`\`question\n${asked}\n\`\`\`` }),
+    ).run(context);
+
+    // `did-not-finish` and not `failed`: the agent judged nothing, so nothing is
+    // charged for the asking (0058 §3b), and `because` is what carries it past
+    // `goesToTheRouter` to `proposed`.
+    expect(result.verdict).toBe("did-not-finish");
+    expect(result.because).toBe(NEEDS_INPUT);
+    // The question alone, and no turn count spliced into it: this string is read
+    // back to the next design agent as `SentBack.asked`.
+    expect(result.evidence).toBe(asked);
+    expect(result.evidence).not.toContain("turns");
+    // And it is not a document — nothing reaches `implement` from a question.
+    expect(result.document).toBeUndefined();
+  });
+
+  it("is `unreadable` when it announced a question and asked none", async () => {
+    // The fence opened and never closed: read as a document this is a design note
+    // whose first line is a code fence and whose body is the agent's difficulty.
+    const result = await drafter(
+      outcome({ text: "```question\nI do not know which of the two readings is meant" }),
+    ).run(context);
+
+    expect(result.unreadable).toBe(true);
+    // A refusal's verdict, so the flag reaches `StepFailed` and the log can be
+    // asked how often this happens — and `design` does not refuse, so the step
+    // reports `did-not-finish` and buys nothing (`endingOf`).
+    expect(result.verdict).toBe("failed");
+    // Never a silently empty document, which is the whole of `#279` here.
+    expect(result.document).toBeUndefined();
+    expect(result.evidence).toContain("I do not know which of the two readings is meant");
+  });
+
+  it("is `unreadable` when the question block is empty", async () => {
+    const result = await drafter(outcome({ text: "```question\n\n```" })).run(context);
+
+    expect(result.unreadable).toBe(true);
+    expect(result.document).toBeUndefined();
+  });
+
+  /**
+   * The parse, read directly, so the three states are one table rather than four
+   * dispatches. The action's branches above are what each state *costs*; this is
+   * what each answer *is*.
+   */
+  it("tells the three apart by what the answer is", () => {
+    expect(parseDraft(null)).toEqual({ kind: "document", document: "" });
+    expect(parseDraft("")).toEqual({ kind: "document", document: "" });
+    expect(parseDraft("a design")).toEqual({ kind: "document", document: "a design" });
+    expect(parseDraft("```question\nwhich?\n```")).toEqual({ kind: "question", question: "which?" });
+    // A document that quotes a fenced block is still a document: only the
+    // `question` tag announces one.
+    expect(parseDraft("use:\n\n```ts\nconst x = 1\n```")).toMatchObject({ kind: "document" });
+  });
+});
+
+/**
+ * **The other half of 0058 §3c's sentence** — *or that step again with state your
+ * assumption* (`#294`).
+ *
+ * A judge may answer a design's question by sending the pass back to `design`,
+ * which buys a round. A design agent handed that round with no memory of asking
+ * reads the same ticket, finds the same gap and asks the same thing: one round
+ * spent, and a person at the end of it anyway. So what it asked and what the
+ * judge said travel into the prompt, with the instruction the ADR names.
+ */
+describe("the design prompt", () => {
+  it("teaches the three states and the bar between a question and a preference", () => {
+    const prompt = buildDesignPrompt({ name: "draft", prompt: "" }, ISSUE);
+
+    expect(prompt).toContain("#58 — alias-aware skill merging");
+    // Empty is still a real answer, and still the common one.
+    expect(prompt).toContain("reply with nothing at all");
+    // A question is announced, and the block is what announces it.
+    expect(prompt).toContain("```question");
+    // The bar, which is the line no parse can hold.
+    expect(prompt).toContain("A question is not a doubt");
+    expect(prompt).toContain("have a preference, and the document is where preferences go");
+    // Nothing was sent back, so nothing says it was.
+    expect(prompt).not.toContain("a second time");
+  });
+
+  it("tells an agent sent back here what it asked and to assume instead", () => {
+    const prompt = buildDesignPrompt({ name: "draft", prompt: "" }, ISSUE, {
+      why: "assume the ticket means the first reading",
+      asked: "which of the two readings is meant?",
+      printed: null,
+    });
+
+    expect(prompt).toContain("which of the two readings is meant?");
+    expect(prompt).toContain("assume the ticket means the first reading");
+    expect(prompt).toContain("**Do not ask again.**");
   });
 });

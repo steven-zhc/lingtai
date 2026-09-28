@@ -23,10 +23,12 @@ export {
   buildReviewPrompt,
   createAgentAction,
   createDraftAction,
+  parseDraft,
   parseFindings,
   verdictFor,
   type AgentActionDeps,
   type AgentActionSpec,
+  type Drafted,
   type ReviewIssue,
 } from "./agent-action.ts";
 export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
