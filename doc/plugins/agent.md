@@ -1,8 +1,11 @@
 # `agent:`
 
-`agent:` buys a model a turn in this pass's worktree, and it is the only key in
-a recipe that spends money. **The three fields are the same wherever it is
-written and the job is not**: at `design` it drafts a document before any code
+`agent:` buys a model a turn in this pass's worktree, and it is **one of the two
+keys in a recipe that spend money** — since `#277` a `judge:` naming a runtime
+rather than a built-in is the other, and `agentRefusal` (`conduct.ts`) holds both
+to the dispatched runtime alike, so an audit of what a recipe costs reads both
+keys. **The three fields are the same wherever it is written and the job is
+not**: at `design` it drafts a document before any code
 exists, at `implement` it writes the change, and at `review`, `proposed` and
 `merge` it reads a diff it did not write. The failure the last of those prevents
 is the one this action was built for and measured on — an agent that has spent
@@ -118,8 +121,12 @@ one a person reaches for:
 > file list and a hold on it are questions about a change already built, which is
 > `proposed`.
 
-`prepared` has the one sentence in `whyThatPair` that is answered by the *kind*
-and not by the step, and it is this key's:
+`prepared` is the step whose sentence `whyThatPair` answers by the *kind* of the
+action rather than by the step — `agent:` gets one, `watch:` the one written
+directly beside it, and everything else the general one about a hold that cannot
+be answered. (It is not the only kind-answered branch in the function: `judge:`,
+`merge:`, the `merge` × `human`|`watch` pair and the three effects are all
+answered by kind, above the step branches and at every step.) This key's is:
 
 > nothing has been committed at `prepared`, so a cold reviewer would be given no
 > diff to read
@@ -209,9 +216,15 @@ The reading job, at the step where a refusal **travels**. Everything under
 `prompt:` is what *this* repository keeps getting wrong — a stale comment, a
 check that is not looking at what its name claims, a projection that is not a
 pure fold — and none of it is the rubric or the checklist, which are in
-`agent-action.ts` and cannot be removed from here. It is the second entry at its
-step in the file it comes from, deliberately: the first refusal wins and the rest
-do not run, so a diff that does not compile is never paid to be reviewed.
+`agent-action.ts` and cannot be removed from here. It is the **only** entry at
+its step in the file it comes from, and nothing else could be written ahead of it
+there: `runPlugin.at` is `prepared`, `build`, `proposed`, `merge`, and `agent:`
+is the only plugin whose `at` carries `review`. What keeps a diff that does not
+compile from being paid to be reviewed is therefore not entry order but the step
+order — `build` comes before `review` in `Step`
+([`packages/domain/src/events.ts`](../../packages/domain/src/events.ts)) and is
+one of `REFUSING_STEPS`, so a red build refuses there and the pass never arrives
+here.
 
 ```yaml
 # packages/conductor/test/one-pass.ts — the `REVIEWED` fixture
