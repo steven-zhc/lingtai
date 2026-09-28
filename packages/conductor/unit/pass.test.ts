@@ -719,6 +719,82 @@ describe("every step that does not pass arrives at proposed", () => {
   });
 
   /**
+   * **And the other half of that sentence, at `design`** — *or that step again
+   * with "state your assumption"* (0058 §3c, `#294`).
+   *
+   * The line above proves the arrival and the person; this proves the round, and
+   * it is the half that is worth nothing without the last assertion. A judge that
+   * answers `design` buys an agent, and an agent dispatched with no memory of
+   * asking reads the same ticket, finds the same gap and asks the same thing: one
+   * round spent and a person at the end of it anyway. So the question travels —
+   * `sentBackTo` folds it off this pass's own visits and the pipeline puts it on
+   * the context, where `createDraftAction` reads it into the prompt.
+   *
+   * The asking is an **action** rather than a body, because that is where it comes
+   * from: `design`'s body is `{ ending: "passed" }` and always was, and the token
+   * is its plugin's.
+   */
+  it("sends a design question back to `design`, and tells it what it asked", async () => {
+    const question = "the ticket asks for two incompatible things and does not say which wins";
+    /** What each `design` dispatch was told about why it is running. */
+    const told: (ActionContext["again"] | undefined)[] = [];
+    let lap = 0;
+    const actionsAt: PassOptions["actionsAt"] = (step, actions) =>
+      step !== "design"
+        ? actions.map((a) => canned(a.name, PASSED))
+        : [
+            {
+              name: "draft",
+              kind: "agent",
+              run: async (seenWith) => {
+                told.push(seenWith.again);
+                lap += 1;
+                return lap === 1
+                  ? {
+                      verdict: "did-not-finish",
+                      because: NEEDS_INPUT,
+                      evidence: question,
+                      findings: [],
+                    }
+                  : {
+                      verdict: "passed",
+                      evidence: "designed on the first reading",
+                      findings: [],
+                      document: "assume the first reading",
+                    };
+              },
+            },
+          ];
+    const { bodies } = watching({ proposed: routerSaying(() => "design") });
+    const { emit } = events();
+
+    const result = await runPass({
+      recipe: recipeWith({ design: [{ name: "draft", agent: "claude-code", prompt: "shape" }] }),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { rounds: 2, restartsLeft: 0 },
+    });
+
+    // The route 0058 §3c names, and the step that asked is the step it went to:
+    // nobody but `design` knows the question, so nothing else was on offer.
+    expect(result.routes).toEqual([
+      { from: "design", chose: "design", to: "design", why: "because a test said so", ceiling: null },
+    ]);
+    // Null on the way through, and the question on the way back — which is the
+    // assertion the round is worth something because of.
+    expect(told[0]).toBeNull();
+    expect(told[1]).toMatchObject({ asked: question, why: "because a test said so", printed: null });
+    // And the second draft is what `implement` works from, so the round produced
+    // the document the first visit could not.
+    expect(result.stoppedAt).toBeNull();
+    expect(
+      result.steps.filter((visit) => visit.step === "design").at(-1)?.ending,
+    ).toMatchObject({ ending: "passed", design: "assume the first reading" });
+  });
+
+  /**
    * Its plugins are not re-run on the way back. They are verdicts about a diff
    * and the step that arrived did not pass, so there is no new diff to inspect —
    * and a declared `human:` approval must not reach a person once per round.
