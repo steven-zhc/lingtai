@@ -14,6 +14,7 @@
  * §1).
  */
 import {
+  createAgentAction,
   createMergeAction,
   createWorktreeAction,
   type Action,
@@ -101,22 +102,59 @@ const REVIEW_REFUSED: ActionResult = {
 };
 
 /**
- * **What a reviewer whose answer nobody could read looks like** (`#279`) — and the
- * point is how little of it differs from a review that found nothing.
+ * **An answer that really does defeat `parseFindings`** (`#279`) — a `major` with a
+ * failure scenario in it, and no closing brace.
  *
- * `createAgentAction`'s own unreadable branch: `failed`, no findings, and the
- * sentence. `#269` attempt 3 said four things and ended one closing brace short of
- * valid JSON, and `unreadable` is the whole of what tells this arrival from a
- * reviewer that read the diff and had nothing to say. Without it the router
- * answered the only thing it could — *no finding with a failure scenario* — and
- * $8.97 of review was discarded under a sentence that reads like a normal outcome.
+ * `#269` attempt 3's shape, shortened: that answer was 4,629 characters of four
+ * findings and ended `}]`, with `stop_reason: end_turn`, so nothing truncated it —
+ * the model believed it had finished. The whole of it is a fixture in the package
+ * the parser lives in (`packages/actions/test/fixtures/review-269-attempt-3.ts`);
+ * what is needed here is only that the real parser refuses it, so that the route
+ * below is reached through `createAgentAction` and not through a flag set by hand.
  */
-const REVIEW_UNREADABLE: ActionResult = {
-  verdict: "failed",
-  evidence: "the reviewer's answer was not readable as findings:\n{\"findings\":[{\"file\"",
-  findings: [],
-  unreadable: true,
-};
+const AN_ANSWER_NOBODY_CAN_READ =
+  '{"findings":[{"file":"packages/recipe/src/recipe.ts","line":1413,"severity":"major",' +
+  '"claim":"`whyThatPair` gained no `claim` branch","failureScenario":"an operator writes a ' +
+  '`run:` at `claim` and is told to move it to `prepared`, which is false where it is printed"}]';
+
+/**
+ * **A real cold reviewer over a fake runtime**, for `createMergeAction`'s reason:
+ * what these tests are about is the seam, and a `canned` result cannot reach the
+ * one in question — `unreadable` is `parseFindings`'s answer, and a test that set
+ * it by hand would assert the router and say nothing about how the flag gets there.
+ * That gap is the bug (`#279`).
+ */
+const coldReviewerSaying = (text: string | null): Action =>
+  createAgentAction(
+    { name: "cold reviewer", prompt: "" },
+    {
+      runtime: {
+        capabilities: {
+          id: "claude-code",
+          hooks: [],
+          canFailClosed: true,
+          canRewriteToolCall: false,
+          providesTier: "guarded",
+          enforces: ["turns", "wall"],
+        },
+        // `#269` attempt 3's receipt: `success · 61 turns · $8.97 · exit 0`. It is
+        // what makes the loss expensive rather than merely wrong.
+        run: async () => ({
+          exitCode: 0,
+          turns: 61,
+          durationMs: 802_000,
+          costUsd: 8.97,
+          text,
+          failure: null,
+          sessionId: "s",
+        }),
+      },
+      issue: async () => ({ ref: "269", title: "T5d", body: "the queue is a plugin at `claim`" }),
+      diff: async () => "diff --git a/x b/x\n+1",
+      settingsPath: "/nowhere/settings.json",
+      limits: { turns: 80, wallMs: 3_600_000, diffBytes: 400_000 },
+    },
+  );
 
 const canned = (name: string, result: ActionResult): Action => ({
   name,
@@ -1375,7 +1413,10 @@ describe("proposed is the only step that routes, and one judge answers each when
    */
   it("reports an answer it could not read as unreadable, and not as an opinion", async () => {
     const { result, asked } = await pass({
-      ...checked(PASSED, REVIEW_UNREADABLE),
+      actions: {
+        build: [canned("typecheck", PASSED)],
+        review: [coldReviewerSaying(AN_ANSWER_NOBODY_CAN_READ)],
+      },
       ceilings: { rounds: 3, restartsLeft: 3 },
     });
 
@@ -1387,6 +1428,27 @@ describe("proposed is the only step that routes, and one judge answers each when
     expect(result.routes[0]?.why).not.toContain("nothing an agent could be held to");
     expect(result.rested).toBe("waiting");
     expect(asked.land).toEqual([]);
+  });
+
+  /**
+   * **And `#262` does not re-open**, which is the other half of the pair: the same
+   * reviewer, the same route through `proposed`, an answer that *parsed* and was
+   * empty — and the change lands. A fix that read *could not read it* and *read it,
+   * it was empty* as one thing would hold this one for a person too.
+   */
+  it("lands a clean review whose answer parsed and said nothing", async () => {
+    const { result, asked } = await pass({
+      actions: {
+        build: [canned("typecheck", PASSED)],
+        review: [coldReviewerSaying('{"findings":[]}')],
+      },
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(result.routes).toEqual([]);
+    expect(asked.judge).toEqual([]);
+    expect(asked.land).toHaveLength(1);
+    expect(outcomeOf(result)).toBe("landed");
   });
 
   /**
