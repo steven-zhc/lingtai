@@ -13,8 +13,10 @@
  * the `build` point run it ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
  * §1).
  */
+import type { QueueActionDeps } from "@lingtai/actions";
 import {
   createMergeAction,
+  createQueueAction,
   createWorktreeAction,
   type Action,
   type ActionContext,
@@ -23,10 +25,11 @@ import {
   type CutAnswer,
   type LandAnswer,
   type MergeStrategy,
+  type TakeAnswer,
 } from "@lingtai/actions";
 import type { Envelope, PayloadOf, ToAppend } from "@lingtai/domain";
 import type { Worktree } from "@lingtai/repo";
-import { StepMap, type StepAction } from "@lingtai/recipe";
+import { StepMap, type QueueSettings, type StepAction } from "@lingtai/recipe";
 import { describe, expect, it } from "vitest";
 import {
   NEEDS_INPUT,
@@ -47,7 +50,6 @@ import {
   type Judging,
   type PassPorts,
   type SentBack,
-  type Taken,
   type Worked,
 } from "../src/pass-steps.ts";
 
@@ -64,6 +66,12 @@ const ITEM: Claimed = {
   ticket: { ref: "259", title: "T4a", body: "six bodies, filling a contract that already runs" },
   kind: "feature",
 };
+
+/**
+ * The four values a `queue:` action carries, as `conduct.ts`'s `defaultsAt`
+ * builds them off `queueOf(recipe)` where a recipe declares nothing (`#269`).
+ */
+const QUEUE: QueueSettings = { kinds: ["bug", "feature"], exclude: ["agent:hold"], backoff: "1h" };
 
 const TREE: Worktree = {
   path: "/nowhere/worktrees/lingtai/run-1",
@@ -113,7 +121,15 @@ const recipeWith = (steps: Record<string, unknown> = {}): PassOptions["recipe"] 
 
 /** What the fake ports were asked, so a test can read the brief a step built. */
 interface Asks {
-  take: number;
+  /**
+   * What each `queue:` action was asked to select over — the four values, which
+   * is the whole of what the take is handed since `#269`.
+   *
+   * Beside the ports rather than on them, for `cut`'s reason: `claim`'s work is a
+   * plugin's now, so what a test reads back is the action's argument and not a
+   * port call.
+   */
+  take: QueueSettings[];
   /**
    * What each `worktree:` action was asked to cut — its `base` and `submodules`,
    * which is the whole of what the cut is handed since `#268`.
@@ -141,7 +157,8 @@ interface Asks {
 }
 
 interface Answers {
-  take?: Taken | (() => Taken);
+  /** What the take answers. `ITEM`, taken, by default. */
+  take?: TakeAnswer | (() => TakeAnswer);
   /** What the cut answers. Cut at `CUT_AT`, by default. */
   cut?: CutAnswer;
   draft?: Drafted | (() => Drafted);
@@ -157,9 +174,11 @@ interface Answers {
   recordThrows?: Error;
 }
 
-function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks } {
+function portsAnswering(
+  answers: Answers = {},
+): { ports: PassPorts; asked: Asks; taking: QueueActionDeps } {
   const asked: Asks = {
-    take: 0,
+    take: [],
     cut: [],
     draft: [],
     dispatch: [],
@@ -171,11 +190,49 @@ function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks 
   const of = <T, A>(given: T | ((arg: A) => T) | undefined, fallback: T, arg: A): T =>
     given === undefined ? fallback : typeof given === "function" ? (given as (a: A) => T)(arg) : given;
 
-  const ports: PassPorts = {
-    take: async () => {
-      asked.take += 1;
-      return of(answers.take, { taken: ITEM }, undefined);
+  /**
+   * **What `take` leaves behind, held where `conduct.ts` holds it** (`#269`).
+   *
+   * The take is an action's, so the item and its stream are the *caller's* fact
+   * and the ports only read them — which is why the reset that begins a pass is
+   * in the take below rather than in `claim`'s body: the action runs before the
+   * body, and a reset written there would wipe what it had just taken.
+   */
+  let took: Claimed | null = null;
+  let onStream: string | null = null;
+
+  /**
+   * The take, as the `queue:` action runs it — **and the reset is the first thing
+   * in it**, for the reason `conduct.ts` puts it there: the three ways it can
+   * decline set no item, and it was exactly those that would let `end` resolve
+   * onto the item the pass before had landed.
+   */
+  const taking: QueueActionDeps = {
+    take: async (spec) => {
+      asked.take.push(spec);
+      took = null;
+      onStream = null;
+      const answer = of<TakeAnswer, undefined>(
+        answers.take,
+        { taken: { workItemId: ITEM.workItemId, kind: ITEM.kind } },
+        undefined,
+      );
+      if ("taken" in answer) {
+        took = { ...ITEM, workItemId: answer.taken.workItemId, kind: answer.taken.kind };
+        onStream = answer.taken.workItemId;
+      } else if ("mayHold" in answer) {
+        // The one decline that leaves a stream behind: `end` still resolves
+        // against it, because an item this run may be holding is one somebody has
+        // to be told about.
+        onStream = answer.mayHold.workItemId;
+      }
+      return answer;
     },
+  };
+
+  const ports: PassPorts = {
+    item: () => took,
+    onStream: () => onStream,
     draft: async (brief) => {
       asked.draft.push(brief);
       return of(answers.draft, { document: "" }, brief);
@@ -198,7 +255,7 @@ function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks 
       if (answers.recordThrows) throw answers.recordThrows;
     },
   };
-  return { ports, asked };
+  return { ports, asked, taking };
 }
 
 /** One run of the whole pass, with whatever the recipe declares and the ports say. */
@@ -210,18 +267,20 @@ async function pass(
     ceilings?: PassOptions["ceilings"];
   } = {},
 ): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
-  const { ports, asked } = portsAnswering(options.answers);
+  const { ports, asked, taking } = portsAnswering(options.answers);
   /**
-   * **`admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt` supplies
-   * them** (0065 §3).
+   * **`claim`'s, `admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt`
+   * supplies them** (0065 §3).
    *
-   * Both bodies are empty — `admit`'s since `#268` and `merge`'s since `#270` —
-   * so a pass whose recipe declares nothing there cuts nothing and lands nothing
-   * unless the caller substitutes, and *the caller substitutes* is the decision
-   * rather than a detail of the conductor. Mirrored here rather than imported,
-   * because importing `conduct.ts` would bring a GitHub client and a store into a
-   * file whose whole claim is that nothing leaves the system.
+   * All three bodies are empty — `admit`'s since `#268`, `merge`'s since `#270`
+   * and `claim`'s since `#269` — so a pass whose recipe declares nothing there
+   * takes nothing, cuts nothing and lands nothing unless the caller substitutes,
+   * and *the caller substitutes* is the decision rather than a detail of the
+   * conductor. Mirrored here rather than imported, because importing `conduct.ts`
+   * would bring a GitHub client and a store into a file whose whole claim is that
+   * nothing leaves the system.
    */
+  const claiming = (): Action => createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
   const cutting = (): Action =>
     createWorktreeAction(
       { name: "cut the branch", base: "main", submodules: false },
@@ -253,6 +312,7 @@ async function pass(
     actionsAt: (step, actions) => {
       if (options.actions?.[step] !== undefined) return options.actions[step];
       if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
+      if (step === "claim") return [claiming()];
       if (step === "admit") return [cutting()];
       return step === "merge" ? [landing()] : [];
     },
@@ -269,7 +329,7 @@ const endRow = (plan: readonly ToAppend[]): PayloadOf<"EndActionsResolved"> =>
 
 // ------------------------------------------------------------------ claim ----
 
-describe("claim picks the ticket, and cannot refuse", () => {
+describe("claim runs the `queue:` plugin, and cannot refuse", () => {
   it("takes the item, and every step after it is about that item", async () => {
     const { result, asked } = await pass();
 
@@ -285,7 +345,7 @@ describe("claim picks the ticket, and cannot refuse", () => {
       "merge:passed",
       "end:passed",
     ]);
-    expect(asked.take).toBe(1);
+    expect(asked.take).toEqual([QUEUE]);
     expect(asked.cut).toEqual([{ base: "main", submodules: false }]);
     expect(asked.dispatch[0]?.ticket).toEqual(ITEM.ticket);
     // `end` resolves onto the stream `claim` named, and nowhere else.
@@ -298,15 +358,22 @@ describe("claim picks the ticket, and cannot refuse", () => {
    * and neither reaches the router: `claim` is not in `ARRIVE_AT_THE_ROUTER`.
    */
   it.each([
-    { answer: { passedOver: "excluded-label" } as Taken, because: "passed-over" },
-    { answer: { notClaimed: "held by local:41" } as Taken, because: "not-claimed" },
+    { answer: { passedOver: "excluded-label" } as TakeAnswer, because: "passed-over" },
+    { answer: { notClaimed: "held by local:41" } as TakeAnswer, because: "not-claimed" },
   ])("stops the pass when the item was not taken ($because)", async ({ answer, because }) => {
     const { result, asked } = await pass({ answers: { take: answer } });
 
     expect(walk(result)).toEqual(["claim:did-not-finish", "end:passed"]);
+    // The action's own `because`, travelling — `endingOf` reads it off the result
+    // and `at` is the action that said it, where the body used to answer `null`.
     expect(result.stoppedAt).toEqual({
       step: "claim",
-      ending: { ending: "did-not-finish", because, at: null, detail: expect.any(String) },
+      ending: {
+        ending: "did-not-finish",
+        because,
+        at: "take the ticket",
+        detail: expect.any(String),
+      },
     });
     expect(result.routes).toEqual([]);
     // Nothing was cut, nothing was dispatched, and `end` had no stream to
@@ -341,27 +408,36 @@ describe("claim picks the ticket, and cannot refuse", () => {
   });
 
   /**
-   * One closure, two passes. `claim` is where a pass begins, so the item, the
-   * tree and the design are cleared there — a second pass that took nothing must
-   * not resolve `end` onto the item the first one landed.
+   * One closure, two passes. `claim` is where a pass begins, so the item and its
+   * stream are cleared by the take that makes them — a second pass that took
+   * nothing must not resolve `end` onto the item the first one landed.
+   *
+   * **The reset is in the take and not in the body, since `#269`**, because the
+   * action runs before the body: a `claim: async () => { took = null; … }` would
+   * clear what the action had just taken, which is the one way this migration
+   * could have been silently wrong.
    */
   it("forgets the previous pass's item when the next claim takes nothing", async () => {
     let first = true;
-    const { ports, asked } = portsAnswering({
+    const { ports, asked, taking } = portsAnswering({
       take: () => {
-        const answer: Taken = first ? { taken: ITEM } : { passedOver: "no kind label" };
+        const answer: TakeAnswer = first
+          ? { taken: { workItemId: ITEM.workItemId, kind: ITEM.kind } }
+          : { passedOver: "no kind label" };
         first = false;
         return answer;
       },
     });
     const bodies = bodiesFor(ports);
+    const claiming = createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
     const run = () =>
       runPass({
         recipe: recipeWith({ end: [CLOSE_ON_LANDED] }),
         context,
         emit: () => {},
         bodies,
-        actionsAt: (_step, actions) => actions.map((a) => canned(a.name, PASSED)),
+        actionsAt: (step, actions) =>
+          step === "claim" ? [claiming] : actions.map((a) => canned(a.name, PASSED)),
       });
 
     await run();
@@ -725,13 +801,14 @@ describe("implement dispatches the one agent, and reports what it committed", ()
    */
   it("is told why it is being run again, and what it asked the first time", async () => {
     let asks = true;
-    const { ports, asked } = portsAnswering({
+    const { ports, asked, taking } = portsAnswering({
       dispatch: () => {
         const answer: Worked = asks ? { asked: "which of the two files?" } : { committed: COMMITTED };
         asks = false;
         return answer;
       },
     });
+    const claiming = createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
     const result = await runPass({
       recipe: recipeWith(),
       context,
@@ -744,7 +821,10 @@ describe("implement dispatches the one agent, and reports what it committed", ()
             : { ending: "routed", to: "implement", why: "state your assumption and carry on" },
       },
       ceilings: { rounds: 1, restartsLeft: 0 },
-      actionsAt: (_step, actions) => actions.map((a) => canned(a.name, PASSED)),
+      // `claim`'s default, because the body takes nothing since `#269` and a pass
+      // that claimed no item cannot brief an agent.
+      actionsAt: (step, actions) =>
+        step === "claim" ? [claiming] : actions.map((a) => canned(a.name, PASSED)),
     });
 
     expect(walk(result)).toEqual([

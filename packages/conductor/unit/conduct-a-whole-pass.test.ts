@@ -320,6 +320,14 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
   });
 
   /**
+   * Which action a `StepRequested` is about, so a fixture can refuse one append
+   * and not every one. `claim`'s take is the first the pipeline writes since
+   * `#269`, and the two cases below are about different halves of that.
+   */
+  const requestedFor = (event: ToAppend): string =>
+    (event.data as { action?: string }).action ?? "";
+
+  /**
    * **A store that refused an append is not a step's verdict about the change.**
    *
    * `appendNow` says a store that will not append is a defect and that the
@@ -335,9 +343,15 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    *
    * So the item goes back to the queue instead, which is what the same rejection
    * did before the swap: the queue takes it again after the backoff and nobody
-   * is asked to acknowledge a database blip. The one append in reach of this
-   * fixture is the pipeline's own `StepRequested` for the person declared at
-   * `proposed` — it is `emit`'s, from inside the walk, which is the whole class.
+   * is asked to acknowledge a database blip. The append in reach of this fixture
+   * is the pipeline's own `StepRequested` for the person declared at `proposed` —
+   * it is `emit`'s, from inside the walk, which is the whole class.
+   *
+   * **Named rather than *any* `StepRequested`, since `#269`**, and the sibling
+   * below is why: `claim`'s work is a `queue:` action now, so the first row `emit`
+   * writes is the take's — *before* the item is claimed, where a release is
+   * another conductor's item given back. That is a different rule, so it is a
+   * different case.
    */
   it("releases the item when the store refused an append the pass made, rather than holding a person", async () => {
     const store = memoryStore();
@@ -346,7 +360,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === "StepRequested")) {
+        if (events.some((e) => e.type === "StepRequested" && requestedFor(e) === "approval")) {
           throw new Error("terminating connection due to administrator command");
         }
         return store.append(streamId, expected, events) as Promise<Envelope[]>;
@@ -383,6 +397,64 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
       "labels #7 bug",
     ]);
   });
+  /**
+   * **A run that took nothing releases nothing** (`#269`).
+   *
+   * The sibling above's rule, at the one step where it inverts. `claim`'s work is
+   * a `queue:` action, so the first thing `emit` writes is that action's
+   * `StepRequested` — **before** `claimWorkItem` has appended anything. A dropped
+   * connection there is the same defect, and `release` is the same handler, but
+   * what it would give back is an item this run never held: `releaseWorkItem`
+   * appends whoever holds it, so `WorkItemReleased` lands on **another
+   * conductor's live item** and `lingtai:queued` goes over its `lingtai:working`
+   * while its agent is still working. That is the failure `#268` named when it
+   * moved the reviewer's settings below the claim, arriving here through the step
+   * whose own work moved above it.
+   *
+   * So: the item's stream is untouched and its labels are not written. The defect
+   * is still reported — a store that will not append is a fact about this machine
+   * and the run says so.
+   */
+  it("appends nothing to an item it never claimed, when the take's own row was refused", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const refusing: typeof store = {
+      ...store,
+      append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
+        if (events.some((e) => e.type === "StepRequested" && requestedFor(e) === "take the ticket")) {
+          throw new Error("terminating connection due to administrator command");
+        }
+        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store: refusing,
+      },
+      fakePorts(did, refusing, true),
+    );
+
+    expect(result).toMatchObject({ ok: false, stage: "unexpected" });
+    expect((result as { detail: string }).detail).toContain("terminating connection");
+
+    // Nothing was claimed, so nothing is released and nothing is blocked — the
+    // stream is as empty as it was before the pass started.
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
+    // And the issue is not relabelled, either to `lingtai:working` or back out of
+    // it: a whole-set write here is the one that would stamp on somebody else.
+    expect(said.filter((line) => line.startsWith("labels #7"))).toEqual([]);
+  });
+
   /**
    * **And the route's own row is the one append that must never cost the ending
    * it describes** (`#271`).

@@ -668,34 +668,39 @@ describe("the two the pass stopped calling itself", () => {
  * plugins that must both be present and must agree is 0053's *one decision
  * across two sources*, one level down.
  *
- * Like `worktree:` and `merge:` above, it is a name for code that already
- * runs — `runnableNow`, `considerIssue` and `assigneeSkip` in
+ * Like `worktree:` and `merge:` above, it is a name for code that already runs —
+ * `runnableNow`, `considerIssue` and `assigneeSkip` in
  * `packages/conductor/src/discover.ts`, and `claimWorkItem` in
- * `packages/conductor/src/claim.ts` — and it is not read from the recipe yet.
- * So what these cases hold is what makes declaring it now worth anything:
+ * `packages/conductor/src/claim.ts` — and **since `#269` the recipe is what tells
+ * it to**: the plugin gained a key and `CALLED_DIRECTLY.queue` went, in the one
+ * diff 0065 §7 asks for. So what these cases hold is:
  *
  * - **It wraps rather than reimplements.** Three of `queue:`'s four fields
  *   *are* `source:`'s three — one declaration, `SOURCE_FIELDS` — and the
  *   fourth *is* `AssigneeRule`, refinement and all. A second copy of either
  *   would be two answers to one question while both shapes exist.
- * - **Refused at all ten steps, by a sentence that says where the code is** and
- *   how `claim` will reduce the list when it reads it. The first half is the
- *   same property `worktree:` and `merge:` have; the second is this plugin's
- *   own, and `packages/conductor/unit/step-matrix.test.ts` is where it is
- *   pinned.
+ * - **It serves `claim` and nothing else**, and the refusal at the other nine is
+ *   about the pair. Leaving `CALLED_DIRECTLY`'s *the queue asks GitHub itself*
+ *   here would be telling an operator the recipe cannot reach what it now
+ *   declares; the half of that sentence which is still true is about the *queue
+ *   pass* rather than about the step, and `queuePlugin`'s own comment carries it.
  */
-describe("the one `claim` will hold", () => {
-  it("is refused at every one of the ten steps, and names the file instead", () => {
-    for (const step of STEPS) {
-      expect(whyNoKindAt(step, "queue"), `${step} × queue is accepted`).not.toBeNull();
-    }
+describe("the one `claim` holds", () => {
+  it("serves `claim`, and is refused at the other nine as a pair", () => {
+    expect(queuePlugin.serves).toEqual(["claim"]);
+    expect(whyNoKindAt("claim", "queue")).toBeNull();
 
-    expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/discover.ts");
-    expect(whyNoKindAt("claim", "queue")).toContain("source.kinds");
-    // The fourth field's own half of the sentence, which used to be
-    // `assignee:`'s own refusal and is now carried by this one.
-    expect(whyNoKindAt("claim", "queue")).toContain("runtime.assignee");
-    expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/claim.ts");
+    for (const step of STEPS.filter((step) => step !== "claim")) {
+      const why = whyNoKindAt(step, "queue");
+      expect(why, `${step} × queue is accepted`).not.toBeNull();
+      // Two sentences and the order is `whyNoKindAt`'s: at a step *nobody*
+      // implements, *no plugin implements `design`* is the first thing wrong and
+      // the pair is moot; everywhere else the answer is about the pair.
+      const nobody = why!.includes(`no plugin implements \`${step}\``);
+      if (nobody) continue;
+      expect(why).toContain("`queue:` does not implement");
+      expect(why).toContain("it serves `claim`");
+    }
   });
 
   /**

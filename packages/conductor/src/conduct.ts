@@ -698,6 +698,20 @@ export function runOnce(
 
     let released = false;
     /**
+     * **The stream `end` resolves onto**, or null where this pass is about no item
+     * (`#269`).
+     *
+     * Beside `took` in meaning and beside `released` in scope, and both placements
+     * are load-bearing. It is not read off `took` because the two are not the same
+     * question: a claim whose append *may* have committed gives the pass a stream
+     * and no ticket, and `end` needs only the first of those. And it is **out here
+     * rather than inside the scope, because `release` is out here too** —
+     * `endResolved` is here for that reason and this is the same one: *did this run
+     * ever hold the item* is what the release is gated on, and a local of the scope
+     * is a question the release cannot ask.
+     */
+    let onStream: string | null = null;
+    /**
      * What `end` resolved, so the issue is told what the item recorded.
      *
      * **Out here rather than inside the scope, because `release` is out here
@@ -792,6 +806,29 @@ export function runOnce(
     const release = (reason: string): Effect.Effect<void> =>
       Effect.suspend(() => {
         if (released) return Effect.void;
+        /**
+         * **A run that took nothing releases nothing** (`#269`).
+         *
+         * `releaseWorkItem` appends whoever holds it (`claim.ts`), so a release
+         * from a run that never claimed writes `WorkItemReleased` over **another
+         * conductor's live item** and `lingtai:queued` over its `lingtai:working`
+         * while its agent is still working. The `claim` branch at the bottom
+         * guards the declines the pass *reports*; what reaches the defect handler
+         * with `released` still false is a throw from before the claim, and
+         * `claim`'s own step has appended to the run's stream since its work
+         * became a `queue:` action — `emit`'s `StepRequested` for the take, which
+         * a dropped connection turns into exactly that defect.
+         *
+         * `onStream` and not `took`, because the one decline that may be holding
+         * the item has a stream and no ticket: `claim-unconfirmed` must still give
+         * back something this run may hold, which is the whole reason `Taken` had
+         * a fourth case.
+         */
+        if (onStream === null) {
+          log(`nothing to release: ${reason}`);
+          released = true;
+          return Effect.void;
+        }
         released = true;
         return Effect.tryPromise({
           try: async () => {
@@ -930,17 +967,6 @@ export function runOnce(
       };
       /** The item, once `claim`'s `queue:` action has taken it. */
       let took: Claimed | null = null;
-      /**
-       * **The stream `end` resolves onto**, or null where this pass is about no
-       * item (`#269`).
-       *
-       * Beside `took` rather than read off it, because the two are not the same
-       * question: a claim whose append *may* have committed gives the pass a stream
-       * and no ticket, and `end` needs only the first of those — it is the one
-       * decline that leaves a stream behind, and an item this run may be holding is
-       * one somebody has to be told about.
-       */
-      let onStream: string | null = null;
       /**
        * The cold reviewer's settings file, once `admit`'s port has written it.
        *
@@ -1387,6 +1413,12 @@ export function runOnce(
           return { mayHold: { workItemId, detail: whyOf(error) } };
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) };
+        // **Set on the line the append committed, and before anything that can
+        // fail** (`#269`). It is the whole of *this run may hold the item*, which
+        // is what `release` below is gated on — so a throw between here and the
+        // return must not be able to leave the item claimed with nothing willing
+        // to give it back.
+        onStream = workItemId;
         log(`claimed ${workItemId} as ${runId}`);
         // **The run's account starts here**, because until this line there is no
         // run to account for: see `runLog`. A `passedOver` or a lost race above
@@ -1397,7 +1429,6 @@ export function runOnce(
           kind: runnable.kind,
           ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
         };
-        onStream = workItemId;
         // The issue says what the log says, from here on. Inline rather than
         // queued (0022): a call that does not land is written down and converged
         // later rather than retried.

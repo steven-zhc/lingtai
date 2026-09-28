@@ -188,6 +188,7 @@ const EVERY_DEP: ActionDeps = {
   watch: { changedFiles: async () => [] },
   worktree: { cut: async () => ({ head: "0".repeat(40), where: "/nowhere" }) },
   merge: { land: async () => ({ merged: "0".repeat(40) }) },
+  queue: { take: async () => ({ taken: { workItemId: "wi-nowhere-1", kind: "bug" } }) },
 };
 const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
   prepared: { env: () => ({}) },
@@ -470,7 +471,7 @@ describe("every step × kind cell runs or refuses", () => {
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["claim", "design", "implement"]);
+    expect(unimplemented).toEqual(["design", "implement"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
       // step's; the two that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
@@ -493,6 +494,10 @@ describe("every step × kind cell runs or refuses", () => {
     // the lane is a `merge:` action, so the refusal for every other kind there is
     // about the pair rather than about a step nobody built.
     expect(whyNoKindAt("merge", "merge")).toBeNull();
+    // **And `claim` is the fourth and the last of 0061 §3's five names** (`#269`):
+    // the take is a `queue:` action, so the refusal for every other kind there is
+    // about the pair rather than about a step nobody built.
+    expect(whyNoKindAt("claim", "queue")).toBeNull();
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
     expect(whyNoKindAt("admit", "run")).not.toContain("no plugin implements `admit`");
     expect(whyNoKindAt("admit", "run")).not.toContain("nothing has been committed at `prepared`");
@@ -506,24 +511,24 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs fifteen of the hundred and twenty cells and refuses a hundred and five", () => {
+  it("runs sixteen of the hundred and twenty cells and refuses a hundred and four", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
     expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(15);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(105);
+    expect(cellsThatRun).toHaveLength(16);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(104);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
     const pluginsServingNothing = PLUGINS.filter((plugin) => plugin.serves.length === 0);
-    expect(stepsNobodyImplements).toHaveLength(3);
-    expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual(["queue", "backlog"]);
-    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(36);
-    expect(pluginsServingNothing.length * STEPS.length).toBe(20);
-    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(6);
+    expect(stepsNobodyImplements).toHaveLength(2);
+    expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual(["backlog"]);
+    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(24);
+    expect(pluginsServingNothing.length * STEPS.length).toBe(10);
+    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(2);
   });
 
   /**
@@ -625,42 +630,38 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
-   * **`claim`'s plugin reduces the other way, and the refusal is the only
-   * place that says so today** (`#236`).
+   * **`claim` runs `queue:` and refuses a second one, which is the reduction 0061
+   * §2 promised there settled the other way** (`#236`, `#269`).
    *
-   * 0061 §2 gives the ordering to the workflow and the *reduction* to the step:
-   * at `prepared` a list means every action must pass, and at `claim` it means
-   * the first plugin that yields a work item wins. Nothing reads `queue:`
-   * yet — `whyNoKindAt` refuses it at all ten steps — so the one
-   * moment a person meets it is the refusal, and a reader who has just read
-   * `prepared`'s row will otherwise carry that step's reduction across and
-   * write the list in an order that means the opposite of what they meant.
+   * That paragraph gave the ordering to the workflow and the *reduction* to the
+   * step, and said `claim`'s was *the first plugin that yields a work item wins*.
+   * Nothing read `queue:` then, so the promise lived in the refusal. What `claim`
+   * runs now is `runActionPipeline`, which stops at the first action that did
+   * **not** pass — so two entries are *both must agree*, never *first wins*, and a
+   * list whose order reads as a priority it does not have is `#61`'s shape through
+   * a duplicate. `StepMap` refuses the second by name instead.
    *
-   * **0061 §§2–3 used `queue:` and `assignee:` as the worked example, and 0063
-   * §3 took the example rather than the rule** (`#244`): `assignee` is one of
-   * `queue:`'s four fields now, so what a `claim` list reduces over is several
-   * `queue:` entries, and the one refusal names both halves of what the queue
-   * does today.
-   *
-   * Pinned here rather than left as prose because it is the half that is *not*
-   * a fact about today's code: the two file references below
-   * would go red the day `discover.ts` moved, and this sentence would not.
+   * Pinned here rather than left as prose because the refusal is the only place a
+   * person meets the rule, and the one it replaced promised the opposite.
    */
-  it("says how `claim` reduces its plugin, and where it runs today", () => {
-    const why = whyNoKindAt("claim", "queue");
-    expect(why, "`queue:` is no longer refused at claim").not.toBeNull();
-    expect(why).toContain("the first plugin that yields a work item");
-    expect(why).toContain("rather than requiring every one to pass");
-    expect(why).toContain("`prepared`");
-    expect(why).toContain("reordering the list is how a person changes priority");
-    // And the same sentence at every other step, because the refusal is a
-    // fact about the plugin and not about the step it was written at.
-    for (const step of STEPS) expect(whyNoKindAt(step, "queue")).toBe(why);
+  it("runs a `queue:` at `claim`, and refuses a second one by name", () => {
+    expect(whyNoKindAt("claim", "queue")).toBeNull();
+    expect(runsAt("claim", "queue")).toBe(true);
 
-    expect(why).toContain("packages/conductor/src/discover.ts");
-    // `assignee`'s half, which used to be a refusal of its own.
-    expect(why).toContain("assigneeSkip");
-    expect(why).toContain("packages/conductor/src/claim.ts");
+    const twice = StepMap.safeParse({
+      claim: [ACTION.queue, { ...ACTION.queue, name: "and again" }],
+    });
+    expect(twice.success).toBe(false);
+    const why = twice.error?.issues.map((issue) => issue.message).join("\n") ?? "";
+    expect(why).toContain('"and again"');
+    expect(why).toContain("already takes a ticket at entry 0");
+    expect(why).toContain("a step takes one or none");
+    // The pipeline's rule said out loud, because it is what makes the order
+    // meaningless rather than merely redundant.
+    expect(why).toContain("stops at the first action that did not pass");
+
+    // And one is accepted, so the refusal is about the duplicate and not the kind.
+    expect(StepMap.safeParse({ claim: [ACTION.queue] }).success).toBe(true);
   });
 
   /**
@@ -709,9 +710,10 @@ describe("every step × kind cell runs or refuses", () => {
     // the three effects out, and that is the more useful half there.
     expect(whyNoKindAt("end", "judge")).toContain("what picks");
     // And a step nobody implements answers as the step, exactly as it does for
-    // `close:` there: *no plugin implements `claim`* is the first thing wrong,
-    // and a judge is not what would fix it.
-    for (const step of ["claim", "design", "implement"] as const) {
+    // `close:` there: *no plugin implements `design`* is the first thing wrong,
+    // and a judge is not what would fix it. It was three until `#269` gave
+    // `claim` a `queue:`, which is the branch shrinking as the keys open.
+    for (const step of ["design", "implement"] as const) {
       expect(whyNoKindAt(step, "judge"), step).toContain(`no plugin implements \`${step}\``);
     }
   });
