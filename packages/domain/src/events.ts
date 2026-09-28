@@ -819,6 +819,28 @@ export const StepFailed = z.object({
   ...stepBase,
   evidence: z.string(),
   findings: z.array(Finding),
+  /**
+   * **The action's answer could not be read at all** — absent on every failure
+   * where it could, which is every failure written before this existed (`#279`).
+   *
+   * *Could not read it* and *read it, it was empty* are two outcomes and the log
+   * carried one shape for both: `#269`'s third review answered four findings one
+   * closing brace short of valid JSON, `parseFindings` refused it, and the event
+   * said `findings: []` — which is also what a reviewer with nothing to say
+   * writes. `proposed` then held the pass as *carries nothing an agent could be
+   * held to*, a sentence that is correct about what it was handed and wrong about
+   * what happened, and $8.97 of review went in the bin with no round bought.
+   *
+   * Present and `true` only, for `WorkItemUnblocked.withdrawn`'s reason: a
+   * boolean on every row would need a third value for the failures that have no
+   * answer to parse — a red `run:` command does not — and *absent* already says
+   * that without a schema step over a log full of rows this is not a claim about.
+   *
+   * It is not `evidence`. That sentence has said *the reviewer's answer was not
+   * readable as findings* all along, and a sentence is not something a fold or a
+   * router reads (0031 §1's rule, at one more seam).
+   */
+  unreadable: z.literal(true).optional(),
 });
 
 /**

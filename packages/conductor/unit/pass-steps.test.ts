@@ -100,6 +100,24 @@ const REVIEW_REFUSED: ActionResult = {
   findings: [BLOCKER],
 };
 
+/**
+ * **What a reviewer whose answer nobody could read looks like** (`#279`) — and the
+ * point is how little of it differs from a review that found nothing.
+ *
+ * `createAgentAction`'s own unreadable branch: `failed`, no findings, and the
+ * sentence. `#269` attempt 3 said four things and ended one closing brace short of
+ * valid JSON, and `unreadable` is the whole of what tells this arrival from a
+ * reviewer that read the diff and had nothing to say. Without it the router
+ * answered the only thing it could — *no finding with a failure scenario* — and
+ * $8.97 of review was discarded under a sentence that reads like a normal outcome.
+ */
+const REVIEW_UNREADABLE: ActionResult = {
+  verdict: "failed",
+  evidence: "the reviewer's answer was not readable as findings:\n{\"findings\":[{\"file\"",
+  findings: [],
+  unreadable: true,
+};
+
 const canned = (name: string, result: ActionResult): Action => ({
   name,
   kind: "run",
@@ -1337,6 +1355,38 @@ describe("proposed is the only step that routes, and one judge answers each when
     expect(result.routes[0]).toMatchObject({ to: "waiting" });
     expect(result.routes[0]?.why).toContain("nothing an agent could be held to");
     expect(result.rested).toBe("waiting");
+  });
+
+  /**
+   * **And an answer nobody could read is not one of those 24** (`#279`).
+   *
+   * `#269`'s third review answered a `major` with a failure scenario and three
+   * minors, stopped one closing brace short of valid JSON, and arrived here as
+   * `findings: []` — the same shape a reviewer with nothing to say produces. So the
+   * pass parked as *carries nothing an agent could be held to*, which is correct
+   * about what it was handed and wrong about what happened, and three other parks
+   * that night said something else entirely: nobody comparing them would have seen
+   * that one was a dropped answer rather than a thin review.
+   *
+   * **Same destination, different sentence, and still no round.** An answer nobody
+   * can read is not a criterion either (0038 §2), so no judge is paid to look at it
+   * and `implement` is not bought — `rounds: 3` here is what makes that an
+   * assertion rather than an accident of the ceilings.
+   */
+  it("reports an answer it could not read as unreadable, and not as an opinion", async () => {
+    const { result, asked } = await pass({
+      ...checked(PASSED, REVIEW_UNREADABLE),
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(asked.judge).toEqual([]);
+    expect(result.routes[0]).toMatchObject({ from: "proposed", to: "waiting", ceiling: null });
+    expect(result.routes[0]?.why).toContain("`review`'s findings could not be read at all");
+    // The sentence the old one gave, and the whole of what `#279` is: a person
+    // reading this must not be told the reviewer had no opinion.
+    expect(result.routes[0]?.why).not.toContain("nothing an agent could be held to");
+    expect(result.rested).toBe("waiting");
+    expect(asked.land).toEqual([]);
   });
 
   /**

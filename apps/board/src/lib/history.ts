@@ -247,7 +247,21 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   StepRequested: stepAt,
   StepStarted: stepAt,
   StepPassed: stepAt,
+  /**
+   * **And *the answer could not be read* rather than the silence a zero is**
+   * (`#279`).
+   *
+   * `0 findings` renders as the bare step, which is the same row a reviewer that
+   * read the diff and had nothing to refuse it on writes. `#269`'s third review
+   * said four things and ended one closing brace short of valid JSON, and this
+   * row was the only place on the page it appeared at all — as nothing.
+   *
+   * The count is not printed beside it, because there is none to print: an answer
+   * that did not parse carries no findings by construction, and a `0` next to the
+   * sentence would invite the reading that the reviewer found nothing.
+   */
   StepFailed: (d) => {
+    if (d["unreadable"] === true) return `${stepAt(d)} — the answer could not be read`;
     const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
     return n > 0 ? `${stepAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : stepAt(d);
   },

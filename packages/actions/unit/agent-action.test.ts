@@ -16,6 +16,7 @@ import {
   verdictFor,
 } from "../src/agent-action.ts";
 import { type ActionEvent, runActionPipeline } from "../src/action.ts";
+import { REVIEW_THAT_DID_NOT_PARSE } from "../test/fixtures/review-269-attempt-3.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
 
@@ -407,6 +408,36 @@ describe("reading the reviewer's answer", () => {
     expect(parsed).toBe(false);
     expect(findings).toEqual([]);
   });
+
+  /**
+   * **`#269` attempt 3's own answer, and what it cost** (`#279`).
+   *
+   * Four findings — a `major` with a failure scenario and three minors — ending one
+   * closing brace short of valid JSON, with `stop_reason: end_turn`: the model
+   * believed it had finished. 61 turns, $8.97, and the pass then parked as though
+   * the reviewer had held an opinion not worth a round, because `parsed` stopped at
+   * this function.
+   *
+   * The assertion is `false` and not a repair. Reading four findings out of an
+   * object that does not close would mean guessing where the writer meant to stop,
+   * and the case above is the rule: no position in a truncated object parses. What
+   * `#279` changed is that *this* answer and `{"findings":[]}` no longer reach the
+   * router as the same thing.
+   */
+  it("refuses the answer that was dropped whole, which is a truncation and not a fence", () => {
+    // Not a fenced block and not prose around a brace: there is no fence to strip,
+    // an inner `{` is followed by the rest of the array, and the outer one never
+    // closes. So every candidate fails and the answer is refused.
+    expect(REVIEW_THAT_DID_NOT_PARSE).not.toContain("```");
+    expect(REVIEW_THAT_DID_NOT_PARSE.startsWith('{"findings":[')).toBe(true);
+    expect(REVIEW_THAT_DID_NOT_PARSE.endsWith("}]")).toBe(true);
+
+    expect(parseFindings(REVIEW_THAT_DID_NOT_PARSE)).toEqual({ findings: [], parsed: false });
+
+    // And the fixture is only worth keeping while that is true of it: one more
+    // brace and it parses, which is the thing a tidy-up would quietly do.
+    expect(parseFindings(`${REVIEW_THAT_DID_NOT_PARSE}}`)).toMatchObject({ parsed: true });
+  });
 });
 
 describe("the verdict", () => {
@@ -578,6 +609,56 @@ describe("the action", () => {
     // system exists to remove.
     expect(result.verdict).toBe("failed");
     expect(result.evidence).toContain("not readable");
+    // And in a word as well as in the sentence (`#279`): `carriesACriterion` one
+    // layer up reads fields, not prose, and for four days the only difference
+    // between this and a clean review lived in the string above.
+    expect(result.unreadable).toBe(true);
+  });
+
+  /**
+   * **The other half of `#279`, which is `#262` not re-opening.**
+   *
+   * *Could not read it* and *read it, it was empty* are two outcomes, and a fix
+   * that made them one would give a clean review the unreadable route — which is
+   * the bug `#262` was filed for, pointed the other way. So the flag is absent on
+   * every answer that parsed, whatever it said.
+   */
+  it("leaves the flag off an answer it could read, however little it said", async () => {
+    const empty = await actionWith(outcome({ text: '{"findings":[]}' })).run(context);
+    expect(empty.verdict).toBe("passed");
+    expect(empty.unreadable).toBeUndefined();
+
+    const refused = await actionWith(
+      outcome({ text: JSON.stringify({ findings: [finding()] }) }),
+    ).run(context);
+    expect(refused.verdict).toBe("failed");
+    expect(refused.unreadable).toBeUndefined();
+  });
+
+  it("says on the log that the answer could not be read, and says nothing where it could", async () => {
+    const eventsFor = async (text: string): Promise<ActionEvent[]> => {
+      const events: ActionEvent[] = [];
+      await runActionPipeline({
+        step: "review",
+        actions: [actionWith(outcome({ text }))],
+        context,
+        emit: (e) => void events.push(e),
+      });
+      return events;
+    };
+
+    const dropped = (await eventsFor(REVIEW_THAT_DID_NOT_PARSE)).at(-1);
+    if (dropped?.type !== "StepFailed") throw new Error("the reviewer's answer was read after all");
+    expect(dropped.data).toHaveProperty("unreadable", true);
+    // The schema's, not just the object's: an optional `true` is what the log
+    // holds, so a row written with it has to validate.
+    expect(parsePayload("StepFailed", dropped.data)).toEqual(dropped.data);
+
+    // **Absent rather than `false`** — the failures with no answer to parse are
+    // most of them, and *absent* is what says so without a step over the log.
+    const refused = (await eventsFor(JSON.stringify({ findings: [finding()] }))).at(-1);
+    if (refused?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
+    expect(refused.data).not.toHaveProperty("unreadable");
   });
 
   /**

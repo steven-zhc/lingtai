@@ -488,12 +488,28 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
 
       const { findings, parsed } = parseFindings(outcome.text);
       if (!parsed) {
-        // A reviewer whose answer cannot be read has not reviewed anything. The
-        // alternative is a green action for a diff nobody assessed.
+        /**
+         * A reviewer whose answer cannot be read has not reviewed anything. The
+         * alternative is a green action for a diff nobody assessed.
+         *
+         * **`unreadable` is the same fact in a word rather than in the sentence**
+         * (`#279`). Both of the ways this returns `findings: []` — this branch and
+         * a review that read the diff and had nothing to say — reached `proposed`
+         * as the same shape, and `carriesACriterion` answered the only thing it
+         * could: *nothing an agent could be held to*. `#269`'s third review said
+         * four things, one of them a `major` with a failure scenario, and stopped
+         * one closing brace short of valid JSON; the pass parked as though the
+         * reviewer had held an opinion, and 61 turns and $8.97 went with it.
+         *
+         * It is still a `failed`, and it still buys nothing: an answer nobody can
+         * read is not a criterion (0038 §2). What the flag changes is which
+         * sentence a person is handed and what the log can be asked.
+         */
         return {
           verdict: "failed",
           evidence: `the reviewer's answer was not readable as findings:\n${(outcome.text ?? "").slice(0, 2_000)}`,
           findings: [],
+          unreadable: true,
         };
       }
 

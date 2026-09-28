@@ -179,6 +179,27 @@ describe("a line of history", () => {
     expect(summarise(build)).not.toBe(summarise(lint));
   });
 
+  /**
+   * **A dropped answer and a clean review used to be the same row** (`#279`).
+   *
+   * `StepFailed` with `findings: []` renders as the bare step, which is what a
+   * reviewer that read the diff and had nothing to refuse it on writes. `#269`'s
+   * third review said four things, ended one closing brace short of valid JSON, and
+   * had this row as its only appearance on the page.
+   */
+  it("says the answer could not be read, where a zero would have said nothing", () => {
+    const step = { step: "review", action: "cold reviewer", runId: "run-1", onSha: "abc" };
+    const dropped = summarise(e("StepFailed", { ...step, evidence: "…", findings: [], unreadable: true }));
+
+    expect(dropped).toBe("review · cold reviewer — the answer could not be read");
+    // The row it was, and still is for every failure whose answer was read: a
+    // refusal with no findings is silent and a refusal with them counts them.
+    expect(summarise(e("StepFailed", { ...step, evidence: "exit 1", findings: [] }))).toBe(
+      "review · cold reviewer",
+    );
+    expect(dropped).not.toBe(summarise(e("StepFailed", { ...step, evidence: "exit 1", findings: [] })));
+  });
+
   it("renders the plan StepsResolved carries, including the empty points", () => {
     const said = summarise(
       e("StepsResolved", {

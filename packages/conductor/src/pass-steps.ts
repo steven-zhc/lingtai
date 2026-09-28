@@ -409,7 +409,19 @@ export interface Judging {
  * the body computes `offering` from the `Offer` it was handed, so a call site
  * that passed its own would be a set the answer was not held to.
  */
-type Arrival = Omit<Judging, "offering">;
+type Arrival = Omit<Judging, "offering"> & {
+  /**
+   * **That the step's answer could not be read at all**, which is not a thin
+   * judgement and must not read as one (`#279`).
+   *
+   * `ActionResult.unreadable` one layer down, and it stops here: a judge is never
+   * handed it, because an arrival carrying it is answered before any judge is
+   * asked. So it is on `Arrival` and not on `Judging` — the brief is the three
+   * fields and the set, and `pass-steps.test.ts`'s *hands a judge the findings,
+   * the evidence and the set, and no ceiling* is what keeps it that way.
+   */
+  readonly unreadable: boolean;
+};
 
 /**
  * What the recipe's `judge:` for that direction answered, or that it declared
@@ -721,6 +733,13 @@ const MECHANICALLY: Record<BuiltInJudge, { readonly wants: Destination; readonly
  * `carriesACriterion`'s reason there: a `findings` arrival that came back with
  * none is an absent criterion rather than a command with no output, which is the
  * more useful of the two truths.
+ *
+ * **It is only asked of an arrival that could be read**, and that is not a detail
+ * of the caller (`#279`). *No finding with a failure scenario* is a claim about
+ * what the reviewer said, and an answer that did not parse supports no claim about
+ * what the reviewer said at all — so `judged` answers `Arrival.unreadable` first
+ * and this function never sees one. Moving that test in here would put two
+ * different facts behind one `false`, which is the shape the bug had.
  */
 function carriesACriterion(on: Arrival): boolean {
   return on.when === "findings"
@@ -747,7 +766,7 @@ function carriesACriterion(on: Arrival): boolean {
  * that refused on a blocker and also filed two minors has said three things about
  * one diff, and the agent that is sent back should be told all three.
  */
-function reviewRefused(reached: readonly StepReached[]): Pick<Judging, "findings" | "evidence"> | null {
+function reviewRefused(reached: readonly StepReached[]): Omit<Arrival, "when"> | null {
   const reviewed = reached.findLast((visit) => visit.step === "review");
   if (reviewed === undefined) return null;
   // By verdict rather than by position, which is `evidenceFrom`'s reason: the
@@ -755,11 +774,22 @@ function reviewRefused(reached: readonly StepReached[]): Pick<Judging, "findings
   // is the only result with that verdict and is also the last.
   const refused = reviewed.results.filter((result) => result.verdict === "failed").at(-1);
   if (refused === undefined) return null;
-  return { findings: reviewed.results.flatMap((result) => result.findings), evidence: refused.evidence };
+  return {
+    findings: reviewed.results.flatMap((result) => result.findings),
+    evidence: refused.evidence,
+    // **The reviewer's own answer, and the difference `findings: []` cannot
+    // carry** (`#279`): the action that refused says whether its answer parsed,
+    // and it is read off the same result the evidence is, so *what refused* and
+    // *whether it could be read* cannot come from two different reviewers.
+    unreadable: refused.unreadable === true,
+  };
 }
 
-/** What the step that did not pass said, as the judge is shown it. */
-function whatArrived(arriving: StepReached): Pick<Judging, "findings" | "evidence"> {
+/**
+ * What the step that did not pass said, as the judge is shown it — and one thing
+ * it is not shown: `unreadable` is answered before any judge is asked (`#279`).
+ */
+function whatArrived(arriving: StepReached): Omit<Arrival, "when"> {
   const ending = arriving.ending;
   return {
     findings: arriving.results.flatMap((result) => result.findings),
@@ -767,6 +797,12 @@ function whatArrived(arriving: StepReached): Pick<Judging, "findings" | "evidenc
     // only two the loop routes — and it is the words a person reads beside the
     // judge's (0043).
     evidence: "detail" in ending ? ending.detail : "",
+    // `reviewRefused`'s rule at the other door: by verdict, off the action that
+    // stopped the pipeline. Only an `agent:` action has an answer to parse, and
+    // `agentPlugin.at` puts one at `merge` as well as at `review`, so the routing
+    // arrivals are asked the same question the way through is (`#279`).
+    unreadable:
+      arriving.results.filter((result) => result.verdict === "failed").at(-1)?.unreadable === true,
   };
 }
 
@@ -948,8 +984,13 @@ export function bodiesFor(ports: PassPorts): StepBodies {
   /**
    * **One arrival at `proposed`, answered** — and the only place a round is bought.
    *
-   * Four answers in order, and the order is what makes the cheap ones cheap:
+   * Five answers in order, and the order is what makes the cheap ones cheap:
    *
+   * 0. **nothing was read** — `Arrival.unreadable`, and a person. Asked before
+   *    everything else because it is what makes the next answer honest: an answer
+   *    nobody could parse arrives as `findings: []`, which is also what a reviewer
+   *    with nothing to say writes, and for four days the two were one sentence
+   *    (`#279`). It buys no round either;
    * 1. **nothing to hold an agent to** — `carriesACriterion`, and a person. Asked
    *    before any judge, because a refusal with no criterion buys nothing at either
    *    extent and paying a model to discover that is paying twice;
@@ -979,6 +1020,33 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     offer: Offer,
     about: string,
   ): Promise<StepRouted | StepNeverRan> => {
+    /**
+     * **Nothing was read, which is not the same as nothing being said** (`#279`).
+     *
+     * Asked before `carriesACriterion` because it is the reason that function
+     * would otherwise be wrong: an answer nobody could parse reaches it as
+     * `findings: []`, and the only sentence it has for that is *the reviewer held
+     * no opinion worth a round*. `#269`'s third review answered a `major` with a
+     * failure scenario and three minors, ended one closing brace short of valid
+     * JSON, and parked the pass under that sentence — 61 turns and $8.97, no round
+     * bought, and four findings that then existed only in a run log which is
+     * deleted when the item lands.
+     *
+     * **It goes to the same place and for a different reason.** An answer nobody
+     * can read is not a criterion either, so it buys no round (0038 §2) and no
+     * judge is paid to look at it. What is different is what the card and the log
+     * then say, which is the whole of what was lost: *the machinery dropped it* is
+     * a thing to re-run, and *the reviewer had nothing* is a thing to merge.
+     */
+    if (arrival.unreadable) {
+      return toAPerson(
+        `${about} could not be read at all — the answer did not parse as findings, so whatever ` +
+          "the reviewer said is in that attempt's run log and nowhere a program can reach it. " +
+          "That is the machinery losing a judgement rather than a reviewer declining to make " +
+          "one, and it buys no round either: an answer nobody can read is not a criterion " +
+          "(0038 §2). The pass is held for a person, who has the transcript",
+      );
+    }
     if (!carriesACriterion(arrival)) {
       return toAPerson(
         `${about} carries nothing an agent could be held to — ` +
@@ -988,7 +1056,12 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     }
     // The affordable half and never the `Offer` — a judge answers *which of
     // these*, and what the ceilings took away is not its business (`Judging`).
-    const on: Judging = { ...arrival, offering: offer.affordable };
+    //
+    // `unreadable` is dropped rather than spread: it is the pass's own fact about
+    // whether there was an answer, it has already been answered above, and a
+    // judge's brief is the three fields and the set and nothing else.
+    const { unreadable: _read, ...judging } = arrival;
+    const on: Judging = { ...judging, offering: offer.affordable };
     const answer = await ports.judge(on);
     // Before the answer is read as one, because a judge that never started did
     // not answer: 0031 §3, at the third depth the same wall is met at.

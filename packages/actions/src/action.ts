@@ -126,6 +126,27 @@ export interface ActionResult {
    * this is the token a judge reads, and 0058 §3c asks for both.
    */
   because?: string;
+  /**
+   * **This action's answer could not be read at all** — absent on every kind that
+   * has no answer to read, and on an `agent` whose answer parsed (`#279`).
+   *
+   * One kind produces it, the `agent` kind, and it is `parseFindings`'s own
+   * `parsed` flag arriving where the decision is made. *Could not read it* and
+   * *read it, it was empty* both left this interface as `findings: []`, so
+   * `carriesACriterion` one layer up said *nothing an agent could be held to*
+   * about an answer that had four findings in it and was one closing brace short
+   * of valid JSON (`#269` attempt 3, $8.97). The sentence was true of what it was
+   * handed and false about what happened, which is why it read as ordinary.
+   *
+   * Like `because`, it is a token rather than the prose: `evidence` has said *the
+   * reviewer's answer was not readable as findings* since the branch was written,
+   * and a sentence is not something a router reads.
+   *
+   * **It buys nothing.** An unreadable answer is not a criterion (0038 §2), so
+   * what this changes is which sentence a person is shown and what the log says —
+   * never whether a round is spent.
+   */
+  unreadable?: true;
 }
 
 export interface ActionContext {
@@ -250,6 +271,8 @@ export interface PipelineResult {
     head?: string;
     /** Its own word for why it said no, where it has one. `ActionResult.because`. */
     because?: string;
+    /** That its answer could not be read, where it had one. `ActionResult.unreadable`. */
+    unreadable?: true;
   }[];
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[];
@@ -353,6 +376,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // same `?? "action-refused"` fallback: an explicit `undefined` would be a
       // kind claiming to have a word for its refusal and then not having one.
       ...(result.because === undefined ? {} : { because: result.because }),
+      // Spread for `head`'s reason again, and the event below carries it the same
+      // way: *absent* is what says an action had no answer to read, and an
+      // explicit `undefined` would read the same to a program and differently to
+      // a person (`#279`).
+      ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
     });
 
     if (result.verdict === "passed") {
@@ -423,7 +451,14 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
 
     await emit({
       type: "StepFailed",
-      data: { ...base, evidence: result.evidence, findings: result.findings },
+      data: {
+        ...base,
+        evidence: result.evidence,
+        findings: result.findings,
+        // The one refusal that is not about the diff's contents but about whether
+        // the answer could be read at all (`#279`). Absent where it could.
+        ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+      },
     });
     return {
       ok: false,
