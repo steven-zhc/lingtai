@@ -1575,15 +1575,22 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   }
   if (result.failedAt !== null) {
     const said = {
-      // *Something the recipe declared refused*, which is all the pipeline
-      // knows. The log spells this `verify-failed` today — `RefusalReason` in
-      // `@lingtai/domain`, and 0058 §3c's own example of a machine-readable
-      // reason — and that spelling is the retired vocabulary `#232`'s allowlist
-      // is down to nothing on, with `#233` renaming the value itself. Writing
-      // it here would put a fifth word back on a list that may only shrink, so
-      // this says the same thing in the vocabulary that replaced it: a step is a
-      // step and an action is an action.
-      because: "action-refused",
+      // **The action's own word where it has one, and the pipeline's where it
+      // does not** (`#270`).
+      //
+      // *Something the recipe declared refused* is all the pipeline knows, and
+      // `action-refused` is that said in the vocabulary that replaced `gate`: a
+      // step is a step and an action is an action. Inventing `verify-failed`
+      // here would put a word back on a list that may only shrink — `#232`'s
+      // allowlist is down to nothing and `#233` renamed the value.
+      //
+      // **`becauseFrom` is not that.** The merge lane's `conflict` and
+      // `verify-failed` are `RefusalReason`s the lane itself produced and the log
+      // already carries, and `directionOf` routes on them — so since the lane is
+      // a `merge:` action they arrive here on the result rather than being
+      // re-derived from a sentence (`ActionResult.because`). Every other kind
+      // says nothing and gets the pipeline's word.
+      because: becauseFrom(result) ?? "action-refused",
       at: result.failedAt,
       detail: evidenceFrom(result, "failed"),
     } as const;
@@ -1645,6 +1652,24 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
 function headFrom(result: PipelineResult): { head?: string } {
   const moved = result.results.filter((each) => each.head !== undefined).at(-1);
   return moved?.head === undefined ? {} : { head: moved.head };
+}
+
+/**
+ * **The failing action's own machine-readable reason**, or null where it had none
+ * (`#270`).
+ *
+ * `evidenceFrom`'s sibling and asked the same way — by verdict rather than by
+ * name, for the reason written there — and read on the `failed` branch alone: a
+ * `needs-approval` carries a question rather than a refusal, and the three
+ * absences carry their own fields.
+ *
+ * One kind produces it, the `merge:` action at `merge`, which is the same shape
+ * `head` has at `admit`: the one action whose answer the caller cannot work out
+ * for itself reports it, and the caller carries it rather than parsing it back
+ * out of prose (`ActionResult.because`).
+ */
+function becauseFrom(result: PipelineResult): string | null {
+  return result.results.filter((r) => r.verdict === "failed").at(-1)?.because ?? null;
 }
 
 /**

@@ -14,12 +14,15 @@
  * §1).
  */
 import {
+  createMergeAction,
   createWorktreeAction,
   type Action,
   type ActionContext,
   type ActionFinding,
   type ActionResult,
   type CutAnswer,
+  type LandAnswer,
+  type MergeStrategy,
 } from "@lingtai/actions";
 import type { Envelope, PayloadOf, ToAppend } from "@lingtai/domain";
 import type { Worktree } from "@lingtai/repo";
@@ -42,8 +45,6 @@ import {
   type Drafted,
   type Judged,
   type Judging,
-  type Landed,
-  type Landing,
   type PassPorts,
   type SentBack,
   type Taken,
@@ -125,7 +126,16 @@ interface Asks {
   dispatch: Brief[];
   /** Every brief a judge was handed, which is what *spends an agent* looks like. */
   judge: Judging[];
-  land: Landing[];
+  /**
+   * What each `merge:` action was asked to land — its `strategy` and the `onSha`
+   * it was reached on, which is the whole of what the lane is handed since
+   * `#270`.
+   *
+   * Beside the ports rather than on them, for `cut`'s reason: `merge`'s work is a
+   * plugin's now, so what a test reads back is the action's argument and not a
+   * port call.
+   */
+  land: { strategy: MergeStrategy; onSha: string }[];
   read: string[];
   record: { workItemId: string; at: number; plan: readonly ToAppend[] }[];
 }
@@ -138,7 +148,8 @@ interface Answers {
   dispatch?: Worked | ((brief: Brief) => Worked);
   /** Nothing declared, by default: the built-ins and the person are what answer. */
   judge?: Judged | ((on: Judging) => Judged);
-  land?: Landed | ((on: Landing) => Landed);
+  /** What the lane answers. Merged at `MERGED`, by default. */
+  land?: LandAnswer | (() => LandAnswer);
   /** The stream `end` reads. Empty is an item with nothing resolved on it. */
   stream?: readonly Envelope[];
   /** Thrown by `readEnd`, so `end`'s own failure can be reached. */
@@ -177,10 +188,6 @@ function portsAnswering(answers: Answers = {}): { ports: PassPorts; asked: Asks 
       asked.judge.push(on);
       return of(answers.judge, { noJudge: true }, on);
     },
-    land: async (on) => {
-      asked.land.push(on);
-      return of(answers.land, { merged: MERGED }, on);
-    },
     readEnd: async (workItemId) => {
       asked.read.push(workItemId);
       if (answers.readThrows) throw answers.readThrows;
@@ -205,14 +212,15 @@ async function pass(
 ): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
   const { ports, asked } = portsAnswering(options.answers);
   /**
-   * **`admit`'s default, as `conduct.ts`'s `defaultsAt` supplies it** (0065 §3).
+   * **`admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt` supplies
+   * them** (0065 §3).
    *
-   * The body is empty since `#268`, so a pass whose recipe declares nothing at
-   * `admit` cuts nothing unless the caller substitutes — and *the caller
-   * substitutes* is the decision, not a detail of the conductor. Mirrored here
-   * rather than imported, because importing `conduct.ts` would bring a GitHub
-   * client and a store into a file whose whole claim is that nothing leaves the
-   * system.
+   * Both bodies are empty — `admit`'s since `#268` and `merge`'s since `#270` —
+   * so a pass whose recipe declares nothing there cuts nothing and lands nothing
+   * unless the caller substitutes, and *the caller substitutes* is the decision
+   * rather than a detail of the conductor. Mirrored here rather than imported,
+   * because importing `conduct.ts` would bring a GitHub client and a store into a
+   * file whose whole claim is that nothing leaves the system.
    */
   const cutting = (): Action =>
     createWorktreeAction(
@@ -221,6 +229,18 @@ async function pass(
         cut: async (spec) => {
           asked.cut.push(spec);
           return options.answers?.cut ?? { head: CUT_AT, where: TREE.path };
+        },
+      },
+    );
+  const landing = (): Action =>
+    createMergeAction(
+      { name: "land the branch", strategy: "merge-commit" },
+      {
+        land: async (spec) => {
+          asked.land.push(spec);
+          const answer = options.answers?.land;
+          if (answer === undefined) return { merged: MERGED };
+          return typeof answer === "function" ? answer() : answer;
         },
       },
     );
@@ -233,7 +253,8 @@ async function pass(
     actionsAt: (step, actions) => {
       if (options.actions?.[step] !== undefined) return options.actions[step];
       if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
-      return step === "admit" ? [cutting()] : [];
+      if (step === "admit") return [cutting()];
+      return step === "merge" ? [landing()] : [];
     },
   });
   return { result, asked, ports };
@@ -1342,13 +1363,30 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
   it("lands, and is handed the head the steps gave their verdicts about", async () => {
     const { result, asked } = await pass();
 
-    // Two facts and not three: the lane was handed a worktree it never read
-    // until `#268` took it off `Landing`.
-    expect(asked.land).toEqual([
-      { claimed: ITEM, context: expect.objectContaining({ onSha: COMMITTED }) },
-    ]);
+    // Two facts and no more: the strategy the block declares, and the commit the
+    // steps gave their verdicts about — no base, because the base is one value
+    // that flows and `land` already has it (0061 §4), and no worktree, which
+    // `#268` took off when the cut became a plugin's.
+    expect(asked.land).toEqual([{ strategy: "merge-commit", onSha: COMMITTED }]);
     expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({ ending: "passed" });
     expect(outcomeOf(result)).toBe("landed");
+  });
+
+  /**
+   * **The body is nothing beyond its plugins, and `merge: []` is what that costs
+   * being explicit about** (0065 §2–3, `#270`).
+   *
+   * A recipe that declares nothing there is the case above: the caller substitutes
+   * `defaultsAt`'s lane and the change lands. A caller that substitutes *nothing*
+   * is this one, and the step passes having landed nothing — which is the
+   * substitution rule doing what it says rather than a hole, and is why
+   * `conduct.ts` asks `landedAt()` before it writes `WorkItemLanded`.
+   */
+  it("lands nothing where nothing at all runs at the step", async () => {
+    const { result, asked } = await pass({ actions: { merge: [] } });
+
+    expect(asked.land).toEqual([]);
+    expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({ ending: "passed" });
   });
 
   /**
@@ -1363,7 +1401,7 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
     const { result, asked } = await pass({
       answers: {
         land: () => {
-          const answer: Landed = refuses
+          const answer: LandAnswer = refuses
             ? { notMerged: { reason: "verify-failed", detail: "pnpm test failed on the new base" } }
             : { merged: MERGED };
           refuses = false;
@@ -1373,10 +1411,20 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
       ceilings: { rounds: 1, restartsLeft: 0 },
     });
 
+    /**
+     * **The reason survived becoming an action's, which is the whole of `#270`.**
+     *
+     * The pipeline knows only that *something the recipe declared refused* and
+     * `endingOf` spells that `action-refused`; a `merge:` action puts the lane's
+     * own word on `ActionResult.because` and `becauseFrom` carries it here, so the
+     * direction is still `verify-failed` and the round is still bought. `at` is
+     * the action's name now rather than `null`, which is 0058 §3c's *what refused*
+     * gaining an answer it did not have.
+     */
     expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({
       ending: "refused",
       because: "verify-failed",
-      at: null,
+      at: "land the branch",
       detail: "pnpm test failed on the new base",
     });
     expect(asked.judge[0]).toMatchObject({
@@ -1403,7 +1451,7 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
     const { result } = await pass({
       answers: {
         land: () => {
-          const answer: Landed = refuses
+          const answer: LandAnswer = refuses
             ? { notMerged: { reason: "conflict", detail: "both changed doc/design/the-pipeline.md" } }
             : { merged: MERGED };
           refuses = false;

@@ -13,18 +13,23 @@
  * the old system approval was a label, and a label survives any amount of
  * rewriting.
  *
- * Five kinds of action produce a verdict — `run`, `agent`, `watch`, `human`,
- * `worktree` — and all five are implemented. `run` and `human` need nothing from
- * the caller; `agent` needs a reviewer, `watch` needs the diff's file list and
- * `worktree` needs the cut, and `conduct.ts` supplies all three. A kind whose
- * dependency is missing is refused by name rather than skipped — see
- * `from-recipe.ts`. The pipeline, the events and `onSha` are the same for all
- * five.
+ * Six kinds of action produce a verdict — `run`, `agent`, `watch`, `human`,
+ * `worktree`, `merge` — and all six are implemented. `run` and `human` need
+ * nothing from the caller; `agent` needs a reviewer, `watch` needs the diff's
+ * file list, `worktree` needs the cut and `merge` needs the lane, and
+ * `conduct.ts` supplies all four. A kind whose dependency is missing is refused
+ * by name rather than skipped — see `from-recipe.ts`. The pipeline, the events
+ * and `onSha` are the same for all six.
  *
  * **`worktree` is the one that makes rather than judges**, and it is why
  * `ActionResult` carries a `head`: `admit` is where the tree is cut, so it is
  * where `onSha` gets a value at all
  * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#268`).
+ *
+ * **`merge` is the one whose *no* is not the pipeline's**, and it is why
+ * `ActionResult` carries a `because`: the lane's `conflict` and `verify-failed`
+ * are directions a judge routes on, and every other refusal is *something the
+ * recipe declared said no* (0065 §2, `#270`).
  *
  * `close` and `labels` are the other two kinds. They are effects rather than
  * verdicts, they only run at `end`, and they never reach this interface.
@@ -104,6 +109,23 @@ export interface ActionResult {
    * for this action it is the base the pass arrived carrying.
    */
   head?: string;
+  /**
+   * **Why this action said no, in its own machine-readable word** — and absent on
+   * every kind whose *no* means nothing more than *no* (0065 §2, `#270`).
+   *
+   * One action produces it — the `merge` kind, at `merge` — and it is on the
+   * result rather than derived by the caller because the caller runs no git:
+   * `conflict` and `verify-failed` are the lane's own words, they are already on
+   * the log as `RefusalReason`, and `directionOf` in
+   * `packages/conductor/src/pass.ts` routes on them. The pipeline knows only that
+   * *something the recipe declared refused* and `endingOf` spells that
+   * `action-refused`, which is right for the other five kinds and would lose the
+   * direction for this one.
+   *
+   * Never a substitute for `evidence`. That is the words a person reads (0043);
+   * this is the token a judge reads, and 0058 §3c asks for both.
+   */
+  because?: string;
 }
 
 export interface ActionContext {
@@ -162,8 +184,8 @@ export interface ActionContext {
 
 export interface Action {
   readonly name: string;
-  /** Which action shape produced it: `run`, `agent`, `watch`, `human` or `worktree`. */
-  readonly kind: "run" | "agent" | "watch" | "human" | "worktree";
+  /** Which action shape produced it: `run`, `agent`, `watch`, `human`, `worktree` or `merge`. */
+  readonly kind: "run" | "agent" | "watch" | "human" | "worktree" | "merge";
   run(context: ActionContext): Promise<ActionResult>;
 }
 
@@ -226,6 +248,8 @@ export interface PipelineResult {
     findings: ActionFinding[];
     /** Where the action left the worktree, where it moved it. `ActionResult.head`. */
     head?: string;
+    /** Its own word for why it said no, where it has one. `ActionResult.because`. */
+    because?: string;
   }[];
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[];
@@ -325,6 +349,10 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
       // same reason.
       ...(result.head === undefined ? {} : { head: result.head }),
+      // Spread for `head`'s reason, read by `becauseFrom` in `pass.ts` with the
+      // same `?? "action-refused"` fallback: an explicit `undefined` would be a
+      // kind claiming to have a word for its refusal and then not having one.
+      ...(result.because === undefined ? {} : { because: result.because }),
     });
 
     if (result.verdict === "passed") {

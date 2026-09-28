@@ -9,12 +9,15 @@
  * wires it, and `pass.test.ts`'s *nothing in the conductor imports it* is the test
  * that fails the day anything but the pass's own two files does.
  *
- * **Three of the ten are nothing beyond their plugins** — `prepared`, `build` and
- * `review` — and that is the shape of them rather than an unfinished body: their
- * work is a `run:` carrying commands and an `agent:` reading the diff, the loop
- * has run both by the time either is called, and the step's part is the outcome
- * rules. `endingOf` is where `review`'s is, because a reviewer's `failed` verdict
- * arrives before any body could see it.
+ * **Five of the ten are nothing beyond their plugins** — `prepared`, `build`,
+ * `review`, `admit` (`#268`) and `merge` (`#270`) — and that is the shape of them
+ * rather than an unfinished body: their work is a `run:` carrying commands, an
+ * `agent:` reading the diff, a `worktree:` cutting the branch and a `merge:`
+ * landing it, the loop has run each by the time the body is called, and the step's
+ * part is the outcome rules. `endingOf` is where `review`'s is, because a
+ * reviewer's `failed` verdict arrives before any body could see it — and it is
+ * also where `merge`'s reason is carried, because the lane's own word is on the
+ * action's result rather than on anything a body could still say.
  *
  * ## What a body is, and why most of them are not empty
  *
@@ -47,14 +50,16 @@
  * day a plugin claims it the body loses the call and keeps the rule — which is
  * what `admit` losing it looked like.
  *
- * **Two of the ports are not waiting on that at all**, and they are the other
- * half of the same fact: `ports.judge` and `ports.land` are not stand-ins for a
- * plugin that will exist; they are the seam that plugin is reached *through*.
- * `merge:` is still one of the four whose `at` is `{}` — `CALLED_DIRECTLY` says
- * the lane runs itself — and `judge:` is the one that stopped being (`#274`):
- * `judgePlugin.at` carries `proposed`, and what a caller hands `ports.judge` is
- * `judgeDeclaredAt(recipe.steps.proposed, when)`. The port did not change shape
- * for it, which was the claim.
+ * **`ports.land` is what that looks like once it has happened** (`#270`), and
+ * `ports.judge` is the other half of the same fact. Neither was a stand-in for a
+ * plugin that would exist; each was the seam that plugin is reached *through*.
+ * `mergePlugin.at` carries `merge` now, so the lane is a `merge:` action's dep
+ * (`MergeActionDeps.land`, handed over in `conduct.ts`'s `stepDeps`) and the port
+ * is gone from this file with the body that called it. `judge:` went the same way
+ * (`#274`) and kept its port, because a judge answers *which step is next* rather
+ * than producing a verdict: `judgePlugin.at` carries `proposed`, and what a caller
+ * hands `ports.judge` is `judgeDeclaredAt(recipe.steps.proposed, when)`. The port
+ * did not change shape for it, which was the claim.
  *
  * **Why plain promises rather than [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)'s
  * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
@@ -70,7 +75,7 @@
  * carries neither:
  *
  * ```
- * the item        claim → design, implement, merge, end   the ticket's own text
+ * the item        claim → design, implement, end          the ticket's own text
  * the design      design → implement                      and `""` is an answer
  * ```
  *
@@ -119,7 +124,7 @@
  * the ending happened, and neither does this file's failure to resolve them.
  */
 import type { ActionContext, ActionFinding } from "@lingtai/actions";
-import type { Envelope, RefusalReason, Step, ToAppend } from "@lingtai/domain";
+import type { Envelope, Step, ToAppend } from "@lingtai/domain";
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
@@ -365,49 +370,6 @@ export interface Brief {
 }
 
 /**
- * What `merge` was asked to land, and it is two of the facts `IntegrateOptions`
- * asks for under its own names.
- *
- * There is no *did the steps pass* here, and that absence is the sequence:
- * `merge` is reached only where every step before it passed, so a lane told
- * otherwise would be a lane told something the pass cannot be in a position to
- * say. `context.onSha` is `headSha` — **the commit the steps gave their verdicts
- * about**, which is what makes the merge the one the review was of.
- *
- * **There is no worktree here either, and `#268` is what took it off.** It was
- * passed and never read: `integrate` is handed the base, the branch and the head
- * sha, and it works on the mirror rather than in the tree the agent worked in. So
- * it was a third fact this file had to carry from `admit` to `merge` in order to
- * hand it to something that ignored it — and the cut being a plugin's is what
- * made that visible.
- */
-export interface Landing {
-  readonly claimed: Claimed;
-  readonly context: ActionContext;
-}
-
-/**
- * What the merge lane answered — `IntegrateResult`'s two cases, and no third.
- *
- * **`notMerged` is a report and not a verdict**, which is the whole of *`merge`
- * reports a `reason` and a `detail` and decides nothing*: over the whole log it
- * has refused 32 times, **26 `verify-failed` and 6 `conflict`**, and the common
- * failure is that somebody else's work landed and the diff stopped being true.
- * That is a fact about the world. Whether it is worth another agent or a person
- * is the judge's at `proposed`, and the lane is not asked.
- *
- * `reason` is `RefusalReason` because those are the lane's own words and they are
- * already on the log — two of them, `conflict` and `verify-failed`, are also
- * `JudgeWhen` values, and the other five are directions no judge is offered
- * (`JudgeWhen`'s own doc: they stop the lane before the diff is what is in
- * doubt).
- */
-export type Landed =
-  /** The merge commit on the base branch. Not a worktree head: nothing local moved. */
-  | { readonly merged: string }
-  | { readonly notMerged: { readonly reason: RefusalReason; readonly detail: string } };
-
-/**
  * **What a judge is asked, and it is everything except the numbers.**
  *
  * `JudgeBrief` in [`judge.ts`](judge.ts) is the same object for the same reason,
@@ -494,17 +456,20 @@ export type Judged =
   | { readonly noJudge: true };
 
 /**
- * A step's own work, as the pass asks for it — for the **seven** steps that have
- * any, in eight methods: `end` is the one step with two, because reading the
+ * A step's own work, as the pass asks for it — for the **five** steps that have
+ * any, in six methods: `end` is the one step with two, because reading the
  * item's stream and appending to it are separate calls for the reason its own
  * rows give.
  *
- * **`build` and `review` are not here, and that is the shape of them rather than
- * an omission.** Both are entirely their plugins' — a `run:` carrying the checks
- * and an `agent:` reading the diff (0061 §3) — so the loop has run them by the
- * time either body is called, and a port beside them would be the
- * reimplementation the rule below exists to prevent. `prepared` is the third of
- * the three and has been since `#259`.
+ * **Five steps are not here, and that is the shape of them rather than an
+ * omission.** Each is entirely its plugins' (0061 §3) — a `run:` carrying the
+ * install at `prepared` and the checks at `build`, an `agent:` reading the diff
+ * at `review`, a `worktree:` cutting the branch at `admit` (`#268`) and a
+ * `merge:` landing it at `merge` (`#270`) — so the loop has run them by the time
+ * any body is called, and a port beside them would be the reimplementation the
+ * rule below exists to prevent. **It was three, and the two that left were ports
+ * here**: `ports.cut` and `ports.land` went with the bodies that called them, in
+ * the diffs that opened their keys.
  *
  * Stateless by construction: everything one step makes and another needs is held
  * by `bodiesFor`, so a test fakes one method without arranging the rest and a
@@ -552,12 +517,14 @@ export interface PassPorts {
    * `judgeDeclaredAt` (`judge.ts`): take the entry whose `when:` matches, and
    * answer with the built-in it names.
    *
-   * **`worktree:` is what this row looks like once it is wired**, and it is the
-   * precedent rather than a sibling: the key opened at `admit`, the entry left
-   * `CALLED_DIRECTLY`, `ports.cut` went, and the body emptied — in one diff,
-   * because 0065 §7's *two things must not both run* is what a half-migrated step
-   * costs. The day `judgePlugin` declares `proposed`, `ports.judge` goes the same
-   * way and `#274` is the ticket.
+   * **`worktree:` and `merge:` are what a wired row looks like when its plugin
+   * produces a verdict**, and they are the contrast rather than siblings: each
+   * key opened, each entry left `CALLED_DIRECTLY`, `ports.cut` and `ports.land`
+   * went, and each body emptied — in one diff, because 0065 §7's *two things must
+   * not both run* is what a half-migrated step costs, and at `merge` it is the
+   * branch landed twice (`#268`, `#270`). This row stayed through its own
+   * opening because what it answers is not a verdict: nothing in
+   * `runActionPipeline` could carry *which step is next*.
    *
    * **Answering costs money for one of the five and must not for the other four.**
    * A live implementation returns `noJudge` for a direction the recipe declared
@@ -567,15 +534,6 @@ export interface PassPorts {
    * direction it is, because a declared judge nothing calls is `#61` again.
    */
   judge(on: Judging): Promise<Judged>;
-  /**
-   * `merge` — the merge lane, and `integrate` is what one is.
-   *
-   * Not reimplemented and not decided: the lane merges the base in, re-verifies
-   * against what landed in the meantime, merges out and pushes, and answers with
-   * the merge commit or with its own `reason` and `detail`. The step reports that
-   * answer and the judge at `proposed` decides what it costs.
-   */
-  land(on: Landing): Promise<Landed>;
   /**
    * `end` — the work item's own stream.
    *
@@ -1354,16 +1312,25 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     },
 
     /**
-     * **Reports a `reason` and a `detail`, and decides nothing.**
+     * **Reports a `reason` and a `detail`, decides nothing — and this is the
+     * fifth of the ten whose body is nothing beyond its plugins** (`#270`).
      *
-     * The lane is `ports.land` — merge the base in, re-verify against what landed
-     * in the meantime, merge out, push — and its two answers are the step's two
-     * endings. Over the whole log it has refused 32 times, **26 `verify-failed` and
-     * 6 `conflict`**: the common failure is that somebody else's work landed and
-     * the diff stopped being true, which is a fact about the world rather than a
-     * verdict about the change. So the words travel and the decision does not
-     * happen here — `proposed` is where a `conflict` is weighed and where a
-     * `verify-failed` buys the mechanical round.
+     * It called `ports.land` here until `mergePlugin` declared `merge`
+     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2). What
+     * lands now is a `merge:` action — the one a recipe declares there, or the one
+     * `conduct.ts`'s `defaultsAt` supplies where a recipe declares nothing — and
+     * the loop has run it by the time this is called, so a second `integrate`
+     * written here would be the branch landed twice that 0065 §7 is about.
+     *
+     * **The reason still travels, and now it travels on the action.** Over the
+     * whole log the lane has refused 32 times, **26 `verify-failed` and 6
+     * `conflict`**: the common failure is that somebody else's work landed and the
+     * diff stopped being true, which is a fact about the world rather than a
+     * verdict about the change. So `createMergeAction` puts the lane's own word on
+     * `ActionResult.because`, `endingOf` carries it onto this step's ending rather
+     * than writing `action-refused` over it (`becauseFrom`), and `directionOf`
+     * reads it one step later — `proposed` is where a `conflict` is weighed and
+     * where a `verify-failed` buys the mechanical round.
      *
      * **It is one of `REFUSING_STEPS` all the same**, and the refusal is what pays
      * for the edge back: `onOffer` offers `build` from here, so an agent that
@@ -1374,23 +1341,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * It reports no `head`. A merge commit is on the base branch and the worktree
      * did not move, and `LeftTheTreeAt` is a fact about the tree.
      */
-    merge: async ({ context }): Promise<StepPassed | StepRefused> => {
-      const answer = await ports.land({
-        claimed: madeBy("merge", "item", claimed),
-        context,
-      });
-      if ("merged" in answer) return { ending: "passed" };
-      return {
-        ending: "refused",
-        // The lane's own word, on the log already — and two of the five values it
-        // can be are directions a judge answers (`directionOf`).
-        because: answer.notMerged.reason,
-        // No action refused: the step's own work did, which is why `at` is null
-        // here and an action's name where `endingOf` builds one.
-        at: null,
-        detail: answer.notMerged.detail,
-      };
-    },
+    merge: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
      * Runs on every ending and cannot refuse — **and the effects never decide

@@ -28,6 +28,13 @@ export {
 export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
 export { createWatchAction, type WatchActionDeps, type WatchActionSpec } from "./watch-action.ts";
 export {
+  createMergeAction,
+  type LandAnswer,
+  type MergeActionDeps,
+  type MergeActionSpec,
+  type MergeStrategy,
+} from "./merge-action.ts";
+export {
   createWorktreeAction,
   type CutAnswer,
   type WorktreeActionDeps,

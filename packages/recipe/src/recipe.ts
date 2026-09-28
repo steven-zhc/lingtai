@@ -371,8 +371,24 @@ export const mergePlugin = definePlugin("merge", {
       strategy: z.enum(["merge-commit"]).default("merge-commit"),
     }),
   },
-  /** No step reads it — the merge lane runs it itself. `CALLED_DIRECTLY.merge` says where. */
-  at: {},
+  /**
+   * **`merge`, and it is the second of 0061 §3's five names to become a key**
+   * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#270`).
+   *
+   * What runs is `createMergeAction` in `@lingtai/actions`, over the lane
+   * `conduct.ts` hands it — and a recipe that declares nothing at `merge` runs
+   * the same action off the same base, because 0065 §2 makes the default an
+   * entry in the plugin system rather than a body beside it. So
+   * `CALLED_DIRECTLY.merge` is gone with this key, in the one diff its own
+   * comment asked for.
+   *
+   * **It reports and it does not decide.** A refused merge carries the lane's own
+   * `reason` and `detail` and goes to `proposed`, which is where a `conflict` is
+   * weighed and where a `verify-failed` buys the mechanical round — so opening
+   * this key moves where the lane is *called from* and nothing about what its
+   * answer costs.
+   */
+  at: { merge: notBuiltYet },
 });
 
 /**
@@ -773,18 +789,20 @@ export const backlogPlugin = definePlugin("backlog", {
  * the same set by the same rules — a key, a schema, and an `at` saying which
  * steps it serves.
  *
- * **Four of them serve no step, and they say so themselves** (0064 §4).
- * `merge:`, `queue:`, `judge:` and `backlog:` are
+ * **Two of them serve no step, and they say so themselves** (0064 §4). `queue:`
+ * and `backlog:` are
  * names for code the pass calls directly today, so their `at` is `{}` and
  * every step refuses them, by a sentence that says where that code is called
  * instead. That is the same two-valued rule a step nothing implements is held
  * to — **naming a thing is not wiring it** — read down the other axis.
  *
- * **It was five until `#274`.** `judge:` was one of them and is the first to
- * leave: `at: { proposed: notBuiltYet }`, a router that reads the entry whose
- * `when:` matches, and its `CALLED_DIRECTLY` entry deleted in the same diff —
- * which is what that rule promised would happen and what makes the other four
- * a statement about today rather than a permanent shape.
+ * **It was five, and three of them have left.** `worktree:` went first (`#268`,
+ * `at: { admit }`), `judge:` second (`#274`, `at: { proposed }`) and `merge:`
+ * third (`#270`, `at: { merge }`) — each of them a key opened, a default
+ * registered in `conduct.ts`'s `defaultsAt`, a body emptied and a
+ * `CALLED_DIRECTLY` entry deleted in the one diff, which is what that rule
+ * promised would happen and what makes the other two a statement about today
+ * rather than a permanent shape.
  *
  * The twelfth was `assignee:`, and it is not missing: 0063 §3 makes it a field
  * of `queue:` rather than a plugin beside it, because the two answer one
@@ -980,6 +998,35 @@ const ONLY_PROPOSED_ROUTES =
   "refused by name";
 
 /**
+ * **Why a `merge:` belongs at `merge` and nowhere else**, and what the step does
+ * with the one it is given.
+ *
+ * `ONLY_PROPOSED_ROUTES`'s sibling, and it is the *kind* that answers rather than
+ * the step for the same reason that one is: every other branch of `whyThatPair`
+ * says *what this step asks of an action*, and none of them can say this. A
+ * `merge:` at `prepared` would otherwise fall through to a sentence about a hold
+ * that cannot be answered — false where it is printed, which is the failure
+ * opening `build` and `review` walked into on 2026-09-27 and the reason
+ * `step-matrix.test.ts` pins sentences rather than keywords.
+ *
+ * The clause worth the sentence is the one that is not about placement:
+ * **landing is the last thing a pass does and the only one that changes `main`**,
+ * so it happens once, after every other step has passed, and a `merge:` earlier
+ * on the spine would land a change the steps after it were about to judge.
+ */
+const ONLY_THE_LANE_LANDS =
+  "`merge` is the last step before `end` and the only one that changes the base branch (0058 §3), " +
+  "so a `merge:` is read there and a pass lands once: every step before it has passed by the time " +
+  "it runs, which is what makes the merge the one the review was of, and a lane declared earlier on " +
+  "the spine would put a change on `main` while the steps after it were still deciding about it. " +
+  "Written at `merge` it is read — `integrate` in `packages/repo/src/integrate.ts` merges the base " +
+  "in, re-verifies against what landed in the meantime, merges out and pushes — and **it reports a " +
+  "reason and decides nothing** (0058 §3c): a refusal carries the lane's own `conflict` or " +
+  "`verify-failed` to `proposed`, which is where a round is bought for it. It declares no `base:` " +
+  "either, and that is deliberate rather than missing (0061 §4): the base is one value that flows, " +
+  "and a second home for it would let what a pass lands disagree with what it was cut from";
+
+/**
  * **What `proposed` will do with the one plugin of its three that decides
  * nothing about where the pass goes**, and the distinction is the whole of why
  * it is said here.
@@ -1016,7 +1063,7 @@ const FILES_AND_ROUTES_NOTHING =
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
  *
- * Why these four are declared at all before anything reads them: a plugin no
+ * Why these two are declared at all before anything reads them: a plugin no
  * list carries is a plugin no step refuses
  * ([`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §3.2). Outside
  * the closed set, `queue:` written under `end:` is *an action naming no
@@ -1025,13 +1072,14 @@ const FILES_AND_ROUTES_NOTHING =
  * becomes `steps:` this entry goes and an `at` key arrives on the plugin in
  * the same diff.
  *
- * **`judge:` was the fifth and is the day that happened** (`#274`). It served no
- * step while the pass's own ceilings decided every direction; it serves
- * `proposed`, the router reads the entry whose `when:` matches, and so its entry
- * here went with the key that opened — the second half of the rule above, paid
- * out. What was true of it is `ONLY_PROPOSED_ROUTES` now, which is a sentence
- * about the pair rather than about the plugin, because it is only wrong *at the
- * other nine steps*.
+ * **`judge:` was the fifth and `merge:` the fourth, and both are the day that
+ * happened** (`#274`, `#270`). Each served no step while the pass's body did its
+ * work; each serves one now — the router reads the `judge:` entry whose `when:`
+ * matches, and `merge`'s own step runs the lane — and so their entries here went
+ * with the keys that opened, which is the second half of the rule above, paid
+ * out twice. What was true of them is `ONLY_PROPOSED_ROUTES` and
+ * `ONLY_THE_LANE_LANDS` now, which are sentences about the pair rather than about
+ * the plugin, because each is only wrong *at the other nine steps*.
  *
  * `assignee:` was the sixth and the case that document wrote the rule about —
  * it had a row in 0061 §3 and appeared in no other list. It is gone from here
@@ -1040,9 +1088,6 @@ const FILES_AND_ROUTES_NOTHING =
  * `queue:`'s sentence below, which names `assigneeSkip` beside the other two.
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
-  merge:
-    "the merge lane runs it itself once everything before it has passed — `integrate` in " +
-    "`packages/repo/src/integrate.ts`, which is handed `repo.base` rather than reading a base of its own",
   queue:
     "the queue asks GitHub itself, before a pass exists to have steps — `runnableNow` and " +
     "`considerIssue` in `packages/conductor/src/discover.ts`, from `source.kinds`, `source.exclude` and " +
@@ -1089,15 +1134,16 @@ function servedBy(plugin: Plugin): string {
  *
  * **Three kinds of no, and they are asked in this order.**
  *
- * - **A plugin no step reads** — `merge:`, `queue:`, `judge:` and `backlog:`,
+ * - **A plugin no step reads** — `queue:` and `backlog:`,
  *   which serve nothing and are refused everywhere for one reason. Asked first,
  *   because a sentence about the *step* would be the less useful half of the
  *   truth at all ten: *no plugin implements `claim`* is right and leaves a reader
  *   looking for the code that picks their ticket, which `CALLED_DIRECTLY` names.
  *   It is sharpest there, where the step's own sentence and the plugin's are
  *   about the same plugin — and only the plugin's says where `discover.ts` is.
- *   **`worktree:` was the fifth until `#268`** and is now a key at `admit`, which
- *   is what this branch shrinking by one looks like.
+ *   **It was five**, and `worktree:` (`#268`), `judge:` (`#274`) and `merge:`
+ *   (`#270`) have each left it for a key of their own — which is what this branch
+ *   shrinking looks like.
  * - **A step no plugin implements**, which is the sentence the table could not
  *   say (0064 §1). An empty row read as *this step takes nothing*, which is
  *   indistinguishable from *nobody has built it* — and that ambiguity is how
@@ -1187,6 +1233,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
     );
   }
   if (kind === "judge") return ONLY_PROPOSED_ROUTES;
+  if (kind === "merge") return ONLY_THE_LANE_LANDS;
   if (kind === "close" || kind === "labels" || kind === "refs") {
     return "it is an effect rather than a verdict, and only the `end` step carries out effects";
   }

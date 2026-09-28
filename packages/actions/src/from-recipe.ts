@@ -13,6 +13,7 @@ import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
 import { createProcessAction } from "./process-action.ts";
+import { createMergeAction, type MergeActionDeps } from "./merge-action.ts";
 import { createWorktreeAction, type WorktreeActionDeps } from "./worktree-action.ts";
 
 /**
@@ -36,6 +37,16 @@ export interface ActionDeps {
    * `admit` is a pass that briefs an agent on a directory that does not exist.
    */
   worktree?: WorktreeActionDeps;
+  /**
+   * The lane a `merge:` action runs — `integrate`, as the conductor already
+   * calls it (0065 §2, `#270`).
+   *
+   * Optional for the reason the other three are, and absent it refuses a
+   * `merge:` action by name rather than becoming a step that passes having
+   * landed nothing — which at `merge` is a pass the board says merged and a
+   * branch that is not on the base.
+   */
+  merge?: MergeActionDeps;
   /**
    * The declared names of a `run:` action → the whole environment its process
    * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
@@ -177,6 +188,17 @@ export function actionsFromRecipe(
         { name: action.name, base: action.worktree.base, submodules: action.worktree.submodules },
         deps.worktree,
       );
+    }
+
+    if ("merge" in action) {
+      if (!deps.merge) {
+        throw new ActionUnavailableError(action.name, kind, "no merge lane was supplied to actionsFromRecipe");
+      }
+      // `strategy` and nothing else, because the plugin declares nothing else:
+      // the base is one value that flows, and a `merge:` block carrying one of
+      // its own would manufacture a disagreement between what the pass cut and
+      // what it lands (0061 §4, `mergePlugin` in `@lingtai/recipe`).
+      return createMergeAction({ name: action.name, strategy: action.merge.strategy }, deps.merge);
     }
 
     if ("human" in action) {

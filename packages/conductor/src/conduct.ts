@@ -37,16 +37,18 @@
  *
  * ## What the ports are, and what they are not
  *
- * Eight methods, and every one of them **wraps rather than reimplements**, which
- * is the `#226` rule `pass-steps.ts` is held to from the other side:
+ * Eight closures, and every one of them **wraps rather than reimplements**, which
+ * is the `#226` rule `pass-steps.ts` is held to from the other side. Six are
+ * `PassPorts` methods; `cut` and `land` are a plugin's deps, reached through
+ * `stepDeps` rather than through the pass (`#268`, `#270`):
  *
  * ```
  * take      runnableNow + claimWorkItem      discover.ts, claim.ts
- * cut       repo.provision                   the worktree, as long as the pass
+ * cut       repo.provision                   a `worktree:` action's, at `admit`
  * draft     nothing, and `""` is the answer   no cell is open at `design`
  * dispatch  the hook, the agent, the receipt  and a fix round, when a round was bought
  * judge     judgeDeclaredAt                  the recipe's own `proposed:` judges
- * land      repo.integrate                    the merge lane
+ * land      repo.integrate                    a `merge:` action's, at `merge`
  * readEnd   store.read                        the item's own stream
  * recordEnd held for the ending's append       what `end` resolved, never alone
  * ```
@@ -124,8 +126,11 @@ import {
   type Action,
   type ActionEvent,
   type CutAnswer,
+  type LandAnswer,
+  type MergeStrategy,
   actionsFromRecipe,
   createHumanAction,
+  createMergeAction,
   createWorktreeAction,
 } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
@@ -173,8 +178,6 @@ import {
   type Drafted,
   type Judged,
   type Judging,
-  type Landed,
-  type Landing,
   type PassPorts,
   type Taken,
   type Worked,
@@ -1477,11 +1480,80 @@ export function runOnce(
       };
 
       /**
-       * What a declared plugin needs in order to run — the three things only a
-       * caller with a machine under it can build (`PassOptions.actionsAt`).
+       * `merge` — the branch on the remote, then the lane.
        *
-       * A reviewer, the diff's file list and an environment resolver. This is
-       * `stepDeps` under its old name, unchanged: turning a declared list into a
+       * **The dep of a plugin rather than a port of a step, since `#270`.**
+       * `mergePlugin` declares `merge` (0065 §2), so what calls this is
+       * `createMergeAction` in `@lingtai/actions`, over the `strategy` the action
+       * carries and the `onSha` the pass is on — which is `merge:`'s at `merge`
+       * where a recipe declares one and `defaultsAt`'s where it does not.
+       *
+       * The push is here rather than beside the agent because this is the point at
+       * which the head has been judged: the steps before it all passed on `onSha`,
+       * and pushing it is how the lane and a person get to see the thing that was
+       * judged. Every other ending publishes from the finalizer.
+       *
+       * **`strategy` is read and not obeyed, because there is one value.**
+       * `integrate` offers `git merge --no-edit` and a fast-forward push, which is
+       * `merge-commit`; the enum grows when the code does, and asserting the one
+       * value here is what keeps a second one from resolving and landing the first
+       * behaviour under its name (`#61`).
+       *
+       * **The lane reports and decides nothing.** `stepsPassed` is `true` without
+       * being asked, and that is the sequence rather than an assumption: `merge` is
+       * reached only where every step before it passed, so a lane told otherwise
+       * would be a lane told something the pass cannot be in a position to say.
+       */
+      const land = async (on: {
+        readonly strategy: MergeStrategy;
+        readonly onSha: string;
+      }): Promise<LandAnswer> => {
+        const pushed = await gitAsked([
+          "push",
+          `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
+          "origin",
+          `HEAD:refs/heads/${branch}`,
+        ]);
+        if (Either.isLeft(pushed)) {
+          return { notMerged: { reason: "push-rejected", detail: pushed.left.detail } };
+        }
+        lease = on.onSha;
+        // The branch and not the arm: the lane is about to merge this ref, and
+        // an arm written for a landing is one 0062 §4's sweep takes back off.
+        // A lane that refuses leaves the arm to the end-of-pass publish, which
+        // asks about `armPublished` and not only about this
+        // (`publishWhatIsCommitted`).
+        published = on.onSha;
+
+        const result = await Effect.runPromise(
+          repo.integrate({
+            project,
+            owner: options.client.owner,
+            repo: options.client.repo,
+            base,
+            branch,
+            workItemId,
+            headSha: on.onSha,
+            stepsPassed: true,
+            token: options.token,
+            home,
+            gitEnv: options.gitEnv,
+            store,
+          }),
+        );
+        if (result.ok) {
+          mergeCommit = result.mergeCommit;
+          return { merged: result.mergeCommit };
+        }
+        return { notMerged: { reason: result.reason, detail: result.detail } };
+      };
+
+      /**
+       * What a declared plugin needs in order to run — the things only a caller
+       * with a machine under it can build (`PassOptions.actionsAt`).
+       *
+       * A reviewer, the diff's file list, an environment resolver, the cut and the
+       * lane. This is `stepDeps` under its old name: turning a declared list into a
        * runnable action is neither the sequence nor the outcome rules, so by 0058
        * §2b it is the caller's and not the pass's.
        */
@@ -1512,6 +1584,9 @@ export function runOnce(
         // The fourth, and the one that makes rather than judges: `admit`'s
         // `worktree:` action cuts through this (0065 §2, `#268`).
         worktree: { cut },
+        // The fifth, and the only one that changes the base branch: `merge`'s
+        // `merge:` action lands through this (0065 §2, `#270`).
+        merge: { land },
       };
 
       /**
@@ -1527,8 +1602,9 @@ export function runOnce(
        * or not the flag was passed. And the hold is bound to `onSha` like any other
        * verdict, so a force-push invalidates it by arithmetic.
        *
-       * Appended after the declared list, which is where the old loop asked: the
-       * recipe's own actions run first and the flag holds what they let past.
+       * Placed after the declared checks and before whatever lands, which is where
+       * the old loop asked: the recipe's own actions run first and the flag holds
+       * what they let past. `heldBeforeTheLane` is that placement.
        */
       const alsoHeldAtMerge = (): Action[] => {
         const held: Action[] = [];
@@ -1571,41 +1647,97 @@ export function runOnce(
        * default did* are the same pass, which is what makes the block safe to
        * paste.
        *
+       * **`merge` is the second row, and `#270` is what put it here.** It landed
+       * the branch in its body, from `repo.base`, where no recipe could see, name
+       * or replace it. Now the body is empty and this is what an unconfigured
+       * `merge` runs — the same `integrate` call a declared `merge:` builds, over
+       * the same base, because `land` above is handed the base by the pass rather
+       * than reading one off the action (0061 §4). So *the default merge* and *a
+       * pasted block that says what the default did* are the same landing.
+       *
        * **`[]` and an omitted key are the same thing here, and 0065 §2's *`[]`
        * runs nothing* is not built.** `StepMap` resolves both to `[]` (0061 §5:
        * *the file may omit a step; the resolved recipe may not*), so by the time a
        * list reaches this seam the difference is gone — the refusal that would
        * keep them apart belongs at resolve, on the file's own bytes, and 0065 §6
-       * is where it is written down. Until it lands, an `admit: []` runs the
-       * default.
+       * is where it is written down. Until it lands, an `admit: []` cuts and a
+       * `merge: []` merges.
        *
        * **That is the safe direction and it is deliberate**, because the other
        * reading is 0065 §6's silent failure with this repository's own recipe as
-       * the subject: `admit: []` means *skipped* in every recipe on the machine
-       * today, and a diff that made it mean *cut nothing* would stop every pass
-       * at the first step that needs a tree, in a daemon nobody had told to
-       * expect it. So the block below is safe to paste and safe not to paste, and
-       * the day `[]` starts meaning nothing is a version bump and a refusal
-       * rather than a change of behaviour under an unchanged file.
+       * the subject: `admit: []` and `merge: []` mean *skipped* in every recipe on
+       * the machine today, and a diff that made the first mean *cut nothing* would
+       * stop every pass at the first step that needs a tree, while the second
+       * would stop merging in a daemon nobody had told to expect it. So the blocks
+       * `#270` prints are safe to paste and safe not to paste, and the day `[]`
+       * starts meaning nothing is a version bump and a refusal rather than a
+       * change of behaviour under an unchanged file.
+       *
+       * **And a recipe that declares something *else* at `merge` no longer
+       * lands**, which is the substitution rule doing exactly what it says (0065
+       * §2) rather than a hole: the default is replaced, nothing in the list
+       * merges, `landedAt()` stays null and the pass falls through to the
+       * requeued or failed ending rather than reporting a landing it did not
+       * make. A recipe that wants checks *and* the merge declares both, which is
+       * what the printed block is for.
        */
       const defaultsAt = (step: Step): readonly Action[] => {
-        if (step !== "admit") return [];
-        return [
-          createWorktreeAction(
-            { name: "cut the branch", base, submodules: submodulesOf(recipe) },
-            { cut },
-          ),
-        ];
+        if (step === "admit") {
+          return [
+            createWorktreeAction(
+              { name: "cut the branch", base, submodules: submodulesOf(recipe) },
+              { cut },
+            ),
+          ];
+        }
+        if (step === "merge") {
+          // The strategy `mergePlugin`'s schema defaults to, because `integrate`
+          // offers one — and no base, for the reason that plugin declares none:
+          // the base is one value that flows, and `land` above already has it, so
+          // *the default merge* and *a pasted block that says what the default
+          // did* cannot land onto different branches (0061 §4).
+          return [createMergeAction({ name: "land the branch", strategy: "merge-commit" }, { land })];
+        }
+        return [];
       };
 
       const actionsAt = (step: Step, actions: readonly StepAction[]): readonly Action[] => {
         const declared = actionsFromRecipe(step, actions, stepDeps);
         // **A default replaces what would have run; a hold composes with it**
         // (0065 §3). That is why `alsoHeldAtMerge` stays outside the substitution
-        // and appends either way: `--no-merge` holds a recipe that declares
+        // and composes either way: `--no-merge` holds a recipe that declares
         // nothing at `merge` exactly as it holds one that declares a person.
         const running = declared.length > 0 ? declared : defaultsAt(step);
-        return step === "merge" ? [...running, ...alsoHeldAtMerge()] : running;
+        return step === "merge" ? heldBeforeTheLane(running) : running;
+      };
+
+      /**
+       * **Where a hold at `merge` goes once the lane is in the list** (`#270`).
+       *
+       * It was `[...running, ...alsoHeldAtMerge()]`, and that was right while the
+       * landing happened in `merge`'s *body* — after the whole pipeline, so an
+       * appended hold stopped it. Since `mergePlugin` serves `merge` the landing is
+       * an action in this list, and appending after it is `#58` again: the
+       * pipeline would merge the branch and then ask a person whether to.
+       *
+       * So the hold goes **after everything that checks and before the thing that
+       * lands**, which is the same sentence the old order was saying. `--no-merge`
+       * is what catches getting it backwards, and it does: with nothing declared
+       * the list is the hold and then the lane, and the integrator is never
+       * reached (`conduct-a-whole-pass.test.ts`).
+       *
+       * Found by `kind` rather than by position, because a recipe may declare its
+       * own `merge:` with checks written either side of it — and a `--no-merge` that
+       * was a no-op for such a recipe would be a flag that silently stopped meaning
+       * anything.
+       */
+      const heldBeforeTheLane = (running: readonly Action[]): readonly Action[] => {
+        const held = alsoHeldAtMerge();
+        if (held.length === 0) return running;
+        const lands = running.findIndex((action) => action.kind === "merge");
+        return lands === -1
+          ? [...running, ...held]
+          : [...running.slice(0, lands), ...held, ...running.slice(lands)];
       };
 
       /**
@@ -1962,63 +2094,11 @@ export function runOnce(
       const dispatch = (brief: Brief): Promise<Worked> =>
         brief.again === null ? firstDispatch(brief) : fixRound(brief, brief.again);
 
-      /**
-       * `merge` — the branch on the remote, then the lane.
-       *
-       * The push is here rather than beside the agent because this is the point at
-       * which the head has been judged: the steps before it all passed on
-       * `context.onSha`, and pushing it is how the lane and a person get to see the
-       * thing that was judged. Every other ending publishes from the finalizer.
-       *
-       * **The lane reports and decides nothing.** `stepsPassed` is `true` without
-       * being asked, and that is the sequence rather than an assumption: `merge` is
-       * reached only where every step before it passed, so a lane told otherwise
-       * would be a lane told something the pass cannot be in a position to say.
-       */
-      const land = async (on: Landing): Promise<Landed> => {
-        const pushed = await gitAsked([
-          "push",
-          `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-          "origin",
-          `HEAD:refs/heads/${branch}`,
-        ]);
-        if (Either.isLeft(pushed)) {
-          return { notMerged: { reason: "push-rejected", detail: pushed.left.detail } };
-        }
-        lease = on.context.onSha;
-        // The branch and not the arm: the lane is about to merge this ref, and
-        // an arm written for a landing is one 0062 §4's sweep takes back off.
-        // A lane that refuses leaves the arm to the end-of-pass publish, which
-        // asks about `armPublished` and not only about this
-        // (`publishWhatIsCommitted`).
-        published = on.context.onSha;
 
-        const result = await Effect.runPromise(
-          repo.integrate({
-            project,
-            owner: options.client.owner,
-            repo: options.client.repo,
-            base,
-            branch,
-            workItemId,
-            headSha: on.context.onSha,
-            stepsPassed: true,
-            token: options.token,
-            home,
-            gitEnv: options.gitEnv,
-            store,
-          }),
-        );
-        if (result.ok) {
-          mergeCommit = result.mergeCommit;
-          return { merged: result.mergeCommit };
-        }
-        return { notMerged: { reason: result.reason, detail: result.detail } };
-      };
-
-      // **Seven, and `cut` is not one of them since `#268`**: `admit`'s work is a
-      // `worktree:` action, reached through `stepDeps` like every other plugin's.
-      const ports: PassPorts = { take, draft, dispatch, judge, land, readEnd, recordEnd };
+      // **Six, and neither `cut` nor `land` is one of them**: `admit`'s work is a
+      // `worktree:` action (`#268`) and `merge`'s is a `merge:` one (`#270`), both
+      // reached through `stepDeps` like every other plugin's.
+      const ports: PassPorts = { take, draft, dispatch, judge, readEnd, recordEnd };
 
       // ---- the pass ----------------------------------------------------------
       // Ten steps, and the claim is the first of them. Everything above this line

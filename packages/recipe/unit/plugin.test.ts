@@ -502,13 +502,66 @@ describe("a plugin declares the steps it serves", () => {
   });
 });
 
-describe("the one the pass calls itself, and the one it stopped calling", () => {
-  it("refuses `merge:` at every one of the ten steps, and names the file instead", () => {
-    for (const step of STEPS) {
-      expect(whyNoKindAt(step, "merge"), `${step} × merge is accepted`).not.toBeNull();
+describe("the two the pass stopped calling itself", () => {
+  /**
+   * **`merge:` was the last of the four whose `at` was `{}` and served a step the
+   * pass's own body did, and `#270` wired it** — the day `merge` read one, the
+   * plugin gained a key and `CALLED_DIRECTLY.merge` went, in the one diff 0065 §7
+   * asks for, because at this step a half-migration is the branch landed twice.
+   *
+   * Three claims, and the third is `worktree:`'s below with the tense changed:
+   * legal at `merge`, refused at the other nine, and **no sentence left anywhere
+   * saying no step reads one** — a refusal that still carried
+   * `CALLED_DIRECTLY`'s *the merge lane runs it itself* would be telling an
+   * operator their declaration is not read when it is what runs. It still names
+   * `integrate.ts`, and that is the opposite claim: *written at `merge` it is
+   * read, and this is what runs*. The sentence the other nine get is about the
+   * pair, and it is where somebody who wrote a lane at the wrong step reads what a
+   * lane is for.
+   */
+  it("makes `merge:` legal at `merge` and at no other step", () => {
+    expect(whyNoKindAt("merge", "merge")).toBeNull();
+    for (const step of STEPS.filter((each) => each !== "merge")) {
+      const why = whyNoKindAt(step, "merge");
+      expect(why, `${step} × merge is accepted`).not.toBeNull();
+      expect(why).not.toContain("no step reads a `merge:` action");
+      if (PLUGINS.some((plugin) => servesStep(plugin, step))) {
+        expect(why, step).toContain("it serves `merge`");
+        // `end` keeps its own sentence, as it does for `judge:`: *these three kinds
+        // and no others* is the more useful half where the plugin is an effect's
+        // neighbour. Everywhere else the reason is the lane's.
+        if (step !== "end") expect(why, step).toContain("Written at `merge` it is read");
+      } else {
+        // Where nobody implements the step, the step's own sentence answers first
+        // and is the more useful half — a lane is not what would fix `claim`.
+        expect(why, step).toContain(`no plugin implements \`${step}\``);
+      }
     }
+  });
 
-    expect(whyNoKindAt("merge", "merge")).toContain("packages/repo/src/integrate.ts");
+  /**
+   * And the clause that earns the sentence: a lane is not a check, and the reason
+   * it belongs at `merge` is *when* rather than *where*. Pinned because it is the
+   * half that is not a fact about today's code — the file reference above would go
+   * red the day `integrate.ts` moved, and this would not.
+   */
+  it("says why a lane belongs at `merge`, and what it does not decide", () => {
+    const why = whyNoKindAt("prepared", "merge")!;
+    expect(why).toContain("the only one that changes the base branch");
+    expect(why).toContain("a pass lands once");
+    expect(why).toContain("reports a reason and decides nothing");
+    expect(why).toContain("`proposed`");
+    // No `base:`, said where somebody about to write one would read it.
+    expect(why).toContain("declares no `base:`");
+    // A fact about the pair, so every step some plugin serves gives the same
+    // reason under its own opening clause.
+    const reason = why.slice(why.indexOf(": ") + 2);
+    // Every step but `end`, which answers as the step for the reason above.
+    for (const step of ["admit", "prepared", "build", "review", "proposed"] as const) {
+      expect(whyNoKindAt(step, "merge"), step).toBe(
+        `\`merge:\` does not implement \`${step}\` — it serves \`merge\`: ${reason}`,
+      );
+    }
   });
 
   /**
