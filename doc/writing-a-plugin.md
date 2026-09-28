@@ -284,9 +284,15 @@ like the cold reviewer — so it is *asked* not to commit and nothing stops it. 
 makes that harmless is not the prompt: `implement`'s receipt (0057 §2) is measured
 against the head *its own* agent found rather than against the base the tree was
 cut at, so a document committed at `design` cannot stand in for work the
-implementing agent did not do. Anything a drafting agent writes into the tree is
-still turns nobody reads — what travels to `implement` is the document it
-*returned*.
+implementing agent did not do.
+
+**What it is not is harmless.** What travels to `implement` is the document the
+action *returned*, so a file written into the tree reaches no agent — but a file
+**committed** rides the branch through `build` and `review` and is merged into
+the base by the lane, like any other commit on it. The receipt rule stops it
+being mistaken for the implementer's work; nothing stops it being in the change.
+A drafting agent that writes is spending turns nobody reads; one that commits is
+editing the repository.
 
 ## What stays the workflow's
 

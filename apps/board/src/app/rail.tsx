@@ -96,12 +96,17 @@ function segTitle(p: StepProgress): string {
  * than trusting this sentence, which named three of the five for a day.)
  * That trade is the right way round: omitting a segment
  * loses the distinction 0016 §4 exists for, and clipping a word loses the
- * characters a reader can get back by hovering. Four of the ten are `skipped`
- * on every card whatever the recipe says, because no plugin implements them —
+ * characters a reader can get back by hovering. **One** of the ten is `skipped`
+ * on every card whatever the recipe says, because no plugin implements it —
  * which is exactly the thing a dashed outline is for, and exactly what a rail
  * that drew only the built ones would hide. It was six until 2026-09-27, when
- * `build` and `review` were opened to a plugin each and began drawing whatever
- * a recipe declares at them.
+ * `build` and `review` were opened to a plugin each; then `merge` (`#270`),
+ * `proposed`'s judge (`#277`), `claim` (`#269`) and `design` (`#265`) followed,
+ * and `implement` is the one left. The same count is in `progress.ts`, which was
+ * corrected while this copy was not: `rail.test.tsx` derives the clipped list
+ * from `STEPS`, but nothing derives this number, so it is a sentence to check
+ * against `step-matrix.test.ts`'s `unimplemented` rather than a fact the code
+ * keeps.
  *
  * **One cell per action.** `prepared: [install]` draws one; a step holding two
  * actions draws two, each with its own verdict, so a step that is half done

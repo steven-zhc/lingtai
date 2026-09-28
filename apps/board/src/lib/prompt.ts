@@ -58,6 +58,20 @@ export interface OutgoingView {
   /**
    * The document the next attempt gets, byte for byte — including the edit, if
    * there is one. Empty when `problem` says why there is none.
+   *
+   * **Byte for byte, and one block cannot be in it** (`#265`). A recipe that
+   * declares an `agent:` at `design` has its document inserted at `{{design}}`,
+   * or appended where the template has no slot — and that document does not
+   * exist until the attempt runs. `renderPrompt`'s own docblock is why this
+   * caller passes nothing and is right to: a preview that invented one would be
+   * showing a person a document nobody wrote, which is worse than showing them
+   * the template.
+   *
+   * So the guarantee holds for every project that declares nothing at `design`,
+   * which is all of them today, and elsewhere reads *everything but the design*.
+   * What is **not** built is telling the viewer which of the two they are
+   * looking at; until it is, a reader of a project with a `design:` sees a
+   * shorter prompt than the one that will be sent and nothing says so.
    */
   text: string;
   /** `ticket@1924+failure@1c5708ba+human@a91f2e`. Names the edit, or does not. */
