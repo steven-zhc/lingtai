@@ -147,6 +147,26 @@ export interface ActionResult {
    * never whether a round is spent.
    */
   unreadable?: true;
+  /**
+   * **The document a `design:` agent wrote** — absent on every kind that judged
+   * something rather than producing one (0065 §2, `#265`).
+   *
+   * One action produces it — the `agent` kind at `design` — and it is on the
+   * result rather than parsed back out of `evidence` because `evidence` is what
+   * the board shows (0043), and a caller reading a document out of a display
+   * string is the second reader of a sentence 0031 §1 exists to prevent. It is
+   * the same shape `head` has at `admit`: the one action that *makes* the thing
+   * the next step needs is the only thing that knows it, so it says so, and
+   * `designFrom` in `packages/conductor/src/pass.ts` carries it onto the step's
+   * ending for `implement`'s brief to read.
+   *
+   * **`""` is a document and not an absence.** *The agent answered that this
+   * change needs no design* and *nothing here drafts* are the same brief to
+   * `implement` — it works from the issue either way (0058 §3) — so the empty
+   * string is set rather than the key omitted, and the distinction that is worth
+   * keeping is on `evidence`, where a person reads it.
+   */
+  document?: string;
 }
 
 export interface ActionContext {
@@ -276,6 +296,8 @@ export interface PipelineResult {
     because?: string;
     /** That its answer could not be read, where it had one. `ActionResult.unreadable`. */
     unreadable?: true;
+    /** The document it wrote, where it wrote one. `ActionResult.document`. */
+    document?: string;
   }[];
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[];
@@ -384,6 +406,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // explicit `undefined` would read the same to a program and differently to
       // a person (`#279`).
       ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+      // Spread for `head`'s reason once more, and here the absence is the one
+      // that matters: *nothing at this step drafted* and *the draft was empty*
+      // are different facts, and `designFrom` in `pass.ts` distinguishes them by
+      // the key rather than by the string (`#265`).
+      ...(result.document === undefined ? {} : { document: result.document }),
     });
 
     if (result.verdict === "passed") {

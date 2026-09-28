@@ -13,9 +13,11 @@
  * the `build` point run it ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
  * §1).
  */
+import type { RunOutcome, Runtime } from "@lingtai/agent";
 import type { QueueActionDeps } from "@lingtai/actions";
 import {
   createAgentAction,
+  createDraftAction,
   createMergeAction,
   createQueueAction,
   createWorktreeAction,
@@ -46,7 +48,6 @@ import {
   bodiesFor,
   type Brief,
   type Claimed,
-  type Drafted,
   type Judged,
   type Judging,
   type PassPorts,
@@ -202,7 +203,15 @@ interface Asks {
    * what a test reads back is the action's argument and not a port call.
    */
   cut: { base: string; submodules: boolean }[];
-  draft: Brief[];
+  /**
+   * Every prompt a drafting agent was handed, which is the whole of what a
+   * design dispatch looks like since `#265`.
+   *
+   * Beside the ports rather than on them, for `cut`'s and `land`'s reason:
+   * `design`'s work is an `agent:` action's now, so what a test reads back is
+   * what the runtime was asked to run and not a port call.
+   */
+  draft: string[];
   dispatch: Brief[];
   /** Every brief a judge was handed, which is what *spends an agent* looks like. */
   judge: Judging[];
@@ -225,7 +234,11 @@ interface Answers {
   take?: TakeAnswer | (() => TakeAnswer);
   /** What the cut answers. Cut at `CUT_AT`, by default. */
   cut?: CutAnswer;
-  draft?: Drafted | (() => Drafted);
+  /**
+   * What the drafting runtime answers, where a test declares an `agent:` at
+   * `design`. A document and nothing else, by default.
+   */
+  draft?: Partial<RunOutcome>;
   dispatch?: Worked | ((brief: Brief) => Worked);
   /** Nothing declared, by default: the built-ins and the person are what answer. */
   judge?: Judged | ((on: Judging) => Judged);
@@ -297,10 +310,6 @@ function portsAnswering(
   const ports: PassPorts = {
     item: () => took,
     onStream: () => onStream,
-    draft: async (brief) => {
-      asked.draft.push(brief);
-      return of(answers.draft, { document: "" }, brief);
-    },
     dispatch: async (brief) => {
       asked.dispatch.push(brief);
       return of(answers.dispatch, { committed: COMMITTED }, brief);
@@ -355,6 +364,42 @@ async function pass(
         },
       },
     );
+  /**
+   * **The `agent:` a recipe declares at `design`** (`#265`) — the drafting
+   * action, over a runtime that runs no process.
+   *
+   * Not supplied by `defaultsAt`: `design` has no default row, because the port
+   * this replaced dispatched nothing and *behaves exactly as today* is what an
+   * unconfigured step has to keep doing. So a test that wants a design declares
+   * one, which is what a recipe does.
+   */
+  const drafting = (): Action =>
+    createDraftAction(
+      { name: "draft the design", prompt: "" },
+      {
+        runtime: {
+          run: async (request: { prompt: string }) => {
+            asked.draft.push(request.prompt);
+            return {
+              exitCode: 0,
+              turns: 3,
+              durationMs: 1,
+              costUsd: null,
+              failure: null,
+              text: "",
+              sessionId: "s-1",
+              ...options.answers?.draft,
+            };
+          },
+        } as unknown as Runtime,
+        issue: async () => ({ ...ITEM.ticket }),
+        // Never asked for at this step, and that is the point of the action
+        // being its own: the reviewer would have returned `passed` on it.
+        diff: async () => "",
+        settingsPath: "/nowhere/settings.json",
+        limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
+      },
+    );
   const landing = (): Action =>
     createMergeAction(
       { name: "land the branch", strategy: "merge-commit" },
@@ -375,6 +420,10 @@ async function pass(
     ceilings: options.ceilings,
     actionsAt: (step, actions) => {
       if (options.actions?.[step] !== undefined) return options.actions[step];
+      // The one declared cell this file builds for real rather than canning: a
+      // `design:` is the step's whole behaviour since `#265`, and a canned pass
+      // would assert the body it replaced rather than the plugin that replaced it.
+      if (step === "design" && actions.length > 0) return [drafting()];
       if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
       if (step === "claim") return [claiming()];
       if (step === "admit") return [cutting()];
@@ -704,40 +753,57 @@ describe("prepared refuses, and the refusal reports like any other", () => {
 
 // ----------------------------------------------------------------- design ----
 
-describe("design produces a document, or nothing, and nothing is an answer", () => {
+describe("design runs the `agent:` plugin, and nothing is an answer", () => {
+  /** A recipe with a drafting agent at `design`, which is the whole of the step. */
+  const DECLARED: Record<string, readonly StepAction[]> = {
+    design: [{ name: "draft the design", agent: "claude-code", prompt: "" } as StepAction],
+  };
+
   /**
-   * The ticket's other *watch out*. An empty document is a **pass** — not a skip
-   * and not a failure — the step appears in the walk, and `implement` is briefed
-   * with `""` and works from the issue's own text. There is no conditional step.
+   * **The ticket's *watch out*, and it is now a claim about the default rather
+   * than about a port** (`#265`).
+   *
+   * `defaultsAt` has no row for `design`, so a recipe that says nothing there
+   * runs nothing — which is what `ports.draft` answering `{ document: "" }` did,
+   * without the port. The step still appears in the walk, `implement` is briefed
+   * with `""` and works from the issue's own text, and no agent is paid.
    */
-  it("passes on an empty document, and `implement` is briefed from the issue", async () => {
-    const { result, asked } = await pass({ answers: { draft: { document: "" } } });
+  it("runs nothing where the recipe declares nothing, and briefs `implement` from the issue", async () => {
+    const { result, asked } = await pass();
 
     expect(result.steps[3]).toEqual({ step: "design", ending: { ending: "passed" }, results: [] });
+    expect(asked.draft).toEqual([]);
     expect(asked.dispatch[0]?.design).toBe("");
     expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body);
     expect(result.stoppedAt).toBeNull();
     expect(outcomeOf(result)).toBe("landed");
   });
 
-  it("hands a document it did write to the agent at `implement`", async () => {
-    const { asked } = await pass({ answers: { draft: { document: "## The shape\n\nSix bodies." } } });
+  /**
+   * An empty document is a **pass** — not a skip and not a failure — and it is
+   * the agent's answer rather than the absence of one: the action ran, the
+   * runtime said nothing, and `implement` is briefed identically to the case
+   * above. There is no conditional step.
+   */
+  it("passes on an empty document, and `implement` is still briefed from the issue", async () => {
+    const { result, asked } = await pass({ steps: DECLARED, answers: { draft: { text: "" } } });
 
-    expect(asked.dispatch[0]?.design).toBe("## The shape\n\nSix bodies.");
+    expect(result.steps[3]?.ending).toEqual({ ending: "passed", design: "" });
+    expect(asked.draft).toHaveLength(1);
+    // The ticket is in the prompt, and the rule that makes the empty answer real.
+    expect(asked.draft[0]).toContain(ITEM.ticket.body);
+    expect(asked.draft[0]).toContain("Answering with nothing is a real answer");
+    expect(asked.dispatch[0]?.design).toBe("");
+    expect(outcomeOf(result)).toBe("landed");
   });
 
-  it("asks, and the question is the one `did-not-finish` with somewhere to go", async () => {
-    const { result } = await pass({ answers: { draft: { asked: "is a design wanted here?" } } });
+  it("hands a document it did write to the agent at `implement`", async () => {
+    const { asked } = await pass({
+      steps: DECLARED,
+      answers: { draft: { text: "## The shape\n\nSix bodies." } },
+    });
 
-    expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:passed",
-      "design:did-not-finish",
-      "proposed:routed",
-      "end:passed",
-    ]);
-    expect(result.stoppedAt?.ending).toMatchObject({ because: NEEDS_INPUT });
+    expect(asked.dispatch[0]?.design).toBe("## The shape\n\nSix bodies.");
   });
 
   /**
@@ -749,7 +815,10 @@ describe("design produces a document, or nothing, and nothing is an answer", () 
    */
   it("stands the conductor down when its agent never started", async () => {
     const { result } = await pass({
-      answers: { draft: { neverStarted: { agent: "claude-code", detail: "session limit" } } },
+      steps: DECLARED,
+      answers: {
+        draft: { turns: 1, failure: { kind: "never-started", detail: "session limit" } },
+      },
     });
 
     expect(walk(result)).toEqual([
@@ -761,24 +830,45 @@ describe("design produces a document, or nothing, and nothing is an answer", () 
     ]);
     expect(result.stoppedAt?.ending).toEqual({
       ending: "never-ran",
-      at: "claude-code",
+      // The action's name rather than the runtime's, which is what changed when
+      // the work left the body: `endingOf` names what did not run.
+      at: "draft the design",
       detail: "session limit",
     });
     expect(result.routes).toEqual([]);
     expect(outcomeOf(result)).toBe("failed");
   });
 
+  /**
+   * 0057 §2 at the step that now reaches it through its plugin. **And this is
+   * the case the ticket said to be careful about**: a design that was asked for
+   * and did not happen must not read as a pass, so the step ends and the pass
+   * stops rather than `implement` being briefed with `""` as though the answer
+   * had been *this needs none*.
+   */
   it("stops the pass when its agent left no receipt", async () => {
-    const { result } = await pass({ answers: { draft: { stopped: "the runtime exited 1" } } });
+    const { result, asked } = await pass({
+      steps: DECLARED,
+      answers: { draft: { failure: { kind: "crash", detail: "the runtime exited 1" } } },
+    });
 
-    expect(result.stoppedAt?.ending).toEqual({
+    expect(walk(result)).toEqual([
+      "claim:passed",
+      "admit:passed",
+      "prepared:passed",
+      "design:did-not-finish",
+      "end:passed",
+    ]);
+    expect(result.stoppedAt?.ending).toMatchObject({
       ending: "did-not-finish",
       because: "did-not-finish",
-      at: null,
-      detail: "the runtime exited 1",
+      at: "draft the design",
+      detail: expect.stringContaining("the runtime exited 1"),
     });
-    // Not `needs-input`, so there is nothing for a judge to route.
+    // Not `needs-input`, so there is nothing for a judge to route — and nothing
+    // was implemented off a design that was never written.
     expect(result.routes).toEqual([]);
+    expect(asked.dispatch).toEqual([]);
     expect(outcomeOf(result)).toBe("blocked");
   });
 });

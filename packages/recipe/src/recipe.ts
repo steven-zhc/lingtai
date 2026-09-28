@@ -185,6 +185,25 @@ export const agentPlugin = definePlugin("agent", {
   },
   /** Not `prepared`: nothing has been committed there, so there is no diff to read. */
   /**
+   * **`design` since `#265`, and it is the one key here that is not a reviewer.**
+   *
+   * Nothing has been committed at `design` either, which is `prepared`'s reason
+   * for being absent — and it is not this step's, because what an `agent:` does
+   * here is *write* the thing rather than read one: a document before any code
+   * (0058 §3), or nothing, which is an answer. So the same key builds a different
+   * action, `createDraftAction`, and `actionsFromRecipe` is where the step picks;
+   * a `design:` built out of the reviewer would return `passed` on the empty diff
+   * without dispatching anything, which is the `#61` shape 0065 §5 removes.
+   *
+   * **The default at this step is still nothing**, and that is the whole of what
+   * *nothing depends on `design` today* means: `conduct.ts`'s `defaultsAt` has no
+   * row for it, an unconfigured `design` runs no action and its body passes, and
+   * `implement` is briefed with `""` and works from the issue — every pass, as
+   * every pass already did. This key is new capability rather than a swap, which
+   * is why it is the only one of 0065 §4's openings that can be read without
+   * re-reading a recipe first.
+   */
+  /**
    * **`review` since 2026-09-27, and `pass.ts` was already written for it.**
    * `pass.ts:1589` reads `if (spec.step === "review") return { ending:
    * "passed" }` — a reviewer's `failed` is its findings and not a verdict about
@@ -196,7 +215,7 @@ export const agentPlugin = definePlugin("agent", {
    * `merge` stays for the re-verify after a moved base. `build` is not here: a
    * `run:` belongs there, and an agent asked to build would be paid to read.
    */
-  at: { review: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
+  at: { design: notBuiltYet, review: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
 });
 
 /** Globs against the diff's file list; a match holds or fails. */
@@ -1076,9 +1095,14 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
  * entries went with the keys that opened — the same diff the second half of the
  * rule describes, in the other direction. Neither is reachable any more:
  * `whyNoKindAt` reads this only where `pluginsAt` is empty.
+ *
+ * **And `design` is the third** (`#265`). Its entry said *there is no design
+ * step*, which stopped being true when `agentPlugin` gained the key: there is
+ * one, the recipe is what declares it, and an operator who writes a `run:` there
+ * is told about the pair rather than about a step nobody built. `implement` is
+ * the last one left, and the table goes with it.
  */
-const WHERE_INSTEAD: Record<"design" | "implement", string> = {
-  design: "there is no design step: the implementing agent is handed the issue body and works from it",
+const WHERE_INSTEAD: Record<"implement", string> = {
   implement: "`conduct.ts` dispatches the implementing agent directly, under `runtime.limits`",
 };
 
@@ -1371,8 +1395,9 @@ export function whyNoKindAt(
  * plugin, `whyNoKindAt` answers every kind at it from the *no plugin implements
  * this* branch and never reaches here; the moment one arrives, all eleven other
  * kinds fall through to the three paragraphs at the bottom and are told about
- * `prepared`. `admit` (`#268`), `merge` (`#270`) and `claim` (`#269`) each
- * brought their own, and `claim` is the last of them.
+ * `prepared`. `admit` (`#268`), `merge` (`#270`), `claim` (`#269`) and `design`
+ * (`#265`) each brought their own, and `implement` is the one step still without
+ * a plugin to need one.
  *
  * **`judge:` is answered by kind before any step but `end`** (`#274`), and that
  * is the one inversion of the order above. Every other branch says *what this
@@ -1439,6 +1464,17 @@ function whyThatPair(step: Step, kind: ActionKind): string {
       "at `prepared`, and nothing has been written, so an agent has no diff to read and a glob no file " +
       "list to match. A question that has to be asked before anything is spent is `lingtai ask`, which " +
       "holds the item in the queue rather than a run that has already paid for a clone"
+    );
+  }
+  if (step === "design") {
+    return (
+      "`design` produces a document before any code, or nothing, which is an answer (0058 §3), so the " +
+      "only plugin it carries is the one that can write one — `agent:`, which is the key `agentPlugin` " +
+      "declares there, and at this step it drafts rather than reviews. Nothing has been committed when " +
+      "this step runs, so a command has no diff to check and belongs at `build`, a cold read of one is " +
+      "`review`, and a glob has no file list to match. A hold is the one that reads as though it would " +
+      "work: a question about a change is a question about a change that exists, and `proposed:` is " +
+      "where there is a diff to ask it about"
     );
   }
   if (kind === "agent") {
