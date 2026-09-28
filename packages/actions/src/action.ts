@@ -169,6 +169,65 @@ export interface ActionResult {
   document?: string;
 }
 
+/**
+ * **Why a step is being run a second time** — the criterion a fix round was
+ * bought on, in the two shapes findings are not.
+ *
+ * It was `packages/conductor/src/pass-steps.ts`'s and moved here with
+ * `implement`'s work (`#266`): an `agent:` at that step is handed the round on
+ * `ActionContext.again`, and a type the action cannot name is a round it cannot
+ * be briefed with. The reading is still the pass's — `sentBackTo` off the visit
+ * list — and this package neither builds one nor interprets it.
+ */
+export interface SentBack {
+  /**
+   * The judge's own words — *state your assumption* — verbatim, and 0043's rule
+   * again: it is prose for an agent and a person, never a token to parse.
+   */
+  readonly why: string;
+  /**
+   * The question this step asked, where the round was bought on its own
+   * `needs-input`. `null` where the judge sent the pass back for some other
+   * reason, and then `printed` is what that reason said.
+   */
+  readonly asked: string | null;
+  /**
+   * **What the step that did not pass printed, and which step printed it** — the
+   * compiler's errors from a red `build`, the lane's `detail` from a refused
+   * `merge` — or `null`.
+   *
+   * It is the criterion the round was bought on, in the one case findings are
+   * not: *run it again; green is green* (0038 §2), which is the same bar
+   * `carriesACriterion` holds the judge to one step earlier. A brief that omits
+   * it asks an agent to fix a failure it has not been shown.
+   *
+   * `null` in the two cases where it would say nothing new. Where this step's own
+   * question bought the round, `asked` is the same words. And on the way through
+   * — a `review` that passed carrying findings — nothing refused and nothing
+   * printed: those findings travel on `context.recheck`, which is the path 0038
+   * §2 is written for.
+   */
+  readonly printed: { readonly step: Step; readonly detail: string } | null;
+}
+
+/**
+ * **The one `because` the workflow itself reads**, and the reason it must be a
+ * constant rather than a string spelled out at two call sites.
+ *
+ * 0058 §3c gives `admit`, `design` and `implement` this token for *the step
+ * stopped and asked*, and it is the only `did-not-finish` with a destination:
+ * the judge's call is `waiting` with the question, or that step again with
+ * *state your assumption*. Every other value of `because` belongs to the step
+ * that produced it and the judge that reads it.
+ *
+ * It was `packages/conductor/src/pass.ts`'s, and moved here with `implement`'s
+ * work (`#266`): the question is an action's now — `ActionResult.because`, read
+ * by `endingOf` — so the constant has to be nameable by the thing that produces
+ * it as well as by the loop that reads it. `pass.ts` re-exports it, so nothing
+ * that imports it from there moved.
+ */
+export const NEEDS_INPUT = "needs-input";
+
 export interface ActionContext {
   runId: string;
   /** The commit this verdict is about, and the only thing that makes it stale. */
@@ -210,6 +269,35 @@ export interface ActionContext {
    * Only said on the run log, so a slow re-review reads as *round 2*.
    */
   round?: number;
+  /**
+   * **What `design` produced, and `""` where it produced none** (0065 §2, `#266`).
+   *
+   * `recheck`'s neighbour and a fact about *this visit* in the same way: the walk
+   * reads it off `design`'s own ending and rebuilds it per visit, and the one
+   * action that reads it is the `agent:` at `implement`. Absent is the pass never
+   * having reached `design`; `""` is a `design` that ran and answered nothing,
+   * which is a real answer (0058 §3) and the same brief to `implement` either
+   * way — it works from the issue.
+   *
+   * On the context rather than fetched by the action, because only the walk has
+   * the visit list the document is on: `designOn` in
+   * `packages/conductor/src/pass.ts` is the one reading of it.
+   */
+  design?: string;
+  /**
+   * **Why this step is being run a second time**, or null on the way through
+   * (0065 §2, `#266`).
+   *
+   * `recheck`'s other neighbour, and the half of a fix round that findings are
+   * not: the judge's own words, the question this step asked, and what the step
+   * that did not pass printed. An action that ignores it dispatches the brief
+   * that produced the failure.
+   *
+   * Read off the visit list by `sentBackTo` in `packages/conductor/src/pass.ts`,
+   * for `design`'s reason: a body that remembered it would have to know how many
+   * rounds ago it was.
+   */
+  again?: SentBack | null;
   /**
    * The run's log ([0034](../../../doc/decisions/0034-the-run-log.md), #153).
    *

@@ -176,95 +176,28 @@ export interface Claimed {
 }
 
 /**
- * **A step stopped and asked** — 0058 §3c's `needs-input`, and the only
- * `did-not-finish` with anywhere to go.
+ * **A step stopped and asked**, and **why it is being run a second time** —
+ * 0058 §3c's `needs-input` and the round it buys.
  *
- * One shape rather than a case written twice, because exactly two *bodies* can
- * produce it — `design` and `implement`
- * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3b's
- * second drawing) — and the judge at `proposed` answers both the same way:
- * `waiting` with the question, or that step again with *state your assumption*.
+ * Both were declared here while `implement`'s brief was a body's argument. The
+ * brief is an action's since `#266`, so the shapes are `@lingtai/actions`'s:
+ * `WorkedAnswer` carries the question and `ActionContext.again` carries the
+ * round, and a type the action cannot name is a brief it cannot be handed.
+ * `SentBack` is re-exported because this module's readers — `fix.ts`, the tests,
+ * `conduct.ts` — had it from here and the shape did not change.
  *
- * **`admit` was the third and is a plugin's now** (`#268`). The edge is not gone
- * and the shape is not this one: `CutAnswer` in `@lingtai/actions` keeps its own
- * `asked` branch for the same reason this one was written — a port cannot report
- * what its type cannot say — and what it costs has changed with the move. A
- * question from a plugin is the pipeline's `needs-approval`, so `endingOf` reads
- * it as `held` and it stops for a person directly, rather than arriving at the
- * judge as `needs-input`. Nothing produces it at `admit` today either way.
+ * What the pass still owns is the *reading*: `sentBackTo` in `pass.ts` computes
+ * it off the visit list rather than off a closure, because which visit routed
+ * here, with what it said and why, is the loop's fact and not a step's.
+ *
+ * **`admit`'s question is neither of them and never was.** `CutAnswer` in
+ * `@lingtai/actions` keeps its own `asked` branch, and what it costs is
+ * different: a question from a plugin at a step that does not refuse is the
+ * pipeline's `needs-approval`, so `endingOf` reads it as `held` and it stops for
+ * a person directly rather than arriving at the judge. Nothing produces it at
+ * `admit` today either way.
  */
-export interface Asked {
-  /** What the step wants answered, in words a person reads (0043). */
-  readonly asked: string;
-}
-
-/**
- * **The judge's other answer, as it reaches the step it was written for.**
- *
- * `Asked` above says the judge at `proposed` may answer a question with `waiting`
- * *or that step again with* state your assumption. The second of those spends a
- * round — `onOffer` puts the asking step back on the offer, and `runPass` walks
- * into it again — and a round costs an agent run. So the step must be run
- * *differently* the second time, and the only thing that can make it different is
- * what the judge said: `context.recheck` is empty on this edge, because a
- * question raised no findings, and `context.onSha` is unchanged, because nothing
- * was committed. A second byte-identical brief buys the same question back and
- * burns every round in `ceilings.rounds` arriving at the answer the first one did.
- *
- * **And the same holds for the round a mechanical refusal buys**, which is where
- * the money is: a red `build` routed back to `implement` committed nothing and
- * raised no findings either — a `run:` action returns `findings: []`
- * (`process-action.ts`) — so `context.recheck` is empty too, and the compiler's
- * three errors exist nowhere on this object unless `printed` carries them. The
- * loop this replaces put them in the prompt by name (`fix.ts`, *## What
- * `${action}` printed*), and an agent sent back without them is ~31 turns and
- * ~$3.40 spent on being told only that something failed.
- *
- * Read off `StepWork.reached` rather than held in the closure, because it is the
- * *loop's* fact and not a step's: which visit routed here, with what it said and
- * why, is in the visit list the pass hands every body.
- */
-export interface SentBack {
-  /**
-   * The judge's own words — *state your assumption* — verbatim, and 0043's rule
-   * again: it is prose for an agent and a person, never a token to parse.
-   */
-  readonly why: string;
-  /**
-   * The question this step asked, where the round was bought on its own
-   * `needs-input`. `null` where the judge sent the pass back for some other
-   * reason, and then `printed` is what that reason said.
-   */
-  readonly asked: string | null;
-  /**
-   * **What the step that did not pass printed, and which step printed it** — the
-   * compiler's errors from a red `build`, the lane's `detail` from a refused
-   * `merge` — or `null`.
-   *
-   * It is the criterion the round was bought on, in the one case findings are
-   * not: *run it again; green is green* (0038 §2), which is the same bar
-   * `carriesACriterion` holds the judge to one step earlier. A brief that omits
-   * it asks an agent to fix a failure it has not been shown.
-   *
-   * `null` in the two cases where it would say nothing new. Where this step's own
-   * question bought the round, `asked` is the same words. And on the way through
-   * — a `review` that passed carrying findings — nothing refused and nothing
-   * printed: those findings travel on `context.recheck`, which is the path 0038
-   * §2 is written for.
-   */
-  readonly printed: { readonly step: Step; readonly detail: string } | null;
-}
-
-/**
- * **The step started and left no receipt** — 0057 §2, and the pass stops.
- *
- * A crash, a spent turn budget, an agent that ran and committed nothing. There
- * is no question in it for anybody to answer and nothing for a judge to route,
- * which is the whole of what separates it from `Asked`.
- */
-export interface Stopped {
-  readonly stopped: string;
-}
+export type { SentBack } from "@lingtai/actions";
 
 /**
  * **The agent never started** — 0031 §1's `never-started`, and the wall that is
@@ -294,43 +227,6 @@ export interface NeverStarted {
 }
 
 // ----------------------------------------------------------- the ports ----
-
-/** What the one agent at `implement` did in that worktree. */
-export type Worked =
-  /** The commit it left the worktree at — the whole of what moves `onSha`. */
-  | { readonly committed: string }
-  | Asked
-  | NeverStarted
-  | Stopped;
-
-/** What an agent at `design` or `implement` is handed. */
-export interface Brief {
-  readonly ticket: Ticket;
-  /**
-   * The design, and `""` where `design` produced none.
-   *
-   * **`implement` works from the issue when this is empty, and there is no
-   * conditional step** (0058 §3): the sequence stays fixed and the judgement
-   * sits in the one thing that could make it. A typo fix costs no design.
-   */
-  readonly design: string;
-  /**
-   * **Why this step is being run a second time**, or `null` on the way through.
-   *
-   * The whole of what makes a re-run brief different from the first one when the
-   * round was bought on a question or on what a step printed: see `SentBack`. An
-   * implementation hands it to the agent beside the ticket — *you asked this, and
-   * the judge said that*, or *`build` printed this* — and a port that ignores it
-   * dispatches the brief that produced the failure.
-   */
-  readonly again: SentBack | null;
-  /**
-   * This visit's — the head it is working from, the round it is in, and the
-   * findings that round was bought on (0038 §2), which an agent on a fix round is
-   * asked about by name.
-   */
-  readonly context: ActionContext;
-}
 
 /**
  * **What a judge is asked, and it is everything except the numbers.**
@@ -454,21 +350,22 @@ export type Judged =
   | { readonly noJudge: true };
 
 /**
- * A step's own work, as the pass asks for it — for the **four** steps that have
- * any, in seven methods: `end` is the one step with three, because the stream it
+ * A step's own work, as the pass asks for it — for the **two** steps that have
+ * any, in six methods: `end` is the one step with three, because the stream it
  * resolves onto, reading it and appending to it are separate calls for the reason
  * its own rows give.
  *
- * **Six steps are not here, and that is the shape of them rather than an
+ * **Eight steps are not here, and that is the shape of them rather than an
  * omission.** Each is entirely its plugins' (0061 §3) — a `run:` carrying the
  * install at `prepared` and the checks at `build`, an `agent:` reading the diff
  * at `review`, a `worktree:` cutting the branch at `admit` (`#268`), a `queue:`
- * taking the ticket at `claim` (`#269`) and a `merge:` landing it at `merge`
- * (`#270`) — so the loop has run them by the time any body is called, and a port
- * beside them would be the reimplementation the rule below exists to prevent.
- * **It was three, and the three that left were ports here**: `ports.cut`,
- * `ports.take` and `ports.land` went with the bodies that called them, in the
- * diffs that opened their keys.
+ * taking the ticket at `claim` (`#269`), a `merge:` landing it at `merge`
+ * (`#270`), an `agent:` drafting at `design` (`#265`) and an `agent:` writing the
+ * change at `implement` (`#266`) — so the loop has run them by the time any body
+ * is called, and a port beside them would be the reimplementation the rule below
+ * exists to prevent. **It was three, then four, and the four that left were ports
+ * here**: `ports.cut`, `ports.take`, `ports.land` and `ports.dispatch` went with
+ * the bodies that called them, in the diffs that opened their keys.
  *
  * **`item` and `onStream` are what `take` left behind, and they are not it.**
  * They *ask* rather than *do*: the take is an action's, and these two read the
@@ -483,13 +380,17 @@ export type Judged =
  */
 export interface PassPorts {
   /**
-   * `design` and `implement` — **the item `claim`'s `queue:` action took**, or
-   * null where it took none.
+   * **The item `claim`'s `queue:` action took**, or null where it took none.
    *
    * Null is the pass's own bookkeeping gone wrong and never something that
-   * happened to a diff: `implement` is reached only after `claim` passed, and
-   * `claim` passes only on a take, so `madeBy` throws and `runStep` reports the
-   * visit's own `did-not-finish`.
+   * happened to a diff: every step after `claim` is reached only because `claim`
+   * passed, and `claim` passes only on a take.
+   *
+   * **No body reads it since `#266`**, and the row stays because the *reading* is
+   * still the pass's rather than a plugin's: `discuss.ts` asks it, and `madeBy`
+   * — the throw that stood between a null here and a brief built out of one — went
+   * with `implement`'s body. What briefs an agent now is `AgentActionDeps.issue`,
+   * which is the same closure's fact answered one layer down.
    */
   item(): Claimed | null;
   /**
@@ -505,17 +406,6 @@ export interface PassPorts {
    * about.
    */
   onStream(): string | null;
-  /**
-   * `implement` — one agent, in that worktree, and what it committed.
-   *
-   * **`draft` was the row beside it and went with `design`'s body** (`#265`).
-   * The two answered the same four things because 0061 §3 put `agent:` at both
-   * steps; the key is open at `design` now, so a document is an action's
-   * (`createDraftAction`) and reaches `implement` on the step's own ending rather
-   * than through a port. This row is the last of the three dispatches still
-   * called directly, and `implement` is the last step without a plugin.
-   */
-  dispatch(brief: Brief): Promise<Worked>;
   /**
    * `proposed` — **which of the offered steps the recipe's `judge:` for this
    * direction answers**, or that it declared none.
@@ -857,113 +747,6 @@ function becauseSpent(wanted: Destination, offer: Offer): string {
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
   /**
-   * What `design` produced, **read off the visit rather than remembered**
-   * (`#265`).
-   *
-   * It was a closure variable this function held and `claim` cleared. The work is
-   * an `agent:` action at `design` since 0065 §2, so the document arrives on that
-   * step's own ending (`WroteTheDesign`) and `reached` is where a body already
-   * looks backwards — which is the same subtraction `#269` made to the item: a
-   * fact the pass records once does not also need a copy beside it, and the copy
-   * is the one that can be stale.
-   *
-   * `""` at both ends of it. A recipe that declares nothing at `design` runs no
-   * action, so there is no document and this answers `""`; an agent that answered
-   * nothing produces `""` as a document it wrote. Those are the same brief to
-   * `implement` — it works from the issue either way, and there is no conditional
-   * step (0058 §3) — and they are different things on the card, where the
-   * action's own `evidence` says which.
-   */
-  const designOn = (reached: readonly StepReached[]): string => {
-    const drafted = reached.filter((visit) => visit.step === "design").at(-1);
-    return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? "") : "";
-  };
-
-  /**
-   * What a step needs and the step before it made — or a throw naming which.
-   *
-   * A programming error about the workflow rather than something that happened to
-   * a diff: `implement` is reached only after `claim` passed, and `claim` passes
-   * only with an item. `runStep` catches it and reports it as the visit's own
-   * `did-not-finish`, so the pass still reaches `end` — which is the rule the
-   * whole skeleton is arranged around.
-   *
-   * **The worktree used to be the other thing it guarded** and is
-   * `conduct.ts`'s `cutTree` since `#268`, which raises the same error in the
-   * same words for the same reason — the closure that holds a fact is the one
-   * that can say it is missing. The item followed it there in `#269` and this
-   * still guards it, because the *reading* is still the pass's: `ports.item`
-   * answers null for a pass that took nothing, and *the spine says `claim`
-   * passed* is a claim only the pass can make.
-   */
-  const madeBy = <T>(what: string, at: string, value: T | null): T => {
-    if (value === null) {
-      throw new Error(
-        `the \`${what}\` step has no ${at} — the step that makes it did not run, ` +
-          "and the spine says it did. This is the pass's own bookkeeping and not a " +
-          "judgement about the change.",
-      );
-    }
-    return value;
-  };
-
-  /**
-   * **Why the pass is at this step a second time, read off the visits** — or
-   * `null`, which is every visit on the way through.
-   *
-   * The route is the last visit when a body is re-entered: `runPass` records
-   * `proposed`'s decision and then walks straight into the step it chose. The
-   * question is the visit before that one, and only where *this* step asked it —
-   * a route back to `implement` from a `build` that refused carries findings
-   * rather than a question, and `context.recheck` is where those are.
-   */
-  const sentBackTo = (step: Step, reached: readonly StepReached[]): SentBack | null => {
-    const judged = reached.at(-1);
-    if (judged === undefined || judged.step !== "proposed") return null;
-    const route = judged.ending;
-    if (route.ending !== "routed" || route.to !== step) return null;
-    const arrived = reached.at(-2);
-    const asked =
-      arrived !== undefined &&
-      arrived.step === step &&
-      arrived.ending.ending === "did-not-finish" &&
-      arrived.ending.because === NEEDS_INPUT
-        ? arrived.ending.detail
-        : null;
-    // And what it printed, where that is not the question `asked` already holds.
-    // The evidence the judge weighed is on the arriving visit's ending, and this
-    // is the only thing that carries it as far as the agent buying the round:
-    // `context.recheck` is empty on a mechanical route, because a command's
-    // refusal raises no findings.
-    const printed =
-      asked === null && arrived !== undefined && "detail" in arrived.ending && arrived.ending.detail !== ""
-        ? { step: arrived.step, detail: arrived.ending.detail }
-        : null;
-    return { why: route.why, asked, printed };
-  };
-
-  const briefOn = (
-    step: Step,
-    work: { context: ActionContext; reached: readonly StepReached[] },
-  ): Brief => ({
-    ticket: madeBy(step, "item", ports.item()).ticket,
-    design: designOn(work.reached),
-    again: sentBackTo(step, work.reached),
-    context: work.context,
-  });
-
-  /** 0057 §2, at whichever of the three steps reported it. */
-  const noReceipt = (detail: string): StepDidNotFinish => ({
-    ending: "did-not-finish",
-    // The pipeline's own word for the same class one layer down (`endingOf`),
-    // and deliberately not `NEEDS_INPUT`: nobody was asked anything, so there is
-    // nothing for the router to route and *the pass stops* is the rule.
-    because: "did-not-finish",
-    at: null,
-    detail,
-  });
-
-  /**
    * 0031 §3, at whichever of the two steps dispatched the agent.
    *
    * Shared rather than written twice, because the whole value of the case is
@@ -1280,31 +1063,40 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     design: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
-     * One agent, in that worktree — **and it reports the `head` it committed**,
-     * which is the whole of what moves `onSha` on a fix round.
+     * One agent, in that worktree — **and this is the seventh of the ten whose
+     * body is nothing beyond its plugins** (`#266`).
      *
-     * Three ways not to pass, and the money is the reason they are three and not
-     * one. An agent that **asked** buys a decision at `proposed` and nothing else
-     * (0058 §3c). An agent that **started and left no receipt** buys nothing and
-     * stands the pass down (0057 §2) — a crash, a spent turn budget, or a run
-     * that committed nothing, since the commit *is* the receipt. An agent that
-     * **never started** stands the *conductor* down and releases the item,
-     * because what it met is about the account rather than the diff and every
-     * queued item would meet it identically (0031 §3).
+     * It called `ports.dispatch` here until `agentPlugin` declared `implement`
+     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2). What
+     * writes the change now is an `agent:` action — `createImplementAction`,
+     * which the recipe declares at this step, or the one `conduct.ts`'s
+     * `defaultsAt` supplies where a recipe declares nothing — and the loop has run
+     * it by the time this is called, so a second dispatch written here would be
+     * **two agents on one brief**, with the second spending a round bought for a
+     * fix. That is 0065 §7's whole reason for *the key, the default and the body,
+     * in one diff*.
+     *
+     * **The `head` still comes out of this step and now comes out of the
+     * action.** It is the whole of what moves `onSha` on a fix round — a round
+     * judged against the wrong head is a round spent on a diff nobody wrote — and
+     * the mechanism is `admit`'s, a step earlier: the action reports
+     * `ActionResult.head`, `headFrom` reads it on the passing branch, and it
+     * survives this body because this body reports none of its own.
+     *
+     * **The three ways it does not pass are the action's now**, and each costs
+     * what it always did. An agent that **asked** answers `failed` carrying
+     * `NEEDS_INPUT`, which at a step `REFUSING_STEPS` does not carry `endingOf`
+     * reads as the `did-not-finish` that reaches the router — a decision at
+     * `proposed` and nothing else (0058 §3c). One that **started and left no
+     * receipt** is `did-not-finish` and stands the pass down (0057 §2), the commit
+     * being the receipt. One that **never started** is `never-ran` and stands the
+     * *conductor* down, because what it met is about the account rather than the
+     * diff (0031 §3).
      *
      * It cannot refuse, and that is 0058 §3b's rectangle: arriving at the router
      * and refusing are different things, and only one of them is charged for.
      */
-    implement: async ({
-      context,
-      reached,
-    }): Promise<StepPassed | StepDidNotFinish | StepNeverRan> => {
-      const answer = await ports.dispatch(briefOn("implement", { context, reached }));
-      if ("committed" in answer) return { ending: "passed", head: answer.committed };
-      if ("asked" in answer) return asking(answer.asked);
-      if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
-      return noReceipt(answer.stopped);
-    },
+    implement: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
      * **Its own step, and a red one skips `review`.**

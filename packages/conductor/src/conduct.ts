@@ -38,14 +38,16 @@
  * ## What the ports are, and what they are not
  *
  * Seven closures, and every one of them **wraps rather than reimplements**, which
- * is the `#226` rule `pass-steps.ts` is held to from the other side. Four are
- * `PassPorts` methods; `take`, `cut` and `land` are a plugin's deps, reached
- * through `stepDeps` rather than through the pass (`#269`, `#268`, `#270`):
+ * is the `#226` rule `pass-steps.ts` is held to from the other side. Three are
+ * `PassPorts` methods; `take`, `cut`, `land` and `work` are a plugin's deps,
+ * reached through `stepDeps` rather than through the pass (`#269`, `#268`,
+ * `#270`, `#266`) — and `work` is `dispatch` under the name `AgentActionDeps`
+ * asks for, with the fix round still on the other side of it:
  *
  * ```
  * take      runnableNow + claimWorkItem      a `queue:` action's, at `claim`
  * cut       repo.provision                   a `worktree:` action's, at `admit`
- * dispatch  the hook, the agent, the receipt  and a fix round, when a round was bought
+ * work      the hook, the agent, the receipt  an `agent:` action's, at `implement`
  * judge     judgeDeclaredAt                  the recipe's own `proposed:` judges
  * land      repo.integrate                    a `merge:` action's, at `merge`
  * readEnd   store.read                        the item's own stream
@@ -137,8 +139,11 @@ import {
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
+  type WorkBrief,
+  type WorkedAnswer,
   actionsFromRecipe,
   createHumanAction,
+  createImplementAction,
   createMergeAction,
   createQueueAction,
   createWorktreeAction,
@@ -183,12 +188,10 @@ import {
   runPass,
 } from "./pass.ts";
 import {
-  type Brief,
   type Claimed,
   type Judged,
   type Judging,
   type PassPorts,
-  type Worked,
   bodiesFor,
 } from "./pass-steps.ts";
 import { isBuiltInJudge } from "@lingtai/recipe";
@@ -238,6 +241,23 @@ export interface AgentRefusal {
    * carries and why this is a field beside it rather than a third value of it.
    */
   key: "agent" | "judge";
+}
+
+/**
+ * **What the recipe's `prompt:` at `implement` adds to the implementer's brief**
+ * — appended, never substituted (`#266`).
+ *
+ * `buildDesignPrompt`'s last line in as many words, and the rule the whole file
+ * follows: a recipe can add what this project cares about and cannot remove what
+ * the prompt already says. `renderPrompt` renders the version Lingtai ships and
+ * hashes as `promptVersion`; this is the project's paragraph after it.
+ *
+ * Empty adds nothing at all rather than an empty heading, because a heading with
+ * nothing under it is a section an agent spends turns looking for meaning in —
+ * and `""` is what every recipe that has not declared one says.
+ */
+function alsoForThisProject(prompt: string): string {
+  return prompt === "" ? "" : `\n\n## Also for this project\n\n${prompt}\n`;
 }
 
 /**
@@ -1864,6 +1884,19 @@ export function runOnce(
             wallMs: parseDuration(limits.wall),
             diffBytes: recipe.runtime.budget.diff,
           },
+          /**
+           * The seventh, and the one that writes the change: `implement`'s
+           * `agent:` action dispatches through this (0065 §2, `#266`).
+           *
+           * A thunk rather than the function itself, and the reason is order
+           * rather than taste: `dispatchWork` is declared below — it is built out
+           * of `firstDispatch` and `fixRound`, which need the tree, the hook and
+           * the run's stream — and naming it here would read it in its temporal
+           * dead zone. Deferred, it is read when an action runs, which is inside
+           * the walk and long after. `settingsPath`'s getter above is the same
+           * problem with the other answer, for a value `admit` writes.
+           */
+          work: (brief: WorkBrief) => dispatchWork(brief),
         },
         watch: {
           changedFiles: async () => {
@@ -2024,6 +2057,28 @@ export function runOnce(
             ),
           ];
         }
+        if (step === "implement") {
+          /**
+           * **The agent that writes the code, which is where `runtime.agent` is
+           * read when the recipe says nothing** (0065 §2, `#266`).
+           *
+           * It is not named here and does not need to be: one conductor
+           * dispatches one runtime, `options.runtime` is it, and `dispatchWork`
+           * is already built over that. What the pasted block adds is a name a
+           * person can read and a `prompt:` they can write — and `agentRefusal`
+           * is what makes a pasted name true of the run, by refusing before the
+           * claim any `agent:` that is not the dispatched one.
+           *
+           * `prompt: ""` is the default's whole content, and it is the
+           * substitution rule saying *behaves exactly as today*:
+           * `alsoForThisProject` adds nothing for it, so the implementer's prompt
+           * is `renderPrompt`'s and `promptVersion` still describes the whole of
+           * what was sent.
+           */
+          return [
+            createImplementAction({ name: "write the change", prompt: "" }, stepDeps.agent),
+          ];
+        }
         if (step === "merge") {
           // The strategy `mergePlugin`'s schema defaults to, because `integrate`
           // offers one — and no base, for the reason that plugin declares none:
@@ -2113,7 +2168,7 @@ export function runOnce(
        * **And the receipt is measured from where the tree stands now, not from
        * where it was cut** (`#265`). See `startedAt` below.
        */
-      const firstDispatch = async (brief: Brief): Promise<Worked> => {
+      const firstDispatch = async (brief: WorkBrief): Promise<WorkedAnswer> => {
         const tree = cutTree();
         /**
          * **Where this agent found the tree** — and the whole of what the receipt
@@ -2184,7 +2239,13 @@ export function runOnce(
                       data: parsePayload("RunStarted", {
                         workItemId,
                         runtime: options.runtime.capabilities.id,
-                        model: "",
+                        // **What the recipe's `agent:` at `implement` named, or
+                        // `""` for the runtime's own default** (`#266`). It was
+                        // `""` unconditionally, which was true while no line of a
+                        // recipe could say otherwise; a `model:` the run was
+                        // spawned with and the log did not carry would be the
+                        // receipt disagreeing with the invocation.
+                        model: brief.spec.model ?? "",
                         promptVersion,
                         baseSha: tree.baseSha,
                         configHash: resolved.configHash,
@@ -2222,20 +2283,25 @@ export function runOnce(
                   options.runtime.run({
                     runId,
                     cwd: tree.path,
-                    prompt: renderPrompt(
-                      options.prompt,
-                      { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
-                      next.failure,
-                      // **What `design` produced, and this is the one reader of it**
-                      // (`#265`). `Brief.design` has been on this object since the
-                      // brief existed and nothing here read it, which cost nothing
-                      // while the port that filled it answered `""` on every pass.
-                      // `agentPlugin` serves the step now: a recipe declaring an
-                      // `agent:` there buys a document, and a document nothing hands
-                      // on is an agent run bought by a line in the recipe whose
-                      // answer no reader ever sees. `""` renders as it always did.
-                      brief.design,
-                    ),
+                    prompt:
+                      renderPrompt(
+                        options.prompt,
+                        { number: Number(brief.issue.ref), title: brief.issue.title, body: brief.issue.body },
+                        next.failure,
+                        // **What `design` produced, and this is the one reader of it**
+                        // (`#265`). The document has been on the brief since the brief
+                        // existed and nothing here read it, which cost nothing while
+                        // the port that filled it answered `""` on every pass.
+                        // `agentPlugin` serves the step now: a recipe declaring an
+                        // `agent:` there buys a document, and a document nothing hands
+                        // on is an agent run bought by a line in the recipe whose
+                        // answer no reader ever sees. `""` renders as it always did.
+                        brief.design,
+                      ) + alsoForThisProject(brief.spec.prompt),
+                    // **Absent means the runtime's own default** (`#266`,
+                    // `AgentActionSpec.model`), so it is spread rather than assigned:
+                    // this seam invents no table of what each runtime defaults to.
+                    ...(brief.spec.model === undefined ? {} : { model: brief.spec.model }),
                     settingsPath: wiring.settingsPath,
                     log: runLog,
                     env: agentEnv,
@@ -2341,7 +2407,10 @@ export function runOnce(
        * `FixRequested` and `FixApplied` are the events the board already reads, so
        * they are appended here, from the step that spends the round.
        */
-      const fixRound = async (brief: Brief, again: NonNullable<Brief["again"]>): Promise<Worked> => {
+      const fixRound = async (
+        brief: WorkBrief,
+        again: NonNullable<WorkBrief["again"]>,
+      ): Promise<WorkedAnswer> => {
         const tree = cutTree();
         const round = brief.context.round ?? 1;
         const findings = brief.context.recheck ?? [];
@@ -2463,17 +2532,36 @@ export function runOnce(
         return { committed: after };
       };
 
-      const dispatch = (brief: Brief): Promise<Worked> =>
+      /**
+       * **`implement`'s work, as the `agent:` action at that step runs it**
+       * (0065 §2, `#266`).
+       *
+       * The dep of a plugin rather than a port of a step, which is `land`'s row
+       * and `cut`'s: `agentPlugin` declares `implement`, so what calls this is
+       * `createImplementAction` in `@lingtai/actions` — over the `prompt:` and
+       * `model:` the action carries and the context the pass is on, which is the
+       * `agent:` at `implement` where a recipe declares one and `defaultsAt`'s
+       * where it does not.
+       *
+       * The branch is unchanged and is still the only thing this decides: a brief
+       * with no round on it is the first dispatch, and one with a round is the fix
+       * the judge already bought. Neither decision is re-made here — `proposed`
+       * made it, `onOffer` counted it, and `ActionContext.again` is what carries
+       * it this far.
+       */
+      const dispatchWork = (brief: WorkBrief): Promise<WorkedAnswer> =>
         brief.again === null ? firstDispatch(brief) : fixRound(brief, brief.again);
 
 
-      // **Six, and none of `cut`, `take`, `land` or `draft` is one of them**:
-      // `admit`'s work is a `worktree:` action (`#268`), `claim`'s is a `queue:`
-      // one (`#269`), `merge`'s is a `merge:` one (`#270`) and `design`'s is an
-      // `agent:` one (`#265`), all four reached through `stepDeps` like every
-      // other plugin's. `draft` is the one of the four that left no dep behind:
-      // the drafting agent is built from `stepDeps.agent`, which the cold
-      // reviewer already needed.
+      // **Five, and none of `cut`, `take`, `land`, `draft` or `dispatch` is one
+      // of them**: `admit`'s work is a `worktree:` action (`#268`), `claim`'s is a
+      // `queue:` one (`#269`), `merge`'s is a `merge:` one (`#270`), `design`'s is
+      // an `agent:` one (`#265`) and `implement`'s is an `agent:` one too
+      // (`#266`), all five reached through `stepDeps` like every other plugin's.
+      // `draft` is the one of them that left no dep behind at all — the drafting
+      // agent is built from `stepDeps.agent`, which the cold reviewer already
+      // needed — and `dispatch` left `stepDeps.agent.work`, which is the same
+      // function under the name the plugin asks for.
       //
       // `item` and `onStream` are what the `take` row left behind, and they ask
       // rather than do: the fact is this closure's, made by the dep above and read
@@ -2483,7 +2571,6 @@ export function runOnce(
       const ports: PassPorts = {
         item: () => took,
         onStream: () => onStream,
-        dispatch,
         judge,
         readEnd,
         recordEnd,
@@ -3058,12 +3145,18 @@ export function runOnce(
         const at = stopped.ending.at;
         const round = wallMetBy();
         yield* standDownConductor(
-          // `implement` has no cell open, so a `never-ran` there is the body's own
-          // stand-down and the wall is the *run's* — **unless the agent at
-          // `implement` was a round's rather than the implementer's**, which is the
-          // one thing `StepNeverRan` cannot say and `fixWall` is recorded for. At
-          // any other step it is a declared plugin's agent, which 0041 §3 reuses
-          // this whole mechanism for.
+          // **The wall at `implement` is the *run's*** — **unless the agent there
+          // was a round's rather than the implementer's**, which is the one thing
+          // `StepNeverRan` cannot say and `fixWall` is recorded for. At any other
+          // step it is a declared plugin's agent, which 0041 §3 reuses this whole
+          // mechanism for.
+          //
+          // **It read *`implement` has no cell open* until `#266`**, and the
+          // sentence stopped being true without the branch needing to change:
+          // `agentPlugin` declares the step, so this is an action's `never-ran`
+          // now rather than a body's stand-down, and `{of: "run"}` is still what
+          // it is — the default at `implement` *is* the run, and a recipe that
+          // declares its own `agent:` there has declared the implementer.
           //
           // **`design` was beside `implement` on the `{of: "run"}` line until
           // `#265`, on the premise this comment stated: that it had no cell open.**

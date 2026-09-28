@@ -54,7 +54,14 @@
  */
 import type { Runtime } from "@lingtai/agent";
 import { SEVERITIES, type Severity } from "@lingtai/domain";
-import type { Action, ActionContext, ActionFinding, ActionResult } from "./action.ts";
+import {
+  NEEDS_INPUT,
+  type Action,
+  type ActionContext,
+  type ActionFinding,
+  type ActionResult,
+  type SentBack,
+} from "./action.ts";
 
 export interface AgentActionSpec {
   name: string;
@@ -99,6 +106,27 @@ export interface AgentActionDeps {
    * diff is normal is a fact about a repository, not about reviewing.
    */
   limits: { turns: number; wallMs: number; diffBytes: number };
+  /**
+   * **The dispatch the `agent:` at `implement` runs** — as the conductor already
+   * calls it (0065 §2, `#266`).
+   *
+   * Beside `runtime` rather than built out of it, and that is the whole shape of
+   * this row: the reviewer and the draft spawn a runtime and read what it said,
+   * and the implementer's dispatch is the hook wired and proven to fail closed,
+   * the socket served, `RunStarted` and `RunFinished` on the run's own stream,
+   * the diff recorded, and the receipt measured against the head *this* agent
+   * found. None of that is something the actions package can learn — it is the
+   * same reason `worktree:` is handed a cut and `merge:` a lane.
+   *
+   * Optional for `ActionDeps`'s reason — `lingtai doctor` and the config tests
+   * build actions purely to check that a recipe *can* be built, and have no
+   * machine to dispatch on — and absent it refuses an `agent:` **at `implement`**
+   * by name rather than becoming a step that passed having written no code. Every
+   * other step this key serves reads a diff or writes a document and needs none
+   * of it, which is why the refusal is the step's and not this object's:
+   * `ImplementActionDeps` below is where it stops being optional.
+   */
+  work?: (brief: WorkBrief) => Promise<WorkedAnswer>;
 }
 
 const RUBRIC = `
@@ -672,6 +700,143 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         findings: [],
         document,
       };
+    },
+  };
+}
+
+/**
+ * **What the one agent at `implement` did in that worktree** — four answers, and
+ * the money is why they are four (`#266`).
+ *
+ * It was `Worked` in `packages/conductor/src/pass-steps.ts`, answered by a port
+ * the body called. `agentPlugin` declares `implement` since 0065 §2, so the four
+ * arrive here instead and `createImplementAction` is what turns each into a
+ * verdict. Nothing about what they *cost* moved: that is `endingOf`'s, one layer
+ * up, and each of the four maps onto an ending the pass already had a rule for.
+ */
+export type WorkedAnswer =
+  /** The commit it left the worktree at — the whole of what moves `onSha`. */
+  | { readonly committed: string }
+  /** It stopped and asked. 0058 §3c: this buys a decision at `proposed`. */
+  | { readonly asked: string }
+  /** The wall that is about the account rather than the diff (0031 §1). */
+  | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
+  /** It started and left no receipt — a crash, a spent budget, no commit (0057 §2). */
+  | { readonly stopped: string };
+
+/**
+ * What the implementing agent is handed, as the only thing this action needs
+ * from its caller beyond the dispatch itself.
+ *
+ * `Brief` in `pass-steps.ts` was the same four facts and is gone with the port.
+ * The three that are not the action's own — the issue, the design and the round
+ * — are read here rather than remembered: `deps.issue()` is the reviewer's own
+ * row, and `design` and `again` are on the context the walk rebuilt for this
+ * visit (`ActionContext`).
+ */
+export interface WorkBrief {
+  /** Which runtime, which model and the project's own words — the recipe's entry. */
+  readonly spec: AgentActionSpec;
+  /** The ticket, exactly as `deps.issue()` answers it. */
+  readonly issue: ReviewIssue;
+  /** What `design` wrote, and `""` where it wrote nothing. `ActionContext.design`. */
+  readonly design: string;
+  /** Why this is the second time, or null on the way through. `ActionContext.again`. */
+  readonly again: SentBack | null;
+  /** The head it is working from, the round it is in, and what that round was bought on. */
+  readonly context: ActionContext;
+}
+
+/**
+ * **The `agent:` at `implement`, and it writes the code** (0065 §2, `#266`).
+ *
+ * The third action this one plugin key builds, and the step is what picks
+ * (`from-recipe.ts`): a reviewer reads a diff, a draft writes a document, and
+ * this one commits. Built apart from `createAgentAction` for `createDraftAction`'s
+ * reason and a stronger one — the reviewer opens by asking for the diff and
+ * returns `passed` when there is none, which at the step that *makes* the diff is
+ * every first pass.
+ *
+ * **It wraps and does not reimplement.** The dispatch is `conduct.ts`'s —
+ * the hook wired and proven to fail closed, the runtime spawned in the worktree,
+ * `RunStarted`/`RunFinished` on the log, and the receipt measured against the
+ * head this agent found — and the caller hands it over as `AgentActionDeps.work`
+ * for the reason `worktree:` is handed a cut: only a caller with a machine under
+ * it can build one.
+ *
+ * **It reports the `head` it committed, and that is the whole of what moves
+ * `onSha` on a fix round.** `ActionResult.head` is the same field `worktree:`
+ * fills at `admit`, `headFrom` reads it on the passing branch, and `runPass`
+ * advances the walk's `onSha` to it — so a round is judged against the diff this
+ * agent wrote rather than against the base the tree was cut at. That property is
+ * older than the plugin and survives it unchanged.
+ *
+ * **Four answers, and three of them are not verdicts about the change.** A
+ * question is a `failed` carrying `NEEDS_INPUT`, which at a step
+ * `REFUSING_STEPS` does not carry is read by `endingOf` as a `did-not-finish`
+ * with that token — exactly the ending `asking()` built by hand, with the
+ * action's name where that wrote `null`. A runtime that never started is
+ * `never-ran` and stands the *conductor* down (0031 §3). One that started and
+ * left no receipt is `did-not-finish` and stands the pass down (0057 §2), buying
+ * no round.
+ *
+ * There is no fifth: `implement` is not one of `REFUSING_STEPS`, so this cannot
+ * refuse, and 0058 §3b's rectangle is what says why — arriving at the router and
+ * refusing are different things, and only one of them is charged for.
+ */
+export interface ImplementActionDeps extends AgentActionDeps {
+  work: NonNullable<AgentActionDeps["work"]>;
+}
+
+export function createImplementAction(spec: AgentActionSpec, deps: ImplementActionDeps): Action {
+  return {
+    name: spec.name,
+    kind: "agent",
+
+    async run(context: ActionContext): Promise<ActionResult> {
+      const issue = await deps.issue();
+      const answer = await deps.work({
+        spec,
+        issue,
+        // `??` and not a default the caller could omit meaning: `""` is a design
+        // that ran and answered nothing, and the absence is a pass that never
+        // reached the step. Both are the same brief (0058 §3).
+        design: context.design ?? "",
+        again: context.again ?? null,
+        context,
+      });
+
+      if ("committed" in answer) {
+        return {
+          verdict: "passed",
+          evidence: `committed ${answer.committed.slice(0, 7)}`,
+          findings: [],
+          head: answer.committed,
+        };
+      }
+      if ("asked" in answer) {
+        return {
+          verdict: "failed",
+          // The question, in the agent's own words, because that is what the
+          // judge at `proposed` weighs and what a person reads (0043).
+          evidence: answer.asked,
+          findings: [],
+          // **The token, and the whole of why this is a `failed` rather than a
+          // `needs-approval`.** A hold reaches a person directly; 0058 §3c sends
+          // a question to `proposed`, which decides whether a person is worth
+          // interrupting or whether the agent goes round again stating its
+          // assumption. `implement` does not refuse, so `endingOf` reads this as
+          // the `did-not-finish` that carries the token — and `goesToTheRouter`
+          // is what reads it.
+          because: NEEDS_INPUT,
+        };
+      }
+      if ("neverStarted" in answer) {
+        // The runtime's own words, whole, exactly as the reviewer and the draft
+        // hand them on: `conduct.ts` reads a reset time out of them (0031 §4).
+        return { verdict: "never-ran", evidence: answer.neverStarted.detail, findings: [] };
+      }
+      return { verdict: "did-not-finish", evidence: answer.stopped, findings: [] };
     },
   };
 }

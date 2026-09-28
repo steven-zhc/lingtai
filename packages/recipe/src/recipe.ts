@@ -215,7 +215,35 @@ export const agentPlugin = definePlugin("agent", {
    * `merge` stays for the re-verify after a moved base. `build` is not here: a
    * `run:` belongs there, and an agent asked to build would be paid to read.
    */
-  at: { design: notBuiltYet, review: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
+  /**
+   * **`implement` since `#266`, and it is the key that closes 0065 §1's
+   * asymmetry.** The cold reviewer has been an `agent:` a person can read and
+   * edit for months; the agent that *writes the code* was `runtime.agent` in a
+   * machine config file, reachable by nothing a recipe could say. Both are in the
+   * recipe now, and what the default reads where a recipe says nothing is still
+   * `runtime.agent` — so a file that declares nothing here behaves exactly as it
+   * did.
+   *
+   * **A third action off one key, and the step is what picks**
+   * (`actionsFromRecipe`). `createImplementAction` neither reads a diff nor
+   * writes a document: it commits, and it reports the `head` it committed, which
+   * is the whole of what moves `onSha` on a fix round. Built out of the reviewer
+   * it would have asked for the diff and returned `passed` on the empty one —
+   * `design`'s trap at the step that *makes* the diff, so every first pass.
+   *
+   * **The default at this step is not nothing**, which is its whole difference
+   * from `design`: `conduct.ts`'s `defaultsAt` has a row for it, because a pass
+   * that wrote no code is not a pass. That is also 0065 §7's footgun arriving —
+   * a recipe that declares `[]` here writes nothing, and one that declares an
+   * `agent:` at four steps buys four agents.
+   */
+  at: {
+    design: notBuiltYet,
+    implement: notBuiltYet,
+    review: notBuiltYet,
+    proposed: notBuiltYet,
+    merge: notBuiltYet,
+  },
 });
 
 /** Globs against the diff's file list; a match holds or fails. */
@@ -1081,32 +1109,6 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
 }
 
 /**
- * Where the work a step no plugin implements names is actually done today.
- *
- * The half of the refusal that is worth reading. *No plugin implements this
- * step* leaves an operator with a recipe key and no next move; *`conduct.ts`
- * dispatches the implementing agent directly* is the line they can act on, and
- * it is also the thing that stops being true the day a plugin declares itself
- * at that step — at which point the entry goes and an `at` key arrives in the
- * same diff.
- *
- * **`build` and `review` are the day that happened** (2026-09-27, `a417908`).
- * Both said *it runs as an action at `proposed`*, both are served now, and both
- * entries went with the keys that opened — the same diff the second half of the
- * rule describes, in the other direction. Neither is reachable any more:
- * `whyNoKindAt` reads this only where `pluginsAt` is empty.
- *
- * **And `design` is the third** (`#265`). Its entry said *there is no design
- * step*, which stopped being true when `agentPlugin` gained the key: there is
- * one, the recipe is what declares it, and an operator who writes a `run:` there
- * is told about the pair rather than about a step nobody built. `implement` is
- * the last one left, and the table goes with it.
- */
-const WHERE_INSTEAD: Record<"implement", string> = {
-  implement: "`conduct.ts` dispatches the implementing agent directly, under `runtime.limits`",
-};
-
-/**
  * **Why a `judge:` belongs at `proposed` and nowhere else**, and what `proposed`
  * does with the ones it is given.
  *
@@ -1234,11 +1236,12 @@ const FILES_AND_ROUTES_NOTHING =
  * **The same table read down the other axis**: a plugin the pass calls itself,
  * and where it calls it.
  *
- * `WHERE_INSTEAD` above is *this step is named and not built*; this is *this
- * plugin is named and not read*. Both are `#61`'s failure caught before it can
- * happen, and both say the one thing an operator can act on — not *nothing
- * runs this* but **the code is already running, here, and the recipe is not yet
- * what tells it to**.
+ * `WHERE_INSTEAD` was *this step is named and not built* until `#266` emptied
+ * it; this is *this plugin is named and not read*. Both are `#61`'s failure
+ * caught before it can happen, and both say the one thing an operator can act on
+ * — not *nothing runs this* but **the code is already running, here, and the
+ * recipe is not yet what tells it to**. One of the two has run out of subjects,
+ * which is what this whole chain of tickets is for.
  *
  * Why the one left is declared at all before anything reads it: a plugin no
  * list carries is a plugin no step refuses
@@ -1322,7 +1325,9 @@ function servedBy(plugin: Plugin): string {
  * - **A step no plugin implements**, which is the sentence the table could not
  *   say (0064 §1). An empty row read as *this step takes nothing*, which is
  *   indistinguishable from *nobody has built it* — and that ambiguity is how
- *   `#231` died. `WHERE_INSTEAD` is what each of those says instead.
+ *   `#231` died. **No step of the ten takes this branch since `#266`**, which is
+ *   what `WHERE_INSTEAD` leaving with `implement`'s key means; it is still
+ *   reached by a caller that passes its own `plugins` list.
  * - **A step somebody implements and this plugin does not.** Then the useful
  *   thing is where this plugin *does* serve, and the reason is about the pair.
  */
@@ -1350,14 +1355,18 @@ export function whyNoKindAt(
   // presence or absence of a key, and this is the sentence that difference
   // buys — one somebody can act on, because it names what to write instead.
   if (pluginsAt(step, plugins).length === 0) {
-    // One sentence per step and not one for the group: *nobody implements it*
-    // is the same refusal at all five, and **where the work actually happens
-    // today** is different at each — the only part an operator can act on.
-    const instead = step in WHERE_INSTEAD ? ` Today ${WHERE_INSTEAD[step as keyof typeof WHERE_INSTEAD]}.` : "";
+    // **`WHERE_INSTEAD` is gone, and the branch it hung off is not** (`#266`).
+    // It was a table of *where the work a step nobody implements is actually
+    // done today*, and `implement` was the last entry in it: `agentPlugin`
+    // declares the step now, so there is nothing left for it to say and the
+    // table went with the key that opened — which is the same diff the rule
+    // itself asks for. The branch stays because `whyNoKindAt` is asked with a
+    // caller's own `plugins` list as well as with `PLUGINS`, and a list that
+    // serves nothing at a step is exactly what it is here to answer.
     return (
       `no plugin implements \`${step}\` — the step is named by ` +
       "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
-      `have a word for it, and no plugin's \`at\` carries that key yet.${instead} ` +
+      "have a word for it, and no plugin's `at` carries that key yet. " +
       "Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded " +
       "in `StepsResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );
@@ -1395,9 +1404,10 @@ export function whyNoKindAt(
  * plugin, `whyNoKindAt` answers every kind at it from the *no plugin implements
  * this* branch and never reaches here; the moment one arrives, all eleven other
  * kinds fall through to the three paragraphs at the bottom and are told about
- * `prepared`. `admit` (`#268`), `merge` (`#270`), `claim` (`#269`) and `design`
- * (`#265`) each brought their own, and `implement` is the one step still without
- * a plugin to need one.
+ * `prepared`. `admit` (`#268`), `merge` (`#270`), `claim` (`#269`), `design`
+ * (`#265`) and `implement` (`#266`) each brought their own, and with the last of
+ * them every step of the ten has a plugin — so the branch above this one is now
+ * reachable only by a caller that hands in a `plugins` list of its own.
  *
  * **`judge:` is answered by kind before any step but `end`** (`#274`), and that
  * is the one inversion of the order above. Every other branch says *what this
@@ -1464,6 +1474,17 @@ function whyThatPair(step: Step, kind: ActionKind): string {
       "at `prepared`, and nothing has been written, so an agent has no diff to read and a glob no file " +
       "list to match. A question that has to be asked before anything is spent is `lingtai ask`, which " +
       "holds the item in the queue rather than a run that has already paid for a clone"
+    );
+  }
+  if (step === "implement") {
+    return (
+      "`implement` is one agent writing the change in the worktree (0058 §3), so the only plugin it " +
+      "carries is the one that can write it — `agent:`, which is the key `agentPlugin` declares there, " +
+      "and at this step it commits rather than reviews. It is the step that *makes* the diff, so " +
+      "nothing that reads one belongs here: a command that checks the change is a `run:` at `build`, " +
+      "a cold read of it is `review`, and a glob over its file list is `proposed`'s. A hold reads as " +
+      "though it would work and is the same mistake: a question about a change is a question about a " +
+      "change that exists, and `proposed:` is where there is a diff to ask it about"
     );
   }
   if (step === "design") {

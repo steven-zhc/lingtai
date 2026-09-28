@@ -14,10 +14,11 @@
  * §1).
  */
 import type { RunOutcome, Runtime } from "@lingtai/agent";
-import type { QueueActionDeps } from "@lingtai/actions";
+import type { AgentActionDeps, QueueActionDeps } from "@lingtai/actions";
 import {
   createAgentAction,
   createDraftAction,
+  createImplementAction,
   createMergeAction,
   createQueueAction,
   createWorktreeAction,
@@ -29,6 +30,8 @@ import {
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
+  type WorkBrief,
+  type WorkedAnswer,
 } from "@lingtai/actions";
 import type { Envelope, PayloadOf, ToAppend } from "@lingtai/domain";
 import type { Worktree } from "@lingtai/repo";
@@ -46,13 +49,11 @@ import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from "../src/judge.ts";
 import {
   END_UNRESOLVED,
   bodiesFor,
-  type Brief,
   type Claimed,
   type Judged,
   type Judging,
   type PassPorts,
   type SentBack,
-  type Worked,
 } from "../src/pass-steps.ts";
 
 // --------------------------------------------------------------- fixtures ----
@@ -212,7 +213,7 @@ interface Asks {
    * what the runtime was asked to run and not a port call.
    */
   draft: string[];
-  dispatch: Brief[];
+  dispatch: WorkBrief[];
   /** Every brief a judge was handed, which is what *spends an agent* looks like. */
   judge: Judging[];
   /**
@@ -239,7 +240,7 @@ interface Answers {
    * `design`. A document and nothing else, by default.
    */
   draft?: Partial<RunOutcome>;
-  dispatch?: Worked | ((brief: Brief) => Worked);
+  dispatch?: WorkedAnswer | ((brief: WorkBrief) => WorkedAnswer);
   /** Nothing declared, by default: the built-ins and the person are what answer. */
   judge?: Judged | ((on: Judging) => Judged);
   /** What the lane answers. Merged at `MERGED`, by default. */
@@ -253,7 +254,12 @@ interface Answers {
 
 function portsAnswering(
   answers: Answers = {},
-): { ports: PassPorts; asked: Asks; taking: QueueActionDeps } {
+): {
+  ports: PassPorts;
+  asked: Asks;
+  taking: QueueActionDeps;
+  working: NonNullable<AgentActionDeps["work"]>;
+} {
   const asked: Asks = {
     take: [],
     cut: [],
@@ -307,13 +313,23 @@ function portsAnswering(
     },
   };
 
+  /**
+   * **The dispatch, as the `agent:` action at `implement` runs it** (`#266`).
+   *
+   * Beside the ports rather than on them, for `take`'s and `cut`'s reason:
+   * `implement`'s work is a plugin's now, so what a test reads back is the brief
+   * the action built and not a port call. The four answers are unchanged — the
+   * action is what turns each into a verdict, and `endingOf` is what turns that
+   * into the ending these tests assert on.
+   */
+  const working: NonNullable<AgentActionDeps["work"]> = async (brief) => {
+    asked.dispatch.push(brief);
+    return of(answers.dispatch, { committed: COMMITTED }, brief);
+  };
+
   const ports: PassPorts = {
     item: () => took,
     onStream: () => onStream,
-    dispatch: async (brief) => {
-      asked.dispatch.push(brief);
-      return of(answers.dispatch, { committed: COMMITTED }, brief);
-    },
     judge: async (on) => {
       asked.judge.push(on);
       return of(answers.judge, { noJudge: true }, on);
@@ -328,7 +344,7 @@ function portsAnswering(
       if (answers.recordThrows) throw answers.recordThrows;
     },
   };
-  return { ports, asked, taking };
+  return { ports, asked, taking, working };
 }
 
 /** One run of the whole pass, with whatever the recipe declares and the ports say. */
@@ -340,7 +356,7 @@ async function pass(
     ceilings?: PassOptions["ceilings"];
   } = {},
 ): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
-  const { ports, asked, taking } = portsAnswering(options.answers);
+  const { ports, asked, taking, working: working_ } = portsAnswering(options.answers);
   /**
    * **`claim`'s, `admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt`
    * supplies them** (0065 §3).
@@ -400,6 +416,30 @@ async function pass(
         limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
       },
     );
+  /**
+   * **`implement`'s default, as `conduct.ts`'s `defaultsAt` supplies it**
+   * (`#266`) — the action that writes the change, over a dispatch that spawns
+   * nothing.
+   *
+   * Unlike `design`'s, this one *is* a default: a pass that wrote no code is not
+   * a pass, so a recipe that declares nothing at `implement` still gets an agent.
+   * `issue` reads the item back through the port for `conduct.ts`'s reason — the
+   * closure that holds a fact is the one that can hand it back — and the runtime
+   * beside it is never reached, because `work` is the whole of what this action
+   * dispatches through.
+   */
+  const working = (): Action =>
+    createImplementAction(
+      { name: "write the change", prompt: "" },
+      {
+        runtime: {} as unknown as Runtime,
+        issue: async () => ports.item()?.ticket ?? { ref: "", title: "", body: "" },
+        diff: async () => "",
+        settingsPath: "/nowhere/settings.json",
+        limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
+        work: working_,
+      },
+    );
   const landing = (): Action =>
     createMergeAction(
       { name: "land the branch", strategy: "merge-commit" },
@@ -427,6 +467,7 @@ async function pass(
       if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
       if (step === "claim") return [claiming()];
       if (step === "admit") return [cutting()];
+      if (step === "implement") return [working()];
       return step === "merge" ? [landing()] : [];
     },
   });
@@ -460,7 +501,7 @@ describe("claim runs the `queue:` plugin, and cannot refuse", () => {
     ]);
     expect(asked.take).toEqual([QUEUE]);
     expect(asked.cut).toEqual([{ base: "main", submodules: false }]);
-    expect(asked.dispatch[0]?.ticket).toEqual(ITEM.ticket);
+    expect(asked.dispatch[0]?.issue).toEqual(ITEM.ticket);
     // `end` resolves onto the stream `claim` named, and nowhere else.
     expect(asked.read).toEqual([ITEM.workItemId]);
   });
@@ -774,7 +815,7 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
     expect(result.steps[3]).toEqual({ step: "design", ending: { ending: "passed" }, results: [] });
     expect(asked.draft).toEqual([]);
     expect(asked.dispatch[0]?.design).toBe("");
-    expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body);
+    expect(asked.dispatch[0]?.issue.body).toBe(ITEM.ticket.body);
     expect(result.stoppedAt).toBeNull();
     expect(outcomeOf(result)).toBe("landed");
   });
@@ -908,19 +949,19 @@ describe("implement dispatches the one agent, and reports what it committed", ()
   it.each([
     {
       what: "asked",
-      answer: { asked: "the ticket names two files and neither exists" } as Worked,
+      answer: { asked: "the ticket names two files and neither exists" } as WorkedAnswer,
       ending: { ending: "did-not-finish", because: NEEDS_INPUT },
       routed: true,
     },
     {
       what: "left no receipt",
-      answer: { stopped: "the turn budget was spent" } as Worked,
+      answer: { stopped: "the turn budget was spent" } as WorkedAnswer,
       ending: { ending: "did-not-finish", because: "did-not-finish" },
       routed: false,
     },
     {
       what: "never started",
-      answer: { neverStarted: { agent: "claude-code", detail: "signed out" } } as Worked,
+      answer: { neverStarted: { agent: "claude-code", detail: "signed out" } } as WorkedAnswer,
       ending: { ending: "never-ran" },
       routed: false,
     },
@@ -957,7 +998,9 @@ describe("implement dispatches the one agent, and reports what it committed", ()
     let asks = true;
     const { ports, asked, taking } = portsAnswering({
       dispatch: () => {
-        const answer: Worked = asks ? { asked: "which of the two files?" } : { committed: COMMITTED };
+        const answer: WorkedAnswer = asks
+          ? { asked: "which of the two files?" }
+          : { committed: COMMITTED };
         asks = false;
         return answer;
       },

@@ -1,5 +1,6 @@
 export {
   runActionPipeline,
+  NEEDS_INPUT,
   type Action,
   type ActionContext,
   type ActionEvent,
@@ -8,6 +9,7 @@ export {
   type ActionVerdict,
   type PipelineOptions,
   type PipelineResult,
+  type SentBack,
 } from "./action.ts";
 export {
   createProcessAction,
@@ -21,11 +23,15 @@ export {
   buildReviewPrompt,
   createAgentAction,
   createDraftAction,
+  createImplementAction,
   parseFindings,
   verdictFor,
   type AgentActionDeps,
   type AgentActionSpec,
+  type ImplementActionDeps,
   type ReviewIssue,
+  type WorkBrief,
+  type WorkedAnswer,
 } from "./agent-action.ts";
 export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
 export { createWatchAction, type WatchActionDeps, type WatchActionSpec } from "./watch-action.ts";

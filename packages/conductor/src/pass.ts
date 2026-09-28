@@ -74,12 +74,14 @@
 import { STEPS, type Step } from "@lingtai/domain";
 import {
   runActionPipeline,
+  NEEDS_INPUT,
   type Action,
   type ActionContext,
   type ActionEvent,
   type ActionFinding,
   type ActionVerdict,
   type PipelineResult,
+  type SentBack,
 } from "@lingtai/actions";
 import type { Recipe, StepAction } from "@lingtai/recipe";
 import type { TerminalOutcome } from "./end-step.ts";
@@ -322,16 +324,22 @@ export interface StepDidNotFinish extends LeftTheTreeAt {
 }
 
 /**
- * **The one `because` the workflow itself reads**, and the reason it must be a
- * constant rather than a string spelled out at two call sites.
+ * **The one `because` the workflow itself reads**, and `@lingtai/actions`'s
+ * since `#266`.
  *
  * 0058 §3c gives `admit`, `design` and `implement` this token for *the step
  * stopped and asked*, and it is the only `did-not-finish` with a destination:
  * the judge's call is `waiting` with the question, or that step again with
  * *state your assumption*. Every other value of `because` belongs to the step
  * that produced it and the judge that reads it — see `StepRefused`.
+ *
+ * It moved because the question is an action's now: the `agent:` at `implement`
+ * answers a question with `ActionResult.because`, and a token the producer
+ * cannot name is a token spelled out at two call sites, which is what the
+ * constant exists to stop. Re-exported here so every reader that had it from
+ * this file still does.
  */
-export const NEEDS_INPUT = "needs-input";
+export { NEEDS_INPUT } from "@lingtai/actions";
 
 /**
  * The step was reached and its agent never started.
@@ -1237,8 +1245,23 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * judging the same tree in the same round: a `review` handed a different
    * `onSha` from the pipeline that just ran at `build` would be two verdicts
    * about two commits on one card.
+   *
+   * **Five moving fields since `#266`, and the two new ones are read off the walk
+   * rather than held beside it.** `design` and `again` were `briefOn`'s in
+   * `pass-steps.ts` while the brief was a body's argument; the brief is an
+   * action's now, and an action is handed exactly this object. The step is an
+   * argument for `again`'s sake alone — *was this step routed back to* is a
+   * different question at each of the ten, and the two call sites that are not
+   * the spine pass their own (`proposed`, `end`).
    */
-  const contextFor = (): ActionContext => ({ ...options.context, onSha, round: roundsSpent, recheck });
+  const contextFor = (step: Step): ActionContext => ({
+    ...options.context,
+    onSha,
+    round: roundsSpent,
+    recheck,
+    design: designOn(steps),
+    again: sentBackTo(step, steps),
+  });
 
   /**
    * One visit, recorded — and the head it left the tree at, if it moved it.
@@ -1325,7 +1348,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     const offer = spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : NO_OFFER;
     const reached = record(
       await runStep(spec, options, bodies, [...steps], {
-        context: contextFor(),
+        context: contextFor(at),
         // The spine visit: the step's own plugins, then its own body. Nothing has
         // arrived, and at nine of the ten there is nothing to route.
         arriving: null,
@@ -1367,7 +1390,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     const arrival = onOffer(at, ending, ceilings, roundsSpent);
     const router = record(
       await runStep(SPEC.proposed, options, bodies, [...steps], {
-        context: contextFor(),
+        context: contextFor("proposed"),
         arriving: reached,
         offering: arrival,
         outcome: null,
@@ -1393,7 +1416,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   const outcome = outcomeOf({ stoppedAt, rested });
   record(
     await runStep(SPEC.end, options, bodies, [...steps], {
-      context: contextFor(),
+      context: contextFor("end"),
       arriving: null,
       offering: NO_OFFER,
       outcome,
@@ -1436,6 +1459,62 @@ interface Reaching {
  */
 function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
   return lap.flatMap((visit) => visit.results.flatMap((result) => result.findings));
+}
+
+/**
+ * What `design` produced, **read off the visit rather than remembered** (`#265`).
+ *
+ * It was `pass-steps.ts`'s, beside `briefOn`, and came here with `implement`'s
+ * work (`#266`): the document is read by an *action* now, so it has to reach one
+ * — and the only thing that can put it there is whatever builds the context an
+ * action is run with, which is `contextFor` below.
+ *
+ * `""` at both ends of it. A recipe that declares nothing at `design` runs no
+ * action, so there is no document and this answers `""`; an agent that answered
+ * nothing produces `""` as a document it wrote. Those are the same brief to
+ * `implement` — it works from the issue either way, and there is no conditional
+ * step (0058 §3) — and they are different things on the card, where the action's
+ * own `evidence` says which.
+ */
+function designOn(reached: readonly StepReached[]): string {
+  const drafted = reached.filter((visit) => visit.step === "design").at(-1);
+  return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? "") : "";
+}
+
+/**
+ * **Why the pass is at this step a second time, read off the visits** — or
+ * `null`, which is every visit on the way through.
+ *
+ * `designOn`'s neighbour and here for its reason (`#266`). The route is the last
+ * visit when a step is re-entered: `runPass` records `proposed`'s decision and
+ * then walks straight into the step it chose. The question is the visit before
+ * that one, and only where *this* step asked it — a route back to `implement`
+ * from a `build` that refused carries findings rather than a question, and
+ * `context.recheck` is where those are.
+ */
+function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | null {
+  const judged = reached.at(-1);
+  if (judged === undefined || judged.step !== "proposed") return null;
+  const route = judged.ending;
+  if (route.ending !== "routed" || route.to !== step) return null;
+  const arrived = reached.at(-2);
+  const asked =
+    arrived !== undefined &&
+    arrived.step === step &&
+    arrived.ending.ending === "did-not-finish" &&
+    arrived.ending.because === NEEDS_INPUT
+      ? arrived.ending.detail
+      : null;
+  // And what it printed, where that is not the question `asked` already holds.
+  // The evidence the judge weighed is on the arriving visit's ending, and this
+  // is the only thing that carries it as far as the agent buying the round:
+  // `context.recheck` is empty on a mechanical route, because a command's
+  // refusal raises no findings.
+  const printed =
+    asked === null && arrived !== undefined && "detail" in arrived.ending && arrived.ending.detail !== ""
+      ? { step: arrived.step, detail: arrived.ending.detail }
+      : null;
+  return { why: route.why, asked, printed };
 }
 
 /**

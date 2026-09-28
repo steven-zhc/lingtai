@@ -8,7 +8,12 @@
  */
 import type { Step } from "@lingtai/domain";
 import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
-import { type AgentActionDeps, createAgentAction, createDraftAction } from "./agent-action.ts";
+import {
+  type AgentActionDeps,
+  createAgentAction,
+  createDraftAction,
+  createImplementAction,
+} from "./agent-action.ts";
 import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
@@ -177,17 +182,34 @@ export function actionsFromRecipe(
         prompt: action.prompt,
         ...(action.model === undefined ? {} : { model: action.model }),
       };
-      // **One key, two actions, and the step is what picks** (`#265`). `agent:`
-      // at `design` drafts and everywhere else it reviews, which is 0065 §4's own
-      // table — *an `agent:` that drafts* at one step, *a cold reviewer* at the
-      // others — and it is a branch rather than a flag on the spec because the
-      // difference is total: the reviewer opens by asking for the diff and
-      // returns `passed` when there is none, and at `design` there never is one.
-      // Built here because this is the seam that knows the step; the actions
-      // themselves know only what they were handed.
-      return step === "design"
-        ? createDraftAction(agent, deps.agent)
-        : createAgentAction(agent, deps.agent);
+      // **One key, three actions, and the step is what picks** (`#265`, `#266`).
+      // `agent:` at `design` drafts, at `implement` it writes the code, and
+      // everywhere else it reviews — which is 0065 §4's own table — and it is a
+      // branch rather than a flag on the spec because the difference is total:
+      // the reviewer opens by asking for the diff and returns `passed` when there
+      // is none, and at `design` there never is one and at `implement` there is
+      // none until this action has made it. Built here because this is the seam
+      // that knows the step; the actions themselves know only what they were
+      // handed.
+      if (step === "design") return createDraftAction(agent, deps.agent);
+      if (step === "implement") {
+        // **The one of the three that needs a second dep**, and refused by name
+        // rather than run without it: an `implement` action with nothing to
+        // dispatch is a step that passes having written no code, which is worse
+        // at this step than anywhere else — `build` and `review` would then judge
+        // the base, and `merge` would land it.
+        const { work } = deps.agent;
+        if (!work) {
+          throw new ActionUnavailableError(
+            action.name,
+            kind,
+            "no dispatch was supplied to actionsFromRecipe",
+            step,
+          );
+        }
+        return createImplementAction(agent, { ...deps.agent, work });
+      }
+      return createAgentAction(agent, deps.agent);
     }
 
     if ("watch" in action) {
