@@ -270,6 +270,15 @@ thing that bounds it (0065 §7). A ticket whose shape is obvious from the issue
 pays for a document nobody reads, which is why the prompt this action is built
 with says an empty answer is the common one.
 
+**What it returns is handed to the implementing agent**, under a heading saying
+where it came from — in `{{design}}` where the prompt template has that placeholder
+(`runtime.prompt`, or `prompts/ticket.md` where the recipe names none), appended
+after the template where it does not, and nothing at all where the document is
+empty. That is `{{failure}}`'s rule and it is here for the same reason: a template
+with no slot must not silently drop something a pass paid for. The heading says the
+ticket outranks the design where the two disagree, because the implementing agent
+has both.
+
 **It runs in the worktree `implement` will run in**, writable and with no hook,
 like the cold reviewer — so it is *asked* not to commit and nothing stops it. What
 makes that harmless is not the prompt: `implement`'s receipt (0057 §2) is measured
