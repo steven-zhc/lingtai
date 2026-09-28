@@ -1040,11 +1040,12 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      */
     if (arrival.unreadable) {
       return toAPerson(
-        `${about} could not be read at all — the answer did not parse as findings, so whatever ` +
-          "the reviewer said is in that attempt's run log and nowhere a program can reach it. " +
-          "That is the machinery losing a judgement rather than a reviewer declining to make " +
-          "one, and it buys no round either: an answer nobody can read is not a criterion " +
-          "(0038 §2). The pass is held for a person, who has the transcript",
+        `${about} could not be read at all — the answer did not parse as findings, so nothing ` +
+          "structured came out of it however much the reviewer said. That is the machinery " +
+          "losing a judgement rather than a reviewer declining to make one, and it buys no " +
+          "round either: an answer nobody can read is not a criterion (0038 §2). The answer " +
+          "itself is on the step's own `StepFailed`, clipped, and whole in that attempt's " +
+          "agent transcript; the pass is held for a person, who can read both",
       );
     }
     if (!carriesACriterion(arrival)) {
