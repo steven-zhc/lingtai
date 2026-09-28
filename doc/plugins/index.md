@@ -28,7 +28,7 @@ plugin is a red test rather than something somebody has to remember.
 | [`run`](run.md) | `prepared` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the one extension point. |
 | [`agent`](agent.md) | `design` `implement` `review` `proposed` `merge` | Buys an agent a turn — to draft, to write, to read the diff cold, or to answer. |
 | `watch` | `proposed` | Holds the pass when the diff touches a path you named. |
-| `human` | `proposed` | Stops for a person, and asks them the question you wrote. |
+| [`human`](human.md) | `proposed` | Stops for a person, and asks them the question you wrote. |
 | [`judge`](judge.md) | `proposed` | Answers *what now* when a step refused, in place of a person. |
 | `worktree` | `admit` | Cuts the branch and the worktree this pass owns. |
 | `queue` | `claim` | Picks which ticket the pass is about. |
