@@ -34,7 +34,7 @@ import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type StepPlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
-import { limitsFor } from "@lingtai/recipe/settings";
+import { limitsFor, queueOf } from "@lingtai/recipe/settings";
 
 /** One of the ten steps, and what the recipe runs there. */
 export interface PlannedStep {
@@ -268,7 +268,7 @@ export async function queuedFor(input: {
   const until = backoffOf(input.own, filter.backoffMs);
 
   try {
-    const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
+    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) });
     const runnable = await selectRunnable({
       project,
       offered: offered.runnable,

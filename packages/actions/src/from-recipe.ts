@@ -14,6 +14,7 @@ import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
 import { createProcessAction } from "./process-action.ts";
 import { createMergeAction, type MergeActionDeps } from "./merge-action.ts";
+import { createQueueAction, type QueueActionDeps } from "./queue-action.ts";
 import { createWorktreeAction, type WorktreeActionDeps } from "./worktree-action.ts";
 
 /**
@@ -47,6 +48,16 @@ export interface ActionDeps {
    * branch that is not on the base.
    */
   merge?: MergeActionDeps;
+  /**
+   * The take a `queue:` action runs — `runnableNow` and `claimWorkItem`, as the
+   * conductor already calls them (0065 §2, `#269`).
+   *
+   * Optional for the reason the other three are, and absent it refuses a
+   * `queue:` action by name rather than becoming a step that passes having
+   * claimed nothing — which at `claim` is a pass that cuts a worktree and briefs
+   * an agent about an item nobody holds.
+   */
+  queue?: QueueActionDeps;
   /**
    * The declared names of a `run:` action → the whole environment its process
    * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
@@ -199,6 +210,16 @@ export function actionsFromRecipe(
       // its own would manufacture a disagreement between what the pass cut and
       // what it lands (0061 §4, `mergePlugin` in `@lingtai/recipe`).
       return createMergeAction({ name: action.name, strategy: action.merge.strategy }, deps.merge);
+    }
+
+    if ("queue" in action) {
+      if (!deps.queue) {
+        throw new ActionUnavailableError(action.name, kind, "no take was supplied to actionsFromRecipe");
+      }
+      // All four fields, and the far side re-reads none of them: a `claim` that
+      // selected over the recipe while the board drew the action's block would be
+      // the ticket taken not being the ticket a reading says was taken (`#269`).
+      return createQueueAction({ name: action.name, ...action.queue }, deps.queue);
     }
 
     if ("human" in action) {

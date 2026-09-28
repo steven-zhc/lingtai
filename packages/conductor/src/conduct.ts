@@ -38,12 +38,12 @@
  * ## What the ports are, and what they are not
  *
  * Eight closures, and every one of them **wraps rather than reimplements**, which
- * is the `#226` rule `pass-steps.ts` is held to from the other side. Six are
- * `PassPorts` methods; `cut` and `land` are a plugin's deps, reached through
- * `stepDeps` rather than through the pass (`#268`, `#270`):
+ * is the `#226` rule `pass-steps.ts` is held to from the other side. Five are
+ * `PassPorts` methods; `take`, `cut` and `land` are a plugin's deps, reached
+ * through `stepDeps` rather than through the pass (`#269`, `#268`, `#270`):
  *
  * ```
- * take      runnableNow + claimWorkItem      discover.ts, claim.ts
+ * take      runnableNow + claimWorkItem      a `queue:` action's, at `claim`
  * cut       repo.provision                   a `worktree:` action's, at `admit`
  * draft     nothing, and `""` is the answer   no cell is open at `design`
  * dispatch  the hook, the agent, the receipt  and a fix round, when a round was bought
@@ -52,6 +52,10 @@
  * readEnd   store.read                        the item's own stream
  * recordEnd held for the ending's append       what `end` resolved, never alone
  * ```
+ *
+ * Beside those, `item` and `onStream` — two `PassPorts` methods that read what
+ * `take` left in this closure rather than doing anything, for `cutTree`'s reason:
+ * the closure that holds a fact is the one that can hand it back (`#269`).
  *
  * **One of them answers *nothing is declared*, and that is the truthful answer
  * rather than a stub.** No plugin declares itself at `design`, so `whyNoKindAt`
@@ -116,7 +120,9 @@ import {
   baseOf,
   limitsFor,
   parseDuration,
+  queueOf,
   submodulesOf,
+  type QueueSettings,
   type ResolvedRecipe,
   type StepAction,
 } from "@lingtai/recipe";
@@ -128,9 +134,11 @@ import {
   type CutAnswer,
   type LandAnswer,
   type MergeStrategy,
+  type TakeAnswer,
   actionsFromRecipe,
   createHumanAction,
   createMergeAction,
+  createQueueAction,
   createWorktreeAction,
 } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
@@ -179,7 +187,6 @@ import {
   type Judged,
   type Judging,
   type PassPorts,
-  type Taken,
   type Worked,
   bodiesFor,
 } from "./pass-steps.ts";
@@ -921,8 +928,19 @@ export function runOnce(
         }
         return worktree;
       };
-      /** The item, once `claim`'s port has taken it. */
+      /** The item, once `claim`'s `queue:` action has taken it. */
       let took: Claimed | null = null;
+      /**
+       * **The stream `end` resolves onto**, or null where this pass is about no
+       * item (`#269`).
+       *
+       * Beside `took` rather than read off it, because the two are not the same
+       * question: a claim whose append *may* have committed gives the pass a stream
+       * and no ticket, and `end` needs only the first of those — it is the one
+       * decline that leaves a stream behind, and an item this run may be holding is
+       * one somebody has to be told about.
+       */
+      let onStream: string | null = null;
       /**
        * The cold reviewer's settings file, once `admit`'s port has written it.
        *
@@ -1328,8 +1346,18 @@ export function runOnce(
        * the pass stops with the item named and `end` resolves against the stream
        * it may be on.
        */
-      const take = async (): Promise<Taken> => {
-        const found = await runnableNow({ client: options.client, recipe, only: [options.issue] });
+      const take = async (queue: QueueSettings): Promise<TakeAnswer> => {
+        // **Before the answer, not after it** — the three ways this can decline
+        // set no item, and it was exactly those that would let `end` resolve onto
+        // the item the pass before had landed. It is here rather than in `claim`'s
+        // body because the action runs *before* the body: a reset written there
+        // would wipe what this had just taken (`pass-steps.ts`).
+        took = null;
+        onStream = null;
+        // The four values off the action and never off `recipe` here, so that the
+        // ticket this takes is the one the reading of the recipe says it took
+        // (`queueOf`, and `defaultsAt` below where a recipe declares nothing).
+        const found = await runnableNow({ client: options.client, queue, only: [options.issue] });
         const runnable = found.runnable.find((r) => r.ref === String(options.issue));
         if (!runnable) {
           return {
@@ -1352,6 +1380,10 @@ export function runOnce(
             kind: runnable.kind,
           });
         } catch (error) {
+          // The one decline that leaves a stream behind, and `end` resolves
+          // against it: the append may have committed, so the item may be held by
+          // this run and somebody has to be told about it.
+          onStream = workItemId;
           return { mayHold: { workItemId, detail: whyOf(error) } };
         }
         if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) };
@@ -1365,6 +1397,7 @@ export function runOnce(
           kind: runnable.kind,
           ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
         };
+        onStream = workItemId;
         // The issue says what the log says, from here on. Inline rather than
         // queued (0022): a call that does not land is written down and converged
         // later rather than retried.
@@ -1374,7 +1407,7 @@ export function runOnce(
           workItemId,
           labels: labelsFor("running"),
         });
-        return { taken: took };
+        return { taken: { workItemId, kind: runnable.kind } };
       };
 
       /**
@@ -1797,6 +1830,9 @@ export function runOnce(
         // The fifth, and the only one that changes the base branch: `merge`'s
         // `merge:` action lands through this (0065 §2, `#270`).
         merge: { land },
+        // The sixth, and the other one that makes rather than judges: `claim`'s
+        // `queue:` action takes the ticket through this (0065 §2, `#269`).
+        queue: { take },
       };
 
       /**
@@ -1857,6 +1893,15 @@ export function runOnce(
        * default did* are the same pass, which is what makes the block safe to
        * paste.
        *
+       * **`claim` is the third row, and `#269` is what put it here.** It took the
+       * item in its body, from `source:` and `runtime.assignee`, where no recipe
+       * could see, name or replace it. Now the body is empty and this is what an
+       * unconfigured `claim` runs — the same action a declared `queue:` builds, over
+       * the same four values, because `queueOf` is the one place that knows which
+       * spelling a file used. So *the default take* and *a pasted block that says
+       * what the default did* select over one list of kinds, which is what makes the
+       * block safe to paste.
+       *
        * **`merge` is the second row, and `#270` is what put it here.** It landed
        * the branch in its body, from `repo.base`, where no recipe could see, name
        * or replace it. Now the body is empty and this is what an unconfigured
@@ -1892,6 +1937,11 @@ export function runOnce(
        * what the printed block is for.
        */
       const defaultsAt = (step: Step): readonly Action[] => {
+        if (step === "claim") {
+          return [
+            createQueueAction({ name: "take the ticket", ...queueOf(recipe) }, { take }),
+          ];
+        }
         if (step === "admit") {
           return [
             createWorktreeAction(
@@ -2307,10 +2357,25 @@ export function runOnce(
         brief.again === null ? firstDispatch(brief) : fixRound(brief, brief.again);
 
 
-      // **Six, and neither `cut` nor `land` is one of them**: `admit`'s work is a
-      // `worktree:` action (`#268`) and `merge`'s is a `merge:` one (`#270`), both
-      // reached through `stepDeps` like every other plugin's.
-      const ports: PassPorts = { take, draft, dispatch, judge, readEnd, recordEnd };
+      // **Seven, and none of `cut`, `take` or `land` is one of them**: `admit`'s
+      // work is a `worktree:` action (`#268`), `claim`'s is a `queue:` one (`#269`)
+      // and `merge`'s is a `merge:` one (`#270`), all three reached through
+      // `stepDeps` like every other plugin's.
+      //
+      // `item` and `onStream` are what the `take` row left behind, and they ask
+      // rather than do: the fact is this closure's, made by the dep above and read
+      // back by the bodies that need it, exactly as `cutTree` is (`#268`). Both are
+      // synchronous, because there is nothing to await — the pass's own `claim`
+      // step has already run the action that filled them.
+      const ports: PassPorts = {
+        item: () => took,
+        onStream: () => onStream,
+        draft,
+        dispatch,
+        judge,
+        readEnd,
+        recordEnd,
+      };
 
       // ---- the pass ----------------------------------------------------------
       // Ten steps, and the claim is the first of them. Everything above this line

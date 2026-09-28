@@ -31,7 +31,7 @@
  * starts fresh, which is what you want after a fix.
  */
 import { parseDuration, type Recipe } from "@lingtai/recipe";
-import { backoffOf, kindsOf } from "@lingtai/recipe/settings";
+import { backoffOf, kindsOf, queueOf } from "@lingtai/recipe/settings";
 import type { GitHubClient } from "@lingtai/github";
 import type { Runtime } from "@lingtai/agent";
 import { type EventStore, eventStore } from "@lingtai/event-store";
@@ -178,7 +178,7 @@ export function runQueue(
       // pass is running changes the answer, and the old cached queue would have
       // taken it anyway.
       const offered = yield* Effect.promise(() =>
-        runnableNow({ client: options.client, recipe: options.recipe }),
+        runnableNow({ client: options.client, queue: queueOf(options.recipe) }),
       );
       // Once, not once round the loop. It is a fact about the repository and
       // the same sentence would be true of every ticket in the queue — the

@@ -35,6 +35,7 @@ import { type BlockDiagnosis, type ProjectState, isPending, isRegistered } from 
 import { eventStore } from "@lingtai/event-store";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
 import { passedOver, runnableNow } from "@lingtai/conductor/discover";
+import { queueOf } from "@lingtai/recipe/settings";
 import { loadAllProjects } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/filter";
 import { projectFilter, type StepPlan, type ProjectFilter } from "@lingtai/conductor/filter";
@@ -520,7 +521,7 @@ export async function askProject(state: ProjectState): Promise<ProjectQueue> {
   const filter = await projectFilter(state);
   if (!filter.ok) return { state: "unreadable", filter };
   try {
-    const offered = await runnableNow({ client: filter.client, recipe: filter.recipe });
+    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) });
     const runnable = await selectRunnable({
       project: filter.project,
       offered: offered.runnable,

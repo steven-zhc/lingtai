@@ -35,6 +35,12 @@ export {
   type MergeStrategy,
 } from "./merge-action.ts";
 export {
+  createQueueAction,
+  type QueueActionDeps,
+  type QueueActionSpec,
+  type TakeAnswer,
+} from "./queue-action.ts";
+export {
   createWorktreeAction,
   type CutAnswer,
   type WorktreeActionDeps,

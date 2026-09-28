@@ -32,7 +32,7 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createClaudeCodeRuntime } from "@lingtai/agent";
-import { kindsOf } from "@lingtai/recipe/settings";
+import { kindsOf, queueOf } from "@lingtai/recipe/settings";
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
 const root = repoRoot();
@@ -162,7 +162,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // whatever was at the top of the queue instead, and the request stayed
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
-      const offered = await runnableNow({ client, recipe: resolved.recipe });
+      const offered = await runnableNow({ client, queue: queueOf(resolved.recipe) });
       // The rows and not a set of numbers. `selectRunnable` already carries the
       // kind and the title, and the line below is read by somebody watching a
       // pass decide what to spend an agent on: `taking #123` is a number they
