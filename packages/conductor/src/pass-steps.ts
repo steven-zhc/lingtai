@@ -969,7 +969,16 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * judge is not one to ask for a second opinion, so the answer is not the next
    * cheapest step — it is a person, with the refusal on the card (`askJudge`).
    */
-  const judged = async (arrival: Arrival, offer: Offer, about: string): Promise<StepRouted> => {
+  /**
+   * `StepNeverRan` is in the return type because the judge is an agent since
+   * `#277`: the one arrival that dispatches one can meet the account-wide wall
+   * every other dispatch can, and 0031 §3's answer to it is not a route.
+   */
+  const judged = async (
+    arrival: Arrival,
+    offer: Offer,
+    about: string,
+  ): Promise<StepRouted | StepNeverRan> => {
     if (!carriesACriterion(arrival)) {
       return toAPerson(
         `${about} carries nothing an agent could be held to — ` +
@@ -1310,7 +1319,15 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * So the floor `#253` set holds: **an arrival no judge can answer still reaches
      * a person**, as it did when no judge existed at all.
      */
-    proposed: async ({ arriving, offering, reached }): Promise<StepPassed | StepRouted> => {
+    // `StepNeverRan` since `#277`: the judge this step may dispatch meets the
+    // same account-wide wall every other agent does, and 0031 §3's answer is
+    // the conductor's rather than a route. `goesToTheRouter` already refuses
+    // it, so it ends the pass here and nothing loops.
+    proposed: async ({
+      arriving,
+      offering,
+      reached,
+    }): Promise<StepPassed | StepRouted | StepNeverRan> => {
       if (arriving === null) {
         const said = reviewRefused(reached);
         // Nothing the reviewer said stops this. The findings at or below the bar
