@@ -912,7 +912,7 @@ written as a stand-in.
 | `refs:` | — same, and the only effect that **deletes**: the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on `origin`, with `branch: true` taking `agent/<n>` too. Its `when:` is `landed` and the schema admits no other value | a GitHub client that can list and delete refs |
 | `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. **`merge` reads it** (`#270`): one field, `strategy`, whose enum has one legal value because `integrate.ts` offers one, and the step reports the lane's own `reason` and decides nothing. **It is the last action at its step** and anything written after one is refused when the recipe resolves (0065 §8) | the mirror, and the `base` it is *handed* |
-| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s. One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue pass**'s field, and that pass runs before a pass exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
+| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s — and **all four are required**, because a block naming only its kinds would replace the other three in silence (`submodules`' rule on `worktree:`). One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue pass**'s field, and that pass runs before a pass exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
 | `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in, which spends nothing. **The other three cost a run each time they arrive**, and only where you declare a runtime for them: declare nothing and they reach a person, free, as they always did. See §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
@@ -1048,13 +1048,26 @@ every reader asks `assigneeOf` in `packages/recipe/src/settings.ts` and the day
 it moves is a change to that one file.
 
 **Three of `queue:`'s four fields *are* `source:`'s three fields, and there is
-one declaration of them** — `SOURCE_FIELDS` in `recipe.ts`, which both shapes
-read. `source:` is the v1 spelling and the plugin is the v2 one; sharing the
-schemas rather than copying them is what stops *what is a kind* having two
-answers while both exist. The fourth is deliberately *not* in `source:`: a
-`source.assignee` no file has ever held and nothing reads would be a key
-accepted and dropped, which is 0016 §4 exactly. What `queue:` deliberately does
-**not** declare is the half worth reading:
+one declaration of them** — `KINDS`, `EXCLUDE` and `BACKOFF` in `recipe.ts`,
+which both shapes read. `source:` is the v1 spelling and the plugin is the v2
+one; sharing the schemas rather than copying them is what stops *what is a kind*
+having two answers while both exist. The fourth is deliberately *not* in
+`source:`: a `source.assignee` no file has ever held and nothing reads would be a
+key accepted and dropped, which is 0016 §4 exactly.
+
+**A `queue:` block must name all four, and that is the one way it differs from
+`source:`** (`#269`). `source:` defaults `exclude` to `[]` and `backoff` to `1h`,
+because a v1 file that says neither has always meant those; the block takes the
+fields without those defaults, for the reason `worktree:` makes `submodules`
+required (`#268`). A block written to narrow the kinds and nothing else would
+otherwise replace a configured hold list with `[]` while `source:` sat unread two
+blocks up — an `agent:hold` ticket claimed and an agent dispatched on work a
+person was holding, which is exactly the *quietly wrong* this step can be. So the
+three that would have been silent are refused by name, and `assignee: { take:
+both }` is how a machine that names nobody writes what an absent
+`runtime.assignee` has always selected.
+
+What `queue:` deliberately does **not** declare is the half worth reading:
 
 - **No `blocked-by` field.** Passing over an issue GitHub still reports an open
   blocker for is not a setting, and no recipe turns it off (`discover.ts:174`).

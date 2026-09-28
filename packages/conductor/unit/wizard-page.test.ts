@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { Recipe, baseOf, editRecipe, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
+import { Recipe, baseOf, editRecipe, excludeOf, kindsOf, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
 import { passCeiling } from "../src/filter.ts";
 import {
   type WizardState,
@@ -504,6 +504,93 @@ describe("the base, at whichever of its two spellings the file uses", () => {
     expect(changesFrom(recipe, after).map((change) => change.path.join("."))).toEqual([
       "repo.base",
     ]);
+  });
+});
+
+/**
+ * **The kinds row, when the recipe has moved it onto `claim`** (`#269`) — the
+ * base row's sibling one setting down, and the failure is the same one.
+ *
+ * `kindsOf` and `excludeOf` read a `queue:` at `claim` before they read
+ * `source:`, so the page *shows* the block's lists; a page that then wrote only
+ * `source:` would report the untick as an edit, write it, hash it, pass its own
+ * read-back guard — the drafted recipe it compares against carries the same
+ * stale declaration — and go on taking the kind that was removed, with the page
+ * showing it back on the next render.
+ */
+describe("the kinds, at whichever of their two spellings the file uses", () => {
+  const declaring = (queue: Record<string, unknown>) =>
+    Recipe.parse({
+      version: 2,
+      repo: { base: "main" },
+      source: { kinds: ["bug"], exclude: ["agent:hold"] },
+      env: { plantAt: ".env" },
+      steps: { claim: [{ name: "take the ticket", queue }] },
+      runtime: { agent: "claude-code" },
+    });
+
+  const WHOLE = {
+    kinds: ["bug", "tech-debt", "documentation"],
+    exclude: ["agent:hold"],
+    backoff: "45m",
+    assignee: { take: "mine", login: "steven-zhc" },
+  };
+
+  it("writes the declaration when there is one, and leaves its other two fields", () => {
+    const recipe = declaring(WHOLE);
+    const state = play(
+      updateState({ slug: "acme/shop", recipe }),
+      { type: "set", draft: { personApproves: false } },
+      // The untick this whole describe is about: a person taking `documentation`
+      // off the row on a machine whose recipe declares its queue at the step.
+      { type: "kind", label: "documentation" },
+      { type: "exclude", label: "wontfix", add: true },
+    );
+
+    const after = Recipe.parse(applyDraft(recipe, state));
+    expect(kindsOf(after)).toEqual(["bug", "tech-debt"]);
+    expect(excludeOf(after)).toEqual(["agent:hold", "wontfix"]);
+    // The block's other two fields are nobody's row here, so they are left as
+    // the file wrote them rather than replaced by this page's idea of them.
+    expect(after.steps.claim).toEqual([
+      {
+        name: "take the ticket",
+        queue: { ...WHOLE, kinds: ["bug", "tech-debt"], exclude: ["agent:hold", "wontfix"] },
+      },
+    ]);
+    // Both spellings are on the change list, because both moved.
+    expect(changesFrom(recipe, after).map((change) => change.path.join("."))).toEqual([
+      "source.kinds",
+      "source.exclude",
+      "steps.claim",
+    ]);
+  });
+
+  it("reads the declaration back into the draft", () => {
+    const state = updateState({ slug: "acme/shop", recipe: declaring(WHOLE) });
+    expect(state.draft.kinds).toEqual(["bug", "tech-debt", "documentation"]);
+    expect(state.draft.exclude).toEqual(["agent:hold"]);
+    // Off the block and not off `source:`, which this fixture disagrees with on
+    // purpose — that disagreement is what a half-written page would have shown.
+    expect(declaring(WHOLE).source.kinds).toEqual(["bug"]);
+  });
+
+  it("leaves `claim` alone where the recipe declares nothing there", () => {
+    const recipe = scanned();
+    const state = play(updateState({ slug: "acme/shop", recipe }), {
+      type: "kind",
+      label: "feature",
+    });
+
+    const after = Recipe.parse(applyDraft(recipe, state));
+    expect(after.steps.claim).toEqual([]);
+    expect(kindsOf(after)).toEqual(["bug"]);
+    expect(changesFrom(recipe, after).map((change) => change.path.join("."))).toContain(
+      "source.kinds",
+    );
+    expect(changesFrom(recipe, after).map((change) => change.path.join("."))).not.toContain(
+      "steps.claim",
+    );
   });
 });
 
