@@ -135,6 +135,25 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `;
 
 /**
+ * **The block `#270` tells a person to paste**, and the `[]` it replaces.
+ *
+ * `mergePlugin` serves `merge` since `#270`, so the landing is a declaration a
+ * recipe can carry — and the two recipes on this machine both write `merge: []`,
+ * which is what an operator would be pasting over. Both shapes have to land the
+ * same branch onto the same base or the migration is 0065 §6's silent failure with
+ * this repository as the subject, and that one is loud: it stops merging.
+ */
+export const landAtMerge = (declared: string) => `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  merge: ${declared}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
+/**
  * The same, with a cold reviewer at `proposed` and no round to patch with.
  *
  * `rounds: 0` and a non-zero `restarts` is the configuration

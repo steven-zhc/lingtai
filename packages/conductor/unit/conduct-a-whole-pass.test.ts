@@ -31,6 +31,7 @@ import {
   RECIPE,
   cutAtAdmit,
   fakeGitHub,
+  landAtMerge,
   fakePorts,
   memoryStore,
   once,
@@ -507,6 +508,154 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(did).toContain("cut from origin/main");
     expect(did.filter((line) => line.startsWith("cut from"))).toHaveLength(1);
     expect(did).toContain(`provision ${result.runId}`);
+  });
+
+  /**
+   * **A hold composes and a default substitutes, and at `merge` the order is what
+   * that means** (0065 §3, `#270`).
+   *
+   * `--no-merge` and a pending repair are `human:` actions `conduct.ts` appends
+   * (#20), and while the landing happened in `merge`'s *body* they could go at the
+   * end of the list: the body ran after the whole pipeline, so a hold anywhere in
+   * it stopped the merge. Since the lane is an action, appending after it would
+   * merge the branch and *then* ask a person whether to — `#58` reached by the
+   * refactor that was supposed to make `#58` impossible.
+   *
+   * `heldBeforeTheLane` is the placement, and the two shapes are the two branches
+   * of it. **The lane in the list** is the case above and the ordinary one: the
+   * hold goes before it, and `holds at the merge` asserts `integrate` was never
+   * reached. **No lane in the list** is this one — a recipe that declared a person
+   * there and nothing that lands — where the flag's hold is appended after what the
+   * recipe declared, which is where the old loop asked. Either way the recipe's own
+   * actions run first and nothing reaches the base branch.
+   */
+  it("asks the recipe's own person first and still reaches no lane under --no-merge", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], HUMAN_AT_MERGE),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        // Both are asking: the recipe declares a person, and the flag appends one.
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      // `true`, so a pipeline that let either past would really call the lane.
+      fakePorts(did, store, true),
+    );
+
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    if (result.ok !== "held") throw new Error("it merged, and two people had been asked");
+    expect(result.step).toBe("merge");
+    expect(did).not.toContain("integrate");
+
+    // The recipe's `approval` asked, and the flag's `no-merge` never had to: the
+    // pipeline stops at the first action that does not pass, so the declared hold
+    // is the one a person sees.
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const asked = run.filter((e) => e.type === "ApprovalRequested");
+    expect(asked.map((e) => (e.data as { action: string }).action)).toEqual(["approval"]);
+  });
+
+  /**
+   * **The lane is a plugin's, and the three shapes a recipe can be in land the same
+   * branch** (`#270`, [0065](../../../doc/decisions/0065-the-default-is-a-plugin.md)
+   * §2–3, §6).
+   *
+   * `cuts from origin/main with $what`'s sibling one step from the end, and the more
+   * expensive of the two to get wrong: 0065 §6 names this repository's own
+   * `merge: []` as the migration trap, because under the substitution rule the same
+   * three characters could mean *do not merge* and the failure would be silent — a
+   * board showing a step that ran nothing and a branch that never landed.
+   *
+   * So the three rows are the migration in order — what both recipes on this
+   * machine say today, what a recipe that never mentioned the step says, and the
+   * block `#270` tells a person to paste — and every one of them reaches
+   * `integrate` and records the landing.
+   */
+  it.each([
+    { what: "`merge: []`, as both recipes on this machine have it", steps: landAtMerge("[]") },
+    { what: "no `merge:` key at all", steps: RECIPE },
+    {
+      what: "the `merge:` block a person pastes",
+      steps: landAtMerge("\n    - name: land the branch\n      merge: { strategy: merge-commit }"),
+    },
+  ])("lands onto main with $what", async ({ steps }) => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], steps),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
+    // Once, and by the lane: two `integrate` calls would be 0065 §7's half-migrated
+    // step, which at this one is the branch on `main` twice.
+    expect(did.filter((line) => line === "integrate")).toHaveLength(1);
+    expect(result.mergeCommit).toBe("c".repeat(40));
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemLanded");
+  });
+
+  /**
+   * **A declared `merge:` produces a verdict**, which is `#268`'s first major
+   * finding asserted for the second plugin to be wired (0065 §5).
+   *
+   * A declaration recorded in `StepsResolved` as planned and then producing nothing
+   * is the `never-ran` mark the board reserves for Lingtai's own bug (0016 §4). The
+   * step runs what is declared there, so the pair below is the whole proof: the
+   * lane was planned, and it ran.
+   */
+  it("records a declared `merge:` as planned and then passes it", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(
+          [],
+          landAtMerge("\n    - name: land the branch\n      merge: { strategy: merge-commit }"),
+        ),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const planned = run.find((event) => event.type === "StepsResolved");
+    expect(JSON.stringify(planned?.data)).toContain("land the branch");
+    const verdicts = run
+      .filter((event) => event.type === "StepStarted" || event.type === "StepPassed")
+      .map(
+        (event) =>
+          `${event.type} ${(event.data as { step: string; action: string }).step}:${(event.data as { action: string }).action}`,
+      );
+    expect(verdicts).toContain("StepStarted merge:land the branch");
+    expect(verdicts).toContain("StepPassed merge:land the branch");
   });
 
   /**
