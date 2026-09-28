@@ -1799,9 +1799,11 @@ function actionsAt(step: Step) {
  * A key that *is* one of the ten, carrying an action that step does not run,
  * is the identical failure reached one level down: it resolves, it is drawn,
  * and nothing happens. Each plugin's `at` is which pairs run (0064 §4) and
- * `whyNoKindAt` is what the refusal says — and it is what keeps the five steps
- * 0058 §3 named but nothing implements from becoming five silent cells: their
- * keys parse, and any action in them is refused with the step's own sentence.
+ * `whyNoKindAt` is what the refusal says. It kept the five steps 0058 §3 named
+ * but nothing implemented from becoming five silent cells — their keys parsed,
+ * and any action in them was refused with the step's own sentence — and since
+ * `#266` there are none of those left: every one of the ten has a plugin, so
+ * what it refuses is a *pair* and the sentence is about the pair.
  */
 export const StepMap = z.strictObject({
   claim: actionsAt("claim"),

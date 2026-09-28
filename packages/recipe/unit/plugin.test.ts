@@ -703,8 +703,11 @@ describe("the one `claim` holds", () => {
       const why = whyNoKindAt(step, "queue");
       expect(why, `${step} × queue is accepted`).not.toBeNull();
       // Two sentences and the order is `whyNoKindAt`'s: at a step *nobody*
-      // implements, *no plugin implements `implement`* is the first thing wrong
-      // and the pair is moot; everywhere else the answer is about the pair.
+      // implements, *no plugin implements this* is the first thing wrong and the
+      // pair is moot; everywhere else the answer is about the pair. **No step of
+      // the ten takes the first branch since `#266`**, and the skip stays because
+      // it is the rule this asserts rather than the census — a step losing its
+      // plugin should fall out here rather than fail on the pair's wording.
       const nobody = why!.includes(`no plugin implements \`${step}\``);
       if (nobody) continue;
       expect(why).toContain("`queue:` does not implement");

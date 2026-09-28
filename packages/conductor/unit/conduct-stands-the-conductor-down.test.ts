@@ -10,8 +10,9 @@
  * else is taken either, until the pause lifts.
  *
  * **The pass says this and the caller does it**, and that division is the whole of
- * what has to be checked here: `implement`'s body reads `NeverStarted` from its
- * port and reports `never-ran`, `outcomeOf` reads that as `failed`, and
+ * what has to be checked here: the `agent:` action at `implement` answers
+ * `never-ran`, `endingOf` reports it as the step's ending (`#266`; it was the
+ * body reading a port until then), `outcomeOf` reads that as `failed`, and
  * `conduct.ts` is what appends `ConductorPaused` — once, on the control stream,
  * whichever item met the wall. A `did-not-finish` would hold the item for a person
  * and leave the account-wide condition unsaid, and the next queue pass would claim

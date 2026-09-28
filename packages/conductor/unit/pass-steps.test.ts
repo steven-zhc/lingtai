@@ -916,7 +916,7 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
 
 // -------------------------------------------------------------- implement ----
 
-describe("implement dispatches the one agent, and reports what it committed", () => {
+describe("implement runs the `agent:` plugin, and reports what it committed", () => {
   /**
    * Declared at `proposed` rather than at `build`, and since 2026-09-27 either
    * would resolve — `runPlugin` serves both. The point is the head either way:

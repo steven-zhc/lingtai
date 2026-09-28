@@ -41,11 +41,13 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * configured and did not run is Lingtai's bug. Only showing all ten keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  *
- * **One of the ten is `skipped` on every run whatever the recipe says**, because
- * no plugin implements `implement` — an action declared there is refused when the
- * recipe resolves (0064 §4), so its plan is empty and cannot be anything else.
- * That is the state reading correctly rather than a gap: nothing is configured
- * there, so nothing ran there, so `skipped` is what the fold owes a reader.
+ * **None of the ten is `skipped` on every run any more** (`#266`). `implement`
+ * was, because no plugin implemented it and an action declared there was refused
+ * when the recipe resolved (0064 §4), so its plan was empty and could not be
+ * anything else. `agentPlugin` serves the step now and `defaultsAt` has a row for
+ * it, so it is `admit`'s and `claim`'s case below: the plan stays empty for a
+ * recipe that declares nothing, a **verdict** is recorded all the same, and
+ * `stateOf` draws the verdict it got rather than a skip.
  *
  * **And `design` is the one step that is `skipped` on every run of every recipe
  * that says nothing at it, and not because nothing implements it** (`#265`).
@@ -59,8 +61,9 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * **It was six, then four, and each step that leaves the list leaves it for a
  * plugin.** `runPlugin` took `build` and `agentPlugin` took `review` on
  * 2026-09-27 (`a417908`); `worktreePlugin` took `admit` (`#268`), `queuePlugin`
- * took `claim` (`#269`) and `agentPlugin` took `design` (`#265`). **`admit` and
- * `claim` are the two that are unlike the others here**: each runs a **default**
+ * took `claim` (`#269`), `agentPlugin` took `design` (`#265`) and `agentPlugin`
+ * took `implement` (`#266`). **`admit`, `claim` and `implement` are the three
+ * that are unlike the others here**: each runs a **default**
  * action where the recipe declares nothing
  * (0065 §2), so a **verdict** is recorded at them on every run rather than only
  * on a recipe that configured them — while the *plan* stays empty, because
@@ -284,11 +287,11 @@ function stateOf(
   // that holds it.
   //
   // It read *four and not five* until the vocabulary widened, and the exclusion
-  // is still exactly one name. A step with nothing declared at it — the four no
-  // plugin implements, and any of the other six a recipe leaves empty — is
-  // reached by the line above rather than by this one: its `planned` is empty,
-  // so it is `skipped` before this rule is asked, and an empty `actions` list
-  // is never an accusation.
+  // is still exactly one name. A step with nothing declared at it — any of the
+  // ten a recipe leaves empty, and there are no longer any that a plugin fails
+  // to implement (`#266`) — is reached by the line above rather than by this
+  // one: its `planned` is empty, so it is `skipped` before this rule is asked,
+  // and an empty `actions` list is never an accusation.
   if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
   if (seen.includes("failed")) return "failed";
   if (seen.includes("running")) return "running";

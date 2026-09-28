@@ -32,10 +32,11 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Seventeen of the hundred and twenty cells run and **a hundred and three
- * refuse**; twelve of those are the one step no plugin implements, and ten are
- * the one plugin that serves no step — overlapping each other by one, because a
- * `backlog:` action at `implement` is both at once.
+ * Eighteen of the hundred and twenty cells run and **a hundred and two refuse**;
+ * ten of those are the one plugin that serves no step, and **none is a step no
+ * plugin implements** — that class emptied when `agentPlugin` took `implement`
+ * (`#266`), and with it went the overlap, which was the single cell a `backlog:`
+ * at `implement` put in both at once.
  *
  * **The ledger, and each number is the count *before* the opening beside it.**
  * Twelve until 2026-09-27, when `runPlugin` took `build` and `agentPlugin` took
@@ -433,11 +434,42 @@ describe("every step × kind cell runs or refuses", () => {
     }
     // The one that runs there — and it is the same key that reviews elsewhere.
     expect(whyNoKindAt("design", "agent")).toBeNull();
-    // **And `implement` is the sixth and the last** (`#266`): the implementer is
-    // an `agent:` action, so the refusal for every other kind there is about the
-    // pair — and the list this case walks is empty rather than short.
-    expect(whyNoKindAt("implement", "agent")).toBeNull();
     expect(whyNoKindAt("review", "agent")).toBeNull();
+  });
+
+  /**
+   * **And why `implement` takes only the agent that writes it** (`#266`), which
+   * is the last step to need its own sentence and the one that empties the *no
+   * plugin implements this* branch.
+   *
+   * The trap is every other opening's, sprung one last time: before
+   * `agentPlugin.at.implement` all twelve kinds here took the *nobody implements
+   * this step* branch, and after it the other eleven fall through `whyThatPair`
+   * to three paragraphs written for `prepared` — which would tell an operator who
+   * wrote a `run:` at `implement` that *nothing has been committed at `prepared`*,
+   * a step they did not name and a claim that is false about this one either way:
+   * `implement` is where the committing happens.
+   *
+   * **The `agent:` sentence is again the one worth pinning**, because this key
+   * builds three different actions and only the step tells them apart: at
+   * `review` it reads a diff, at `design` it writes a document, and here it
+   * commits.
+   */
+  it("says why `implement` takes only the agent that writes the change", () => {
+    for (const kind of ["run", "watch", "human"] as const) {
+      const why = whyNoKindAt("implement", kind);
+      expect(why, `${kind} is no longer refused at implement`).not.toBeNull();
+      expect(why).toContain(`\`${kind}:\` does not implement \`implement\``);
+      expect(why).toContain("`implement` is one agent writing the change in the worktree");
+      expect(why).toContain("at this step it commits rather than reviews");
+      // Not the sentences about a step this operator never wrote.
+      expect(why).not.toContain("no plugin implements `implement`");
+      expect(why).not.toMatch(/at `prepared`/);
+    }
+    // The one that runs there — and where a reader is sent for each of the three.
+    expect(whyNoKindAt("implement", "agent")).toBeNull();
+    expect(whyNoKindAt("implement", "run")).toContain("a `run:` at `build`");
+    expect(whyNoKindAt("implement", "watch")).toContain("`proposed`");
   });
 
   /**
