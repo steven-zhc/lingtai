@@ -24,12 +24,12 @@ there**. This page is for somebody who wants to write one.
 > that is decided, read the example as the shape of the first kind.
 >
 > **`judge:` is the one plugin whose declaration is read today, and not as a
-> body** (`#274`). Its `at` carries `proposed`, its value is `notBuiltYet` like
-> every other, and what reads the entry is a lookup the router calls —
-> `judgeDeclaredAt` in `packages/conductor/src/judge.ts`, which answers *which
-> built-in*, not *which step*. So the `judge:` example below is still the shape
-> being built towards; what is live is the key, the refusals, and one built-in
-> name (`same-worktree`).
+> body** (`#274`, `#277`). Its `at` carries `proposed`, its value is
+> `notBuiltYet` like every other, and what reads the entry is a lookup the router
+> calls — `judgeDeclaredAt` in `packages/conductor/src/judge.ts`, which answers
+> *which judge*, not *which step*. So the `judge:` example below is still the
+> shape being built towards; what is live is the key, the refusals, one built-in
+> name (`same-worktree`) and the runtimes, which `conduct.ts` dispatches.
 
 ## A plugin is two halves
 

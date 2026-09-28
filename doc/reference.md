@@ -912,7 +912,7 @@ written as a stand-in.
 | `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. No step reads it yet | the mirror, and the `base` it is *handed* |
 | `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
-| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in, which spends nothing. **An agent judge is not a name the schema takes yet**, so those three reach a person: see §`judge:` below |
+| `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in, which spends nothing. **The other three cost a run each time they arrive**, and only where you declare a runtime for them: declare nothing and they reach a person, free, as they always did. See §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
 **`agent:` is the one key that changed meaning rather than arriving** (`#245`,
@@ -1081,31 +1081,42 @@ which is a synchronous function in `packages/conductor/src/judge.ts`. Being
 synchronous is the declaration that it spends nothing: nothing that dispatches
 an agent can answer without awaiting.
 
-**`same-worktree` is the only legal name today, and a runtime is not one**
-(`#274`). The rule has not changed — *a recipe cannot name a judge no code
-answers* — it is the list that has: `BUILT_IN` is a total record over the
-built-ins, so every one of those is answered, and **nothing dispatches an agent
-judge**. There is no `Runtime` and no prompt on the router's side of the call, so
-`judge: claude-code` would resolve, be recorded in `StepsResolved`, be printed by
-`lingtai add`, be drawn on the board — and never be asked anything, which is
-`#61` through the one door a replaceable plugin opens
-([the-plugin-body.md](design/the-plugin-body.md) §5). It is refused where it is
-written instead, at resolve, before a worktree and before any money. `ask-or-assume`
-from 0061 §3's example is out for the same one reason.
+**The legal names are `same-worktree` and the runtimes — `claude-code`,
+`codex`** (`#277`). The rule has never changed, and it is the list that moves
+under it: *a recipe cannot name a judge no code answers*. `BUILT_IN` is a total
+record over the built-ins, so every one of those is answered; a runtime is
+answered by `askTheAgent` in `packages/conductor/src/conduct.ts`, which is the
+`Runtime`, the settings file and the prompt that `#274` took the names out for
+not having ([the-plugin-body.md](design/the-plugin-body.md) §5). `ask-or-assume`
+from 0061 §3's example is still refused, and now it is alone there: nothing
+implements it.
 
-**What that costs is the direction worth the most.** `findings` — 231 refusals in
-fourteen days, *the lines or the approach* — has no built-in, so it reaches a
-person unless a recipe declares `judge: same-worktree` for it, which answers *the
-lines* always and never *the approach*. `conflict` and `needs-input` are the same
-shape. The ticket that lands the dispatch is what puts the runtimes back in the
-enum, and until it does the honest reading of this key is: **it closes the loop
-for `red` and `verify-failed`, and leaves the judgement with a person.**
+**The two halves are two kinds of decider and the difference is what answering
+costs.** A built-in is a synchronous function, applied where the router reads it;
+a runtime is **an agent, paid for a judgement**, dispatched every time that
+direction arrives. So `judge: claude-code` at `red` is paying a model to reach a
+conclusion a `switch` reaches sixty times a fortnight, and `judge: claude-code`
+at `findings` is the one that is worth it: 231 refusals in fourteen days, *the
+lines or the approach*, and a `switch` cannot tell those apart from a findings
+array.
+
+**What a runtime judge may spend is what the counting already left.** It is
+handed the offered set and no ceiling — there is no `rounds` in the prompt, and
+choosing `implement` spends one of the rounds `runtime.limits.rounds` had already
+paid for. On the arrival where none is left, `implement` is simply not on the set
+to ask for, and a judge that asks anyway is refused by name with the ceiling that
+refused it on the card. **Three answers are not a choice and each is a person**:
+a run that never started, one that did not finish, and an answer that does not
+read as one of the offered steps. None of them is retried.
 
 ```yaml
 proposed:
   - name: a red build is the agent's to fix, in the worktree it is already in
     judge: same-worktree
     when: red
+  - name: the lines or the approach
+    judge: claude-code
+    when: findings
 ```
 
 **One thing had to be true before any of this could be reached**, and it is not
