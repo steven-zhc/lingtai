@@ -32,19 +32,22 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Fifteen of the hundred and twenty cells run and **a hundred and five
- * refuse**; thirty-six of those are the three steps no plugin implements, and
- * twenty are the two plugins that serve no step — overlapping each other by
- * six, because a `queue:` action at `design` is both at once.
+ * Seventeen of the hundred and twenty cells run and **a hundred and three
+ * refuse**; twelve of those are the one step no plugin implements, and ten are
+ * the one plugin that serves no step — overlapping each other by one, because a
+ * `backlog:` action at `implement` is both at once.
  *
  * **The ledger, and each number is the count *before* the opening beside it.**
  * Twelve until 2026-09-27, when `runPlugin` took `build` and `agentPlugin` took
  * `review` (`a417908`) — two cells in one commit, so fourteen; fourteen until
  * `worktreePlugin` took `admit` (`#268`); fifteen until `judgePlugin` took
  * `proposed` (`#274`); sixteen until `mergePlugin` took `merge` (`#270`). **And
- * fifteen now, because that last one is the first opening that left fewer cells
+ * sixteen, because that last one is the first opening that left fewer cells
  * running than it found**: it gave `merge` a lane and took `watch:` and `human:`
- * away from it, net minus one. Every other entry moves a cell from refusing to
+ * away from it, net minus one. Sixteen until `agentPlugin` took `design`
+ * (`#265`) — the first of the two *new* keys 0065 §4 asks for, and the only
+ * opening whose step keeps its old behaviour, because its default is nothing —
+ * and seventeen now. Every other entry moves a cell from refusing to
  * running and can take a whole step or a whole plugin out of a column that
  * refused everything. **The counts are asserted** — *the arithmetic of the two
  * closed sets is what the paragraph above says* is a case a few rows down, so a
@@ -395,6 +398,39 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
+   * **And why `design` is narrower than `proposed`, which is the newest step to
+   * need its own sentence** (`#265`).
+   *
+   * `agentPlugin.at.design` is what put it here, and the trap is the one every
+   * opening in this file has sprung: before the key, all twelve kinds at `design`
+   * took the *no plugin implements this step* branch; after it, the other eleven
+   * fall through `whyThatPair` to the three paragraphs written for `prepared` —
+   * which say *nothing has been committed at `prepared`* about a step the
+   * operator did not write. True of `design` and printed under the wrong name is
+   * still the failure `a417908` and `#270` each shipped once.
+   *
+   * **The `agent:` sentence is the one worth pinning**, because at every other
+   * step that runs one it reviews and here it drafts: an operator who writes a
+   * `run:` at `design` is told the step produces a document and that a command
+   * that checks the diff is `build`'s, which is the part they can act on.
+   */
+  it("says why `design` takes only the agent that drafts, and not `prepared`'s reason", () => {
+    for (const kind of ["run", "watch", "human"] as const) {
+      const why = whyNoKindAt("design", kind);
+      expect(why, `${kind} is no longer refused at design`).not.toBeNull();
+      expect(why).toContain(`\`${kind}:\` does not implement \`design\``);
+      expect(why).toContain("`design` produces a document before any code");
+      expect(why).toContain("at this step it drafts rather than reviews");
+      // Not the sentences about a step this operator never wrote.
+      expect(why).not.toContain("no plugin implements `design`");
+      expect(why).not.toContain("at `prepared`");
+    }
+    // The one that runs there — and it is the same key that reviews elsewhere.
+    expect(whyNoKindAt("design", "agent")).toBeNull();
+    expect(whyNoKindAt("review", "agent")).toBeNull();
+  });
+
+  /**
    * **And why `merge` is narrower than `proposed` too, which is a subtraction and
    * the only one in this file** (`#270`).
    *
@@ -506,7 +542,7 @@ describe("every step × kind cell runs or refuses", () => {
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["design", "implement"]);
+    expect(unimplemented).toEqual(["implement"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
       // step's; the two that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
@@ -533,6 +569,11 @@ describe("every step × kind cell runs or refuses", () => {
     // the take is a `queue:` action, so the refusal for every other kind there is
     // about the pair rather than about a step nobody built.
     expect(whyNoKindAt("claim", "queue")).toBeNull();
+    // **And `design` is the fifth, and the first that is not a name 0061 §3 gave
+    // code the pass already ran** (`#265`): `agentPlugin` declares the step, so
+    // the refusal for every other kind there is about the pair. `implement` is
+    // what is left of the list.
+    expect(whyNoKindAt("design", "agent")).toBeNull();
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
     expect(whyNoKindAt("admit", "run")).not.toContain("no plugin implements `admit`");
     expect(whyNoKindAt("admit", "run")).not.toContain("nothing has been committed at `prepared`");
@@ -546,24 +587,24 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs sixteen of the hundred and twenty cells and refuses a hundred and four", () => {
+  it("runs seventeen of the hundred and twenty cells and refuses a hundred and three", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
     expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(16);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(104);
+    expect(cellsThatRun).toHaveLength(17);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(103);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
     const pluginsServingNothing = PLUGINS.filter((plugin) => plugin.serves.length === 0);
-    expect(stepsNobodyImplements).toHaveLength(2);
+    expect(stepsNobodyImplements).toHaveLength(1);
     expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual(["backlog"]);
-    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(24);
+    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(12);
     expect(pluginsServingNothing.length * STEPS.length).toBe(10);
-    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(2);
+    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(1);
   });
 
   /**
@@ -736,7 +777,7 @@ describe("every step × kind cell runs or refuses", () => {
     // some plugin serves gives the same one — under an opening clause that names
     // the step the operator actually wrote.
     const reason = why!.slice(why!.indexOf(": ") + 2);
-    for (const step of ["admit", "prepared", "build", "review", "merge"] as const) {
+    for (const step of ["admit", "prepared", "design", "build", "review", "merge"] as const) {
       expect(whyNoKindAt(step, "judge"), step).toBe(
         `\`judge:\` does not implement \`${step}\` — it serves \`proposed\`: ${reason}`,
       );
@@ -745,10 +786,11 @@ describe("every step × kind cell runs or refuses", () => {
     // the three effects out, and that is the more useful half there.
     expect(whyNoKindAt("end", "judge")).toContain("what picks");
     // And a step nobody implements answers as the step, exactly as it does for
-    // `close:` there: *no plugin implements `design`* is the first thing wrong,
+    // `close:` there: *no plugin implements `implement`* is the first thing wrong,
     // and a judge is not what would fix it. It was three until `#269` gave
-    // `claim` a `queue:`, which is the branch shrinking as the keys open.
-    for (const step of ["design", "implement"] as const) {
+    // `claim` a `queue:` and two until `#265` gave `design` an `agent:`, which is
+    // the branch shrinking as the keys open.
+    for (const step of ["implement"] as const) {
       expect(whyNoKindAt(step, "judge"), step).toContain(`no plugin implements \`${step}\``);
     }
   });

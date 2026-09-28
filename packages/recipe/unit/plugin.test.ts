@@ -493,9 +493,11 @@ describe("a plugin declares the steps it serves", () => {
    */
   it("says when no plugin implements a step at all", () => {
     const set = [slack] as unknown as typeof PLUGINS[number][];
-    const why = whyNoKindAt("design", "slack" as never, set);
-    expect(why).toContain("no plugin implements `design`");
-    expect(why).toContain("there is no design step");
+    // `implement` rather than `design` since `#265`: `agentPlugin` declares the
+    // one, so `WHERE_INSTEAD` has one entry left and this is it.
+    const why = whyNoKindAt("implement", "slack" as never, set);
+    expect(why).toContain("no plugin implements `implement`");
+    expect(why).toContain("dispatches the implementing agent directly");
   });
 
   /** A key that is not a step is refused at import, where the author is. */
@@ -694,8 +696,8 @@ describe("the one `claim` holds", () => {
       const why = whyNoKindAt(step, "queue");
       expect(why, `${step} × queue is accepted`).not.toBeNull();
       // Two sentences and the order is `whyNoKindAt`'s: at a step *nobody*
-      // implements, *no plugin implements `design`* is the first thing wrong and
-      // the pair is moot; everywhere else the answer is about the pair.
+      // implements, *no plugin implements `implement`* is the first thing wrong
+      // and the pair is moot; everywhere else the answer is about the pair.
       const nobody = why!.includes(`no plugin implements \`${step}\``);
       if (nobody) continue;
       expect(why).toContain("`queue:` does not implement");

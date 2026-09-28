@@ -37,15 +37,14 @@
  *
  * ## What the ports are, and what they are not
  *
- * Eight closures, and every one of them **wraps rather than reimplements**, which
- * is the `#226` rule `pass-steps.ts` is held to from the other side. Five are
+ * Seven closures, and every one of them **wraps rather than reimplements**, which
+ * is the `#226` rule `pass-steps.ts` is held to from the other side. Four are
  * `PassPorts` methods; `take`, `cut` and `land` are a plugin's deps, reached
  * through `stepDeps` rather than through the pass (`#269`, `#268`, `#270`):
  *
  * ```
  * take      runnableNow + claimWorkItem      a `queue:` action's, at `claim`
  * cut       repo.provision                   a `worktree:` action's, at `admit`
- * draft     nothing, and `""` is the answer   no cell is open at `design`
  * dispatch  the hook, the agent, the receipt  and a fix round, when a round was bought
  * judge     judgeDeclaredAt                  the recipe's own `proposed:` judges
  * land      repo.integrate                    a `merge:` action's, at `merge`
@@ -57,11 +56,14 @@
  * `take` left in this closure rather than doing anything, for `cutTree`'s reason:
  * the closure that holds a fact is the one that can hand it back (`#269`).
  *
- * **One of them answers *nothing is declared*, and that is the truthful answer
- * rather than a stub.** No plugin declares itself at `design`, so `whyNoKindAt`
- * refuses every cell there (`recipe.ts`) and a design cannot be written in a
- * recipe at all; a port that pretended otherwise would be `#61`'s shape with the
- * pieces swapped. **`judge` stopped being the second of those in `#274`**: a
+ * **`draft` was one of them and is gone** (`#265`). It answered *nothing is
+ * declared* — `""`, dispatching nothing — because no plugin served `design`, and
+ * that was the truthful answer rather than a stub while it was true.
+ * `agentPlugin` declares the step now, so a design is an `agent:` action a recipe
+ * writes and the port that stood in for one would be the second place it could
+ * happen. What is unchanged is what an unconfigured `design` does: `defaultsAt`
+ * has no row for it, nothing runs, and `implement` is briefed with `""`.
+ * **`judge` stopped being the second of those in `#274`**: a
  * recipe declares its judges at `proposed:`, one per `when:`, and this port is
  * where the entry matching the direction is looked up. Where it declares none the
  * answer is still `noJudge`, and what that costs is `BUILT_IN_FOR`'s: `red` and
@@ -183,7 +185,6 @@ import {
 import {
   type Brief,
   type Claimed,
-  type Drafted,
   type Judged,
   type Judging,
   type PassPorts,
@@ -1550,19 +1551,6 @@ export function runOnce(
       };
 
       /**
-       * `design` — **nothing, and `""` is the answer rather than a stub** (0058 §3).
-       *
-       * No plugin declares itself at `design`, so `whyNoKindAt` refuses every kind
-       * there by name: a design cannot be declared in a recipe and no code writes one.
-       * The step still runs and still reports, which is the point: *does this need
-       * designing* is answered by the step returning an empty document, and
-       * `implement` works from the issue — no conditional step, no skip. T9 is the
-       * ticket that gives this port a body, and the day it does, nothing in the
-       * pass changes.
-       */
-      const draft = async (): Promise<Drafted> => ({ document: "" });
-
-      /**
        * **An agent, paid for a judgement** — the dispatch a `judge: claude-code`
        * is (`#277`, [the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5).
        *
@@ -1963,6 +1951,18 @@ export function runOnce(
        * `queueOf` is the one place that knows which spelling a file used. So *the
        * default take* and *a pasted block that says what the default did* select
        * over one list of kinds, which is what makes the block safe to paste.
+       *
+       * **`design` opened a key here and took no row, and that is the decision
+       * rather than an omission** (`#265`). 0065 §4's table names *an `agent:`
+       * that drafts* as its default, and what this step actually did was
+       * `ports.draft` answering `{ document: "" }` — a port that dispatched
+       * nothing, because no plugin served `design`. So the default *is* nothing,
+       * and writing a drafting agent in here instead would not be moving the work
+       * out of the body: it would buy an agent on every pass of every project
+       * whose recipe never mentioned `design`, which is §7's footgun and not §2's
+       * decision. A recipe that wants one writes it, and that is the capability
+       * the key is for; the three rows below stay the three things that *did*
+       * happen in a body.
        *
        * **And it is the one row that cannot be wrong loudly** (`#269`). A replaced
        * `admit` starts nothing and a replaced `merge` lands nothing, and each of
@@ -2423,10 +2423,13 @@ export function runOnce(
         brief.again === null ? firstDispatch(brief) : fixRound(brief, brief.again);
 
 
-      // **Seven, and none of `cut`, `take` or `land` is one of them**: `admit`'s
-      // work is a `worktree:` action (`#268`), `claim`'s is a `queue:` one (`#269`)
-      // and `merge`'s is a `merge:` one (`#270`), all three reached through
-      // `stepDeps` like every other plugin's.
+      // **Six, and none of `cut`, `take`, `land` or `draft` is one of them**:
+      // `admit`'s work is a `worktree:` action (`#268`), `claim`'s is a `queue:`
+      // one (`#269`), `merge`'s is a `merge:` one (`#270`) and `design`'s is an
+      // `agent:` one (`#265`), all four reached through `stepDeps` like every
+      // other plugin's. `draft` is the one of the four that left no dep behind:
+      // the drafting agent is built from `stepDeps.agent`, which the cold
+      // reviewer already needed.
       //
       // `item` and `onStream` are what the `take` row left behind, and they ask
       // rather than do: the fact is this closure's, made by the dep above and read
@@ -2436,7 +2439,6 @@ export function runOnce(
       const ports: PassPorts = {
         item: () => took,
         onStream: () => onStream,
-        draft,
         dispatch,
         judge,
         readEnd,

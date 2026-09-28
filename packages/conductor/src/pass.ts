@@ -211,8 +211,32 @@ export interface LeftTheTreeAt {
   readonly head?: string;
 }
 
+/**
+ * **What `design`'s own plugins wrote**, and absent at the other nine (`#265`).
+ *
+ * `LeftTheTreeAt`'s sibling and it is here for that field's reason: the pass runs
+ * no agent of its own, so the one action that produced a document is the only
+ * thing that knows what it says, and `implement`'s brief needs it one step later.
+ * Carried on the ending rather than remembered in a closure, because `reached` is
+ * this pass's own record and a variable beside it would be a second one.
+ *
+ * **Only on a pass, and only ever `design`'s.** A step whose plugins did not pass
+ * produced no document — a draft that did not finish is `did-not-finish`, and its
+ * design is the `""` the pass came in with — so this rides on `StepPassed` alone
+ * rather than on every ending the way `head` does.
+ *
+ * Absent and `""` are different facts and both are kept: *nothing here drafted*
+ * is the nine steps and every unconfigured `design`, and *the agent answered that
+ * this change needs none* is a document it wrote. `implement` is briefed
+ * identically either way (0058 §3), and a person reading the card is not.
+ */
+export interface WroteTheDesign {
+  /** The document the step's own work produced, when it produced one. */
+  readonly design?: string;
+}
+
 /** Nothing to report. The pass moves to the next step on the spine. */
-export interface StepPassed extends LeftTheTreeAt {
+export interface StepPassed extends LeftTheTreeAt, WroteTheDesign {
   readonly ending: "passed";
 }
 
@@ -1447,6 +1471,16 @@ async function runStep(
    * anything its plugins could have said.
    */
   let leftTheTreeAt: LeftTheTreeAt = {};
+  /**
+   * **What the step's plugins drafted, kept across the body** (`#265`).
+   *
+   * `leftTheTreeAt`'s sibling and kept for its reason: `design`'s body is empty
+   * since this ticket, so a document that did not survive the body would not
+   * survive at all. No body reports one of its own, so unlike `head` there is
+   * nothing for a body to win against — the spread below puts it on the ending a
+   * passing body returned.
+   */
+  let wroteTheDesign: WroteTheDesign = {};
 
   try {
     // A routing arrival runs the router and not the inspection — `StepWork
@@ -1468,6 +1502,7 @@ async function runStep(
       // its own plugins said.
       results = result.results;
       leftTheTreeAt = headFrom(result);
+      wroteTheDesign = designFrom(result);
       const ending = endingOf(spec, result);
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.
@@ -1500,7 +1535,7 @@ async function runStep(
     });
     return {
       step: spec.step,
-      ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...ending }, reaching),
+      ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }, reaching),
       results,
     };
   } catch (error) {
@@ -1652,6 +1687,26 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
 function headFrom(result: PipelineResult): { head?: string } {
   const moved = result.results.filter((each) => each.head !== undefined).at(-1);
   return moved?.head === undefined ? {} : { head: moved.head };
+}
+
+/**
+ * **What the step's own plugins drafted**, or nothing where none of them did
+ * (`#265`).
+ *
+ * `headFrom`'s sibling, read the same way and for the same reason: one kind
+ * produces it — an `agent:` at `design`, which is `createDraftAction` — so the
+ * last one that said anything is the answer, and a step declaring two drafts
+ * hands `implement` the second, which is the same rule the pipeline already has
+ * for a verdict.
+ *
+ * Spread rather than assigned, so *nothing here drafted* stays an absent key:
+ * `designOn` in `pass-steps.ts` reads it with `??`, and an empty document is a
+ * real answer that must not read as an absence — the whole of 0058 §3's *or
+ * nothing, which is an answer* lives in that distinction.
+ */
+function designFrom(result: PipelineResult): { design?: string } {
+  const drafted = result.results.filter((each) => each.document !== undefined).at(-1);
+  return drafted?.document === undefined ? {} : { design: drafted.document };
 }
 
 /**

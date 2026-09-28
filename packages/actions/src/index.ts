@@ -17,8 +17,10 @@ export {
   type ProcessActionSpec,
 } from "./process-action.ts";
 export {
+  buildDesignPrompt,
   buildReviewPrompt,
   createAgentAction,
+  createDraftAction,
   parseFindings,
   verdictFor,
   type AgentActionDeps,

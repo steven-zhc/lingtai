@@ -295,16 +295,6 @@ export interface NeverStarted {
 
 // ----------------------------------------------------------- the ports ----
 
-/**
- * What `design` produced — **and `""` is an answer rather than a skip.**
- *
- * 0058 §3: the step always runs and its plugin may return an empty document,
- * which is how *does this need designing* gets answered without a branch in the
- * workflow. Every pass today is the empty one: nothing writes a design yet, and
- * this repository's own recipe declares nothing at the step.
- */
-export type Drafted = { readonly document: string } | Asked | NeverStarted | Stopped;
-
 /** What the one agent at `implement` did in that worktree. */
 export type Worked =
   /** The commit it left the worktree at — the whole of what moves `onSha`. */
@@ -516,15 +506,15 @@ export interface PassPorts {
    */
   onStream(): string | null;
   /**
-   * `design` — a document, before any code, or nothing.
+   * `implement` — one agent, in that worktree, and what it committed.
    *
-   * The same four answers as `dispatch` below, because 0061 §3 puts `agent:` at
-   * both steps and an agent meets the same walls at either: `""` is *this needs
-   * no design*, and the other three are a question, a wall about the account, and
-   * a run that left no receipt (`NeverStarted`).
+   * **`draft` was the row beside it and went with `design`'s body** (`#265`).
+   * The two answered the same four things because 0061 §3 put `agent:` at both
+   * steps; the key is open at `design` now, so a document is an action's
+   * (`createDraftAction`) and reaches `implement` on the step's own ending rather
+   * than through a port. This row is the last of the three dispatches still
+   * called directly, and `implement` is the last step without a plugin.
    */
-  draft(brief: Brief): Promise<Drafted>;
-  /** `implement` — one agent, in that worktree, and what it committed. */
   dispatch(brief: Brief): Promise<Worked>;
   /**
    * `proposed` — **which of the offered steps the recipe's `judge:` for this
@@ -867,12 +857,27 @@ function becauseSpent(wanted: Destination, offer: Offer): string {
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
   /**
-   * What `design` produced. `""` is the answer *this needs no design*, and is
-   * every pass today — so it starts as the answer rather than as `null`, because
-   * a `design` the recipe left empty never ran and `implement` is briefed the
-   * same way either way.
+   * What `design` produced, **read off the visit rather than remembered**
+   * (`#265`).
+   *
+   * It was a closure variable this function held and `claim` cleared. The work is
+   * an `agent:` action at `design` since 0065 §2, so the document arrives on that
+   * step's own ending (`WroteTheDesign`) and `reached` is where a body already
+   * looks backwards — which is the same subtraction `#269` made to the item: a
+   * fact the pass records once does not also need a copy beside it, and the copy
+   * is the one that can be stale.
+   *
+   * `""` at both ends of it. A recipe that declares nothing at `design` runs no
+   * action, so there is no document and this answers `""`; an agent that answered
+   * nothing produces `""` as a document it wrote. Those are the same brief to
+   * `implement` — it works from the issue either way, and there is no conditional
+   * step (0058 §3) — and they are different things on the card, where the
+   * action's own `evidence` says which.
    */
-  let design = "";
+  const designOn = (reached: readonly StepReached[]): string => {
+    const drafted = reached.filter((visit) => visit.step === "design").at(-1);
+    return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? "") : "";
+  };
 
   /**
    * What a step needs and the step before it made — or a throw naming which.
@@ -942,7 +947,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     work: { context: ActionContext; reached: readonly StepReached[] },
   ): Brief => ({
     ticket: madeBy(step, "item", ports.item()).ticket,
-    design,
+    design: designOn(work.reached),
     again: sentBackTo(step, work.reached),
     context: work.context,
   });
@@ -1164,19 +1169,17 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * each as a `did-not-finish` carrying the action's own `because`. None of them
      * reaches the router either (`ARRIVE_AT_THE_ROUTER`).
      *
-     * **It is still where a pass begins, and the reset is not here.** It cleared
-     * the item, its stream and the design before asking, because the three ways a
-     * take can decline set no item and it was exactly those that would let `end`
-     * resolve onto the item the pass before had landed. The action runs *before*
-     * this body, so a reset written here would wipe what the action had just
-     * taken: the item and its stream are cleared by the take itself
-     * (`conduct.ts`), and the design — which nothing at `claim` writes — is
-     * cleared here.
+     * **It is still where a pass begins, and there is nothing left here to
+     * reset.** It cleared the item, its stream and the design before asking,
+     * because the three ways a take can decline set no item and it was exactly
+     * those that would let `end` resolve onto the item the pass before had
+     * landed. The action runs *before* this body, so a reset written here would
+     * wipe what the action had just taken: the item and its stream are cleared by
+     * the take itself (`conduct.ts`), and the design stopped being a variable to
+     * clear in `#265` — it is read off `design`'s own visit, and a pass that has
+     * not reached that step has no visit to read.
      */
-    claim: async (): Promise<StepPassed> => {
-      design = "";
-      return { ending: "passed" };
-    },
+    claim: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
      * Start work on it — **and this is the fourth of the ten whose body is
@@ -1240,34 +1243,41 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     prepared: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
-     * A document, before any code — **or nothing, which is an answer** (0058 §3).
+     * A document, before any code — **or nothing, which is an answer** (0058 §3)
+     * — **and this is the sixth of the ten whose body is nothing beyond its
+     * plugins** (`#265`).
      *
-     * An empty document is `passed`, not a skip and not a failure: the step ran,
-     * it decided this change needs no design, and `implement` is briefed with
-     * `""` and works from the issue. A conditional step would have put that
-     * judgement in the workflow, where nothing knows enough to make it.
+     * It called `ports.draft` here until `agentPlugin` declared `design`
+     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §4). What
+     * writes one now is an `agent:` action — `createDraftAction`, which the
+     * recipe declares at this step — and the loop has run it by the time this is
+     * called, so a second dispatch written here would be the reimplementation
+     * 0061 §3 exists to prevent and would be two agents on one brief.
+     *
+     * **The default here is nothing, and that is this step's whole difference
+     * from the other four migrations.** `conduct.ts`'s `defaultsAt` has no row
+     * for `design`: the port it replaced answered `{ document: "" }` and
+     * dispatched nothing, so *behaves exactly as today* means an unconfigured
+     * `design` runs no action and passes, and `implement` is briefed with `""`
+     * and works from the issue. A drafting agent registered as the default would
+     * buy one on every pass of every project that never asked for one, which is
+     * 0065 §7's footgun rather than its decision.
+     *
+     * **An empty document is still `passed` and still not a skip**, and it is the
+     * action that says so: the step ran, it decided this change needs no design,
+     * and `WroteTheDesign` carries `""` as a document rather than as an absence.
+     * A conditional step would have put that judgement in the workflow, where
+     * nothing knows enough to make it.
      *
      * It cannot refuse — a design is not a judgement about a diff, there being no
-     * diff yet — but it can ask, and 0058 §3b draws that edge.
-     *
-     * **And it stands the conductor down on the same wall `implement` does.**
-     * `agent:` is declared at both steps (0061 §3), so a design agent meets
-     * `You've hit your session limit` identically, and the answer has to be the
-     * same one: `never-ran`, released, 0031 §3. Reported as `did-not-finish` it
-     * would hold the item for a person and leave the account-wide condition
-     * unsaid, and the next queue pass would claim the next ticket and meet the
-     * same wall — which is 0031's own incident.
+     * diff yet — and the three ways it does not pass are the action's now, which
+     * is what 0065 §7's *one diff* buys: a runtime that never started stands the
+     * conductor down on the same wall `implement` meets (`never-ran`, released,
+     * 0031 §3), one that started and left no receipt stands the pass down (0057
+     * §2), and `endingOf` reports each in the step's own terms without this body
+     * being reached at all.
      */
-    design: async ({ context, reached }): Promise<StepPassed | StepDidNotFinish | StepNeverRan> => {
-      const answer = await ports.draft(briefOn("design", { context, reached }));
-      if ("document" in answer) {
-        design = answer.document;
-        return { ending: "passed" };
-      }
-      if ("asked" in answer) return asking(answer.asked);
-      if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
-      return noReceipt(answer.stopped);
-    },
+    design: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
      * One agent, in that worktree — **and it reports the `head` it committed**,

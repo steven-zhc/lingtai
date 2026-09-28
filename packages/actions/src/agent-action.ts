@@ -523,3 +523,134 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
     },
   };
 }
+
+/**
+ * What a `design:` agent is told, and **the whole of it is that it may answer
+ * nothing** (0058 §3, `#265`).
+ *
+ * The reviewer's three fixed blocks are absent because none of them is about a
+ * change that has not been written: there is no severity to rate, no finding to
+ * hold to a failure scenario, and no diff to read. What is fixed here instead is
+ * the one rule an empty answer depends on — *a design nobody needed is a design
+ * you do not write* — because a model handed a ticket and asked for a document
+ * will produce one for a typo fix, and that document is then in `implement`'s
+ * prompt being worked from.
+ *
+ * **And it may not commit.** `firstDispatch` in `packages/conductor/src/conduct.ts`
+ * reads *the agent committed something* as `HEAD !== tree.baseSha` — the commit is
+ * the receipt (0057 §2) — so a design agent that committed would hand `implement`
+ * a receipt it did not write, and a pass that implemented nothing would report a
+ * head and go to `build`. Nothing else at this step can say that: the worktree is
+ * cut and writable, and this is the step between the two.
+ */
+export function buildDesignPrompt(spec: AgentActionSpec, issue: ReviewIssue): string {
+  return `You are writing the design note for a change nobody has written yet. You
+have the ticket and the worktree it will be made in, and nothing has been
+committed. What you write is handed to the agent that does the work, beside the
+ticket, and is the only thing it gets from you.
+
+## The ticket
+
+#${issue.ref} — ${issue.title}
+
+${issue.body}
+
+## What to write
+
+The shape of the change: where it goes, what it touches, and the decision that
+is not obvious from the ticket. Not the diff, and not a restatement of the
+ticket — the agent reading this has the ticket too.
+
+**Answering with nothing is a real answer, and it is the common one.** A change
+whose shape is obvious from the ticket does not need a design, and a document
+written anyway is a paragraph the implementing agent will work from instead of
+from the issue. If this is one of those, reply with nothing at all.
+
+Read whatever you need to in this worktree. **Do not change it**: do not edit a
+file, do not run a command that writes one, and above all do not commit —
+Lingtai reads the commit as the implementing agent's receipt, and one made here
+would report work that nobody did.
+
+Reply with the document and nothing else: no preamble, no summary of what you
+read, no offer to continue.
+${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ""}`;
+}
+
+/**
+ * **The `agent:` at `design`, and it drafts rather than judges** (0065 §4, `#265`).
+ *
+ * The same plugin key as the reviewer above and a different action, because the
+ * two share nothing but a runtime: `createAgentAction` opens by asking for the
+ * diff and returns `passed` when there is none, which at `design` is *every*
+ * pass — nothing has been committed there — so a `design:` block built out of it
+ * would resolve, be printed by `lingtai add`, be drawn on the board and never
+ * dispatch anything. That is `#61` with a new spelling, and it is the case
+ * [0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §5 says this
+ * decision removes rather than one it may add. `actionsFromRecipe` is where the
+ * step picks between them.
+ *
+ * **Four answers, and they are the body's four** (`pass-steps.ts` before `#265`).
+ * A document — including the empty one, which is `passed` and not a skip. A
+ * runtime that never started, which is about the account and stands the
+ * conductor down (0031 §3). One that started and left no receipt, which buys no
+ * round and stands the pass down (0057 §2). There is no fifth: a design is not a
+ * judgement about a diff, there being no diff, so this action cannot refuse and
+ * `design` is not one of `REFUSING_STEPS`.
+ */
+export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
+  return {
+    name: spec.name,
+    kind: "agent",
+
+    async run(context: ActionContext): Promise<ActionResult> {
+      const issue = await deps.issue();
+      // **Not** `context.runId`, for the reviewer's reason one function up: the
+      // session id is derived from it, so reusing it would resume the
+      // implementer's session — and here it would resume a session that has not
+      // happened yet, which is the same mistake read backwards.
+      const draftId = `${context.runId}:design:${spec.name}`;
+      context.log?.note("design", `${draftId} · drafting for #${issue.ref}`);
+      const outcome = await deps.runtime.run({
+        runId: draftId,
+        cwd: context.cwd,
+        prompt: buildDesignPrompt(spec, issue),
+        ...(spec.model === undefined ? {} : { model: spec.model }),
+        settingsPath: deps.settingsPath,
+        log: context.log,
+        traceTools: true,
+        env: context.env,
+        limits: deps.limits,
+        signal: context.signal,
+      });
+
+      if (outcome.failure) {
+        // The adapter's classification and never a second reading of it
+        // (0031 §1), exactly as the reviewer above: at most one turn, no cost
+        // and an error is `never-started`, and everything else started.
+        if (outcome.failure.kind === "never-started") {
+          return { verdict: "never-ran", evidence: outcome.failure.detail, findings: [] };
+        }
+        return {
+          verdict: "did-not-finish",
+          evidence: `the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
+          findings: [],
+        };
+      }
+
+      const document = (outcome.text ?? "").trim();
+      const cost = outcome.costUsd === null ? "" : ` · $${outcome.costUsd.toFixed(2)}`;
+      return {
+        verdict: "passed",
+        // The distinction the board wants and `implement` does not: an empty
+        // document and a document are one brief to the agent — it works from
+        // the issue either way — and two different things to a person reading
+        // what this pass spent its turns on.
+        evidence:
+          (document === "" ? "no design: this change needs none" : document) +
+          `\n\n(${outcome.turns} turns${cost})`,
+        findings: [],
+        document,
+      };
+    },
+  };
+}

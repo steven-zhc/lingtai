@@ -8,7 +8,7 @@
  */
 import type { Step } from "@lingtai/domain";
 import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
-import { type AgentActionDeps, createAgentAction } from "./agent-action.ts";
+import { type AgentActionDeps, createAgentAction, createDraftAction } from "./agent-action.ts";
 import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
@@ -172,10 +172,22 @@ export function actionsFromRecipe(
       // than assigned, because absent has to reach `RunRequest` as absent (an
       // explicit `undefined` and no key are the same to the adapter, but not to
       // a reader deciding whether this seam invents a default).
-      return createAgentAction(
-        { name: action.name, prompt: action.prompt, ...(action.model === undefined ? {} : { model: action.model }) },
-        deps.agent,
-      );
+      const agent = {
+        name: action.name,
+        prompt: action.prompt,
+        ...(action.model === undefined ? {} : { model: action.model }),
+      };
+      // **One key, two actions, and the step is what picks** (`#265`). `agent:`
+      // at `design` drafts and everywhere else it reviews, which is 0065 §4's own
+      // table — *an `agent:` that drafts* at one step, *a cold reviewer* at the
+      // others — and it is a branch rather than a flag on the spec because the
+      // difference is total: the reviewer opens by asking for the diff and
+      // returns `passed` when there is none, and at `design` there never is one.
+      // Built here because this is the seam that knows the step; the actions
+      // themselves know only what they were handed.
+      return step === "design"
+        ? createDraftAction(agent, deps.agent)
+        : createAgentAction(agent, deps.agent);
     }
 
     if ("watch" in action) {
