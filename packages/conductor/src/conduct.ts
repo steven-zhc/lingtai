@@ -1924,15 +1924,6 @@ export function runOnce(
        * default did* are the same pass, which is what makes the block safe to
        * paste.
        *
-       * **`claim` is the third row, and `#269` is what put it here.** It took the
-       * item in its body, from `source:` and `runtime.assignee`, where no recipe
-       * could see, name or replace it. Now the body is empty and this is what an
-       * unconfigured `claim` runs — the same action a declared `queue:` builds, over
-       * the same four values, because `queueOf` is the one place that knows which
-       * spelling a file used. So *the default take* and *a pasted block that says
-       * what the default did* select over one list of kinds, which is what makes the
-       * block safe to paste.
-       *
        * **`merge` is the second row, and `#270` is what put it here.** It landed
        * the branch in its body, from `repo.base`, where no recipe could see, name
        * or replace it. Now the body is empty and this is what an unconfigured
@@ -1940,6 +1931,30 @@ export function runOnce(
        * the same base, because `land` above is handed the base by the pass rather
        * than reading one off the action (0061 §4). So *the default merge* and *a
        * pasted block that says what the default did* are the same landing.
+       *
+       * **`claim` is the third row to arrive and the first in the list, and `#269`
+       * is what put it here.** The three paragraphs above are in the order the
+       * tickets opened their keys; the branches below are in **step order**, which
+       * is the order a reader of a pass meets them, and the two disagree only
+       * because `claim` moved last. It took the item in its body, from `source:`
+       * and `runtime.assignee`, where no recipe could see, name or replace it. Now
+       * the body is empty and this is what an unconfigured `claim` runs — the same
+       * action a declared `queue:` builds, over the same four values, because
+       * `queueOf` is the one place that knows which spelling a file used. So *the
+       * default take* and *a pasted block that says what the default did* select
+       * over one list of kinds, which is what makes the block safe to paste.
+       *
+       * **And it is the one row that cannot be wrong loudly** (`#269`). A replaced
+       * `admit` starts nothing and a replaced `merge` lands nothing, and each of
+       * those shows on the card as a step that ran and a thing that did not happen.
+       * A replaced `claim` cannot fail that way — `queue:` is the only kind legal
+       * at this step and a second one is refused by name (`step-matrix.test.ts`),
+       * so the substitution here is never *nothing takes the ticket*: it is **a
+       * different four values taking a different ticket**, which looks like an
+       * ordinary pass about an issue somebody did not expect, or like a machine
+       * with nothing to do. There is no verdict that tells those apart, which is
+       * why the accessors are the seam: a pasted block and an unpasted one reach
+       * `runnableNow` through `queueOf`, and `lingtai add` reads the file back.
        *
        * **`[]` and an omitted key are the same thing here, and 0065 §2's *`[]`
        * runs nothing* is not built.** `StepMap` resolves both to `[]` (0061 §5:
