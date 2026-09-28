@@ -168,7 +168,15 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(did).not.toContain("integrate");
 
     // The hook was wired and proved to fail closed before the agent started.
-    expect(did.indexOf("smokeTest")).toBeLessThan(did.indexOf("git rev-parse"));
+    //
+    // **`lastIndexOf` since `#265`.** There are two `git rev-parse` calls around
+    // the dispatch now rather than one after it: `firstDispatch` reads the head
+    // the agent *found* before it wires anything, so that the receipt 0057 §2 asks
+    // for is measured against that rather than against the base — which a `design:`
+    // agent may have committed over. The first is that baseline and is deliberately
+    // earlier than the smoke test; the ones after it are the receipt and the push,
+    // and those are what this ordering is about.
+    expect(did.indexOf("smokeTest")).toBeLessThan(did.lastIndexOf("git rev-parse"));
     /**
      * **And the step agents' settings were asked of the host, not written here.**
      *

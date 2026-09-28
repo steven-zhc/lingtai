@@ -536,12 +536,20 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
  * will produce one for a typo fix, and that document is then in `implement`'s
  * prompt being worked from.
  *
- * **And it may not commit.** `firstDispatch` in `packages/conductor/src/conduct.ts`
- * reads *the agent committed something* as `HEAD !== tree.baseSha` — the commit is
- * the receipt (0057 §2) — so a design agent that committed would hand `implement`
- * a receipt it did not write, and a pass that implemented nothing would report a
- * head and go to `build`. Nothing else at this step can say that: the worktree is
- * cut and writable, and this is the step between the two.
+ * **It is asked not to commit, and the asking is not what makes that safe.** This
+ * runs in the worktree `implement` will run in, unhooked and writable, so there is
+ * nothing here that *stops* a commit — and a prompt is not a guard, because the
+ * agent that ignores it is the one a guard is for. What makes a design commit
+ * harmless is one line in `firstDispatch` (`packages/conductor/src/conduct.ts`):
+ * the receipt 0057 §2 asks for is measured against `startedAt`, the head *this*
+ * agent found, rather than against `tree.baseSha`. Measured from the base, a
+ * document committed here would have stood in for the implementer's receipt, and a
+ * pass that wrote no code would have gone to `build` and `review` with
+ * `RunProposedCompletion` naming the drafting agent's commit.
+ *
+ * So the paragraph in the prompt is there for the money rather than for the
+ * correctness: a design agent that edits the tree is one whose turns went
+ * somewhere the next agent will not read.
  */
 export function buildDesignPrompt(spec: AgentActionSpec, issue: ReviewIssue): string {
   return `You are writing the design note for a change nobody has written yet. You
@@ -567,9 +575,10 @@ written anyway is a paragraph the implementing agent will work from instead of
 from the issue. If this is one of those, reply with nothing at all.
 
 Read whatever you need to in this worktree. **Do not change it**: do not edit a
-file, do not run a command that writes one, and above all do not commit —
-Lingtai reads the commit as the implementing agent's receipt, and one made here
-would report work that nobody did.
+file, do not run a command that writes one, and do not commit. The agent that
+does the work runs in this same worktree after you and starts from what you
+return, not from what you left behind — so anything you write here is turns
+nobody reads.
 
 Reply with the document and nothing else: no preamble, no summary of what you
 read, no offer to continue.
@@ -589,13 +598,25 @@ ${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ""}`;
  * decision removes rather than one it may add. `actionsFromRecipe` is where the
  * step picks between them.
  *
- * **Four answers, and they are the body's four** (`pass-steps.ts` before `#265`).
- * A document — including the empty one, which is `passed` and not a skip. A
- * runtime that never started, which is about the account and stands the
+ * **Three answers, and they are three of the body's four** (`pass-steps.ts` before
+ * `#265`). A document — including the empty one, which is `passed` and not a skip.
+ * A runtime that never started, which is about the account and stands the
  * conductor down (0031 §3). One that started and left no receipt, which buys no
- * round and stands the pass down (0057 §2). There is no fifth: a design is not a
- * judgement about a diff, there being no diff, so this action cannot refuse and
- * `design` is not one of `REFUSING_STEPS`.
+ * round and stands the pass down (0057 §2).
+ *
+ * **The fourth was `asked`, and no runtime could reach it.** `Drafted` carried an
+ * `Asked` case for 0058 §3b's edge — `design` is on `ARRIVE_AT_THE_ROUTER`, so a
+ * question there would have bought a decision at `proposed` — and the live port
+ * that fed it returned `{ document: "" }` and nothing else, so the case was never
+ * once constructed in this repository's log. An `ActionResult` has no shape for a
+ * question, only `needs-approval`, which holds for a person rather than asking a
+ * judge; giving one to this kind is a decision about the whole plugin system and
+ * not about `design`. Until somebody makes it, a design agent with a question
+ * writes it in the document, which is the thing `implement` reads.
+ *
+ * There is no fifth either way: a design is not a judgement about a diff, there
+ * being no diff, so this action cannot refuse and `design` is not one of
+ * `REFUSING_STEPS`.
  */
 export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
   return {

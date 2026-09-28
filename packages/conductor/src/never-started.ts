@@ -91,14 +91,32 @@ export function parseResetAt(detail: string, now: Date = new Date()): Date | nul
  * pass is the same species of false sentence `#133` is against, one screen along
  * from the card it started on: the board's chip and `lingtai doctor` are exactly
  * where somebody woken at 2am reads it.
+ *
+ * **There is one variant per agent a pass can buy, and the fourth arrived with
+ * `design`** (`#265`). Every clause in each of them is a fact about *which* agent
+ * and *what had already been paid for* by the time it met the wall, so a variant
+ * that covered two of them would be false about one — which is the whole of
+ * `#133`.
  */
 export type NeverStarted =
   | { readonly of: "run" }
   /** The point's action, as `point:action` — what the card and the chip name. */
   | { readonly of: "step"; readonly step: string }
   /**
-   * The agent a refusal bought (0038), which is the third agent in a pass and
-   * meets the same wall the second one does. `action` is what refused.
+   * **The drafting agent, which is the first one a pass can buy** (`#265`) — the
+   * `agent:` a recipe declares at `design`, as `design:action`.
+   *
+   * Its own variant because it is the one agent that sits inside a run that
+   * started and has paid for **no** agent yet: `agentPlugin.at` opens at `design`
+   * before any other step, so nothing ahead of it dispatches one. `{of: "run"}`
+   * would say *no turns taken, nothing spent* about a run that claimed the ticket,
+   * cut a worktree and installed; `{of: "step"}` would say *nothing judged the
+   * diff*, and there is no diff at `design`.
+   */
+  | { readonly of: "draft"; readonly step: string }
+  /**
+   * The agent a refusal bought (0038), which is the last agent in a pass and
+   * meets the same wall the others do. `action` is what refused.
    */
   | { readonly of: "fix"; readonly action: string; readonly round: number };
 
@@ -108,6 +126,14 @@ function subject(what: NeverStarted): { opening: string; whose: string } {
     return {
       opening: "a run ended without ever starting — no turns taken, nothing spent",
       whose: "The run said",
+    };
+  }
+  if (what.of === "draft") {
+    return {
+      opening:
+        `the ${what.step} step's agent never started, so nothing drafted the design — ` +
+        `the run that reached it did start, and had paid for no agent yet`,
+      whose: `The ${what.step} step's agent said`,
     };
   }
   if (what.of === "fix") {

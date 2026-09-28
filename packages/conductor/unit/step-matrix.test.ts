@@ -41,13 +41,15 @@
  * Twelve until 2026-09-27, when `runPlugin` took `build` and `agentPlugin` took
  * `review` (`a417908`) — two cells in one commit, so fourteen; fourteen until
  * `worktreePlugin` took `admit` (`#268`); fifteen until `judgePlugin` took
- * `proposed` (`#274`); sixteen until `mergePlugin` took `merge` (`#270`). **And
- * sixteen, because that last one is the first opening that left fewer cells
- * running than it found**: it gave `merge` a lane and took `watch:` and `human:`
- * away from it, net minus one. Sixteen until `agentPlugin` took `design`
- * (`#265`) — the first of the two *new* keys 0065 §4 asks for, and the only
- * opening whose step keeps its old behaviour, because its default is nothing —
- * and seventeen now. Every other entry moves a cell from refusing to
+ * `proposed` (`#274`); sixteen until `mergePlugin` took `merge` (`#270`) — **the
+ * first opening that left fewer cells running than it found**, because it gave
+ * `merge` a lane and took `watch:` and `human:` away from it, net minus one, so
+ * fifteen. Fifteen until `queuePlugin` took `claim` (`#269`) — **the entry this
+ * chain was missing, which is how it read *fifteen now* under an assertion of
+ * sixteen for four days** — and sixteen until `agentPlugin` took `design`
+ * (`#265`), the first of the two *new* keys 0065 §4 asks for and the only
+ * opening whose step keeps its old behaviour, because its default is nothing:
+ * **seventeen now**. Every other entry moves a cell from refusing to
  * running and can take a whole step or a whole plugin out of a column that
  * refused everything. **The counts are asserted** — *the arithmetic of the two
  * closed sets is what the paragraph above says* is a case a few rows down, so a
@@ -57,10 +59,10 @@
  *
  * **`refs:` is the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
- * plugins were 0061 §3's names for the pass's own calls, and three of those five
+ * plugins were 0061 §3's names for the pass's own calls, and four of those five
  * have since been wired to the step whose code they named — `worktree:` (`#268`),
- * `judge:` (`#274`) and `merge:` (`#270`) — leaving `queue:` and `backlog:` still
- * refusing everywhere, while this one runs at `end` on the day it lands. The rule is the same either
+ * `judge:` (`#274`), `merge:` (`#270`) and `queue:` (`#269`) — leaving `backlog:`
+ * alone in refusing everywhere, while this one runs at `end` on the day it lands. The rule is the same either
  * way — a plugin says where it runs — and it is worth reading here
  * because every precedent in this file is the other case.
  *
@@ -68,9 +70,10 @@
  * axes: **naming a thing is not wiring it.** The steps 0058 named and the
  * pipeline has not yet constructed must refuse every kind until it has, and the
  * plugins that are names for code the conductor calls itself must be refused at
- * every step until the recipe is what tells it to. A `design:` block a recipe
- * could write and nothing would run is `#61` with a new spelling, and so is a
- * `backlog:` one. **A `worktree:` one was the example here for four columns'
+ * every step until the recipe is what tells it to. A `backlog:` block a recipe
+ * could write and nothing would run is `#61` with a new spelling — and a
+ * `design:` one was the other example until `#265`, which opened the key and
+ * emptied the body together. **A `worktree:` one was the example here for four columns'
  * worth of tickets and is now the counter-example**: `#268` opened the key and
  * emptied `admit`'s body in one diff, which is the shape a wiring has to take —
  * both halves, or the step runs its plugins *and* its own copy of the work.

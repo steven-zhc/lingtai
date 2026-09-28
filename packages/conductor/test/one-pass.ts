@@ -524,6 +524,25 @@ export const reviewerAtTheWall: Runtime = {
  * than the design being awkward.
  */
 export function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
+  /**
+   * **What `rev-parse HEAD` answers, and it moves once** (`#265`).
+   *
+   * It was the constant `b`*40, from the first call to the last — so a freshly
+   * cut worktree answered a head its own `provision` had not put there, and
+   * *nothing has been committed yet* was a state this fake could not be in. That
+   * was invisible while `implement` was the only step that could commit and the
+   * receipt was read as `HEAD !== tree.baseSha`; `firstDispatch` measures against
+   * the head *it* found now, because `design` may commit too, and a fake that
+   * answers the same sha before and after the dispatch says every agent committed
+   * nothing.
+   *
+   * It moves at `wire`, which is the one port only the implementing dispatch
+   * calls and is called before the run — so the sequence is the real one: the
+   * base until the agent is wired up, and its commit afterwards. Nothing here
+   * models a design agent's commit, because no runtime in this file writes one;
+   * what the fake now has is the *base* to tell one from.
+   */
+  let head = "a".repeat(40);
   return {
     repo: {
       provision: (o) =>
@@ -550,8 +569,9 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
               : `git ${args[0]}`,
           );
           // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
-          // is what the diff summary is counted from.
-          if (args[0] === "rev-parse") return "b".repeat(40);
+          // is what the diff summary is counted from. See `head` above for why
+          // this is a variable rather than the constant it was.
+          if (args[0] === "rev-parse") return head;
           if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
           if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
           // `base...HEAD`, which is what a reviewer is shown. Non-empty on
@@ -572,6 +592,9 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
       wire: () =>
         Effect.sync(() => {
           did.push("wire");
+          // The implementing agent is about to run in that tree, and this fake's
+          // agent always commits — so this is where `head` leaves the base.
+          head = "b".repeat(40);
           return { settingsPath: "/tmp/fake/settings.json", socketPath: "/tmp/fake/sock", env: {} } as never;
         }),
       smokeTest: () =>

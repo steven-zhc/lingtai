@@ -879,7 +879,7 @@ export function runOnce(
         const it =
           what.of === "run"
             ? "a run"
-            : what.of === "step"
+            : what.of === "step" || what.of === "draft"
               ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`;
         const events = await store.read(CONTROL_STREAM);
@@ -969,11 +969,18 @@ export function runOnce(
       /** The item, once `claim`'s `queue:` action has taken it. */
       let took: Claimed | null = null;
       /**
-       * The cold reviewer's settings file, once `admit`'s port has written it.
+       * The settings file every declared `agent:` runs under, once `admit`'s port
+       * has written it.
        *
-       * Empty until then, and nothing reads it until then: every `agent:` action
-       * runs at `review`, `proposed` or `merge`. See `cut` for why it is written
-       * there rather than above the pass.
+       * Empty until then, and nothing reads it until then — **and since `#265` the
+       * earliest reader is one step later rather than three.** `agentPlugin.at`
+       * opens at `design`, `review`, `proposed` and `merge`, and `design` is the
+       * step straight after `admit`: a drafting agent declared there is dispatched
+       * with this path, so the write cannot move any later than `cut` without
+       * leaving it `""`. Named for the reviewer because that is the action it was
+       * written for and still the only one that reads a diff; what it *is* is one
+       * unhooked settings file per pass. See `cut` for why it is written there
+       * rather than above the pass.
        */
       let reviewSettingsPath = "";
       /**
@@ -1845,9 +1852,10 @@ export function runOnce(
           runtime: options.runtime,
           issue: async () => took?.ticket ?? { ref: String(options.issue), title: "", body: "" },
           diff: () => gitOrDie(["diff", `${baseShaOr("HEAD")}...HEAD`]),
-          // A getter, because `admit` is what writes it: `createAgentAction`
-          // reads `deps.settingsPath` when the action *runs*, which is at
-          // `review`, `proposed` or `merge` and so is always after `cut`.
+          // A getter, because `admit` is what writes it: `createAgentAction` and
+          // `createDraftAction` read `deps.settingsPath` when the action *runs*,
+          // which is at `design`, `review`, `proposed` or `merge` — so always
+          // after `cut`, and since `#265` the first of those is the very next step.
           get settingsPath() {
             return reviewSettingsPath;
           },
@@ -2101,9 +2109,34 @@ export function runOnce(
        * `did-not-finish` rather than released back to the queue: it is a fact about
        * this machine, and another pass meets it identically — so the honest answer
        * is a person, not the queue.
+       *
+       * **And the receipt is measured from where the tree stands now, not from
+       * where it was cut** (`#265`). See `startedAt` below.
        */
       const firstDispatch = async (brief: Brief): Promise<Worked> => {
         const tree = cutTree();
+        /**
+         * **Where this agent found the tree** — and the whole of what the receipt
+         * below is measured against (`#265`).
+         *
+         * It was `tree.baseSha`, which is the same commit for as long as `implement`
+         * is the first step that may write one. `design` may since `agentPlugin`
+         * declared it: a recipe's drafting agent runs in *this* worktree, unhooked
+         * and writable, and a document it committed there would move `HEAD` past the
+         * base before this is called. `tree.baseSha` then reads *something was
+         * committed* for a run that committed nothing, which is 0057 §2's one guard
+         * answering about the wrong agent — and the pass would go to `build` and
+         * `review` on a branch holding a design note and no implementation, with
+         * `RunProposedCompletion` naming the drafting agent's commit as this run's.
+         *
+         * So it is asked rather than assumed, which is what `fixRound` already does
+         * one function down: it compares against `brief.context.onSha`, *the head
+         * this round is about*, for this reason a round earlier. The prompt telling a
+         * design agent not to commit stays where it is and is not what makes this
+         * true: prose in a prompt is not a guard, and the agent that ignores it is
+         * exactly the one the guard is for.
+         */
+        const startedAt = await gitOrDie(["rev-parse", "HEAD"]);
         const wired = await Effect.runPromise(
           Effect.either(host.wire({ runId, hookBinary: options.hookBinary, home })),
         );
@@ -2268,10 +2301,12 @@ export function runOnce(
         runLog.note("run", `finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`);
 
         const head = await gitOrDie(["rev-parse", "HEAD"]);
-        // **The commit is the receipt** (0057 §2). An agent that ran and committed
-        // nothing left none, and the pass stops rather than buying a round to fix
-        // a diff that does not exist.
-        if (head === tree.baseSha) return { stopped: "the agent produced no commits" };
+        // **The commit is the receipt** (0057 §2), and it is *this* agent's commit:
+        // `startedAt` and not `tree.baseSha`, so a step before this one that left a
+        // commit of its own cannot stand in for one. An agent that ran and committed
+        // nothing left no receipt, and the pass stops rather than buying a round to
+        // fix a diff that does not exist.
+        if (head === startedAt) return { stopped: "the agent produced no commits" };
         await recordDiff(branch, head);
         await appendNow(runId, [
           {
@@ -3014,17 +3049,27 @@ export function runOnce(
         const at = stopped.ending.at;
         const round = wallMetBy();
         yield* standDownConductor(
-          // `implement` and `design` have no cell open, so a `never-ran` at either
-          // is the body's own stand-down and the wall is the *run's* — **unless
-          // the agent at `implement` was a round's rather than the implementer's**,
-          // which is the one thing `StepNeverRan` cannot say and `fixWall` is
-          // recorded for. At any other step it is a declared plugin's agent, which
-          // 0041 §3 reuses this whole mechanism for.
+          // `implement` has no cell open, so a `never-ran` there is the body's own
+          // stand-down and the wall is the *run's* — **unless the agent at
+          // `implement` was a round's rather than the implementer's**, which is the
+          // one thing `StepNeverRan` cannot say and `fixWall` is recorded for. At
+          // any other step it is a declared plugin's agent, which 0041 §3 reuses
+          // this whole mechanism for.
+          //
+          // **`design` was beside `implement` on the `{of: "run"}` line until
+          // `#265`, on the premise this comment stated: that it had no cell open.**
+          // `agentPlugin` declares the step now, so a `never-ran` there can only be
+          // a declared action's — the body dispatches nothing and `defaultsAt` has
+          // no row — and the pause has to name it. Its own variant rather than
+          // `{of: "step"}`'s, because that sentence ends *nothing judged the diff*
+          // and there is no diff one step before `implement`.
           round !== null && stopped.step === "implement"
             ? { of: "fix", action: round.action, round: round.round }
-            : stopped.step === "implement" || stopped.step === "design"
+            : stopped.step === "implement"
               ? { of: "run" }
-              : { of: "step", step: `${stopped.step}:${at ?? "agent"}` },
+              : stopped.step === "design"
+                ? { of: "draft", step: `design:${at ?? "agent"}` }
+                : { of: "step", step: `${stopped.step}:${at ?? "agent"}` },
           stopped.ending.detail,
         );
       }
