@@ -98,7 +98,7 @@ field.
 | `claim` | — | pass · hold · did-not-finish · never-ran | picking the ticket. **Its body is empty and `queue:` is what runs** (`#269`): **there is no work item yet**, so the `ActionContext` has none to be about — `onSha` is the base the pass came in on, `cwd` is a directory nothing has cut, and a plugin that assumed either does not compile |
 | `admit` | — | pass · hold · did-not-finish · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
 | `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
-| `design` | — | pass · hold · did-not-finish · never-ran | a document before any code — **or nothing, which is an answer** |
+| `design` | — | pass · hold · did-not-finish · never-ran | a document before any code — **or nothing, which is an answer**. **Its body is empty and `agent:` is what runs** (`#265`): the same key as the cold reviewer and a different action — at this step it drafts, and what it answers is the document rather than findings. **There is no default**: a recipe that says nothing here runs nothing, which is what it always did |
 | `implement` | — | pass · hold · did-not-finish · never-ran | one agent in the worktree. It reports the `head` it committed |
 | `build` | — | **+ refuse** | is it green. A red one skips `review` |
 | `review` | — | pass · hold · did-not-finish · never-ran | read the diff, return findings, **judge nothing** |
@@ -206,7 +206,7 @@ runs, what happened has happened.
 |---|---|
 | Not in `PLUGINS` | `slack: not a plugin` — an unknown key, at resolve |
 | In `PLUGINS`, no `at` for that step | *the "tell the channel" action is a "slack" at the "claim" step, and `slack:` does not implement `claim` — it serves `proposed`* |
-| In `PLUGINS`, and nothing implements that step | *… and no plugin implements `design` — today there is no design step: the implementing agent is handed the issue body and works from it…*. Two of the ten are left — `design` and `implement`; `claim` was the third until `#269` gave it `queue:` |
+| In `PLUGINS`, and nothing implements that step | *… and no plugin implements `implement` — today `conduct.ts` dispatches the implementing agent directly, under `runtime.limits`…*. One of the ten is left — `implement`; `design` was the second until `#265` gave it `agent:`, and `claim` the third until `#269` gave it `queue:` |
 | Two plugin keys in one entry | refused: an entry names exactly one |
 | Plugin landed, daemon not restarted, recipe edited | the recipe resolves on your machine and is refused on the daemon's, and **no pass starts at all** until it restarts. Editing the recipe alone never needs one |
 
