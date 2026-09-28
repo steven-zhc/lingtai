@@ -41,22 +41,32 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * configured and did not run is Lingtai's bug. Only showing all ten keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  *
- * **Two of the ten are `skipped` on every run whatever the recipe says**,
- * because no plugin implements `design` or `implement` — an action declared at
- * either is refused when the recipe resolves (0064 §4), so their plan is empty
- * and cannot be anything else. That is the state reading correctly rather than
- * a gap: nothing is configured there, so nothing ran there, so `skipped` is what
- * the fold owes a reader.
+ * **One of the ten is `skipped` on every run whatever the recipe says**, because
+ * no plugin implements `implement` — an action declared there is refused when the
+ * recipe resolves (0064 §4), so its plan is empty and cannot be anything else.
+ * That is the state reading correctly rather than a gap: nothing is configured
+ * there, so nothing ran there, so `skipped` is what the fold owes a reader.
+ *
+ * **And `design` is the one step that is `skipped` on every run of every recipe
+ * that says nothing at it, and not because nothing implements it** (`#265`).
+ * `agentPlugin` serves the step, so a drafting agent is declarable and draws a
+ * verdict where somebody wrote one; what `design` has that `admit`, `claim` and
+ * `merge` do not is **no default** — `conduct.ts`'s `defaultsAt` has no row for it
+ * — so an unconfigured `design` runs nothing, sees nothing, and `skipped` is again
+ * exactly right. It is the case this comment is about, arrived at from the other
+ * side.
  *
  * **It was six, then four, and each step that leaves the list leaves it for a
  * plugin.** `runPlugin` took `build` and `agentPlugin` took `review` on
- * 2026-09-27 (`a417908`); `worktreePlugin` took `admit` (`#268`) and
- * `queuePlugin` took `claim` (`#269`). The last two are unlike the first two
- * here: each runs a **default** action where the recipe declares nothing
+ * 2026-09-27 (`a417908`); `worktreePlugin` took `admit` (`#268`), `queuePlugin`
+ * took `claim` (`#269`) and `agentPlugin` took `design` (`#265`). **`admit` and
+ * `claim` are the two that are unlike the others here**: each runs a **default**
+ * action where the recipe declares nothing
  * (0065 §2), so a **verdict** is recorded at them on every run rather than only
  * on a recipe that configured them — while the *plan* stays empty, because
  * `stepPlan` reads `recipe.steps[step]` and a default is written nowhere in the
- * file. `stateOf` is what keeps that pair honest: `skipped` wants an empty plan
+ * file. `design` is the one opening with no default and so is not one of them,
+ * which is the paragraph above. `stateOf` is what keeps that pair honest: `skipped` wants an empty plan
  * **and** nothing seen, so a point the recipe leaves empty and a default filled
  * draws the verdict it got, with the action named among the ones the plan did
  * not. A `claim` segment reading `failed` is the take declining —
