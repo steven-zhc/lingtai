@@ -475,7 +475,7 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 
 | Step | When | May refuse? | Built? |
 |---|---|---|---|
-| `claim` | the queue picks the item | no | not yet |
+| `claim` | the ticket is taken here, by the `queue:` the recipe declares or the one the default supplies | no | yes |
 | `admit` | work starts on it; the worktree is cut here, by the `worktree:` the recipe declares or the one the default supplies | no | yes |
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
 | `design` | a document, before any code — or nothing, which is an answer | no | not yet |
@@ -486,17 +486,18 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | `merge` | after `proposed` passes, before the merge lane | yes | yes |
 | `end` | the work item reached any terminal outcome | **no** | yes |
 
-`admit`, `prepared`, `build`, `review` and `proposed` run the recipe's actions;
+`claim`, `admit`, `prepared`, `build`, `review` and `proposed` run the recipe's actions;
 `merge` holds when a `human` action asks or when `--no-merge` does; `end` runs
 too, its actions being effects rather than verdicts. The conductor calls GitHub and appends the outcome; what
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
-**Three of the ten are empty here and empty everywhere, and that is what the
-last column is for.** No plugin implements `claim`, `design` or `implement`, so
+**Two of the ten are empty here and empty everywhere, and that is what the
+last column is for.** No plugin implements `design` or `implement`, so
 an action declared at one is refused when the recipe resolves rather than
 accepted and skipped (`#61`) — today's implementing agent is dispatched by
-`conduct.ts` directly. It was six until 2026-09-27, when `runPlugin` took
+`conduct.ts` directly. **`claim` was the third until `#269`**, when `queuePlugin`
+took it and the take became an action like the cut and the lane. It was six until 2026-09-27, when `runPlugin` took
 `build` and `agentPlugin` took `review`: the build and the cold reviewer had
 shared `proposed:` because it was the only door open, and each has its own step
 now. `admit` was the fourth until `#268` gave the cut to `worktreePlugin` and
@@ -911,7 +912,7 @@ written as a stand-in.
 | `refs:` | — same, and the only effect that **deletes**: the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on `origin`, with `branch: true` taking `agent/<n>` too. Its `when:` is `landed` and the schema admits no other value | a GitHub client that can list and delete refs |
 | `worktree:` | — it cuts the branch the pass owns, at `admit`, and reports the head the rest of the pass is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. **`merge` reads it** (`#270`): one field, `strategy`, whose enum has one legal value because `integrate.ts` offers one, and the step reports the lane's own `reason` and decides nothing. **It is the last action at its step** and anything written after one is refused when the recipe resolves (0065 §8) | the mirror, and the `base` it is *handed* |
-| `queue:` | — it picks which ticket is taken, and whether this machine may take it. No step reads it yet | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
+| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s. One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue pass**'s field, and that pass runs before a pass exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
 | `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for three of the five directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in, which spends nothing. **The other three cost a run each time they arrive**, and only where you declare a runtime for them: declare nothing and they reach a person, free, as they always did. See §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
@@ -962,12 +963,25 @@ that changes the base branch, and what runs there is `createMergeAction` over th
 integrator, `packages/repo/src/integrate.ts` — the same call `conduct.ts` used to
 make from the step's body, handed the base rather than declaring one (`#270`).
 
-**The other two are names for code that already runs, and no step accepts one**
-(`#236`, `#238`). `queue:` is `runnableNow` and `considerIssue` in
-`packages/conductor/src/discover.ts`, with its `assignee` field `assigneeSkip`
-beside them together with `claimWorkItem` in `packages/conductor/src/claim.ts`,
-which takes the one that survives; the queue pass calls those itself, before a
-pass exists to have steps at all. `backlog:` is **two
+**`queue:` is the third, and its step is `claim`** (`#269`).
+`queuePlugin.at` carries `claim`, the first step of the ten, and what runs there is
+`createQueueAction` over `runnableNow` and `considerIssue` in
+`packages/conductor/src/discover.ts` — with its `assignee` field `assigneeSkip`
+beside them, and `claimWorkItem` in `packages/conductor/src/claim.ts` taking the
+one that survives. That is the same pair of calls `conduct.ts` used to make from
+the step's body, handed the four values rather than re-reading the recipe behind
+the action (`queueOf`, `packages/recipe/src/settings.ts`).
+
+**And the queue pass is still called directly, because it is a different question
+rather than the same one twice.** `selectRunnable` in
+`packages/conductor/src/queue.ts` asks GitHub which issues are on offer *before a
+pass exists to have steps*, and `backoff` is only read there. The key above is the
+pass's own re-read of that answer for the one issue it was pointed at — which is
+why a label edited between the two takes effect, and why `backoff` rides on the
+block without being read at `claim`.
+
+**The one left is a name for code that already runs, and no step accepts it**
+(`#236`, `#238`). `backlog:` is **two
 literals and not one** — the `minor` in `backlogProjection`,
 `packages/projector/src/backlog.ts`, which decides what is *filed*, and the
 blocker-or-major in `verdictFor`, `packages/actions/src/agent-action.ts`, which
@@ -1233,7 +1247,7 @@ declaration is what makes it legal there.**
 ```ts
 definePlugin("close", { fields: { … }, at: { end: … } });        // one step
 definePlugin("run",   { fields: { … }, at: { prepared: …, proposed: …, merge: … } });
-definePlugin("queue", { fields: { … }, at: {} });                // none — see below
+definePlugin("backlog", { fields: { … }, at: {} });              // none — see below
 ```
 
 Source: each plugin's `at` in `packages/recipe/src/recipe.ts`, and
@@ -1259,19 +1273,20 @@ each says the part an operator can act on:
   works from it.* That sentence was unwritable under the table, because an
   empty row could not tell *not yet* from *not ever*. Three of the steps
   [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named are
-  these: the queue's filter for `claim`, the issue body for `design`, and
-  `conduct.ts`'s own dispatch for `implement`. `build` and `review` were here
-  until 2026-09-27 and are served now, and **`admit` was the fourth until
-  `#268`** — `worktree:` serves it, so the eleven other kinds there are refused
+  these: the issue body for `design` and `conduct.ts`'s own dispatch for
+  `implement`. `build` and `review` were here
+  until 2026-09-27 and are served now, **`admit` was the fourth until
+  `#268`** and **`claim` the third until `#269`** — `worktree:` serves the one and
+  `queue:` the other, so the eleven other kinds at each are refused
   in `admit`'s own terms instead, with the same remedy: a question that must be
   asked *before* anything is spent is `lingtai ask`, which holds the item in the
   queue and is answered without a worktree
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
-- **A plugin that serves no step at all** — `queue:` and
-  `backlog:`, whose `at` is `{}`. Both are names 0061 §3 gives
+- **A plugin that serves no step at all** — `backlog:`, whose `at` is `{}`, and
+  it is the last one. It is a name 0061 §3 gives
   code the pass already runs, and the recipe is not yet what tells it to.
-  **`worktree:`, `judge:` and `merge:` were on this list and left it**, with
-  `#268`, `#274` and `#270`. Asked
+  **`worktree:`, `judge:`, `merge:` and `queue:` were on this list and left it**, with
+  `#268`, `#274`, `#270` and `#269`. Asked
   first, and the same sentence at all ten steps, because it is a fact about the
   plugin: *nothing implements `claim`* is true and leaves a reader hunting for
   the code that picks their ticket. `CALLED_DIRECTLY` names it instead, and it
@@ -1279,11 +1294,16 @@ each says the part an operator can act on:
   the same plugin and only the plugin's says which file to open. Both of them
   carry one more clause, and it is the only part of those refusals that is not
   a fact about today's code — what the step will do with the list when it reads
-  it: **at `claim` the first plugin that yields a work item wins**, rather than
-  every one having to pass as at `prepared` (0061 §2), and `backlog:` routes
-  nothing and files at or below the bar. The day a step reads one, its entry in
-  `CALLED_DIRECTLY` goes and an `at` key arrives on the plugin in the same diff.
-  **`merge:` and `judge:` are the two days that happened** (`#270`, `#274`).
+  it: `backlog:` routes nothing and files at or below the bar. The day a step
+  reads one, its entry in `CALLED_DIRECTLY` goes and an `at` key arrives on the
+  plugin in the same diff. **`merge:`, `judge:` and `queue:` are the three days
+  that happened** (`#270`, `#274`, `#269`), and the last of them is where the
+  clause turned out to be **wrong rather than merely unwritten**: it had said *at
+  `claim` the first plugin that yields a work item wins*, and what `claim` does
+  with a list of two is refuse the second by name. The pipeline stops at the first
+  action that did *not* pass, so two takes would be *both must agree*, and an
+  order that reads as a priority it does not have is worse than no second entry
+  (0061 §2's reduction, not built and not wanted).
   `merge:` serves `merge`, so a lane written anywhere else is refused by the
   *first* shape above now — *`merge:` does not implement `prepared` — it serves
   `merge`* — carrying the clause its own row used to, because somebody who wrote a

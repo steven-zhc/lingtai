@@ -201,12 +201,25 @@ two things, and the plugin says which. Either the record is keyed by kind —
 `at: { proposed: { step: … } }` against `at: { "*": { action: … } }` — or the
 step-body plugins are a separate declaration from the action plugins, and
 `servesStep` answers a different question for each. The second matches what is
-true today: `judge:`, `queue:`, `merge:` and `backlog:` are not actions and never
+true today: `judge:` and `backlog:` are not actions and never
 were, and 0064 §2 opens by saying exactly that. **`worktree:` was the fifth on
 that list and `#268` settled it the other way**: it *is* an action — a
 `WorktreeActionDeps` and an `ActionResult` like the other four kinds — so the cut
 runs once per declared entry through `runActionPipeline`, and what made it look
 like a step's own function was only that `admit`'s body used to call it.
+
+**`queue:` was the sixth and `#269` settled it the same way**, and it is the
+sharper case of the two because it runs where there is *nothing yet*: a
+`QueueActionDeps` and an `ActionResult` like the rest, at a step whose
+`ActionContext` has no work item to be about — `onSha` is the base the pass came
+in on and `cwd` is a directory nothing has cut. So *an action needs a worktree* was
+never in the contract either, and what made the take look like a step's own
+function was only that `claim`'s body used to call it. **`merge:` had left before
+it, with `#270`** — `createMergeAction` over the integrator — so of the four the
+paragraph above named, two are gone and the two left are `judge:` and `backlog:`.
+Which is the finding: that list was about **how a body happened to be written**,
+not about what a kind is, and every entry a diff looked at turned out to be an
+action.
 
 ### And an agent judge has a dispatch, at the seam this section named (`#277`)
 
