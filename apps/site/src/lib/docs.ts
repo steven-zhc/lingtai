@@ -78,7 +78,9 @@ export const SECTIONS: Section[] = [
   {
     id: "plugins",
     label: "Plugins",
-    note: "One page per recipe key — what it does, which steps it may be declared at, and what a real one looks like. `plugins/index.md` is the parent, and is what `/docs/plugins/` serves.",
+    // No backticks: a note is rendered as the text it is, beside the section's
+    // heading, and the other three read as sentences rather than as markdown.
+    note: "One page per recipe key — what it does, which steps it may be declared at, and what a real one looks like. The parent page lists the twelve and is read off the closed set rather than kept by hand.",
     files: { dir: "plugins" },
   },
   {
