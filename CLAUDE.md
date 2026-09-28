@@ -125,10 +125,10 @@ Then, under a rule, the evidence — house style as in #52, #55, #58:
 ## Running Lingtai on Lingtai
 
 **This repository merges its own work unattended, and that is configuration
-rather than a gap.** `gates.merge` is `[]` — nothing is declared there, so
-nothing holds. Declare a `human:` action there and the point runs it: #58 was
+rather than a gap.** `merge:` is `[]` — nothing is declared there, so nothing
+holds. Declare a `human:` action at **`proposed:`** and the pass runs it: #58 was
 fixed, and the test that pins it is `conductor/unit/conduct-a-whole-pass.test.ts`'s
-*holds at a human action declared at the merge point, with no --no-merge
+*holds at a person the recipe declared before the lane, with no --no-merge
 anywhere*, which asserts the merge lane is never called — it carried that claim
 in `integration/run-once.test.ts` until #256 deleted the engine that file tested.
 **A test that passes `--no-merge` cannot make it**: since #256 the flag is itself
@@ -136,8 +136,21 @@ an injected `human:` action, so it exercises the injected one and says nothing
 about the declared one, which is how #58 stayed hidden for four days.
 `--no-merge` remains the way to hold a run whose recipe asks for nothing.
 
-So the question to ask before a run is not *did I pass the flag* but *what does
-`merge:` say today*, and `lingtai add` prints the answer.
+**`proposed:` and not `merge:`, since #270.** A `human:` or a `watch:` written at
+`merge` is refused by name when the recipe resolves — `humanPlugin.at` and
+`watchPlugin.at` carry `proposed` and nothing else — because 0058 §3b gives
+`merge` three ways out and the third is *anything else → `proposed`, and only
+`proposed` may send it to a person*. The mechanical half: `mergePlugin` serves
+`merge` now, so the landing is an action in that step's own list, and a hold
+written beside it would be asked about a merge the same list had already made.
+`proposed` is on the spine — every pass that got past `review` arrives there — so
+a hold declared at `proposed:` is reached unprompted, one step before anything
+lands. **And the lane is the last action at `merge:`**: anything written after one
+is refused too (0065 §8), because a check that fails there fails about a change
+already on `main`.
+
+So the question to ask before a run is not *did I pass the flag* but *what do
+`proposed:` and `merge:` say today*, and `lingtai add` prints the answer.
 
 **The build is at `build:` and the cold reviewer at `review:` since 2026-09-27
 (`a417908`, T5d), and `proposed:` is `[]` on purpose.** They shared `proposed:`

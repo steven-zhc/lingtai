@@ -378,6 +378,17 @@ one option that produces a silent drop.
 
 ### 3.2 `watch:` and `human:` are plugins with no step — and the plugin set is twelve, not eleven
 
+> **Decided since, and the other way.** `#270` took `merge` off both `at` keys:
+> 0058 §3b gives `merge` three ways out and the third is *anything else →
+> `proposed`, and only `proposed` may send it to a person*, and `mergePlugin`
+> serves `merge` now — so the landing is an action in that step's list and a hold
+> beside it would be asked about a merge already made. Each of these two has *a*
+> home after all, and it is `proposed`. What this section got right is the rule it
+> ends on: the pair was a cell nobody had decided, and it was decided by a ticket
+> rather than by narrowing to what this repository happened to write. See
+> [0065](../decisions/0065-the-default-is-a-plugin.md) §8, which also settles the
+> lane's position: it is the last action at `merge`.
+
 Two lists of the plugins exist — [the-pipeline.md](the-pipeline.md)'s T2, and
 0061 §3's table — and **neither was the set, in both directions**:
 

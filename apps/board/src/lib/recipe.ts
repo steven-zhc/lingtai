@@ -508,11 +508,14 @@ export function describeAction(
       const what = a.branch ? "agent/<n> and every agent/<n>-attempt-<k>" : "every agent/<n>-attempt-<k>";
       return { does: `deletes ${what} from origin when it lands`, bound: "runs for effect, and cannot be undone" };
     }
-    // The two the pass calls itself, so no step in the recipe can hold one
-    // today — `whyNoKindAt` refuses both everywhere. A reading with no case
-    // for them would be a `switch` that returns `undefined` the moment the
-    // ticket after this one wires them up, on a page nobody would think to
-    // re-test; the closed set is read here, so the set is what this answers.
+    // **Two rows a recipe can now hold, and they were the pass's own calls until
+    // 2026-09-27**: `worktree:` at `admit` (`#268`) and `merge:` at `merge`
+    // (`#270`), so `whyNoKindAt` answers `null` for both of those pairs and the
+    // board draws these lines off a live file rather than keeping them for a
+    // future ticket. They were written before either was wired, which is why they
+    // were here to be drawn on the day it happened — the closed set is read here,
+    // so the set is what this answers, and a reading with no case for a kind is a
+    // `switch` that returns `undefined` on a page nobody would think to re-test.
     case "worktree": {
       const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>;
       return {
