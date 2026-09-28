@@ -240,6 +240,36 @@ proposed:
 to route. Otherwise it names where to go, and `why` is what a person reads on the
 card.
 
+## A second one: buying a design, and the step whose default is nothing
+
+`design` is declarable since `#265` and **its default is nothing**, which is the
+one place in the plugin system where *declared* and *omitted* are not two ways of
+getting a behaviour: omit it and no action runs, the step passes, and `implement`
+is briefed with `""` and works from the issue — which is what every pass did
+before the key existed. So this is a block that buys something rather than one
+that re-states what you already had:
+
+```yaml
+design:
+  - name: write the shape down first
+    agent: claude-code
+    prompt: |
+      This repository is a pnpm workspace. Say which package the change belongs
+      in and which existing function it should wrap.
+```
+
+**The same key reviews everywhere else**, and that is deliberate: `agent:` is *a
+runtime, a model and a prompt* at all four steps it serves, and what it is for
+differs by step. At `review`, `proposed` and `merge` it reads the diff and
+returns findings; at `design` there is no diff to read, so it is handed the
+ticket and answers with the document — including the empty one, which is the
+answer *this change needs no design* and is a pass rather than a skip.
+
+**What it costs is an agent run per pass**, and `runtime.limits` is the only
+thing that bounds it (0065 §7). A ticket whose shape is obvious from the issue
+pays for a document nobody reads, which is why the prompt this action is built
+with says an empty answer is the common one.
+
 ## What stays the workflow's
 
 **You choose the destination; you do not choose what it costs.**
