@@ -24,8 +24,10 @@ What comes back is a verdict and evidence. `pnpm test exited 0 in 41.2s` on a
 pass; on a failure, the exit code, how long it took, and the log — terminal
 escapes stripped at capture
 ([0043](../decisions/0043-evidence-is-plain-text.md)), the last 60 lines kept
-and the first few on top of them with a count of what was elided between, capped
-at 8 000 bytes. That bound is not only the card's: the fix prompt quotes the same
+and capped at 8 000 bytes, with whole lines from the top **on top of that cap
+rather than out of it** (`#171`) — up to a quarter of it again, then the line
+counting what was elided between, so the payload bound is 8 000 bytes and a
+quarter. That bound is not only the card's: the fix prompt quotes the same
 evidence and `budget.evidence` is counted in it. A timeout is a distinct outcome
 inside `runCommand` — `SIGTERM`, `SIGKILL` five seconds later, evidence that
 opens `timed out after 20m` — and the same verdict out here: `failed`, exactly as
@@ -60,19 +62,24 @@ are answered without a person:
 
 | a red `run:` at | what the pass does with it |
 |---|---|
-| `prepared` | arrives at `proposed` as `red` — *a command said no … `prepared`'s install, which is the same kind of evidence one step earlier* — and the built-in `same-worktree` judge sends it back to `implement` with the error. **A fix round.** |
-| `build` | the same direction and the same answer, and this is the one everybody copies. **A fix round.** |
+| `prepared` | arrives at `proposed` as `red` — *a command said no … `prepared`'s install, which is the same kind of evidence one step earlier* — and the built-in `same-worktree` judge asks for `implement` and does not get it. `onOffer` offers that step only from `implement` and after it (`AFTER_AN_AGENT` in `pass.ts`, which leaves `prepared` off: *a failed install refuses before any agent has run, so there is no diff and no error in one to fix*), so the mechanical answer falls to its `orElse`, the outcome is `blocked`, and a person is asked. **No round bought** — and no ceiling to raise either, because `implement` is off `reachable` as well as `affordable`. |
+| `build` | the same direction, and here the judge gets what it asked for: `build` is after an agent, so `implement` is on offer and the refusal goes back to it with the error. **A fix round**, and this is the one everybody copies. |
 | `proposed` | nothing. `proposed` is the router, and `ARRIVE_AT_THE_ROUTER` does not carry it — *a visit that did not pass there has nowhere above it to appeal to* — so the walk stops, the outcome is `blocked`, and a person is asked. **No round bought.** |
 | `merge` | arrives, and `directionOf` reads `merge`'s ending for the lane's own words: an action that refused says `action-refused`, which is *not a direction any `judge:` answers*, so the pass is held for a person. **No round bought.** |
 
-That difference is `#256`'s lesson and it is why `build` exists as somewhere to
-write a command at all. Before it, `proposed:` was the only step a `run:` could
-legally be declared at, and the five gate points the old engine had bought a
-round where the router does not — so the same `pnpm test`, unmoved, stopped
-costing one fix and started costing a person. **A check that the diff is expected
-to be able to satisfy belongs at `build`.** `proposed` is for a question whose
-answer is *somebody decide*, and `merge` for one whose answer is *do not land
-this*.
+**`build` is the only one of the four where a red command buys a fix round**, and
+that is `#256`'s lesson and why the step exists as somewhere to write a command at
+all. A `run:` was legal at three of them before it — `prepared`, `proposed` and
+`merge`, which is what `runPlugin.at` carried until `a417908` added the fourth, so
+the install above is older than `build` and was never what the move was about.
+What had nowhere to go was a check on what an agent had *written*: of the three,
+`proposed` was the only step after `implement`, and the five gate points the old
+engine had bought a round where the router does not — so the same `pnpm test`,
+unmoved, stopped costing one fix and started costing a person. **A check that the
+diff is expected to be able to satisfy belongs at `build`.** `prepared` is for
+what must be true before an agent starts, `proposed` for a question whose answer
+is *somebody decide*, and `merge` for one whose answer is *do not land this* — and
+a red one at any of the three is a person's.
 
 The six steps it may not be declared at each have a sentence, and it is the
 sentence the refusal prints (`whyThatPair`, same file). `review` and `implement`
@@ -106,7 +113,7 @@ accepts and the step throws out is `#61` with the throw in a different file.
 |---|---|---|---|
 | `name` | string | yes | How every verdict, waiver and reading addresses this action. It is on the card, in `StepsResolved` and in the refusal when something about this entry is wrong, so it is worth writing as a sentence — `a red build is the agent's to fix` reads better on a board than `build`. |
 | `run` | string | yes | The command. Run through a shell, in the worktree, so `&&`, pipes and quoting are yours. Its exit code is the verdict and there is no other channel: a command that exits 0 on failure has told the pass it passed. |
-| `timeout` | duration string | no — `15m` | `30s`, `15m`, `2h`, which is `parseDuration`'s shape. Reaching it kills the command and refuses the step exactly as a non-zero exit would, and the evidence says which. **The schema takes it as a string and does not check the shape**: `parseDuration` is what reads it and throws `"soon" is not a duration like 30s, 15m or 2h` where the action is built — inside the pass, rather than where `lingtai add` and `lingtai doctor` would have caught it. |
+| `timeout` | duration string | no — `15m` | `30s`, `15m`, `2h`, which is `parseDuration`'s shape. Reaching it kills the command and refuses the step exactly as a non-zero exit would, and the evidence says which. **The schema takes it as a string and does not check the shape**: `parseDuration` is what reads it and throws `"soon" is not a duration like 30s, 15m or 2h` where the action is built, which is inside the pass. It is the one thing on this page a resolve does not refuse, and `lingtai doctor` catches it all the same — `stepPlan` parses every `run:`'s timeout on the way to the `recipe: resolves for every project` row, so a typo is a red row there rather than a throw in a pass somebody paid for. |
 | `env` | list of strings | no — `[]` | The **names** of the variables this command's process is given — never the values, so the recipe stays safe to read. |
 
 `env` is the field that makes this more than a shell line, and it is worth the
