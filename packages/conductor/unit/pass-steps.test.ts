@@ -1431,6 +1431,43 @@ describe("proposed is the only step that routes, and one judge answers each when
   });
 
   /**
+   * **And the same is true of the lane's own agent, which is the path that does not
+   * go through `judged` at all** (`#279`).
+   *
+   * `agentPlugin.at` carries `merge`, so a recipe may declare a re-verify there.
+   * When its answer does not parse, `createAgentAction` returns
+   * `{verdict: "failed", unreadable: true}` and sets no `because` — so `endingOf`
+   * reports `action-refused`, `directionOf` has no direction for that, and
+   * `proposed` takes its `when === null` branch. That branch answers a person
+   * directly and never reaches `judged`, where `unreadable` is read: so the flag
+   * `whatArrived` computes was dead on the one arrival that could carry it, and the
+   * sentence a person got was *not a direction any `judge:` answers* — true, and
+   * about the wrong thing. A dropped judgement is a thing to re-run; a reason no
+   * judge answers is a thing to go and look at.
+   *
+   * The reviewer that found this had its own findings dropped by the bug it was
+   * reviewing the fix for, which is why this test arrived by hand.
+   */
+  it("reports the lane's unreadable answer as unreadable, not as a reason nobody answers", async () => {
+    const { result, asked } = await pass({
+      actions: {
+        build: [canned("typecheck", PASSED)],
+        review: [coldReviewerSaying('{"findings":[]}')],
+        merge: [coldReviewerSaying(AN_ANSWER_NOBODY_CAN_READ)],
+      },
+      ceilings: { rounds: 3, restartsLeft: 3 },
+    });
+
+    expect(asked.judge).toEqual([]);
+    expect(result.routes[0]).toMatchObject({ from: "merge", to: "waiting", ceiling: null });
+    expect(result.routes[0]?.why).toContain("could not be read at all");
+    // The sentence this branch used to give for a dropped answer.
+    expect(result.routes[0]?.why).not.toContain("not a direction any");
+    expect(result.rested).toBe("waiting");
+    expect(outcomeOf(result)).not.toBe("landed");
+  });
+
+  /**
    * **And `#262` does not re-open**, which is the other half of the pair: the same
    * reviewer, the same route through `proposed`, an answer that *parsed* and was
    * empty — and the change lands. A fix that read *could not read it* and *read it,

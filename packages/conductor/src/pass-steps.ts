@@ -417,8 +417,11 @@ type Arrival = Omit<Judging, "offering"> & {
    * `ActionResult.unreadable` one layer down, and it stops here: a judge is never
    * handed it, because an arrival carrying it is answered before any judge is
    * asked. So it is on `Arrival` and not on `Judging` — the brief is the three
-   * fields and the set, and `pass-steps.test.ts`'s *hands a judge the findings,
-   * the evidence and the set, and no ceiling* is what keeps it that way.
+   * fields and the set, and what keeps it that way is the key-set assertion at
+   * the end of `pass-steps.test.ts`'s *offers a judge only the steps the pass
+   * reached*: `Object.keys` of the brief is exactly `evidence`, `findings`,
+   * `offering`, `when`. A field added to `Judging` fails there by name, which is
+   * the whole reason that assertion is a key set rather than a spot check.
    */
   readonly unreadable: boolean;
 };
@@ -1381,11 +1384,12 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * - **a visit — a routing arrival.** The step that did not pass, carrying its
      *   reason intact (0058 §3c), and `directionOf` is which of the five that is.
      *
-     * **Every arrival is answered, and four things can answer it, in this order.**
-     * A direction no judge is written for is a person; a refusal carrying nothing
-     * an agent could be held to is a person, whatever is declared; what the recipe
-     * declared for the direction is asked; and where it declared nothing, the
-     * mechanical answer is given without paying for one. **A judge that answers
+     * **Every arrival is answered, and five things can answer it, in this order.**
+     * An answer nobody could read is a person, before anything else is asked
+     * (`#279`); a refusal carrying nothing an agent could be held to is a person,
+     * whatever is declared; a direction no judge is written for is a person; what
+     * the recipe declared for the direction is asked; and where it declared
+     * nothing, the mechanical answer is given without paying for one. **A judge that answers
      * outside `offering` is refused by name and the pass is held for a person**,
      * which is 0061 §8 again and the asymmetry `judge.ts` opens with — *a
      * misconfiguration that fails is cheap; one that loops is not.*
@@ -1412,6 +1416,30 @@ export function bodiesFor(ports: PassPorts): StepBodies {
       }
       const when = directionOf(arriving);
       if (when === null) {
+        const arrived = whatArrived(arriving);
+        /**
+         * **An unreadable answer here is the machinery's, and this branch is how
+         * it would have been missed** (`#279`).
+         *
+         * `judged` answers `unreadable` first, and this path does not reach
+         * `judged`: an `agent:` at `merge` — legal, `agentPlugin.at` carries the
+         * step — whose answer does not parse gives `verdict: "failed"` with no
+         * `because`, so `endingOf` reports `action-refused`, `directionOf` has no
+         * direction for that, and the sentence below would have called a dropped
+         * judgement *not a direction any `judge:` answers*. True, and about the
+         * wrong thing: the lane's re-verify said something and nobody could read
+         * it. Same destination, and the sentence is what was lost.
+         */
+        if (arrived.unreadable) {
+          return toAPerson(
+            `the \`${arriving.step}\` step's answer could not be read at all — it did not parse ` +
+              "as findings, so nothing structured came out of it however much the action said. " +
+              "That is the machinery losing a judgement rather than a step declining to make " +
+              "one, and it buys no round either (0038 §2). The answer is on that step's own " +
+              "`StepFailed`, clipped, and whole in the attempt's agent transcript; the pass is " +
+              "held for a person, who can read both",
+          );
+        }
         return toAPerson(
           `the \`${arriving.step}\` step reported "${reasonOf(arriving)}", which is not a ` +
             "direction any `judge:` answers — it stops the lane before the diff is what is in " +
