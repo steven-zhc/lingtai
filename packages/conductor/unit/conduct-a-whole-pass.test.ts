@@ -25,7 +25,7 @@ import { STEPS } from "@lingtai/domain";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
-  HUMAN_AT_MERGE,
+  HUMAN_BEFORE_THE_LANE,
   JUDGED,
   PROJECT,
   RECIPE,
@@ -200,14 +200,15 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
   });
 
   /**
-   * **A person declared at `merge` holds it, with no `--no-merge` anywhere** —
-   * `#58`, and the claim `CLAUDE.md` rests on when it says this repository merges
-   * its own work unattended *by configuration rather than by a gap*.
+   * **A person the recipe declared holds the merge, with no `--no-merge`
+   * anywhere** — `#58`, and the claim `CLAUDE.md` rests on when it says this
+   * repository merges its own work unattended *by configuration rather than by a
+   * gap*.
    *
    * It was pinned by the old engine's own integration test — *holds at a human
    * action at the merge point, with no --no-merge anywhere* — which `#256`
-   * deleted along with the engine it tested. The flag is a `createHumanAction` injected after
-   * `merge`'s declared list now (#20), so **a test that passes `merge: false`
+   * deleted along with the engine it tested. The flag is a `createHumanAction` injected into
+   * `merge`'s list now (#20), so **a test that passes `merge: false`
    * cannot make this claim at all**: it exercises the injected action and says
    * nothing about the declared one. That is exactly how `#58` stayed hidden for
    * four days — every test held its run with the flag, and the daemon does not
@@ -216,8 +217,18 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * So the recipe is the only thing asking, `merges` is `true` on the fake so a
    * pipeline that let this past would really call the lane, and the assertion is
    * that it was never called.
+   *
+   * **The step the recipe writes it at is `proposed` since `#270`, and that is the
+   * same claim rather than a weaker one.** `humanPlugin.at` lost `merge` with that
+   * ticket: 0058 §3b gives the step three ways out and only `proposed` may send one
+   * to a person, and once the landing is an action in `merge`'s own list an
+   * approval written beside it is asked about a merge already made. `proposed` is
+   * on the spine — every pass that got past `review` arrives there — so a hold
+   * there is reached by the daemon, unprompted, one step before anything lands.
+   * What is asserted is unchanged: `integrate` was never called and no
+   * `WorkItemLanded` is on the item's stream.
    */
-  it("holds at a human action declared at the merge point, with no --no-merge anywhere", async () => {
+  it("holds at a person the recipe declared before the lane, with no --no-merge anywhere", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const said: string[] = [];
@@ -225,7 +236,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const result = await once(
       {
         project,
-        client: fakeGitHub(said, HUMAN_AT_MERGE),
+        client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
         runtime,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
@@ -239,8 +250,8 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     );
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    if (result.ok !== "held") throw new Error("it merged, and a person had been declared at merge");
-    expect(result.step).toBe("merge");
+    if (result.ok !== "held") throw new Error("it merged, and a person had been declared before the lane");
+    expect(result.step).toBe("proposed");
     // **Nothing reached the base branch.** That is the entire ticket.
     expect(did).not.toContain("integrate");
     expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
@@ -252,7 +263,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const asked = run.filter((e) => e.type === "ApprovalRequested");
     expect(asked).toHaveLength(1);
     expect(asked[0]!.data).toMatchObject({
-      step: "merge",
+      step: "proposed",
       action: "approval",
       onSha: result.headSha,
     });
@@ -325,7 +336,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * did before the swap: the queue takes it again after the backoff and nobody
    * is asked to acknowledge a database blip. The one append in reach of this
    * fixture is the pipeline's own `StepRequested` for the person declared at
-   * `merge` — it is `emit`'s, from inside the walk, which is the whole class.
+   * `proposed` — it is `emit`'s, from inside the walk, which is the whole class.
    */
   it("releases the item when the store refused an append the pass made, rather than holding a person", async () => {
     const store = memoryStore();
@@ -344,7 +355,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     const result = await once(
       {
         project,
-        client: fakeGitHub(said, HUMAN_AT_MERGE),
+        client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
         runtime,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
@@ -521,46 +532,53 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * merge the branch and *then* ask a person whether to — `#58` reached by the
    * refactor that was supposed to make `#58` impossible.
    *
-   * `heldBeforeTheLane` is the placement, and the two shapes are the two branches
-   * of it. **The lane in the list** is the case above and the ordinary one: the
-   * hold goes before it, and `holds at the merge` asserts `integrate` was never
-   * reached. **No lane in the list** is this one — a recipe that declared a person
-   * there and nothing that lands — where the flag's hold is appended after what the
-   * recipe declared, which is where the old loop asked. Either way the recipe's own
-   * actions run first and nothing reaches the base branch.
+   * `heldBeforeTheLane` is the placement, and **the lane a person wrote out is the
+   * case that makes it necessary**: `merge: [land the branch]` plus `--no-merge`
+   * would, under an append, run the lane and then ask. So the hold is inserted
+   * ahead of whatever has `kind === "merge"`, found by kind rather than by position,
+   * and the assertion is that `integrate` was never reached at all.
+   *
+   * The other branch — no lane in the list — is what `alsoHeldAtMerge` falls back to
+   * appending for, and since `#270` only a recipe that declares a *check* at
+   * `merge:` and nothing that lands can be in that shape. Such a recipe does not
+   * merge either way (§2: a default substitutes), so the append cannot put a hold
+   * after a landing there.
    */
-  it("asks the recipe's own person first and still reaches no lane under --no-merge", async () => {
+  it("asks before a lane the recipe declared itself, under --no-merge", async () => {
     const store = memoryStore();
     const did: string[] = [];
 
     const result = await once(
       {
         project,
-        client: fakeGitHub([], HUMAN_AT_MERGE),
+        client: fakeGitHub(
+          [],
+          landAtMerge("\n    - name: land the branch\n      merge: { strategy: merge-commit }"),
+        ),
         runtime,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
         prompt: "fix {{issue}}",
-        // Both are asking: the recipe declares a person, and the flag appends one.
+        // The recipe lands, and the flag says not this time.
         merge: false,
         home: "/tmp/fake-home",
         store,
       },
-      // `true`, so a pipeline that let either past would really call the lane.
+      // `true`, so a pipeline that let the hold past would really call the lane.
       fakePorts(did, store, true),
     );
 
     if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    if (result.ok !== "held") throw new Error("it merged, and two people had been asked");
+    if (result.ok !== "held") throw new Error("it merged, and --no-merge had been passed");
     expect(result.step).toBe("merge");
+    // **The whole of it**: the declared lane is in the list, the injected hold is
+    // ahead of it, and nothing reached the base branch.
     expect(did).not.toContain("integrate");
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
 
-    // The recipe's `approval` asked, and the flag's `no-merge` never had to: the
-    // pipeline stops at the first action that does not pass, so the declared hold
-    // is the one a person sees.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
     const asked = run.filter((e) => e.type === "ApprovalRequested");
-    expect(asked.map((e) => (e.data as { action: string }).action)).toEqual(["approval"]);
+    expect(asked.map((e) => (e.data as { action: string }).action)).toEqual(["no-merge"]);
   });
 
   /**

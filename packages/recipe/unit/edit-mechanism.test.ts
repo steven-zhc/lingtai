@@ -29,7 +29,11 @@ describe("editRecipe's mechanism", () => {
     const toString = vi.spyOn(yaml.Document.prototype, "toString");
     const out = editRecipe(OWN, [
       { path: ["runtime", "limits", "turns"], value: 200 },
-      { path: ["steps", "merge"], value: [{ name: "approve", human: "Merge?" }] },
+      // The lane rather than an approval since `#270`: `editRecipe` parses what it
+      // wrote, and `human:` at `merge` is refused by name now. Still this key,
+      // because a list this repository's own file writes as `[]` is the one a
+      // wholesale replacement can reach without taking a comment with it.
+      { path: ["steps", "merge"], value: [{ name: "land the branch", merge: { strategy: "merge-commit" } }] },
       { path: ["source", "exclude"], value: ["blocked"].concat((yaml.parse(OWN) as { source: { exclude: string[] } }).source.exclude.slice(1)) },
     ]);
     expect(yaml.parseDocument).toHaveBeenCalledWith(OWN);

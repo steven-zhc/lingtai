@@ -155,7 +155,11 @@ describe("the one default that flips", () => {
       "Nothing checks a diff before it merges. Every ticket goes from an agent straight into `develop`. " +
         "So the default here is that a person approves.",
     );
-    expect(applyDraft(scanned([]), state).steps.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+    // **`proposed:` and not `merge:` since `#270`**, and the whole list, because
+    // the row and the decision write the same key: no check was found, so the
+    // approval is all of it.
+    expect(applyDraft(scanned([]), state).steps.proposed).toEqual([{ name: "approve", human: "Merge this?" }]);
+    expect(applyDraft(scanned([]), state).steps.merge).toEqual([]);
   });
 
   it("argues from what is ticked, not from what the scan found", () => {
@@ -186,7 +190,8 @@ describe("the one default that flips", () => {
 
     const answered = play(none, { type: "settle", decision: "steps.merge" });
     expect(finishRefusals(answered)).toEqual([]);
-    expect(applyDraft(scanned(), answered).steps.merge).toEqual([{ name: "approve", human: "Merge this?" }]);
+    // The ticks are gone, so `proposed:` is the approval and nothing else.
+    expect(applyDraft(scanned(), answered).steps.proposed).toEqual([{ name: "approve", human: "Merge this?" }]);
   });
 
   it("leaves a limits question a person opened open when the last tick goes, and asks the merge question after it", () => {
@@ -292,8 +297,12 @@ describe("a check the scan did not find", () => {
 
     expect(added.draft.checks).toEqual([{ id: "cargo test", label: "cargo test", ticked: true }]);
     expect(mergeArgument(added)).toBeNull();
+    // The check, and then the hold the merge question defaults to when nothing was
+    // found — two of the page's answers in one key since `#270`, in that order,
+    // because a person asked before the build has run is asked about nothing.
     expect(applyDraft(scanned([]), added).steps.proposed).toEqual([
       { name: "build", run: "cargo test", timeout: "20m", env: [] },
+      { name: "approve", human: "Merge this?" },
     ]);
     expect(play(added, { type: "add-check", run: "cargo test" }).draft.checks).toHaveLength(1);
   });
@@ -419,7 +428,13 @@ describe("a check lives at the step it was declared at", () => {
     const after = Recipe.parse(applyDraft(recipe, state));
 
     expect(updateState({ slug: "acme/tool", recipe }).noChecksFound).toBe(true);
-    expect(after.steps.proposed).toEqual([{ name: "check", run: "make test", timeout: "20m", env: [] }]);
+    // The typed-in check at `proposed:`, and the approval after it: a file that
+    // checked nothing opens the merge question with *a person approves* chosen, and
+    // this state has not answered it otherwise.
+    expect(after.steps.proposed).toEqual([
+      { name: "check", run: "make test", timeout: "20m", env: [] },
+      { name: "approve", human: "Merge this?" },
+    ]);
     expect(after.steps.build).toEqual([]);
   });
 });
@@ -449,7 +464,8 @@ describe("the base, at whichever of its two spellings the file uses", () => {
   it("writes the declaration when there is one, and says which path changed", () => {
     const recipe = declaring("main");
     // The file checks nothing, so the merge question is asked; answered as the
-    // file has it, which keeps `steps.merge` off the change list.
+    // file has it — nobody approving — which keeps `steps.proposed` off the change
+    // list. (`steps.merge` is not on `PATHS` at all since `#270`.)
     const state = play(
       updateState({ slug: "acme/shop", recipe }),
       { type: "set", draft: { personApproves: false } },

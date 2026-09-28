@@ -233,8 +233,8 @@ runtime:
 `;
 
 /**
- * A person declared at `merge`, and nothing else asking — which is the recipe
- * this repository has had since the day it was self-hosted.
+ * A person the recipe declared, and nothing else asking — the claim `#58` is
+ * about, and **`proposed:` is where it is written since `#270`**.
  *
  * **The point of it is that no flag is passed.** `#58` merged two changes into
  * `main` with nobody's approval because `merge:` was resolved, printed by
@@ -242,14 +242,24 @@ runtime:
  * and the reason that stayed hidden for four days is that `--no-merge` was the
  * only thing that had ever held a run: every test held its run with the flag, and
  * the daemon does not pass it.
+ *
+ * **The step moved and the claim did not.** It was `merge:` until `mergePlugin`
+ * took that step (`#270`): the landing is an action in `merge`'s own list now, so
+ * a hold declared beside it would be asked about a merge already made, and
+ * `humanPlugin.at` refuses the pair by name. 0058 §3b is the rule — `merge` has
+ * three ways out and only `proposed` may send one to a person — and `proposed` is
+ * on the spine, so a hold there is reached by every pass that got past `review`
+ * and is still before the lane. What this fixture holds is what it always held:
+ * *a person the recipe asked for stops the branch reaching the base, with no flag
+ * anywhere.*
  */
-export const HUMAN_AT_MERGE = `
+export const HUMAN_BEFORE_THE_LANE = `
 version: 2
 repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
-  merge:
+  proposed:
     - name: approval
       human: "Merge this? It is Lingtai's own code."
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }

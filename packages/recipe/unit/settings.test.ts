@@ -187,6 +187,46 @@ describe("the accessors", () => {
   });
 
   /**
+   * **The lane is the last action at `merge`, and the refusal says why rather than
+   * where** (0065 §8, `#270`).
+   *
+   * The second rule in this file about an action's *neighbours*, and it exists for
+   * a failure the ordering makes silent: every declared action at a step runs and
+   * the step's ending is the pipeline's, so a check written after the lane runs on
+   * a change already on the base branch. `endingOf` then reports `merge` refused
+   * while the merge stood — no `WorkItemLanded`, `end`'s `when: landed` effects
+   * never fired, and the item back in the queue with its diff on `main`.
+   *
+   * Both rows are the one clause: a second `merge:` is refused by *being after the
+   * first* rather than by a count of its own, because two lanes is the second one
+   * running over the first one's merge.
+   */
+  it.each([
+    { what: "a check after the lane", after: { name: "smoke", run: "pnpm smoke" } },
+    { what: "a second lane", after: { name: "land it again", merge: { strategy: "merge-commit" } } },
+  ])("refuses $what at `merge` by name", ({ after }) => {
+    const late = Recipe.safeParse({
+      ...WRITTEN,
+      steps: { merge: [{ name: "land the branch", merge: { strategy: "merge-commit" } }, after] },
+    });
+    expect(late.success).toBe(false);
+    const said = JSON.stringify(late.error?.issues);
+    expect(said).toContain(after.name);
+    expect(said).toContain("lands the branch at entry 0");
+    expect(said).toContain("the lane is the last action a step carries");
+    expect(said).toContain("a change already on the base branch");
+
+    // And the same two entries the other way round resolve: a check before the
+    // lane is where a reader would write it, and is what the rule asks for.
+    expect(
+      Recipe.safeParse({
+        ...WRITTEN,
+        steps: { merge: [{ name: "smoke", run: "pnpm smoke" }, { name: "land the branch", merge: { strategy: "merge-commit" } }] },
+      }).success,
+    ).toBe(true);
+  });
+
+  /**
    * Not an implementation detail: the step is unread *today* and the two calls
    * are not the same question, so a caller passing the step it is at is right
    * both before 0061 §4's move and after it.

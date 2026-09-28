@@ -212,12 +212,15 @@ describe("every problem in one answer", () => {
   it("does not let one bad action hide the next, or one step the other nine", () => {
     const refused = StepMap.safeParse({
       prepared: [{ name: "install", run: "pnpm i", timeout: 10 }],
-      merge: [{ name: "approve", human: 7 }],
+      // `proposed:` and not `merge:`, which is where a hold is legal since `#270`
+      // — a bad *field* is what this case is about, and one at a step that refused
+      // the kind outright would never be read (`whyNoKindAt` answers first).
+      proposed: [{ name: "approve", human: 7 }],
     });
 
     expect(refused.error!.issues.map((issue) => issue.path)).toEqual([
       ["prepared", 0, "timeout"],
-      ["merge", 0, "human"],
+      ["proposed", 0, "human"],
     ]);
   });
 });

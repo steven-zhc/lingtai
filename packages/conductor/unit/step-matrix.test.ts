@@ -380,6 +380,40 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
+   * **And why `merge` is narrower than `proposed` too, which is a subtraction and
+   * the only one in this file** (`#270`).
+   *
+   * `humanPlugin.at` and `watchPlugin.at` carried `merge` from before 0058; that
+   * ADR §3b gives the step three ways out and the third is *anything else →
+   * `proposed`, and only `proposed` may send it to a person*. Both lost the key
+   * with the ticket that gave `mergePlugin` one, because the two facts are one:
+   * the landing is an action in `merge`'s own list now, so a hold declared beside
+   * it would be asked about a merge the same list had already made.
+   *
+   * **The sentence is pinned rather than the null**, for the reason the row above
+   * is. Without `ONLY_PROPOSED_ASKS_A_PERSON` these two cells fall through
+   * `whyThatPair`'s step branches to its last paragraph — *a hold at `prepared`
+   * cannot be answered* — which is true where it is written and false at the step
+   * it would be printed for. That is exactly what opening `build` and `review`
+   * walked into, and `not.toMatch` is the half of this case that catches it.
+   */
+  it("says why `merge` may not ask a person, and does not answer with `prepared`'s reason", () => {
+    for (const kind of ["human", "watch"] as const) {
+      const why = whyNoKindAt("merge", kind);
+      expect(why, `${kind} is no longer refused at merge`).not.toBeNull();
+      expect(why).toContain(`\`${kind}:\` does not implement \`merge\``);
+      expect(why).toContain("only `proposed` may send it to a person");
+      expect(why).toContain("`proposed:`, and that is the step to write this at");
+      // Not the sentence about a step this operator never wrote.
+      expect(why).not.toMatch(/at `prepared`/);
+    }
+    // The two that still run there, and the lane itself.
+    expect(whyNoKindAt("merge", "run")).toBeNull();
+    expect(whyNoKindAt("merge", "agent")).toBeNull();
+    expect(whyNoKindAt("merge", "merge")).toBeNull();
+  });
+
+  /**
    * **The refusal a plugin author gets, and it names the step they should have
    * written** (`#261`).
    *

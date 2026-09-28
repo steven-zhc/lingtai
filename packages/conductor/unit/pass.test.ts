@@ -607,15 +607,17 @@ describe("a refusal reports what the action that refused said", () => {
    * asked, and the question is the whole of what they are answering.
    */
   it("asks the question the held action asked, under a duplicated name", async () => {
+    // `proposed:` and not `merge:`: a hold is `proposed`'s since `#270` — 0058 §3b
+    // gives `merge` three ways out and only `proposed` may send one to a person.
     const recipe = recipeWith({
-      merge: [
+      proposed: [
         { name: "sign off", run: "pnpm test" },
         { name: "sign off", human: "ship it?" },
       ],
     });
     const { bodies } = watching();
     const { actionsAt } = watchingActions({
-      merge: [
+      proposed: [
         canned("sign off", { verdict: "passed", evidence: "tests green", findings: [] }),
         canned("sign off", { verdict: "needs-approval", evidence: "ship it?", findings: [] }),
       ],
@@ -1656,10 +1658,10 @@ describe("a step that did not finish is not a step that refused", () => {
 
   /** A person being asked is a third thing again, and it is not a failure. */
   it("keeps a question for a person apart from a refusal", async () => {
-    const recipe = recipeWith({ merge: [{ name: "sign off", human: "ship it?" }] });
+    const recipe = recipeWith({ proposed: [{ name: "sign off", human: "ship it?" }] });
     const { bodies } = watching();
     const { actionsAt } = watchingActions({
-      merge: [canned("sign off", { verdict: "needs-approval", evidence: "ship it?", findings: [] })],
+      proposed: [canned("sign off", { verdict: "needs-approval", evidence: "ship it?", findings: [] })],
     });
     const { emit } = events();
 
