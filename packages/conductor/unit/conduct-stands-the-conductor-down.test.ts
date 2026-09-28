@@ -29,10 +29,12 @@ import type { Runtime } from "@lingtai/agent";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  DRAFTED,
   PROJECT,
   RECIPE,
   REVIEWED,
   JUDGED_BY_AN_AGENT,
+  designerAtTheWall,
   fakeGitHub,
   fakePorts,
   memoryStore,
@@ -266,6 +268,78 @@ describe("when an agent inside the pass produces no verdict", () => {
     expect(reason).toContain("the run that reached it did start, and was paid for");
     // The falsehood the three variants exist to prevent.
     expect(reason).not.toContain("no turns taken, nothing spent");
+    // The runtime's own words, because this is the only place a person can learn
+    // what stopped the queue.
+    expect(reason).toContain("You've hit your session limit");
+
+    // The item keeps its place, as any failed run's does.
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemReleased");
+  });
+
+  /**
+   * **The *first* agent a pass can buy, and its own sentence** — the `agent:` a
+   * recipe declares at `design` (`#265`).
+   *
+   * It is the one wall met inside a run that started and has paid for **no** agent:
+   * `agentPlugin.at` opens at `design` before any other step, so `claim`, `admit`
+   * and `prepared` have run and nothing has been dispatched. Both of the sentences
+   * that already existed are false about that pass. `{of: "run"}` opens *a run
+   * ended without ever starting — no turns taken, nothing spent*, about a pass that
+   * claimed the ticket and cut a worktree — and it is what `conduct.ts` selected,
+   * on the stated premise that `design` had no cell open, which is what this ticket
+   * makes untrue. `{of: "step"}` ends *nothing judged the diff*, and one step before
+   * `implement` there is no diff.
+   *
+   * What the pause has to carry is the same three things every other depth's does:
+   * which agent, until when, and where the time came from — so the step and the
+   * action are in it by name, and a person reading the board's chip is told the
+   * design was not written rather than that a run never started.
+   */
+  it("names the drafting agent when the first agent a pass buys meets the wall", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, DRAFTED),
+        runtime: designerAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+
+    // Released rather than held, at the step that met it — the wall is about the
+    // account, so it asks nobody.
+    expect(result).toMatchObject({ ok: false, stage: "design" });
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    // The drafting agent is the one that ran, by name, and nothing after it did:
+    // `RunStarted` is `firstDispatch`'s and is never reached.
+    expect(run.find((e) => e.type === "StepNeverRan")!.data).toMatchObject({
+      step: "design",
+      action: "draft",
+    });
+    expect(run.map((e) => e.type)).not.toContain("RunStarted");
+    expect(run.map((e) => e.type)).not.toContain("RunFinished");
+    expect(did).not.toContain("wire");
+
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+    const reason = (paused[0]!.data as { reason: string }).reason;
+    // Which agent, by name, and what did not happen because of it.
+    expect(reason).toContain("the design:draft step's agent never started");
+    expect(reason).toContain("nothing drafted the design");
+    // The falsehood `{of: "run"}` would have written here, and the one
+    // `{of: "step"}` would have.
+    expect(reason).not.toContain("no turns taken, nothing spent");
+    expect(reason).not.toContain("nothing judged the diff");
     // The runtime's own words, because this is the only place a person can learn
     // what stopped the queue.
     expect(reason).toContain("You've hit your session limit");

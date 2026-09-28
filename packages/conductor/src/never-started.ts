@@ -92,11 +92,12 @@ export function parseResetAt(detail: string, now: Date = new Date()): Date | nul
  * from the card it started on: the board's chip and `lingtai doctor` are exactly
  * where somebody woken at 2am reads it.
  *
- * **There is one variant per agent a pass can buy, and the fourth arrived with
- * `design`** (`#265`). Every clause in each of them is a fact about *which* agent
- * and *what had already been paid for* by the time it met the wall, so a variant
- * that covered two of them would be false about one — which is the whole of
- * `#133`.
+ * **A variant is a set of clauses that are all true together, and that is what
+ * makes them four rather than one** (`#265`). Each says *which* agent met the wall
+ * and *what had already been paid for* by the time it did, so two agents share a
+ * variant exactly where those answers are the same — the reviewer and a runtime
+ * `judge:` do, both being `{of: "step"}` — and need their own where they differ.
+ * A variant stretched over a case it is false about is `#133`.
  */
 export type NeverStarted =
   | { readonly of: "run" }

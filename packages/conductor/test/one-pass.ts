@@ -266,6 +266,33 @@ runtime:
 `;
 
 /**
+ * **A drafting agent at `design:`** — the block `#265` tells a person to paste,
+ * and the only way the step does anything.
+ *
+ * `agentPlugin` serves `design` since `#265` and `conduct.ts`'s `defaultsAt` has
+ * no row for it, so an unconfigured `design` runs nothing and briefs `implement`
+ * with `""` — every pass, as every pass already did. This fixture is the other
+ * case, and it is the one nothing else in this file constructs: one `agent:` at
+ * the step, which dispatches `createDraftAction` rather than the cold reviewer
+ * (`actionsFromRecipe` is where the step picks).
+ *
+ * No `review:` or `proposed:` beside it, so that what a test on this fixture
+ * fails on is the drafting and not a reviewer three steps later.
+ */
+export const DRAFTED = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  design:
+    - name: draft
+      agent: claude-code
+      prompt: say what shape this takes
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
+/**
  * A person the recipe declared, and nothing else asking — the claim `#58` is
  * about, and **`proposed:` is where it is written since `#270`**.
  *
@@ -513,6 +540,46 @@ export const reviewerAtTheWall: Runtime = {
 };
 
 /**
+ * **The first agent a pass can buy meets the wall** (`#265`).
+ *
+ * The drafting agent runs one step after `admit` and before anything else has
+ * been dispatched, so this is the one wall that is met inside a run that started
+ * and has paid for **no** agent — which is why `standDown` has a fourth variant
+ * for it rather than reusing `{of: "run"}`'s *no turns taken, nothing spent* or
+ * `{of: "step"}`'s *nothing judged the diff*.
+ *
+ * Told apart by the run id like `reviewerAtTheWall`, and for the same reason:
+ * `createDraftAction` runs under `${runId}:design:${name}` so that the session id
+ * derived from it cannot be the implementer's.
+ */
+export const designerAtTheWall: Runtime = {
+  ...runtime,
+  run: async (request) =>
+    request.runId.includes(":design:")
+      ? {
+          exitCode: 1,
+          turns: 0,
+          durationMs: 6_000,
+          costUsd: 0,
+          failure: {
+            kind: "never-started",
+            detail: "You've hit your session limit \u00b7 resets 4pm (America/Chicago)",
+          },
+          text: null,
+          sessionId: "sess-design",
+        }
+      : {
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1234,
+          costUsd: 0.42,
+          failure: null,
+          text: "done",
+          sessionId: "sess-1",
+        },
+};
+
+/**
  * The world, as a list of what was asked of it.
  *
  * The hook server takes the store because the real one does something a stub
@@ -523,26 +590,39 @@ export const reviewerAtTheWall: Runtime = {
  * this fake was a stub, and is the fake being right about the design rather
  * than the design being awkward.
  */
-export function fakePorts(did: string[], store: EventStore, merges = false): RunPorts {
-  /**
-   * **What `rev-parse HEAD` answers, and it moves once** (`#265`).
-   *
-   * It was the constant `b`*40, from the first call to the last — so a freshly
-   * cut worktree answered a head its own `provision` had not put there, and
-   * *nothing has been committed yet* was a state this fake could not be in. That
-   * was invisible while `implement` was the only step that could commit and the
-   * receipt was read as `HEAD !== tree.baseSha`; `firstDispatch` measures against
-   * the head *it* found now, because `design` may commit too, and a fake that
-   * answers the same sha before and after the dispatch says every agent committed
-   * nothing.
-   *
-   * It moves at `wire`, which is the one port only the implementing dispatch
-   * calls and is called before the run — so the sequence is the real one: the
-   * base until the agent is wired up, and its commit afterwards. Nothing here
-   * models a design agent's commit, because no runtime in this file writes one;
-   * what the fake now has is the *base* to tell one from.
-   */
-  let head = "a".repeat(40);
+/**
+ * **What the fake worktree's `rev-parse HEAD` answers**, and who moved it
+ * (`#265`).
+ *
+ * It was the constant `b`*40, from the first call to the last — so a freshly cut
+ * worktree answered a head its own `provision` had not put there, and *nothing
+ * has been committed yet* was a state this fake could not be in. That was
+ * invisible while `implement` was the only step that could commit and the receipt
+ * was read as `HEAD !== tree.baseSha`; `firstDispatch` measures against the head
+ * *it* found now, because a `design:` agent may commit too, and a fake answering
+ * one sha on both sides of the dispatch says every agent committed nothing.
+ *
+ * `at` starts where `provision` cuts, and `implementerCommits` says whether the
+ * implementing agent leaves one — recorded at `wire`, which is the one port only
+ * that dispatch calls and is called before the run, so the sequence is the real
+ * one. **Both are knobs because the interesting case is neither default**: a tree
+ * already past the base when `implement` starts, and an implementer that commits
+ * nothing, is *a step before `implement` committed and the implementer did not*,
+ * which is the pass the receipt rule has to refuse.
+ */
+export interface FakeTree {
+  /** What `rev-parse HEAD` answers now. `provision` cuts at `a`*40. */
+  at: string;
+  /** Whether the implementing agent commits — `b`*40, recorded at `wire`. */
+  implementerCommits: boolean;
+}
+
+export function fakePorts(
+  did: string[],
+  store: EventStore,
+  merges = false,
+  tree: FakeTree = { at: "a".repeat(40), implementerCommits: true },
+): RunPorts {
   return {
     repo: {
       provision: (o) =>
@@ -569,9 +649,9 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
               : `git ${args[0]}`,
           );
           // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
-          // is what the diff summary is counted from. See `head` above for why
-          // this is a variable rather than the constant it was.
-          if (args[0] === "rev-parse") return head;
+          // is what the diff summary is counted from. See `FakeTree` for why this
+          // is a variable rather than the constant it was.
+          if (args[0] === "rev-parse") return tree.at;
           if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
           if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
           // `base...HEAD`, which is what a reviewer is shown. Non-empty on
@@ -592,9 +672,9 @@ export function fakePorts(did: string[], store: EventStore, merges = false): Run
       wire: () =>
         Effect.sync(() => {
           did.push("wire");
-          // The implementing agent is about to run in that tree, and this fake's
-          // agent always commits — so this is where `head` leaves the base.
-          head = "b".repeat(40);
+          // The implementing agent is about to run in that tree, so this is where
+          // its commit lands — where the fixture says it makes one (`FakeTree`).
+          if (tree.implementerCommits) tree.at = "b".repeat(40);
           return { settingsPath: "/tmp/fake/settings.json", socketPath: "/tmp/fake/sock", env: {} } as never;
         }),
       smokeTest: () =>

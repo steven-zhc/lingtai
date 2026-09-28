@@ -25,6 +25,7 @@ import { STEPS } from "@lingtai/domain";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  DRAFTED,
   HUMAN_BEFORE_THE_LANE,
   JUDGED,
   JUDGED_BY_AN_AGENT,
@@ -755,6 +756,128 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
       );
     expect(verdicts).toContain("StepStarted merge:land the branch");
     expect(verdicts).toContain("StepPassed merge:land the branch");
+  });
+
+  /**
+   * **A declared `design:` produces a verdict too**, and it is the first step whose
+   * default is nothing (`#265`, 0065 §4).
+   *
+   * The same claim as the case above and worth making again here, because `design`
+   * is the one opening where *declared and never run* could not be caught by the
+   * step doing nothing: an unconfigured `design` runs nothing and passes, which is
+   * exactly what a resolved-but-unwired declaration looks like from outside. So the
+   * pair is the proof — the drafting action is in `StepsResolved` as planned, and it
+   * produced a verdict of its own — and the run log line is the third thing,
+   * because it is the only evidence in `did` that a *runtime* was dispatched rather
+   * than a cell drawn on the board (0016 §4, and `#61`).
+   *
+   * **And the document is on the verdict.** `evidence` is what a person reads off
+   * the card; the string `implement` is briefed with rides on the ending, which is
+   * `pass-steps.ts`'s `designOn`. The fake runtime answers `done` to every
+   * dispatch, so that is the document here.
+   */
+  it("drafts at `design` when the recipe declares one, and records what it wrote", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], DRAFTED),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store, true),
+    );
+
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const planned = run.find((event) => event.type === "StepsResolved");
+    expect(JSON.stringify(planned?.data)).toContain("draft");
+    const passed = run.find(
+      (event) =>
+        event.type === "StepPassed" && (event.data as { step: string }).step === "design",
+    );
+    expect(passed?.data).toMatchObject({ step: "design", action: "draft" });
+    // The document, and a person's sentence about what it cost beside it.
+    expect((passed?.data as { evidence: string }).evidence).toContain("done");
+    // A runtime was dispatched, under an id of its own so the session cannot be
+    // the implementer's (`createDraftAction`) — and the run log says so under the
+    // pipeline's own `<step>:<action>` tag.
+    expect(
+      did.some((line) => line.startsWith("note design:draft") && line.includes("drafting for #7")),
+    ).toBe(true);
+    // And the implementer still ran and still left the receipt, which is the half
+    // 0065 §7 is about: the step before it does not stand in for one.
+    expect(run.map((e) => e.type)).toContain("RunProposedCompletion");
+  });
+
+  /**
+   * **A commit made before `implement` is not `implement`'s receipt** (`#265`, 0057
+   * §2).
+   *
+   * `firstDispatch` read *the agent committed something* as `HEAD !== tree.baseSha`,
+   * which is the same commit only while `implement` is the first step that can
+   * write one. `agentPlugin` serves `design` now: the drafting agent runs in this
+   * same worktree, unhooked and writable, and the prompt asking it not to commit is
+   * the only thing between it and one — a prompt, not a guard.
+   *
+   * Left as it was, the pass below would have **passed** `implement`: `HEAD` is past
+   * the base, so the receipt check skips, `RunProposedCompletion` names the commit
+   * the implementer did not make, `build` and `review` run green on a branch holding
+   * a design note, and with `merge: []` on this machine nothing holds it. The
+   * fixture is that pass — a tree already past the base at `implement`, and an
+   * implementer that commits nothing — and what it must produce is the stop.
+   */
+  it("does not read a commit made before `implement` as the implementer's receipt", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], DRAFTED),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: true,
+        home: "/tmp/fake-home",
+        store,
+      },
+      // `provision` cuts at `a`*40 and the tree is at `d`*40 when `implement`
+      // starts: the step before it committed. The implementer does not.
+      fakePorts(did, store, true, { at: "d".repeat(40), implementerCommits: false }),
+    );
+
+    // The drafting step is the one that ran and passed — the setup this is about,
+    // not a pass that failed earlier for some other reason.
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    expect(
+      run.some(
+        (e) => e.type === "StepPassed" && (e.data as { step: string }).step === "design",
+      ),
+    ).toBe(true);
+
+    // And `implement` stops, because *this* agent left no receipt. Held rather
+    // than released: 0057 §2's class buys no round and asks a person, and there is
+    // nothing about the account here for the conductor to stand down over.
+    expect(result).toMatchObject({ ok: "held", step: "implement" });
+    const blocked = (await store.read(`wi-${PROJECT}-7`)).find(
+      (e) => e.type === "WorkItemBlocked",
+    )!.data as { needs: string; diagnosis: { raw: string } };
+    expect(blocked.needs).toBe("acknowledgement");
+    expect(blocked.diagnosis.raw).toContain("produced no commits");
+    // The claim that would have been false: nothing proposes the drafting agent's
+    // commit as this run's completion, and nothing lands.
+    expect(run.map((e) => e.type)).not.toContain("RunProposedCompletion");
+    expect(did).not.toContain("integrate");
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
   });
 
   /**
