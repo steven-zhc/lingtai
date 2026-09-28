@@ -853,23 +853,38 @@ describe("proposed is the only step that routes, and one judge answers each when
   });
 
   /**
-   * **`conduct.ts`'s own `ports.judge`, line for line** (`#274`).
+   * **`conduct.ts`'s own `ports.judge`, line for line** (`#274`, `#277`).
    *
-   * The live port is
-   * `judgeDeclaredAt(recipe.steps.proposed, on.when) ?? { noJudge: true }`, and
-   * the cases below that hand this to `answers.judge` are therefore about the
-   * recipe rather than about a fake: what is declared at `proposed:` is what the
-   * pass gets. A `Judged` written out by hand would assert the body and say
-   * nothing about the one line that makes a declared judge reachable.
+   * The live port looks the entry up, hands a built-in back as a *name* the body
+   * applies, and dispatches a runtime — so the cases below that hand this to
+   * `answers.judge` are about the recipe rather than about a fake: what is
+   * declared at `proposed:` is what the pass gets. A `Judged` written out by hand
+   * would assert the body and say nothing about the lines that make a declared
+   * judge reachable.
+   *
+   * `agent` stands in for `askTheAgent`, which is the one thing a unit test may
+   * not have: dispatching one spawns a process. What is mirrored is everything
+   * around it — the lookup, the branch, and that a runtime's answer arrives as a
+   * `next` the body then holds to the offer.
    */
   const theRecipesJudge =
-    (steps: Record<string, unknown>) =>
-    (on: Judging): Judged =>
-      judgeDeclaredAt(recipeWith(steps).steps.proposed, on.when) ?? { noJudge: true };
+    (steps: Record<string, unknown>, agent: (named: string, on: Judging) => Judged = notAsked) =>
+    (on: Judging): Judged => {
+      const declared = judgeDeclaredAt(recipeWith(steps).steps.proposed, on.when);
+      if (declared === null) return { noJudge: true };
+      return "built" in declared ? declared : agent(declared.named, on);
+    };
+
+  /** No dispatch was arranged, which is a person — as it is when one fails live. */
+  const notAsked = (named: string): Judged => ({
+    next: "waiting",
+    named,
+    why: `the "${named}" judge was not asked`,
+  });
 
   /** A `judge:` entry, as a recipe writes one. */
-  const declaring = (when: string, name: string) => ({
-    proposed: [{ name, judge: "same-worktree", when }],
+  const declaring = (when: string, name: string, judge = "same-worktree") => ({
+    proposed: [{ name, judge, when }],
   });
 
   /**
@@ -1040,6 +1055,115 @@ describe("proposed is the only step that routes, and one judge answers each when
     expect(nothing.result.routes[0]?.to).toBe("waiting");
     expect(nothing.result.routes[0]?.why).toContain("no `judge:` is declared");
     expect(nothing.asked.dispatch).toHaveLength(1);
+  });
+
+  /**
+   * **A runtime judge is a dispatch, and what it buys is the round the ceilings
+   * already paid for** (`#277`).
+   *
+   * `judge: claude-code` at `findings` — the direction 0061 §3 measured at 231
+   * refusals and calls the one judgement worth an agent — reaches the pass as a
+   * `next` rather than as a name, because `judgeDeclaredAt` answers a runtime as
+   * a runtime and the port is what asks it. The agent here answers *the lines*,
+   * so the round goes back to `implement`.
+   *
+   * **And it stops at `rounds`, not one past it.** The same judge is asked the
+   * second time with `implement` off the offer, and the most it can do with that
+   * set is a person: the counting is the workflow's, the offer is what is left of
+   * it, and no answer widens a set it was handed. `rounds: 1` and two refusals is
+   * the smallest arrangement where the difference between *spends a round* and
+   * *spends rounds* is visible.
+   */
+  it("dispatches a runtime judge the recipe declares, and spends one round of `rounds`", async () => {
+    const steps = declaring("findings", "the lines or the approach", "claude-code");
+    const seen: Judging[] = [];
+    const theLines = (named: string, on: Judging): Judged => {
+      seen.push(on);
+      return { next: "implement", named, why: "the seam is right and two of its lines are wrong" };
+    };
+
+    const { result, asked } = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      steps,
+      answers: { judge: theRecipesJudge(steps, theLines) },
+      ceilings: { rounds: 1, restartsLeft: 0 },
+    });
+
+    // Asked on both arrivals, and never handed a count — the brief is the
+    // direction, the words and the set (`JudgeBrief`).
+    expect(seen.map((on) => on.when)).toEqual(["findings", "findings"]);
+    expect(Object.keys(seen[0]!).sort()).toEqual(["evidence", "findings", "offering", "when"]);
+    // The round it asked for, bought once, on the findings it read.
+    expect(result.routes[0]).toMatchObject({ from: "proposed", chose: "implement", to: "implement" });
+    expect(result.routes[0]?.why).toContain("two of its lines are wrong");
+    expect(asked.dispatch).toHaveLength(2);
+    expect(asked.dispatch[1]?.context.recheck).toEqual([BLOCKER]);
+    // And the second time, `implement` was never on the set to ask for.
+    expect(seen[1]?.offering).not.toContain("implement");
+    expect(result.routes[1]).toMatchObject({ chose: "implement", to: "waiting", ceiling: "rounds" });
+    expect(result.rested).toBe("waiting");
+  });
+
+  /**
+   * **An agent judge that answers nothing reaches a person**, and the dispatch is
+   * where that is decided (`#277`).
+   *
+   * A run that never started, one that did not finish, and an answer that will
+   * not read as a destination are one case to the pass: none of them judged
+   * anything, so `askTheAgent` answers `waiting` with the runtime's own words —
+   * the same rule `agent-action.ts` applies to a reviewer whose answer will not
+   * parse. **What it must not do is go round again**: an agent that could not
+   * answer once costs the same the second time and terminates no sooner, so the
+   * pass rests and the round is unspent.
+   */
+  it("holds for a person where the runtime judge answered nothing, and buys no round", async () => {
+    const steps = declaring("findings", "the lines or the approach", "claude-code");
+    const silent = (named: string): Judged => ({
+      next: "waiting",
+      named,
+      why: `the "${named}" judge did not answer (timeout): 15m — so the pass is held for a person`,
+    });
+
+    const { result, asked } = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      steps,
+      answers: { judge: theRecipesJudge(steps, silent) },
+      // Three rounds to spend, and not one of them is spent on an answer nobody got.
+      ceilings: { rounds: 3, restartsLeft: 0 },
+    });
+
+    expect(result.routes[0]).toMatchObject({ to: "waiting", ceiling: null });
+    expect(result.routes[0]?.why).toContain("did not answer (timeout)");
+    expect(asked.dispatch).toHaveLength(1);
+    expect(result.rested).toBe("waiting");
+    expect(outcomeOf(result)).toBe("blocked");
+  });
+
+  /**
+   * **And an agent judge is held to the offer exactly as any other is** — the
+   * refusal names the recipe's own entry, so what a person does about it is one
+   * line rather than a grep (0061 §8, `#271`).
+   *
+   * The loop this closes is the expensive one: a judge that could answer
+   * `implement` past a spent `rounds` would buy ~31 turns and ~$3.40 a round for
+   * ever with nothing reporting a fault. It costs one pass and stops, and the
+   * card says which ceiling refused it — a number somebody can raise.
+   */
+  it("refuses a runtime judge's answer the offer did not contain, naming the recipe's entry", async () => {
+    const steps = declaring("findings", "the lines or the approach", "claude-code");
+    const greedy = (named: string): Judged => ({ next: "implement", named, why: "one more go" });
+
+    const { result } = await pass({
+      ...checked(PASSED, REVIEW_REFUSED),
+      steps,
+      answers: { judge: theRecipesJudge(steps, greedy) },
+      ceilings: { rounds: 0, restartsLeft: 0 },
+    });
+
+    expect(result.routes[0]).toMatchObject({ chose: "implement", to: "waiting" });
+    expect(result.routes[0]?.why).toContain('the "the lines or the approach" judge answered "implement"');
+    expect(result.routes[0]?.why).toContain("`rounds` is spent");
+    expect(result.rested).toBe("waiting");
   });
 
   /**

@@ -149,6 +149,7 @@ import { priorAttempts } from "./attempts.ts";
 import { nextPrompt, renderPrompt } from "./prompt.ts";
 import {
   CONTROL_STREAM,
+  type RuntimeId,
   type Step,
   type ToAppend,
   reduceControl,
@@ -181,6 +182,7 @@ import {
   bodiesFor,
 } from "./pass-steps.ts";
 import { judgeDeclaredAt } from "./judge.ts";
+import { chosenIn, judgePrompt } from "./judge-agent.ts";
 
 import type { ProjectState } from "@lingtai/domain";
 import { extensionEnv, productionPatterns, runnableEnv } from "@lingtai/agent-env";
@@ -1427,15 +1429,143 @@ export function runOnce(
       const draft = async (): Promise<Drafted> => ({ document: "" });
 
       /**
-       * `proposed` — **the judge the recipe declared for this direction** (`#274`,
-       * 0061 §3).
+       * **An agent, paid for a judgement** — the dispatch a `judge: claude-code`
+       * is (`#277`, [the-plugin-body.md](../../../doc/design/the-plugin-body.md) §5).
        *
-       * One line, and it is the line that makes the cell reachable: `judgePlugin.at`
-       * carries `proposed`, `recipe.steps.proposed` is what resolved there, and
-       * `judgeDeclaredAt` takes the entry whose `when:` matches the reason the last
-       * step gave. Nothing is dispatched and nothing is counted here — the answer is
-       * a *name*, and `bodiesFor`'s `judged` applies the rule and records what it
-       * chose against the offer.
+       * This is the seam that was missing while `JudgeName` took no runtime: a
+       * built-in is a function the router applies and could live anywhere, and a
+       * runtime needs a `Runtime`, a settings file and a prompt, none of which
+       * exists on the router's side of the call. So it is here, beside the other
+       * two dispatches, and it is the same four moves they make — settings, run,
+       * read the answer, say what it cost.
+       *
+       * **Three ways it does not come back with a choice, and all three are a
+       * person.** A run that never started (a quota wall), a run that did not
+       * finish, and an answer that will not read as a destination: none of those
+       * judged anything, exactly as a reviewer whose answer will not parse has
+       * not reviewed (`agent-action.ts`). It is **not retried** — an agent that
+       * could not answer once costs the same again and terminates no sooner —
+       * and it does not stand the conductor down the way an implementing agent's
+       * wall does: the pass stops at `proposed` for a person either way, and the
+       * runtime's own words go on the card.
+       *
+       * **Nothing is dispatched for a set of one.** `waiting` is on every offer
+       * and is the whole of a refusal at `admit` or `prepared`, where no agent
+       * has run — paying a model to pick the only item on a list is the purchase
+       * `stepsOnOffer`'s criterion rule exists to refuse, one step further on.
+       *
+       * **What it cost is in the sentence** rather than on an event of its own.
+       * `PassRouted.why` is what a person reads beside the arriving step's
+       * detail, and a judgement with no price on it is the reading `#98` is
+       * about; there is no `JudgeAsked` to fold and the route is already the
+       * record of what was decided.
+       */
+      const askTheAgent = async (
+        runtime: RuntimeId,
+        named: string,
+        on: Judging,
+      ): Promise<Judged> => {
+        const held = (why: string): Judged => ({ next: "waiting", named, why });
+        if (on.offering.length < 2) {
+          return held(
+            `the "${named}" judge was not asked about this "${on.when}": \`${on.offering[0]}\` was ` +
+              "the only step on offer, and an agent paid to pick the only item on a list has " +
+              "judged nothing",
+          );
+        }
+        if (runtime !== options.runtime.capabilities.id) {
+          // `agent:`'s rule, one plugin over: per-step dispatch is not built, so
+          // a name that is not the conductor's own runtime is said rather than
+          // run on the one that is.
+          return held(
+            `the "${named}" judge names \`${runtime}\` and this conductor runs ` +
+              `\`${options.runtime.capabilities.id}\` — per-step dispatch is not built, so nothing ` +
+              "was asked and the pass is held for a person",
+          );
+        }
+
+        const settings = await Effect.runPromise(
+          Effect.either(host.unhookedSettings({ runId, label: "judge", home })),
+        );
+        if (Either.isLeft(settings)) {
+          return held(`the "${named}" judge had no settings: ${settings.left.detail}`);
+        }
+        log(`judging a "${on.when}" with ${runtime} — ${named}`);
+        runLog.note("judge", `${on.when}: asking ${runtime}`);
+
+        const outcome = await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const abort = yield* Effect.acquireRelease(
+                Effect.sync(() => new AbortController()),
+                (controller) => Effect.sync(() => controller.abort()),
+              );
+              return yield* Effect.promise(() =>
+                options.runtime
+                  .run({
+                    // The direction is in it, so two arrivals on one pass are two
+                    // sessions: a judge asked whether it still agrees with itself
+                    // is the warm-review failure `sessionIdFor` exists to avoid.
+                    runId: `${runId}:judge:${on.when}`,
+                    // The worktree where there is one, and the conductor's own
+                    // directory where `admit` never cut one. Nothing is read from
+                    // either — the prompt says so — but a process still needs a
+                    // directory that exists to start in.
+                    cwd: worktree?.path ?? home,
+                    prompt: judgePrompt(on),
+                    settingsPath: settings.right,
+                    log: taggedTrace(runLog, `judge:${on.when}`),
+                    traceTools: true,
+                    env: runnableEnv(env.values),
+                    limits: { turns: limits.turns, wallMs: parseDuration(limits.wall) },
+                    signal: abort.signal,
+                  })
+                  .catch((err) => ({
+                    exitCode: null,
+                    turns: 0,
+                    durationMs: 0,
+                    costUsd: null,
+                    failure: { kind: "crash" as const, detail: (err as Error).message },
+                    text: null,
+                    sessionId: "",
+                  })),
+              );
+            }),
+          ),
+        );
+
+        const spent = `${outcome.turns} turns${outcome.costUsd === null ? "" : `, $${outcome.costUsd.toFixed(2)}`}`;
+        runLog.note("judge", `${on.when}: ${outcome.failure?.kind ?? "answered"} · ${spent}`);
+        if (outcome.failure) {
+          return held(
+            `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
+              `${outcome.failure.detail} — so the pass is held for a person (${spent})`,
+          );
+        }
+        const chose = chosenIn(outcome.text);
+        if (chose === null) {
+          return held(
+            `the "${named}" judge's answer was not readable as one of the steps it was offered ` +
+              `(${spent}):\n${(outcome.text ?? "").slice(0, 2_000)}`,
+          );
+        }
+        // Held to the offer by `judged` in `pass-steps.ts` and never here — a
+        // destination the set did not contain is refused by name there, with the
+        // ceiling that took it away, which is the one place that knows both.
+        return { next: chose.next, named, why: `the "${named}" judge: ${chose.why} (${spent})` };
+      };
+
+      /**
+       * `proposed` — **the judge the recipe declared for this direction** (`#274`,
+       * `#277`, 0061 §3).
+       *
+       * `judgePlugin.at` carries `proposed`, `recipe.steps.proposed` is what
+       * resolved there, and `judgeDeclaredAt` takes the entry whose `when:` matches
+       * the reason the last step gave. **What it answers is one of two kinds of
+       * decider**: a built-in is a *name* the pass applies, where nothing is
+       * dispatched and `bodiesFor`'s `judged` records what the rule chose against
+       * the offer; a runtime is an agent, and `askTheAgent` above is what that
+       * costs.
        *
        * **`noJudge` where the recipe said nothing, which is still the ordinary
        * answer.** `BUILT_IN_FOR` then answers `red` and `verify-failed` mechanically
@@ -1447,10 +1577,15 @@ export function runOnce(
        * **What a declared judge buys is the round the ceilings already paid for.**
        * `#267` and `#263` each refused at `review` and parked at `waiting` with
        * `rounds: 3` unspent — $14.19 between them — because there was no judge to
-       * ask which way to go.
+       * ask which way to go. A runtime judge spends one of those rounds by
+       * *choosing* `implement`; it cannot spend a second, because the offer it was
+       * handed is what the counting already left.
        */
-      const judge = async (on: Judging): Promise<Judged> =>
-        judgeDeclaredAt(recipe.steps.proposed, on.when) ?? { noJudge: true };
+      const judge = async (on: Judging): Promise<Judged> => {
+        const declared = judgeDeclaredAt(recipe.steps.proposed, on.when);
+        if (declared === null) return { noJudge: true };
+        return "built" in declared ? declared : askTheAgent(declared.runtime, declared.named, on);
+      };
 
       /** `end` — the work item's own stream, read this late on purpose. */
       const readEnd = (stream: string) => store.read(stream);

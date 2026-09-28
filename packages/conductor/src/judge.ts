@@ -53,10 +53,17 @@
  * **`judgeDeclaredAt` is the half that is called** (`#274`), and it is the
  * smallest thing that could be: `judgePlugin.at` carries `proposed`,
  * `conduct.ts` hands this `recipe.steps.proposed` at `ports.judge`, and the pass
- * applies what it answers. The rest of the file is still ahead of its callers —
- * `askJudge` waits for a judge that *chooses*, which is a runtime and a dispatch
- * (`JudgeName` has no runtime in it yet), and `stepsOnOffer` is `onOffer`'s rule
- * in this file's vocabulary until T5 makes the two `Destination`s one.
+ * applies what it answers. Since `#277` it answers a **runtime** as a runtime —
+ * `Declared` below — and `conduct.ts` dispatches one, which is the half that was
+ * missing while `JudgeName` had no runtime in it.
+ *
+ * What is still ahead of its callers is `askJudge`, and it is one function rather
+ * than the file: the seam it is, `judged` in `pass-steps.ts` is again in the
+ * pass's own vocabulary, because `stepsOnOffer` is `onOffer`'s rule in *this*
+ * file's until T5 makes the two `Destination`s one. Both hold an answer to the
+ * set it was offered and neither obeys one outside it, and
+ * `pass-steps.test.ts`'s *the mechanical answer is `judge.ts`'s, cell for cell*
+ * is what makes a divergence between them a failing test rather than a surprise.
  *
  * What is here early is the half that had to exist before the wiring could be
  * written safely — because the offered set is the bound, and a bound invented at
@@ -68,8 +75,8 @@
  * 3,000-line file is a rule nobody can check.
  */
 import type { ActionFinding } from "@lingtai/actions";
-import { STEPS, type Step } from "@lingtai/domain";
-import type { BuiltInJudge, JudgeWhen, StepAction } from "@lingtai/recipe";
+import { STEPS, type RuntimeId, type Step } from "@lingtai/domain";
+import { isBuiltInJudge, type BuiltInJudge, type JudgeWhen, type StepAction } from "@lingtai/recipe";
 
 /**
  * **What the recipe declared for this direction, or null** — the whole of what
@@ -94,19 +101,43 @@ import type { BuiltInJudge, JudgeWhen, StepAction } from "@lingtai/recipe";
  * `named` is the entry's `name:`, so a refusal or a card can say which line of
  * the recipe to edit rather than which built-in disagreed.
  */
-export function judgeDeclaredAt(
-  actions: readonly StepAction[],
-  when: JudgeWhen,
-): { readonly built: BuiltInJudge; readonly named: string } | null {
+export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen): Declared | null {
   for (const action of actions) {
     // The key is the discriminator, as everywhere else a `StepAction` is read
     // (`pluginNaming`): `when` alone is `close:`'s and `labels:`' field too, and
     // matching on it is how a judge action once reached `end`'s resolver (`#238`).
     if (!("judge" in action) || action.when !== when) continue;
-    return { built: action.judge, named: action.name };
+    return isBuiltInJudge(action.judge)
+      ? { built: action.judge, named: action.name }
+      : { runtime: action.judge, named: action.name };
   }
   return null;
 }
+
+/**
+ * **What a recipe declared, split by what answering it costs** (`#277`).
+ *
+ * Two members and they are two kinds of decider rather than two spellings of one
+ * — which is the whole reason the split is made *here*, at the reading, rather
+ * than left to whoever holds the name:
+ *
+ *     built     a synchronous function, applied where it is read   spends nothing
+ *     runtime   an agent, dispatched and awaited                   spends a run
+ *
+ * `isBuiltInJudge` is the test and `JudgeName` is the list it splits, so a second
+ * built-in added to `BUILT_IN_JUDGES` lands on the free side on the day it is
+ * added. A caller that got a `runtime` has to dispatch one — there is nothing
+ * else it can do with it — which is the property that stops `judge: claude-code`
+ * resolving into a cell nothing calls (`#61`, and the door `#274` shut by
+ * narrowing the enum instead).
+ *
+ * **Neither member carries a destination**, and that is unchanged: this function
+ * answers *which judge*, and the rule a built-in's name stands for stays in the
+ * one place the pass already applies it (`MECHANICALLY` in `pass-steps.ts`).
+ */
+export type Declared =
+  | { readonly built: BuiltInJudge; readonly named: string }
+  | { readonly runtime: RuntimeId; readonly named: string };
 
 /**
  * Where a pass may go from a refusal, and **`human` is not a step**.
@@ -353,6 +384,12 @@ export type Judge = (brief: JudgeBrief) => Destination | Promise<Destination>;
  * type-checking. That is the property `BUILT_IN_JUDGES` in the recipe's schema
  * promises a person writing `judge: same-worktree`, held by the type system
  * rather than by review.
+ *
+ * **And it is the half of `JudgeName` that has to stay narrow now that the other
+ * half is wide** (`#277`). A runtime judge is a second implementation *behind
+ * `Judge`* rather than a widening of this type: widen `BuiltIn` to admit a
+ * promise and `judge: same-worktree` stops being a claim about money and becomes
+ * a name somebody has to go and read the implementation of.
  */
 export type BuiltIn = (brief: JudgeBrief) => Destination;
 
