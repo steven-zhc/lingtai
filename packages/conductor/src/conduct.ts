@@ -1493,11 +1493,15 @@ export function runOnce(
        * and pushing it is how the lane and a person get to see the thing that was
        * judged. Every other ending publishes from the finalizer.
        *
-       * **`strategy` is read and not obeyed, because there is one value.**
+       * **`strategy` is carried and not branched on, because there is one value.**
        * `integrate` offers `git merge --no-edit` and a fast-forward push, which is
-       * `merge-commit`; the enum grows when the code does, and asserting the one
-       * value here is what keeps a second one from resolving and landing the first
-       * behaviour under its name (`#61`).
+       * `merge-commit`. What keeps a second value from resolving is `mergePlugin`'s
+       * own `z.enum` in `packages/recipe/src/recipe.ts` — not a check here, and
+       * this signature has none: it carries the field so the lane is told what it
+       * was asked for. Widening that enum without giving `integrate` the second
+       * behaviour is `#61` — a value that resolves, is drawn, and lands the first
+       * behaviour under the second's name — so the enum and `integrate` grow in
+       * one diff, and this is where the branch on it would go.
        *
        * **The lane reports and decides nothing.** `stepsPassed` is `true` without
        * being asked, and that is the sequence rather than an assumption: `merge` is
@@ -1727,9 +1731,11 @@ export function runOnce(
        * reached (`conduct-a-whole-pass.test.ts`).
        *
        * Found by `kind` rather than by position, because a recipe may declare its
-       * own `merge:` with checks written either side of it — and a `--no-merge` that
-       * was a no-op for such a recipe would be a flag that silently stopped meaning
-       * anything.
+       * own `merge:` with checks written **before** the lane — and a `--no-merge`
+       * that was a no-op for such a recipe would be a flag that silently stopped
+       * meaning anything. Before, and not either side: `actionsAt` refuses anything
+       * written after the lane (0065 §8), so the list this searches is checks and
+       * then the lane, and the index it finds is the last entry or nothing.
        */
       const heldBeforeTheLane = (running: readonly Action[]): readonly Action[] => {
         const held = alsoHeldAtMerge();

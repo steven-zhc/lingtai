@@ -1521,6 +1521,48 @@ function actionsAt(step: Step) {
           ),
         });
       }
+      /**
+       * **A step that is written and does not land is refused** (`#270`).
+       *
+       * `merge: []` is a step that runs nothing, and that is a reading a person
+       * can want — 0065 §6 gives the empty list its own meaning, and this
+       * repository has run on it for months. What has no reading is a `merge:`
+       * carrying checks and no lane. Every declared action at a step runs
+       * (0065 §2) and the pass reads the step's ending off the pipeline, so a
+       * list of green checks with nothing that lands reports the step
+       * **passed** — and a step that passed having landed nothing is routed as
+       * merged, releases the claim, and hands the same ticket to the next pass
+       * with a new agent and a new bill. That is `#61`'s failure — configured,
+       * drawn, and not what ran — reached through an omission rather than a
+       * duplicate, and it is silent in the one direction that costs money.
+       *
+       * Scoped by `whyNoKindAt` rather than by naming the step, because *is the
+       * lane on offer here* is the plugin's own `at` to answer (0064 §4) and a
+       * second step that lands would otherwise get the rule silently skipped.
+       *
+       * Asked only where every entry resolved, because a refused entry may have
+       * been the lane: *is a lane present* is not answerable about a list one of
+       * whose actions Lingtai could not read. The person fixes that one, and
+       * this rule sees the list on the next resolve.
+       */
+      if (
+        written.length > 0 &&
+        resolved.length === written.length &&
+        landsAt === null &&
+        whyNoKindAt(step, "merge") === null
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [],
+          message:
+            `the "${step}" step is written with ${written.length} action` +
+            `${written.length === 1 ? "" : "s"} and none of them is the lane, so the step would ` +
+            "pass having landed nothing — and a pass that reports it merged releases the ticket " +
+            "and buys a second agent for the same diff. Write the lane last, or write " +
+            `"${step}: []" for a step that deliberately lands nothing. ` +
+            REFUSED_WHEN_IT_RESOLVED,
+        });
+      }
       return resolved;
     })
     .default([]);

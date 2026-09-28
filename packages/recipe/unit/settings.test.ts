@@ -227,6 +227,43 @@ describe("the accessors", () => {
   });
 
   /**
+   * **A written `merge:` with no lane is refused, and the empty one is not**
+   * (`#270`).
+   *
+   * The costly direction of the rule above, and the one that was missing while
+   * that one landed: the refusal there is about what comes *after* the lane, so
+   * a list with no lane at all walked straight through it. Every declared action
+   * at a step runs and the step's ending is the pipeline's, so a `merge:` of
+   * green checks reports `merge` **passed** having landed nothing — the pass
+   * routes it as merged, `end` releases the claim, and the next pass buys a
+   * fresh agent for a diff that is still on the branch. Nothing red, nothing
+   * held, a bill every time.
+   *
+   * `merge: []` is the case that must survive it, because it is what this
+   * repository runs on: an empty list is a step that does nothing (0065 §6),
+   * and a rule that could not tell *nothing declared* from *checks and no lane*
+   * would refuse every recipe here.
+   */
+  it("refuses a `merge:` that checks and never lands, and keeps `merge: []`", () => {
+    const never = Recipe.safeParse({
+      ...WRITTEN,
+      steps: { merge: [{ name: "smoke", run: "pnpm smoke" }] },
+    });
+    expect(never.success).toBe(false);
+    const said = JSON.stringify(never.error?.issues);
+    expect(said).toContain("none of them is the lane");
+    expect(said).toContain("pass having landed nothing");
+    expect(said).toContain("buys a second agent for the same diff");
+    // Before the money: the refusal is the recipe's, not a worktree's.
+    expect(said).toContain("before any money");
+
+    // The empty list is a different statement and still resolves.
+    expect(Recipe.safeParse({ ...WRITTEN, steps: { merge: [] } }).success).toBe(true);
+    // And so does a step that says nothing at all.
+    expect(Recipe.safeParse({ ...WRITTEN, steps: {} }).success).toBe(true);
+  });
+
+  /**
    * Not an implementation detail: the step is unread *today* and the two calls
    * are not the same question, so a caller passing the step it is at is right
    * both before 0061 §4's move and after it.

@@ -285,7 +285,9 @@ describe("a step that was configured is never skipped", () => {
     const recipe = recipeWith({
       prepared: [{ name: "install", run: "pnpm install" }],
       proposed: [{ name: "build", run: "pnpm test" }],
-      merge: [{ name: "verify", run: "pnpm typecheck" }],
+      // The lane, because a written `merge:` must carry one (`#270`) — and
+      // it is what a real one looks like: the checks, then the thing that lands.
+      merge: [{ name: "verify", run: "pnpm typecheck" }, { name: "land it", merge: { strategy: "merge-commit" } }],
       end: [{ name: "close it", close: true }],
     });
     const { bodies, seen } = watching();
@@ -305,7 +307,7 @@ describe("a step that was configured is never skipped", () => {
       { step: "build", actions: [] },
       { step: "review", actions: [] },
       { step: "proposed", actions: ["build"] },
-      { step: "merge", actions: ["verify"] },
+      { step: "merge", actions: ["verify", "land it"] },
     ]);
     // And `end`'s effects reach `end`'s body, which is the only thing that can
     // carry them out — the loop does not run them as actions.
@@ -778,7 +780,9 @@ describe("every step that does not pass arrives at proposed", () => {
       ["never-ran", "never-ran"],
       ["needs-approval", "held"],
     ] as const) {
-      const recipe = recipeWith({ merge: [{ name: "check", run: "true" }] });
+      // The lane so the recipe resolves (`#270`); what runs is `watchingActions`'s,
+      // and this list is only asked to be a legal one.
+      const recipe = recipeWith({ merge: [{ name: "check", run: "true" }, { name: "land it", merge: { strategy: "merge-commit" } }] });
       const { bodies } = watching({ proposed: routerSaying(() => "implement") });
       const { actionsAt } = watchingActions({
         merge: [canned("check", { verdict, evidence: "…", findings: [] })],

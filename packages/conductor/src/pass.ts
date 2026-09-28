@@ -254,7 +254,7 @@ export interface StepRefused extends LeftTheTreeAt {
  * Not a refusal: a `human:` action asking a question has judged nothing, and
  * folding it into `failed` would put *the build is broken* on a card whose
  * build is fine (`action.ts`, `needs-approval`). Which steps can reach it is
- * the `human:` plugin's `at` — `proposed` and `merge` today — and not
+ * the `human:` plugin's `at` — `proposed` alone since `#270` — and not
  * this type's, which is why `held` is not restricted to the four the way
  * `refused` is.
  *

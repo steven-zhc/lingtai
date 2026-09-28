@@ -245,9 +245,23 @@ function runsAt(step: Step, kind: ActionKind): boolean {
   }
 }
 
-/** Does a recipe naming this action at this point resolve? */
+/**
+ * Does a recipe naming this action at this point resolve?
+ *
+ * **The probe carries the lane wherever the step lands** (`#270`). Two rules in
+ * `actionsAt` are about an action's *neighbours* rather than about the pair this
+ * matrix asks about: nothing may be written after the lane, and a step that
+ * lands may not be written without one. A lone `run:` at `merge` trips the
+ * second and would read here as *the `merge` step refuses a `run:`*, which is
+ * false — a check before the lane is exactly where a check at `merge` goes. So
+ * the probe is put in the smallest list that satisfies the list-level rules, and
+ * what comes back is the cell's own answer.
+ */
 function accepted(step: Step, kind: ActionKind): string | null {
-  const parsed = StepMap.safeParse({ [step]: [ACTION[kind]] });
+  const lands = whyNoKindAt(step, "merge") === null;
+  const written =
+    !lands || kind === "merge" ? [ACTION[kind]] : [ACTION[kind], ACTION.merge];
+  const parsed = StepMap.safeParse({ [step]: written });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
 
