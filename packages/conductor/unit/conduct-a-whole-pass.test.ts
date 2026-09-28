@@ -891,7 +891,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
               durationMs: 1234,
               costUsd: 0.21,
               failure: null,
-              text: `I cannot design this yet.\n\n\`\`\`question\n${asked}\n\`\`\``,
+              text: `\`\`\`question\n${asked}\n\`\`\``,
               sessionId: "sess-design",
             }
           : {
@@ -937,6 +937,11 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
       .data as { needs: string; question: string; diagnosis: { raw: string } };
     expect(blocked.diagnosis.raw).toBe(asked);
     expect(blocked.question).toContain(asked);
+    // **And what it needs is a judgement, not an acknowledgement** (the fix
+    // round). `describeHold` renders this field as the hold's first line, and
+    // *a failure needs acknowledging* is the wrong sentence over a step that did
+    // not fail and is waiting for an answer.
+    expect(blocked.needs).toBe("judgement");
 
     // Nothing was written and nothing landed: a question costs the pass and no
     // round, which is the half 0058 §3b calls *arriving at the router and refusing

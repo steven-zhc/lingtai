@@ -131,6 +131,7 @@ import {
 import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
+  NEEDS_INPUT,
   type Action,
   type ActionContext,
   type ActionEvent,
@@ -2824,10 +2825,30 @@ export function runOnce(
         }
         return {
           question,
-          // A hold and a route to a person are both *decide something*; a step that
-          // reported a machine failure is *look at this*.
+          /**
+           * A hold and a route to a person are both *decide something*; a step that
+           * reported a machine failure is *look at this*.
+           *
+           * **And a step that stopped to ask is *decide something* too** (`#294`,
+           * the fix round). The line above was written while every
+           * `did-not-finish` reaching a person was a crash or a turn limit, which
+           * is what *acknowledge* is the right word for. `design` asking a question
+           * it cannot design without is the arrival that made it false: a card
+           * reading *a failure needs acknowledging* over a question asks the
+           * operator to tick off something that did not fail, and the thing the
+           * pass is actually waiting for — an answer — is a judgement.
+           * `NEEDS_INPUT` is the same token `goesToTheRouter` let it past the
+           * gate on, read here rather than restated (0031 §1).
+           *
+           * No recommendation goes with it, and that is right rather than
+           * missing: `BlockRecommendation` is `approve`, `reject` or `requeue` —
+           * *a recommendation the board cannot carry out would be a sentence* —
+           * and none of the three answers a question.
+           */
           needs:
-            stopped === null || stopped.ending.ending === "held"
+            stopped === null ||
+            stopped.ending.ending === "held" ||
+            (stopped.ending.ending === "did-not-finish" && stopped.ending.because === NEEDS_INPUT)
               ? ("judgement" as const)
               : ("acknowledgement" as const),
           diagnosis: {

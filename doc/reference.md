@@ -1108,7 +1108,7 @@ has one legal value because `integrate.ts:417` offers one: `git merge
 --no-edit`, then a push that is a fast-forward where it can be one.
 
 **`judge:` is one entry per `when:`, and the two rules that make it safe are in
-the schema rather than in prose** (0061 §3). Five things arrive at `proposed`
+the schema rather than in prose** (0061 §3). Six things arrive at `proposed`
 and only one of them is a judgement worth an agent:
 
 ```
@@ -1116,11 +1116,22 @@ reason              seen      what deciding actually is
 build   red           34      back to implement with the error — mechanical
 merge   verify-failed   26      back to implement with the new base — mechanical
 merge   conflict       6      text: resolve · intent: a person
+design  needs-input   —     answer it, or `design` again stating the assumption
 implement needs-input   —     interrupt, or go round stating the assumption
 review  findings      231     the lines or the approach   ← the judgement
 ```
 
-So `when:` is required and has no default — no entry can answer for all five —
+**`needs-input` has two producers, and a `when:` cannot tell them apart**
+(`#294`). `design` reaches `proposed` carrying it when its agent replied with a
+` ```question ` block instead of a document, and `implement` when its agent
+stopped mid-flight through the hook — so one `judge: …, when: needs-input`
+entry is asked about both, and what says which is the **offer**: the arriving
+step is on it, so a design's question offers `design` again and an
+implementer's offers `implement`. Declare one only if the same judge should be
+paid for both; a person is the floor under either, because
+`BUILT_IN_FOR["needs-input"]` is null.
+
+So `when:` is required and has no default — no entry can answer for all six —
 and `red` and `verify-failed` are answered by `same-worktree`, a **built-in**
 which is a synchronous function in `packages/conductor/src/judge.ts`. Being
 synchronous is the declaration that it spends nothing: nothing that dispatches

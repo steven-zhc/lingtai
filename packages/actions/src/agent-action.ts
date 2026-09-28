@@ -740,8 +740,19 @@ of them can disagree with; a second question is this ticket stopping twice.`;
  * ```
  * ""                       the change needs no design          → a document, empty
  * anything else            the design                          → a document
- * a ```question fence      what somebody has to answer first   → a question
+ * a ```question fence      what somebody has to answer first   → a question, and
+ *                          whatever stood before it            → its `draft`
  * ```
+ *
+ * **And the third state keeps what stood before the fence** (`#294`, the fix
+ * round). The parse is lenient about *where* the fence is, so what precedes it is
+ * whatever the agent wrote before it asked — one sentence where it could not
+ * start, and **a finished design note where a model that had both a shape and a
+ * doubt emitted both**, which is what the prompt teaching the fence makes likely.
+ * Nothing about an answer tells those two apart and nothing needs to: both are
+ * `draft`, and the one outcome that must not happen is the document an agent was
+ * paid to write reaching no result, no event and nothing but a run log that is
+ * deleted when the ticket lands (0034).
  *
  * **And `unreadable` is not a fourth state, it is the absence of one** (`#279`).
  * An answer that opened the fence and never closed it, or closed it around
@@ -753,7 +764,7 @@ of them can disagree with; a second question is this ticket stopping twice.`;
  */
 export type Drafted =
   | { readonly kind: "document"; readonly document: string }
-  | { readonly kind: "question"; readonly question: string }
+  | { readonly kind: "question"; readonly question: string; readonly draft: string }
   | { readonly kind: "unreadable"; readonly answer: string };
 
 /** The fence that announces a question, on its own line, and nothing else does. */
@@ -767,9 +778,12 @@ const CLOSES_THE_FENCE = /^[ \t]*```[ \t]*$/m;
  * Lenient about where the fence appears, for the reason `parseFindings` is
  * lenient about where the JSON is: a model that says *I cannot design this until*
  * and then opens the fence has asked a question, and refusing it over a preamble
- * would spend the turns and throw the answer away. Strict about the fence itself,
- * because that is the whole signal — an unclosed one is `unreadable` rather than a
- * document that begins with a code fence.
+ * would spend the turns and throw the answer away. **And the leniency costs
+ * nothing, because what it skipped over comes back** — everything before the
+ * fence is `draft`, whether that is one sentence of apology or the design note
+ * itself, so no reading of *where the fence was* can lose text the agent wrote.
+ * Strict about the fence itself, because that is the whole signal — an unclosed
+ * one is `unreadable` rather than a document that begins with a code fence.
  */
 export function parseDraft(text: string | null): Drafted {
   const answer = (text ?? "").trim();
@@ -784,7 +798,10 @@ export function parseDraft(text: string | null): Drafted {
   const closed = CLOSES_THE_FENCE.exec(inside);
   if (closed === null) return { kind: "unreadable", answer };
   const question = inside.slice(0, closed.index).trim();
-  return question === "" ? { kind: "unreadable", answer } : { kind: "question", question };
+  if (question === "") return { kind: "unreadable", answer };
+  // Everything before the fence, and it is not thrown away at any width: a
+  // preamble and a whole design note are the same slice.
+  return { kind: "question", question, draft: answer.slice(0, opened.index).trim() };
 }
 
 /**
@@ -886,18 +903,32 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * where `BUILT_IN_FOR["needs-input"]` is null, so a person holds it with
          * the question unless a recipe declared a judge for the direction.
          *
-         * **The question alone on `evidence`, with no turn count spliced in.**
+         * **The question first on `evidence`, with no turn count spliced in.**
          * This string is three things at once: the sentence a person reads off the
          * card, the evidence a judge weighs, and — where the judge sends the pass
          * back here — `SentBack.asked`, which is quoted verbatim into the next
          * design prompt. A cost appended to it would be read back to an agent as
          * part of its own question. `createWorkAction` carries `asked` the same
          * bare way, and what the turns cost is on the run log.
+         *
+         * **And the draft rides with it, under a rule, where the agent wrote one**
+         * (`#294`, the fix round). `WroteTheDesign` in `pass.ts` is *only on a
+         * pass* and `StepDidNotFinish` carries one field, so `evidence` is the one
+         * channel a question's draft can reach both a person and the log through —
+         * and a design note that reached neither would be in nothing but the run
+         * log, which 0034 deletes when the ticket lands. The question leads because
+         * the question is what has to be answered; the draft follows because an
+         * agent that wrote one and asked anyway has told its reader, its judge and
+         * the round it may buy something all three of them want. Absent, and not
+         * an empty rule, where it asked and wrote nothing.
          */
         return {
           verdict: "did-not-finish",
           because: NEEDS_INPUT,
-          evidence: drafted.question,
+          evidence:
+            drafted.draft === ""
+              ? drafted.question
+              : `${drafted.question}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
           findings: [],
         };
       }

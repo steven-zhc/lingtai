@@ -987,9 +987,7 @@ describe("the drafting agent's answer", () => {
 
   it("is a question when it is a question, and that is 0058 §3c's token", async () => {
     const asked = "The ticket asks for a hold at `merge` and for nothing to hold there. Which wins?";
-    const result = await drafter(
-      outcome({ text: `I cannot design this.\n\n\`\`\`question\n${asked}\n\`\`\`` }),
-    ).run(context);
+    const result = await drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` })).run(context);
 
     // `did-not-finish` and not `failed`: the agent judged nothing, so nothing is
     // charged for the asking (0058 §3b), and `because` is what carries it past
@@ -1002,6 +1000,42 @@ describe("the drafting agent's answer", () => {
     expect(result.evidence).not.toContain("turns");
     // And it is not a document — nothing reaches `implement` from a question.
     expect(result.document).toBeUndefined();
+  });
+
+  /**
+   * **The answer that is both, and the one the prompt makes likely** (`#294`, the
+   * fix round).
+   *
+   * The block is taught in the prompt, so a model that has both a shape and a
+   * doubt emits both — a finished design note and a question after it. Read as a
+   * question and nothing else, that note is in no `document`, no `StepPassed`
+   * evidence and no event: the pass stops at `design` and the person is handed a
+   * side doubt with no sign a design was written, and what held it was a run log
+   * 0034 deletes on landing.
+   *
+   * So the question still stops the pass — it is the thing that has to be
+   * answered — and the note rides with it, in the one field that reaches both a
+   * person's card and the log.
+   */
+  it("keeps the design note when the answer is a document and a question", async () => {
+    const note = "## Shape\n\nPut `judgeDeclaredAt` in `judge.ts` and hand it the step's own list.";
+    const asked = "should the hold go at `proposed:` or `merge:`?";
+    const result = await drafter(
+      outcome({ text: `${note}\n\n\`\`\`question\n${asked}\n\`\`\`` }),
+    ).run(context);
+
+    // Still a question: the agent asked, so the pass has somewhere to go and
+    // nothing is charged for the asking.
+    expect(result.verdict).toBe("did-not-finish");
+    expect(result.because).toBe(NEEDS_INPUT);
+    // The question leads, because that is what a judge is offered and what a
+    // person answers.
+    expect(result.evidence.startsWith(asked)).toBe(true);
+    // **And the note the agent was paid to write is not thrown away.**
+    expect(result.evidence).toContain(note);
+    expect(result.evidence).toContain("What it had written before it asked:");
+    // Still no turn count spliced in: this string is read back as `SentBack.asked`.
+    expect(result.evidence).not.toContain("turns");
   });
 
   it("is `unreadable` when it announced a question and asked none", async () => {
@@ -1037,10 +1071,27 @@ describe("the drafting agent's answer", () => {
     expect(parseDraft(null)).toEqual({ kind: "document", document: "" });
     expect(parseDraft("")).toEqual({ kind: "document", document: "" });
     expect(parseDraft("a design")).toEqual({ kind: "document", document: "a design" });
-    expect(parseDraft("```question\nwhich?\n```")).toEqual({ kind: "question", question: "which?" });
+    expect(parseDraft("```question\nwhich?\n```")).toEqual({
+      kind: "question",
+      question: "which?",
+      draft: "",
+    });
     // A document that quotes a fenced block is still a document: only the
     // `question` tag announces one.
     expect(parseDraft("use:\n\n```ts\nconst x = 1\n```")).toMatchObject({ kind: "document" });
+    // And whatever stood before the fence comes back on `draft`, at every width:
+    // one sentence of apology and a whole design note are the same slice, because
+    // nothing about the answer tells them apart.
+    expect(parseDraft("I cannot.\n\n```question\nwhich?\n```")).toEqual({
+      kind: "question",
+      question: "which?",
+      draft: "I cannot.",
+    });
+    expect(parseDraft("## Shape\n\nDo it in `judge.ts`.\n\n```question\nwhich?\n```")).toEqual({
+      kind: "question",
+      question: "which?",
+      draft: "## Shape\n\nDo it in `judge.ts`.",
+    });
   });
 });
 
