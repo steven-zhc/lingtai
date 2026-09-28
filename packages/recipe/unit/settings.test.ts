@@ -234,15 +234,21 @@ describe("the accessors", () => {
    * that one landed: the refusal there is about what comes *after* the lane, so
    * a list with no lane at all walked straight through it. Every declared action
    * at a step runs and the step's ending is the pipeline's, so a `merge:` of
-   * green checks reports `merge` **passed** having landed nothing — the pass
-   * routes it as merged, `end` releases the claim, and the next pass buys a
-   * fresh agent for a diff that is still on the branch. Nothing red, nothing
-   * held, a bill every time.
+   * green checks reports `merge` **passed** having landed nothing — and then no
+   * landing follows either, because the `WorkItemLanded` append is guarded on
+   * the lane's own commit: no event, no `endPlan`, and the pass falls through to
+   * the failed tail, which releases the ticket so the next pass buys a fresh
+   * agent for a diff that is still on the branch. Nothing red, nothing held, a
+   * bill every time.
    *
    * `merge: []` is the case that must survive it, because it is what this
-   * repository runs on: an empty list is a step that does nothing (0065 §6),
-   * and a rule that could not tell *nothing declared* from *checks and no lane*
-   * would refuse every recipe here.
+   * repository runs on — and it survives as *a step nobody wrote* rather than as
+   * *a step that does nothing*: 0065 §6 decides the second and that part is not
+   * built, so the seam still reads `[]` as the omitted key and the default lane
+   * merges (`conduct-a-whole-pass.test.ts`'s *lands onto main with `merge: []`*).
+   * A rule that could not tell *nothing declared* from *checks and no lane*
+   * would refuse every recipe here — and a refusal that offered `merge: []` as
+   * the way to land nothing would send a person to a list that merges.
    */
   it("refuses a `merge:` that checks and never lands, and keeps `merge: []`", () => {
     const never = Recipe.safeParse({
@@ -256,6 +262,9 @@ describe("the accessors", () => {
     expect(said).toContain("buys a second agent for the same diff");
     // Before the money: the refusal is the recipe's, not a worktree's.
     expect(said).toContain("before any money");
+    // And it does not send them to `merge: []`, which takes the default lane.
+    expect(said).toContain("the default lane runs and the branch merges");
+    expect(said).toContain("declare a `human:` action at `proposed:`");
 
     // The empty list is a different statement and still resolves.
     expect(Recipe.safeParse({ ...WRITTEN, steps: { merge: [] } }).success).toBe(true);
