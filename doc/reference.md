@@ -478,7 +478,7 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | `claim` | the ticket is taken here, by the `queue:` the recipe declares or the one the default supplies | no | yes |
 | `admit` | work starts on it; the worktree is cut here, by the `worktree:` the recipe declares or the one the default supplies | no | yes |
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
-| `design` | a document, before any code — or nothing, which is an answer | no | not yet |
+| `design` | a document, before any code — or nothing, which is an answer; the `agent:` the recipe declares writes it, and an unconfigured step writes none | no | yes |
 | `implement` | one agent, in that worktree | no | not yet |
 | `build` | the independent build of what was written | yes | yes |
 | `review` | reads the diff, returns findings, judges nothing | no | yes |
@@ -492,11 +492,15 @@ too, its actions being effects rather than verdicts. The conductor calls GitHub 
 did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
-**Two of the ten are empty here and empty everywhere, and that is what the
-last column is for.** No plugin implements `design` or `implement`, so
-an action declared at one is refused when the recipe resolves rather than
+**One of the ten is empty here and empty everywhere, and that is what the
+last column is for.** No plugin implements `implement`, so
+an action declared there is refused when the recipe resolves rather than
 accepted and skipped (`#61`) — today's implementing agent is dispatched by
-`conduct.ts` directly. **`claim` was the third until `#269`**, when `queuePlugin`
+`conduct.ts` directly. **`design` was the second until `#265`**, when
+`agentPlugin` took it: an `agent:` there drafts rather than reviews, and the step
+runs **nothing** where a recipe declares nothing, so what an unconfigured pass
+does is what it always did — `implement` is briefed with `""` and works from the
+issue. **`claim` was the third until `#269`**, when `queuePlugin`
 took it and the take became an action like the cut and the lane. It was six until 2026-09-27, when `runPlugin` took
 `build` and `agentPlugin` took `review`: the build and the cold reviewer had
 shared `proposed:` because it was the only door open, and each has its own step
@@ -904,7 +908,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | a cold reviewer reading the diff. Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
+| `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): same three fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers with the document, `""` included. Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question. **`proposed` only, since `#270`**: 0058 §3b gives `merge` three ways out and the third is *anything else → `proposed`, and only `proposed` may send it to a person* — and the landing is an action in `merge`'s own list now, so a hold beside it would be asked about a merge already made | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
@@ -1281,16 +1285,16 @@ each says the part an operator can act on:
 - **A plugin declared where it does not serve.** *`close:` does not implement
   `proposed` — it serves `end`.* The plugin carries where it does belong, so
   the refusal is not homework.
-- **A step no plugin implements.** *No plugin implements `design` — today
-  there is no design step: the implementing agent is handed the issue body and
-  works from it.* That sentence was unwritable under the table, because an
-  empty row could not tell *not yet* from *not ever*. Three of the steps
-  [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named are
-  these: the issue body for `design` and `conduct.ts`'s own dispatch for
-  `implement`. `build` and `review` were here
+- **A step no plugin implements.** *No plugin implements `implement` — today
+  `conduct.ts` dispatches the implementing agent directly, under
+  `runtime.limits`.* That sentence was unwritable under the table, because an
+  empty row could not tell *not yet* from *not ever*. **One of the steps
+  [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named is left**,
+  and it is that one. `build` and `review` were here
   until 2026-09-27 and are served now, **`admit` was the fourth until
-  `#268`** and **`claim` the third until `#269`** — `worktree:` serves the one and
-  `queue:` the other, so the eleven other kinds at each are refused **in that
+  `#268`**, **`claim` the third until `#269`** and **`design` the second until
+  `#265`** — `worktree:` serves the first, `queue:` the second and `agent:` the
+  third, so the eleven other kinds at each are refused **in that
   step's own terms** instead. Each step's sentence is its own and lands in the
   same diff as the key: without one, a step whose plugin has just arrived
   answers every other kind out of `prepared`'s paragraphs, which say *nothing

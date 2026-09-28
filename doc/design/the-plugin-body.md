@@ -164,13 +164,15 @@ A step does not have one plugin. Since `#261` the keys say so, read off the
 twelve `at`s and not off a table:
 
 ```
-claim design implement         —                                      0
-admit                          worktree                              1   ← #268
+implement                      —                                      0
+claim                          queue                                  1   ← #269
+admit                          worktree                               1   ← #268
 prepared                       run                                    1
+design                         agent                                  1   ← #265
 build                          run                                    1   ← T5d
 review                         agent                                  1   ← T5d
 proposed                       run · agent · watch · human · judge    5   ← #274
-merge                          run · agent · watch · human            4
+merge                          run · agent · merge                    3   ← #270
 end                            close · labels · refs                  3
 ```
 
