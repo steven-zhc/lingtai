@@ -14,6 +14,7 @@ import {
   resolveHref,
   SECTIONS,
   slugify,
+  slugOf,
   statuses,
   statusParts,
   titleOf,
@@ -61,6 +62,26 @@ describe("what the site publishes", () => {
     expect(fileOf("../package")).toBeNull();
     expect(fileOf("../../package")).toBeNull();
     expect(fileOf("tutorial")).toBe("tutorial.md");
+  });
+
+  it("serves a directory's index.md at the directory", async () => {
+    // `/docs/plugins/` and not `/docs/plugins/index/`, which is the route a
+    // person guesses when they take a segment off a plugin's page. The pair
+    // round-trips, because `generateStaticParams` builds the route `slugOf`
+    // gives and the page reads it back with `fileOf`.
+    expect(slugOf("plugins/index.md")).toBe("plugins");
+    expect(fileOf("plugins")).toBe("plugins/index.md");
+    expect(await published()).toContain("plugins/index.md");
+  });
+
+  it("does not publish the plugin page template, and does not hide it either", async () => {
+    // A leading underscore is the one convention `markdownIn` reads: the
+    // template is a shape to fill in, and published it would be a page whose
+    // every section is an instruction about a different one. `unpublished()`
+    // still names it, so the index links to it on GitHub rather than dropping
+    // it — the cost of an allow-list, paid out loud.
+    expect(await published()).not.toContain("plugins/_template.md");
+    expect(await unpublished()).toContain("plugins/_template.md");
   });
 });
 
@@ -129,44 +150,44 @@ describe("where a link inside a document goes", () => {
     );
 
   it("sends a link between two projected documents to its route here", () => {
-    expect(resolveHref("decisions/0022-the-seams", "0016-the-settled-model.md", isPublished)).toBe(
+    expect(resolveHref("decisions/0022-the-seams.md", "0016-the-settled-model.md", isPublished)).toBe(
       "/docs/decisions/0016-the-settled-model/",
     );
-    expect(resolveHref("tutorial", "decisions/0022-the-seams.md", isPublished)).toBe(
+    expect(resolveHref("tutorial.md", "decisions/0022-the-seams.md", isPublished)).toBe(
       "/docs/decisions/0022-the-seams/",
     );
-    expect(resolveHref("decisions/0022-the-seams", "../tutorial.md", isPublished)).toBe(
+    expect(resolveHref("decisions/0022-the-seams.md", "../tutorial.md", isPublished)).toBe(
       "/docs/tutorial/",
     );
   });
 
   it("keeps the anchor", () => {
-    expect(resolveHref("tutorial", "decisions/0022-the-seams.md#the-seams", isPublished)).toBe(
+    expect(resolveHref("tutorial.md", "decisions/0022-the-seams.md#the-seams", isPublished)).toBe(
       "/docs/decisions/0022-the-seams/#the-seams",
     );
   });
 
   it("sends a link to source code to the repository, where the code is", () => {
     expect(
-      resolveHref("decisions/0016-the-settled-model", "../../packages/domain/src/events.ts", isPublished),
+      resolveHref("decisions/0016-the-settled-model.md", "../../packages/domain/src/events.ts", isPublished),
     ).toBe(`${GITHUB_BLOB}packages/domain/src/events.ts`);
   });
 
   it("sends a link to a document nobody projected to the repository too", () => {
-    expect(resolveHref("tutorial", "research/market-opportunities.md", isPublished)).toBe(
+    expect(resolveHref("tutorial.md", "research/market-opportunities.md", isPublished)).toBe(
       `${GITHUB_BLOB}doc/research/market-opportunities.md`,
     );
   });
 
   it("sends architecture.html to the copy the build made", () => {
-    expect(resolveHref("decisions/0022-the-seams", "../architecture.html", isPublished)).toBe(
+    expect(resolveHref("decisions/0022-the-seams.md", "../architecture.html", isPublished)).toBe(
       "/doc/architecture.html",
     );
   });
 
   it("leaves an absolute link and a bare anchor alone", () => {
-    expect(resolveHref("tutorial", "https://github.com/x", isPublished)).toBe("https://github.com/x");
-    expect(resolveHref("tutorial", "#done-when", isPublished)).toBe("#done-when");
+    expect(resolveHref("tutorial.md", "https://github.com/x", isPublished)).toBe("https://github.com/x");
+    expect(resolveHref("tutorial.md", "#done-when", isPublished)).toBe("#done-when");
   });
 });
 
@@ -210,14 +231,18 @@ describe("finding your way around one document", () => {
     const dangling: string[] = [];
     for (const file of files) {
       const body = await readFile(path.join(docRoot, file), "utf8");
-      const slug = file.replace(/\.md$/, "");
       for (const [, href] of body.matchAll(/\]\(([^)\s]*#[^)\s]*)\)/g)) {
         if (href === undefined) continue;
-        const resolved = resolveHref(slug, href, (f) => files.includes(f));
+        const resolved = resolveHref(file, href, (f) => files.includes(f));
         if (!resolved.startsWith("#") && !resolved.startsWith("/docs/")) continue;
         const [route = "", anchor = ""] = resolved.split("#", 2);
-        const target = route === "" ? file : `${route.slice("/docs/".length).replace(/\/$/, "")}.md`;
-        if (headings.get(target)?.has(anchor) !== true) dangling.push(`${file} → ${href}`);
+        // `fileOf` back from the route, and not `${route}.md`: a directory's
+        // `index.md` is served at the directory, so the arithmetic that assumed
+        // one route per `.md` path would look for `plugins.md` and find nothing.
+        const target = route === "" ? file : fileOf(route.slice("/docs/".length).replace(/\/$/, ""));
+        if (target === null || headings.get(target)?.has(anchor) !== true) {
+          dangling.push(`${file} → ${href}`);
+        }
       }
     }
     expect(dangling, "an anchor in doc/ lands nowhere on the site").toEqual([]);

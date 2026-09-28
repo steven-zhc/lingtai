@@ -37,11 +37,18 @@ type HeadingProps = ComponentPropsWithoutRef<"h2"> & ExtraProps;
 
 export function Document({
   slug,
+  source,
   body,
   published,
 }: {
-  /** The document's own route, which relative links are resolved against. */
+  /** The document's own route, which is what decides how the page is set. */
   slug: string;
+  /**
+   * Its path under `doc/`, which relative links are resolved against — the
+   * file's directory and not the route's, since `plugins/index.md` is served at
+   * `/docs/plugins/` and a link beside it means the file beside it.
+   */
+  source: string;
   body: string;
   /** Every file the site projects, so a link can tell a page from a blob. */
   published: string[];
@@ -73,7 +80,7 @@ export function Document({
     h4: heading("h4"),
     a({ href, children, ...rest }) {
       return (
-        <a href={resolveHref(slug, href ?? "", isPublished)} {...rest}>
+        <a href={resolveHref(source, href ?? "", isPublished)} {...rest}>
           {children}
         </a>
       );
@@ -81,7 +88,7 @@ export function Document({
     img({ src, alt, ...rest }) {
       // Images in `doc/` are files in `doc/`, and the export does not carry
       // them. Pointed at the repository, where they are.
-      return <img src={resolveHref(slug, typeof src === "string" ? src : "", isPublished)} alt={alt ?? ""} {...rest} />;
+      return <img src={resolveHref(source, typeof src === "string" ? src : "", isPublished)} alt={alt ?? ""} {...rest} />;
     },
   };
 

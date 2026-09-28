@@ -9,6 +9,7 @@ import {
   ledeOf,
   published,
   readDoc,
+  slugOf,
   statuses,
   statusParts,
   type StatusPart,
@@ -36,7 +37,11 @@ import { Document } from "../document";
  */
 export async function generateStaticParams() {
   const files = await published();
-  return files.map((file) => ({ slug: file.replace(/\.md$/, "").split("/") }));
+  // `slugOf` and not a `.md` stripped here: a directory's `index.md` is the
+  // directory (`plugins/index.md` → `/docs/plugins/`), and a second answer to
+  // *what route is this file* would build the page at one path and link to it
+  // at the other.
+  return files.map((file) => ({ slug: slugOf(file).split("/") }));
 }
 
 type Params = { params: Promise<{ slug: string[] }> };
@@ -91,7 +96,7 @@ export default async function DocPage({ params }: Params) {
             <div className="doc-layout">
               <article>
                 <Status decided={decided} parts={parts} />
-                <Document slug={doc.slug} body={doc.body} published={files} />
+                <Document slug={doc.slug} source={doc.source} body={doc.body} published={files} />
                 <p className="source">
                   Rendered from{" "}
                   <a href={`${GITHUB_BLOB}doc/${doc.source}`}>

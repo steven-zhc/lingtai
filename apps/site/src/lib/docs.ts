@@ -76,6 +76,12 @@ export const SECTIONS: Section[] = [
     files: ["tutorial.md", "guide.md", "operating.md", "reference.md", "design.md", "roadmap.md"],
   },
   {
+    id: "plugins",
+    label: "Plugins",
+    note: "One page per recipe key — what it does, which steps it may be declared at, and what a real one looks like. `plugins/index.md` is the parent, and is what `/docs/plugins/` serves.",
+    files: { dir: "plugins" },
+  },
+  {
     id: "decisions",
     label: "Decisions",
     note: "One decision per file, with its context and its consequences. Append-only in spirit — a decision that turns out wrong gets a superseding file, not an edit.",
@@ -179,11 +185,30 @@ export interface DocEntry {
   decided: string | null;
 }
 
+/**
+ * **A leading underscore means *not a page*** — the one convention a directory
+ * section reads, and it names no file.
+ *
+ * `doc/plugins/_template.md` is the shape the twelve plugin pages follow, and it
+ * is written to be filled in rather than read: published, it would be a
+ * documentation page whose every section is an instruction to somebody writing
+ * a different one. A section that takes a whole directory has no way to say that
+ * about one file without a list beside it, which is the second copy this module
+ * exists not to have — so the file says it itself, in its name.
+ *
+ * **It is skipped, not hidden.** `unpublished()` below walks `doc/` for markdown
+ * nothing takes, so the template is on the docs index with a link to it on
+ * GitHub, the same as `doc/design/` and `doc/research/`. The cost of an
+ * allow-list is what it silently omits, and nothing here is omitted silently.
+ */
 async function markdownIn(dir: string): Promise<string[]> {
   const full = path.join(docRoot, dir);
   if (!existsSync(full)) return [];
   const names = await readdir(full);
-  return names.filter((n) => n.endsWith(".md")).sort().map((n) => `${dir}/${n}`);
+  return names
+    .filter((n) => n.endsWith(".md") && !n.startsWith("_"))
+    .sort()
+    .map((n) => `${dir}/${n}`);
 }
 
 /** Every file a section takes, relative to `doc/`, in the order it takes them. */
@@ -224,19 +249,30 @@ export async function unpublished(): Promise<string[]> {
   return found.sort();
 }
 
+/**
+ * The route a file gets, and **a directory's `index.md` is the directory**.
+ *
+ * `doc/plugins/index.md` is `/docs/plugins/` rather than `/docs/plugins/index/`,
+ * which is the convention every web server has and the one a person guesses:
+ * the parent of the twelve plugin pages is the page you land on by removing the
+ * last segment. `fileOf` reads it back, so the pair still round-trips and there
+ * is no second table saying which slugs are directories.
+ */
 export function slugOf(file: string): string {
-  return file.replace(/\.md$/, "");
+  return file.replace(/\/index\.md$/, "").replace(/\.md$/, "");
 }
 
 /** The file a slug came from. Null when the slug names nothing in `doc/`. */
 export function fileOf(slug: string): string | null {
-  const file = `${slug}.md`;
   // Refuse anything that climbs out of `doc/`. A slug arrives from a route
   // segment, and `..` in one is how a static export ends up with a page whose
   // content is `/etc/passwd`.
-  const full = path.resolve(docRoot, file);
-  if (!full.startsWith(docRoot + path.sep)) return null;
-  return existsSync(full) ? file : null;
+  for (const file of [`${slug}.md`, `${slug}/index.md`]) {
+    const full = path.resolve(docRoot, file);
+    if (!full.startsWith(docRoot + path.sep)) return null;
+    if (existsSync(full)) return file;
+  }
+  return null;
 }
 
 export async function readDoc(slug: string): Promise<DocPage | null> {
@@ -302,11 +338,16 @@ export async function entriesOf(section: Section): Promise<DocEntry[]> {
  *   `packages/domain/src/events.ts` actually is
  * - a drawing in `HTML_DOCS` → the copy the build put in `public/doc/`
  * - an absolute URL or a bare `#anchor` → untouched
+ *
+ * **`from` is the file and not the route**, because the two stopped being the
+ * same string the day a directory got an `index.md`: `plugins/index.md` is
+ * `/docs/plugins/`, and a `run.md` beside it is relative to the directory the
+ * file is in rather than to the route it is served at.
  */
-export function resolveHref(fromSlug: string, href: string, isPublished: (file: string) => boolean): string {
+export function resolveHref(from: string, href: string, isPublished: (file: string) => boolean): string {
   if (href === "" || /^[a-z]+:/i.test(href) || href.startsWith("#") || href.startsWith("//")) return href;
 
-  const fromDir = path.posix.dirname(`${fromSlug}.md`);
+  const fromDir = path.posix.dirname(from);
   const [target = "", hash] = href.split("#", 2);
   const suffix = hash === undefined ? "" : `#${hash}`;
   // Relative to the document, then relative to `doc/`. A path that climbs out
