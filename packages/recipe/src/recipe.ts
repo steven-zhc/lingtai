@@ -1365,6 +1365,15 @@ export function whyNoKindAt(
  * them rather than the keywords, because *contains the step name* passes on
  * the opening clause alone and let exactly this through.
  *
+ * **So a branch here lands in the same diff as the key that needs it** — this
+ * is the fourth thing 0065 §7's *one diff or not at all* covers, beside the
+ * `at` key, the `defaultsAt` row and the emptied body. Until a step has a
+ * plugin, `whyNoKindAt` answers every kind at it from the *no plugin implements
+ * this* branch and never reaches here; the moment one arrives, all eleven other
+ * kinds fall through to the three paragraphs at the bottom and are told about
+ * `prepared`. `admit` (`#268`), `merge` (`#270`) and `claim` (`#269`) each
+ * brought their own, and `claim` is the last of them.
+ *
  * **`judge:` is answered by kind before any step but `end`** (`#274`), and that
  * is the one inversion of the order above. Every other branch says *what this
  * step asks of an action*, and a judge is not an action: it is asked once a step
@@ -1408,6 +1417,18 @@ function whyThatPair(step: Step, kind: ActionKind): string {
       "builds anything. An agent asked to would be paid to read, and a cold read of the diff is " +
       "`review`; a glob over the diff's file list and a hold on it are questions about a change already " +
       "built, which is `proposed`"
+    );
+  }
+  if (step === "claim") {
+    return (
+      "`claim` picks the ticket the pass is about and does nothing else (0058 §3), so the only plugin " +
+      "it carries is the one that picks — `queue:`, which is the key `queuePlugin` declares there. " +
+      "Nothing has been claimed, cut or written when this step runs, so a command has no worktree to " +
+      "run in and belongs at `prepared`, an agent has no diff to read and a glob no file list to " +
+      "match. A hold is the one that reads as though it would work: asked here it is asked either " +
+      "about no ticket at all, or about one this run is already holding for the whole of the wait. " +
+      "`lingtai ask` is the question that belongs before a claim — it holds the item in the queue, " +
+      "and it is answered without a run having been paid for"
     );
   }
   if (step === "admit") {

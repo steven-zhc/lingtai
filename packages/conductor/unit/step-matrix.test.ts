@@ -429,6 +429,41 @@ describe("every step × kind cell runs or refuses", () => {
   });
 
   /**
+   * **And why `claim` is not `prepared` either, which is the same trap sprung by
+   * the last key to open** (`#269`).
+   *
+   * While `queuePlugin`'s `at` was `{}`, `pluginsAt("claim")` was empty and every
+   * kind written there took the *no plugin implements this step* branch. The key
+   * removes that branch at this step, so all eleven other kinds fall through
+   * `whyThatPair`'s step branches to the three paragraphs at the bottom — which
+   * are `prepared`'s, and say *nothing has been committed* and *the run is
+   * released back to the queue* about a step where the run has not claimed
+   * anything yet. A refusal naming a step the operator never wrote, for a reason
+   * that is false where it is printed, is worse than no reason at all: that is
+   * what opening `build` and `review` walked into, and `#270` after them.
+   *
+   * So the branch lands in the same diff as the key, and this is what says so.
+   * The remedy is the one `admit`'s carries — a question asked before anything is
+   * spent is `lingtai ask`, which holds the item in the queue — because at `claim`
+   * nothing has been spent at all.
+   */
+  it("says why `claim` is not `prepared`, and does not answer with `prepared`'s reason", () => {
+    for (const kind of ["run", "agent", "watch", "human"] as const) {
+      const why = whyNoKindAt("claim", kind);
+      expect(why, `${kind} is no longer refused at claim`).not.toBeNull();
+      expect(why).toContain(`\`${kind}:\` does not implement \`claim\``);
+      // In `claim`'s own terms: the one plugin it carries, and the remedy.
+      expect(why).toContain("`queue:`, which is the key `queuePlugin` declares there");
+      expect(why).toContain("`lingtai ask`");
+      // Not the two sentences about a step this operator never wrote.
+      expect(why).not.toContain("nothing has been committed at `prepared`");
+      expect(why).not.toContain("a hold at `prepared` cannot be answered");
+    }
+    // The one that runs there.
+    expect(whyNoKindAt("claim", "queue")).toBeNull();
+  });
+
+  /**
    * **The refusal a plugin author gets, and it names the step they should have
    * written** (`#261`).
    *

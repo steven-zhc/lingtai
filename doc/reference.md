@@ -1290,10 +1290,15 @@ each says the part an operator can act on:
   `implement`. `build` and `review` were here
   until 2026-09-27 and are served now, **`admit` was the fourth until
   `#268`** and **`claim` the third until `#269`** — `worktree:` serves the one and
-  `queue:` the other, so the eleven other kinds at each are refused
-  in `admit`'s own terms instead, with the same remedy: a question that must be
-  asked *before* anything is spent is `lingtai ask`, which holds the item in the
-  queue and is answered without a worktree
+  `queue:` the other, so the eleven other kinds at each are refused **in that
+  step's own terms** instead. Each step's sentence is its own and lands in the
+  same diff as the key: without one, a step whose plugin has just arrived
+  answers every other kind out of `prepared`'s paragraphs, which say *nothing
+  has been committed* and *the run is released back to the queue* about steps
+  where neither is what went wrong. What the two share is the remedy, and it is
+  what makes them one bullet: a question that must be asked *before* anything is
+  spent is `lingtai ask`, which holds the item in the queue and is answered
+  without a worktree — or, at `claim`, without a run at all
   ([`ask.ts`](../packages/conductor/src/ask.ts)).
 - **A plugin that serves no step at all** — `backlog:`, whose `at` is `{}`, and
   it is the last one. It is a name 0061 §3 gives
@@ -1301,11 +1306,12 @@ each says the part an operator can act on:
   **`worktree:`, `judge:`, `merge:` and `queue:` were on this list and left it**, with
   `#268`, `#274`, `#270` and `#269`. Asked
   first, and the same sentence at all ten steps, because it is a fact about the
-  plugin: *nothing implements `claim`* is true and leaves a reader hunting for
-  the code that picks their ticket. `CALLED_DIRECTLY` names it instead, and it
-  is sharpest there, where the step's sentence and the plugin's are about
-  the same plugin and only the plugin's says which file to open. Both of them
-  carry one more clause, and it is the only part of those refusals that is not
+  plugin: *no plugin implements `end`* would be right about a step nothing
+  decides and leave a reader hunting for the bar that files a finding.
+  `CALLED_DIRECTLY` names it instead, and it
+  is sharpest where the step's sentence and the plugin's are about
+  the same plugin and only the plugin's says which file to open. It
+  carries one more clause, and it is the only part of that refusal that is not
   a fact about today's code — what the step will do with the list when it reads
   it: `backlog:` routes nothing and files at or below the bar. The day a step
   reads one, its entry in `CALLED_DIRECTLY` goes and an `at` key arrives on the
