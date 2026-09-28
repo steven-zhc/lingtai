@@ -138,6 +138,7 @@ import { BUILT_IN_FOR } from "./judge.ts";
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
+  type SentBack,
   ceilingFor,
   type Destination,
   type Offer,
@@ -223,37 +224,13 @@ export interface Asked {
  * Read off `StepWork.reached` rather than held in the closure, because it is the
  * *loop's* fact and not a step's: which visit routed here, with what it said and
  * why, is in the visit list the pass hands every body.
+ *
+ * **It moved to `@lingtai/actions` in `#266`, and is re-exported here.** The
+ * step it is written for is a plugin now — `createWorkAction` reads it off
+ * `ActionContext.again` — so it has to be a name that package can see, and
+ * `pass.ts` is where the fold that computes it lives (`sentBackTo`).
  */
-export interface SentBack {
-  /**
-   * The judge's own words — *state your assumption* — verbatim, and 0043's rule
-   * again: it is prose for an agent and a person, never a token to parse.
-   */
-  readonly why: string;
-  /**
-   * The question this step asked, where the round was bought on its own
-   * `needs-input`. `null` where the judge sent the pass back for some other
-   * reason, and then `printed` is what that reason said.
-   */
-  readonly asked: string | null;
-  /**
-   * **What the step that did not pass printed, and which step printed it** — the
-   * compiler's errors from a red `build`, the lane's `detail` from a refused
-   * `merge` — or `null`.
-   *
-   * It is the criterion the round was bought on, in the one case findings are
-   * not: *run it again; green is green* (0038 §2), which is the same bar
-   * `carriesACriterion` holds the judge to one step earlier. A brief that omits
-   * it asks an agent to fix a failure it has not been shown.
-   *
-   * `null` in the two cases where it would say nothing new. Where this step's own
-   * question bought the round, `asked` is the same words. And on the way through
-   * — a `review` that passed carrying findings — nothing refused and nothing
-   * printed: those findings travel on `context.recheck`, which is the path 0038
-   * §2 is written for.
-   */
-  readonly printed: { readonly step: Step; readonly detail: string } | null;
-}
+export type { SentBack };
 
 /**
  * **The step started and left no receipt** — 0057 §2, and the pass stops.
@@ -483,16 +460,6 @@ export type Judged =
  */
 export interface PassPorts {
   /**
-   * `design` and `implement` — **the item `claim`'s `queue:` action took**, or
-   * null where it took none.
-   *
-   * Null is the pass's own bookkeeping gone wrong and never something that
-   * happened to a diff: `implement` is reached only after `claim` passed, and
-   * `claim` passes only on a take, so `madeBy` throws and `runStep` reports the
-   * visit's own `did-not-finish`.
-   */
-  item(): Claimed | null;
-  /**
    * `end` — **the stream `claim`'s `queue:` action left the pass on**, or null
    * where the pass is about no item.
    *
@@ -505,17 +472,6 @@ export interface PassPorts {
    * about.
    */
   onStream(): string | null;
-  /**
-   * `implement` — one agent, in that worktree, and what it committed.
-   *
-   * **`draft` was the row beside it and went with `design`'s body** (`#265`).
-   * The two answered the same four things because 0061 §3 put `agent:` at both
-   * steps; the key is open at `design` now, so a document is an action's
-   * (`createDraftAction`) and reaches `implement` on the step's own ending rather
-   * than through a port. This row is the last of the three dispatches still
-   * called directly, and `implement` is the last step without a plugin.
-   */
-  dispatch(brief: Brief): Promise<Worked>;
   /**
    * `proposed` — **which of the offered steps the recipe's `judge:` for this
    * direction answers**, or that it declared none.
@@ -857,113 +813,6 @@ function becauseSpent(wanted: Destination, offer: Offer): string {
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
   /**
-   * What `design` produced, **read off the visit rather than remembered**
-   * (`#265`).
-   *
-   * It was a closure variable this function held and `claim` cleared. The work is
-   * an `agent:` action at `design` since 0065 §2, so the document arrives on that
-   * step's own ending (`WroteTheDesign`) and `reached` is where a body already
-   * looks backwards — which is the same subtraction `#269` made to the item: a
-   * fact the pass records once does not also need a copy beside it, and the copy
-   * is the one that can be stale.
-   *
-   * `""` at both ends of it. A recipe that declares nothing at `design` runs no
-   * action, so there is no document and this answers `""`; an agent that answered
-   * nothing produces `""` as a document it wrote. Those are the same brief to
-   * `implement` — it works from the issue either way, and there is no conditional
-   * step (0058 §3) — and they are different things on the card, where the
-   * action's own `evidence` says which.
-   */
-  const designOn = (reached: readonly StepReached[]): string => {
-    const drafted = reached.filter((visit) => visit.step === "design").at(-1);
-    return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? "") : "";
-  };
-
-  /**
-   * What a step needs and the step before it made — or a throw naming which.
-   *
-   * A programming error about the workflow rather than something that happened to
-   * a diff: `implement` is reached only after `claim` passed, and `claim` passes
-   * only with an item. `runStep` catches it and reports it as the visit's own
-   * `did-not-finish`, so the pass still reaches `end` — which is the rule the
-   * whole skeleton is arranged around.
-   *
-   * **The worktree used to be the other thing it guarded** and is
-   * `conduct.ts`'s `cutTree` since `#268`, which raises the same error in the
-   * same words for the same reason — the closure that holds a fact is the one
-   * that can say it is missing. The item followed it there in `#269` and this
-   * still guards it, because the *reading* is still the pass's: `ports.item`
-   * answers null for a pass that took nothing, and *the spine says `claim`
-   * passed* is a claim only the pass can make.
-   */
-  const madeBy = <T>(what: string, at: string, value: T | null): T => {
-    if (value === null) {
-      throw new Error(
-        `the \`${what}\` step has no ${at} — the step that makes it did not run, ` +
-          "and the spine says it did. This is the pass's own bookkeeping and not a " +
-          "judgement about the change.",
-      );
-    }
-    return value;
-  };
-
-  /**
-   * **Why the pass is at this step a second time, read off the visits** — or
-   * `null`, which is every visit on the way through.
-   *
-   * The route is the last visit when a body is re-entered: `runPass` records
-   * `proposed`'s decision and then walks straight into the step it chose. The
-   * question is the visit before that one, and only where *this* step asked it —
-   * a route back to `implement` from a `build` that refused carries findings
-   * rather than a question, and `context.recheck` is where those are.
-   */
-  const sentBackTo = (step: Step, reached: readonly StepReached[]): SentBack | null => {
-    const judged = reached.at(-1);
-    if (judged === undefined || judged.step !== "proposed") return null;
-    const route = judged.ending;
-    if (route.ending !== "routed" || route.to !== step) return null;
-    const arrived = reached.at(-2);
-    const asked =
-      arrived !== undefined &&
-      arrived.step === step &&
-      arrived.ending.ending === "did-not-finish" &&
-      arrived.ending.because === NEEDS_INPUT
-        ? arrived.ending.detail
-        : null;
-    // And what it printed, where that is not the question `asked` already holds.
-    // The evidence the judge weighed is on the arriving visit's ending, and this
-    // is the only thing that carries it as far as the agent buying the round:
-    // `context.recheck` is empty on a mechanical route, because a command's
-    // refusal raises no findings.
-    const printed =
-      asked === null && arrived !== undefined && "detail" in arrived.ending && arrived.ending.detail !== ""
-        ? { step: arrived.step, detail: arrived.ending.detail }
-        : null;
-    return { why: route.why, asked, printed };
-  };
-
-  const briefOn = (
-    step: Step,
-    work: { context: ActionContext; reached: readonly StepReached[] },
-  ): Brief => ({
-    ticket: madeBy(step, "item", ports.item()).ticket,
-    design: designOn(work.reached),
-    again: sentBackTo(step, work.reached),
-    context: work.context,
-  });
-
-  /** 0057 §2, at whichever of the three steps reported it. */
-  const noReceipt = (detail: string): StepDidNotFinish => ({
-    ending: "did-not-finish",
-    // The pipeline's own word for the same class one layer down (`endingOf`),
-    // and deliberately not `NEEDS_INPUT`: nobody was asked anything, so there is
-    // nothing for the router to route and *the pass stops* is the rule.
-    because: "did-not-finish",
-    at: null,
-    detail,
-  });
-
-  /**
    * 0031 §3, at whichever of the two steps dispatched the agent.
    *
    * Shared rather than written twice, because the whole value of the case is
@@ -1135,16 +984,6 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     };
   };
 
-  /** 0058 §3c, and the one `because` the workflow itself reads. */
-  const asking = (question: string): StepDidNotFinish => ({
-    ending: "did-not-finish",
-    because: NEEDS_INPUT,
-    // No action asked it: the step's own work did, which is why `at` is null
-    // here and an action's name where `endingOf` builds one.
-    at: null,
-    detail: question,
-  });
-
   return {
     ...NOT_BUILT_YET,
 
@@ -1280,31 +1119,41 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     design: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
-     * One agent, in that worktree — **and it reports the `head` it committed**,
-     * which is the whole of what moves `onSha` on a fix round.
+     * One agent, in that worktree — **and this is the last of the ten whose body
+     * had work left in it** (`#266`, 0065 §1).
      *
-     * Three ways not to pass, and the money is the reason they are three and not
-     * one. An agent that **asked** buys a decision at `proposed` and nothing else
-     * (0058 §3c). An agent that **started and left no receipt** buys nothing and
-     * stands the pass down (0057 §2) — a crash, a spent turn budget, or a run
-     * that committed nothing, since the commit *is* the receipt. An agent that
-     * **never started** stands the *conductor* down and releases the item,
-     * because what it met is about the account rather than the diff and every
-     * queued item would meet it identically (0031 §3).
+     * It called `ports.dispatch` here until `agentPlugin` declared `implement`
+     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §1). What
+     * writes the change now is an `agent:` action — `createWorkAction`, wrapping
+     * the dispatch `conduct.ts` hands it — and the loop has run it by the time
+     * this is called, so a dispatch written here would be **two agents on one
+     * brief**: the declared one pays for the work, the pipeline passes, and this
+     * would pay for a second on the same ticket, spending a round bought for a
+     * fix. That is why the key and the empty body are one diff and not two.
+     *
+     * **The `head` still comes out of this step and now comes out of the
+     * action**, which is the whole of what must survive the move: `onSha` is *the
+     * commit this verdict is about*, everything after `implement` is judged
+     * against it, and a round judged against the wrong head is a round spent on a
+     * diff nobody wrote. `admit`'s row says the same sentence one step earlier,
+     * and `runStep`'s `leftTheTreeAt` is the field that carries both.
+     *
+     * **The default is the old behaviour and not nothing** — unlike `design`,
+     * whose port dispatched nothing. `conduct.ts`'s `defaultsAt` has a row here
+     * that reads `runtime.agent`, so a recipe that declares nothing at
+     * `implement` buys exactly the agent it bought before, on the same brief.
+     *
+     * The four ways it goes are the action's now: a commit, a **question** that
+     * buys a decision at `proposed` (0058 §3c), a run that **left no receipt**
+     * and stands the pass down (0057 §2), and one that **never started** and
+     * stands the *conductor* down, because what it met is about the account
+     * rather than the diff (0031 §3). `endingOf` reports each in the step's own
+     * terms without this body being reached at all.
      *
      * It cannot refuse, and that is 0058 §3b's rectangle: arriving at the router
      * and refusing are different things, and only one of them is charged for.
      */
-    implement: async ({
-      context,
-      reached,
-    }): Promise<StepPassed | StepDidNotFinish | StepNeverRan> => {
-      const answer = await ports.dispatch(briefOn("implement", { context, reached }));
-      if ("committed" in answer) return { ending: "passed", head: answer.committed };
-      if ("asked" in answer) return asking(answer.asked);
-      if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
-      return noReceipt(answer.stopped);
-    },
+    implement: async (): Promise<StepPassed> => ({ ending: "passed" }),
 
     /**
      * **Its own step, and a red one skips `review`.**

@@ -9,6 +9,7 @@
 import type { Step } from "@lingtai/domain";
 import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
 import { type AgentActionDeps, createAgentAction, createDraftAction } from "./agent-action.ts";
+import { type WorkActionDeps, createWorkAction } from "./work-action.ts";
 import type { Action } from "./action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
@@ -26,6 +27,16 @@ import { createWorktreeAction, type WorktreeActionDeps } from "./worktree-action
  */
 export interface ActionDeps {
   agent?: AgentActionDeps;
+  /**
+   * The dispatch the `agent:` at `implement` wraps (`#266`).
+   *
+   * Its own dep rather than a field on `agent`, because the two share only the
+   * key a recipe writes: a cold reviewer needs a runtime and the diff, and the
+   * agent that writes the change needs the hook wired, the socket served and the
+   * receipt measured — all of which is `conduct.ts`'s and none of which this
+   * package can build.
+   */
+  work?: WorkActionDeps;
   watch?: WatchActionDeps;
   /**
    * The cut a `worktree:` action runs — `provisionWorktree`, as the conductor
@@ -158,9 +169,6 @@ export function actionsFromRecipe(
     }
 
     if ("agent" in action) {
-      if (!deps.agent) {
-        throw new ActionUnavailableError(action.name, kind, "no reviewer was supplied to actionsFromRecipe");
-      }
       // `action.agent` is the *runtime* since `#245`; the prose is `prompt:`.
       // Reading the old field here would compile and send a runtime's name
       // where a reviewer's instructions belong (0063 §2).
@@ -185,6 +193,21 @@ export function actionsFromRecipe(
       // returns `passed` when there is none, and at `design` there never is one.
       // Built here because this is the seam that knows the step; the actions
       // themselves know only what they were handed.
+      // **And a third since `#266`.** `agent:` at `implement` is the agent that
+      // *writes the change* — it is handed the worktree and leaves a commit, and
+      // what it needs from its caller is the dispatch rather than a reviewer's
+      // runtime and diff. The reviewer built for this step would ask for the diff
+      // one step before there is one and return `passed` on it, which is `#61`
+      // with a new spelling and the case 0065 §5 removes.
+      if (step === "implement") {
+        if (!deps.work) {
+          throw new ActionUnavailableError(action.name, kind, "no dispatch was supplied to actionsFromRecipe");
+        }
+        return createWorkAction(agent, deps.work);
+      }
+      if (!deps.agent) {
+        throw new ActionUnavailableError(action.name, kind, "no reviewer was supplied to actionsFromRecipe");
+      }
       return step === "design"
         ? createDraftAction(agent, deps.agent)
         : createAgentAction(agent, deps.agent);

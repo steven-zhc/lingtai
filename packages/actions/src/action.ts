@@ -169,6 +169,42 @@ export interface ActionResult {
   document?: string;
 }
 
+/**
+ * **The step asked a question, and a judge is what answers it** (0058 §3c).
+ *
+ * `ActionResult.because` spelled this on a `did-not-finish`, which is the one
+ * ending that may reach the router: *an agent started and left no receipt* and
+ * *an agent stopped to ask* are the same verdict and cost different money, and a
+ * caller reading a field rather than a sentence is 0031 §1 again.
+ *
+ * It lives here rather than in `pass.ts` because the action produces it and the
+ * pass reads it, and a second definition of one token is the drift
+ * `worktree-action.ts` names. `pass.ts` re-exports this name.
+ */
+export const NEEDS_INPUT = "needs-input";
+
+/**
+ * **Why a step is being run a second time** — or `null`, which is every visit on
+ * the way through.
+ *
+ * The whole of what makes a re-run different from the first run when the round
+ * was bought on a question or on what a step printed. An action that writes code
+ * hands it to its agent beside the ticket — *you asked this, and the judge said
+ * that*, or *`build` printed this* — and one that ignores it dispatches the brief
+ * that produced the failure.
+ *
+ * It is computed from the visit list rather than remembered, in `pass.ts`, and
+ * arrives here because the agent buying the round is a plugin since `#266`.
+ */
+export interface SentBack {
+  /** The judge's own words for why it sent the pass back here. */
+  readonly why: string;
+  /** What this step asked the first time, where it asked anything. */
+  readonly asked: string | null;
+  /** What the refusing step printed, where the round was not bought on a question. */
+  readonly printed: { readonly step: Step; readonly detail: string } | null;
+}
+
 export interface ActionContext {
   runId: string;
   /** The commit this verdict is about, and the only thing that makes it stale. */
@@ -219,6 +255,29 @@ export interface ActionContext {
    * writes is filed under the action it belongs to. A `run` or `watch` action has
    * no agent and writes nothing further. Absent, nothing is written.
    */
+  /**
+   * **What `design` drafted**, and `""` where it drafted nothing (`#266`).
+   *
+   * On the context rather than on a spec for `recheck`'s reason: it is a fact
+   * about *this run of the pipeline* and not about the action the recipe wrote.
+   * `designFrom` in `packages/conductor/src/pass.ts` is what puts it here, off
+   * the `design` step's own visit — so the one action that writes code reads what
+   * the one action that writes a document produced, without either knowing the
+   * other exists.
+   *
+   * **`""` is a document and not an absence** (`ActionResult.document`): an agent
+   * that answered *this change needs no design* and a step that drafts nothing
+   * are one brief, because the ticket is what it works from either way.
+   */
+  design?: string;
+  /**
+   * **Why this step is being run a second time**, or `null` on the way through.
+   *
+   * `recheck`'s neighbour and not its duplicate: `recheck` is the findings a
+   * round was bought on, and this is what the judge said and what the step asked
+   * — the two shapes a round can be bought in that no finding carries.
+   */
+  again?: SentBack | null;
   log?: RunTrace;
   signal?: AbortSignal;
 }
@@ -276,7 +335,7 @@ export interface PipelineResult {
    * that had to read `evidence` to tell it from a refusal would be the second
    * reader of a sentence that 0031 §1 exists to prevent.
    */
-  didNotFinishAt: { action: string; detail: string } | null;
+  didNotFinishAt: { action: string; detail: string; because?: string } | null;
   /**
    * Every verdict, with the findings behind it.
    *
@@ -454,7 +513,15 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         failedAt: null,
         heldAt: null,
         neverRanAt: null,
-        didNotFinishAt: { action: action.name, detail: result.evidence },
+        // **The action's own word where it has one**, exactly as `failedAt` takes
+        // one from the `merge` kind: *the agent stopped to ask* is a
+        // `did-not-finish` that may reach the router, and *it left no receipt* is
+        // one that may not (`NEEDS_INPUT`, `endingOf` in `pass.ts`).
+        didNotFinishAt: {
+          action: action.name,
+          detail: result.evidence,
+          ...(result.because === undefined ? {} : { because: result.because }),
+        },
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
       };

@@ -1,5 +1,6 @@
 export {
   runActionPipeline,
+  NEEDS_INPUT,
   type Action,
   type ActionContext,
   type ActionEvent,
@@ -8,6 +9,7 @@ export {
   type ActionVerdict,
   type PipelineOptions,
   type PipelineResult,
+  type SentBack,
 } from "./action.ts";
 export {
   createProcessAction,
@@ -42,6 +44,12 @@ export {
   type QueueActionSpec,
   type TakeAnswer,
 } from "./queue-action.ts";
+export {
+  createWorkAction,
+  type WorkActionDeps,
+  type WorkActionSpec,
+  type WorkedAnswer,
+} from "./work-action.ts";
 export {
   createWorktreeAction,
   type CutAnswer,

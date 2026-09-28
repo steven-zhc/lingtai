@@ -215,7 +215,30 @@ export const agentPlugin = definePlugin("agent", {
    * `merge` stays for the re-verify after a moved base. `build` is not here: a
    * `run:` belongs there, and an agent asked to build would be paid to read.
    */
-  at: { design: notBuiltYet, review: notBuiltYet, proposed: notBuiltYet, merge: notBuiltYet },
+  /**
+   * **`implement` since `#266`, and it is the key that closes 0065 §1's
+   * asymmetry.**
+   *
+   * The cold reviewer has been an `agent:` a person can read and edit since this
+   * schema existed; the agent that *writes the code* was `runtime.agent` in
+   * `~/.lingtai/config.yml`, reached through a port, with no line in any recipe
+   * naming it. Both are here now, and a recipe that declares nothing at
+   * `implement` gets `conduct.ts`'s `defaultsAt` row — which reads
+   * `runtime.agent`, so nothing changes for a file nobody edited.
+   *
+   * **A third action off this one key** (`from-recipe.ts`), for the reason
+   * `design` is a second: the reviewer opens by asking for the diff and returns
+   * `passed` when there is none, and at `implement` there is none *yet* — the
+   * diff is what this step produces. So the same block builds `createWorkAction`,
+   * which is handed the dispatch rather than a runtime and a diff.
+   */
+  at: {
+    design: notBuiltYet,
+    implement: notBuiltYet,
+    review: notBuiltYet,
+    proposed: notBuiltYet,
+    merge: notBuiltYet,
+  },
 });
 
 /** Globs against the diff's file list; a match holds or fails. */

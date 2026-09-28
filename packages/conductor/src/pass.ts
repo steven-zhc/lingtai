@@ -73,6 +73,7 @@
  */
 import { STEPS, type Step } from "@lingtai/domain";
 import {
+  NEEDS_INPUT,
   runActionPipeline,
   type Action,
   type ActionContext,
@@ -80,6 +81,7 @@ import {
   type ActionFinding,
   type ActionVerdict,
   type PipelineResult,
+  type SentBack,
 } from "@lingtai/actions";
 import type { Recipe, StepAction } from "@lingtai/recipe";
 import type { TerminalOutcome } from "./end-step.ts";
@@ -330,8 +332,13 @@ export interface StepDidNotFinish extends LeftTheTreeAt {
  * the judge's call is `waiting` with the question, or that step again with
  * *state your assumption*. Every other value of `because` belongs to the step
  * that produced it and the judge that reads it — see `StepRefused`.
+ *
+ * **It moved to `@lingtai/actions` in `#266` and is re-exported here.** The
+ * agent at `implement` is a plugin now, so the token is produced one layer down
+ * — `createWorkAction` sets it on the result and `endingOf` reads it back — and
+ * a second definition of one word is the drift `worktree-action.ts` names.
  */
-export const NEEDS_INPUT = "needs-input";
+export { NEEDS_INPUT, type SentBack };
 
 /**
  * The step was reached and its agent never started.
@@ -1439,6 +1446,62 @@ function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
 }
 
 /**
+ * **What `design` drafted, for the step that works from it** — and `""` where it
+ * drafted nothing.
+ *
+ * Read off the `design` step's own visit rather than off a variable somebody
+ * carried, for `findingsIn`'s reason: the pass is holding it in memory and a
+ * second place to keep it is a second place for it to be wrong. It was
+ * `bodiesFor`'s until `#266`, and moved here when `implement`'s body emptied —
+ * the only reader is a plugin now, and a plugin is handed the context.
+ *
+ * **The last `design` visit and not the first**: a pass routed back through it
+ * would have a second document, and the one to work from is the one the round
+ * was bought for.
+ */
+function designOn(reached: readonly StepReached[]): string {
+  const drafted = reached.filter((visit) => visit.step === "design").at(-1);
+  return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? "") : "";
+}
+
+/**
+ * **Why the pass is at this step a second time, read off the visits** — or
+ * `null`, which is every visit on the way through.
+ *
+ * The route is the last visit when a step is re-entered: `runPass` records
+ * `proposed`'s decision and then walks straight into the step it chose. The
+ * question is the visit before that one, and only where *this* step asked it — a
+ * route back to `implement` from a `build` that refused carries findings rather
+ * than a question, and `ActionContext.recheck` is where those are.
+ *
+ * `bodiesFor`'s until `#266`, and here for `designOn`'s reason.
+ */
+function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | null {
+  const judged = reached.at(-1);
+  if (judged === undefined || judged.step !== "proposed") return null;
+  const route = judged.ending;
+  if (route.ending !== "routed" || route.to !== step) return null;
+  const arrived = reached.at(-2);
+  const asked =
+    arrived !== undefined &&
+    arrived.step === step &&
+    arrived.ending.ending === "did-not-finish" &&
+    arrived.ending.because === NEEDS_INPUT
+      ? arrived.ending.detail
+      : null;
+  // And what it printed, where that is not the question `asked` already holds.
+  // The evidence the judge weighed is on the arriving visit's ending, and this
+  // is the only thing that carries it as far as the agent buying the round:
+  // `context.recheck` is empty on a mechanical route, because a command's
+  // refusal raises no findings.
+  const printed =
+    asked === null && arrived !== undefined && "detail" in arrived.ending && arrived.ending.detail !== ""
+      ? { step: arrived.step, detail: arrived.ending.detail }
+      : null;
+  return { why: route.why, asked, printed };
+}
+
+/**
  * One visit: its plugins, then its own work.
  *
  * Its plugins first because that is the order a refusal needs — at `prepared`
@@ -1490,7 +1553,25 @@ async function runStep(
       const result = await runActionPipeline({
         step: spec.step,
         actions: options.actionsAt(spec.step, actions),
-        context: reaching.context,
+        /**
+         * **The two facts a plugin cannot read off `onSha`** (`#266`).
+         *
+         * `design` is what the step before this one drafted and `again` is why
+         * this step is being run a second time, and both are folds over the visit
+         * list — which the pipeline has no way to see. They are added here rather
+         * than in `contextFor` because one of them is per-step: *sent back to
+         * `implement`* and *sent back to `build`* are different answers on the
+         * same lap.
+         *
+         * Every kind is handed them and one kind reads them, exactly as `recheck`
+         * is: a `run:` at `build` re-runs unchanged, because a build does not need
+         * to be told what the judge said.
+         */
+        context: {
+          ...reaching.context,
+          design: designOn(reached),
+          again: sentBackTo(spec.step, reached),
+        },
         emit: options.emit,
       });
       // Carried out whatever the step then did, because the verdicts are what a
@@ -1600,7 +1681,11 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
       // agent started and left no receipt and nothing else. It is deliberately
       // not `NEEDS_INPUT` — nobody was asked anything, so there is nothing for
       // the router to route and 0057 §2's *the pass stops* is the rule.
-      because: "did-not-finish",
+      // **Unless the action had a word of its own** (`#266`), which is
+      // `becauseFrom`'s rule one branch down: `createWorkAction` sets
+      // `NEEDS_INPUT` when its agent stopped to ask, and *asked* is the one
+      // `did-not-finish` with a destination.
+      because: result.didNotFinishAt.because ?? "did-not-finish",
       at: result.didNotFinishAt.action,
       detail: result.didNotFinishAt.detail,
     };

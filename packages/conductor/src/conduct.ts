@@ -132,6 +132,7 @@ import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
   type Action,
+  type ActionContext,
   type ActionEvent,
   type CutAnswer,
   type LandAnswer,
@@ -141,6 +142,7 @@ import {
   createHumanAction,
   createMergeAction,
   createQueueAction,
+  createWorkAction,
   createWorktreeAction,
 } from "@lingtai/actions";
 import type { GitHubClient } from "@lingtai/github";
@@ -1880,6 +1882,20 @@ export function runOnce(
         // The sixth, and the other one that makes rather than judges: `claim`'s
         // `queue:` action takes the ticket through this (0065 §2, `#269`).
         queue: { take },
+        // The seventh, and the one that writes the change: `implement`'s `agent:`
+        // action dispatches through this (0065 §1, `#266`). Its own row rather
+        // than a field on `agent` above, because the two share only the key a
+        // recipe writes — a cold reviewer wants a runtime and a diff, and this
+        // wants the hook wired, the socket served and the receipt measured.
+        //
+        // An arrow rather than `{ work: dispatch }`: `dispatch` is declared six
+        // hundred lines down, and this object literal is evaluated here.
+        work: {
+          work: (
+            spec: { readonly prompt: string; readonly model?: string },
+            context: ActionContext,
+          ) => dispatch(spec, context),
+        },
       };
 
       /**
@@ -2024,6 +2040,25 @@ export function runOnce(
             ),
           ];
         }
+        if (step === "implement") {
+          /**
+           * **The agent that writes the change, where the recipe names none**
+           * (0065 §1, `#266`).
+           *
+           * Unlike `design`, this row is not optional: the port it replaced
+           * dispatched on every pass, so *behaves exactly as it does today* means
+           * an unconfigured `implement` still buys the one agent — on
+           * `runtime.agent`, which is what `dispatch` runs and what a recipe's own
+           * `agent:` is held to by `agentRefusal` before the claim.
+           *
+           * `prompt: ""` because the implementer's brief is `options.prompt`,
+           * rendered with the ticket and the design. A recipe's `prompt:` is
+           * appended to that and never substituted for it — the rule the cold
+           * reviewer follows — so the default adding nothing is the default
+           * changing nothing.
+           */
+          return [createWorkAction({ name: "write the change", prompt: "" }, { work: dispatch })];
+        }
         if (step === "merge") {
           // The strategy `mergePlugin`'s schema defaults to, because `integrate`
           // offers one — and no base, for the reason that plugin declares none:
@@ -2113,7 +2148,23 @@ export function runOnce(
        * **And the receipt is measured from where the tree stands now, not from
        * where it was cut** (`#265`). See `startedAt` below.
        */
-      const firstDispatch = async (brief: Brief): Promise<Worked> => {
+      /**
+       * **A recipe's `prompt:` at `implement`, appended and never substituted**
+       * (`#266`) — the rule `buildDesignPrompt` and `createAgentAction` already
+       * follow, and the same heading, so an agent meets one convention.
+       *
+       * A project can add what it cares about; it cannot remove the ticket, the
+       * design, or the refusal a round was bought on. `""` — which is what
+       * `defaultsAt` writes — adds nothing at all, so a recipe that declares
+       * nothing gets the prompt it got before this key existed, byte for byte.
+       */
+      const alsoSays = (prompt: string, extra: string): string =>
+        extra === "" ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`;
+
+      const firstDispatch = async (
+        brief: Brief,
+        spec: { readonly prompt: string; readonly model?: string },
+      ): Promise<Worked> => {
         const tree = cutTree();
         /**
          * **Where this agent found the tree** — and the whole of what the receipt
@@ -2184,7 +2235,10 @@ export function runOnce(
                       data: parsePayload("RunStarted", {
                         workItemId,
                         runtime: options.runtime.capabilities.id,
-                        model: "",
+                        // The recipe's `model:` where it named one, and the
+                        // runtime's own default where it did not (0063 §2) —
+                        // which is what the empty string has always meant here.
+                        model: spec.model ?? "",
                         promptVersion,
                         baseSha: tree.baseSha,
                         configHash: resolved.configHash,
@@ -2222,7 +2276,7 @@ export function runOnce(
                   options.runtime.run({
                     runId,
                     cwd: tree.path,
-                    prompt: renderPrompt(
+                    prompt: alsoSays(renderPrompt(
                       options.prompt,
                       { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
                       next.failure,
@@ -2235,7 +2289,8 @@ export function runOnce(
                       // on is an agent run bought by a line in the recipe whose
                       // answer no reader ever sees. `""` renders as it always did.
                       brief.design,
-                    ),
+                    ), spec.prompt),
+                    ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: wiring.settingsPath,
                     log: runLog,
                     env: agentEnv,
@@ -2341,7 +2396,11 @@ export function runOnce(
        * `FixRequested` and `FixApplied` are the events the board already reads, so
        * they are appended here, from the step that spends the round.
        */
-      const fixRound = async (brief: Brief, again: NonNullable<Brief["again"]>): Promise<Worked> => {
+      const fixRound = async (
+        brief: Brief,
+        again: NonNullable<Brief["again"]>,
+        spec: { readonly prompt: string; readonly model?: string },
+      ): Promise<Worked> => {
         const tree = cutTree();
         const round = brief.context.round ?? 1;
         const findings = brief.context.recheck ?? [];
@@ -2391,14 +2450,18 @@ export function runOnce(
                   .run({
                     runId: `${runId}:fix:${round}`,
                     cwd: tree.path,
-                    prompt: fixBrief({
-                      refusal,
-                      round,
-                      of: limits.rounds,
-                      action: from,
-                      diff: underReview,
-                      diffBytes: recipe.runtime.budget.diff,
-                    }),
+                    prompt: alsoSays(
+                      fixBrief({
+                        refusal,
+                        round,
+                        of: limits.rounds,
+                        action: from,
+                        diff: underReview,
+                        diffBytes: recipe.runtime.budget.diff,
+                      }),
+                      spec.prompt,
+                    ),
+                    ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: settings.right,
                     log: taggedTrace(runLog, `fix:${round}`),
                     traceTools: true,
@@ -2463,8 +2526,47 @@ export function runOnce(
         return { committed: after };
       };
 
-      const dispatch = (brief: Brief): Promise<Worked> =>
-        brief.again === null ? firstDispatch(brief) : fixRound(brief, brief.again);
+      /**
+       * **What the `agent:` at `implement` wraps** (`#266`) — and the brief is
+       * built here now rather than by the step's body.
+       *
+       * The three things a brief is made of reach it three ways, and all three
+       * are already facts somebody else made: the ticket is what `claim`'s
+       * `queue:` action took and this closure is holding, and the design and the
+       * *why again* are folds over the visit list that `runStep` puts on the
+       * context (`designOn`, `sentBackTo` in `pass.ts`). Nothing is remembered
+       * twice.
+       *
+       * **`again` is still what decides which of the two dispatches runs**, and
+       * that has not moved: a first visit renders the implementer's prompt, and a
+       * round the judge bought renders `fixBrief` against what the refusal said.
+       *
+       * The throw is `madeBy`'s, which is the shape this replaces: a pass reaches
+       * `implement` only after `claim` passed, and `claim` passes only on a take,
+       * so no item here is the pass's own bookkeeping gone wrong. The pipeline
+       * turns it into this action's verdict and the pass still reaches `end`.
+       */
+      const dispatch = async (
+        spec: { readonly prompt: string; readonly model?: string },
+        context: ActionContext,
+      ): Promise<Worked> => {
+        if (took === null) {
+          throw new Error(
+            "the `implement` step has no item — the step that makes it did not run, " +
+              "and the spine says it did. This is the pass's own bookkeeping and not a " +
+              "judgement about the change.",
+          );
+        }
+        const brief: Brief = {
+          ticket: took.ticket,
+          design: context.design ?? "",
+          again: context.again ?? null,
+          context,
+        };
+        return brief.again === null
+          ? firstDispatch(brief, spec)
+          : fixRound(brief, brief.again, spec);
+      };
 
 
       // **Six, and none of `cut`, `take`, `land` or `draft` is one of them**:
@@ -2481,9 +2583,7 @@ export function runOnce(
       // synchronous, because there is nothing to await — the pass's own `claim`
       // step has already run the action that filled them.
       const ports: PassPorts = {
-        item: () => took,
         onStream: () => onStream,
-        dispatch,
         judge,
         readEnd,
         recordEnd,
