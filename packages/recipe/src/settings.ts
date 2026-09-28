@@ -183,6 +183,11 @@ export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
  * absent rule means belongs to `assigneeSkip` and to `describeAssignee`, which
  * say it in their own words, and 0046 §2's *a wrong login shows itself* wants
  * the reading to be able to say *nothing was written* rather than *both*.
+ *
+ * **A declared `queue:` must name it**, so the `??` below is a spelling and not
+ * a fallback, exactly as `submodulesOf`'s is: there is no third answer between
+ * *the step said* and *the machine file said*, and a block that named only its
+ * kinds cannot silently hand this machine somebody else's tickets (`#269`).
  */
 export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
   return takeAt(recipe)?.assignee ?? recipe.runtime.assignee;
@@ -200,16 +205,26 @@ export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
  * block and must **not** ask, so that the ticket a pass takes is the one the
  * reading of the recipe says it took.
  *
- * `assignee` is spread rather than assigned, so an absent rule reaches
- * `assigneeSkip` as absent: what nothing written means is that function's to say,
- * and `both` written here would be this file inventing the answer.
+ * **`assignee` is the one value this fills in, because the block requires it and
+ * `runtime.assignee` does not exist on every machine.** `EVERYONE` is what an
+ * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
+ * `rule?.take ?? "both"` — so writing it here selects identically and says out
+ * loud what a pasted `queue:` must then write. The *reading* of an absent rule is
+ * still `assigneeOf`'s, which returns it absent: *nothing was written* and
+ * *everyone* are one filter and two sentences, and only the filter is here.
  */
 export function queueOf(recipe: Recipe): QueueSettings {
-  const assignee = assigneeOf(recipe);
   return {
     kinds: kindsOf(recipe),
     exclude: excludeOf(recipe),
     backoff: backoffOf(recipe),
-    ...(assignee === undefined ? {} : { assignee }),
+    assignee: assigneeOf(recipe) ?? EVERYONE,
   };
 }
+
+/**
+ * What an unwritten `runtime.assignee` selects — **every issue, whoever it is
+ * assigned to**, which is how the queue behaved before it read an assignee at
+ * all (`assigneeSkip`).
+ */
+const EVERYONE = { take: "both" } as const;

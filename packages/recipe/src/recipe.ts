@@ -433,12 +433,23 @@ export const mergePlugin = definePlugin("merge", {
  * Sharing the *fields* rather than the object keeps both true without either
  * borrowing the other's strictness.
  *
- * **Not a migration and not a second home.** No step accepts `queue:` yet —
- * `whyNoKindAt` refuses it at all ten — so there is exactly one place a person
- * can write these today and it is `source:`. What this removes is the copy
- * that would otherwise exist: a `kinds` the plugin required and `source:` did
- * not would be two answers to *what is a kind*, and the one list doing three
- * jobs below is the reason that must not happen twice.
+ * **Not a migration and not a second home.** `queue:` serves `claim` since
+ * `#269`, so there are two places a person can write these and they are one
+ * setting each: `settings.ts` is what knows which spelling a file used, exactly
+ * as it does for the base. What this sharing removes is the copy that would
+ * otherwise exist: a `kinds` the plugin required and `source:` did not would be
+ * two answers to *what is a kind*, and the one list doing three jobs below is
+ * the reason that must not happen twice.
+ *
+ * **What is shared is the field and not its default**, and that is the one way
+ * the two shapes differ in substance (`#269`). `source:` defaults `exclude` to
+ * `[]` and `backoff` to `1h`, because a v1 file that says neither has always
+ * meant those; a `queue:` block must **name all four**, for `submodules`'
+ * reason one plugin up — a block that named only its kinds would replace the
+ * hold list with `[]` and the backoff with `1h` while `source:` sat two blocks
+ * up unread, which is a held ticket claimed and an agent dispatched on work a
+ * person was holding. So the schemas below are declared without their defaults
+ * and `SOURCE_FIELDS` adds them; `QUEUE_FIELDS` takes them bare.
  *
  * **`assignee` is not here, and that is the same rule kept rather than broken**
  * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3). It
@@ -447,69 +458,94 @@ export const mergePlugin = definePlugin("merge", {
  * Putting it in `source:` too would invent a third spelling that nothing reads,
  * which is the silently-dropped key 0016 §4 is about.
  */
+/**
+ * Labels of yours that mark an issue as work, **most wanted first**.
+ *
+ * One list doing three jobs, and that is the design rather than an
+ * economy: it is the vocabulary (a label outside it is not a kind at all),
+ * the filter (`kindOf` matches against exactly this), and the priority
+ * order (earlier wins).
+ *
+ * Free-form since #76, and `exclude` always was. There used to be a
+ * `WorkKind` enum in the core — `bug` · `feature` · `enhancement` ·
+ * `tech-debt` — and a recipe naming any other label failed to resolve,
+ * which took *every* issue in the project down with it rather than the one
+ * label. It also contained `enhancement`, which no recipe had ever used,
+ * and omitted `documentation`, which one wanted. Which of a repository's
+ * labels name work is a fact that repository has and this schema does not,
+ * which is 0016 §7 exactly.
+ *
+ * **Required in both shapes**, and the only one of the three that always was: a
+ * recipe that names no kind takes nothing at all.
+ */
+const KINDS = z.array(z.string()).min(1);
+
+/**
+ * Labels of yours that must keep the agent off a ticket, matched
+ * case-insensitively by whole name.
+ *
+ * **This is the only reason an issue is passed over for its labels.** There
+ * was a rule in `discover.ts` too, skipping anything labelled `agent:*` as
+ * belonging to another system; it is gone. A namespace is not a meaning —
+ * `agent:hold` and `agent:followup` share a prefix and mean opposite
+ * things — and which of a repository's labels are holds is a fact that
+ * repository has and this schema does not.
+ *
+ * Whole names rather than patterns, deliberately: `agent:*` would have to
+ * be spelled with an exception for the one label in it that means "ready",
+ * and an exclude list with negation in it is a small language. List them.
+ *
+ * **Declared without its default**, which `SOURCE_FIELDS` adds and
+ * `QUEUE_FIELDS` does not: a `queue:` block that named only its kinds would
+ * take `[]` here and drop the hold list, which is an `agent:hold` ticket
+ * claimed and an agent dispatched on work a person was holding.
+ */
+const EXCLUDE = z.array(z.string());
+
+/**
+ * How long a failed attempt keeps its own ticket out of the queue
+ * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+ *
+ * A failed run releases its task, a release is a completion event, and a
+ * completion event is what tells the conductor to look again — so without
+ * this the top of the queue is the ticket that just failed, forever, at
+ * agent prices. The old harness re-ran #58 and #59 five times for roughly
+ * $29 exactly that way.
+ *
+ * Here rather than compiled into Lingtai for the reason `repair` is: how
+ * long a failure of *this* repository's is worth waiting out depends on
+ * what its failures usually are, and that is a thing the repository knows
+ * and the core cannot see (0016 §7). One hour by default under `source:`,
+ * flat — the wait does not grow with attempts, because what changes between
+ * attempts is what the next one is told (#82) and not how long it sat.
+ *
+ * A duration like `runtime.limits.wall`, and it must be a positive one:
+ * zero is not a shorter backoff, it is the absence of the guard, and the
+ * thing a person wants when they reach for it is `lingtai now`.
+ *
+ * **Declared without its default, for `EXCLUDE`'s reason**: an hour silently
+ * replacing a configured `45m` is quieter than the hold list and no more
+ * correct.
+ */
+const BACKOFF = z
+  .string()
+  // Checked here rather than left to throw at the point of use: a recipe
+  // that will not resolve names the key it failed on, and an exception out
+  // of the middle of a queue pass names nothing.
+  .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 1h" });
+
 const SOURCE_FIELDS = {
   /**
-   * Labels of yours that mark an issue as work, **most wanted first**.
-   *
-   * One list doing three jobs, and that is the design rather than an
-   * economy: it is the vocabulary (a label outside it is not a kind at all),
-   * the filter (`kindOf` matches against exactly this), and the priority
-   * order (earlier wins).
-   *
-   * Free-form since #76, and `exclude` always was. There used to be a
-   * `WorkKind` enum in the core — `bug` · `feature` · `enhancement` ·
-   * `tech-debt` — and a recipe naming any other label failed to resolve,
-   * which took *every* issue in the project down with it rather than the one
-   * label. It also contained `enhancement`, which no recipe had ever used,
-   * and omitted `documentation`, which one wanted. Which of a repository's
-   * labels name work is a fact that repository has and this schema does not,
-   * which is 0016 §7 exactly.
+   * Labels of yours that mark an issue as work, **most wanted first** — `KINDS`.
    */
-  kinds: z.array(z.string()).min(1),
+  kinds: KINDS,
+  /** The labels that keep the agent off a ticket — `EXCLUDE`, and none is none. */
+  exclude: EXCLUDE.default([]),
   /**
-   * Labels of yours that must keep the agent off a ticket, matched
-   * case-insensitively by whole name.
-   *
-   * **This is the only reason an issue is passed over for its labels.** There
-   * was a rule in `discover.ts` too, skipping anything labelled `agent:*` as
-   * belonging to another system; it is gone. A namespace is not a meaning —
-   * `agent:hold` and `agent:followup` share a prefix and mean opposite
-   * things — and which of a repository's labels are holds is a fact that
-   * repository has and this schema does not.
-   *
-   * Whole names rather than patterns, deliberately: `agent:*` would have to
-   * be spelled with an exception for the one label in it that means "ready",
-   * and an exclude list with negation in it is a small language. List them.
+   * How long a failed attempt keeps its own ticket out of the queue — `BACKOFF`,
+   * and an hour where a v1 file says nothing, which is what it has always meant.
    */
-  exclude: z.array(z.string()).default([]),
-  /**
-   * How long a failed attempt keeps its own ticket out of the queue
-   * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
-   *
-   * A failed run releases its task, a release is a completion event, and a
-   * completion event is what tells the conductor to look again — so without
-   * this the top of the queue is the ticket that just failed, forever, at
-   * agent prices. The old harness re-ran #58 and #59 five times for roughly
-   * $29 exactly that way.
-   *
-   * Here rather than compiled into Lingtai for the reason `repair` is: how
-   * long a failure of *this* repository's is worth waiting out depends on
-   * what its failures usually are, and that is a thing the repository knows
-   * and the core cannot see (0016 §7). One hour by default, flat — the wait
-   * does not grow with attempts, because what changes between attempts is
-   * what the next one is told (#82) and not how long it sat.
-   *
-   * A duration like `runtime.limits.wall`, and it must be a positive one:
-   * zero is not a shorter backoff, it is the absence of the guard, and the
-   * thing a person wants when they reach for it is `lingtai now`.
-   */
-  backoff: z
-    .string()
-    .default("1h")
-    // Checked here rather than left to throw at the point of use: a recipe
-    // that will not resolve names the key it failed on, and an exception out
-    // of the middle of a queue pass names nothing.
-    .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 1h" }),
+  backoff: BACKOFF.default("1h"),
 } satisfies PluginFields;
 
 /**
@@ -557,12 +593,22 @@ export type AssigneeRule = z.infer<typeof AssigneeRule>;
  * the rule is a `strictObject` with a `.refine` rather than two loose fields,
  * and it goes on firing from in here.
  *
- * Optional, like the `runtime.assignee` it is the v2 spelling of: absent is
- * `both`, which is how the queue behaved before it read an assignee at all.
+ * **All four are required, and none of them defaults** — which is the one way
+ * this differs from the `source:` shape it shares its fields with, and it is
+ * `submodules`' rule on `worktree:` kept rather than restated (`#268`, `#269`).
+ * A block is *the four values this step selects on*, so a person who writes one
+ * to narrow the kinds cannot silently lose the hold list to a `[]`, the backoff
+ * to an hour, or `runtime.assignee` to `both`: the three that would have been
+ * quiet are refused by name instead, and the refusal names the key to add.
+ * `assignee: { take: both }` is how a machine with nobody named writes what an
+ * absent `runtime.assignee` has always meant — spelled out, because the whole
+ * failure this step can have is being quietly wrong about which ticket it took.
  */
 const QUEUE_FIELDS = {
-  ...SOURCE_FIELDS,
-  assignee: AssigneeRule.optional(),
+  kinds: KINDS,
+  exclude: EXCLUDE,
+  backoff: BACKOFF,
+  assignee: AssigneeRule,
 } satisfies PluginFields;
 
 /**
@@ -1838,11 +1884,15 @@ export const Recipe = z.object({
    * written anything and holds no verdict about anything.
    */
   // **Three of the four fields `queue:` declares, and the same schema
-  // objects.** `SOURCE_FIELDS` is where they and their comments are written;
-  // this key is the v1 spelling of them, and the plugin is the v2 one. One
-  // declaration, because two would be two things to keep true — and the day
-  // `claim` reads the plugin, this line goes and nothing about the three
-  // fields moves.
+  // objects.** `KINDS`, `EXCLUDE` and `BACKOFF` are where they and their
+  // comments are written; this key is the v1 spelling of them, and the plugin is
+  // the v2 one. One declaration, because two would be two things to keep true —
+  // and what this key adds to them is the two defaults, which `queue:` does not
+  // take (`#269`).
+  //
+  // `claim` reads the plugin since `#269`, and this line is still here: which
+  // spelling a file used is `settings.ts`'s one question, and a recipe that
+  // declares nothing at `claim` is selected on exactly these three.
   //
   // The fourth is `assignee`, and it is deliberately not here: its v1 spelling
   // is `runtime.assignee` below, on the machine's own file (0046 §3), and a

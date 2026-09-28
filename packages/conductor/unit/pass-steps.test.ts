@@ -70,8 +70,16 @@ const ITEM: Claimed = {
 /**
  * The four values a `queue:` action carries, as `conduct.ts`'s `defaultsAt`
  * builds them off `queueOf(recipe)` where a recipe declares nothing (`#269`).
+ *
+ * All four, because a block is all four: the schema requires them, and `queueOf`
+ * writes `take: both` where the machine file names nobody.
  */
-const QUEUE: QueueSettings = { kinds: ["bug", "feature"], exclude: ["agent:hold"], backoff: "1h" };
+const QUEUE: QueueSettings = {
+  kinds: ["bug", "feature"],
+  exclude: ["agent:hold"],
+  backoff: "1h",
+  assignee: { take: "both" },
+};
 
 const TREE: Worktree = {
   path: "/nowhere/worktrees/lingtai/run-1",

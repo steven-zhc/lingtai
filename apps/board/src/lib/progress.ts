@@ -41,18 +41,22 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * configured and did not run is Lingtai's bug. Only showing all ten keeps them
  * apart. `pending` is the honest third thing — configured, not reached yet.
  *
- * **Four of the ten are `skipped` on every run whatever the recipe says**,
- * because no plugin implements `claim`, `admit`, `design` or `implement` — an
- * action declared at one of them is refused when the recipe resolves (0064 §4),
- * so their plan is empty and cannot be anything else. That is the state reading
- * correctly rather than a gap: nothing is configured there, so nothing ran
- * there, so `skipped` is what the fold owes a reader.
+ * **Two of the ten are `skipped` on every run whatever the recipe says**,
+ * because no plugin implements `design` or `implement` — an action declared at
+ * either is refused when the recipe resolves (0064 §4), so their plan is empty
+ * and cannot be anything else. That is the state reading correctly rather than
+ * a gap: nothing is configured there, so nothing ran there, so `skipped` is what
+ * the fold owes a reader.
  *
- * **It was six until 2026-09-27**, when `runPlugin` took `build` and
- * `agentPlugin` took `review` (`a417908`). Those two now draw whatever the
- * recipe declares at them, and this repository's declares both — so a card
- * showing more live segments than a reader remembers is the recipe working
- * rather than a fold to rebuild.
+ * **It was six, then four, and each step that leaves the list leaves it for a
+ * plugin.** `runPlugin` took `build` and `agentPlugin` took `review` on
+ * 2026-09-27 (`a417908`); `worktreePlugin` took `admit` (`#268`) and
+ * `queuePlugin` took `claim` (`#269`). The last two are unlike the first two
+ * here: each runs a **default** action where the recipe declares nothing
+ * (0065 §2), so they have a plan and a verdict on every run rather than only on
+ * a recipe that configured them. A `claim` segment reading `failed` is the take
+ * declining — `passed-over`, `not-claimed` — and not a point nobody configured,
+ * which is what this comment used to say was impossible.
  */
 export type StepState =
   | "skipped"

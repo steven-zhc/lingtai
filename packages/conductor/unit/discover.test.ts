@@ -33,6 +33,9 @@ const queue: QueueSettings = {
   kinds: ["bug", "feature", "documentation"],
   exclude: ["blocked", "needs-design", "agent:wip", "agent:review"],
   backoff: "1h",
+  // Written out because the block requires it: `both` is what an unwritten
+  // `runtime.assignee` has always selected, and `queueOf` is where that is said.
+  assignee: { take: "both" },
 };
 
 /**

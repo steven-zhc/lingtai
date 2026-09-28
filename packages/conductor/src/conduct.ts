@@ -1053,21 +1053,36 @@ export function runOnce(
        * rule 0034 rests on to need no sweeper is exactly that nothing
        * uninvestigable is written.
        *
-       * So the handle is deferred and `runLog` is what everything holds: notes
-       * before the claim would be dropped, and there are none — the first is the
-       * one `openTheRunLog` writes itself, once there is a run to account for.
+       * So the handle is deferred and `runLog` is what everything holds — and
+       * **a note written before the open is held rather than dropped** (`#269`).
+       * There used to be none, which is what this said; since the take is a
+       * `queue:` action, `runActionPipeline` writes its `started` line before
+       * calling it (`action.ts`) and the open happens *inside* the call, on the
+       * line the claim commits. Dropping it left every log opening with a
+       * `claim:… passed` whose `started` was nowhere — an action end that never
+       * began, to somebody following `lingtai attach <runId>` from the beginning,
+       * which is how that command is always read (0034).
+       *
+       * Held and not eagerly opened, because the file is the thing 0034 is about:
+       * a pass that is passed over or loses the race still writes nothing at all,
+       * and what it buffered goes with the closure.
        */
       let opened: RunLog | null = null;
+      /** Notes taken before there was a file, in the order they were written. */
+      let beforeTheOpen: { label: string; detail: string | undefined }[] = [];
       const runLog: RunLog = {
         get path() {
           return opened?.path ?? "";
         },
-        note: (label, detail) => opened?.note(label, detail),
+        note: (label, detail) => {
+          if (opened === null) beforeTheOpen.push({ label, detail });
+          else opened.note(label, detail);
+        },
         close: async (fate) => {
           await opened?.close(fate);
         },
       };
-      /** Called by `claim`'s port, and only once it holds the item. */
+      /** Called by `claim`'s `queue:` action, and only once it holds the item. */
       const openTheRunLog = async (): Promise<void> => {
         opened = await Effect.runPromise(
           host.runLog({ path: runLogPath(home, project, runId) }).pipe(
@@ -1079,7 +1094,12 @@ export function runOnce(
             ),
           ),
         );
+        // The sentence that says which run this is, first — then what was written
+        // while there was nowhere to write it, in the order it was written.
         runLog.note("run", `${runId} · ${workItemId} · ${branch} → ${base}`);
+        const held = beforeTheOpen;
+        beforeTheOpen = [];
+        for (const { label, detail } of held) runLog.note(label, detail);
       };
       /**
        * Released last, because it is registered first — the same ordering the
