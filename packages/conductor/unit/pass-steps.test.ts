@@ -965,6 +965,34 @@ describe("implement dispatches the one agent, and reports what it committed", ()
     expect(result.steps.at(-1)?.step).toBe("end");
   });
 
+  /**
+   * **The body dispatches nothing, and this is what says so** (`#266`).
+   *
+   * `runStep` runs a step's declared actions *before* the body and skips the body
+   * only when they did not pass, so a body that still dispatched would be **two
+   * agents on one brief** the moment a recipe declared an `agent:` at
+   * `implement` — the declared one pays for the work, the pipeline passes, and
+   * the body pays for a second on the same ticket, spending a round bought for a
+   * fix. Nothing refuses it and nothing warns.
+   *
+   * So the assertion is the empty list with *no* action at the step at all: the
+   * step still passes, because the body's whole answer is `passed`, and nothing
+   * was dispatched, because there is nothing left in it to dispatch. A body that
+   * regained the call would dispatch here and go red.
+   */
+  it("dispatches nothing of its own, so a declared agent is the only one paid", async () => {
+    const { asked, result } = await pass({ actions: { implement: [] } });
+
+    expect(asked.dispatch).toEqual([]);
+    expect(result.steps.find((visit) => visit.step === "implement")?.ending).toEqual({
+      ending: "passed",
+    });
+    // And the pass carries on to the end rather than stopping for the missing
+    // receipt: `implement`'s head is the action's, so a step with no action
+    // leaves `onSha` where `admit` put it.
+    expect(outcomeOf(result)).toBe("landed");
+  });
+
   it("is handed the round it is in and the findings it was bought on", async () => {
     const { asked } = await pass();
 
