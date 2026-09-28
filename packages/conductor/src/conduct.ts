@@ -2226,6 +2226,15 @@ export function runOnce(
                       options.prompt,
                       { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
                       next.failure,
+                      // **What `design` produced, and this is the one reader of it**
+                      // (`#265`). `Brief.design` has been on this object since the
+                      // brief existed and nothing here read it, which cost nothing
+                      // while the port that filled it answered `""` on every pass.
+                      // `agentPlugin` serves the step now: a recipe declaring an
+                      // `agent:` there buys a document, and a document nothing hands
+                      // on is an agent run bought by a line in the recipe whose
+                      // answer no reader ever sees. `""` renders as it always did.
+                      brief.design,
                     ),
                     settingsPath: wiring.settingsPath,
                     log: runLog,

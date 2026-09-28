@@ -278,4 +278,50 @@ describe("the next attempt's prompt", () => {
     expect(read.failure).toContain("It committed no change");
     expect(unread.failure).not.toContain("It committed no change");
   });
+
+  /**
+   * **The document `design` produced reaches the agent that does the work**
+   * (`#265`, 0058 §3).
+   *
+   * `Brief.design` was on the brief from the day the brief existed and the live
+   * dispatch never read it, which cost nothing while the port that filled it
+   * answered `""` on every pass. `agentPlugin` serves `design` now, so a recipe can
+   * buy a document there — and a document nothing hands on is an agent run bought by
+   * a line in the recipe whose answer no reader sees. So the claim is the one the
+   * `{{failure}}` rule already makes for the attempt history: **a template with no
+   * slot gets it appended rather than losing it.**
+   *
+   * `TEMPLATE` above carries `{{failure}}` and no `{{design}}`, which is both halves
+   * in one fixture: the history goes in its slot and the design is appended.
+   */
+  it("hands the design to the implementer, in its slot or appended", () => {
+    const design = "Put it in `packages/recipe`, beside `whyNoKindAt`.";
+
+    const appended = renderPrompt(TEMPLATE, TICKET, "", design);
+    expect(appended).toContain("## The design, written for this run before any code");
+    expect(appended).toContain(design);
+    // What it is *not*: an instruction that outranks the ticket.
+    expect(appended).toContain("the ticket is what was asked for");
+
+    // In the slot where a template has one, and then not appended a second time.
+    const slotted = renderPrompt(`${TEMPLATE}\n{{design}}`, TICKET, "", design);
+    expect(slotted.match(/## The design, written for this run/g)).toHaveLength(1);
+
+    // And the two blocks compose in reading order: the design is about the change,
+    // the history is about the attempts at it.
+    const both = renderPrompt("#{{issue}}", TICKET, "## What the last attempt did", design);
+    expect(both.indexOf("## The design")).toBeLessThan(both.indexOf("## What the last attempt did"));
+
+    /**
+     * **And an empty design changes nothing**, which is every pass today: no recipe
+     * declares a `design:` and `defaultsAt` has no row for the step, so an
+     * unconfigured one runs nothing and this renders what it always rendered. The
+     * first case in this file asserts that byte for byte; this asserts the two
+     * arities agree, so the parameter cannot drift into meaning something absent.
+     */
+    for (const blank of ["", "   \n\n  "]) {
+      expect(renderPrompt(TEMPLATE, TICKET, "", blank)).toBe(renderPrompt(TEMPLATE, TICKET, ""));
+      expect(renderPrompt(TEMPLATE, TICKET, "", blank)).not.toContain("## The design");
+    }
+  });
 });

@@ -200,23 +200,82 @@ function join(blocks: readonly string[]): string {
  * prompt: every attempt *is* a run, and giving one of them its own template
  * would be the beginning of the sixth gate point 0016 closed the set against.
  *
- * **A template with no slot gets it appended, rather than losing it.** That is
+ * **A template with no slot gets it appended, rather than losing it.** That was
  * the one placeholder this is true of, and deliberately: a project writing its
  * own prompt can leave `{{title}}` out and mean it, but an attempt whose
  * history silently did not reach the agent is a run that costs the same and
  * knows nothing — a control the recipe claims and the code does not have, which
  * is `#58`'s shape and the thing this feature must not reintroduce.
+ *
+ * **`{{design}}` is the second, since `#265`, for exactly that reason.** `design`
+ * is a step a recipe can declare an `agent:` at now, and what that agent returns
+ * is the one thing `implement` gets from it (0058 §3). Dropped, it would be an
+ * agent run bought by a line in the recipe whose answer nothing read — the same
+ * silence as `#58`'s with the money spent before it. So it goes in the slot where
+ * a template has one and is appended where it does not.
+ *
+ * **Empty is the ordinary case and adds nothing.** No recipe declares a `design:`
+ * today and none has to — `defaultsAt` has no row for the step — so such a pass
+ * renders byte-identically to what it rendered before this existed, which is the
+ * property `prompt.test.ts` asserts about attempt 1 and is why the parameter
+ * defaults to `""`.
+ *
+ * **Two callers pass nothing and are right to.** The board previews the *next*
+ * attempt's prompt (`apps/board/src/lib/prompt.ts`), and the design does not exist
+ * until that attempt runs `design` — a preview that invented one would be showing a
+ * document nobody wrote. And `fixBrief` is a different prompt on purpose (0039 §2):
+ * it opens *you are not given the implementer's reasoning*, and a design is another
+ * agent's reasoning, so the round bought to answer a refusal is held to the
+ * criterion and the code in front of it.
  */
 export function renderPrompt(
   template: string,
   ticket: { number: number; title: string; body: string },
   failure = "",
+  design = "",
 ): string {
+  const drafted = design.trim() === "" ? "" : designBrief(design);
   const filled = template
     .replaceAll("{{issue}}", String(ticket.number))
     .replaceAll("{{title}}", ticket.title)
     .replaceAll("{{body}}", ticket.body)
+    .replaceAll("{{design}}", drafted)
     .replaceAll("{{failure}}", failure);
-  if (failure === "" || template.includes("{{failure}}")) return filled;
-  return `${filled}\n\n${failure}\n`;
+  // The design first and the history second: the design is about the change and
+  // the history is about the attempts at it. `join` drops whichever said nothing,
+  // so a template that carries a slot appends nothing for it — which keeps the
+  // rule above one rule rather than two.
+  const appended = join([
+    drafted !== "" && !template.includes("{{design}}") ? drafted : "",
+    failure !== "" && !template.includes("{{failure}}") ? failure : "",
+  ]);
+  if (appended === "") return filled;
+  return `${filled}\n\n${appended}\n`;
+}
+
+/**
+ * **The document `design` produced, under a heading that says what it is not**
+ * (`#265`).
+ *
+ * A heading rather than the bare text, because the agent reading this already has
+ * the ticket and has to be told which is which: a design pasted unlabelled reads
+ * as more ticket, and the two can disagree by construction — the ticket says what
+ * is wanted and the design says how, so where they conflict the ticket is the one
+ * that was asked for.
+ *
+ * Not in a fence. The document is prose written for this reader by another agent,
+ * and a fence would say *this is data* about the one block that is an argument.
+ */
+function designBrief(design: string): string {
+  return [
+    "## The design, written for this run before any code",
+    "",
+    "An agent was asked for the shape of this change before you started, and this is",
+    "what it answered. It had the ticket and this worktree and nothing else — no more",
+    "than you have — so it is where to start rather than an instruction: where it",
+    "disagrees with the ticket, the ticket is what was asked for. Say so in your final",
+    "message if you departed from it, and why.",
+    "",
+    design.trim(),
+  ].join("\n");
 }

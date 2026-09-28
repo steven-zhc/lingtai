@@ -20,6 +20,7 @@
  * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
+import type { Runtime } from "@lingtai/agent";
 import type { Envelope, ToAppend } from "@lingtai/domain";
 import { STEPS } from "@lingtai/domain";
 import { Effect } from "effect";
@@ -771,20 +772,42 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * because it is the only evidence in `did` that a *runtime* was dispatched rather
    * than a cell drawn on the board (0016 §4, and `#61`).
    *
-   * **And the document is on the verdict.** `evidence` is what a person reads off
-   * the card; the string `implement` is briefed with rides on the ending, which is
-   * `pass-steps.ts`'s `designOn`. The fake runtime answers `done` to every
-   * dispatch, so that is the document here.
+   * **And the document is on the verdict *and* in the implementer's prompt.**
+   * `evidence` is what a person reads off the card; the string the next agent works
+   * from travels on the step's ending (`pass-steps.ts`'s `designOn`) and into
+   * `renderPrompt`. The second half is the one that had nothing asserting it and
+   * nothing doing it: `Brief.design` existed from the day the brief did and the
+   * dispatch never read it, which is an agent run a recipe pays for and no reader
+   * sees — `#61`'s silence with the money spent before it.
    */
-  it("drafts at `design` when the recipe declares one, and records what it wrote", async () => {
+  it("drafts at `design` when the recipe declares one, and hands it to the implementer", async () => {
     const store = memoryStore();
     const did: string[] = [];
+    /** Every prompt dispatched, so the implementer's can be read back. */
+    const prompts: { runId: string; prompt: string }[] = [];
+    const drafting: Runtime = {
+      ...runtime,
+      run: async (request) => {
+        prompts.push({ runId: request.runId, prompt: request.prompt });
+        return {
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1234,
+          costUsd: 0.42,
+          failure: null,
+          // The document at `design`, and the implementer's decline message
+          // everywhere else — one runtime, as `runOnce` has (`one-pass.ts`).
+          text: "Put it in `packages/recipe`, beside `whyNoKindAt`.",
+          sessionId: "sess-1",
+        };
+      },
+    };
 
     const result = await once(
       {
         project,
         client: fakeGitHub([], DRAFTED),
-        runtime,
+        runtime: drafting,
         issue: 7,
         hookBinary: "/tmp/fake/lingtai-hook",
         prompt: "fix {{issue}}",
@@ -805,7 +828,21 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     );
     expect(passed?.data).toMatchObject({ step: "design", action: "draft" });
     // The document, and a person's sentence about what it cost beside it.
-    expect((passed?.data as { evidence: string }).evidence).toContain("done");
+    expect((passed?.data as { evidence: string }).evidence).toContain("beside `whyNoKindAt`");
+
+    /**
+     * **And the implementer was handed it**, which is the half nothing did before.
+     *
+     * Told apart by the run id, as the runtime above is: the drafting dispatch runs
+     * under `<runId>:design:<name>` so its session cannot be the implementer's, so
+     * the run's own id is the implementing one.
+     */
+    const implementing = prompts.find((each) => each.runId === result.runId);
+    expect(implementing, `no dispatch under ${result.runId}: ${JSON.stringify(prompts)}`).toBeDefined();
+    expect(implementing!.prompt).toContain("## The design, written for this run before any code");
+    expect(implementing!.prompt).toContain("beside `whyNoKindAt`");
+    // The ticket is still what was asked for, which is what the block says it is.
+    expect(implementing!.prompt).toContain("the ticket is what was asked for");
     // A runtime was dispatched, under an id of its own so the session cannot be
     // the implementer's (`createDraftAction`) — and the run log says so under the
     // pipeline's own `<step>:<action>` tag.
