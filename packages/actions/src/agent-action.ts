@@ -53,7 +53,7 @@
  * `recheckBlock`.
  */
 import type { Runtime } from "@lingtai/agent";
-import { SEVERITIES, type Severity } from "@lingtai/domain";
+import { REFUSED_ABOUT, SEVERITIES, type RefusedAbout, type Severity } from "@lingtai/domain";
 import type { Action, ActionContext, ActionFinding, ActionResult } from "./action.ts";
 
 export interface AgentActionSpec {
@@ -135,7 +135,7 @@ Look at these first. They are where the defects have actually been.
 const CONTRACT = `
 Report as a single JSON object, and nothing else after it:
 
-{"findings":[{"file":"src/x.ts","line":42,"severity":"blocker",
+{"about":"lines","findings":[{"file":"src/x.ts","line":42,"severity":"blocker",
   "claim":"one sentence, what is wrong",
   "failureScenario":"concrete inputs or interleaving, then the wrong outcome"}]}
 
@@ -143,6 +143,12 @@ Rules:
 - **No failure scenario, no finding.** If you cannot write the concrete sequence
   that produces a wrong outcome, you do not have a finding, you have an opinion.
   Leave it out.
+- **Say what a refusal is about.** Where your findings stop the change, add
+  \`"about"\` beside them: \`"lines"\` where this is the right change and part of
+  it is wrong, \`"approach"\` where no edit to these lines would fix it because
+  the shape is wrong and it should be written again. The example above shows
+  where the key goes and is not the usual answer. Omit the key when you
+  cannot say which — *did not say* is a real answer here and a guess is not.
 - \`line\` may be null if the defect is the absence of something.
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
@@ -276,7 +282,20 @@ ${clipped}
  * in. A truncated answer still parses at no position and is still refused: that
  * difference is the only thing the refusal below is for.
  */
-export function parseFindings(text: string | null): { findings: ActionFinding[]; parsed: boolean } {
+export function parseFindings(text: string | null): {
+  findings: ActionFinding[];
+  parsed: boolean;
+  /**
+   * **What the reviewer said its refusal was about**, where it said one of the
+   * two words, and absent otherwise (`#293`).
+   *
+   * Spread rather than set, so *it did not say* is an absent key here and stays
+   * one all the way to `StepFailed`: the whole value of the field is the count
+   * it makes possible, and a missing answer filled in with a default would be
+   * counted as the default.
+   */
+  about?: RefusedAbout;
+} {
   if (!text) return { findings: [], parsed: false };
 
   const candidates: string[] = [];
@@ -316,7 +335,14 @@ export function parseFindings(text: string | null): { findings: ActionFinding[];
             SEVERITIES[0],
       });
     }
-    return { findings, parsed: true };
+    // The reviewer's own classification, taken only where it is one of the two
+    // words and never repaired into one: a `severity` off the ladder is raised to
+    // the worst because the rubric is a thing the reviewer was told, and there is
+    // no equivalent safe direction here — `lines` and `approach` are opposite
+    // answers, and inventing either would put a classification at this seam that
+    // no reviewer made (0031 §1, `#223`'s own rule).
+    const about = (value as { about?: unknown })?.about;
+    return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
   }
 
   return { findings: [], parsed: false };
@@ -348,6 +374,11 @@ export function verdictFor(findings: readonly ActionFinding[]): "passed" | "fail
 /** Whether the reviewer's word is on the ladder at all. `SEVERITIES` is the ladder. */
 function isSeverity(value: unknown): value is Severity {
   return (SEVERITIES as readonly unknown[]).includes(value);
+}
+
+/** Whether the reviewer said one of the two words. `REFUSED_ABOUT` is the pair. */
+function isRefusedAbout(value: unknown): value is RefusedAbout {
+  return (REFUSED_ABOUT as readonly unknown[]).includes(value);
 }
 
 function summarise(findings: readonly ActionFinding[]): string {
@@ -486,7 +517,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         };
       }
 
-      const { findings, parsed } = parseFindings(outcome.text);
+      const { findings, parsed, about } = parseFindings(outcome.text);
       if (!parsed) {
         /**
          * A reviewer whose answer cannot be read has not reviewed anything. The
@@ -519,6 +550,21 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         verdict,
         evidence: `${summarise(findings)}\n\n(${outcome.turns} turns${cost})`,
         findings,
+        /**
+         * **The reviewer's own classification of its refusal, and only of a
+         * refusal** (`#293`).
+         *
+         * On the `failed` verdict because that is the only thing there is to
+         * classify: a review that passed refused nothing, so an `about` it
+         * volunteered anyway is about a change that is going ahead, and
+         * `StepPassed` has no field for it. `#223`'s question is *of the reviews
+         * that stopped a change, how many said the approach was wrong*, and a
+         * denominator with passes in it does not answer it.
+         *
+         * Spread, so *the reviewer did not say* stays an absent key — the rule
+         * this whole field is under.
+         */
+        ...(verdict === "failed" && about !== undefined ? { about } : {}),
       };
     },
   };

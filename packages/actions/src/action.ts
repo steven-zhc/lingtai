@@ -35,7 +35,7 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from "@lingtai/agent/run-log";
-import type { Step, PayloadOf, Severity } from "@lingtai/domain";
+import type { Step, PayloadOf, RefusedAbout, Severity } from "@lingtai/domain";
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -147,6 +147,30 @@ export interface ActionResult {
    * never whether a round is spent.
    */
   unreadable?: true;
+  /**
+   * **Which of the two kinds of refusal this is, in the action's own word** —
+   * `lines` or `approach` (`REFUSED_ABOUT`), and absent on every result that did
+   * not classify one (`#293`, and `#223` is what it is for).
+   *
+   * One kind produces it, the `agent` kind, on a refusal: the reviewer answers
+   * `about` beside its findings, `parseFindings` takes it only when it is one of
+   * the two words, and this is where it arrives. It is a sibling of `unreadable`
+   * in every way that matters — the adapter's own classification of its refusal,
+   * a token rather than the prose, never re-derived by a caller from `evidence`
+   * or from the findings' text (0031 §1).
+   *
+   * **It buys nothing and routes nothing, on purpose.** `#223` wants `lines` to
+   * buy a fix round and `approach` to buy a restart, and the number that decides
+   * whether that branch is worth having does not exist: five review refusals on
+   * 2026-09-27/28 all looked like `lines` by eye. So the classification is
+   * recorded and no pass reads it, and the branch is designed against a rate
+   * rather than against a guess.
+   *
+   * **Absent is a third state and must stay one.** A reviewer that has not been
+   * updated says nothing, and a seam that read that as `lines` would make the
+   * count this field exists for a count of its own default.
+   */
+  about?: RefusedAbout;
   /**
    * **The document a `design:` agent wrote** — absent on every kind that judged
    * something rather than producing one (0065 §2, `#265`).
@@ -355,6 +379,8 @@ export interface PipelineResult {
     because?: string;
     /** That its answer could not be read, where it had one. `ActionResult.unreadable`. */
     unreadable?: true;
+    /** Which kind of refusal it said this was, where it said. `ActionResult.about`. */
+    about?: RefusedAbout;
     /** The document it wrote, where it wrote one. `ActionResult.document`. */
     document?: string;
   }[];
@@ -465,6 +491,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // explicit `undefined` would read the same to a program and differently to
       // a person (`#279`).
       ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+      // Spread for `head`'s reason a third time, and here *absent* is the whole
+      // value: a reviewer that did not classify its refusal and one that said
+      // `lines` must never fold into the same row, because the only thing this
+      // field is for is being counted (`#293`).
+      ...(result.about === undefined ? {} : { about: result.about }),
       // Spread for `head`'s reason once more, and here the absence is the one
       // that matters: *nothing at this step drafted* and *the draft was empty*
       // are different facts, and `designFrom` in `pass.ts` distinguishes them by
@@ -555,6 +586,12 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         // The one refusal that is not about the diff's contents but about whether
         // the answer could be read at all (`#279`). Absent where it could.
         ...(result.unreadable === undefined ? {} : { unreadable: result.unreadable }),
+        // And, where the action said so, which kind of refusal it is (`#293`).
+        // On the event rather than only on `results` because the question it
+        // answers is asked of a fortnight of passes, and `results` is memory:
+        // a run log would do for one pass and is deleted when the item lands
+        // (0034), so the rate has to be a fold over `events` or it is a guess.
+        ...(result.about === undefined ? {} : { about: result.about }),
       },
     });
     return {

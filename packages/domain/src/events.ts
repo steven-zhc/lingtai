@@ -815,6 +815,31 @@ export const StepPassed = z.object({
   findings: z.array(Finding),
 });
 
+/**
+ * **What a refusal is about: these lines, or this approach** (`#223`, `#293`).
+ *
+ * `lines` is *the change is the right change and part of it is wrong* — a
+ * missing branch, a docblock that misdescribes what was built, an off-by-one.
+ * `approach` is *no edit to these lines fixes this*: the shape is wrong, and the
+ * round that follows should start again rather than patch.
+ *
+ * **Nothing reads it, and that is the whole of `#293`.** `#223` wants the two
+ * spent on differently — a fix round for the first, a restart for the second —
+ * and that arithmetic needs a rate nobody has. Five review refusals on
+ * 2026-09-27/28 looked like `lines` by eye, and n=5 by eye is not a number this
+ * repository designs from. So the reviewer says which, the log holds it, no pass
+ * behaves differently, and the branch is bought when the rate is a query.
+ *
+ * **Absent is a third value, and today it is the common one.** Every reviewer
+ * written before this — and every answer that omits the key or spells it
+ * something else — classifies nothing, and a default would be a seam inventing
+ * the classification rather than the adapter stating it (0031 §1, and `#223`'s
+ * own rule). A count whose missing rows were filled in with a default is a count
+ * of the default.
+ */
+export const REFUSED_ABOUT = ["lines", "approach"] as const;
+export type RefusedAbout = (typeof REFUSED_ABOUT)[number];
+
 export const StepFailed = z.object({
   ...stepBase,
   evidence: z.string(),
@@ -841,6 +866,41 @@ export const StepFailed = z.object({
    * router reads (0031 §1's rule, at one more seam).
    */
   unreadable: z.literal(true).optional(),
+  /**
+   * **Which of the two kinds of refusal the action said this was** — one of
+   * `REFUSED_ABOUT`, and absent wherever it did not say (`#293`).
+   *
+   * Optional for `unreadable`'s reason and one of its own: this field exists to
+   * be counted, so *the reviewer did not classify* has to be a row that answers
+   * neither rather than a row that answers the default, or the reading is a
+   * count of the schema.
+   *
+   * **The reading, written down so the next one is the same one** (`#293`'s
+   * fourth `Done when`) — one query, no projection, no scrape of run logs, which
+   * are deleted when an item lands (0034):
+   *
+   *     SELECT coalesce(data->>'about', '(not said)') AS about,
+   *            count(*) AS refusals
+   *       FROM events
+   *      WHERE type = 'StepFailed'
+   *        AND data->>'step' = 'review'
+   *        AND at > now() - interval '14 days'
+   *      GROUP BY 1
+   *      ORDER BY 2 DESC;
+   *
+   * On SQLite the two extractions are `json_extract(data, '$.about')` and
+   * `json_extract(data, '$.step')`, and the window is a `datetime('now','-14
+   * days')` — the same fold either way (0055 §3).
+   *
+   * `(not said)` is the row `#223` has to read before it designs anything: a
+   * rate whose denominator is mostly *the reviewer did not answer* is not a rate,
+   * it is a prompt that is not landing.
+   *
+   * It is not `because`. That is the lane's word for why it said no and
+   * `directionOf` routes on it; this routes nothing at all, by design, until
+   * `#223` has the rate to decide with.
+   */
+  about: z.enum(REFUSED_ABOUT).optional(),
 });
 
 /**

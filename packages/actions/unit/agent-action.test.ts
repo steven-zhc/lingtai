@@ -8,7 +8,7 @@
 import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
 import { sessionIdFor } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
-import { SEVERITIES, parsePayload } from "@lingtai/domain";
+import { REFUSED_ABOUT, SEVERITIES, parsePayload } from "@lingtai/domain";
 import {
   buildReviewPrompt,
   createAgentAction,
@@ -128,6 +128,22 @@ describe("the review prompt", () => {
 
     expect(prompt).toContain("[diff truncated at");
     expect(prompt.length).toBeLessThan(huge.length);
+  });
+
+  /**
+   * **The one line `#293` adds to the contract**, and it is in the prompt or the
+   * field is one nothing ever fills. The two words are `REFUSED_ABOUT`'s, read
+   * from the array rather than spelled again, so a third value added there is a
+   * red test here and not a reviewer answering a word the parser drops.
+   */
+  it("asks a refusing reviewer which kind of refusal it is, in the two words", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+
+    expect(prompt).toMatch(/say what a refusal is about/i);
+    for (const word of REFUSED_ABOUT) expect(prompt).toContain(`"${word}"`);
+    // And that not answering is a real answer — a reviewer told to pick one
+    // anyway is a reviewer inventing the number this field exists to measure.
+    expect(prompt).toMatch(/omit the key when you\s+cannot say which/i);
   });
 
   it("says nothing about a re-review when there is nothing to re-check", () => {
@@ -438,6 +454,50 @@ describe("reading the reviewer's answer", () => {
     // brace and it parses, which is the thing a tidy-up would quietly do.
     expect(parseFindings(`${REVIEW_THAT_DID_NOT_PARSE}}`)).toMatchObject({ parsed: true });
   });
+
+  /**
+   * **The reviewer's own classification of its refusal, taken as it was said**
+   * (`#293`, for `#223`).
+   *
+   * Both words, off `REFUSED_ABOUT` rather than spelled here, for the reason the
+   * severity walk above reads `SEVERITIES`.
+   */
+  it("takes the two words the reviewer may classify its refusal with", () => {
+    for (const about of REFUSED_ABOUT) {
+      expect(parseFindings(JSON.stringify({ about, findings: [finding()] }))).toMatchObject({
+        parsed: true,
+        about,
+      });
+    }
+  });
+
+  /**
+   * **Absent is the third state, and nothing here invents a value for it.**
+   *
+   * A `severity` off the ladder is raised to the worst, because the rubric is
+   * something the reviewer was told and under-rating it is the failure 001
+   * measured. There is no safe direction here: `lines` and `approach` are
+   * opposite answers, and a repaired one would be counted as a reviewer's when
+   * the whole point of the field is the count (0031 §1, `#223`'s own rule).
+   */
+  it("leaves the classification absent where the reviewer did not give one of the two", () => {
+    const answers = [
+      JSON.stringify({ findings: [finding()] }),
+      JSON.stringify({ about: "the lines", findings: [finding()] }),
+      JSON.stringify({ about: "Lines", findings: [finding()] }),
+      JSON.stringify({ about: null, findings: [finding()] }),
+      JSON.stringify({ about: ["lines"], findings: [finding()] }),
+    ];
+
+    for (const answer of answers) {
+      const read = parseFindings(answer);
+      expect(read.parsed).toBe(true);
+      expect(read.findings).toHaveLength(1);
+      // Absent, not `undefined` under a key: the spread is what carries *did not
+      // say* through to the event, and a present key would survive a schema.
+      expect(read).not.toHaveProperty("about");
+    }
+  });
 });
 
 describe("the verdict", () => {
@@ -659,6 +719,98 @@ describe("the action", () => {
     const refused = (await eventsFor(JSON.stringify({ findings: [finding()] }))).at(-1);
     if (refused?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
     expect(refused.data).not.toHaveProperty("unreadable");
+  });
+
+  /**
+   * **What `#293` adds and the whole of what it adds**: a refused review says
+   * which kind of refusal it is, the word rides to the log, and nothing reads it.
+   *
+   * On the event rather than only on the result because the question it exists
+   * for — *how often is a refusal about the approach* — is asked of a fortnight
+   * of passes, and the only store that keeps a fortnight is `events`: a run log
+   * is deleted when the item lands (0034), and `results` is memory.
+   */
+  it("carries the reviewer's classification of its refusal onto the log", async () => {
+    for (const about of REFUSED_ABOUT) {
+      const events: ActionEvent[] = [];
+      const text = JSON.stringify({ about, findings: [finding()] });
+      const result = await runActionPipeline({
+        step: "review",
+        actions: [actionWith(outcome({ text }))],
+        context,
+        emit: (e) => void events.push(e),
+      });
+
+      expect(result.results[0]).toMatchObject({ verdict: "failed", about });
+
+      const failed = events.at(-1);
+      if (failed?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
+      expect(failed.data).toHaveProperty("about", about);
+      // The schema's and not just the object's: the query is a fold over stored
+      // rows, so a row written with this has to validate as one.
+      expect(parsePayload("StepFailed", failed.data)).toEqual(failed.data);
+    }
+  });
+
+  /**
+   * **Absent is what every reviewer that has not been updated produces**, and it
+   * has to stay a third thing all the way to the row (`#293`, `#223`'s rule and
+   * 0031 §1's).
+   *
+   * Three ways to say nothing — no key, a word that is neither, and an answer
+   * nobody could read at all — and none of them may arrive as `lines`. A count
+   * whose unclassified rows were filled in with a default is a count of the
+   * default, and this field exists only to be counted.
+   */
+  it("says nothing about the kind of refusal where the reviewer said nothing", async () => {
+    const saidNothing = [
+      JSON.stringify({ findings: [finding()] }),
+      JSON.stringify({ about: "the approach", findings: [finding()] }),
+      REVIEW_THAT_DID_NOT_PARSE,
+    ];
+
+    for (const text of saidNothing) {
+      const events: ActionEvent[] = [];
+      const result = await runActionPipeline({
+        step: "review",
+        actions: [actionWith(outcome({ text }))],
+        context,
+        emit: (e) => void events.push(e),
+      });
+
+      expect(result.results[0]?.verdict).toBe("failed");
+      expect(result.results[0]).not.toHaveProperty("about");
+
+      const failed = events.at(-1);
+      if (failed?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
+      expect(failed.data).not.toHaveProperty("about");
+      expect(parsePayload("StepFailed", failed.data)).toEqual(failed.data);
+    }
+  });
+
+  /**
+   * **A review that passed refused nothing, so it classified nothing.**
+   *
+   * `#223`'s question is *of the reviews that stopped a change, how many said the
+   * approach was wrong* — a denominator with passes in it answers a different
+   * question — and `StepPassed` has no field to carry one anyway. A reviewer that
+   * volunteers `about` beside an empty list, or beside minors that do not stop
+   * anything, is answering about a change that is going ahead.
+   */
+  it("keeps the classification off a review that did not refuse", async () => {
+    const clean = await actionWith(outcome({ text: '{"about":"approach","findings":[]}' })).run(
+      context,
+    );
+    expect(clean.verdict).toBe("passed");
+    expect(clean).not.toHaveProperty("about");
+
+    const minorOnly = await actionWith(
+      outcome({
+        text: JSON.stringify({ about: "lines", findings: [finding({ severity: "minor" })] }),
+      }),
+    ).run(context);
+    expect(minorOnly.verdict).toBe("passed");
+    expect(minorOnly).not.toHaveProperty("about");
   });
 
   /**

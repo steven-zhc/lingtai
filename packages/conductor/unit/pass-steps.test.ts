@@ -1730,6 +1730,90 @@ describe("proposed is the only step that routes, and one judge answers each when
   });
 
   /**
+   * **The whole of `#293`: the reviewer says which kind of refusal it is, and no
+   * pass behaves differently.**
+   *
+   * `#223` wants `lines` to buy a fix round and `approach` to buy a restart, and
+   * the number that decides whether that branch is worth having does not exist —
+   * five review refusals on 2026-09-27/28 all looked like `lines` by eye, which
+   * is not a standard this repository designs from. So the classification is
+   * recorded and nothing reads it, and *nothing reads it* is a claim that has to
+   * be asserted rather than assumed: `decideFix`, `BUILT_IN_FOR` and the judge's
+   * brief are untouched, and this is what would go red if one of them started
+   * reading the word.
+   *
+   * Four answers over one refusal — neither word, each word, and a word that is
+   * neither — and the four passes compared whole: the same walk, the same routes,
+   * the same rounds dispatched, the same question put to the judge, the same
+   * ending. The classification is asserted separately, on the visit, because a
+   * comparison of four identical passes would also pass if the field were being
+   * dropped on the floor.
+   *
+   * Through `coldReviewerSaying` and not a canned result, for `#279`'s reason: the
+   * word arrives through the real parser or the test asserts a field it set itself.
+   */
+  it("records what a refusal was about and routes, spends and ends identically either way", async () => {
+    const steps = declaring("findings", "the lines, until the rounds are spent");
+    const said: string[] = [];
+    const passes: unknown[] = [];
+
+    for (const [answered, recorded] of [
+      [null, undefined],
+      ["lines", "lines"],
+      ["approach", "approach"],
+      // Neither word is not a word: a reviewer that has not been updated, and the
+      // third state that must never read as `lines`.
+      ["the approach", undefined],
+    ] as const) {
+      const answer = JSON.stringify(
+        answered === null ? { findings: [BLOCKER] } : { about: answered, findings: [BLOCKER] },
+      );
+      const { result, asked } = await pass({
+        steps,
+        answers: { judge: theRecipesJudge(steps) },
+        actions: {
+          build: [canned("typecheck", PASSED)],
+          review: [coldReviewerSaying(answer)],
+        },
+        ceilings: { rounds: 1, restartsLeft: 0 },
+      });
+
+      // Both reviews — the one that bought the round and the one after it — and
+      // the reviewer's own word, off the visit the pass carries.
+      expect(
+        result.steps
+          .filter((visit) => visit.step === "review")
+          .flatMap((visit) => visit.results.map((each) => each.about)),
+      ).toEqual([recorded, recorded]);
+
+      said.push(String(answered));
+      passes.push({
+        walk: walk(result),
+        routes: result.routes,
+        rested: result.rested,
+        outcome: outcomeOf(result),
+        dispatched: asked.dispatch.length,
+        judged: asked.judge.map((on) => on.when),
+      });
+    }
+
+    // The pass that is compared is a real one: a round bought on the findings, a
+    // second refusal with nothing left to spend, and a person at the end of it.
+    expect(passes[0]).toMatchObject({
+      rested: "waiting",
+      dispatched: 2,
+      judged: ["findings", "findings"],
+    });
+    expect((passes[0] as { routes: unknown[] }).routes[0]).toMatchObject({
+      from: "proposed",
+      to: "implement",
+    });
+    for (const [index, each] of passes.slice(1).entries()) {
+      expect(each, `the pass differed when the reviewer said ${said[index + 1]}`).toEqual(passes[0]);
+    }
+  });
+
+  /**
    * The mechanical answer is written in this file's vocabulary because
    * `judge.ts`'s `Destination` has three values and cannot say `build`; this is
    * what makes a divergence between the two a failing test rather than a
