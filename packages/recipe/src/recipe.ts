@@ -1578,13 +1578,16 @@ function nameOf(action: unknown): string {
  * halted at the first bad field would make a person fix one thing per attempt,
  * which is `#222`'s lesson about the build step applied to configuration.
  *
- * **Then three questions about the list rather than about one action**, asked
+ * **Then four questions about the list rather than about one action**, asked
  * last because each is only answerable once the entries either side have been
- * accepted: *does this step cut twice* (`#268`), *does it take twice* (`#269`) and
- * *is anything written after the lane* (`#270`). They are the only rules here
- * about an action's neighbours, and each exists because the plugin it is about
- * does something the rest do not — two of them *make* what the pass is about, the
- * worktree and the work item, and the third changes the base branch.
+ * accepted: *does this step cut twice* (`#268`), *does it take twice* (`#269`),
+ * *is anything written after the lane* and *is a step written with no lane at
+ * all* (both `#270`). They are the only rules here about an action's
+ * neighbours, and each exists because the plugin it is about does something the
+ * rest do not — two of them *make* what the pass is about, the worktree and the
+ * work item, and the last two are the one action that changes the base branch,
+ * asked from both sides: nothing may follow the lane, and a written step that
+ * could land may not omit it.
  *
  * `z.unknown()` rather than the union, so the dispatch is the key's and not
  * zod's: a union tries six schemas and reports six failures about one action.

@@ -175,8 +175,8 @@ and anything written after one is refused when the recipe resolves
 a step that is written at all and that may land carries a `merge:`,
 and a list of checks with no lane is refused when the recipe resolves
 
-`merge: []` is neither of those. It is a step that runs nothing (§6),
-and it resolves
+`merge: []` is neither of those, so it resolves — and until §6 is
+built it is still the omitted key: the default lane runs and it merges
 ```
 
 **Nothing else here needed an ordering rule, and this one is not about order.** §2
@@ -209,18 +209,38 @@ merge:
 
 That resolved, ran, and **passed having landed nothing**. §2 again: every declared
 action at a step runs and the step's ending is the pipeline's, so a list of green
-checks with no lane reports `merge` passed — the pass routes it as merged, `end`
-releases the claim, and the next pass buys a fresh agent for a diff still sitting
-on the branch. Nothing red, nothing held, a bill every time. **That is why the
-second clause is about money and the first is not**: the first leaves a diff on
-`main` and a ticket blocked, which somebody eventually sees; this one leaves the
-board saying merged while the same ticket is bought again, which nobody does.
+checks with no lane reports `merge` passed, nothing stops the spine, and
+`outcomeOf` reads `landed`.
+
+**What does not follow is a landing, and it does not follow anywhere.** The append
+is guarded on the lane's own commit — `const merged = landedAt(); if (outcome ===
+"landed" && merged !== null)` in `conduct.ts` — and no lane ran, so `landedAt()` is
+null: no `WorkItemLanded`, no `endPlan`, `end`'s `when: landed` effects never fire,
+the issue is never closed, and the pass falls through to the failed tail, which
+releases the ticket under *the pass ended without landing and without asking
+anybody*. The next pass takes the same ticket and buys a fresh agent for a diff
+still sitting on the branch. `#270`'s own comment beside `defaultsAt` says it of
+any recipe that replaces the lane: *`landedAt()` stays null and the pass falls
+through to the requeued or failed ending rather than reporting a landing it did not
+make.*
+
+**That is why the second clause is about money and the first is not.** The first
+leaves a diff on `main` and a ticket blocked, which somebody eventually sees. This
+one runs ten green steps, records a failure whose reason names no step, puts the
+ticket back in the queue, and buys the same diff again next pass — nothing red,
+nothing held, a bill every time.
 
 **And `merge: []` is a different statement, which is why the rule cannot simply
-require a non-empty list.** §6 gives the empty list its own meaning — a step that
-runs nothing — and it is what this repository runs on. So the refusal asks *is
-this step written, and does nothing in it land*, and an empty list is not written:
-it resolves, as it always did.
+require a non-empty list.** §6 *decides* the empty list will mean a step that runs
+nothing, and that is the part of §6 still unbuilt: `StepMap` resolves `[]` and an
+omitted key to the same value, so at the seam `merge: []` takes the default and
+merges — this repository's recipe is the `merge: []` §6's migration table says must
+be re-decided, and while it stands it lands the branch
+(`conduct-a-whole-pass.test.ts`, *lands onto main with `merge: []`*). Either
+reading refuses a rule that demanded a non-empty list: today it would refuse the
+recipe this machine runs on, and after §6 it would refuse the deliberate
+*land nothing*. So the refusal asks *is this step written, and does nothing in it
+land*, and an empty list is not written: it resolves, as it always did.
 
 **So the rule is at resolve and not at the seam.** `whyNoKindAt` answers *may this
 step run this kind*, and these are questions about an action's neighbours — the
