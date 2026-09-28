@@ -12,6 +12,24 @@
 > — `backlog:` serves no step and its *Where it may be declared* is the most
 > useful paragraph on its page.
 
+> **And the lengths below are a budget, not a suggestion.** The first four pages
+> written from this file came out at 268, 288, 318 and 396 lines against this
+> file's 104, and every one of them overran in the same two places: *Where it may
+> be declared* and *What it refuses*, each about seven times its allowance. A
+> reference page is read to answer one question — *what do I write, and what does
+> it take* — and a reader who has to skim four screens to find a two-line table
+> has been handed an essay instead of a reference.
+>
+> So: **no page over 120 lines**, and each section within a line or two of the
+> guidance under its own heading. The rule for cutting is not *say less*, it is
+> **say it once**: the same fact in the lede, in *What it does* and again in
+> *What it refuses* is one fact and two thirds of a page. Keep the sentence where
+> it is load-bearing, and delete the other two.
+>
+> What is never cut: the real examples, the refusal quoted in the schema's own
+> words, and the trap a reader would otherwise walk into. Prose about *why the
+> design is good* is what goes — that lives in the ADR the page links to.
+
 > One paragraph, before any heading: what this plugin does, **and the failure it
 > prevents rather than the mechanism it uses**. The mechanism is in the code and
 > the code moves; the failure is why the key exists. This paragraph is also the
