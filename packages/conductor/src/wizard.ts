@@ -111,13 +111,21 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * null when somebody does.
  *
  * **The one place the wizard argues.** With nothing at any of the
- * `CHECKING_STEPS` and `merge: []` the whole chain is *an agent writes code,
- * nothing checks it, it lands in the base branch, nobody read it*, and many
- * repositories have no tests. The sentence is said on the last screen, because
- * that is where somebody is deciding.
+ * `CHECKING_STEPS` and nothing but the lane at `merge:` the whole chain is *an
+ * agent writes code, nothing checks it, it lands in the base branch, nobody read
+ * it*, and many repositories have no tests. The sentence is said on the last
+ * screen, because that is where somebody is deciding.
+ *
+ * **It asked whether `merge:` was empty until `#270`**, and that reading died with
+ * the ticket that opened the key: a `merge:` now carries the lane, so *empty*
+ * stopped meaning *nothing reads it* and started meaning *nothing merges*. A
+ * recipe with the printed block pasted into it and no test in the repository
+ * would have silenced the one sentence this function exists to say. What counts is
+ * an entry at `merge:` that is not the lane — a command before it, or an `agent:`
+ * re-reading a moved base.
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
-  if (recipe.steps.merge.length > 0) return null;
+  if (recipe.steps.merge.some((action) => !("merge" in action))) return null;
   if (CHECKING_STEPS.some((step) => recipe.steps[step].length > 0)) return null;
   return nothingChecks(baseOf(recipe));
 }

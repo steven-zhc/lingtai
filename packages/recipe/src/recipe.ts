@@ -205,15 +205,45 @@ export const watchPlugin = definePlugin("watch", {
     watch: z.array(z.string()).min(1),
     then: z.enum(["request-approval", "fail"]).default("request-approval"),
   },
-  /** Not `prepared`: the globs would be matched against no file list. */
-  at: { proposed: notBuiltYet, merge: notBuiltYet },
+  /**
+   * Not `prepared`: the globs would be matched against no file list.
+   *
+   * **And not `merge` since `#270`**, for the reason `humanPlugin` loses it:
+   * `then: request-approval` is the default, so a watch is a way of reaching a
+   * person, and 0058 §3b's three ways out of `merge` end *anything else →
+   * `proposed`, and only `proposed` may send it to a person*. A glob over the
+   * diff's file list is a question about a change already built, which is the
+   * step `whyThatPair` sends every other misplaced `watch:` to.
+   */
+  at: { proposed: notBuiltYet },
 });
 
 /** Waits for a person. The string is the question they are asked. */
 export const humanPlugin = definePlugin("human", {
   fields: { human: z.string() },
-  /** Not `prepared`: a hold there is a release, so the question re-asks itself every pass. */
-  at: { proposed: notBuiltYet, merge: notBuiltYet },
+  /**
+   * Not `prepared`: a hold there is a release, so the question re-asks itself
+   * every pass.
+   *
+   * **And not `merge` since `#270`, which is a subtraction 0058 asked for and
+   * `mergePlugin`'s own key is what made urgent.** While the landing happened in
+   * `merge`'s *body*, after the whole pipeline, an approval declared here held it:
+   * that is `#58`'s fix and CLAUDE.md described it. Since the lane is an action in
+   * the same list, an approval written after it would be run after it — the
+   * pipeline merging the branch and then asking a person whether to, which is
+   * `#58` again with the order reversed. `ONLY_PROPOSED_ASKS_A_PERSON` is the
+   * refusal, and it is the rule rather than the workaround: 0058 §3b gives `merge`
+   * three ways out and **only `proposed` may send it to a person**, so the step
+   * where a proposed change is inspected is `proposed` — which is where that ADR's
+   * own open question already puts the `human:` approval and the `watch:`.
+   *
+   * The injected holds are untouched and are not this key's business:
+   * `alsoHeldAtMerge` in `conduct.ts` puts a `human:` at `merge` for a pending
+   * repair and for `--no-merge`, built by `createHumanAction` rather than read off
+   * a recipe. Those are the caller's, they compose ahead of the lane
+   * (`heldBeforeTheLane`), and `whyNoKindAt` never sees them.
+   */
+  at: { proposed: notBuiltYet },
 });
 
 /**
@@ -1027,6 +1057,41 @@ const ONLY_THE_LANE_LANDS =
   "and a second home for it would let what a pass lands disagree with what it was cut from";
 
 /**
+ * **Why a `human:` and a `watch:` are refused at `merge`** — the subtraction
+ * `#270` made, and the third sentence answered by the *pair* rather than by the
+ * step alone.
+ *
+ * `ONLY_PROPOSED_ROUTES` and `ONLY_THE_LANE_LANDS` are its siblings, and it exists
+ * for the same reason they do: without it these two cells fall through to
+ * `whyThatPair`'s last paragraph, which explains that a hold at **`prepared`**
+ * cannot be answered. That is true where it is written and false where it would
+ * then be printed, which is the exact failure opening `build` and `review` walked
+ * into and the reason `step-matrix.test.ts` pins whole sentences.
+ *
+ * The rule is 0058 §3b's, and it is about who a step may reach rather than about
+ * what it asks of an action: `merge` has three ways out, and the third is
+ * *anything else → `proposed`, **and only `proposed` may send it to a person***.
+ * So the step where a proposed change is inspected — the approval, the glob, the
+ * tamper check — is `proposed`, which is where that ADR's own open question puts
+ * all three.
+ *
+ * **And since `#270` the mechanical half of it bites.** The landing is an action in
+ * `merge`'s own list, so an approval declared after it would be asked after the
+ * branch was already on the base: `#58` with the order reversed, against a merge
+ * already made. Refusing the kind is what makes that unwritable rather than
+ * something a position rule has to catch.
+ */
+const ONLY_PROPOSED_ASKS_A_PERSON =
+  "`merge` may not reach a person, and that is the third of its three ways out (0058 §3b): a lane " +
+  "that refuses carries its reason to `proposed`, **and only `proposed` may send it to a person**. " +
+  "So the step where a proposed change is inspected — an approval, a glob over its files, the tamper " +
+  "check — is `proposed:`, and that is the step to write this at. Since `#270` the landing is itself " +
+  "an action in `merge`'s list (`mergePlugin.at.merge`), so a hold written here would be asked about a " +
+  "merge the same list had already made — `#58` with the order reversed. A run that must not merge " +
+  "unattended is held at `proposed:`, which is before the lane, or by `lingtai run --no-merge`, whose " +
+  "hold is the conductor's own and composes ahead of the lane rather than being declared in the file";
+
+/**
  * **What `proposed` will do with the one plugin of its three that decides
  * nothing about where the pass goes**, and the distinction is the whole of why
  * it is said here.
@@ -1234,6 +1299,11 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (kind === "judge") return ONLY_PROPOSED_ROUTES;
   if (kind === "merge") return ONLY_THE_LANE_LANDS;
+  // Before the step branches and not after them, for `judge:`'s reason (`#270`):
+  // what is wrong with a hold at `merge` is not what `merge` asks of an action but
+  // who it may reach, and the sentence below about `prepared` would otherwise be
+  // printed at a step where it is false.
+  if (step === "merge" && (kind === "human" || kind === "watch")) return ONLY_PROPOSED_ASKS_A_PERSON;
   if (kind === "close" || kind === "labels" || kind === "refs") {
     return "it is an effect rather than a verdict, and only the `end` step carries out effects";
   }
@@ -1338,6 +1408,13 @@ function nameOf(action: unknown): string {
  * halted at the first bad field would make a person fix one thing per attempt,
  * which is `#222`'s lesson about the build step applied to configuration.
  *
+ * **Then two questions about the list rather than about one action**, asked last
+ * because both are only answerable once the entries either side have been
+ * accepted: *does this step cut twice* (`#268`) and *is anything written after the
+ * lane* (`#270`). They are the only rules here about an action's neighbours, and
+ * both exist because the plugin they are about does something the rest do not —
+ * one makes what the pass works in, the other changes the base branch.
+ *
  * `z.unknown()` rather than the union, so the dispatch is the key's and not
  * zod's: a union tries six schemas and reports six failures about one action.
  */
@@ -1348,6 +1425,8 @@ function actionsAt(step: Step) {
       const resolved: StepAction[] = [];
       /** Where each accepted `worktree:` was written, for the refusal below. */
       const cuts: number[] = [];
+      /** Where an accepted `merge:` was written, if one has been — the refusal below. */
+      let landsAt: number | null = null;
       written.forEach((action, i) => {
         const named = pluginsNamed(action, PLUGINS);
         const plugin = pluginNaming(action, PLUGINS);
@@ -1372,7 +1451,45 @@ function actionsAt(step: Step) {
           }
           return;
         }
+        /**
+         * **The lane is the last action at its step, and anything written after
+         * it is refused** (0065 §8, `#270`).
+         *
+         * Asked in the loop rather than after it because the entries arrive in
+         * order, so *a lane has already been accepted* is the whole of the
+         * question — and it catches a second `merge:` by the same clause that
+         * catches a `run:`, since both are *something after the thing that
+         * lands*.
+         *
+         * The failure it removes is not a style one. Every declared action at a
+         * step runs (0065 §2) and the pass reads its ending off the pipeline, so
+         * a `run: pnpm smoke` written after the lane runs on a branch already on
+         * the base: the merge happened, the check fails, `endingOf` reports
+         * `merge` refused, no `WorkItemLanded` is appended, `end`'s `when:
+         * landed` effects never fire, and the item is blocked with its diff on
+         * `main` for a later pass to work again. A check that must gate the merge
+         * goes before the lane, which is where a reader would write it anyway.
+         */
+        if (landsAt !== null) {
+          ctx.addIssue({
+            code: "custom",
+            path: [i],
+            message: kindRefusedAt(
+              step,
+              kind,
+              nameOf(action),
+              `the "${step}" step lands the branch at entry ${landsAt}, and the lane is the last action ` +
+                "a step carries. This one is written after it, so it would run on a change already on the " +
+                "base branch — and a verdict it gave there would report the step refused while the merge " +
+                "stood, leaving the diff landed and the ticket blocked. Write it before the lane",
+              REFUSED_WHEN_IT_RESOLVED,
+            ),
+          });
+          return;
+        }
+
         if (kind === "worktree") cuts.push(i);
+        if (kind === "merge") landsAt = i;
         resolved.push(read.value as StepAction);
       });
       /**

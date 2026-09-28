@@ -32,21 +32,25 @@
  * once more with `refs:` (`#240`). **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Seventeen of the hundred and twenty cells run and **a hundred and three
+ * Fifteen of the hundred and twenty cells run and **a hundred and five
  * refuse**; thirty-six of those are the three steps no plugin implements, and
  * twenty are the two plugins that serve no step — overlapping each other by
  * six, because a `queue:` action at `design` is both at once.
  *
- * **It was twelve and six until 2026-09-27**, when `runPlugin` took `build` and
- * `agentPlugin` took `review` (`a417908`), fourteen until `worktreePlugin` took
- * `admit` (`#268`), sixteen until `judgePlugin` took `proposed` (`#274`) and
- * seventeen until `mergePlugin` took `merge` (`#270`): each opening moves a cell
- * from refusing to running and can take a whole step or a whole plugin out of a
- * column that refused everything. **The counts are asserted** — *the arithmetic of the two closed
- * sets is what the paragraph above says* is a case a few rows down, so a key
- * opened anywhere goes red here rather than leaving a stale numeral in a
- * docblock. It is the one thing in this file that used to be able to go quietly
- * stale, and it did, twice.
+ * **The ledger, and each number is the count *before* the opening beside it.**
+ * Twelve until 2026-09-27, when `runPlugin` took `build` and `agentPlugin` took
+ * `review` (`a417908`) — two cells in one commit, so fourteen; fourteen until
+ * `worktreePlugin` took `admit` (`#268`); fifteen until `judgePlugin` took
+ * `proposed` (`#274`); sixteen until `mergePlugin` took `merge` (`#270`). **And
+ * fifteen now, because that last one is the first opening that left fewer cells
+ * running than it found**: it gave `merge` a lane and took `watch:` and `human:`
+ * away from it, net minus one. Every other entry moves a cell from refusing to
+ * running and can take a whole step or a whole plugin out of a column that
+ * refused everything. **The counts are asserted** — *the arithmetic of the two
+ * closed sets is what the paragraph above says* is a case a few rows down, so a
+ * key opened or closed anywhere goes red here rather than leaving a stale numeral
+ * in a docblock. It is the one thing in this file that used to be able to go
+ * quietly stale, and it did, twice.
  *
  * **`refs:` is the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
@@ -106,7 +110,7 @@ import { decideBacklog } from "../src/backlog.ts";
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
- * hold them — **and four of them are actions no resolved recipe can hold**,
+ * hold them — **and two of them are actions no resolved recipe can hold**,
  * because `queue:` and
  * `backlog:` are refused at all ten steps. That is the point of writing them: the cell has to be
  * *refused by name* rather than *unrepresentable*, and an action the schema
@@ -421,7 +425,7 @@ describe("every step × kind cell runs or refuses", () => {
     expect(unimplemented).toEqual(["claim", "design", "implement"]);
     for (const step of unimplemented) {
       // Asked of a plugin that serves *somewhere*, so the answer is the
-      // step's; the four that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
+      // step's; the two that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
       const why = whyNoKindAt(step, "run");
       expect(why, `${step} is no longer unimplemented`).toContain(`no plugin implements \`${step}\``);
     }
@@ -454,13 +458,13 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs seventeen of the hundred and twenty cells and refuses a hundred and three", () => {
+  it("runs fifteen of the hundred and twenty cells and refuses a hundred and five", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
     expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(17);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(103);
+    expect(cellsThatRun).toHaveLength(15);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(105);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
@@ -559,10 +563,14 @@ describe("every step × kind cell runs or refuses", () => {
       "end",
     ]);
     expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human", "judge"]);
-    // **`merge` is `proposed`'s shape with a different fifth** (`#270`): four kinds
-    // whose function is an *action's*, called once per declared entry, and one that
-    // the step's own work reduces to — the lane, which lands once.
-    expect(serving.get("merge")).toEqual(["run", "agent", "watch", "human", "merge"]);
+    // **`merge` is not `proposed` with a fifth entry, and `#270` is where the two
+    // stopped being the same list.** It carries three: two checks, and the lane the
+    // step's own work reduced to. `watch:` and `human:` were here until that ticket
+    // and are `proposed`'s alone now — 0058 §3b gives `merge` three ways out and
+    // only `proposed` may send one to a person, and since the landing is an action
+    // in this list a hold declared beside it would be asked about a merge already
+    // made. So this row is the one place the two closed sets record a *subtraction*.
+    expect(serving.get("merge")).toEqual(["run", "agent", "merge"]);
     expect(serving.get("end")).toEqual(["close", "labels", "refs"]);
     // And exactly one body per step, which is the other half of the sentence.
     expect(Object.keys(NOT_BUILT_YET).sort()).toEqual([...STEPS].sort());

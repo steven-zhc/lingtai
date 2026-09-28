@@ -51,6 +51,23 @@ export type FastRowId =
   | "runtime.agent"
   | "steps.end";
 
+/**
+ * **`steps.merge` names the question and no longer names the key it writes**
+ * (`#270`).
+ *
+ * The question is *does a person approve the merge?* and that is what a person
+ * reads; what it writes is a `human:` at **`proposed:`**, because 0058 §3b gives
+ * `merge` three ways out and only `proposed` may send one to a person — and since
+ * `mergePlugin` serves `merge`, a hold declared beside the lane would be asked
+ * about a merge the same list had already made. `humanPlugin.at` refuses it there
+ * by name now.
+ *
+ * The id keeps the name for `FastRowId.steps.proposed`'s reason, one screen up:
+ * renaming it moves nothing a person sees and touches every switch on it. Both
+ * write `proposed:` and they write different things into it — the row writes the
+ * ticked checks, this writes the hold, and `applyDraft` is the one place that
+ * knows that.
+ */
 export type DecisionId = "steps.merge" | "runtime.limits";
 
 /**
@@ -183,7 +200,15 @@ export interface WizardState {
   doubts: string[];
 }
 
-/** The human action a *yes* to the merge question writes. */
+/**
+ * The human action a *yes* to the merge question writes — **at `proposed:`, which
+ * is the step before the lane** (`#270`, 0058 §3b).
+ *
+ * The question it asks is unchanged, because the question a person is answering is
+ * unchanged: `proposed` is reached by every pass that got past `review`, so a hold
+ * there is a hold on the merge. What moved is the key, and it moved because the
+ * other one now lands.
+ */
 export const APPROVE_ACTION: StepAction = { name: "approve", human: "Merge this?" };
 
 /** The end action *close the issue when it lands* writes. */
@@ -287,7 +312,7 @@ export function onboardState(input: {
   doubts?: readonly string[];
 }): WizardState {
   const { recipe } = input;
-  const declared = CHECKING_STEPS.flatMap((step) => recipe.steps[step]);
+  const declared = CHECKING_STEPS.flatMap((step) => recipe.steps[step].filter(isCheck));
   const picked = declared.flatMap((a) => ("run" in a ? a.run.split(" && ") : []));
   const ordered = [
     ...picked.flatMap((run) => input.scripts.filter((s) => s.guessed && s.run === run)),
@@ -329,7 +354,7 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
   // row is one list to a reader and three keys in the file, and `applyDraft`
   // needs the second to put an edited one back where it was.
   const checks: Check[] = CHECKING_STEPS.flatMap((step) =>
-    recipe.steps[step].map((action, i) => ({
+    recipe.steps[step].filter(isCheck).map((action, i) => ({
       id: `${step}.${i}:${action.name}`,
       label: "run" in action ? `${action.name} — ${action.run}` : action.name,
       ticked: true,
@@ -338,7 +363,7 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
     })),
   );
   const noChecksFound = checks.length === 0;
-  const unread = noChecksFound && !recipe.steps.merge.some((a) => "human" in a);
+  const unread = noChecksFound && !recipe.steps.proposed.some((a) => "human" in a);
   return {
     mode: "update",
     slug: input.slug,
@@ -364,9 +389,27 @@ function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
     envRequired: [...recipe.env.required],
     agent: recipe.runtime.agent === "codex" ? "codex" : "claude-code",
     closeOnLand: recipe.steps.end.some(closesOnLand),
-    personApproves: recipe.steps.merge.some((a) => "human" in a),
+    // `proposed:` and not `merge:` since `#270`: that is where the hold is legal
+    // and where `applyDraft` writes it.
+    personApproves: recipe.steps.proposed.some((a) => "human" in a),
     limits: { turns, wall, rounds, restarts },
   };
+}
+
+/**
+ * **What the checks row is a list of — and a hold is not one** (`#270`).
+ *
+ * `proposed:` carries two of the page's answers since the merge decision moved
+ * there: the ticked checks and, when a person approves, the hold. Both read the
+ * same key, so the row has to be able to say which entries are its own — a
+ * `human:` shown as a check would be labelled *approve*, ticked, and unticking it
+ * would silently answer the decision below.
+ *
+ * `human:` and nothing else. A `watch:` reads the diff's files and has read as a
+ * check since the row existed, and this is not the ticket that re-decides that.
+ */
+function isCheck(action: StepAction): boolean {
+  return !("human" in action);
 }
 
 function closesOnLand(action: StepAction): boolean {
@@ -619,12 +662,31 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
     checked[home].push({ name: "build", run: ticked.map((c) => c.label).join(" && "), timeout: "20m", env: [] });
   }
 
-  const humans = recipe.steps.merge.filter((a) => "human" in a);
-  const merge = draft.personApproves
-    ? humans.length > 0
-      ? recipe.steps.merge
-      : [...recipe.steps.merge, APPROVE_ACTION]
-    : recipe.steps.merge.filter((a) => !("human" in a));
+  /**
+   * **The merge decision writes `proposed:`, after the checks that row refilled**
+   * (`#270`).
+   *
+   * It wrote `merge:` until that ticket opened `mergePlugin.at.merge`, and the two
+   * cannot share a list: the lane is an action there now, so an approval appended
+   * beside it is asked *after* the branch has landed. `humanPlugin.at` refuses it
+   * at `merge` by name, so a page that still wrote one would build a recipe
+   * `Recipe.parse` throws on — and `proposed` is where 0058 §3b puts the question
+   * anyway.
+   *
+   * **A question somebody wrote in their own words is kept.** The holds are not
+   * checks, so `isCheck` keeps them out of the row above and out of `ticked`; this
+   * is the only line that puts one back, and it re-uses what the file said rather
+   * than overwriting it with `APPROVE_ACTION`'s wording. A *no* drops them, which
+   * is the answer being honoured.
+   *
+   * After the checks, because a hold before them asks a person about a diff whose
+   * own build has not run yet.
+   */
+  const asks = recipe.steps.proposed.filter((a) => !isCheck(a));
+  checked.proposed = [
+    ...checked.proposed,
+    ...(draft.personApproves ? (asks.length > 0 ? asks : [APPROVE_ACTION]) : []),
+  ];
 
   const end = draft.closeOnLand
     ? recipe.steps.end.some(closesOnLand)
@@ -656,7 +718,7 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
     repo: { ...recipe.repo, base: draft.base.trim(), submodules: draft.submodules },
     source: { ...recipe.source, kinds: [...draft.kinds], exclude: [...draft.exclude] },
     env: { ...recipe.env, required: [...draft.envRequired] },
-    steps: { ...recipe.steps, admit, ...checked, merge, end },
+    steps: { ...recipe.steps, admit, ...checked, end },
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
@@ -703,7 +765,9 @@ const PATHS: readonly (readonly string[])[] = [
   ["env", "required"],
   ["runtime", "agent"],
   ["steps", "end"],
-  ["steps", "merge"],
+  // No `["steps", "merge"]`: the page stopped writing that key with `#270`, and the
+  // merge decision's `human:` goes to `["steps", "proposed"]` above — which is the
+  // same path the checks row writes, because they are two things in one list.
   ["runtime", "limits", "turns"],
   ["runtime", "limits", "wall"],
   ["runtime", "limits", "rounds"],

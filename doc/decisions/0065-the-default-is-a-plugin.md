@@ -68,16 +68,19 @@ already are.
 const actionsAt = (step, actions) => {
   const declared = actionsFromRecipe(step, actions, stepDeps);
   const running = declared.length > 0 ? declared : defaultsAt(step);
-  return step === "merge" ? [...running, ...alsoHeldAtMerge()] : running;
+  return step === "merge" ? heldBeforeTheLane(running) : running;
 };
 ```
+
+The last line was `[...running, ...alsoHeldAtMerge()]` while the landing happened
+in `merge`'s body, after the whole pipeline. §8 is where it changed and why.
 
 Not in the schema, and not in each plugin as a `default: true` flag. The schema's
 job is *is this legal* (0064); asking it *and is this what runs when nothing is
 written* would put two questions in one place, and the second one needs the
 conductor's ports to answer.
 
-`alsoHeldAtMerge` stays **outside** the substitution and keeps appending. That is
+`alsoHeldAtMerge` stays **outside** the substitution and keeps composing. That is
 the distinction §6 turns on: a hold composes with whatever runs; a default
 replaces what would have run.
 
@@ -158,6 +161,70 @@ when they did not pass. So a half-migrated step — `agentPlugin.at.implement`
 opened while `implement`'s body still dispatches — pays for **two agents on one
 brief**, and the second spends a round bought for a fix. Each step moves in one
 diff: the key opens, the default is registered, and the body empties, together.
+
+## 8. The lane is the last action at `merge`
+
+Added by [#270](https://github.com/steven-zhc/lingtai/issues/270), which is the
+first step this decision opened whose action **changes something outside the
+worktree**. The rule:
+
+```
+a `merge:` action is the last entry at its step,
+and anything written after one is refused when the recipe resolves
+```
+
+**Nothing else here needed an ordering rule, and this one is not about order.** §2
+says every declared action at a step runs and the step's ending is the pipeline's,
+which is a complete account of a list of *checks*: they run, and the first that
+does not pass is the step's answer. The lane is not a check. It moves `main`, and
+once it has, the pass's ending is no longer a free variable — so a check written
+after it runs on a change that has already landed, and its `no` is a verdict about
+something nobody can now undo.
+
+Concretely, before the refusal: `merge: [land the branch, {run: pnpm smoke}]` is
+legal, the lane merges and pushes, `smoke` fails, `endingOf` reports `merge`
+refused, `directionOf` returns null, the pass ends `blocked`. No `WorkItemLanded`
+is appended, so `end`'s `when: landed` effects never run, the issue is never
+closed, and the item goes back to the queue **with its diff on `main`** for a later
+pass to work again. Two `merge:` entries reach the same state by the second lane
+running over the first's merge. Neither is a bug in a step body; both are a list
+the schema had no reason to refuse.
+
+**So the rule is at resolve and not at the seam.** `whyNoKindAt` answers *may this
+step run this kind*, and this is a question about an action's neighbours — the
+second of two such rules, beside `#268`'s *a step cuts one worktree or none*. Both
+are in `actionsAt` in `packages/recipe/src/recipe.ts`, both name the entry the
+other rule is about, and both are refused before a ticket is claimed rather than
+discovered by a pass.
+
+**A hold is the caller's and composes ahead of the lane.** §3's snippet is
+`heldBeforeTheLane` now rather than an append:
+
+```ts
+const heldBeforeTheLane = (running) => {
+  const held = alsoHeldAtMerge();          // a pending repair, `--no-merge`
+  if (held.length === 0) return running;
+  const lands = running.findIndex((a) => a.kind === "merge");
+  return lands === -1 ? [...running, ...held] : [...running.slice(0, lands), ...held, ...running.slice(lands)];
+};
+```
+
+That keeps §3's distinction intact — a hold composes, a default substitutes —
+while obeying this section: the hold goes after everything that checks and before
+the thing that lands, which is what the old append *meant* while the landing was
+in the body. Found by `kind` rather than by position, because a recipe may declare
+its own checks before the lane and a `--no-merge` that silently stopped meaning
+anything for such a recipe would be worse than one that refused.
+
+**And a declared hold at `merge` is not the way to ask a person**, which is the
+subtraction that makes the rule enough on its own. `humanPlugin.at` and
+`watchPlugin.at` carried `merge` from before
+[0058](0058-lingtai-is-a-development-pipeline.md); that ADR §3b gives `merge` three
+ways out and the third is *anything else → `proposed`, **and only `proposed` may
+send it to a person***. Both lose the key in `#270`, so the case this section is
+about is narrowed to a check — and a person who wants the merge held writes the
+`human:` at `proposed:`, which is before the lane and is where 0058's own open
+question puts it.
 
 ## Related
 
