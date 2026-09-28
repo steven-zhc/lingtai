@@ -478,7 +478,7 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 | `claim` | the ticket is taken here, by the `queue:` the recipe declares or the one the default supplies | no | yes |
 | `admit` | work starts on it; the worktree is cut here, by the `worktree:` the recipe declares or the one the default supplies | no | yes |
 | `prepared` | after the worktree exists, before the agent starts | yes | yes |
-| `design` | a document, before any code — or nothing, which is an answer; the `agent:` the recipe declares writes it, and an unconfigured step writes none | no | yes |
+| `design` | a document, before any code — or nothing, which is an answer, or a question, which since `#294` is 0058 §3c's `needs-input` and goes to the router; the `agent:` the recipe declares writes it, and an unconfigured step writes none | no | yes |
 | `implement` | one agent, in that worktree | no | not yet |
 | `build` | the independent build of what was written | yes | yes |
 | `review` | reads the diff, returns findings, judges nothing | no | yes |
@@ -908,7 +908,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): same three fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers with the document, `""` included. Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
+| `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): same three fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `needs-input` and reaches `proposed` (`#294`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question. **`proposed` only, since `#270`**: 0058 §3b gives `merge` three ways out and the third is *anything else → `proposed`, and only `proposed` may send it to a person* — and the landing is an action in `merge`'s own list now, so a hold beside it would be asked about a merge already made | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
