@@ -493,11 +493,17 @@ describe("a plugin declares the steps it serves", () => {
    */
   it("says when no plugin implements a step at all", () => {
     const set = [slack] as unknown as typeof PLUGINS[number][];
-    // `implement` rather than `design` since `#265`: `agentPlugin` declares the
-    // one, so `WHERE_INSTEAD` has one entry left and this is it.
+    // **Asked of a plugin set this test hands in, and that is now the only way
+    // to reach the branch** (`#266`): every step in `PLUGINS` has a key, so the
+    // refusal survives for a caller with its own set and for nothing else.
+    // `WHERE_INSTEAD` went with the last step that needed it, so there is no
+    // *today the work happens here* clause left to assert.
     const why = whyNoKindAt("implement", "slack" as never, set);
     expect(why).toContain("no plugin implements `implement`");
-    expect(why).toContain("dispatches the implementing agent directly");
+    expect(why).not.toContain("Today");
+    // And with the real set it is the pair that answers, because `agent:` serves
+    // the step — which is what makes the sentence above unreachable in practice.
+    expect(whyNoKindAt("implement", "slack" as never)).toContain("no plugin is named `slack:`");
   });
 
   /** A key that is not a step is refused at import, where the author is. */

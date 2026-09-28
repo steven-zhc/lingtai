@@ -1285,17 +1285,18 @@ each says the part an operator can act on:
 - **A plugin declared where it does not serve.** *`close:` does not implement
   `proposed` — it serves `end`.* The plugin carries where it does belong, so
   the refusal is not homework.
-- **A step no plugin implements.** *No plugin implements `implement` — today
-  `conduct.ts` dispatches the implementing agent directly, under
-  `runtime.limits`.* That sentence was unwritable under the table, because an
-  empty row could not tell *not yet* from *not ever*. **One of the steps
-  [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named is left**,
-  and it is that one. `build` and `review` were here
-  until 2026-09-27 and are served now, **`admit` was the fourth until
-  `#268`**, **`claim` the third until `#269`** and **`design` the second until
-  `#265`** — `worktree:` serves the first, `queue:` the second and `agent:` the
-  third, so the eleven other kinds at each are refused **in that
-  step's own terms** instead. Each step's sentence is its own and lands in the
+- **A step no plugin implements.** *No plugin implements `<step>`.* That
+  sentence was unwritable under the table, because an empty row could not tell
+  *not yet* from *not ever*. **None of the steps
+  [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named is left**:
+  `build` and `review` were here until 2026-09-27 and are served now, **`admit`
+  was the fifth until `#268`**, **`claim` the fourth until `#269`**, **`design`
+  the third until `#265`** and **`implement` the last until `#266`** — `worktree:`
+  serves the first, `queue:` the second and `agent:` the other two, so the eleven
+  other kinds at each are refused **in that step's own terms** instead. The
+  refusal itself survives for a caller that hands `whyNoKindAt` a plugin set of
+  its own, and the *today the work happens here* clause went with the last step
+  that needed it. Each step's sentence is its own and lands in the
   same diff as the key: without one, a step whose plugin has just arrived
   answers every other kind out of `prepared`'s paragraphs, which say *nothing
   has been committed* and *the run is released back to the queue* about steps
@@ -1611,10 +1612,12 @@ run" becomes visible. It used to be a `pending` count off a second fold,
 It was five until 2026-09-23 — the count moved with the vocabulary and the rule
 did not, because the rule never counted. `apps/board/unit/rail.test.tsx` asserts
 ten segments in all three lanes that fold, so **an operator counting ten
-segments on a card is looking at correct behaviour**, and four of them are
-`skipped` on every card anybody draws, because no plugin implements them. It
-was six until 2026-09-27, when `build` and `review` were opened to a plugin
-each; this repository declares both, so they draw live here.
+segments on a card is looking at correct behaviour**. One of them — `design` —
+is `skipped` on every card of a recipe that says nothing at it, because it is
+the one step with a plugin and no default. It was six until 2026-09-27, when
+`build` and `review` were opened to a plugin each; this repository declares
+both, so they draw live here. `admit`, `claim`, `merge` and `implement` each
+run a default where the recipe is silent, so they draw a verdict either way.
 
 `lingtai add` prints the same ten at onboarding (`for (const point of STEPS)` in
 `packages/conductor/src/onboard.ts`). Neither surface omits a step.

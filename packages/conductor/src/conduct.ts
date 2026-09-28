@@ -3158,12 +3158,18 @@ export function runOnce(
         const at = stopped.ending.at;
         const round = wallMetBy();
         yield* standDownConductor(
-          // `implement` has no cell open, so a `never-ran` there is the body's own
-          // stand-down and the wall is the *run's* — **unless the agent at
-          // `implement` was a round's rather than the implementer's**, which is the
-          // one thing `StepNeverRan` cannot say and `fixWall` is recorded for. At
-          // any other step it is a declared plugin's agent, which 0041 §3 reuses
-          // this whole mechanism for.
+          // A `never-ran` at `implement` is the *run's* wall — **unless the agent
+          // there was a round's rather than the implementer's**, which is the one
+          // thing `StepNeverRan` cannot say and `fixWall` is recorded for. At any
+          // other step it is a declared plugin's agent, which 0041 §3 reuses this
+          // whole mechanism for.
+          //
+          // **The cell is open since `#266` and the sentence did not change.** It
+          // used to read *`implement` has no cell open, so this is the body's own
+          // stand-down*; the stand-down is `createWorkAction`'s now, and it is the
+          // same wall met by the same runtime on the same brief — so `{of: "run"}`
+          // is still what a person is owed, and `at` is the action's name rather
+          // than the runtime's, which this branch has never read.
           //
           // **`design` was beside `implement` on the `{of: "run"}` line until
           // `#265`, on the premise this comment stated: that it had no cell open.**

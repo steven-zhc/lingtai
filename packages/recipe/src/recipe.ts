@@ -1104,30 +1104,23 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
 }
 
 /**
- * Where the work a step no plugin implements names is actually done today.
+ * **`WHERE_INSTEAD` is gone, and `#266` is the diff its own rule named.**
  *
- * The half of the refusal that is worth reading. *No plugin implements this
- * step* leaves an operator with a recipe key and no next move; *`conduct.ts`
- * dispatches the implementing agent directly* is the line they can act on, and
- * it is also the thing that stops being true the day a plugin declares itself
- * at that step — at which point the entry goes and an `at` key arrives in the
- * same diff.
+ * It held one sentence per step nothing implemented — *today `conduct.ts`
+ * dispatches the implementing agent directly* — because *no plugin implements
+ * this step* leaves an operator with a key and no next move. The rule beside it
+ * was that an entry goes and an `at` key arrives in the same diff, and the entry
+ * that outlived every other one was `implement`'s: `build` and `review` went on
+ * 2026-09-27 (`a417908`), `admit` with `#268`, `claim` with `#269`, `design`
+ * with `#265`, and `agentPlugin` serves `implement` since `#266`.
  *
- * **`build` and `review` are the day that happened** (2026-09-27, `a417908`).
- * Both said *it runs as an action at `proposed`*, both are served now, and both
- * entries went with the keys that opened — the same diff the second half of the
- * rule describes, in the other direction. Neither is reachable any more:
- * `whyNoKindAt` reads this only where `pluginsAt` is empty.
- *
- * **And `design` is the third** (`#265`). Its entry said *there is no design
- * step*, which stopped being true when `agentPlugin` gained the key: there is
- * one, the recipe is what declares it, and an operator who writes a `run:` there
- * is told about the pair rather than about a step nobody built. `implement` is
- * the last one left, and the table goes with it.
+ * So the table is empty rather than one row long, which is the same fact said
+ * once: **every one of 0058 §3's ten steps has a plugin**. The branch below that
+ * would have read it is still there and still reachable — `whyNoKindAt` takes a
+ * plugin set, and a caller may hand it one that serves nothing — but nothing in
+ * `PLUGINS` reaches it, and a sentence about where the work happens instead has
+ * no step left to be about.
  */
-const WHERE_INSTEAD: Record<"implement", string> = {
-  implement: "`conduct.ts` dispatches the implementing agent directly, under `runtime.limits`",
-};
 
 /**
  * **Why a `judge:` belongs at `proposed` and nowhere else**, and what `proposed`
@@ -1257,8 +1250,8 @@ const FILES_AND_ROUTES_NOTHING =
  * **The same table read down the other axis**: a plugin the pass calls itself,
  * and where it calls it.
  *
- * `WHERE_INSTEAD` above is *this step is named and not built*; this is *this
- * plugin is named and not read*. Both are `#61`'s failure caught before it can
+ * `WHERE_INSTEAD` above was *this step is named and not built* and is empty
+ * since `#266`; this is *this plugin is named and not read*. Both are `#61`'s failure caught before it can
  * happen, and both say the one thing an operator can act on — not *nothing
  * runs this* but **the code is already running, here, and the recipe is not yet
  * what tells it to**.
@@ -1341,11 +1334,12 @@ function servedBy(plugin: Plugin): string {
  *   reader looking for the bar that files a finding, which `CALLED_DIRECTLY`
  *   names. **It was five**, and `worktree:` (`#268`), `judge:` (`#274`), `merge:`
  *   (`#270`) and `queue:` (`#269`) have each left it for a key of their own —
- *   which is what this branch shrinking looks like, and the next one empties it.
+ *   which is what this branch shrinking looks like. `backlog:` is what is left.
  * - **A step no plugin implements**, which is the sentence the table could not
  *   say (0064 §1). An empty row read as *this step takes nothing*, which is
  *   indistinguishable from *nobody has built it* — and that ambiguity is how
- *   `#231` died. `WHERE_INSTEAD` is what each of those says instead.
+ *   `#231` died. **No step in `PLUGINS` reaches it since `#266`**, which is what
+ *   emptied `WHERE_INSTEAD`; a caller that hands in its own plugin set still can.
  * - **A step somebody implements and this plugin does not.** Then the useful
  *   thing is where this plugin *does* serve, and the reason is about the pair.
  */
@@ -1373,14 +1367,14 @@ export function whyNoKindAt(
   // presence or absence of a key, and this is the sentence that difference
   // buys — one somebody can act on, because it names what to write instead.
   if (pluginsAt(step, plugins).length === 0) {
-    // One sentence per step and not one for the group: *nobody implements it*
-    // is the same refusal at all five, and **where the work actually happens
-    // today** is different at each — the only part an operator can act on.
-    const instead = step in WHERE_INSTEAD ? ` Today ${WHERE_INSTEAD[step as keyof typeof WHERE_INSTEAD]}.` : "";
+    // **No `Today …` clause since `#266`**: it was `WHERE_INSTEAD`'s, one
+    // sentence per step, and every step in `PLUGINS` has a key now — so what is
+    // left is the refusal itself, for a caller that handed in a plugin set of
+    // its own.
     return (
       `no plugin implements \`${step}\` — the step is named by ` +
       "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
-      `have a word for it, and no plugin's \`at\` carries that key yet.${instead} ` +
+      "have a word for it, and no plugin's `at` carries that key yet. " +
       "Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded " +
       "in `StepsResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
     );

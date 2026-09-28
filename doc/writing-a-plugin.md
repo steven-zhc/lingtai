@@ -99,7 +99,7 @@ field.
 | `admit` | — | pass · hold · did-not-finish · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
 | `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
 | `design` | — | pass · hold · did-not-finish · never-ran | a document before any code — **or nothing, which is an answer**. **Its body is empty and `agent:` is what runs** (`#265`): the same key as the cold reviewer and a different action — at this step it drafts, and what it answers is the document rather than findings. **There is no default**: a recipe that says nothing here runs nothing, which is what it always did |
-| `implement` | — | pass · hold · did-not-finish · never-ran | one agent in the worktree. It reports the `head` it committed |
+| `implement` | — | pass · hold · did-not-finish · never-ran | one agent in the worktree. **Its body is empty and `agent:` is what runs** (`#266`): the same key again and a third action — at this step it *writes the change*, and what it answers is the `head` it committed. **The default is the agent that wrote it before**, on `runtime.agent`, so a recipe that says nothing here buys exactly what it always did |
 | `build` | — | **+ refuse** | is it green. A red one skips `review` |
 | `review` | — | pass · hold · did-not-finish · never-ran | read the diff, return findings, **judge nothing** |
 | `proposed` | `arriving` · `offering` | **+ refuse + route** | the only step that routes |
@@ -144,8 +144,14 @@ carries a fifth field:
 
 `head` reaches the step's ending as `LeftTheTreeAt.head` and the loop carries it
 to every visit after — so *the tree moved* survives the body rather than being
-replaced by it, and a body reporting a head of its own wins (`implement`'s does).
-Absent means the tree did not move, which is every other action.
+replaced by it. Absent means the tree did not move, which is every other action.
+
+**It is two actions and not one since `#266`.** The `agent:` at `implement`
+reports a `head` for the same reason and a different fact: `admit`'s is where the
+tree was *cut*, and this one is the commit the agent *left*, which is what every
+step after it is judged against. No body reports one of its own any more — the
+rule that a body's head wins is still written in `runStep`, and nothing exercises
+it.
 
 A cut that did not happen answers `did-not-finish` and never `failed`: nothing has
 been written, so there is nothing to have judged, and `admit` is not one of the
@@ -206,7 +212,7 @@ runs, what happened has happened.
 |---|---|
 | Not in `PLUGINS` | `slack: not a plugin` — an unknown key, at resolve |
 | In `PLUGINS`, no `at` for that step | *the "tell the channel" action is a "slack" at the "claim" step, and `slack:` does not implement `claim` — it serves `proposed`* |
-| In `PLUGINS`, and nothing implements that step | *… and no plugin implements `implement` — today `conduct.ts` dispatches the implementing agent directly, under `runtime.limits`…*. One of the ten is left — `implement`; `design` was the second until `#265` gave it `agent:`, and `claim` the third until `#269` gave it `queue:` |
+| In `PLUGINS`, and nothing implements that step | *… and no plugin implements `<step>` …*. **None of the ten is left since `#266`** gave `implement` an `agent:` — `design` was the second until `#265` and `claim` the third until `#269` — so this refusal is now only reachable by a caller that hands `whyNoKindAt` a plugin set of its own |
 | Two plugin keys in one entry | refused: an entry names exactly one |
 | Plugin landed, daemon not restarted, recipe edited | the recipe resolves on your machine and is refused on the daemon's, and **no pass starts at all** until it restarts. Editing the recipe alone never needs one |
 

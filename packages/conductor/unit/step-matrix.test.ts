@@ -543,7 +543,8 @@ describe("every step × kind cell runs or refuses", () => {
    * ambiguity: it put configuration on steps whose rows were empty for a
    * reason that had nothing to do with what it was asking for. An `at` can
    * only say the first, so the second is now a sentence of its own, and it
-   * carries `WHERE_INSTEAD`'s half — the only part an operator can act on.
+   * carried `WHERE_INSTEAD`'s half — the only part an operator could act on —
+   * until `#266` emptied both the class and the table.
    */
   it("says a step no plugin implements, and where that work happens today", () => {
     const unimplemented = STEPS.filter((step) =>
