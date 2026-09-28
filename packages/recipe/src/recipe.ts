@@ -1494,6 +1494,16 @@ function whyThatPair(step: Step, kind: ActionKind): string {
       "where there is a diff to ask it about"
     );
   }
+  if (step === "implement") {
+    return (
+      "`implement` is the change itself (0058 §3), so the only plugin it carries is the one that " +
+      "writes one — `agent:`, which is the key `agentPlugin` declares there, and at this step it " +
+      "implements rather than reads. The step's own receipt is a commit (0057 §2), which is what " +
+      "none of the other three can leave: a command that checks what was written is `build`, a " +
+      "cold read of it is `review`, a glob over its file list and a hold on it are questions about " +
+      "a change already made, which is `proposed`"
+    );
+  }
   if (kind === "agent") {
     return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";
   }

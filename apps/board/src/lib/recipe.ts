@@ -12,7 +12,7 @@
  * still is.
  */
 import { homedir } from "node:os";
-import { STEPS, type ProjectState } from "@lingtai/domain";
+import { STEPS, type ProjectState, type Step } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
@@ -456,6 +456,16 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
 export function describeAction(
   action: StepAction,
   plugins: readonly PluginSecrets[] = PLUGINS,
+  /**
+   * **Which step it was declared at, because an `agent:` does a different job at
+   * each of five** (`#266`). `agentPlugin.at` carries `design`, `implement`,
+   * `review`, `proposed` and `merge`, so the one kind covers drafting a design,
+   * writing the change and reading it cold. Optional, and absent says *an agent*
+   * rather than guessing: a caller that does not know the step would otherwise
+   * have this function invent a job for it, which is how the old wording came to
+   * call an implementer a cold reviewer on the task page.
+   */
+  step?: Step,
 ): { does: string; bound: string } {
   // Every `no_log` value gone before a word of this is written (0061 §9). It
   // reads named fields, so today it could not print one by accident — the point
@@ -479,7 +489,17 @@ export function describeAction(
       // rather than a blank — and not a name invented here, because the
       // runtime is the one that knows it.
       const on = `${a.agent}, ${a.model ?? "its default model"}`;
-      return { does: `a cold reviewer on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
+      // What it is *for*, by the step. `review`, `proposed` and `merge` are the
+      // three that read a diff somebody else wrote, so they share a word.
+      const job =
+        step === "design"
+          ? "an agent drafting a design"
+          : step === "implement"
+            ? "an agent writing the change"
+            : step === undefined
+              ? "an agent"
+              : "a cold reviewer";
+      return { does: `${job} on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
     }
     case "watch": {
       const a = action as Extract<StepAction, { watch: string[] }>;

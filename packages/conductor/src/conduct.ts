@@ -3053,8 +3053,8 @@ export function runOnce(
          * an agent stopped at `runtime.limits.turns` having committed twice — and
          * `admit`'s is a clone that did not finish. Asked there, `ApprovalRequested`
          * sets `task_view.awaitingSha`, `standing.tsx` draws **Approve**, and
-         * `refusingOn` (`approve.ts`) finds no `StepFailed`, `StepNeverRan` or
-         * `StepDidNotFinish` row to be refusing — because no gate ran — so one
+         * `refusingOn` (`approve.ts`) finds nothing to be refusing — the pass stopped
+         * at `implement`, so `build` and `review` never ran and left no row — so one
          * click merges a half-finished diff the build and the cold reviewer never
          * read, with no `note`, no `StepWaived` and nothing on the log saying
          * anything was skipped. On a card whose own diagnosis reads *the limit is a

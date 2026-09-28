@@ -372,7 +372,7 @@ export function RecipeGiven({ run }: { run: RunView }) {
                         </span>
                       );
                     }
-                    const { does, bound } = describeAction(action);
+                    const { does, bound } = describeAction(action, undefined, p.step);
                     return (
                       <details key={name} className="act">
                         <summary>
