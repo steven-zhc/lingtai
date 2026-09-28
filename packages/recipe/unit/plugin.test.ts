@@ -493,11 +493,18 @@ describe("a plugin declares the steps it serves", () => {
    */
   it("says when no plugin implements a step at all", () => {
     const set = [slack] as unknown as typeof PLUGINS[number][];
-    // `implement` rather than `design` since `#265`: `agentPlugin` declares the
-    // one, so `WHERE_INSTEAD` has one entry left and this is it.
-    const why = whyNoKindAt("implement", "slack" as never, set);
-    expect(why).toContain("no plugin implements `implement`");
-    expect(why).toContain("dispatches the implementing agent directly");
+    // **Asked of a `plugins` list of one, because `PLUGINS` no longer has such a
+    // step** (`#266`). `WHERE_INSTEAD` went with `implement`'s key — the last
+    // entry it had, and the last of *where this work actually happens today* —
+    // so what is left to assert is the sentence itself, which is the half that
+    // says `#61` was caught rather than the half that named the remedy. Any step
+    // does but `proposed`, which is the one key this fixture declares.
+    for (const step of STEPS.filter((each) => each !== "proposed")) {
+      const why = whyNoKindAt(step, "slack" as never, set);
+      expect(why, step).toContain(`no plugin implements \`${step}\``);
+      expect(why, step).toContain("no plugin's `at` carries that key yet");
+      expect(why, step).toContain("never called (`#61`)");
+    }
   });
 
   /** A key that is not a step is refused at import, where the author is. */

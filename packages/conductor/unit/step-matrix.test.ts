@@ -189,8 +189,11 @@ const KINDS = PLUGINS.map((plugin) => plugin.key);
  */
 const EVERY_DEP: ActionDeps = {
   env: () => ({}),
-  // Built, never run — building is the whole of what this file asserts.
-  agent: {} as unknown as AgentActionDeps,
+  // Built, never run — building is the whole of what this file asserts. `work`
+  // is the one field named, because `implement` is the one cell whose action
+  // `from-recipe.ts` refuses to build without it (`#266`): a cast that left it
+  // off would read here as *the step refuses an `agent:`*, which is false.
+  agent: { work: async () => ({ committed: "0".repeat(40) }) } as unknown as AgentActionDeps,
   watch: { changedFiles: async () => [] },
   worktree: { cut: async () => ({ head: "0".repeat(40), where: "/nowhere" }) },
   merge: { land: async () => ({ merged: "0".repeat(40) }) },
@@ -430,6 +433,10 @@ describe("every step × kind cell runs or refuses", () => {
     }
     // The one that runs there — and it is the same key that reviews elsewhere.
     expect(whyNoKindAt("design", "agent")).toBeNull();
+    // **And `implement` is the sixth and the last** (`#266`): the implementer is
+    // an `agent:` action, so the refusal for every other kind there is about the
+    // pair — and the list this case walks is empty rather than short.
+    expect(whyNoKindAt("implement", "agent")).toBeNull();
     expect(whyNoKindAt("review", "agent")).toBeNull();
   });
 
@@ -542,16 +549,15 @@ describe("every step × kind cell runs or refuses", () => {
    * carries `WHERE_INSTEAD`'s half — the only part an operator can act on.
    */
   it("says a step no plugin implements, and where that work happens today", () => {
+    // **Empty since `#266`, and that is the assertion rather than a case left
+    // with nothing to walk.** Every one of the ten has a plugin now, so the
+    // branch this case is named for is reachable only through a caller's own
+    // `plugins` list — which is what `plugin.test.ts` asks it with. A step
+    // arriving back in this list would mean a key was lost.
     const unimplemented = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
-    expect(unimplemented).toEqual(["implement"]);
-    for (const step of unimplemented) {
-      // Asked of a plugin that serves *somewhere*, so the answer is the
-      // step's; the two that serve nowhere are `CALLED_DIRECTLY`'s at all ten.
-      const why = whyNoKindAt(step, "run");
-      expect(why, `${step} is no longer unimplemented`).toContain(`no plugin implements \`${step}\``);
-    }
+    expect(unimplemented).toEqual([]);
     // **Both were opened on 2026-09-27 and their refusals went with them.** A
     // `run:` at `build` and an `agent:` at `review` are what the recipe declares
     // there now, so there is no sentence left to send a reader to `proposed` —
@@ -577,6 +583,10 @@ describe("every step × kind cell runs or refuses", () => {
     // the refusal for every other kind there is about the pair. `implement` is
     // what is left of the list.
     expect(whyNoKindAt("design", "agent")).toBeNull();
+    // **And `implement` is the sixth and the last** (`#266`): the implementer is
+    // an `agent:` action, so the refusal for every other kind there is about the
+    // pair — and the list this case walks is empty rather than short.
+    expect(whyNoKindAt("implement", "agent")).toBeNull();
     expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
     expect(whyNoKindAt("admit", "run")).not.toContain("no plugin implements `admit`");
     expect(whyNoKindAt("admit", "run")).not.toContain("nothing has been committed at `prepared`");
@@ -590,24 +600,27 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs seventeen of the hundred and twenty cells and refuses a hundred and three", () => {
+  it("runs eighteen of the hundred and twenty cells and refuses a hundred and two", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
     expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(17);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(103);
+    expect(cellsThatRun).toHaveLength(18);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(102);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
       PLUGINS.every((plugin) => !servesStep(plugin, step)),
     );
     const pluginsServingNothing = PLUGINS.filter((plugin) => plugin.serves.length === 0);
-    expect(stepsNobodyImplements).toHaveLength(1);
+    expect(stepsNobodyImplements).toHaveLength(0);
     expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual(["backlog"]);
-    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(12);
+    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(0);
     expect(pluginsServingNothing.length * STEPS.length).toBe(10);
-    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(1);
+    // **And the overlap is gone with the step**, which is what makes the two
+    // classes add up now: a `backlog:` at `implement` was both at once, and that
+    // one cell was subtracted twice until `#266` emptied the first class.
+    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(0);
   });
 
   /**
@@ -780,7 +793,13 @@ describe("every step × kind cell runs or refuses", () => {
     // some plugin serves gives the same one — under an opening clause that names
     // the step the operator actually wrote.
     const reason = why!.slice(why!.indexOf(": ") + 2);
-    for (const step of ["admit", "prepared", "design", "build", "review", "merge"] as const) {
+    // **All eight of the other steps since `#266`**, which is the branch that
+    // shrank as the keys opened finally reaching nothing: it was three steps
+    // answering *no plugin implements this* until `#269` gave `claim` a `queue:`,
+    // two until `#265` gave `design` an `agent:`, one until this ticket gave
+    // `implement` one — and that list is now empty, so every step but `end`
+    // answers about the pair.
+    for (const step of STEPS.filter((each) => each !== "proposed" && each !== "end")) {
       expect(whyNoKindAt(step, "judge"), step).toBe(
         `\`judge:\` does not implement \`${step}\` — it serves \`proposed\`: ${reason}`,
       );
@@ -788,14 +807,6 @@ describe("every step × kind cell runs or refuses", () => {
     // `end`'s own sentence names `judge:`'s `when:` in order to say what picks
     // the three effects out, and that is the more useful half there.
     expect(whyNoKindAt("end", "judge")).toContain("what picks");
-    // And a step nobody implements answers as the step, exactly as it does for
-    // `close:` there: *no plugin implements `implement`* is the first thing wrong,
-    // and a judge is not what would fix it. It was three until `#269` gave
-    // `claim` a `queue:` and two until `#265` gave `design` an `agent:`, which is
-    // the branch shrinking as the keys open.
-    for (const step of ["implement"] as const) {
-      expect(whyNoKindAt(step, "judge"), step).toContain(`no plugin implements \`${step}\``);
-    }
   });
 
   /**

@@ -996,7 +996,7 @@ describe("implement dispatches the one agent, and reports what it committed", ()
    */
   it("is told why it is being run again, and what it asked the first time", async () => {
     let asks = true;
-    const { ports, asked, taking } = portsAnswering({
+    const { ports, asked, taking, working } = portsAnswering({
       dispatch: () => {
         const answer: WorkedAnswer = asks
           ? { asked: "which of the two files?" }
@@ -1006,6 +1006,20 @@ describe("implement dispatches the one agent, and reports what it committed", ()
       },
     });
     const claiming = createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
+    // `implement`'s default too, for `claim`'s reason: the body dispatches
+    // nothing since `#266`, so a pass whose caller substitutes no action there
+    // writes no code and never reaches the question this case is about.
+    const writing = createImplementAction(
+      { name: "write the change", prompt: "" },
+      {
+        runtime: {} as unknown as Runtime,
+        issue: async () => ports.item()?.ticket ?? { ref: "", title: "", body: "" },
+        diff: async () => "",
+        settingsPath: "/nowhere/settings.json",
+        limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
+        work: working,
+      },
+    );
     const result = await runPass({
       recipe: recipeWith(),
       context,
@@ -1020,8 +1034,11 @@ describe("implement dispatches the one agent, and reports what it committed", ()
       ceilings: { rounds: 1, restartsLeft: 0 },
       // `claim`'s default, because the body takes nothing since `#269` and a pass
       // that claimed no item cannot brief an agent.
-      actionsAt: (step, actions) =>
-        step === "claim" ? [claiming] : actions.map((a) => canned(a.name, PASSED)),
+      actionsAt: (step, actions) => {
+        if (step === "claim") return [claiming];
+        if (step === "implement") return [writing];
+        return actions.map((a) => canned(a.name, PASSED));
+      },
     });
 
     expect(walk(result)).toEqual([
