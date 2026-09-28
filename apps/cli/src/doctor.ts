@@ -1436,12 +1436,18 @@ async function projectRecipes(
  *
  * Both halves end in why there is no other way out: per-step dispatch is not
  * built, so the answer is never "configure the other runtime".
+ *
+ * **And the step's half names the key rather than assuming `agent:`** (`#277`).
+ * A `judge:` may name a runtime too, and it is the same refusal for the same
+ * reason — so the remedy takes the key off the refusal, because *Name `agent:`
+ * …* over a `judge:` line is the same wrong instruction `#245` fixed one level
+ * up: an operator sent to edit a key the line does not have.
  */
-function agentRemedy(at: AgentRefusal["at"], project: string, dispatched: string): string {
-  return at === "runtime.agent"
+function agentRemedy(refused: AgentRefusal, project: string, dispatched: string): string {
+  return refused.at === "runtime.agent"
     ? `Name runtime.agent: ${dispatched} in ${machinePath()}; no other runtime is dispatched yet`
-    : `Name agent: ${dispatched} on that action in ${recipePath(project)}, or drop the action; ` +
-      `per-step dispatch is not built, so a step's agent: has to be the runtime this conductor runs`;
+    : `Name ${refused.key}: ${dispatched} on that action in ${recipePath(project)}, or drop the action; ` +
+      `per-step dispatch is not built, so a step's ${refused.key}: has to be the runtime this conductor runs`;
 }
 
 /**
@@ -1464,7 +1470,7 @@ export function recipeRow(
       status: "fail",
       detail:
         `${wrongAgent.sentence} — every run of this project is refused before its claim, and nothing will be taken. ` +
-        `${agentRemedy(wrongAgent.at, f.project, dispatched)}\n` +
+        `${agentRemedy(wrongAgent, f.project, dispatched)}\n` +
         provenanceLines(f.provenance),
     };
   }

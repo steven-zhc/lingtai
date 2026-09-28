@@ -184,6 +184,7 @@ import {
   type Worked,
   bodiesFor,
 } from "./pass-steps.ts";
+import { isBuiltInJudge } from "@lingtai/recipe";
 import { judgeDeclaredAt } from "./judge.ts";
 import { chosenIn, judgePrompt } from "./judge-agent.ts";
 
@@ -220,6 +221,16 @@ export interface AgentRefusal {
   sentence: string;
   /** Where that `agent:` is written, which is the file whose line must change. */
   at: "runtime.agent" | "step";
+  /**
+   * **Which key on that line names the runtime** (`#277`).
+   *
+   * `agent:` and a runtime `judge:` are the same fact — a second runtime named
+   * at a step — and they are refused by the same sentence; the remedy has to
+   * name the key, because *Name `agent:` …* sends an operator to edit a key the
+   * line does not have. The file is the same either way, which is what `at`
+   * carries and why this is a field beside it rather than a third value of it.
+   */
+  key: "agent" | "judge";
 }
 
 /**
@@ -239,6 +250,14 @@ export interface AgentRefusal {
  * and it is answered the same way and in the same place: before the claim, by
  * name. Per-step dispatch is not built; until it is, the only honest answer to
  * a second runtime named at a step is to say so.
+ *
+ * **A runtime `judge:` is the same fact and is refused the same way** (`#277`).
+ * Since that ticket a `judge:` entry may name a runtime, and a judge is
+ * dispatched on `options.runtime` exactly as a cold reviewer is — so a
+ * `judge: codex` here would have its judgement bought from Claude Code with
+ * nothing anywhere saying the named runtime was not used. A built-in `judge:` is
+ * not a runtime and is passed over: `isBuiltInJudge` is the whole of that test,
+ * so a second built-in is on the free side the day it is added.
  */
 export function agentRefusal(
   resolved: Pick<ResolvedRecipe, "recipe" | "provenance">,
@@ -249,19 +268,28 @@ export function agentRefusal(
     const from = resolved.provenance?.["runtime.agent"];
     return {
       at: "runtime.agent",
+      key: "agent",
       sentence: `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`,
     };
   }
   for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
     for (const action of actions) {
-      if ("agent" in action && action.agent !== dispatched) {
-        return {
-          at: "step",
-          sentence:
-            `steps.${step}'s "${action.name}" action names agent ${action.agent}, ` +
-            `and this conductor runs ${dispatched}`,
-        };
-      }
+      // A built-in judge names no runtime — it is a function — so it is not a
+      // second dispatch and nothing about it can disagree with this one.
+      const second: { key: AgentRefusal["key"]; wants: string } | null =
+        "agent" in action
+          ? { key: "agent", wants: action.agent }
+          : "judge" in action && !isBuiltInJudge(action.judge)
+            ? { key: "judge", wants: action.judge }
+            : null;
+      if (second === null || second.wants === dispatched) continue;
+      return {
+        at: "step",
+        key: second.key,
+        sentence:
+          `steps.${step}'s "${action.name}" action names ${second.key} ${second.wants}, ` +
+          `and this conductor runs ${dispatched}`,
+      };
     }
   }
   return null;
@@ -1463,11 +1491,7 @@ export function runOnce(
        * about; there is no `JudgeAsked` to fold and the route is already the
        * record of what was decided.
        */
-      const askTheAgent = async (
-        runtime: RuntimeId,
-        named: string,
-        on: Judging,
-      ): Promise<Judged> => {
+      const askTheAgent = async (named: string, on: Judging): Promise<Judged> => {
         const held = (why: string): Judged => ({ next: "waiting", named, why });
         if (on.offering.length < 2) {
           return held(
@@ -1476,17 +1500,13 @@ export function runOnce(
               "judged nothing",
           );
         }
-        if (runtime !== options.runtime.capabilities.id) {
-          // `agent:`'s rule, one plugin over: per-step dispatch is not built, so
-          // a name that is not the conductor's own runtime is said rather than
-          // run on the one that is.
-          return held(
-            `the "${named}" judge names \`${runtime}\` and this conductor runs ` +
-              `\`${options.runtime.capabilities.id}\` — per-step dispatch is not built, so nothing ` +
-              "was asked and the pass is held for a person",
-          );
-        }
 
+        // **Which runtime the entry named is not read here**, and that is not it
+        // being dropped: one conductor dispatches one runtime, `options.runtime`
+        // is it, and a step naming the other is refused by `agentRefusal` before
+        // the claim — so by the time a judge is asked the two agree. That is
+        // `from-recipe.ts`'s rule for `agent:`, one plugin over.
+        const runtime = options.runtime.capabilities.id;
         const settings = await Effect.runPromise(
           Effect.either(host.unhookedSettings({ runId, label: "judge", home })),
         );
@@ -1587,7 +1607,7 @@ export function runOnce(
       const judge = async (on: Judging): Promise<Judged> => {
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when);
         if (declared === null) return { noJudge: true };
-        return "built" in declared ? declared : askTheAgent(declared.runtime, declared.named, on);
+        return "built" in declared ? declared : askTheAgent(declared.named, on);
       };
 
       /** `end` — the work item's own stream, read this late on purpose. */
