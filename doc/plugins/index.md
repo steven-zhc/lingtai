@@ -25,7 +25,7 @@ plugin is a red test rather than something somebody has to remember.
 
 | key | may be declared at | what it is for |
 |---|---|---|
-| `run` | `prepared` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the one extension point. |
+| [`run`](run.md) | `prepared` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the one extension point. |
 | `agent` | `design` `implement` `review` `proposed` `merge` | Buys an agent a turn — to draft, to write, to read the diff cold, or to answer. |
 | `watch` | `proposed` | Holds the pass when the diff touches a path you named. |
 | `human` | `proposed` | Stops for a person, and asks them the question you wrote. |
