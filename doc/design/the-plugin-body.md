@@ -2,8 +2,10 @@
 
 **Status** a finding, not a plan — and one of its four is answered
 ([#274](https://github.com/steven-zhc/lingtai/issues/274): the `judge:` **key** is
-open at `proposed` and a lookup reads it; `at`'s *value* is still `notBuiltYet`,
-which is what the rest of this page is about) · **Date** 2026-09-26 ·
+open at `proposed` and a lookup reads it, and
+[#277](https://github.com/steven-zhc/lingtai/issues/277) gave §5's agent judge the
+dispatch it said was missing; `at`'s *value* is still `notBuiltYet`, which is what
+the rest of this page is about) · **Date** 2026-09-26 ·
 **About**
 [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §§2–3, 5,
 7 and the two tickets that were to build them
@@ -206,7 +208,7 @@ that list and `#268` settled it the other way**: it *is* an action — a
 runs once per declared entry through `runActionPipeline`, and what made it look
 like a step's own function was only that `admit`'s body used to call it.
 
-### And an agent judge has no dispatch on that side of the line
+### And an agent judge has a dispatch, at the seam this section named (`#277`)
 
 `JudgeName` was `BUILT_IN_JUDGES | RuntimeId` — `same-worktree`, `claude-code`,
 `codex`. A declared `judge: same-worktree` is a pure function and could live
@@ -220,14 +222,27 @@ So a `judge:` that only answered the built-ins would accept `judge: claude-code`
 at resolve and run nothing for it — `#61`, through the door this repository has
 decided it will not leave open.
 
-**`#274` resolved that by narrowing the enum, which is the same rule read the
-other way.** `JudgeName` is `z.enum(BUILT_IN_JUDGES)` now: one legal name,
-answered by a synchronous function, and a runtime refused at the line it is
-written. *The enum says what the code does, and grows when the code does*
-(`BUILT_IN_JUDGES`), so the day the dispatch lands the runtimes go back in with
-it. The cost is stated where an operator reads it — `doc/reference.md`
-§`judge:` — and it is the direction 0061 §3 calls the judgement: **`findings`
-has no built-in, so it still reaches a person.**
+**`#274` resolved that by narrowing the enum, and `#277` resolved it by building
+the thing.** Both are the same rule — *the enum says what the code does, and
+grows when the code does* (`BUILT_IN_JUDGES`) — read at two moments. What `#277`
+added is exactly what this section said was missing and nothing else:
+`judgeDeclaredAt` answers a runtime as a runtime (`Declared`), and `askTheAgent`
+in `conduct.ts` binds the `Runtime`, the settings file and the prompt
+(`judge-agent.ts`) to it. `BuiltIn` is untouched and still synchronous: the
+runtime judge is a **second implementation behind `Judge`**, because widening
+`BuiltIn` to admit a promise is what would turn *`judge: same-worktree` spends
+nothing* from a fact about a type into a claim somebody has to check.
+
+**It did not need either decision above, for the reason `#274` did not.** The
+reader is still a lookup and the dispatcher is still a port; `at.proposed` still
+carries `notBuiltYet`, `judgePlugin` still lives where the twelve are declared,
+and `pass-steps.ts`'s `proposed` still decides — which is what keeps `chose` and
+the spent ceiling on the card (`#271`). §§1–3 and §5 are open exactly as far as
+they were.
+
+What changed for an operator is stated where one reads it — `doc/reference.md`
+§`judge:` — and it is the direction 0061 §3 calls the judgement: **`findings` has
+no built-in, and now it has something a recipe can declare instead of a person.**
 
 **What that did *not* need is either decision above.** The reader is
 `judgeDeclaredAt` in `packages/conductor/src/judge.ts` and it is a lookup — *the
@@ -319,13 +334,26 @@ proposed:
   - name: a merge whose re-verify went red is the same fix on a moved base
     judge: same-worktree
     when: verify-failed
+  - name: the lines or the approach
+    judge: claude-code
+    when: findings
 ```
 
-`conflict`, `needs-input` and `findings` are left undeclared, and that is this
-repository choosing what it already has: no built-in answers them, so each
-reaches a person, and `findings` is the one 0061 §3 measured at 231 refusals and
-calls the one judgement worth an agent — it wants `judge: claude-code`, which
-wants the dispatch §5 says is not there yet.
+**The third entry is `#277`'s and it is the one that costs money.** `findings` is
+the direction 0061 §3 measured at 231 refusals and calls *the one judgement worth
+an agent*: every one of them reached a person with the rounds unspent, seven of
+them on 2026-09-27 alone. Declared, each arrival buys one run of the judge, which
+reads the reviewer's own findings and answers *the lines* (`implement`, a round in
+the worktree already cut) or *the approach* (`claim`, a fresh one) — and it can
+spend no more than `runtime.limits.rounds` had already paid for, because the set
+it is handed is what the counting left.
+
+`conflict` and `needs-input` are still left undeclared, and that is this
+repository choosing what it already has: no built-in answers either, they were
+seen six times and zero in the fortnight 0061 §3 measured, and each reaches a
+person. The trade is legible — a run per arrival against a person per arrival —
+and it is worth making only where the arrivals are frequent and the judgement is
+real.
 
 **`nextloom-ai-admin` — every refusal reaches a person, which is what a managed
 repository that is not Lingtai should almost certainly say.** And it is the one
@@ -352,6 +380,13 @@ declaring nothing at all, which is the cheapest of the three: with no entry for 
 direction the router falls to `BUILT_IN_FOR`, and a person is the floor under
 `conflict`, `needs-input` and `findings` (0064 §5 — absent is not empty, and here
 they read the same).
+
+**`#277` did not change this block, and that it did not is the point.** The enum
+grew by the runtimes, because a runtime is now dispatched; `always-waiting` names
+no code still, so it is refused still. A managed repository that wants an agent
+to decide its `findings` can write `judge: claude-code` there — and this one
+almost certainly should not, because the whole reading of *every refusal reaches
+a person* is that a person is what it wants.
 
 ## Related
 

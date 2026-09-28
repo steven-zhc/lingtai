@@ -171,11 +171,15 @@ it is **a block a person can fill rather than one they are waiting for**:
 answered mechanically by `BUILT_IN_FOR` as they always were, and a person is the
 floor under the other three.
 
-**`same-worktree` is the only name the schema takes, so `findings` is still a
-person's** unless the recipe answers *the lines* for it always. A runtime judge
-is not a legal name — nothing dispatches one — and `judge: claude-code` is refused
-when the recipe resolves, which means `conduct.ts` answers `stage: "recipe"` and
-the daemon claims nothing until the line goes. **A judge is pasted onto the
+**Since #277 a judge may be a runtime, so `findings` is a line in the recipe
+rather than a person's every time.** `judge: claude-code` at `findings` is **an
+agent, paid for a judgement** — `askTheAgent` in `conduct.ts` dispatches it, it
+reads the reviewer's own findings and answers *the lines* (`implement`) or *the
+approach* (`claim`), and what it may spend is the rounds the workflow had already
+counted: an answer the offer did not contain is refused by name, and an agent
+that answered nothing reaches a person rather than going round again.
+`same-worktree` is still the only **built-in**, and being synchronous is still how
+that name promises it spends nothing. **A judge is pasted onto the
 conducting machine's own file after a restart, never before one**: the `at` key is
 a module constant the running daemon loaded at start, and a recipe naming a plugin
 at a step *its* copy does not serve is refused every pass
