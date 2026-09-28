@@ -47,9 +47,19 @@
  * this file.** `assignee` is a field of `queue:` and not a plugin beside it, so
  * it is a setting that moves onto a step exactly as the other six are, and
  * `assigneeOf` is here for the same reason `kindsOf` is.
+ *
+ * **And four more have actually moved, on `baseOf`'s terms** (`#269`).
+ * `kindsOf`, `excludeOf`, `backoffOf` and `assigneeOf` read a `queue:` declared
+ * at `claim` first and `source:`/`runtime:` second, which is the same **spelling**
+ * distinction `cutAt` draws and not a fallback: both are present on a resolved
+ * recipe, and which one a file wrote is exactly the knowledge this file exists to
+ * hold alone. So a recipe that declares its queue at the step gets the filter, the
+ * wizard, the board, `lingtai add` and the pass reading the same four values —
+ * which is the failure `#231` found, arriving through a half-moved setting rather
+ * than through a reader.
  */
 import type { Step } from "@lingtai/domain";
-import type { Recipe } from "./recipe.ts";
+import type { QueueSettings, Recipe } from "./recipe.ts";
 
 /** What one agent run at `step` may spend. */
 export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits"] {
@@ -109,11 +119,25 @@ export function submodulesOf(recipe: Recipe): boolean {
 }
 
 /**
+ * The `queue:` this recipe declares at `claim`, or null where it declares none
+ * and `source:`/`runtime:` are what say it (`#269`).
+ *
+ * `cutAt`'s sibling and written for its reason: `find` and not a reduction over
+ * several, because a step takes one ticket or none — `StepMap` refuses a second
+ * `queue:` at a step by name when the recipe resolves, so *the first one* and
+ * *the only one* are the same entry here.
+ */
+function takeAt(recipe: Recipe): QueueSettings | null {
+  const declared = recipe.steps.claim.find((action) => "queue" in action);
+  return declared === undefined ? null : declared.queue;
+}
+
+/**
  * The kinds the queue takes, **in priority order** — the order is the
  * meaning, so this returns the list rather than a set.
  */
 export function kindsOf(recipe: Recipe): Recipe["source"]["kinds"] {
-  return recipe.source.kinds;
+  return takeAt(recipe)?.kinds ?? recipe.source.kinds;
 }
 
 /**
@@ -126,7 +150,7 @@ export function kindsOf(recipe: Recipe): Recipe["source"]["kinds"] {
  * than this list's.
  */
 export function excludeOf(recipe: Recipe): Recipe["source"]["exclude"] {
-  return recipe.source.exclude;
+  return takeAt(recipe)?.exclude ?? recipe.source.exclude;
 }
 
 /**
@@ -139,7 +163,7 @@ export function excludeOf(recipe: Recipe): Recipe["source"]["exclude"] {
  * and is read back by whoever set it.
  */
 export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
-  return recipe.source.backoff;
+  return takeAt(recipe)?.backoff ?? recipe.source.backoff;
 }
 
 /**
@@ -159,7 +183,48 @@ export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
  * absent rule means belongs to `assigneeSkip` and to `describeAssignee`, which
  * say it in their own words, and 0046 §2's *a wrong login shows itself* wants
  * the reading to be able to say *nothing was written* rather than *both*.
+ *
+ * **A declared `queue:` must name it**, so the `??` below is a spelling and not
+ * a fallback, exactly as `submodulesOf`'s is: there is no third answer between
+ * *the step said* and *the machine file said*, and a block that named only its
+ * kinds cannot silently hand this machine somebody else's tickets (`#269`).
  */
 export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
-  return recipe.runtime.assignee;
+  return takeAt(recipe)?.assignee ?? recipe.runtime.assignee;
 }
+
+/**
+ * **All four at once** — what `claim`'s `queue:` action carries, and what the
+ * code that picks a ticket is handed (`#269`).
+ *
+ * The four accessors above are still the one place each setting's spelling is
+ * known; this is them read together, because `considerIssue` and `runnableNow`
+ * in `packages/conductor/src/discover.ts` apply all four in one pass over one
+ * GitHub response (0063 §3: *they answer one question*). A caller that has only
+ * a recipe asks this; a caller that is running a declared action already has the
+ * block and must **not** ask, so that the ticket a pass takes is the one the
+ * reading of the recipe says it took.
+ *
+ * **`assignee` is the one value this fills in, because the block requires it and
+ * `runtime.assignee` does not exist on every machine.** `EVERYONE` is what an
+ * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
+ * `rule?.take ?? "both"` — so writing it here selects identically and says out
+ * loud what a pasted `queue:` must then write. The *reading* of an absent rule is
+ * still `assigneeOf`'s, which returns it absent: *nothing was written* and
+ * *everyone* are one filter and two sentences, and only the filter is here.
+ */
+export function queueOf(recipe: Recipe): QueueSettings {
+  return {
+    kinds: kindsOf(recipe),
+    exclude: excludeOf(recipe),
+    backoff: backoffOf(recipe),
+    assignee: assigneeOf(recipe) ?? EVERYONE,
+  };
+}
+
+/**
+ * What an unwritten `runtime.assignee` selects — **every issue, whoever it is
+ * assigned to**, which is how the queue behaved before it read an assignee at
+ * all (`assigneeSkip`).
+ */
+const EVERYONE = { take: "both" } as const;

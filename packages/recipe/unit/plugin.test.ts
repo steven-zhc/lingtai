@@ -668,34 +668,39 @@ describe("the two the pass stopped calling itself", () => {
  * plugins that must both be present and must agree is 0053's *one decision
  * across two sources*, one level down.
  *
- * Like `worktree:` and `merge:` above, it is a name for code that already
- * runs — `runnableNow`, `considerIssue` and `assigneeSkip` in
+ * Like `worktree:` and `merge:` above, it is a name for code that already runs —
+ * `runnableNow`, `considerIssue` and `assigneeSkip` in
  * `packages/conductor/src/discover.ts`, and `claimWorkItem` in
- * `packages/conductor/src/claim.ts` — and it is not read from the recipe yet.
- * So what these cases hold is what makes declaring it now worth anything:
+ * `packages/conductor/src/claim.ts` — and **since `#269` the recipe is what tells
+ * it to**: the plugin gained a key and `CALLED_DIRECTLY.queue` went, in the one
+ * diff 0065 §7 asks for. So what these cases hold is:
  *
  * - **It wraps rather than reimplements.** Three of `queue:`'s four fields
  *   *are* `source:`'s three — one declaration, `SOURCE_FIELDS` — and the
  *   fourth *is* `AssigneeRule`, refinement and all. A second copy of either
  *   would be two answers to one question while both shapes exist.
- * - **Refused at all ten steps, by a sentence that says where the code is** and
- *   how `claim` will reduce the list when it reads it. The first half is the
- *   same property `worktree:` and `merge:` have; the second is this plugin's
- *   own, and `packages/conductor/unit/step-matrix.test.ts` is where it is
- *   pinned.
+ * - **It serves `claim` and nothing else**, and the refusal at the other nine is
+ *   about the pair. Leaving `CALLED_DIRECTLY`'s *the queue asks GitHub itself*
+ *   here would be telling an operator the recipe cannot reach what it now
+ *   declares; the half of that sentence which is still true is about the *queue
+ *   pass* rather than about the step, and `queuePlugin`'s own comment carries it.
  */
-describe("the one `claim` will hold", () => {
-  it("is refused at every one of the ten steps, and names the file instead", () => {
-    for (const step of STEPS) {
-      expect(whyNoKindAt(step, "queue"), `${step} × queue is accepted`).not.toBeNull();
-    }
+describe("the one `claim` holds", () => {
+  it("serves `claim`, and is refused at the other nine as a pair", () => {
+    expect(queuePlugin.serves).toEqual(["claim"]);
+    expect(whyNoKindAt("claim", "queue")).toBeNull();
 
-    expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/discover.ts");
-    expect(whyNoKindAt("claim", "queue")).toContain("source.kinds");
-    // The fourth field's own half of the sentence, which used to be
-    // `assignee:`'s own refusal and is now carried by this one.
-    expect(whyNoKindAt("claim", "queue")).toContain("runtime.assignee");
-    expect(whyNoKindAt("claim", "queue")).toContain("packages/conductor/src/claim.ts");
+    for (const step of STEPS.filter((step) => step !== "claim")) {
+      const why = whyNoKindAt(step, "queue");
+      expect(why, `${step} × queue is accepted`).not.toBeNull();
+      // Two sentences and the order is `whyNoKindAt`'s: at a step *nobody*
+      // implements, *no plugin implements `design`* is the first thing wrong and
+      // the pair is moot; everywhere else the answer is about the pair.
+      const nobody = why!.includes(`no plugin implements \`${step}\``);
+      if (nobody) continue;
+      expect(why).toContain("`queue:` does not implement");
+      expect(why).toContain("it serves `claim`");
+    }
   });
 
   /**
@@ -711,32 +716,65 @@ describe("the one `claim` will hold", () => {
   });
 
   /**
-   * **One declaration, read by two shapes.** `source:` is the v1 spelling of
-   * three of these fields and `queue:` is the v2 one; while both exist, a
-   * `kinds` the plugin required and `source:` did not would be two answers to
-   * *what is a kind* — and the one list doing three jobs is the reason that
-   * must not happen twice. Asserted by parsing the same input through both and
-   * getting the same defaults, rather than by comparing schema objects.
+   * **One declaration, read by two shapes — and the defaults belong to one of
+   * them** (`#269`). `source:` is the v1 spelling of three of these fields and
+   * `queue:` is the v2 one; while both exist, a `kinds` the plugin required and
+   * `source:` did not would be two answers to *what is a kind*, and the one list
+   * doing three jobs is the reason that must not happen twice. So the field
+   * schemas are shared and the two refusals below are the same ones.
    *
-   * **And the fourth is absent from both when nothing writes it**, which is
-   * what keeps `source:` from growing a `source.assignee` nothing reads.
+   * **What is not shared is `exclude`'s `[]` and `backoff`'s `1h`.** A v1 file
+   * that says neither has always meant those; a `queue:` block that named only
+   * its kinds and took them would drop the hold list a person configured, which
+   * is `submodules`' trap on `worktree:` one plugin down (`#268`). The block is
+   * the four values this step selects on, so all four are required and the
+   * refusal names the key to add.
+   *
+   * **And the fourth is absent from `source:` however it is written**, which is
+   * what keeps it from growing a `source.assignee` nothing reads.
    */
-  it("gives `queue:` the same three fields `source:` has, defaults and all", () => {
+  it("shares `source:`'s three fields and refuses a `queue:` that names only some", () => {
     expect(queuePlugin.declares).toEqual(["name", "queue"]);
 
-    const written = { kinds: ["bug", "feature"] };
-    expect(queuePlugin.schema.parse({ name: "what to work on", queue: written })).toEqual({
+    const whole = {
+      kinds: ["bug", "feature"],
+      exclude: ["agent:hold"],
+      backoff: "45m",
+      assignee: { take: "both" },
+    };
+    expect(queuePlugin.schema.parse({ name: "what to work on", queue: whole })).toEqual({
       name: "what to work on",
-      queue: Recipe.shape.source.parse(written),
+      queue: whole,
     });
     expect(Object.keys(Recipe.shape.source.shape)).not.toContain("assignee");
 
-    // And the same refusals: `backoff: 0` is the absence of the guard rather
-    // than a shorter one, and `kinds: []` is a recipe that takes nothing.
-    expect(queuePlugin.schema.safeParse({ name: "q", queue: { kinds: [] } }).success).toBe(false);
+    // The same three values under `source:`, where the two defaults live and
+    // where a file that says nothing goes on meaning what it always did.
+    expect(Recipe.shape.source.parse({ kinds: ["bug", "feature"] })).toEqual({
+      kinds: ["bug", "feature"],
+      exclude: [],
+      backoff: "1h",
+    });
+
+    // Each missing field by name, and the message says which: a block narrowing
+    // the kinds must not silently replace the other three.
+    for (const missing of ["exclude", "backoff", "assignee"]) {
+      const partial = Object.fromEntries(Object.entries(whole).filter(([k]) => k !== missing));
+      const refused = queuePlugin.schema.safeParse({ name: "q", queue: partial });
+      expect(refused.success).toBe(false);
+      expect(refused.error!.issues[0]!.path).toEqual(["queue", missing]);
+    }
+
+    // And the same refusals `source:` has: `backoff: 0` is the absence of the
+    // guard rather than a shorter one, and `kinds: []` is a recipe that takes
+    // nothing.
+    expect(queuePlugin.schema.safeParse({ name: "q", queue: { ...whole, kinds: [] } }).success).toBe(
+      false,
+    );
     expect(
-      queuePlugin.schema.safeParse({ name: "q", queue: { kinds: ["bug"], backoff: "0s" } }).success,
+      queuePlugin.schema.safeParse({ name: "q", queue: { ...whole, backoff: "0s" } }).success,
     ).toBe(false);
+    expect(Recipe.shape.source.safeParse({ kinds: ["bug"], backoff: "0s" }).success).toBe(false);
   });
 
   /**
@@ -746,7 +784,7 @@ describe("the one `claim` will hold", () => {
   it("declares no `env:`, and says what it does declare", () => {
     const problems = readFields(queuePlugin, {
       name: "take work",
-      queue: { kinds: ["bug"] },
+      queue: { kinds: ["bug"], exclude: [], backoff: "1h", assignee: { take: "both" } },
       env: ["GITHUB_TOKEN"],
     }).problems!;
     expect(problems).toHaveLength(1);
@@ -764,7 +802,9 @@ describe("the one `claim` will hold", () => {
    * remove.
    */
   it("keeps the rule that `assignee: { take: mine }` needs a login", () => {
-    const q = { kinds: ["bug"] };
+    // The other three, because the block requires all four — `assignee: {}` is
+    // still how a person writes *whoever it is assigned to*.
+    const q = { kinds: ["bug"], exclude: [], backoff: "1h" };
     expect(
       queuePlugin.schema.parse({ name: "q", queue: { ...q, assignee: {} } }),
     ).toMatchObject({ queue: { assignee: { take: "both" } } });

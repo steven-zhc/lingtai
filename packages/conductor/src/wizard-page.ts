@@ -713,12 +713,35 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
       : action,
   );
 
+  /**
+   * **The kinds row is written where `kindsOf` reads it, which is two places**
+   * (`#269`) — the block above, one setting down.
+   *
+   * A recipe that declares a `queue:` at `claim` has its kinds and its holds
+   * *there*, and `source:` is the v1 spelling of the same three settings. A page
+   * that wrote only `source.kinds` would show the block's list (the row is read
+   * through `kindsOf`), report the untick as an edit, write it, hash it, and then
+   * take a `documentation` ticket on the next pass — with the page showing the
+   * removed kind back on the next render, so the edit reads as silently reverted.
+   * The read-back guard cannot catch it for `admit`'s reason: the recipe it
+   * hashes against carries the same stale declaration.
+   *
+   * The other two fields of the block are left exactly as written: `backoff` and
+   * `assignee` are not this page's rows, and filling them in would be the second
+   * home the spelling exists to avoid.
+   */
+  const claim = recipe.steps.claim.map((action) =>
+    "queue" in action
+      ? { ...action, queue: { ...action.queue, kinds: [...draft.kinds], exclude: [...draft.exclude] } }
+      : action,
+  );
+
   return {
     ...recipe,
     repo: { ...recipe.repo, base: draft.base.trim(), submodules: draft.submodules },
     source: { ...recipe.source, kinds: [...draft.kinds], exclude: [...draft.exclude] },
     env: { ...recipe.env, required: [...draft.envRequired] },
-    steps: { ...recipe.steps, admit, ...checked, end },
+    steps: { ...recipe.steps, claim, admit, ...checked, end },
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
@@ -756,6 +779,12 @@ const PATHS: readonly (readonly string[])[] = [
   ["steps", "admit"],
   ["source", "kinds"],
   ["source", "exclude"],
+  // The same row's other spelling: `queue:` at `claim` carries the kinds and the
+  // holds where a recipe has moved them, and `kindsOf`/`excludeOf` read it first
+  // (`#269`). One path, because the block is one map and the two fields are one
+  // row — and the block's other two fields are nobody's row here, so a `claim`
+  // that only holds them never appears as a change.
+  ["steps", "claim"],
   // The checks row is one row and three keys: a build at `build:`, a cold
   // reviewer at `review:`, whatever is left at `proposed:`. Each is its own
   // path so that editing one of them writes one of them.

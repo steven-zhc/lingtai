@@ -205,8 +205,11 @@ export interface ActionContext {
 
 export interface Action {
   readonly name: string;
-  /** Which action shape produced it: `run`, `agent`, `watch`, `human`, `worktree` or `merge`. */
-  readonly kind: "run" | "agent" | "watch" | "human" | "worktree" | "merge";
+  /**
+   * Which action shape produced it: `run`, `agent`, `watch`, `human`, `worktree`,
+   * `queue` or `merge`.
+   */
+  readonly kind: "run" | "agent" | "watch" | "human" | "worktree" | "queue" | "merge";
   run(context: ActionContext): Promise<ActionResult>;
 }
 

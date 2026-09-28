@@ -26,9 +26,8 @@
  * any `agent:*` label is one the old loop has touched, so Lingtai does not
  * discover it at all.
  */
-import type { AssigneeRule, Recipe } from "@lingtai/recipe";
+import type { AssigneeRule, QueueSettings } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
-import { assigneeOf, excludeOf, kindsOf } from "@lingtai/recipe/settings";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
@@ -139,7 +138,7 @@ export interface Considered {
  * Separated from the appending so `lingtai status` can explain a queue's *absences*,
  * which is the question the old loop's `pick_ticket` could never answer.
  */
-export function considerIssue(issue: Issue, recipe: Recipe): Considered {
+export function considerIssue(issue: Issue, queue: QueueSettings): Considered {
   if (issue.state === "closed") return { issue, skip: "closed" };
 
   const labels = issue.labels.map((l) => l.name.toLowerCase());
@@ -155,10 +154,10 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
   // of it in `nextloom-ai-admin` — and it was skipped alongside `agent:hold`,
   // which means the opposite. A repository knows which of its labels are holds;
   // this file cannot.
-  const excluded = new Set(excludeOf(recipe).map((l) => l.toLowerCase()));
+  const excluded = new Set(queue.exclude.map((l) => l.toLowerCase()));
   if (labels.some((l) => excluded.has(l))) return { issue, skip: "excluded-label" };
 
-  if (kindOf(issue, kindsOf(recipe)) === null) return { issue, skip: "no-kind" };
+  if (kindOf(issue, queue.kinds) === null) return { issue, skip: "no-kind" };
 
   // After the checks above, and deliberately the least permanent of them. A ticket carrying
   // `agent:hold` is one a person is holding and a ticket of no kind is one this
@@ -176,7 +175,7 @@ export function considerIssue(issue: Issue, recipe: Recipe): Considered {
 
   // Last: whose work it is (#181). An issue both blocked and somebody else's
   // reports `blocked-by`, the reason that clears on its own.
-  const assignee = assigneeSkip(issue, assigneeOf(recipe));
+  const assignee = assigneeSkip(issue, queue.assignee);
   if (assignee) return { issue, skip: assignee };
 
   return { issue, skip: null };
@@ -303,7 +302,15 @@ export function passedOver(skipped: Offered["skipped"]): string | null {
 
 export interface RunnableNowOptions {
   client: GitHubClient;
-  recipe: Recipe;
+  /**
+   * The four values `queue:` carries — **the block and not a recipe** (`#269`).
+   *
+   * `queueOf(recipe)` in `@lingtai/recipe` is what a caller that has only a
+   * recipe asks, and it is the one place the two spellings are known. A caller
+   * running `claim`'s declared `queue:` action hands the block itself, so the
+   * ticket a pass takes is the one the reading of that action says it took.
+   */
+  queue: QueueSettings;
   /** Restricts the read to specific issue numbers. */
   only?: number[];
 }
@@ -324,7 +331,7 @@ export interface RunnableNowOptions {
  * which subtracts what the log says is claimed.
  */
 export async function runnableNow(options: RunnableNowOptions): Promise<Offered> {
-  const { client, recipe } = options;
+  const { client, queue } = options;
 
   const issues = options.only
     ? await Promise.all(options.only.map((n) => client.getIssue(n)))
@@ -337,7 +344,7 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
   for (const issue of issues) {
     if (issue.dependencies === null) unread.push(issue.number);
 
-    const matched = kindLabelOf(issue, kindsOf(recipe));
+    const matched = kindLabelOf(issue, queue.kinds);
     // Before the skip, deliberately: the colour of `bug` is the same whether or
     // not this particular bug can be run, and a held ticket is often the only
     // open issue a kind has.
@@ -345,7 +352,7 @@ export async function runnableNow(options: RunnableNowOptions): Promise<Offered>
       result.kindColors[matched.kind] = matched.label.color;
     }
 
-    const { skip } = considerIssue(issue, recipe);
+    const { skip } = considerIssue(issue, queue);
     if (skip) {
       result.skipped.push({ ref: issue.number, reason: skip });
       continue;

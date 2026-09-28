@@ -5,7 +5,7 @@
  * or a network. `runnableNow` gets the real store anyway, because "it appends
  * nothing" is a claim about the log rather than about a return value.
  */
-import type { Recipe } from "@lingtai/recipe";
+import type { AssigneeRule, QueueSettings } from "@lingtai/recipe";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
 import type { EventStore } from "@lingtai/event-store/store";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
@@ -20,20 +20,23 @@ import {
   runnableNow,
 } from "../src/index.ts";
 
-const recipe = {
-  version: 2,
-  repo: { base: "develop", submodules: false },
-  // `documentation` is here on purpose: it is not a member of any enum, and
-  // before #76 a recipe naming it did not parse at all — which took the two
-  // `bug`s down with it rather than the one label.
-  source: {
-    kinds: ["bug", "feature", "documentation"],
-    exclude: ["blocked", "needs-design", "agent:wip", "agent:review"],
-  },
-  env: { required: [], plantAt: ".env.local" },
-  steps: { admit: [], prepared: [], proposed: [{ name: "build", run: "pnpm verify", timeout: "15m" }], merge: [], end: [] },
-  runtime: { agent: "claude-code", limits: { turns: 300, wall: "2h" } },
-} as unknown as Recipe;
+/**
+ * **The four values and not a recipe**, since `#269`: `considerIssue` and
+ * `runnableNow` take `queue:`'s own block, and `queueOf` in `@lingtai/recipe` is
+ * what a caller holding a recipe asks for one.
+ *
+ * `documentation` is in `kinds` on purpose: it is not a member of any enum, and
+ * before #76 a recipe naming it did not parse at all — which took the two `bug`s
+ * down with it rather than the one label.
+ */
+const queue: QueueSettings = {
+  kinds: ["bug", "feature", "documentation"],
+  exclude: ["blocked", "needs-design", "agent:wip", "agent:review"],
+  backoff: "1h",
+  // Written out because the block requires it: `both` is what an unwritten
+  // `runtime.assignee` has always selected, and `queueOf` is where that is said.
+  assignee: { take: "both" },
+};
 
 /**
  * Labels are given here as names, and coloured only where a test is about the
@@ -95,7 +98,7 @@ describe("kindOf", () => {
 
 describe("considerIssue", () => {
   it("accepts an open issue of a wanted kind", () => {
-    expect(considerIssue(issue({ number: 1, labels: ["bug"] }), recipe).skip).toBeNull();
+    expect(considerIssue(issue({ number: 1, labels: ["bug"] }), queue).skip).toBeNull();
   });
 
   /**
@@ -105,10 +108,10 @@ describe("considerIssue", () => {
    * ready work an agent had filed — down with `agent:wip`.
    */
   it("refuses another system's labels when the recipe names them", () => {
-    expect(considerIssue(issue({ number: 2, labels: ["bug", "agent:wip"] }), recipe).skip).toBe(
+    expect(considerIssue(issue({ number: 2, labels: ["bug", "agent:wip"] }), queue).skip).toBe(
       "excluded-label",
     );
-    expect(considerIssue(issue({ number: 3, labels: ["bug", "agent:review"] }), recipe).skip).toBe(
+    expect(considerIssue(issue({ number: 3, labels: ["bug", "agent:review"] }), queue).skip).toBe(
       "excluded-label",
     );
   });
@@ -116,20 +119,20 @@ describe("considerIssue", () => {
   it("takes a label in that namespace the recipe did not name", () => {
     // `agent:followup` is not in the exclude list, so it is ordinary work. The
     // old rule would have skipped it for its prefix alone.
-    expect(considerIssue(issue({ number: 5, labels: ["bug", "agent:followup"] }), recipe).skip).toBeNull();
+    expect(considerIssue(issue({ number: 5, labels: ["bug", "agent:followup"] }), queue).skip).toBeNull();
   });
 
   it("honours the recipe's own exclude list", () => {
-    expect(considerIssue(issue({ number: 4, labels: ["bug", "blocked"] }), recipe).skip).toBe(
+    expect(considerIssue(issue({ number: 4, labels: ["bug", "blocked"] }), queue).skip).toBe(
       "excluded-label",
     );
-    expect(considerIssue(issue({ number: 5, labels: ["bug", "Needs-Design"] }), recipe).skip).toBe(
+    expect(considerIssue(issue({ number: 5, labels: ["bug", "Needs-Design"] }), queue).skip).toBe(
       "excluded-label",
     );
   });
 
   it("takes a label of the repository's own that no enum ever had", () => {
-    expect(considerIssue(issue({ number: 9, labels: ["documentation"] }), recipe).skip).toBeNull();
+    expect(considerIssue(issue({ number: 9, labels: ["documentation"] }), queue).skip).toBeNull();
   });
 
   it("skips a kind this project does not want, and says which reason", () => {
@@ -137,9 +140,9 @@ describe("considerIssue", () => {
     // there is no difference between "unclassified" and "classified as
     // something this project does not take". `kind-not-wanted` named that gap
     // and the gap is gone (#76).
-    expect(considerIssue(issue({ number: 6, labels: ["tech-debt"] }), recipe).skip).toBe("no-kind");
-    expect(considerIssue(issue({ number: 7, labels: [] }), recipe).skip).toBe("no-kind");
-    expect(considerIssue(issue({ number: 8, labels: ["bug"], state: "closed" }), recipe).skip).toBe(
+    expect(considerIssue(issue({ number: 6, labels: ["tech-debt"] }), queue).skip).toBe("no-kind");
+    expect(considerIssue(issue({ number: 7, labels: [] }), queue).skip).toBe("no-kind");
+    expect(considerIssue(issue({ number: 8, labels: ["bug"], state: "closed" }), queue).skip).toBe(
       "closed",
     );
   });
@@ -155,7 +158,7 @@ describe("considerIssue", () => {
     expect(
       considerIssue(
         issue({ number: 123, labels: ["bug"], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }),
-        recipe,
+        queue,
       ).skip,
     ).toBe("blocked-by");
   });
@@ -169,13 +172,13 @@ describe("considerIssue", () => {
     expect(
       considerIssue(
         issue({ number: 124, labels: ["bug"], dependencies: { blockedBy: 0, totalBlockedBy: 2 } }),
-        recipe,
+        queue,
       ).skip,
     ).toBeNull();
     expect(
       considerIssue(
         issue({ number: 125, labels: ["bug"], dependencies: { blockedBy: 0, totalBlockedBy: 0 } }),
-        recipe,
+        queue,
       ).skip,
     ).toBeNull();
   });
@@ -186,7 +189,7 @@ describe("considerIssue", () => {
    * rather than passing every ticket over; `runnableNow` is what says so.
    */
   it("takes an issue whose repository reports no dependencies at all", () => {
-    expect(considerIssue(issue({ number: 126, labels: ["bug"], dependencies: null }), recipe).skip).toBeNull();
+    expect(considerIssue(issue({ number: 126, labels: ["bug"], dependencies: null }), queue).skip).toBeNull();
   });
 
   /**
@@ -202,7 +205,7 @@ describe("considerIssue", () => {
           labels: ["bug", "blocked"],
           dependencies: { blockedBy: 1, totalBlockedBy: 1 },
         }),
-        recipe,
+        queue,
       ).skip,
     ).toBe("excluded-label");
   });
@@ -213,8 +216,7 @@ describe("considerIssue", () => {
  * `lingtai:working`, which says a machine is running it and decides nothing.
  */
 describe("the assignee", () => {
-  const as = (assignee: Recipe["runtime"]["assignee"]) =>
-    ({ ...recipe, runtime: { ...recipe.runtime, assignee } }) as Recipe;
+  const as = (assignee: AssigneeRule): QueueSettings => ({ ...queue, assignee });
   const alices = issue({ number: 181, labels: ["bug"], assignees: ["alice"] });
   const mine = issue({ number: 182, labels: ["bug"], assignees: ["Bob"] });
   const nobodys = issue({ number: 183, labels: ["bug"] });
@@ -226,7 +228,7 @@ describe("the assignee", () => {
 
   /** Unassigned work is taken by default — what the queue did before, and what somebody alone expects. */
   it("offers everything when the machine says nothing", () => {
-    for (const i of [alices, mine, nobodys]) expect(considerIssue(i, recipe).skip).toBeNull();
+    for (const i of [alices, mine, nobodys]) expect(considerIssue(i, queue).skip).toBeNull();
   });
 
   it("under `mine`, takes only this login's, compared as GitHub does, without case", () => {
@@ -265,7 +267,7 @@ describe("the assignee", () => {
   it("is counted on the line `lingtai status` prints, beside the other reasons", async () => {
     const found = await runnableNow({
       client: fakeClient([alices, mine, nobodys]),
-      recipe: as({ login: "bob", take: "mine" }),
+      queue: as({ login: "bob", take: "mine" }),
     });
     expect(found.runnable.map((r) => r.ref)).toEqual(["182"]);
     expect(passedOver(found.skipped)).toBe("2 passed over — assigned-elsewhere 1, unassigned 1");
@@ -376,7 +378,7 @@ describe("runnableNow", () => {
       issue({ number: 104, labels: [] }),
     ];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.runnable.map((r) => r.ref)).toEqual(["101", "102"]);
     expect(result.runnable[0]).toEqual({ ref: "101", title: "a race in the importer", kind: "bug" });
@@ -404,7 +406,7 @@ describe("runnableNow", () => {
       issue({ number: 123, labels: ["bug"], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }),
     ];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.runnable.map((r) => r.ref)).toEqual(["121", "122"]);
     expect(result.skipped).toEqual([{ ref: 123, reason: "blocked-by" }]);
@@ -424,7 +426,7 @@ describe("runnableNow", () => {
       issue({ number: 132, labels: ["feature"], dependencies: null }),
     ];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.runnable.map((r) => r.ref)).toEqual(["131", "132"]);
     expect(result.skipped).toEqual([]);
@@ -445,7 +447,7 @@ describe("runnableNow", () => {
       issue({ number: 123, labels: ["bug"], dependencies: { blockedBy: 1, totalBlockedBy: 2 } }),
     ];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.runnable.map((r) => r.ref)).toEqual(["121", "122"]);
     expect(result.skipped).toEqual([{ ref: 123, reason: "blocked-by" }]);
@@ -468,7 +470,7 @@ describe("runnableNow", () => {
       issue({ number: 402, labels: [{ name: "feature", color: "#a2eeef" }] }),
     ];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.kindColors).toEqual({ bug: "#d73a4a", feature: "#a2eeef" });
   });
@@ -483,7 +485,7 @@ describe("runnableNow", () => {
     const PROJECT = newProject();
     const issues = [issue({ number: 403, labels: [{ name: "bug", color: "#d73a4a" }, "blocked"] })];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.runnable).toEqual([]);
     expect(result.skipped).toEqual([{ ref: 403, reason: "excluded-label" }]);
@@ -499,7 +501,7 @@ describe("runnableNow", () => {
     const PROJECT = newProject();
     const issues = [issue({ number: 404, labels: ["bug"] })];
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     expect(result.kindColors).toEqual({});
   });
@@ -508,7 +510,7 @@ describe("runnableNow", () => {
     const PROJECT = newProject();
     const issues = [issue({ number: 201, labels: ["bug"] })];
 
-    await runnableNow({ client: fakeClient(issues, PROJECT), recipe });
+    await runnableNow({ client: fakeClient(issues, PROJECT), queue });
 
     // The whole point of 0012: which issues exist is GitHub's state, and one
     // event per issue per pass was reproducing a fact GitHub answers on demand.
@@ -529,7 +531,7 @@ describe("runnableNow", () => {
 
     const result = await runnableNow({
       client: fakeClient(issues, PROJECT),
-      recipe,
+      queue,
       only: [302],
     });
 

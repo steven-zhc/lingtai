@@ -71,25 +71,28 @@
  *
  * ## What travels between the steps, and how
  *
- * Two facts are made at one step and needed at a later one, and `StepWork`
- * carries neither:
+ * One fact is made at one step and needed at a later one, and `StepWork` does
+ * not carry it:
  *
  * ```
- * the item        claim → design, implement, end          the ticket's own text
  * the design      design → implement                      and `""` is an answer
  * ```
  *
- * They are held by `bodiesFor`, cleared at `claim` so one closure may conduct one
+ * It is held by `bodiesFor`, cleared at `claim` so one closure may conduct one
  * pass after another, rather than on the ports, which stay stateless and
  * therefore fakeable one method at a time.
  *
- * **It was three until `#268`, and the worktree is what left.** `admit` cut it in
- * a body, so the path was a fact this file had to hold and hand on; since
- * `worktreePlugin` declares `admit` (0065 §4) the cut is an action's, and the
- * only closure that can have the path is the one whose dep made it —
- * `conduct.ts`'s `cutTree`. So `Brief` does not carry a worktree either: an
- * implementation is handed a ticket, a design and why it is being run again, and
- * it already knows where it works.
+ * **It was three, and two have left the same way.** `admit` cut the worktree in a
+ * body, so the path was a fact this file had to hold and hand on; since
+ * `worktreePlugin` declares `admit` (0065 §4) the cut is an action's, and the only
+ * closure that can have the path is the one whose dep made it — `conduct.ts`'s
+ * `cutTree`. `claim` took the item in a body until `queuePlugin` declared `claim`
+ * (`#269`), and the item moved for the same reason to the same place: `ports.item`
+ * and `ports.onStream` are that closure's, **read** here rather than assigned, and
+ * the reset that begins a pass is in the take itself, which runs before the body
+ * and not after it. So `Brief` does not carry a worktree: an implementation is
+ * handed a ticket, a design and why it is being run again, and it already knows
+ * where it works.
  *
  * **What the loop already carries is read off `StepWork` and never kept here**,
  * and there are three of those. The head: a step that moved the tree says so on
@@ -157,7 +160,13 @@ export interface Ticket {
   readonly body: string;
 }
 
-/** The item `claim` took, and the three things every step after it needs. */
+/**
+ * The item `claim`'s `queue:` action took, and the three things every step after
+ * it needs.
+ *
+ * `conduct.ts` holds it — the closure whose `take` dep made it — and the pass
+ * reads it back through `PassPorts.item` (`#269`).
+ */
 export interface Claimed {
   /** `wi-<project>-<issue>` — `workItemStream`, and where `end` appends. */
   readonly workItemId: string;
@@ -285,42 +294,6 @@ export interface NeverStarted {
 }
 
 // ----------------------------------------------------------- the ports ----
-
-/** What `claim` found when it asked whether it may take the item. */
-export type Taken =
-  | { readonly taken: Claimed }
-  /**
-   * GitHub is no longer offering it, with `considerIssue`'s own reason —
-   * `excluded-label`, `blocked-by`, `assigned-elsewhere`. Asked rather than
-   * looked up, because nothing was appended when the issue was first seen
-   * ([0012](../../../doc/decisions/0012-one-task-view.md)) and a label edit takes
-   * effect through this read or through nothing.
-   */
-  | { readonly passedOver: string }
-  /**
-   * Somebody else holds it, or this append lost the race — `ClaimRefusal`, and
-   * losing is an ordinary outcome of two schedulers reading one queue.
-   */
-  | { readonly notClaimed: string }
-  /**
-   * **The claim may have committed** — the one answer that is neither taking it
-   * nor leaving it alone, and the reason there are four cases rather than three.
-   *
-   * `claimWorkItem` appends `WorkItemClaimed` at an expected version and answers
-   * a `ConcurrencyError` with `lost-race`; every other failure of that append
-   * **throws**, and an append that committed and then lost its connection throws
-   * the same way. So there is a state in which the item is held by this run and
-   * the port has no result to show for it, and the pass is the only component
-   * that knows which item that was.
-   *
-   * A port that lets the throw escape gets `runStep`'s generic `did-not-finish`,
-   * which names no item: `PassResult` then says `claim` threw and nothing —
-   * including the caller that would append the ending — can say what is held.
-   * Reported here instead, so the pass stops with the item named, `end` resolves
-   * against the stream it may be on, and a person or the next conductor's
-   * reconcile has something to act on.
-   */
-  | { readonly mayHold: { readonly workItemId: string; readonly detail: string } };
 
 /**
  * What `design` produced — **and `""` is an answer rather than a skip.**
@@ -491,20 +464,27 @@ export type Judged =
   | { readonly noJudge: true };
 
 /**
- * A step's own work, as the pass asks for it — for the **five** steps that have
- * any, in six methods: `end` is the one step with two, because reading the
- * item's stream and appending to it are separate calls for the reason its own
- * rows give.
+ * A step's own work, as the pass asks for it — for the **four** steps that have
+ * any, in seven methods: `end` is the one step with three, because the stream it
+ * resolves onto, reading it and appending to it are separate calls for the reason
+ * its own rows give.
  *
- * **Five steps are not here, and that is the shape of them rather than an
+ * **Six steps are not here, and that is the shape of them rather than an
  * omission.** Each is entirely its plugins' (0061 §3) — a `run:` carrying the
  * install at `prepared` and the checks at `build`, an `agent:` reading the diff
- * at `review`, a `worktree:` cutting the branch at `admit` (`#268`) and a
- * `merge:` landing it at `merge` (`#270`) — so the loop has run them by the time
- * any body is called, and a port beside them would be the reimplementation the
- * rule below exists to prevent. **It was three, and the two that left were ports
- * here**: `ports.cut` and `ports.land` went with the bodies that called them, in
- * the diffs that opened their keys.
+ * at `review`, a `worktree:` cutting the branch at `admit` (`#268`), a `queue:`
+ * taking the ticket at `claim` (`#269`) and a `merge:` landing it at `merge`
+ * (`#270`) — so the loop has run them by the time any body is called, and a port
+ * beside them would be the reimplementation the rule below exists to prevent.
+ * **It was three, and the three that left were ports here**: `ports.cut`,
+ * `ports.take` and `ports.land` went with the bodies that called them, in the
+ * diffs that opened their keys.
+ *
+ * **`item` and `onStream` are what `take` left behind, and they are not it.**
+ * They *ask* rather than *do*: the take is an action's, and these two read the
+ * fact it made off the closure whose dep made it (`conduct.ts`). That is why they
+ * are synchronous and touch nothing — there is no call to make, the pass's own
+ * `claim` step has already made it, and a `Promise` here would suggest otherwise.
  *
  * Stateless by construction: everything one step makes and another needs is held
  * by `bodiesFor`, so a test fakes one method without arranging the rest and a
@@ -513,16 +493,28 @@ export type Judged =
  */
 export interface PassPorts {
   /**
-   * `claim` — whether this machine may take the item the pass is about, and
-   * taking it.
+   * `design` and `implement` — **the item `claim`'s `queue:` action took**, or
+   * null where it took none.
    *
-   * **The decision is not reimplemented here.** Which item is taken, by kind and
-   * by label and by whether this machine may take it, is `runnableNow` and
-   * `considerIssue` (`discover.ts`) over the recipe's `queue:` values, and the
-   * taking is `claimWorkItem`'s append at an expected version, which is the whole
-   * of the mutual exclusion (`claim.ts`).
+   * Null is the pass's own bookkeeping gone wrong and never something that
+   * happened to a diff: `implement` is reached only after `claim` passed, and
+   * `claim` passes only on a take, so `madeBy` throws and `runStep` reports the
+   * visit's own `did-not-finish`.
    */
-  take(): Promise<Taken>;
+  item(): Claimed | null;
+  /**
+   * `end` — **the stream `claim`'s `queue:` action left the pass on**, or null
+   * where the pass is about no item.
+   *
+   * Beside `item` rather than read off it, because the two are not the same
+   * question: a claim that *may* have committed gives the pass a stream and no
+   * ticket, and `end` needs only the first of those. It is also the one of the
+   * two that must be answerable when the step's own action did **not** pass —
+   * `end` runs on every ending, the body of a step whose plugins refused never
+   * runs, and an item this run may be holding is one somebody has to be told
+   * about.
+   */
+  onStream(): string | null;
   /**
    * `design` — a document, before any code, or nothing.
    *
@@ -868,20 +860,12 @@ function becauseSpent(wanted: Destination, offer: Offer): string {
  * A pass run with these ports walks the whole spine, and every refusal on it
  * reaches `proposed`, where a judge is asked and a person is the floor.
  *
- * One closure conducts one pass at a time: the four facts below are the pass's,
- * and `claim` clears them.
+ * One closure conducts one pass at a time: the one fact below is the pass's, and
+ * `claim` clears it. The item and its stream are `conduct.ts`'s since `#269`,
+ * cleared by the take that makes them — which is the only place a reset can be,
+ * now that the work runs *before* the body rather than in it.
  */
 export function bodiesFor(ports: PassPorts): StepBodies {
-  /** The item, from `claim`. Null until it has taken one. */
-  let claimed: Claimed | null = null;
-  /**
-   * The stream `end` resolves onto, or null where the pass is about no item.
-   *
-   * Beside `claimed` rather than read off it, because the two are not the same
-   * question: a `mayHold` gives the pass a stream and no ticket, and `end` needs
-   * only the first of those.
-   */
-  let onStream: string | null = null;
   /**
    * What `design` produced. `""` is the answer *this needs no design*, and is
    * every pass today — so it starts as the answer rather than as `null`, because
@@ -902,7 +886,10 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * **The worktree used to be the other thing it guarded** and is
    * `conduct.ts`'s `cutTree` since `#268`, which raises the same error in the
    * same words for the same reason — the closure that holds a fact is the one
-   * that can say it is missing.
+   * that can say it is missing. The item followed it there in `#269` and this
+   * still guards it, because the *reading* is still the pass's: `ports.item`
+   * answers null for a pass that took nothing, and *the spine says `claim`
+   * passed* is a claim only the pass can make.
    */
   const madeBy = <T>(what: string, at: string, value: T | null): T => {
     if (value === null) {
@@ -954,7 +941,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     step: Step,
     work: { context: ActionContext; reached: readonly StepReached[] },
   ): Brief => ({
-    ticket: madeBy(step, "item", claimed).ticket,
+    ticket: madeBy(step, "item", ports.item()).ticket,
     design,
     again: sentBackTo(step, work.reached),
     context: work.context,
@@ -1157,48 +1144,38 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     ...NOT_BUILT_YET,
 
     /**
-     * Pick the ticket.
+     * Pick the ticket — **and this is the fifth of the ten whose body is nothing
+     * beyond its plugins** (`#269`).
      *
-     * **It cannot refuse**, and 0058 §2 is why rather than an omission: a refusal
-     * buys a fix round, holds the work item and reaches a person, and `claim` has
-     * picked nothing — there is no item to hold and no diff to fix. So the
-     * answers are *took it* and three ways of *did not*, and none of those
+     * It took the item here until `queuePlugin` declared `claim`
+     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2). What
+     * takes it now is a `queue:` action — the one a recipe declares there, or the
+     * one `conduct.ts`'s `defaultsAt` supplies where a recipe declares nothing —
+     * and the loop has run it by the time this is called, so a second take written
+     * here would be the reimplementation 0061 §3 exists to prevent. At `claim` it
+     * would be worse than a duplicate: a second `claimWorkItem` at an expected
+     * version the first one moved is a lost race against this same run.
+     *
+     * **It cannot refuse, and that is the pipeline's rule rather than this body's**
+     * (0058 §2). A refusal buys a fix round, holds the work item and reaches a
+     * person, and a `claim` that took nothing is holding nothing — so the answers
+     * are *took it* and three ways of *did not*, the three arrive as `failed`
+     * verdicts at a step `REFUSING_STEPS` does not carry, and `endingOf` reports
+     * each as a `did-not-finish` carrying the action's own `because`. None of them
      * reaches the router either (`ARRIVE_AT_THE_ROUTER`).
      *
-     * **It is also where a pass begins**, which is why the four facts are cleared
-     * here and not left from the pass before: see `bodiesFor`.
+     * **It is still where a pass begins, and the reset is not here.** It cleared
+     * the item, its stream and the design before asking, because the three ways a
+     * take can decline set no item and it was exactly those that would let `end`
+     * resolve onto the item the pass before had landed. The action runs *before*
+     * this body, so a reset written here would wipe what the action had just
+     * taken: the item and its stream are cleared by the take itself
+     * (`conduct.ts`), and the design — which nothing at `claim` writes — is
+     * cleared here.
      */
-    claim: async (): Promise<StepPassed | StepDidNotFinish> => {
-      // Before the answer, not after it — the three ways `take` can decline set
-      // no item, and it was exactly those that would let `end` resolve onto the
-      // item the pass before had landed.
-      claimed = null;
-      onStream = null;
+    claim: async (): Promise<StepPassed> => {
       design = "";
-      const answer = await ports.take();
-      if ("taken" in answer) {
-        claimed = answer.taken;
-        onStream = answer.taken.workItemId;
-        return { ending: "passed" };
-      }
-      if ("mayHold" in answer) {
-        // The one decline that leaves a stream behind: `end` still resolves
-        // against it, because an item this run may be holding is one somebody
-        // has to be told about.
-        onStream = answer.mayHold.workItemId;
-        return {
-          ending: "did-not-finish",
-          because: "claim-unconfirmed",
-          at: null,
-          detail: `${answer.mayHold.workItemId} may be claimed by this run: ${answer.mayHold.detail}`,
-        };
-      }
-      // Two tokens rather than one, because they clear differently: an issue
-      // GitHub passed over comes back when a label or a blocker changes, and one
-      // somebody else holds comes back when that run ends.
-      return "passedOver" in answer
-        ? { ending: "did-not-finish", because: "passed-over", at: null, detail: answer.passedOver }
-        : { ending: "did-not-finish", because: "not-claimed", at: null, detail: answer.notClaimed };
+      return { ending: "passed" };
     },
 
     /**
@@ -1504,7 +1481,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * **A pass with no stream behind it resolves nothing.** `EndActionsResolved`
      * lives on the work item's stream, and a `claim` that took no item leaves
      * none to append to; a `claim` that may have taken one leaves a stream and no
-     * ticket, and that is enough for this step (`Taken`'s `mayHold`). What the
+     * ticket, and that is enough for this step (`TakeAnswer`'s `mayHold`, and
+     * `PassPorts.onStream` is why it is asked rather than remembered). What the
      * body must not do either way is throw, because the ending it is running for
      * has already happened.
      *
@@ -1514,7 +1492,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `EndActionsResolved` records.
      */
     end: async ({ actions, outcome }): Promise<StepPassed | StepDidNotFinish> => {
-      const workItemId = onStream;
+      const workItemId = ports.onStream();
       if (workItemId === null) return { ending: "passed" };
       // Which of the step's three acts did not finish, for the person reading
       // `detail`. The plan is empty until `resolveEndActions` has answered, so a

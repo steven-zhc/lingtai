@@ -45,7 +45,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { stateDir } from "@lingtai/env";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Recipe, backoffOf, baseOf, emitRecipe, excludeOf, kindsOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
+import { Recipe, backoffOf, baseOf, emitRecipe, excludeOf, kindsOf, queueOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
 import { type Runnable, selectRunnable } from "./queue.ts";
 import { CHECKING_STEPS, nothingChecks } from "./wizard-page.ts";
@@ -86,7 +86,7 @@ export interface FirstPass {
  */
 export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
   const { client, recipe } = options;
-  const offered = await runnableNow({ client, recipe });
+  const offered = await runnableNow({ client, queue: queueOf(recipe) });
   const taking = await selectRunnable({
     project: client.repo,
     offered: offered.runnable,

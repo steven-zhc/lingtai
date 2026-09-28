@@ -18,6 +18,7 @@ import {
   type ClientFor,
   type RecipeFor,
 } from "@lingtai/conductor";
+import { queueOf } from "@lingtai/recipe/settings";
 import { paint, stateInk } from "@lingtai/env/colour";
 import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from "@lingtai/projector";
 
@@ -103,7 +104,7 @@ export async function status(
         // out of — 0022 deleted the table that used to hold it — so the choice
         // is between asking GitHub and having no answer. This takes nothing,
         // claims nothing and appends no event.
-        const found = await runnableNow({ client, recipe });
+        const found = await runnableNow({ client, queue: queueOf(recipe) });
         offered = found.runnable;
         asked = true;
         const passed = passedOver(found.skipped);
