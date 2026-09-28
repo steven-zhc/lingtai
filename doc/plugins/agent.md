@@ -62,9 +62,18 @@ the findings ride out on `results` for `proposed` to route on. At `implement` th
 receipt is a commit and nothing else — a document committed there would not do,
 which is why `firstDispatch` measures the receipt against the head *this* agent
 found rather than against `tree.baseSha` (`#265`). At `design` what it returns is
-a document, and **what it writes into the tree reaches nobody**: it is asked not
-to commit, and the asking is not what makes that safe — the same one line in
-`firstDispatch` is.
+a document, and **what it writes into the tree is not the document**: the prompt
+asks it not to edit a file, not to run a command that writes one and not to
+commit, and that asking is the only thing between a drafting agent and the
+branch. `firstDispatch`'s one line narrows what ignoring it costs rather than
+undoing it — a design commit can no longer be read as the implementer's receipt,
+so a pass that drafted and wrote no code still stands down (0057 §2) — and **the
+commit itself stays**: nothing resets the worktree between the two steps, so a
+`doc/design/foo.md` committed at `design` travels to `build` and `review` and
+lands with the change, and a file left uncommitted is there for the implementer to
+stage. So if a drafting agent's tree writes matter here, what catches them is a
+`watch:` on those paths at `proposed` or the cold reviewer reading them in the
+diff — never that guard, which is about the receipt.
 
 **An answer that does not parse is `unreadable`, and it costs nothing either
 way** (`#279`). A reviewer whose JSON cannot be read and a reviewer with nothing
@@ -126,7 +135,13 @@ action rather than by the step — `agent:` gets one, `watch:` the one written
 directly beside it, and everything else the general one about a hold that cannot
 be answered. (It is not the only kind-answered branch in the function: `judge:`,
 `merge:`, the `merge` × `human`|`watch` pair and the three effects are all
-answered by kind, above the step branches and at every step.) This key's is:
+answered by kind, above the step branches — but **below `end`**, which is the
+function's first branch and so answers every kind at that step, `judge:` and
+`merge:` included, with `end`'s own sentence — the one at the foot of this
+section. Changing what a misplaced
+`judge:` is told is therefore two edits and not one, and
+`conductor/unit/step-matrix.test.ts` walks the `end` × `judge` cell that says so.)
+This key's is:
 
 > nothing has been committed at `prepared`, so a cold reviewer would be given no
 > diff to read
