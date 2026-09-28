@@ -27,6 +27,7 @@ import { describe, expect, it } from "vitest";
 import {
   HUMAN_BEFORE_THE_LANE,
   JUDGED,
+  JUDGED_BY_AN_AGENT,
   PROJECT,
   RECIPE,
   cutAtAdmit,
@@ -810,5 +811,102 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     // So the pass rests with a person at the router, and the item says so.
     expect(result).toMatchObject({ ok: "held", step: "proposed" });
     expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemBlocked");
+  });
+
+  /**
+   * **And a declared *runtime* judge is dispatched, twice on one pass** (`#277`).
+   *
+   * The case above is the built-in, where `ports.judge` answers a name and
+   * nothing is spent. This is the other half of the same line, and it is the only
+   * test that can see it: `judgeDeclaredAt` answering a `runtime` is asserted in
+   * `judge.test.ts` and what the body does with a `next` is asserted in
+   * `pass-steps.test.ts`, and neither can say whether the conductor actually
+   * dispatches one.
+   *
+   * **The session id is the thing this fixture exists for.** Two rounds means two
+   * arrivals at `findings` on one pass, and a session id built from the direction
+   * alone would be the same string both times — which Claude Code refuses by name
+   * (*Session ID … is already in use*), for one second, with the round spent and
+   * the question never read. That is `#195` exactly, and the crash was its lucky
+   * outcome: a runtime that *resumed* instead would answer the second arrival
+   * with the first one's context, which is a judge asked whether it still agrees
+   * with itself.
+   *
+   * **And the third arrival is not bought at all.** With both rounds spent and no
+   * restart, `waiting` is the only step on offer, and paying a model to pick the
+   * only item on a list has judged nothing.
+   */
+  it("dispatches a runtime judge, with a session of its own each time it is asked", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const ports = fakePorts(did, store);
+
+    const ran: string[] = [];
+    const judging: typeof refusingRuntime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        ran.push(request.runId);
+        if (!request.runId.includes(":judge:")) return refusingRuntime.run(request);
+        // The judge reads the findings and answers in the pass's own vocabulary;
+        // `implement` is *the lines*, which is the round the arrival can pay for.
+        return {
+          ...(await refusingRuntime.run(request)),
+          text: '```json\n{"next": "implement", "why": "the seam is right, two of its lines are wrong"}\n```',
+        };
+      },
+    };
+    // **A different head per round**, or the second one is a round with no diff
+    // in it: `conduct.ts` only continues the loop where the fixing agent
+    // committed, and the fixture answers one sha for ever. The judgements are
+    // what count the rounds here, because each is asked before the round it buys.
+    const git = ports.repo.git;
+    ports.repo.git = (args, o) => {
+      const rounds = ran.filter((id) => id.includes(":judge:")).length;
+      return args[0] === "rev-parse" && rounds > 0
+        ? Effect.succeed(`${"d".repeat(39)}${rounds}`)
+        : git(args, o);
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
+        runtime: judging,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    // Asked twice — once per arrival that had something to choose between — and
+    // never with the same session, which is the whole of the case.
+    const asked = ran.filter((id) => id.includes(":judge:"));
+    expect(asked).toHaveLength(2);
+    expect(new Set(asked).size).toBe(2);
+    for (const id of asked) expect(id).toContain(":judge:findings:");
+
+    // The round each answer asked for was bought: three agents implemented and
+    // three reviews read what they wrote.
+    expect(ran.filter((id) => id.includes(":review:"))).toHaveLength(3);
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const routed = run
+      .filter((e) => e.type === "PassRouted")
+      .map((e) => e.data as { to: string; chose: string; why: string; ceiling: string | null });
+    expect(routed.map((row) => row.to)).toEqual(["implement", "implement", "waiting"]);
+    // The judge's own words are on the card, with what they cost beside them —
+    // `PassRouted.why` is the record, because there is no event of its own.
+    expect(routed[0]!.why).toContain("two of its lines are wrong");
+    expect(routed[0]!.why).toContain("5 turns");
+    // And the third was never asked: nothing was on offer to choose between.
+    expect(routed[2]!.why).toContain("the only step on offer");
+    expect(routed[2]!.ceiling).toBeNull();
+
+    expect(result).toMatchObject({ ok: "held", step: "proposed" });
   });
 });

@@ -233,6 +233,39 @@ runtime:
 `;
 
 /**
+ * **The same, with an agent judge** (`#277`) — `judge: claude-code` at
+ * `findings`, which is the direction 0061 §3 calls the judgement.
+ *
+ * `rounds: 2` rather than `JUDGED`'s one, and that is the whole difference the
+ * fixture exists for: two rounds means the judge is *dispatched twice on one
+ * pass*, which is the arrangement where a session id built from the direction
+ * alone collides and Claude Code refuses the second one by name (`#195`). One
+ * round could not show it.
+ *
+ * The third arrival is left with `waiting` as the only step on offer, and nothing
+ * is dispatched for a set of one: paying a model to pick the only item on a list
+ * is a purchase, not a judgement.
+ */
+export const JUDGED_BY_AN_AGENT = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  review:
+    - name: cold reviewer
+      agent: claude-code
+      prompt: look for races
+  proposed:
+    - name: the lines or the approach
+      judge: claude-code
+      when: findings
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 2, restarts: 0 }
+`;
+
+/**
  * A person the recipe declared, and nothing else asking — the claim `#58` is
  * about, and **`proposed:` is where it is written since `#270`**.
  *

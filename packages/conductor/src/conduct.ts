@@ -154,7 +154,6 @@ import { priorAttempts } from "./attempts.ts";
 import { nextPrompt, renderPrompt } from "./prompt.ts";
 import {
   CONTROL_STREAM,
-  type RuntimeId,
   type Step,
   type ToAppend,
   reduceControl,
@@ -933,6 +932,26 @@ export function runOnce(
        */
       let reviewSettingsPath = "";
       /**
+       * **How many judgements this pass has bought**, and it is in the session id
+       * (`#277`).
+       *
+       * A runtime's session id has to differ per dispatch, and the direction is
+       * not enough to make it: one pass reaches `proposed` with a `findings`
+       * every round it buys, so `<runId>:judge:findings` would be the same string
+       * twice. Claude Code refuses a session id it has already been given —
+       * *Session ID … is already in use* — which is `#195` exactly: one second,
+       * no receipt, the round spent, the question never read. **The crash was the
+       * lucky outcome there**; a runtime that resumed instead would answer the
+       * second arrival with the first one's context, which is a judge asked
+       * whether it still agrees with itself.
+       *
+       * A count rather than the head `sessionIdFor` keys on: a judge is asked at
+       * arrivals that may share a commit — a `needs-input` and the `findings`
+       * after it — so the commit is not the thing that differs, and the number of
+       * times this pass has paid for a judgement is.
+       */
+      let judgements = 0;
+      /**
        * The turn limit's own words, where that is what stopped the agent.
        *
        * The pass reports an agent that ran out of turns as a `did-not-finish` and
@@ -1513,6 +1532,7 @@ export function runOnce(
         if (Either.isLeft(settings)) {
           return held(`the "${named}" judge had no settings: ${settings.left.detail}`);
         }
+        judgements += 1;
         log(`judging a "${on.when}" with ${runtime} — ${named}`);
         runLog.note("judge", `${on.when}: asking ${runtime}`);
 
@@ -1526,10 +1546,12 @@ export function runOnce(
               return yield* Effect.promise(() =>
                 options.runtime
                   .run({
-                    // The direction is in it, so two arrivals on one pass are two
+                    // The count is in it, so two arrivals on one pass are two
                     // sessions: a judge asked whether it still agrees with itself
-                    // is the warm-review failure `sessionIdFor` exists to avoid.
-                    runId: `${runId}:judge:${on.when}`,
+                    // is the warm-review failure `sessionIdFor` exists to avoid,
+                    // and a session id reused is the refusal `#195` cost a run.
+                    // See `judgements`.
+                    runId: `${runId}:judge:${on.when}:${judgements}`,
                     // The worktree where there is one, and the conductor's own
                     // directory where `admit` never cut one. Nothing is read from
                     // either — the prompt says so — but a process still needs a
