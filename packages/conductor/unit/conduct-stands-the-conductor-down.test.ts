@@ -32,11 +32,13 @@ import {
   PROJECT,
   RECIPE,
   REVIEWED,
+  JUDGED_BY_AN_AGENT,
   fakeGitHub,
   fakePorts,
   memoryStore,
   once,
   project,
+  refusingRuntime,
   quotaRuntime,
   reviewerAtTheWall,
   reviewerThatCrashes,
@@ -392,6 +394,94 @@ describe("when an agent inside the pass produces no verdict", () => {
     // The falsehood the three variants exist to prevent.
     expect(reason).not.toContain("no turns taken, nothing spent");
     expect(reason).toContain("You've hit your session limit");
+  });
+
+  /**
+   * **The fourth agent in a pass is the judge, and its wall is the account's**
+   * (0031 §3, `#277`).
+   *
+   * The comment above says there are three agents, and `#277` added a fourth: a
+   * `judge:` naming a runtime is dispatched and paid for. It arrived treating
+   * every failure alike — `askTheAgent` answered `next: "waiting"` for all of
+   * them — and its own docblock argued for it, on the grounds that *the pass
+   * stops at `proposed` for a person either way*. That is true about this pass
+   * and is not what §3 decides. §3 is about the **conductor**: a quota is
+   * account-wide, so every queued item would meet it, and per-item backoff is
+   * the wrong instrument — `80` events in `92` seconds is what using it looked
+   * like. A hold also loses §5: a pause lifts by itself at the reset, and a
+   * `waiting` ticket waits for a person.
+   *
+   * So the wall is the judge's and the answer is the same as every other
+   * depth's: the item is released like any other failure, nothing else is
+   * taken until the pause lifts, and the runtime's own words carry the reset.
+   *
+   * **A crash is still a person's**, which is the other half — see the next
+   * case for the reviewer, and `askTheAgent`'s `held` for the judge. The split
+   * is `kind === "never-started"` and is the adapter's classification, never
+   * re-derived here (0031 §1).
+   */
+  it("pauses the conductor when the judge it dispatched never started", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const said: string[] = [];
+    const ports = fakePorts(did, store);
+
+    /** Everything runs and is paid for; only the judge meets the wall. */
+    const ran: string[] = [];
+    const judgeAtTheWall = {
+      ...refusingRuntime,
+      run: async (request: Parameters<typeof refusingRuntime.run>[0]) => {
+        ran.push(request.runId);
+        if (!request.runId.includes(":judge:")) return refusingRuntime.run(request);
+        return {
+          exitCode: 1,
+          turns: 0,
+          durationMs: 5_000,
+          costUsd: 0,
+          failure: {
+            kind: "never-started" as const,
+            detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
+          },
+          text: null,
+          sessionId: "sess-judge",
+        };
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
+        runtime: judgeAtTheWall,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      ports,
+    );
+
+    // It was asked, or this is not the branch under test.
+    expect(ran.filter((id) => id.includes(":judge:"))).toHaveLength(1);
+
+    // **Released, not held** — the distinction the whole case is about. A hold
+    // answers `ok: "held"` and leaves the item for a person.
+    expect(result).toMatchObject({ ok: false, stage: "proposed" });
+
+    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
+    expect(paused).toHaveLength(1);
+    const reason = (paused[0]!.data as { reason: string }).reason;
+    // The step whose agent met it, and the clause that is the point of §3.
+    expect(reason).toContain("proposed");
+    expect(reason).toContain("Every queued item would meet the same thing");
+    // The reset came from the message, not from the recipe's backoff (0031 §4).
+    expect(reason).not.toContain("it named no reset time");
+    expect(reason).toContain("You've hit your session limit");
+    // And the run that reached the judge did start and was paid for, so the
+    // sentence must not be the one written for a run that took no turns.
+    expect(reason).not.toContain("no turns taken, nothing spent");
   });
 
   /**

@@ -415,11 +415,13 @@ type Arrival = Omit<Judging, "offering">;
  * What the recipe's `judge:` for that direction answered, or that it declared
  * none.
  *
- * **Three answers, and they are three kinds of decider rather than three
- * outcomes.** `built` is a judge the recipe declared and the pass applies (`#274`,
- * and every judge a recipe can name today); `next` is a judge that *chose*, which
- * is an agent and awaits a dispatch nothing builds yet; `noJudge` is the recipe
- * saying nothing for this direction.
+ * **Four answers, and they are kinds of decider rather than outcomes.** `built`
+ * is a judge the recipe declared and the pass applies — a name, spending nothing
+ * (`#274`); `next` is a judge that *chose*, which is an agent `conduct.ts`
+ * dispatched and paid for (`#277`, which is when `JudgeName` gained the runtimes
+ * and this stopped being a cell nothing filled); `neverStarted` is that agent
+ * meeting an account-wide wall, which is the conductor's to answer and not this
+ * item's (0031 §3); `noJudge` is the recipe saying nothing for this direction.
  *
  * **`noJudge` is not a failure and is the ordinary answer for four of the five.**
  * `BUILT_IN_FOR` is what the body falls back to — the mechanical directions are
@@ -438,9 +440,9 @@ export type Judged =
     }
   | {
       /**
-       * **A built-in the recipe declared for this direction** — the answer
-       * `judgeDeclaredAt` gives, and the whole of what a `judge:` entry can be
-       * today (`#274`).
+       * **A built-in the recipe declared for this direction** — one of the two
+       * things `judgeDeclaredAt` answers, the other being a runtime (`#274`,
+       * `#277`).
        *
        * A name and not a destination, because the rule that name stands for is
        * the pass's: `MECHANICALLY` is `BUILT_IN`'s in this file's vocabulary, it
@@ -453,6 +455,24 @@ export type Judged =
       /** The entry's `name:`, so the sentence says which line of the recipe chose. */
       readonly named: string;
     }
+  /**
+   * **The judge's dispatch met something account-wide, so the conductor stops
+   * and this item does not back off** (0031 §3).
+   *
+   * The same arm `Worked` carries and the same shape `stoodDown` reads, because
+   * the judge is the *third* depth the one wall is met at — after the step's own
+   * agent and after the agent a refusal bought. A quota is about the account and
+   * never about the diff (0031 §1), so a judge that never started has judged
+   * nothing, exactly as a reviewer that never started has reviewed nothing
+   * (`agent-action.ts`).
+   *
+   * **Not `next: "waiting"`**, which is what this was: a hold makes an
+   * account-wide condition into one item's outcome, needs a person where a pause
+   * lifts by itself at the reset (0031 §5), and leaves the conductor free to take
+   * the next ticket into the same wall — `80` events in `92` seconds is what 0031
+   * §3 was written about.
+   */
+  | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
   | { readonly noJudge: true };
 
 /**
@@ -961,6 +981,9 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     // these*, and what the ceilings took away is not its business (`Judging`).
     const on: Judging = { ...arrival, offering: offer.affordable };
     const answer = await ports.judge(on);
+    // Before the answer is read as one, because a judge that never started did
+    // not answer: 0031 §3, at the third depth the same wall is met at.
+    if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
     if ("next" in answer) {
       if (!on.offering.includes(answer.next)) {
         return toAPerson(

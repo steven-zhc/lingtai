@@ -1993,6 +1993,15 @@ describe("the pass has one caller, and it is `conduct.ts`", () => {
    * this rule exists to prevent rather than an instance of it. So the match is on
    * a **value** import, which is every import that is not `import type` — and
    * `import { type Ceilings, runPass }` is one, because that file can call.
+   *
+   * **And on a value `export … from`, which is how it can happen without an
+   * `import` at all.** Narrowing to the `import` token let
+   * `export { runPass } from "./pass.ts"` through, and a re-export is worse than
+   * a caller: `index.ts` re-exports eighteen modules, so one line there makes the
+   * engine public API of `@lingtai/conductor` and every package that depends on it
+   * a possible second caller — the exact thing this guards, arriving through the
+   * one shape the pattern had stopped reading. `export type { … } from` is erased
+   * like `import type` and is allowed for the same reason.
    */
   it.each([
     { module: "pass.ts", allowed: ["pass-steps.ts", "conduct.ts"] },
@@ -2002,14 +2011,32 @@ describe("the pass has one caller, and it is `conduct.ts`", () => {
     // `[^;]*?` keeps the match inside one statement: without it the lazy span
     // starts at some earlier value import and runs on to this specifier, and
     // every file with any import at all is an offender.
-    const imports = new RegExp(`import(?!\\s+type\\b)[^;]*?["']\\./${module.replace(".", "\\.")}["']`);
+    const reaches = new RegExp(
+      `(?:import|export)(?!\\s+type\\b)[^;]*?["']\\./${module.replace(".", "\\.")}["']`,
+    );
 
     const offenders = readdirSync(src)
       .filter((f) => f.endsWith(".ts") && f !== module && !allowed.includes(f))
-      .filter((f) => imports.test(readFileSync(join(src, f), "utf8")))
+      .filter((f) => reaches.test(readFileSync(join(src, f), "utf8")))
       .sort();
 
     expect(offenders).toEqual([]);
+
+    // The pattern itself, because the scan above is green whenever no file
+    // happens to be an offender — which is also true of a pattern that matches
+    // nothing. These six say which shapes it reads.
+    const spec = `"./${module}"`;
+    for (const reaching of [
+      `import { runPass } from ${spec};`,
+      `import { type Ceilings, runPass } from ${spec};`,
+      `export { runPass } from ${spec};`,
+      `export * from ${spec};`,
+    ]) {
+      expect(reaches.test(reaching), `should be an offender: ${reaching}`).toBe(true);
+    }
+    for (const erased of [`import type { Judging } from ${spec};`, `export type { Judged } from ${spec};`]) {
+      expect(reaches.test(erased), `should be allowed: ${erased}`).toBe(false);
+    }
   });
 
   /** And the caller is there, which is the other half of *one*. */

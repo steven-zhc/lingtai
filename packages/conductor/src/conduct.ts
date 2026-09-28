@@ -1489,15 +1489,24 @@ export function runOnce(
        * two dispatches, and it is the same four moves they make — settings, run,
        * read the answer, say what it cost.
        *
-       * **Three ways it does not come back with a choice, and all three are a
-       * person.** A run that never started (a quota wall), a run that did not
-       * finish, and an answer that will not read as a destination: none of those
-       * judged anything, exactly as a reviewer whose answer will not parse has
-       * not reviewed (`agent-action.ts`). It is **not retried** — an agent that
-       * could not answer once costs the same again and terminates no sooner —
-       * and it does not stand the conductor down the way an implementing agent's
-       * wall does: the pass stops at `proposed` for a person either way, and the
-       * runtime's own words go on the card.
+       * **Three ways it does not come back with a choice, and they are not all
+       * the same thing.** None of the three judged anything, exactly as a reviewer
+       * whose answer will not parse has not reviewed (`agent-action.ts`), and none
+       * of them is **retried** — an agent that could not answer once costs the
+       * same again and terminates no sooner. What differs is *whose* condition it
+       * was:
+       *
+       * - a run that did not finish, and an answer that will not read as a
+       *   destination, are about this pass, so they are **a person's** — the pass
+       *   stops at `proposed` and the runtime's own words go on the card;
+       * - a run that **never started** is a quota wall, which is account-wide, so
+       *   it stands the conductor down exactly as an implementing agent's does
+       *   (0031 §3). This paragraph said the opposite until the cold reviewer on
+       *   `#277` read it against the ADR, and the argument it made — *the pass
+       *   stops at `proposed` for a person either way* — was true about this pass
+       *   and beside the point: the decision is about whether the conductor keeps
+       *   taking work into a wall every queued item would meet, which is what §3
+       *   is for, and about §5's resume happening without anybody watching.
        *
        * **Nothing is dispatched for a set of one.** `waiting` is on every offer
        * and is the whole of a refusal at `admit` or `prepared`, where no agent
@@ -1581,6 +1590,26 @@ export function runOnce(
 
         const spent = `${outcome.turns} turns${outcome.costUsd === null ? "" : `, $${outcome.costUsd.toFixed(2)}`}`;
         runLog.note("judge", `${on.when}: ${outcome.failure?.kind ?? "answered"} · ${spent}`);
+        /**
+         * **A quota wall is the account's, so it stops the conductor rather than
+         * this item** (0031 §3) — the third depth that wall is met at, after the
+         * step's own agent and the agent a refusal bought.
+         *
+         * `never-started` is the adapter's classification and is not re-derived
+         * here (0031 §1). Everything else — a crash, a timeout, a turn budget
+         * spent without an answer — did start, is about this pass, and is a
+         * person's: that is the `held` below.
+         */
+        if (outcome.failure?.kind === "never-started") {
+          return {
+            neverStarted: {
+              agent: options.runtime.capabilities.id,
+              // The runtime's own words, whole: `standDown` reads a reset time out
+              // of them (0031 §4) and the pause chip shows them as what they are.
+              detail: outcome.failure.detail,
+            },
+          };
+        }
         if (outcome.failure) {
           return held(
             `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
