@@ -33,6 +33,7 @@ import {
   Recipe,
   agentPlugin,
   canonicalRecipe,
+  filePlugin,
   definePlugin,
   disclose,
   notBuiltYet,
@@ -50,6 +51,7 @@ import {
   servesStep,
   whyNoKindAt,
   withheld,
+  whyThePathEscapes,
   worktreePlugin,
   type StepAction,
 } from "../src/index.ts";
@@ -1041,6 +1043,134 @@ describe("the one that deletes", () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]!.field).toBe("older_than");
     expect(problems[0]!.why).toContain('"refs" declares no "older_than" field');
+  });
+});
+
+/**
+ * **The first destination, and the two questions 0066 left to it** (`#300`).
+ *
+ * §5 decided that where a large answer lands is a plugin rather than a field, and
+ * left two things to whoever built the first one: *whether the file is committed*
+ * and *what refuses a path that escapes the worktree*. Both are schema here —
+ * which is §6's rule, *a configuration error is refused when the recipe resolves*
+ * — so the cases below are what an operator meets before a worktree, before an
+ * agent and before any money.
+ */
+describe("the one `design` keeps with", () => {
+  const DRAFTER = { name: "shape it", agent: "claude-code", prompt: "write down the shape" };
+
+  /**
+   * **`commit:` is required and undefaulted**, which is the answer rather than a
+   * strictness about shape: committed, the note rides the branch through `build`
+   * and `review` and the lane merges it; uncommitted, it does not survive the
+   * pass at all, because the worktree is removed when the run ends. Two different
+   * products, so a value nobody wrote is a behaviour nobody chose —
+   * `worktree.submodules`' argument (`#268`).
+   */
+  it("requires `commit:` rather than defaulting it either way", () => {
+    expect(filePlugin.declares).toEqual(["name", "file", "commit"]);
+
+    const silent = StepMap.safeParse({
+      design: [DRAFTER, { name: "keep it", file: "doc/design/x.md" }],
+    });
+    expect(silent.success).toBe(false);
+    expect(silent.error!.issues[0]!.message).toContain('its "commit" field is not what "file" accepts');
+    expect(silent.error!.issues[0]!.message).toContain("expected boolean, received undefined");
+
+    // And both values resolve, so the refusal is about the omission.
+    for (const commit of [true, false]) {
+      expect(
+        StepMap.safeParse({ design: [DRAFTER, { name: "keep it", file: "doc/design/x.md", commit }] })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  /**
+   * **A path that escapes the worktree is refused where it is written** (0066 §6).
+   * A `..` that survived to run time costs one claim, one clone and one paid agent
+   * and then a person answering a refusal a schema line could have printed — §6's
+   * own correction (`#299`), because such a pass ends `blocked` and sits there.
+   *
+   * `whyThePathEscapes` is asserted directly as well as through the schema: it is
+   * string rules rather than `node:path` so that the operator's machine and the
+   * daemon answer alike, and each clause names what is wrong rather than saying
+   * *invalid*.
+   */
+  it("refuses a path that leaves the worktree, by the clause that is wrong with it", () => {
+    expect(whyThePathEscapes("doc/design/x.md")).toBeNull();
+    expect(whyThePathEscapes("./x.md")).toBeNull();
+    expect(whyThePathEscapes("")).toContain("empty");
+    expect(whyThePathEscapes("/etc/passwd")).toContain("absolute");
+    expect(whyThePathEscapes("C:\\notes\\x.md")).toContain("absolute");
+    expect(whyThePathEscapes("~/notes/x.md")).toContain("home directory");
+    expect(whyThePathEscapes("../../notes/x.md")).toContain('".." segment');
+    expect(whyThePathEscapes("doc/..\\x.md")).toContain('".." segment');
+    expect(whyThePathEscapes("doc/design/")).toContain("empty segment");
+
+    const refused = StepMap.safeParse({
+      design: [DRAFTER, { name: "keep it", file: "../../notes/x.md", commit: true }],
+    });
+    expect(refused.success).toBe(false);
+    const why = refused.error!.issues[0]!.message;
+    expect(why).toContain('"../../notes/x.md" is not a path inside the worktree');
+    expect(why).toContain("with no `..` in it");
+    // Refused at resolve, which is the whole of §6.
+    expect(why).toContain("before a worktree, before an agent, before any money");
+  });
+
+  /**
+   * **A destination is written after the thing it keeps.** It keeps what an
+   * earlier entry made — `runActionPipeline` hands each result's document forward
+   * — so a `file:` at entry 0 would pass having written no file and returned no
+   * locator, under a recipe that reads as though the design is being kept. That is
+   * `#61` reached through an order, and it is refused instead.
+   */
+  it("refuses a `file:` written first, because it would keep nothing", () => {
+    const first = StepMap.safeParse({
+      design: [{ name: "keep it", file: "doc/design/x.md", commit: true }, DRAFTER],
+    });
+    expect(first.success).toBe(false);
+    expect(first.error!.issues[0]!.message).toContain("it is the first action there");
+    expect(first.error!.issues[0]!.message).toContain("Write it after the action that drafts");
+  });
+
+  /**
+   * **Two destinations are a legal list**, which is 0066 §5 read forwards: a
+   * plugin per destination and no field carrying a list, so *the note in the
+   * repository* and *a copy the gates can read* are two entries with their own
+   * `commit:` rather than one block somebody half-wrote.
+   */
+  it("takes two destinations, each with its own answer about the commit", () => {
+    const parsed = StepMap.safeParse({
+      design: [
+        DRAFTER,
+        { name: "the note in the repository", file: "doc/design/notes.md", commit: true },
+        { name: "and a copy the gates can read", file: ".lingtai-design.md", commit: false },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.design).toHaveLength(3);
+  });
+
+  /**
+   * **And it serves `design` alone, answered by the kind** (`#306`'s rule applied
+   * before the fall-through could happen). Its output is one step's own work — a
+   * destination keeps what a step *made* — so no step branch can say why it is
+   * meaningless elsewhere, and the sentence is the same at the nine that refuse it.
+   */
+  it("serves `design` and says why the other steps are not its", () => {
+    expect(filePlugin.serves).toEqual(["design"]);
+    expect(whyNoKindAt("design", "file")).toBeNull();
+    for (const step of STEPS.filter((each) => each !== "design" && each !== "end")) {
+      const why = whyNoKindAt(step, "file");
+      expect(why, `file is no longer refused at ${step}`).not.toBeNull();
+      expect(why, step).toContain("`design` is the one step that makes something large");
+      expect(why, step).toContain("createFileAction");
+      // Not one of `prepared`'s three paragraphs, which is what `#306` is about.
+      expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
+      expect(why, step).not.toContain("nothing has been committed at `prepared`");
+    }
   });
 });
 

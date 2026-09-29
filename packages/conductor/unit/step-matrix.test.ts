@@ -1,5 +1,5 @@
 /**
- * **A hundred and twenty cells, and each one runs or refuses by name.** There
+ * **A hundred and thirty cells, and each one runs or refuses by name.** There
  * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
  * `StepsResolved`, printed by `lingtai add`, drawn on the board, and never
@@ -8,7 +8,7 @@
  * and the other eleven kinds at that step refuse in `admit`'s own terms.
  *
  * **There is no matrix any more, and the cells are still there** (`#261`).
- * `KINDS_AT` was a hand-written table of which of the twelve plugins each of
+ * `KINDS_AT` was a hand-written table of which of the thirteen plugins each of
  * the ten steps runs; since
  * [0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md)
  * §4 a plugin declares the steps it serves and that declaration is what makes
@@ -29,10 +29,11 @@
  * `judge:` (`#238`) and a hundred and twenty until it grew `backlog:` (`#237`)
  * — a hundred and ten again when 0063 §3 made `assignee` a field of
  * `queue:` rather than a plugin beside it (`#244`), and a hundred and twenty
- * once more with `refs:` (`#240`). **A column that goes is
+ * once more with `refs:` (`#240`), and a hundred and thirty with `file:` (`#300`)
+ * — the first column whose whole job is where an answer *goes*. **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Eighteen of the hundred and twenty cells run and **a hundred and two
+ * Nineteen of the hundred and thirty cells run and **a hundred and eleven
  * refuse**; **none of those is a step no plugin implements any more** — `#266`
  * gave `implement` an `agent:` and emptied that class — and ten are the one
  * plugin that serves no step. The two classes no longer overlap, because there
@@ -52,7 +53,9 @@
  * opening whose step keeps its old behaviour, because its default is nothing;
  * and seventeen until `agentPlugin` also took `implement` (`#266`) — **the
  * opening that empties the *no plugin implements this step* class**, since it
- * was the last step in it: **eighteen now**. Every other entry moves a cell from refusing to
+ * was the last step in it: eighteen; and eighteen until `filePlugin` took `design`
+ * beside the drafter (`#300`) — **the first opening that gives a step a *second*
+ * plugin rather than its first: nineteen now**. Every other entry moves a cell from refusing to
  * running and can take a whole step or a whole plugin out of a column that
  * refused everything. **The counts are asserted** — *the arithmetic of the two
  * closed sets is what the paragraph above says* is a case a few rows down, so a
@@ -60,7 +63,7 @@
  * in a docblock. It is the one thing in this file that used to be able to go
  * quietly stale, and it did, twice.
  *
- * **`refs:` is the first column that is not a name for code that already
+ * **`refs:` was the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
  * plugins were 0061 §3's names for the pass's own calls, and four of those five
  * have since been wired to the step whose code they named — `worktree:` (`#268`),
@@ -333,11 +336,12 @@ function reasonAt(step: Step, kind: ActionKind): string | null {
  * This is the exemption the cell below needs, and it is a short list of real
  * rules rather than a loophole:
  *
- * - `judge:`, `merge:`, `worktree:` and `queue:` — **their output is one step's
- *   own work**, so the reason is about the *plugin* and is the same sentence at
- *   every step that refuses it (`ONLY_PROPOSED_ROUTES`, `ONLY_THE_LANE_LANDS`,
- *   `ONLY_ADMIT_CUTS`, `ONLY_CLAIM_TAKES`). No step branch could say it: *what
- *   `build` asks of an action* is not why a cut belongs at `admit`.
+ * - `judge:`, `merge:`, `worktree:`, `queue:` and `file:` — **their output is one
+ *   step's own work**, so the reason is about the *plugin* and is the same sentence
+ *   at every step that refuses it (`ONLY_PROPOSED_ROUTES`, `ONLY_THE_LANE_LANDS`,
+ *   `ONLY_ADMIT_CUTS`, `ONLY_CLAIM_TAKES`, `ONLY_DESIGN_KEEPS`). No step branch
+ *   could say it: *what `build` asks of an action* is not why a cut belongs at
+ *   `admit`, or why a destination keeps only what `design` made (`#300`).
  * - `close:`, `labels:` and `refs:` — the effect-only rule, which is about
  *   **what a kind is**: an effect is not a verdict, and only `end` carries
  *   effects out.
@@ -569,13 +573,18 @@ describe("every step × kind cell runs or refuses", () => {
    * `run:` at `design` is told the step produces a document and that a command
    * that checks the diff is `build`'s, which is the part they can act on.
    */
-  it("says why `design` takes only the agent that drafts, and not `prepared`'s reason", () => {
+  it("says why `design` takes the drafter and the destination, and not `prepared`'s reason", () => {
     for (const kind of ["run", "watch", "human"] as const) {
       const why = whyNoKindAt("design", kind);
       expect(why, `${kind} is no longer refused at design`).not.toBeNull();
       expect(why).toContain(`\`${kind}:\` does not implement \`design\``);
       expect(why).toContain("`design` produces a document before any code");
       expect(why).toContain("at this step it drafts rather than reviews");
+      // **And the destination beside it since `#300`**, which is the one clause
+      // this sentence gained: the step carries two plugins now, one that makes the
+      // document and one that keeps it, so a refusal naming only the drafter would
+      // send its reader looking for a `destination:` field that does not exist.
+      expect(why).toContain("the one that keeps it, `file:`");
       // Not the sentences about a step this operator never wrote.
       expect(why).not.toContain("no plugin implements `design`");
       expect(why).not.toContain("at `prepared`");
@@ -730,9 +739,9 @@ describe("every step × kind cell runs or refuses", () => {
         `\`${kind}:\` is exempt from the cell's assertion and yet answers ${reasons.length} ways`,
       ).toHaveLength(1);
     }
-    // The four whose output is one step's own work take `end`'s sentence at
+    // The five whose output is one step's own work take `end`'s sentence at
     // `end`, which is the one step that answers before the kind is looked at.
-    for (const kind of ["worktree", "merge", "queue", "judge"] as const) {
+    for (const kind of ["worktree", "merge", "queue", "judge", "file"] as const) {
       expect(reasonAt("end", kind), kind).toBe(reasonAt("end", "run"));
     }
     // And the three effects are the kinds `end` accepts, so they are refused at
