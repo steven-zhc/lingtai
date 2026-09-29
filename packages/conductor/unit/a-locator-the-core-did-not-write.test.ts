@@ -47,8 +47,28 @@
  * `file-brief`'s locator is a path. That is inside a port named for one plugin,
  * handed that plugin's own spec, so it is not the core learning to classify. A
  * test that asserted *no `join` anywhere near a locator* would be wrong. The
- * assertion has to be about **a locator the core did not write**, which is what
- * every `it` below is.
+ * assertion has to be about **a locator the core did not write**.
+ *
+ * ## The port is the hole a pass-level test cannot see, so it is held on its own
+ *
+ * `carry` replaces `actionsAt` and all ten bodies, which is what makes it a unit
+ * test — and it is also what puts the port layer **outside its module graph
+ * entirely**. `test/a-url-destination.ts` imports `../src/pass.ts` and never
+ * `conduct.ts`, so the four `it`s that run a pass are green against any port at
+ * all, including one taught to classify. That is not a small gap: `conduct.ts`
+ * is the file §9's retired criterion actually measured, and retiring it on the
+ * strength of a check that cannot reach it would have left §4 recorded as
+ * measured while the one place it can erode went unwatched.
+ *
+ * So the port is now a value rather than a closure — `readWhatAFileKept` in
+ * `src/file-port.ts`, the same six lines with the filesystem handed in — and
+ * *hands the locator to the filesystem unclassified* below calls it directly.
+ * It is the one `it` here allowed to name a resolution, because naming it is
+ * the assertion: `join(cwd, locator)` and that alone, asked for every string,
+ * with nothing between the argument and the read. A port that returned early on
+ * a `://`, or that read `new URL(locator).pathname` instead, fails it — and
+ * both are what a reader generalising `fileBrief: { read }` into one
+ * destination-agnostic port writes first.
  *
  * So §9's criterion is retired and this file replaces it. §4 stands unchanged
  * and is what these tests guard; there is no superseding ADR, because a check
@@ -64,10 +84,21 @@
  * rather than remembered:
  *
  * ```
- * resolve      runStep's context: join(reaching.context.cwd, d.locator)   3 of 5 red
- * classify     designFrom: drop a locator containing "://"                3 of 5 red
- * canonicalise designFrom: new URL(locator).toString(), throw → as-is     3 of 5 red
+ * resolve      runStep's context: join(reaching.context.cwd, d.locator)   3 of 6 red
+ * classify     designFrom: drop a locator containing "://"                3 of 6 red
+ * canonicalise designFrom: new URL(locator).toString(), throw → as-is     3 of 6 red
+ * port         file-port.ts: notRead on a "://", URL(…).pathname on the   1 of 6 red
+ *              rest — the shared classifying port a second destination
+ *              tempts somebody into writing
  * ```
+ *
+ * **Only the classify branch of the fourth is a change**, which is worth
+ * recording because it looks like two: `join(cwd, new URL(`file:///${p}`).pathname)`
+ * is byte-identical to `join(cwd, p)` on this locator — `path.join` already
+ * collapses the doubled slash and resolves the `..`, so the parse buys the
+ * rewriter nothing. The rewrites that *do* move the string are caught by the
+ * same assertion: `new URL(p).toString()` lower-cases the host and
+ * `decodeURIComponent(p)` eats the `%20`, and neither equals `join(cwd, p)`.
  *
  * The resolve left `/nowhere/https:/Example.INVALID/design/1%20a/` at both ends
  * — the doubled slash collapsed and so did the `..`, which is exactly the quiet
@@ -84,10 +115,17 @@
  * given — so all four `it`s stayed green and the guard said nothing. The fifth
  * `it` now pins the literal itself.
  *
- * *reaches no event* stayed green through all three, and should: it is a claim
- * about what the core writes to the log, not about what it does with the string
- * in memory. Five `it`s: three claims about the core, the board's, and one about
- * the literal the other four are asked with.
+ * **The fourth is the one no version of this file could catch while the port
+ * was a closure**, which is the section above: every `it` that runs a pass
+ * stayed green against it, because none of them loads the module it is in. The
+ * sixth `it` is the only thing that sees it, and it is the only thing that
+ * needs to.
+ *
+ * *reaches no event* stayed green through all three of the first, and should:
+ * it is a claim about what the core writes to the log, not about what it does
+ * with the string in memory. Six `it`s: three claims about the pass, the
+ * board's, one about the port under it, and one about the literal the others
+ * are asked with.
  *
  * ## What is not checked here, and where it goes instead
  *
@@ -100,8 +138,10 @@
  *
  * Unit by 0060 §1: no filesystem, no process, no network, no clock.
  */
+import { join } from "node:path";
 import type { TheDesign } from "@lingtai/actions";
 import { describe, expect, it } from "vitest";
+import { readWhatAFileKept } from "../src/file-port.ts";
 import {
   A_PATH,
   A_URL,
@@ -204,7 +244,10 @@ describe("a locator the core did not write", () => {
    * survives this line, and none of them needs its own test.
    *
    * This is the assertion that makes the file worth keeping: it goes red the day
-   * something in the core learns to parse, whatever it learned.
+   * anything **on the pass's own path** learns to parse, whatever it learned —
+   * `runPass`, `runActionPipeline`, `designOn`, `designFrom`, `runStep`'s
+   * context. **It says nothing about the ports**, which `carry` does not load:
+   * those are the last `it`'s, and the header says why they needed their own.
    */
   it("takes the same route through the pass that a repository path takes", async () => {
     const [url, path] = await Promise.all([carry(A_URL), carry(A_PATH)]);
@@ -258,5 +301,66 @@ describe("a locator the core did not write", () => {
 
     expect(carried.events.length).toBeGreaterThan(0);
     for (const event of carried.events) expect(event.payload).not.toContain(A_URL);
+  });
+
+  /**
+   * **And the port under all of that did not look either** — the one thing the
+   * four `it`s above cannot see, because `carry` replaces `actionsAt` and all
+   * ten bodies and so never loads the module the port is in.
+   *
+   * `readWhatAFileKept` is `conduct.ts`'s `fileBrief: { read }`, which is the
+   * core's only contact with a locator and therefore the only place §4 can
+   * actually erode. Two things are asked of it, and a shared classifying port
+   * fails one or the other however it is written:
+   *
+   * - **it asked**, once per locator and in order. A port that returns early on
+   *   a string it recognised — `if (spec.path.includes("://")) return { notRead }`,
+   *   the first line somebody generalising this into a destination-agnostic
+   *   port writes — never reaches the filesystem at all, and `asked` is short.
+   * - **it asked for `join(cwd, locator)`**, which is `file:` resolving `file:`'s
+   *   own locator and is all it is entitled to. A port that read
+   *   `new URL(locator).pathname` first asked for something else, and this is
+   *   the one assertion in the file that names a resolution — naming it is the
+   *   point, because *which* one is legal is exactly what is being pinned.
+   *
+   * The `A_PATH` arm is not decoration: it is what makes *unconditionally* a
+   * claim rather than a hope. One string of each shape, one rule, one call each.
+   *
+   * The failure branch is asked the same question. A `notRead` this port
+   * composed itself would be the port having recognised something before it
+   * tried; what comes back is the filesystem's own sentence, and it is the same
+   * sentence for both shapes.
+   *
+   * Unit for the file's reason: the filesystem is the argument, and no `readFile`
+   * is anywhere near this.
+   */
+  it("hands the locator to the filesystem unclassified, whatever it looks like", async () => {
+    const asked: string[] = [];
+    const read = readWhatAFileKept(NOWHERE, {
+      read: async (at) => {
+        asked.push(at);
+        return DOCUMENT;
+      },
+    });
+
+    for (const locator of [A_URL, A_PATH]) {
+      expect(await read({ path: locator })).toEqual({ document: DOCUMENT });
+    }
+    expect(asked).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)]);
+
+    const refused: string[] = [];
+    const broken = readWhatAFileKept(NOWHERE, {
+      read: async (at) => {
+        refused.push(at);
+        throw new Error(`ENOENT: no such file or directory, open '${at}'`);
+      },
+    });
+
+    for (const locator of [A_URL, A_PATH]) {
+      expect(await broken({ path: locator })).toEqual({
+        notRead: `ENOENT: no such file or directory, open '${join(NOWHERE, locator)}'`,
+      });
+    }
+    expect(refused).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)]);
   });
 });

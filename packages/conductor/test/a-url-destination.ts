@@ -40,6 +40,16 @@
  * string the core did not write, carried in at `design` and read back out at
  * `implement`, with both ends recorded.
  *
+ * **What they make checkable is the pass, and not the ports under it.** The two
+ * seams below — `actionsAt` and all ten bodies — are exactly what keeps this
+ * unit, and exactly what puts `conduct.ts` outside the module graph: nothing
+ * here imports it, so a port taught to classify a locator leaves every arm of
+ * every comparison identical. That is not a caveat on the retirement, it is
+ * half of what replaces it — `readWhatAFileKept` in `src/file-port.ts` is the
+ * port as a value a test can call, and *hands the locator to the filesystem
+ * unclassified* is the `it` that calls it. Adding an arm here does not cover
+ * it, and never will.
+ *
  * ## What it deliberately does not stand in for
  *
  * Two halves of a real cloud destination are **not** simulated here, because
@@ -109,9 +119,16 @@ export const A_URL = "https://Example.INVALID/design/v2/../1%20a/";
 /**
  * **The shape `file:` returns**, as the arm to compare against.
  *
- * `sameRouteAs` below runs the pass twice and asserts the two differ in the
- * locator string and in nothing else — which is what *the core does not branch
- * on a locator's shape* means when it is written as something a test can check.
+ * The two-arm comparison is not one function here and is worth saying so: the
+ * test calls `carry` once per locator and compares the two through
+ * `withoutTheLocator` below — *takes the same route through the pass that a
+ * repository path takes*, in `unit/a-locator-the-core-did-not-write.test.ts`.
+ * `carry` runs a pass; `withoutTheLocator` blanks the locator out of what one
+ * recorded. Neither runs both arms, so the claim they make together — *the two
+ * differ in the locator string and in nothing else*, which is what *the core
+ * does not branch on a locator's shape* means written as something `toEqual`
+ * can answer — is the `it`'s and is stated there.
+ *
  * It is the literal `file-action.test.ts` uses.
  */
 export const A_PATH = "doc/design/x.md";

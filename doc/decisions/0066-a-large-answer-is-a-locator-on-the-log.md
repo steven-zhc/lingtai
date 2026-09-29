@@ -14,7 +14,9 @@ anything could produce either ending, and both are now measured by
 at §6 and §7 below; §1–§5 and §7's first row stand · **§9's last paragraph — the
 test of whether §4 held — is retired** (`#303`): it named a check no destination
 could pass, and `packages/conductor/unit/a-locator-the-core-did-not-write.test.ts`
-is what measures §4 instead. §4 itself is unchanged
+is what measures §4 instead — **both halves of it**, the pass and the port under
+it, because the pass-level half cannot see `conduct.ts` and `conduct.ts` is the
+file §9 was counting lines in. §4 itself is unchanged
 
 ## 1. What is wrong today: the design is bought, used once, and cannot be kept
 
@@ -213,11 +215,27 @@ what a locator looks like**, which is a property of the code:
 `packages/conductor/unit/a-locator-the-core-did-not-write.test.ts` carries a URL
 locator from a fixture destination through the pass and out the other side and
 asserts it byte-for-byte at both ends, and its fixture is
-`packages/conductor/test/a-url-destination.ts`. **§4 stands and there is no
-superseding file** — a check that measures the wrong thing is a correction to a
-test, not to a decision — and this note sits here rather than only in that file
-for `#299`'s reason: a correction that lives only in a second file gets
-reinstated from the first.
+`packages/conductor/test/a-url-destination.ts`.
+
+**And it asks the port the same question separately, because carrying a locator
+through the pass cannot.** The fixture replaces `actionsAt` and all ten bodies —
+which is what makes it a unit test, and is also why nothing in it loads
+`conduct.ts`, where every port lives. Retiring a criterion that counted lines in
+that file on the strength of a check that never reaches it would leave §4 filed
+as measured and the one place it can actually erode unwatched: a shared port
+that answered `notRead` to a `://` and read `new URL(locator).pathname` from
+everything else is the core classifying, is the first thing somebody
+generalising `fileBrief: { read }` writes, and would have gone green. So the
+port is a value rather than a closure — `readWhatAFileKept` in
+`packages/conductor/src/file-port.ts`, the same six lines with the filesystem
+handed in — and that test calls it with each shape and asserts one resolution,
+applied unconditionally, with nothing between the argument and the read. A
+`confluence:` gets its own port beside it, never a branch inside it.
+
+**§4 stands and there is no superseding file** — a check that measures the wrong
+thing is a correction to a test, not to a decision — and this note sits here
+rather than only in that file for `#299`'s reason: a correction that lives only
+in a second file gets reinstated from the first.
 
 ## What this does not decide
 

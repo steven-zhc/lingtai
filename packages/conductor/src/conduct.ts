@@ -129,6 +129,7 @@ import {
   type StepAction,
 } from "@lingtai/recipe";
 import { currentRecipe } from "./projects.ts";
+import { readWhatAFileKept } from "./file-port.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
   NEEDS_INPUT,
@@ -138,7 +139,6 @@ import {
   type ActionEvent,
   type CutAnswer,
   type KeptAnswer,
-  type ReadAnswer,
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
@@ -1928,31 +1928,19 @@ export function runOnce(
 
       /**
        * `implement` — the design back off the path a `file:` kept it at (0066 §4,
-       * 0069 §4, `#301`).
+       * 0069 §4, `#301`), and `keep`'s mirror.
        *
-       * `keep`'s mirror, and the smaller half of the pair: no `git`, because a
-       * read asks the worktree what is there rather than changing it, and the
-       * commit is what the keep already answered for.
-       *
-       * Under `cwd` for the keep's reason, and it is the same `cwd`: the locator
-       * is a path the `file:` at `design` wrote into this pass's own tree, and
-       * `whyThePathEscapes` — the schema's own rule, asked again by the action —
-       * has refused anything that is not one before this is called.
-       *
-       * **`notRead` and never a throw**, for the keep's reason: `implement` may
-       * not refuse (0058 §3), and an exception out of a plugin is a step that did
-       * not finish with no words on it. A file the destination said it wrote and
-       * that is not there — an `ENOENT` — arrives here as the sentence a person
-       * reads, which is the only thing that separates *the design was not kept*
-       * from *the design was not read*.
+       * **Written in `file-port.ts` rather than here, and that is the whole of
+       * the difference** (`#303`): this is the core's only contact with a
+       * locator, so it is the one place 0066 §4 can actually erode, and a
+       * closure over `cwd` inside a two-thousand-line function is a place no
+       * test can reach. Out there it is a value
+       * `unit/a-locator-the-core-did-not-write.test.ts` calls with a URL and
+       * asks *what did you do with it*. The reasoning that was in this docblock
+       * moved with the code it is about; the filesystem is handed in, and is
+       * still `readFile` and nothing else.
        */
-      const read = async (spec: { readonly path: string }): Promise<ReadAnswer> => {
-        try {
-          return { document: await readFile(join(cwd, spec.path), "utf8") };
-        } catch (error) {
-          return { notRead: (error as Error).message };
-        }
-      };
+      const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, "utf8") });
 
       /**
        * What a declared plugin needs in order to run — the things only a caller
