@@ -175,6 +175,22 @@ All unit — nothing here needs Postgres, a process or a real filesystem, so
   something a later reader has to rediscover. That is the paragraph that stops
   the next person moving it "earlier, where the other refusal is".
 
-No ADR. 0066 §1 is the decision this restores, §6 is the rule it keeps on both
-sides of the expansion, and 0036 already names the vocabulary and its evolution —
-nothing here contradicts an accepted decision, so there is nothing to supersede.
+**An ADR, and the design said no to one.** 0066 §1 is the decision this
+restores, §6 is the rule it keeps on both sides of the expansion, and 0036
+already names the vocabulary and its evolution — which is why this paragraph
+first read *nothing here contradicts an accepted decision*. It does. 0061 §9
+validates every plugin at resolve and gives a reason that is a fact about the
+file format: *a recipe has no templating and is resolved in full before a work
+item is claimed*. After this change one field is a template, its validity
+depends on the expansion, and the expansion is judged per work item, after the
+claim — Ansible's case, which that section names as the thing this system does
+not have to do. The rule survives and its premise does not, and a premise left
+standing is read: the next templated field's author reads 0061, believes there
+is no templating, and puts the expansion's check in the `superRefine` on the
+written string, which is this ticket's **Watch out** reintroduced under an
+accepted ADR's authority.
+
+So [0071](../decisions/0071-a-templated-field-is-judged-twice.md) — *a templated
+field is judged twice, and the second judgement is at execution* — with a note
+at 0061's head and beside the paragraph, and that ADR's §4 carrying the
+obligation forward to whatever field takes a placeholder next.

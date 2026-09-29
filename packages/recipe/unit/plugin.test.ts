@@ -1193,6 +1193,52 @@ describe("the one `design` keeps with", () => {
   });
 
   /**
+   * **And the reason is about the placeholder that was written**, which is the
+   * half a refusal earns its lines with: the operator asked *why not this one*,
+   * so an answer about `{{title}}` printed at `{{ref}}` explains a field the
+   * recipe does not mention and reads as though the parser misread the line.
+   * That is `whyThatPair`'s *worse than no reason*, and it is what this refusal
+   * printed when it first landed — one fixed sentence about slugs, at every
+   * spelling.
+   *
+   * The three worth their own clause are the three somebody actually types.
+   * `{{ref}}` is 0036's named rename of this very field, so the operator is
+   * early rather than wrong; `{{ issue }}` is a stray space and not a second
+   * field at all, and a lecture about slugs there is the worst of the set.
+   * Everything else gets the clause that is true of every unlisted name and of
+   * none in particular.
+   */
+  it("says why the placeholder that was written is not the one, and never why a different one is not", () => {
+    const whyNot = (path: string): string => {
+      const refused = StepMap.safeParse({
+        design: [DRAFTER, { name: "keep it", file: path }],
+      });
+      expect(refused.success, `"${path}" was accepted`).toBe(false);
+      return refused.error!.issues[0]!.message;
+    };
+
+    // 0036's named successor to this field's own placeholder — and the spelling
+    // `#310`'s comments cite as the reason the run-time check exists at all.
+    const ref = whyNot("doc/design/{{ref}}.md");
+    expect(ref).toContain("`{{ref}}`, which a `file:` path does not take");
+    expect(ref).toContain("0036 names the rename");
+    expect(ref, "a `{{ref}}` was answered with `{{title}}`'s reason").not.toContain("slug problem");
+
+    // A stray space inside the braces, which is a typo rather than a field.
+    const spaced = whyNot("doc/design/{{ issue }}.md");
+    expect(spaced).toContain("The spelling is exact");
+    expect(spaced, "a typo was answered with `{{title}}`'s reason").not.toContain("slug problem");
+
+    // Anything else: true of every name not listed, and of no field in particular.
+    for (const each of ["{{body}}", "{{design}}", "{{failure}}"]) {
+      const other = whyNot(`doc/design/${each}.md`);
+      expect(other).toContain(`\`${each}\`, which a \`file:\` path does not take`);
+      expect(other).toContain("The list is one name long on purpose");
+      expect(other, `${each} was answered with \`{{title}}\`'s reason`).not.toContain("slug problem");
+    }
+  });
+
+  /**
    * **A destination is written after the thing it keeps.** It keeps what an
    * earlier entry made — `runActionPipeline` hands each result's document forward
    * — so a `file:` at entry 0 would pass having written no file and returned no

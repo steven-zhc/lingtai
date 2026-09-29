@@ -4,7 +4,10 @@
 [0058](0058-lingtai-is-a-development-pipeline.md) §2b and §4 as a file shape** ·
 **replaces `gates:` with `steps:` and does not migrate** · generalises
 [0059](0059-a-point-carries-only-the-kinds-it-runs.md) from five points to ten
-steps
+steps · **§9's premise *a recipe has no templating* is narrowed by
+[0071](0071-a-templated-field-is-judged-twice.md)** — one field takes a
+placeholder since `#310`, so the resolve-time rule below is the rule about the
+string a person wrote, and the expansion is judged where it exists
 
 The recipe is the one file a person reads to learn what this system will do to
 their repository. Today it takes four sections to describe one pass and hides
@@ -384,6 +387,17 @@ claimed. So:
 
 > **Every plugin in the recipe is validated at resolve time, before a claim —
 > before a worktree, before an agent, before any money.**
+
+**The premise above it is narrowed by
+[0071](0071-a-templated-field-is-judged-twice.md).** *A recipe has no templating*
+was true when this was written; since `#310` a `file:` path takes `{{issue}}`,
+which is Ansible's case one field wide — the value is a template, its validity
+depends on the expansion, and the expansion does not exist until a work item has
+been claimed. The rule keeps its force **about the string a person wrote**, and
+the expansion is judged where it exists, by the same function. What that does
+not license is moving a check to run time because it is easier there, or —
+worse — writing the expansion's check on the template, which is the trap 0071 §3
+is about.
 
 That is the same bargain (*configure it wrong and you get an error*) collected
 early instead of late, and the machinery exists: `whyNoKindAt(point, kind)`

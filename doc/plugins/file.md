@@ -185,6 +185,13 @@ Refused rather than written out, because the file it would otherwise commit to
 the locator somebody follows a year later — this key's own failure, reached by a
 typo instead of by a fixed path.
 
+**The second half of that sentence is about the placeholder you wrote**, not a
+fixed paragraph about `{{title}}`: a `{{ref}}` is answered with 0036's rename
+(*this field's own later spelling, and nothing has made it yet*), a
+`{{ issue }}` with *the spelling is exact* rather than a lecture about slugs,
+and anything else with why the list is one name long. A refusal that explains a
+field the recipe does not mention reads as though the parser misread the line.
+
 A path whose `{{issue}}` **expands** into something outside the worktree gets
 the first refusal's clause, but at run time and on the card: `did-not-finish` at
 `design`, nothing written, and a sentence naming both the path as written and

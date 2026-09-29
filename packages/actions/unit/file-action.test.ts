@@ -303,10 +303,14 @@ describe("the recipe's own block, built", () => {
    * `actionsFromRecipe` has one production call site, `conduct.ts`'s, and
    * `lingtai doctor` resolves the recipe without ever constructing an action — so
    * a keep that went missing surfaces mid-pass, after the claim, the clone and
-   * the drafting agent have all been paid for. Every *other* refusal this plugin
-   * makes is at resolve time, before a worktree and before an agent; this one is
-   * the caller's defect rather than the operator's, which is why it is a throw
-   * here and not a resolve-time refusal.
+   * the drafting agent have all been paid for. What makes that tolerable is not
+   * that it is the only late refusal — since `#310` the test below is another,
+   * and an expansion that escapes is refused after the same money — but that
+   * **this one is the caller's defect rather than the operator's**: a `file:`
+   * built with no keep is a wiring mistake in `conduct.ts`, which nothing an
+   * operator writes can cause and nothing an operator reads can fix. That is
+   * why it is a throw and not a verdict, where the escaping expansion is a
+   * `did-not-finish` with a sentence on the card.
    */
   it("refuses a `file:` by name when no keep was supplied", () => {
     expect(() =>

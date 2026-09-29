@@ -298,6 +298,49 @@ export function whyThePathEscapes(written: string): string | null {
 const THE_PLACEHOLDER = "{{issue}}";
 
 /**
+ * **Why *that* placeholder is not the one** — the second half of the refusal
+ * `filePlugin` prints, chosen by what the operator actually wrote.
+ *
+ * One clause per spelling somebody reaches for, because a refusal's whole job
+ * here is to answer *why not this one*, and a reason about a field the recipe
+ * does not mention reads as though the parser misread the line. That is the
+ * *worse than no reason* `whyThatPair`'s docblock is about and `#268`'s `admit`
+ * branch was added to stop, and it is what this refusal printed when it first
+ * landed: every `{{…}}` was answered with a sentence about slugs — including
+ * `{{ref}}`, which 0036 names as this field's own later spelling, and
+ * `{{ issue }}`, which is a stray space rather than a second field at all.
+ *
+ * The default clause says what is true of every name not listed and of no name
+ * in particular, so it is never a sentence about somebody else's field.
+ */
+function whyNotThatPlaceholder(each: string): string {
+  const name = each.slice(2, -2).trim();
+  if (name === "issue") {
+    return (
+      "The spelling is exact — `{{issue}}`, with no spaces inside the braces — because a path is " +
+      "matched on the whole of what is written between them and never on a name trimmed out of it"
+    );
+  }
+  if (name === "title") {
+    return (
+      "A `{{title}}` in a filename is a slug problem — spaces, slashes, length, two tickets under " +
+      "one title — so it is left out on purpose rather than forgotten"
+    );
+  }
+  if (name === "ref") {
+    return (
+      "`{{ref}}` is this one's own later spelling rather than a second placeholder: 0036 names the " +
+      "rename and nothing has made it yet, so a ticket's reference is `{{issue}}` until it does"
+    );
+  }
+  return (
+    "The list is one name long on purpose — what may go in a filename is a decision somebody makes " +
+    "and writes down — so a second placeholder is a line added beside `{{issue}}` rather than a " +
+    "name a path can ask for"
+  );
+}
+
+/**
  * **What a `file:` path is for one ticket, or why that answer escapes the
  * worktree** — the substitution `#310` buys, and the second half of 0066 §6.
  *
@@ -307,6 +350,10 @@ const THE_PLACEHOLDER = "{{issue}}";
  * per-ticket, and `{{issue}}` is how a recipe says which part of it.
  *
  * ## Why this runs when the action runs, and not when the recipe resolves
+ *
+ * [0071](../../../doc/decisions/0071-a-templated-field-is-judged-twice.md) is
+ * the decision, and it is the one that narrows 0061 §9's *a recipe has no
+ * templating* to the string a person wrote. The argument, in full:
  *
  * `resolveRecipe` has no ticket and must not acquire one: it produces
  * `configHash`, *of the resolved form rather than the file's bytes*, so that a
@@ -436,6 +483,11 @@ export const filePlugin = definePlugin("file", {
       // fixed path. Here and not in `whyThePathEscapes`, which is also asked
       // about a *locator* at `implement`, where the string has already been
       // expanded and the only question left is whether it escapes.
+      //
+      // The reason is `whyNotThatPlaceholder`'s and not a fixed sentence: the
+      // half of a refusal that earns it is *why not the one I wrote*, and a
+      // sentence about `{{title}}` printed at `{{ref}}` names a field the
+      // recipe does not mention.
       const unknown = [...written.matchAll(/\{\{[^{}]*\}\}/g)]
         .map((match) => match[0])
         .find((each) => each !== THE_PLACEHOLDER);
@@ -444,9 +496,8 @@ export const filePlugin = definePlugin("file", {
           code: "custom",
           message:
             `"${written}" names \`${unknown}\`, which a \`file:\` path does not take — \`${THE_PLACEHOLDER}\` ` +
-            "is the one placeholder, and it becomes the ticket's number when the pass runs. A `{{title}}` in " +
-            "a filename is a slug problem — spaces, slashes, length, two tickets under one title — so it is " +
-            "left out on purpose rather than forgotten",
+            "is the one placeholder, and it becomes the ticket's number when the pass runs. " +
+            whyNotThatPlaceholder(unknown),
         });
       }
     }),
