@@ -1,14 +1,16 @@
 /**
- * One interface, two implementations — one of which is a stub, on purpose.
+ * One interface, two implementations — **both of them real since `#313`.**
  *
  * The contract is the **intersection** of what Claude Code and Codex CLI both
  * have: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`.
  * Claude Code's extra three (`SessionEnd`, `PreCompact`, `Notification`) are
  * bonus signal — better when present, never required, and the adapter works
- * without them. Both runtimes are designed for from day one because retrofitting
- * this interface later is a refactor; only `claude-code` is implemented, because
- * writing the second adapter before the first interface has survived real use is
- * guessing at the wrong abstractions.
+ * without them. Both runtimes were designed for from day one because retrofitting
+ * this interface later is a refactor, and for a long time only `claude-code` was
+ * implemented, because writing the second adapter before the first interface had
+ * survived real use is guessing at the wrong abstractions. It has survived it;
+ * `codex.ts` is the second, and which one runs is `RUNTIMES` in `runtimes.ts`
+ * reading the recipe's `runtime.agent`.
  *
  * **Containment is Lingtai's responsibility, not the runtime's.** Codex ships
  * a filesystem sandbox and Claude Code does not, and a project's safety level
@@ -253,7 +255,14 @@ export interface Runtime {
  * prompt (`canFailClosed`) — not a hook before tool use, which Lingtai does not
  * install (`INTERSECTION_HOOKS`) — and it is what the first project runs at and what carried
  * the old loop's 73 runs. `sandboxed` adds a filesystem boundary the runtime
- * enforces itself, which nothing implemented provides.
+ * enforces itself, **which Codex provides and which was proved rather than read
+ * off documentation** (`#313`, `codex.ts`): `codex sandbox -c
+ * sandbox_mode=read-only` refuses a write inside the working root, and
+ * `workspace-write` refuses `$HOME` and `~/.lingtai`.
+ *
+ * **The two are independent promises and this function reads both.** For weeks it
+ * returned on rank alone, so `sandboxed` satisfied `guarded` without
+ * `canFailClosed` being consulted — see `meetsTier`.
  */
 export function meetsTier(capabilities: RuntimeCapabilities, required: Tier): boolean {
   const rank: Record<Tier, number> = { open: 0, guarded: 1, sandboxed: 2 };
