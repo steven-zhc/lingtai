@@ -34,7 +34,7 @@ import { loadProject } from "@lingtai/conductor/projects";
 import { projectFilter, type StepPlan } from "@lingtai/conductor/filter";
 import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
 import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
-import { limitsFor, queueOf } from "@lingtai/recipe/settings";
+import { ceilingOf, queueOf } from "@lingtai/recipe/settings";
 
 /** One of the ten steps, and what the recipe runs there. */
 export interface PlannedStep {
@@ -262,7 +262,16 @@ export async function queuedFor(input: {
   // to a rate limit would be the same thing #76 removed from the Queued
   // column: one failure costing an answer it had nothing to do with.
   const plan = planOf(filter.plan, {
-    limits: limitsFor(filter.recipe, "implement"),
+    // **The ceiling, and not `implement`'s reduction from it** (`#314`).
+    // `PlanView.turns` and `.wall` are documented as `runtime.limits.turns` and
+    // `runtime.limits.wall`, and `Plan`'s own footer promises *`runtime.limits`
+    // in the recipe's own words … so the line reads back against the file it
+    // came from*. Since `limitsFor` started reading its step, that call answered
+    // a narrowed `implement` instead — two numbers for one documented field, and
+    // the next reader comparing the panel against `~/.lingtai/config.yml` looks
+    // for a bug in the machine-file merge. A step's own bound is named on the
+    // `agent:` row, which is where it belongs.
+    limits: ceilingOf(filter.recipe),
     tier: filter.recipe.runtime.tier,
   });
   const until = backoffOf(input.own, filter.backoffMs);

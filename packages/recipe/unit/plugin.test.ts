@@ -1507,6 +1507,51 @@ describe("a dispatch is one shape", () => {
   });
 
   /**
+   * **`safeParse` returns a refusal for a malformed duration and never throws
+   * one** (`#218`, and the reason the narrowing check parses nothing eagerly).
+   *
+   * The leaf `.refine`s on both `wall` keys raise a *non-aborting* `custom`
+   * issue, so zod runs the object-level refinement afterwards with the bad
+   * string still in hand — and `parseDuration` throws. `resolveSource` only
+   * inspects `safeParse`'s failure *result*, so a throw escapes past the
+   * `RecipeInvalidError` that names the key and the file, and `lingtai add`, the
+   * board's `recipeAtSha` and the setup wizard each print a bare duration
+   * message naming neither `runtime.limits.wall` nor which file to open. That is
+   * `#218`'s own failure, reintroduced one layer up by a check that compares
+   * durations.
+   *
+   * `wall: "90"` — the unit forgotten — is that ticket's exact typo, and it is
+   * asserted at **both** ends, because the comparison parses both.
+   */
+  it("refuses a malformed `wall` by name at either end, rather than throwing out of `safeParse`", () => {
+    const ceiling = Recipe.safeParse({
+      ...BASE,
+      runtime: { limits: { wall: "90" } },
+      steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "" }] },
+    });
+    expect(ceiling.success).toBe(false);
+    expect(ceiling.error!.issues).toEqual([
+      expect.objectContaining({
+        path: ["runtime", "limits", "wall"],
+        message: "must be a positive duration, like 2h",
+      }),
+    ]);
+
+    // And a step's own, which the same line parses. The refusal is the leaf's,
+    // named at the field — nothing about narrowing, because a ceiling or a bound
+    // that is not a duration is not a thing to compare.
+    const own = Recipe.safeParse({
+      ...BASE,
+      runtime: { limits: { wall: "1h" } },
+      steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "", limits: { wall: "90" } }] },
+    });
+    expect(own.success).toBe(false);
+    expect(own.error!.issues[0]!.path).toEqual(["steps", "implement", 0, "limits", "wall"]);
+    expect(own.error!.issues[0]!.message).toContain("must be a positive duration, like 30m");
+    expect(own.error!.issues.map((issue) => issue.message).join("\n")).not.toContain("may only narrow");
+  });
+
+  /**
    * **`rounds` and `restarts` bound the pass, so they are refused inside one
    * dispatch** (0040, 0070 §5).
    *

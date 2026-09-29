@@ -192,8 +192,11 @@ instead is:
 [`run:`](run.md) will look for.** What bounds an agent is `limits:` above, and
 what it narrows is `runtime.limits` — `turns` and `wall`. An `agent:` that
 declares none gets the ceiling, which is every `agent:` in every recipe on this
-machine today. The board says so in as many words rather than inventing a
-timeout: `describeAction` returns `no timeout in the recipe`. What a *refusal*
+machine today. The board says which of the two it is reading rather than
+inventing a timeout: `describeAction`'s bound is `runtime.limits, with no bound
+of its own` where the entry declares none, and `30m and 50 turns on this one
+call, narrowing runtime.limits` where it does — field by field, because the
+narrowing is. What a *refusal*
 may buy is `runtime.limits.rounds`, counted at `proposed` — and a fix round is
 this same entry dispatched again, so an `implement` that narrowed its bound
 narrowed its rounds with it.

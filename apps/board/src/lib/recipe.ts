@@ -499,7 +499,32 @@ export function describeAction(
             : step === undefined
               ? "an agent"
               : "a cold reviewer";
-      return { does: `${job} on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
+      /**
+       * **What this entry declared, and the ceiling where it declared nothing**
+       * (`#314`, 0070 §5).
+       *
+       * `no timeout in the recipe` was true while an `agent:` had no bound of
+       * its own to name, and this is the one column whose job is to say what
+       * bounds an action — so an operator who has just written
+       * `limits: { wall: 30m }` and reads that sentence back concludes the
+       * narrowing did not take, or goes raising `runtime.limits.wall` looking
+       * for the bound the page says is missing.
+       *
+       * Field by field, because the narrowing is: an absent one is the
+       * ceiling's, which is what the second half of each sentence says rather
+       * than this row reaching for a recipe it is not handed. `does` names
+       * `a.model` for the same reason — what this reviewer costs is what an
+       * operator is deciding from here.
+       */
+      const own = [
+        a.limits?.wall === undefined ? null : a.limits.wall,
+        a.limits?.turns === undefined ? null : `${a.limits.turns} turns`,
+      ].filter((each): each is string => each !== null);
+      const bound =
+        own.length === 0
+          ? "runtime.limits, with no bound of its own"
+          : `${own.join(" and ")} on this one call, narrowing runtime.limits`;
+      return { does: `${job} on ${on}: ${a.prompt}`, bound };
     }
     // **The one row that says where an answer *went*** (`#300`, 0066 §5). Every
     // other line here is a check, a dispatch or an effect on the issue; this one

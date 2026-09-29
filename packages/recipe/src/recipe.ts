@@ -3003,9 +3003,28 @@ export const Recipe = z.object({
    */
   .superRefine((recipe, ctx) => {
     const ceiling = recipe.runtime.limits;
-    // Parsed once: `positiveDuration` has already refused a malformed `wall` at
-    // both ends, here and at `runtime.limits`, so this never throws (#218).
-    const ceilingWallMs = parseDuration(ceiling.wall);
+    /**
+     * **A duration this refinement is handed may be malformed, and it may not
+     * throw on one** (#218).
+     *
+     * The leaf `.refine`s on both `wall` keys raise a non-aborting `custom`
+     * issue, so zod runs this refinement *after* one of them has already
+     * refused — with the bad string still in hand. A bare `parseDuration` here
+     * throws out of `Recipe.safeParse`, and `resolveSource` only inspects
+     * `safeParse`'s failure *result*: the throw escapes past the
+     * `RecipeInvalidError` that names the key and the file, so `lingtai add`,
+     * the board's reading and the wizard all print a bare duration message
+     * naming neither `runtime.limits.wall` nor which file to open. That is
+     * exactly the failure `#218` was opened on, one layer up.
+     *
+     * So a wall the leaf already refused is a wall this has nothing to say
+     * about: `null`, and the comparison is skipped. The named refusal the leaf
+     * raised is the one the operator reads, which is the right one — *what a
+     * step may narrow* is not a useful thing to hear about a ceiling that is
+     * not a duration.
+     */
+    const msOf = (text: string): number | null => (positiveDuration(text) ? parseDuration(text) : null);
+    const ceilingWallMs = msOf(ceiling.wall);
     for (const [step, actions] of Object.entries(recipe.steps)) {
       for (const action of actions) {
         const refuse = (message: string): void => {
@@ -3031,7 +3050,11 @@ export const Recipe = z.object({
               `${ceiling.turns}, and a step may only narrow it (0070 §5)`,
           );
         }
-        if (wall !== undefined && parseDuration(wall) > ceilingWallMs) {
+        // Both sides through `msOf`, and either one being `null` skips the
+        // comparison: a malformed `wall` at *this* end has been refused by the
+        // leaf too, and a second issue about narrowing would be noise beside it.
+        const wallMs = wall === undefined ? null : msOf(wall);
+        if (wallMs !== null && ceilingWallMs !== null && wallMs > ceilingWallMs) {
           refuse(
             `steps.${step}'s "${action.name}" asks for ${wall} of wall clock; runtime.limits.wall is ` +
               `${ceiling.wall}, and a step may only narrow it (0070 §5)`,
