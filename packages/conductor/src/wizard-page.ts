@@ -37,7 +37,7 @@ import { RuntimeId } from "@lingtai/domain";
 import type { StepAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
-import { baseOf, excludeOf, kindsOf, limitsFor, submodulesOf } from "@lingtai/recipe/settings";
+import { baseOf, ceilingOf, excludeOf, kindsOf, submodulesOf } from "@lingtai/recipe/settings";
 
 /** A new repository read back from a scan, or a recipe that is already there. */
 export type WizardMode = "onboard" | "update";
@@ -381,7 +381,10 @@ export function updateState(input: { slug: string; recipe: Recipe }): WizardStat
 }
 
 function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
-  const { turns, wall, rounds, restarts } = limitsFor(recipe, "implement");
+  // The dials edit `runtime.limits` itself, so they read the ceiling (`#314`):
+  // a page opened against a recipe that narrows `implement` must not offer that
+  // narrower number back as the ceiling and save it as one.
+  const { turns, wall, rounds, restarts } = ceilingOf(recipe);
   return {
     base: baseOf(recipe),
     submodules: submodulesOf(recipe),
@@ -750,7 +753,7 @@ export function applyDraft(recipe: Recipe, state: WizardState): Recipe {
     runtime: {
       ...recipe.runtime,
       agent: draft.agent,
-      limits: { ...limitsFor(recipe, "implement"), ...draft.limits },
+      limits: { ...ceilingOf(recipe), ...draft.limits },
     },
   };
 }

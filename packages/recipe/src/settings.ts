@@ -6,17 +6,20 @@
  * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4 puts
  * every setting on the step that owns it: what a pass may spend belongs to
  * `implement`, the branch belongs to `worktree:`, which kinds are taken belongs
- * to `queue:`. None of that has moved yet. What has moved is *who asks* — a
- * caller now says `limitsFor(recipe, "implement")` rather than reaching into
- * `recipe.runtime.limits`, and the day the value moves, every one of those
- * callers is already asking the right question.
+ * to `queue:`. What has moved is *who asks* — a caller says
+ * `limitsFor(recipe, "implement")` rather than reaching into
+ * `recipe.runtime.limits`, and the day a value moves, every one of those callers
+ * is already asking the right question.
  *
- * **The `step` argument is not read, and that is the point.** A function that
- * took no step would have to grow one later, which is the sixty-file change
- * this exists to avoid; a caller that passes the step it is *at* is correct
- * both before and after the move. `limitsFor(recipe, "build")` and
- * `limitsFor(recipe, "implement")` return the same object today and are not the
- * same question.
+ * **`limitsFor`'s `step` argument was the bet, and `#314` collected it.** It read
+ * `void step;` for eight tickets, on the argument that a function which took no
+ * step would have to grow one later — the sixty-file change this file exists to
+ * avoid. [0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+ * §5 put a `limits:` on a dispatch, the argument started being read, and the
+ * eleven callers that were already passing the step they were *at* needed no
+ * edit. What did need one is the four that meant **the ceiling** rather than the
+ * step — `ceilingOf` is that question, and it is a second accessor because
+ * `pnpm typecheck` cannot tell two readings of one type apart.
  *
  * Nothing here is a default or a fallback. A recipe is resolved before it
  * reaches any of these, so every value is present and an absent one is a bug in
@@ -58,13 +61,132 @@
  * which is the failure `#231` found, arriving through a half-moved setting rather
  * than through a reader.
  */
-import type { Step } from "@lingtai/domain";
-import type { QueueSettings, Recipe } from "./recipe.ts";
+import { STEPS, type Step } from "@lingtai/domain";
+import { parseDuration } from "./duration.ts";
+import { isBuiltInJudge, type QueueSettings, type Recipe, type StepAction } from "./recipe.ts";
 
-/** What one agent run at `step` may spend. */
+/**
+ * What one call this step makes may spend, **as a dispatch's own `limits:`**, or
+ * null where it declares none and the ceiling is what bounds it (0070 §5).
+ *
+ * `agent:` always dispatches; `judge:` dispatches when it names a runtime and
+ * never when it names a built-in, which is a synchronous function the router
+ * applies. Exactly `agentRefusal`'s test, and the schema's: the three places that
+ * ask *is this a paid call* have to agree, or a step's bound is read off an
+ * action that never runs.
+ */
+function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | null | undefined {
+  if ("agent" in action) return action.limits ?? null;
+  if ("judge" in action && !isBuiltInJudge(action.judge)) return action.limits ?? null;
+  return undefined;
+}
+
+/**
+ * **What one agent run at `step` may spend — the step's upper bound, and never
+ * one dispatch's own** (`#314`, 0070 §5).
+ *
+ * The `step` argument was `void step;` until this ticket, and the comment above
+ * this file said so: *a function that took no step would have to grow one later*.
+ * It grew one. A dispatch's `limits:` may narrow `runtime.limits` and may not
+ * widen it — refused when the recipe resolves — so what a step may spend is the
+ * **maximum** over its dispatches, and the ceiling where it has none.
+ *
+ * **There are two questions here and only one of them is this one.** A step may
+ * hold several dispatches — `StepMap` refuses a second `worktree:` or `queue:`
+ * at a step and refuses no second `agent:` — so:
+ *
+ * - *what may this **call** spend* is the action's own `limits:`, read at the
+ *   seam that builds the dispatch, falling back to `ceilingOf`. Never this.
+ * - *what may this **step** spend at most* is this, and it is what
+ *   `passCeiling`'s sentence is made of.
+ *
+ * Conflating them under-reports: a `review` holding a narrowed dispatch beside
+ * an undeclared one may spend the ceiling, because the undeclared one may.
+ *
+ * **A caller that writes `runtime.limits` wants `ceilingOf` and not this.** The
+ * wizard and `resolveLocalRecipe` save the machine file's ceiling, and narrowing
+ * that to whatever `implement` asked for would lower it permanently on the next
+ * save. `pnpm typecheck` cannot tell the two apart — both return the same type —
+ * so the question is in the name.
+ *
+ * **The ceiling object itself comes back where nothing narrows**, by identity, so
+ * *a recipe nobody edited resolves to the same values* is cheap to assert
+ * (0070 §8).
+ */
 export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits"] {
-  void step;
+  const ceiling = recipe.runtime.limits;
+  const ceilingWallMs = parseDuration(ceiling.wall);
+  let turns = 0;
+  let wall = ceiling.wall;
+  let wallMs = 0;
+  let dispatches = 0;
+  for (const action of recipe.steps[step]) {
+    const own = dispatchedBy(action);
+    if (own === undefined) continue;
+    dispatches += 1;
+    turns = Math.max(turns, own?.turns ?? ceiling.turns);
+    const ms = own?.wall === undefined ? ceilingWallMs : parseDuration(own.wall);
+    if (ms > wallMs) {
+      wallMs = ms;
+      wall = own?.wall ?? ceiling.wall;
+    }
+  }
+  if (dispatches === 0) return ceiling;
+  if (turns === ceiling.turns && wallMs === ceilingWallMs) return ceiling;
+  return { ...ceiling, turns, wall };
+}
+
+/**
+ * **`runtime.limits` itself — the ceiling, said once** (`#314`, 0070 §5).
+ *
+ * `limitsFor`'s opposite and the reason it can be a maximum: what a step may
+ * spend is a reduction from this, and this is what a machine file stores and a
+ * dial edits. Every reader that means *the bound the recipe states at the top*
+ * asks for it by that name, so the two questions are told apart by the call and
+ * not by a comment beside it.
+ *
+ * An accessor rather than an inlined `recipe.runtime.limits`, for the reason
+ * every accessor in this file is one: `unit/settings.test.ts`'s *nothing reaches
+ * past them* greps the workspace for exactly that expression, and the day the
+ * ceiling moves it moves here.
+ */
+export function ceilingOf(recipe: Recipe): Recipe["runtime"]["limits"] {
   return recipe.runtime.limits;
+}
+
+/** A step that dispatches, and what it may spend — `boundsBesides`' rows. */
+export interface StepBound {
+  step: Step;
+  turns: number;
+  wall: string;
+}
+
+/**
+ * **Every dispatching step whose bound is not the one a sentence already names**
+ * (`#314`, 0070 §9).
+ *
+ * `passCeiling` prints one figure and multiplies it by the rounds, because the
+ * rounds are `implement`'s. With per-step bounds that figure stops being the
+ * whole truth, and the fix is not a longer computation but a shorter list: the
+ * steps that disagree with it, named. A recipe that narrows nothing returns `[]`
+ * and the sentence is the one it has always printed, character for character.
+ *
+ * **Only steps that actually dispatch.** `limitsFor` answers the ceiling for a
+ * step with no `agent:` and no runtime `judge:` — truthfully, since nothing there
+ * spends anything — and listing `admit 1h/150 turns` beside a narrowed
+ * `implement` would be a bound on a step that buys no agent at all.
+ */
+export function boundsBesides(recipe: Recipe, named: Step): readonly StepBound[] {
+  const figure = limitsFor(recipe, named);
+  const rows: StepBound[] = [];
+  for (const step of STEPS) {
+    if (step === named) continue;
+    if (!recipe.steps[step].some((action) => dispatchedBy(action) !== undefined)) continue;
+    const own = limitsFor(recipe, step);
+    if (own.turns === figure.turns && parseDuration(own.wall) === parseDuration(figure.wall)) continue;
+    rows.push({ step, turns: own.turns, wall: own.wall });
+  }
+  return rows;
 }
 
 /**

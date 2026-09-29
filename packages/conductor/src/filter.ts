@@ -20,7 +20,7 @@ import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, type GitHubClient } from "@lingtai/github";
 import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
-import { assigneeOf, backoffOf, excludeOf, kindsOf, limitsFor } from "@lingtai/recipe/settings";
+import { assigneeOf, backoffOf, boundsBesides, ceilingOf, excludeOf, kindsOf, limitsFor, type StepBound } from "@lingtai/recipe/settings";
 import { passCeiling } from "./ceiling.ts";
 import { currentRecipe } from "./projects.ts";
 
@@ -120,7 +120,22 @@ export type ProjectFilter =
        * that make it live in one place. `wallMs` is parsed here so no caller
        * reads a duration string.
        */
-      limits: { rounds: number; restarts: number; turns: number; wall: string; wallMs: number };
+      /**
+       * **`steps` is the other dispatching steps, since a dispatch may narrow**
+       * (`#314`, 0070 §5). The five numbers above are `implement`'s, because
+       * `rounds` are rounds at `implement` and they are what the product
+       * multiplies; a `review` or a `judge` bounded differently is named here
+       * rather than averaged in, and a recipe that narrows nothing carries an
+       * empty list and reads exactly as it did.
+       */
+      limits: {
+        rounds: number;
+        restarts: number;
+        turns: number;
+        wall: string;
+        wallMs: number;
+        steps: readonly StepBound[];
+      };
       /**
        * How long a failed attempt keeps its own ticket out of the queue,
        * `source.backoff` in milliseconds
@@ -206,11 +221,15 @@ export async function projectFilter(
       kinds: kindsOf(resolved.recipe),
       exclude: excludeOf(resolved.recipe),
       limits: {
-        rounds: limitsFor(resolved.recipe, "implement").rounds,
-        restarts: limitsFor(resolved.recipe, "implement").restarts,
+        // `rounds` and `restarts` are the pass's and are the ceiling's by
+        // definition (0040); `turns` and `wall` are what `implement` may spend,
+        // which is the ceiling unless a dispatch there narrowed it (`#314`).
+        rounds: ceilingOf(resolved.recipe).rounds,
+        restarts: ceilingOf(resolved.recipe).restarts,
         turns: limitsFor(resolved.recipe, "implement").turns,
         wall: limitsFor(resolved.recipe, "implement").wall,
         wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
+        steps: boundsBesides(resolved.recipe, "implement"),
       },
       backoffMs: parseDuration(backoffOf(resolved.recipe)),
       plan: stepPlan(resolved.recipe),

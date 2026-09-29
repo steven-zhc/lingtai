@@ -17,7 +17,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
-import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
+import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, boundsBesides, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
 /** The limits `a pass` is made of, from the recipe rather than listed again here. */
 const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
@@ -753,7 +753,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "a pass",
-      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall) }),
+      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall), steps: boundsBesides(recipe, "implement") }),
       keys: LIMIT_KEYS.map((key) => `runtime.limits.${key}`),
     },
     // **Beside the limits, because it is the other half of the same answer.**

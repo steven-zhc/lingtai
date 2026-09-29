@@ -46,7 +46,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
-import { baseDivergence, baseOf, baseWrittenAt, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
+import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
 import { type RecordedRefusal, type RuntimeId, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1599,8 +1599,11 @@ export function limitsRow(
 ): CheckResult {
   const name = `runtime: ${project} limits`;
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
-    turns: String(limitsFor(recipe, "implement").turns),
-    wall: limitsFor(recipe, "implement").wall,
+    // The ceiling beside its provenance: this row is about what
+    // `~/.lingtai/config.yml` says and whether the runtime applies it, and a
+    // step's reduction is neither (`#314`).
+    turns: String(ceilingOf(recipe).turns),
+    wall: ceilingOf(recipe).wall,
   };
   const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
   const detail = RUN_LIMITS.map(

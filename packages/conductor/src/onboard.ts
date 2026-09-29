@@ -34,7 +34,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from "@lingtai/domain";
-import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, baseWrittenAt, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type ResolvedRecipe } from "@lingtai/recipe";
+import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, baseWrittenAt, boundsBesides, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type ResolvedRecipe } from "@lingtai/recipe";
 import { signedInHere } from "./projects.ts";
 import { STEPS, type Tier, parsePayload } from "@lingtai/domain";
 import {
@@ -326,6 +326,9 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   log(`  ${"a pass".padEnd(9)} ${passCeiling({
     ...limitsFor(resolved.recipe, "implement"),
     wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
+    // The steps bounded differently from `implement`, so `lingtai add` answers
+    // *what do `proposed:` and `merge:` say today* about money too (`#314`).
+    steps: boundsBesides(resolved.recipe, "implement"),
   })}`);
   log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${kindsOf(resolved.recipe).join(" > ")}`);
 
