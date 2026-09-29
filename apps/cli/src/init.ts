@@ -62,7 +62,8 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 import { Document, isMap, parseDocument } from "yaml";
-import { claudeCodeAuth, codexAuth } from "@lingtai/agent/auth";
+import { askEveryRuntime } from "@lingtai/agent/auth";
+import { RuntimeId } from "@lingtai/domain";
 import { runnableEnv } from "@lingtai/agent-env";
 import {
   SQLITE_MACHINE,
@@ -80,8 +81,15 @@ import { boardLock, builtBoardDir, serveBoard } from "./board.ts";
 
 // -------------------------------------------------------------- the world --
 
-export const RUNTIMES = ["claude-code", "codex"] as const;
-export type RuntimeName = (typeof RUNTIMES)[number];
+/**
+ * `RuntimeId`, and not a list of its members written out again (`#313`).
+ *
+ * It was `["claude-code", "codex"] as const` with its own `RuntimeName` beside
+ * it — a third runtime added to the enum would have been invisible to
+ * `lingtai init`, which is the one command whose job is to say which agents this
+ * machine has. `RuntimeId` is the enum; `askEveryRuntime` walks it.
+ */
+export type RuntimeName = RuntimeId;
 
 export interface RuntimeFound {
   id: RuntimeName;
@@ -551,14 +559,15 @@ export function liveInitWorld(): InitWorld {
       return said.status === 0 ? said.stdout.trim() : null;
     },
     runtimes: async () => {
-      const env = runnableEnv({});
-      const asked = await Promise.all([claudeCodeAuth("claude", env), codexAuth("codex", env)]);
-      return RUNTIMES.map((id, i) => ({
+      // Keyed by id in `auth.ts`, not zipped positionally here: the pair of
+      // hand-written lists this replaces was one insertion away from reporting
+      // Codex's answer under Claude Code's name.
+      return (await askEveryRuntime(runnableEnv({}))).map(({ id, status }) => ({
         id,
         // A missing binary is a spawn error, and not a runtime saying it is signed out.
-        installed: !/ENOENT/.test(asked[i]!.detail),
-        signedIn: asked[i]!.loggedIn,
-        detail: asked[i]!.detail,
+        installed: !/ENOENT/.test(status.detail),
+        signedIn: status.loggedIn,
+        detail: status.detail,
       }));
     },
     database: async (url) => {

@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 import { RuntimeId } from "@lingtai/domain";
 import { FIRST_RUNTIME, RUNTIMES, createRuntime, everyRuntime } from "../src/runtimes.ts";
+import { AUTH_PROBES } from "../src/auth.ts";
 import type { Runtime } from "../src/runtime.ts";
 
 describe("the table", () => {
@@ -45,6 +46,35 @@ describe("the table", () => {
     // the reason there is no `undefined` branch in `createRuntime`.
     const exhaustive = RUNTIMES satisfies Record<RuntimeId, (o?: never) => Runtime>;
     expect(Object.keys(exhaustive)).toHaveLength(RuntimeId.options.length);
+  });
+});
+
+/**
+ * **The second table, and why it is allowed to exist.**
+ *
+ * `RUNTIMES[id]().checkAuth` is the same probe `AUTH_PROBES` holds, so this looks
+ * like duplication to delete. It is not: `lingtai init` asks which agent a machine
+ * has *before there is a log*, and reaching the factory table loads
+ * `claude-code.ts` → `hook-socket.ts` → `@lingtai/event-store`, whose client is
+ * built at module scope and throws without a database URL. `auth.ts` exists for
+ * exactly that reason (see its header).
+ *
+ * What keeps the two from drifting is the type, not vigilance: both are
+ * `Record<RuntimeId, …>`, so a third runtime is a `tsc` error in both. These
+ * assertions write that down where somebody counting the places a runtime is
+ * named would look.
+ */
+describe("the auth probe table, which init reads before there is a log", () => {
+  it("has the same keys as the factory table, because both are total over the enum", () => {
+    expect(Object.keys(AUTH_PROBES).sort()).toEqual(Object.keys(RUNTIMES).sort());
+    expect(Object.keys(AUTH_PROBES).sort()).toEqual([...RuntimeId.options].sort());
+  });
+
+  it("answers every id with a function, so no id is probed by position", () => {
+    // It was `Promise.all([claudeCodeAuth(…), codexAuth(…)])` indexed against a
+    // written-out list of ids — one insertion from reporting Codex's answer under
+    // Claude Code's name.
+    for (const id of RuntimeId.options) expect(AUTH_PROBES[id]).toBeTypeOf("function");
   });
 });
 

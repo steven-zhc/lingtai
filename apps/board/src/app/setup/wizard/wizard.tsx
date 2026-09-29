@@ -15,6 +15,7 @@
  */
 import Link from "next/link";
 import { type ReactNode, useReducer, useState, useTransition } from "react";
+import { RuntimeId } from "@lingtai/domain";
 import type { Recipe } from "@lingtai/recipe";
 import {
   DECISIONS,
@@ -269,7 +270,9 @@ function fastEditor(state: WizardState, row: FastRowId, act: (m: WizardMove) => 
         </>
       );
     case "runtime.agent":
-      return (["claude-code", "codex"] as const).map((agent) => (
+      // `RuntimeId.options`, not a list written out here: a runtime the enum has
+      // and this page does not is one nobody can choose (`#313`).
+      return RuntimeId.options.map((agent) => (
         <label key={agent} className="wz-tick">
           <input
             type="radio"

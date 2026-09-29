@@ -33,6 +33,7 @@
  * something a person can get wrong and fix in a minute; a slow one is something
  * they cannot.
  */
+import { RuntimeId } from "@lingtai/domain";
 import type { StepAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
@@ -176,7 +177,8 @@ export interface Draft {
   exclude: string[];
   checks: Check[];
   envRequired: string[];
-  agent: "claude-code" | "codex";
+  /** `RuntimeId` and not its members written out: a third one is then this too. */
+  agent: RuntimeId;
   closeOnLand: boolean;
   personApproves: boolean;
   limits: Limits;
@@ -387,7 +389,10 @@ function fromRecipe(recipe: Recipe, checks: Check[]): Draft {
     exclude: [...excludeOf(recipe)],
     checks,
     envRequired: [...recipe.env.required],
-    agent: recipe.runtime.agent === "codex" ? "codex" : "claude-code",
+    // `recipe.runtime.agent` is already a `RuntimeId`; the ternary this replaces
+    // narrowed it to the two it knew about, so a third would have been silently
+    // read back as `claude-code` on the page that sets it.
+    agent: recipe.runtime.agent,
     closeOnLand: recipe.steps.end.some(closesOnLand),
     // `proposed:` and not `merge:` since `#270`: that is where the hold is legal
     // and where `applyDraft` writes it.

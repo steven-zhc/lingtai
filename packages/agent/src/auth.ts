@@ -9,6 +9,7 @@
  * database it wants — the order the ticket forbids.
  */
 import { spawn } from "node:child_process";
+import { RuntimeId } from "@lingtai/domain";
 import type { AuthStatus } from "./runtime.ts";
 
 /**
@@ -114,4 +115,39 @@ export function codexAuth(binary: string, env: Record<string, string>): Promise<
       resolve({ loggedIn: code === 0, method: null, detail });
     });
   });
+}
+
+/**
+ * Every runtime asked whether it is signed in, **before there is a log**.
+ *
+ * The second exhaustive table over `RuntimeId`, and the duplication is forced
+ * rather than an oversight (`#313`). `RUNTIMES` in `runtimes.ts` is the one place
+ * a runtime is *constructed*, and `RUNTIMES[id]().checkAuth` is this same probe —
+ * but reaching it loads `claude-code.ts`, which loads `hook-socket.ts` for
+ * `observedCall`, which loads `@lingtai/event-store`, whose client is built at
+ * module scope and throws without a database URL. That is the whole reason this
+ * file exists (see the header), and it is why `lingtai init` cannot ask which
+ * agent a machine has by way of the factory table.
+ *
+ * What the duplication costs is bounded by the type: `Record<RuntimeId, …>` makes
+ * a third runtime a `tsc` error **here as well as there**, so the two cannot
+ * drift into disagreeing about which runtimes exist. `unit/runtimes.test.ts`
+ * asserts both are exhaustive.
+ *
+ * **Keyed, not zipped.** It was `Promise.all([claudeCodeAuth(…), codexAuth(…)])`
+ * indexed positionally against a written-out list of ids, which is one careless
+ * insertion away from reporting Codex's answer under Claude Code's name.
+ */
+export const AUTH_PROBES: Record<RuntimeId, (env: Record<string, string>) => Promise<AuthStatus>> = {
+  "claude-code": (env) => claudeCodeAuth("claude", env),
+  codex: (env) => codexAuth("codex", env),
+};
+
+/** In the enum's own order, so a caller's list is never written by hand. */
+export function askEveryRuntime(
+  env: Record<string, string>,
+): Promise<{ id: RuntimeId; status: AuthStatus }[]> {
+  return Promise.all(
+    RuntimeId.options.map(async (id) => ({ id, status: await AUTH_PROBES[id](env) })),
+  );
 }
