@@ -13,10 +13,19 @@ still cut detached, at the base, once per pass
 Every attempt pushes twice: to `agent/<n>`, the branch a ticket's passes own,
 and to `agent/<n>-attempt-<k>` — an **arm**, a sibling ref per attempt
 (`armBranch` in `packages/conductor/src/branches.ts`). The remote carries 31 of
-them. `refs:` at `end` sweeps both when a ticket lands (`#240`), so an arm exists
-exactly as long as there is a next attempt that might want it.
+them. `refs:` at `end` deletes an item's arms once it lands (`#240`) — and its
+`branch:` is `false` by default, so `agent/<n>` itself stays: after a merge its
+commits are reachable from `main`, but it is the ref a person follows from the
+merge commit. An arm is therefore meant to outlive exactly the passes that might
+read it.
 
-Nothing wants it. The next attempt is cut from `origin/<base>` and is told about
+**Meant to. This repository had not declared `refs:` at all** until 2026-09-29,
+so nothing was swept and the 31 above are what a fortnight of accident looks
+like. Declining the plugin is done by not declaring it (0061 §2), which is a
+good rule and is indistinguishable from forgetting.
+
+**And nothing reads one either**, which is the separate half and the one this
+file is about. The next attempt is cut from `origin/<base>` and is told about
 its predecessors in prose: `priorAttempts` gives the brief `n`, `runId`, how it
 `ended`, the integrator's `refusal` and the `outcome` — **and no ref.** So the
 agent learns that an attempt happened and what it cost, and never where the code
@@ -131,8 +140,8 @@ numbers arrive without anybody instrumenting anything for them.
 ## 7. What it costs
 
 **One line in a brief, and a derivation.** No event grows, no schema changes, no
-ref is created that is not created today, and `refs:`'s sweep already removes
-them on the ticket that lands.
+ref is created that is not created today, and `refs:`'s sweep removes them on
+the ticket that lands — once a recipe declares it.
 
 **A wrong turn the agent can take.** An arm is the work of an attempt that did
 not land, and some of those were refused for good reasons. An agent that reads
@@ -162,8 +171,9 @@ carry, so the cost is wording rather than plumbing.
   whole of a pass, cut once and released at the end. Unchanged.
 - [0068](0068-a-step-that-asked-is-not-a-step-that-crashed.md) — the ending split
   that makes §6's deferred question answerable at all.
-- [#240](https://github.com/steven-zhc/lingtai/issues/240) — `refs:` sweeps both
-  the branch and its arms, which is why an arm outlives exactly the passes that
-  might read it.
+- [#240](https://github.com/steven-zhc/lingtai/issues/240) — `refs:` sweeps an
+  item's arms at `end`, and its branch too where `branch: true` says so. That is
+  why an arm outlives exactly the passes that might read it, in a recipe that
+  declares the plugin.
 - [#82](https://github.com/steven-zhc/lingtai/issues/82) — the brief that quotes
   earlier attempts. This adds a field to what it quotes and changes nothing else.
