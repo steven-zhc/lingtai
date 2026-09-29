@@ -151,7 +151,8 @@ name in a vocabulary and not a branch.
 A **destination** — a plugin that writes the design into the tree, or files it on
 a wiki ([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5) —
 can fail in a way the three endings above do not obviously sort, so the table is
-written down (0066 §7) and
+written down — it is 0066 §7's, with the two run-time rows corrected there by
+measurement (`#299`) — and
 `packages/conductor/unit/what-a-destination-costs.test.ts` drives it:
 
 | what happened | how you say it | what it costs |

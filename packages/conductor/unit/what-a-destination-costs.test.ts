@@ -1,7 +1,9 @@
 /**
  * **A destination fails three ways, and each way costs something different** —
  * [0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
- * §7's table, row by row (`#299`).
+ * §7's table, row by row — the table as `#299` corrected it there, the two
+ * run-time rows having been written before anything could produce either
+ * ending.
  *
  * ```
  * the recipe is wrong          refused at resolve   nothing is claimed and nothing runs
@@ -14,7 +16,8 @@
  * to run time costs a whole pass — the claim, the worktree, the design agent —
  * and then ends `blocked`, which puts the item on *Waiting on you* and leaves it
  * there. It is **not** retried on the recipe's backoff, which is what 0066 §6
- * expects of it: a block folds to `state: "waiting"` and `selectRunnable` drops
+ * said until `#299` corrected it there: a block folds to `state: "waiting"` and
+ * `selectRunnable` drops
  * any row that is not `queued` before it consults the backoff at all
  * (`queue.ts`, and `integration/queue.test.ts`'s *passes over an item asked a
  * question before any run*). So what is asserted about this row is that the pass
@@ -44,6 +47,8 @@
  * and `doc/writing-a-plugin.md`'s *a plugin that keeps something somewhere fails
  * three ways* is the page that tells a plugin author the same table.
  */
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { Step } from "@lingtai/domain";
 import { NEEDS_INPUT, type Action, type ActionEvent, type ActionResult } from "@lingtai/actions";
 import { StepMap } from "@lingtai/recipe";
@@ -57,6 +62,8 @@ import {
   type PassResult,
   type StepEnding,
 } from "../src/pass.ts";
+
+const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 /**
  * Rounds to spare on every pass below, so that *no round was bought* is a fact
@@ -215,8 +222,8 @@ describe("a destination fails three ways, and a step has one way to say so", () 
       // the item again, where `blocked` folds to `state: "waiting"` and
       // `selectRunnable` drops any row that is not `queued` before it looks at
       // the backoff (`queue.ts`). So this row waits for a person and is not
-      // retried, however cheap the failure was — the line 0066 §6 gets wrong
-      // about a configuration error that reaches run time.
+      // retried, however cheap the failure was — the line `#299` corrected at
+      // 0066 §6, about a configuration error that reaches run time.
       expect(outcomeOf(result)).toBe("blocked");
       expect(outcomeOf(result)).not.toBe("failed");
       // `StepDidNotFinish` and not `StepAsked` — broken machinery, not a
@@ -335,5 +342,65 @@ describe("a destination fails three ways, and a step has one way to say so", () 
       // not the workflow's, which is the distinction the two sets exist to keep.
       expect(onOffer("design", question, SPARE, SPARE.rounds).reachable).toEqual(["waiting", "design"]);
     });
+  });
+});
+
+/**
+ * **The table's own home says what was measured here**, which is the half of
+ * this ticket a passing assertion about `onOffer` cannot carry.
+ *
+ * 0066 is `accepted`, and two of its cost cells are false against the code
+ * above — `#299` measured them. A correction that lives only in a second file
+ * and in this docblock is a correction the next reader never meets: they follow
+ * the durable citation (`0066 §7`, because a seq is not one — `doc/design/1.0.md`),
+ * read the row, and specify a destination on the strength of it. So what is
+ * pinned here is that the ADR carries the correction *beside the cell*, the way
+ * 0057's header carries its withdrawn §4 — and that the page a plugin author
+ * reads says the table is the corrected one rather than citing §7 flat.
+ *
+ * Read from the files for `packages/actions/unit/tamper-watch.test.ts`'s
+ * reason: the document is what the claim is judged against, so the judgement
+ * belongs beside the code the document describes.
+ */
+describe("the ADR the table came from carries what was measured", () => {
+  /** One `## N. …` section of an ADR, which is the unit a citation names. */
+  async function section(file: string, n: number): Promise<string> {
+    const body = await readFile(`${root}doc/decisions/${file}`, "utf8");
+    const found = body.split(/^## /m).find((part) => part.startsWith(`${n}. `));
+    if (found === undefined) throw new Error(`${file} has no §${n}`);
+    return found;
+  }
+
+  const ADR = "0066-a-large-answer-is-a-locator-on-the-log.md";
+
+  it("corrects §6 where §6 prices a run-time failure", async () => {
+    const six = await section(ADR, 6);
+
+    expect(six).toContain("#299");
+    // The mechanism, named where the wrong one is: not a retry, a block.
+    expect(six).toContain("not retried");
+    expect(six).toContain("blocked");
+  });
+
+  it("corrects both of §7's run-time cells, quoting the cell it corrects", async () => {
+    const seven = await section(ADR, 7);
+
+    expect(seven).toContain("#299");
+    expect(seven).toContain("the item is released, the backoff retries it");
+    expect(seven).toContain("buys no round");
+    // And the reason the second cell was written, so it is not written again:
+    // refusing and arriving at the router are different transactions.
+    expect(seven).toMatch(/round is bought at the\s+router/);
+  });
+
+  it("is cited as corrected on the page a plugin author reads", async () => {
+    const page = await readFile(`${root}doc/writing-a-plugin.md`, "utf8");
+    const destination = page
+      .split(/^### /m)
+      .find((part) => part.startsWith("A plugin that keeps something somewhere fails three ways"));
+    if (destination === undefined) throw new Error("doc/writing-a-plugin.md has no destination section");
+
+    expect(destination).toContain("0066 §7");
+    expect(destination).toContain("#299");
   });
 });

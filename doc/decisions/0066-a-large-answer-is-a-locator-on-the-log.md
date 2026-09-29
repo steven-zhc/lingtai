@@ -6,7 +6,12 @@ step's plugin returns · **Extends**
 [0031](0031-a-run-that-never-started.md) §1 from a classification to a location ·
 **Makes load-bearing** [0064](0064-a-plugin-declares-the-steps-it-implements.md)
 §4's *a plugin declares its own `at`*, which is what lets a second destination
-join without the core learning about it
+join without the core learning about it · **§6's second paragraph and §7's
+last two rows are corrected** (`#299`) — a run-time failure is not retried on
+the backoff, and the asking row *can* buy a round; both were written before
+anything could produce either ending, and both are now measured by
+`packages/conductor/unit/what-a-destination-costs.test.ts`. The corrections are
+at §6 and §7 below; §1–§5 and §7's first row stand
 
 ## 1. What is wrong today: the design is bought, used once, and cannot be kept
 
@@ -110,6 +115,18 @@ costs. A configuration error that survives to run time is retried on the
 recipe's backoff — **every hour here** — and each retry claims the ticket, cuts a
 worktree, dispatches and fails again.
 
+**Corrected (`#299`): it is not retried, and that makes the alternative worse
+rather than better.** A configuration error that survives to run time ends the
+pass `blocked` and the item then sits there: `outcomeOf` (`pass.ts`) reads a
+`did-not-finish` as `blocked`, `conduct.ts` appends `WorkItemBlocked`,
+`task_view` folds that to `state: "waiting"`, and `selectRunnable` (`queue.ts`)
+drops any row that is not `queued` **before** it consults the backoff at all. So
+what it costs is one claim, one worktree, one paid agent — and then a person,
+who is being asked to answer a refusal a schema line could have printed before
+anything was claimed. The paragraph above priced it as an hourly leak; it is a
+single charge and a stop. **The section's decision is unchanged and is if
+anything better supported** — only the mechanism was wrong.
+
 ## 7. Three failures, three endings, and only one waits for a person
 
 `design` **may not refuse** — it is a rectangle in 0058 §3's list — so none of
@@ -123,10 +140,27 @@ different things, and only one of them is charged for.*
 | the destination was briefly unreachable | `did-not-finish` | the pass stops, the item is released, the backoff retries it |
 | the destination needs a person | `did-not-finish` carrying `needs-input` | reaches `proposed`, and with no judge declared, a person — **and buys no round** |
 
+**Corrected (`#299`): the last two cost cells are wrong**, and so is the rule
+below them for telling the rows apart. Measured against the code by
+`packages/conductor/unit/what-a-destination-costs.test.ts`:
+
+| the row | what the cell says | what happens |
+|---|---|---|
+| unreachable | *the item is released, the backoff retries it* | the item is **not** released: the pass ends `blocked`, the row folds to `waiting`, and the queue passes over it however long its backoff has run (§6's correction) |
+| needs a person | *and buys no round* | it buys none getting there — but it arrives with **`design` itself on the offer**, so a `judge:` declared at `when: needs-input` that answers `design` pays for a second design run, up to `runtime.limits.rounds` |
+
+The second cell is this section's own first sentence read backwards. *`design`
+may not refuse* is a fact about `refused`, and **a round is bought at the
+router**, which is the other transaction — so it settles nothing about what any
+of these costs, and the row that reaches the router is the one that can cost
+more than once.
+
 **Which runtime failures are the second row and which are the third is left to
 measurement.** *Unreachable* and *needs a person* are the same event seen at two
-moments. Start everything at the second row, and move a failure to the third when
-it is seen to retry without ever succeeding.
+moments. Start everything at the second row — but **not** by watching for retries,
+since neither row is retried. The observable is the person: move a failure to
+the third row when the person the block reached answers it with something only
+they knew — a space, a path, a credential — rather than by running it again.
 
 Two things this row depends on are open:
 [#294](https://github.com/steven-zhc/lingtai/issues/294) — nothing can produce a
