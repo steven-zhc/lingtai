@@ -2,9 +2,11 @@
 
 `agent:` buys a model a turn in this pass's worktree, and it is **one of the two
 keys in a recipe that spend money** — since `#277` a `judge:` naming a runtime
-rather than a built-in is the other, and `agentRefusal` (`conduct.ts`) holds both
-to the dispatched runtime alike, so an audit of what a recipe costs reads both
-keys. **The three fields are the same wherever it is written and the job is
+rather than a built-in is the other, and since `#314` the two share the same
+**dispatch** group (`model`, `prompt`, `limits`), so an audit of what a recipe
+costs reads both keys and reads them the same way
+([0070](../decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §3).
+**The fields are the same wherever it is written and the job is
 not**: at `design` it drafts a document before any code
 exists, at `implement` it writes the change, and at `review`, `proposed` and
 `merge` it reads a diff it did not write. The failure the last of those prevents
@@ -160,6 +162,11 @@ effect"*.
 | `agent` | `claude-code` or `codex` | yes | **The runtime, not the prose** — `RuntimeId` in `packages/domain/src/events.ts`, which is a `z.enum` and not a string (0063 §2, `#245`). |
 | `model` | string | no — **the runtime's own default** | Handed to the runtime as-is. Lingtai keeps no table of what each runtime defaults to, so it is passed through *absent* rather than resolved to a name here, and it is **not validated**: the legal model names are the runtime's to know, and a stale allowlist would refuse a model that works. |
 | `prompt` | string | yes | What this project wants looked for, appended to the fixed brief. It cannot remove the rubric, the checklist, the failure-scenario rule, the ticket or the diff. |
+| `limits` | `{ turns?, wall? }` | no — **`runtime.limits`** | What this **one call** may spend (0070 §5). Field by field, so `limits: { turns: 50 }` narrows the turns and keeps the pass's wall. **It may only narrow**: a figure past `runtime.limits` is refused when the recipe resolves, because a step that could raise its own bound would make what a pass may spend unknowable without reading every action. `rounds` and `restarts` are refused inside it by name — they count *how many* calls a pass and a ticket buy, which is not a thing one action can have an opinion about ([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)). |
+
+`model`, `prompt` and `limits` are the **dispatch group** — the same three
+fields, with the same meanings, on every plugin that pays for a model. `judge:`
+embeds two of them; see [`judge.md`](judge.md) for why it leaves `prompt:` out.
 
 **The enum on `agent` is the whole safety of the field rather than a style
 choice.** A `z.string()` here would take the paragraph of prose a file written
@@ -167,27 +174,29 @@ before `#245` puts under `agent:`, parse it cleanly, and hand it on as the *name
 of a runtime* — failing at spawn, in a worktree, a long way from the line that is
 wrong.
 
-**And a legal name is not yet a true one.** One conductor dispatches one runtime
-and hands it to every step, so a value here that is not the dispatched one cannot
-be honoured: `agentRefusal` in `packages/conductor/src/conduct.ts` reads **every**
-`agent:` in the file, not `runtime.agent` alone, and refuses the recipe before the
-claim —
+**And a legal name is one this machine has to be able to run.** Until `#314` a
+value here that was not the pass's own runtime could not be honoured at all —
+one conductor dispatched one runtime and handed it to every step — so
+`agentRefusal` refused the recipe before the claim. It is dispatched now
+(`runtimeFor` in `conduct.ts`, over `RUNTIMES`), and what the same refusal says
+instead is:
 
-> steps.review's "review" action names agent codex, and this conductor runs
-> claude-code
+> steps.review's "review" action names agent codex, and nothing on this machine
+> is signed in to codex
 
 — naming the step, the action and the key, because *which* `agent:` is wrong and
-*which file to open* are one fact. Per-step dispatch is not built; until it is,
-the only honest answer to a second runtime named at a step is to say so.
+*which file to open* are one fact. Still before the claim, so a pass whose
+`review` cannot start does not first cut a worktree and buy an implementer.
 
 **There is no `timeout:`, and that is the field a reader arriving from
-[`run:`](run.md) will look for.** What bounds an agent is `runtime.limits` —
-`turns` and `wall` — which is a recipe-wide setting and not this plugin's:
-`limitsFor` in `packages/recipe/src/settings.ts` takes a step and ignores it, so
-every agent at every step gets the same ceiling today. The board says so in as
-many words rather than inventing one: `describeAction` returns `no timeout in
-the recipe`. What a *refusal* may buy is `runtime.limits.rounds`, counted at
-`proposed`.
+[`run:`](run.md) will look for.** What bounds an agent is `limits:` above, and
+what it narrows is `runtime.limits` — `turns` and `wall`. An `agent:` that
+declares none gets the ceiling, which is every `agent:` in every recipe on this
+machine today. The board says so in as many words rather than inventing a
+timeout: `describeAction` returns `no timeout in the recipe`. What a *refusal*
+may buy is `runtime.limits.rounds`, counted at `proposed` — and a fix round is
+this same entry dispatched again, so an `implement` that narrowed its bound
+narrowed its rounds with it.
 
 `diff` is the other number an agent at `review`, `proposed` or `merge` spends and
 does not declare: `runtime.budget.diff` is where the diff is clipped
@@ -337,7 +346,8 @@ review:
 ```
 
 > the "review" action is a "agent" at the "review" step, and "agent" declares no
-> "timeout" field — what it declares is "name", "agent", "model", "prompt". A
+> "timeout" field — what it declares is "name", "agent", "model", "prompt",
+> "limits". A
 > plugin refuses a field it does not understand, rather than accepting it and
 > ignoring it (0061 §9). Refused when the recipe resolves, before a worktree,
 > before an agent, before any money.
@@ -354,9 +364,45 @@ review:
 > "claude-code"|"codex". Refused when the recipe resolves, before a worktree,
 > before an agent, before any money.
 
-A runtime this conductor is not dispatching is a *legal* name and is refused one
-layer later, by `agentRefusal` and before the claim rather than at resolve — see
-the parameters above.
+```yaml
+runtime:
+  limits: { turns: 150, wall: 1h }
+steps:
+  implement:
+    - name: write the change
+      agent: claude-code
+      prompt: ""
+      limits: { turns: 300 }
+```
+
+> steps.implement's "write the change" asks for 300 turns; runtime.limits.turns
+> is 150, and a step may only narrow it (0070 §5)
+
+The ceiling is said once and every other number is a reduction from it. An
+operator who wants `implement` to have 300 turns raises `runtime.limits.turns`
+and narrows the others. Equal is not wider: a `limits:` restating the ceiling is
+legal and says a true thing.
+
+```yaml
+review:
+  - name: review
+    agent: claude-code
+    prompt: look for races
+    limits: { rounds: 2 }
+```
+
+> `rounds` bounds the pass and not one call (0040): it counts how many times a
+> pass sends the agent back, which is a fact about the pass rather than about one
+> dispatch. Write it at `runtime.limits`, where the ceiling is stated once
+> (0070 §5)
+
+Declared inside `limits:` in order to be refused **by name** there. Left
+undeclared, zod would answer *Unrecognized key: "rounds"*, which says the key is
+not allowed and not why — and *why* is the whole of what is being said.
+
+A runtime nothing on this machine is signed in to is a *legal* name and is
+refused one layer later, by `agentRefusal` and before the claim rather than at
+resolve — see the parameters above.
 
 ## Related
 
@@ -378,6 +424,10 @@ the parameters above.
   to `prompt:`.
 - [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4 —
   legality is `agentPlugin.at` and there is no table beside it.
+- [0070](../decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+  — a dispatch is one shape every paid plugin embeds, and the ceiling is stated
+  once. §5 is the narrowing rule; §7 is why a second runtime at a step is
+  dispatched and an unsigned-in one is still refused.
 - [0065](../decisions/0065-the-default-is-a-plugin.md) §1, §4, §5 — the default
   is a plugin, which is how `implement` and `design` became keys a recipe can
   write; §5 is why one key builds three actions rather than one that would pass
