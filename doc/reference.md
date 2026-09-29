@@ -1038,7 +1038,12 @@ eleven (`#244`) — and back to twelve with `refs:` (`#240`), which is the first
 member 0061 §3 did not name at all, and thirteen with `file:`
 ([#300](https://github.com/steven-zhc/lingtai/issues/300)), which is the second
 and the first *destination*: where a large answer lands is a plugin too
-([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5). The set is
+([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5) — and
+fourteen with `file-brief:`
+([#301](https://github.com/steven-zhc/lingtai/issues/301)), which is that
+destination's **other end** rather than a new one: `file:` keeps the document at
+`design` and this reads it back at `implement`, so a `confluence:` pair is two
+more keys and no change here (0066 §4). The set is
 not closed against *new* work:
 §3's list is the names the v2 file gives code that already runs, and a plugin
 doing something no code did before joins by the same rules — a key, a schema,

@@ -99,7 +99,7 @@ field.
 | `admit` | — | pass · hold · did-not-finish · asked · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
 | `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
 | `design` | — | pass · hold · did-not-finish · asked · never-ran | a document before any code — **or nothing, which is an answer**. **Its body is empty and `agent:` is what runs** (`#265`): the same key as the cold reviewer and a different action — at this step it drafts, and what it answers is the document rather than findings. **There is no default**: a recipe that says nothing here runs nothing, which is what it always did |
-| `implement` | — | pass · hold · did-not-finish · asked · never-ran | one agent in the worktree. **Its body is empty and `agent:` is what runs** (`#266`): the same key again and a third action — at this step it *writes the change*, and what it answers is the `head` it committed. **The default is the agent that wrote it before**, on `runtime.agent`, so a recipe that says nothing here buys exactly what it always did |
+| `implement` | — | pass · hold · did-not-finish · asked · never-ran | one agent in the worktree. **Its body is empty and `agent:` is what runs** (`#266`): the same key again and a third action — at this step it *writes the change*, and what it answers is the `head` it committed. **The default is the agent that wrote it before**, on `runtime.agent`, so a recipe that says nothing here buys exactly what it always did. **And `file-brief:` may be written before it** (`#301`), which is the one plugin anywhere that *reads* a locator: it resolves what a `file:` at `design` kept and hands the document to the entries after it |
 | `build` | — | **+ refuse** | is it green. A red one skips `review` |
 | `review` | — | pass · hold · did-not-finish · asked · never-ran | read the diff, return findings, **judge nothing** |
 | `proposed` | `arriving` · `offering` | **+ refuse + route** | the only step that routes |
@@ -160,6 +160,14 @@ measurement (`#299`) — and
 | the recipe is wrong | **you say nothing** — the schema refused it | nothing: no claim, no worktree, no agent |
 | the destination was briefly unreachable | `did-not-finish` | the pass stops and the item waits for a person; no round, and no judge is asked |
 | the destination needs a person | `did-not-finish` with `because: NEEDS_INPUT` | reaches `proposed`: a person, or a `judge:` at `needs-input` — which may buy `design` again |
+
+**The rows are the same at the other end.** A destination has two — one that
+keeps and one that reads back — and `file-brief:` at `implement` fails by this
+table too: a locator it does not understand, or a file that is not there, is the
+second row, and nothing about it reaches a judge. What differs is only what the
+first row can catch: there is **no pairing rule** between the two halves (0069
+§3), so a recipe that keeps a design one place and reads it back another
+resolves, and the plugin says so when it runs.
 
 **The first row is the one that is easy to lose and the expensive one to
 lose.** A missing field, a path that is not a path, a destination named with no
