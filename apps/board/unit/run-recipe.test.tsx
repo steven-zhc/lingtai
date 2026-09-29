@@ -533,6 +533,7 @@ describe("describeAction, over the closed set", () => {
   const ACTION: Record<string, StepAction> = {
     run: { name: "build", run: "pnpm test", timeout: "15m", env: [] },
     agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
+    file: { name: "keep it", file: "doc/design/x.md", commit: true },
     watch: { name: "tamper", watch: ["**/x"], then: "fail" },
     human: { name: "approve", human: "merge?" },
     close: { name: "close", close: true, when: "landed" },

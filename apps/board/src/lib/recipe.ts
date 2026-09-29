@@ -501,6 +501,21 @@ export function describeAction(
               : "a cold reviewer";
       return { does: `${job} on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
     }
+    // **The one row that says where an answer *went*** (`#300`, 0066 §5). Every
+    // other line here is a check, a dispatch or an effect on the issue; this one
+    // is a destination, and the fact a person is deciding from is whether the
+    // note is in the change — `commit: false` keeps it for the length of the
+    // worktree and for nobody after that, so the `bound` says so rather than
+    // saying *no clock* and leaving the reader to work it out.
+    case "file": {
+      const a = action as Extract<StepAction, { file: string; commit: boolean }>;
+      return {
+        does: `keeps the design at ${a.file}${a.commit ? ", committed to the branch" : ", uncommitted"}`,
+        bound: a.commit
+          ? "no clock — the note rides the branch through build, review and the merge"
+          : "no clock — and it is gone with the worktree, so only this pass can read it",
+      };
+    }
     case "watch": {
       const a = action as Extract<StepAction, { watch: string[] }>;
       return { does: `watches ${a.watch.join(", ")}, then ${a.then}`, bound: "no clock — a match against the diff" };

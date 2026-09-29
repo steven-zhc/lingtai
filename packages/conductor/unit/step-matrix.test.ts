@@ -147,6 +147,12 @@ import { decideBacklog } from "../src/backlog.ts";
 const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
   agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
+  // **The one action the probe cannot write alone** (`#300`). A `file:` keeps what
+  // an earlier entry made, so `actionsAt` refuses one at entry 0 — which is a rule
+  // about the *list* and not about the pair this matrix asks about, exactly as the
+  // lane's two are. `accepted` below carries a drafter ahead of it wherever the
+  // step keeps, so what comes back is the cell's own answer.
+  file: { name: "keep the design", file: "doc/design/x.md", commit: true },
   watch: { name: "tamper", watch: ["**/steps.yml"], then: "fail" },
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
@@ -212,6 +218,7 @@ const EVERY_DEP: ActionDeps = {
   merge: { land: async () => ({ merged: "0".repeat(40) }) },
   queue: { take: async () => ({ taken: { workItemId: "wi-nowhere-1", kind: "bug" } }) },
   work: { work: async () => ({ committed: "0".repeat(40) }) },
+  file: { keep: async () => ({ at: "doc/design/x.md" }) },
 };
 const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
   prepared: { env: () => ({}) },
@@ -280,11 +287,19 @@ function runsAt(step: Step, kind: ActionKind): boolean {
  * false — a check before the lane is exactly where a check at `merge` goes. So
  * the probe is put in the smallest list that satisfies the list-level rules, and
  * what comes back is the cell's own answer.
+ *
+ * **And the drafter wherever the step keeps** (`#300`). The third list-level rule
+ * is the mirror of the lane's: a `file:` may not be the *first* entry, because it
+ * keeps what an earlier one made. A lone `file:` at `design` would trip it and
+ * read here as *the `design` step refuses a `file:`*, which is false — `design`
+ * is the one step that takes one. So the probe puts a drafter ahead of it, which
+ * is the smallest list the rule accepts.
  */
 function accepted(step: Step, kind: ActionKind): string | null {
   const lands = whyNoKindAt(step, "merge") === null;
-  const written =
-    !lands || kind === "merge" ? [ACTION[kind]] : [ACTION[kind], ACTION.merge];
+  const keeps = whyNoKindAt(step, "file") === null;
+  const probe = keeps && kind === "file" ? [ACTION.agent, ACTION[kind]] : [ACTION[kind]];
+  const written = !lands || kind === "merge" ? probe : [...probe, ACTION.merge];
   const parsed = StepMap.safeParse({ [step]: written });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
@@ -345,6 +360,7 @@ const ANSWERED_BY_THE_KIND: readonly ActionKind[] = [
   "merge",
   "worktree",
   "queue",
+  "file",
   "close",
   "labels",
   "refs",
@@ -823,13 +839,13 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs eighteen of the hundred and twenty cells and refuses a hundred and two", () => {
+  it("runs nineteen of the hundred and thirty cells and refuses a hundred and eleven", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
-    expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(18);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(102);
+    expect(STEPS.length * PLUGINS.length).toBe(130);
+    expect(cellsThatRun).toHaveLength(19);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(111);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
@@ -926,10 +942,16 @@ describe("every step × kind cell runs or refuses", () => {
     );
 
     expect([...serving].filter(([, keys]) => keys.length > 1).map(([step]) => step)).toEqual([
+      "design",
       "proposed",
       "merge",
       "end",
     ]);
+    // **`design` is the second step to hold more than one, and the two are not two
+    // checks** (`#300`): one makes the document and one keeps it, which is the pair
+    // 0066 §5 asks for and the reason a destination is a plugin rather than a field
+    // on the drafter.
+    expect(serving.get("design")).toEqual(["agent", "file"]);
     expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human", "judge"]);
     // **`merge` is not `proposed` with a fifth entry, and `#270` is where the two
     // stopped being the same list.** It carries three: two checks, and the lane the

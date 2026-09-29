@@ -153,7 +153,7 @@ describe("a plugin refuses a field it does not understand", () => {
   it("names the plugins when an action names none, or two", () => {
     const none = StepMap.safeParse({ proposed: [{ name: "nothing" }] });
     expect(none.error!.issues[0]!.message).toContain('"nothing" action at the "proposed" step names no plugin');
-    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "watch", "human", "close", "labels"');
+    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "file", "watch", "human", "close", "labels"');
 
     const two = StepMap.safeParse({ proposed: [{ name: "both", run: "x", human: "ok?" }] });
     expect(two.error!.issues[0]!.message).toContain("names 2 plugins");
@@ -719,7 +719,7 @@ describe("the one `claim` holds", () => {
    */
   it("has no `assignee:` plugin left in the closed set", () => {
     expect(PLUGINS.map((plugin) => plugin.key)).not.toContain("assignee");
-    expect(PLUGINS).toHaveLength(12);
+    expect(PLUGINS).toHaveLength(13);
     expect(pluginOf({ name: "whose", assignee: { take: "both" } })).toBeNull();
   });
 
@@ -1059,6 +1059,7 @@ describe("plugin.ts's own count of who carries a universal key", () => {
     "ten",
     "eleven",
     "twelve",
+    "thirteen",
   ] as const;
   const carrying = (field: string) =>
     PLUGINS.filter((plugin) => plugin.declares.includes(field)).length;

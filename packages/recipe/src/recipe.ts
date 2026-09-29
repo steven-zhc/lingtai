@@ -98,7 +98,7 @@ const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
  * serves, and today every declaration lives in `PLUGINS` — 0067 is what lets
  * one come from elsewhere, and it supersedes 0037 §2's *there is no plugin
  * system*. Needing no declaration is also why this is the only one of the
- * twelve declaring an `env` field at all: `agent`, `watch` and `human` are the
+ * thirteen declaring an `env` field at all: `agent`, `watch` and `human` are the
  * core's own and run in the core's own process, so a recipe writing `env:`
  * under one of them is refused by name (0061 §9) rather than having it accepted
  * and ignored.
@@ -245,6 +245,114 @@ export const agentPlugin = definePlugin("agent", {
     proposed: notBuiltYet,
     merge: notBuiltYet,
   },
+});
+
+/**
+ * **Why a path is not inside the worktree, or `null` when it is** — the whole of
+ * what `file:` refuses about its own field
+ * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §6).
+ *
+ * A string and not `node:path`, because the answer has to be the same wherever
+ * the recipe is read: `lingtai add` resolves on the operator's machine and the
+ * daemon resolves on its own, and `path.isAbsolute` answers differently on
+ * Windows. What is legal is a relative path with no `..` in it, which is the
+ * same rule `git` itself applies to a pathspec.
+ *
+ * **Refused where it is written and never checked again**, which is 0066 §6's
+ * *before a worktree, before an agent, before any money*: a `..` caught at run
+ * time is one claim, one clone and one paid agent, and then a person answering a
+ * refusal a schema line could have printed (§6's correction, `#299`).
+ */
+export function whyThePathEscapes(written: string): string | null {
+  if (written === "") return "it is empty, and a document has to be written somewhere";
+  if (/^[\\/]/.test(written) || /^[A-Za-z]:[\\/]/.test(written)) {
+    return "it is absolute, and an absolute path names somewhere outside the tree this pass owns";
+  }
+  if (written.startsWith("~")) {
+    return "it starts at a home directory, which is where Lingtai's own files live and is not the worktree";
+  }
+  const segments = written.split(/[\\/]/);
+  if (segments.includes("..")) {
+    return 'it contains a ".." segment, so where it lands depends on where the worktree is rather than on what is written here';
+  }
+  if (segments.some((segment) => segment === "")) {
+    return "it has an empty segment, so it names a directory rather than a file to write";
+  }
+  return null;
+}
+
+/**
+ * **Keeps what an earlier action at the step made, as a file in the worktree** —
+ * the first destination 0066 §5 asks for, and the whole of what makes a design
+ * survive the pass that bought it.
+ *
+ * A design was *bought, used once and could not be kept*
+ * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * §1): the document lived on `WroteTheDesign.design` until the pass ended, in
+ * `implement`'s prompt for one dispatch, and on `StepPassed.evidence` uncapped.
+ * This writes it to a path and returns that path as the **locator** — a string,
+ * and nothing above this plugin reads it (§4,
+ * [0069](../../../doc/decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+ * §3). `createFileAction` in `packages/actions/src/file-action.ts` is the work.
+ *
+ * ## `commit:` is required and has no default, and that is the decision
+ *
+ * 0066's *What this does not decide* leaves it here and asks for a sentence, and
+ * the sentence is that **both answers are real and neither is safe to assume**.
+ *
+ * Committed, the note rides the branch through `build` and `review` and the lane
+ * merges it — which for a repository's own design document is the point, and for
+ * a one-ticket brief is noise in every diff. **Uncommitted, it does not survive
+ * the pass**: the worktree is removed by `runOnce`'s finalizer, so the file and
+ * the path that locates it are both gone before anybody can follow either, which
+ * is §1's failure with a new spelling rather than a fix for it.
+ *
+ * So there is no default, for `worktree.submodules`'s reason (`#268`): a value
+ * nobody wrote would be a behaviour nobody chose, and a recipe that does not say
+ * is refused by name. It is **not** a safety question — `#265`'s receipt is
+ * `head === startedAt`, so a design commit cannot stand in for work the
+ * implementer did not do — it is a question about what belongs in the change.
+ *
+ * ## It keeps what the step made and never what it was handed
+ *
+ * The document comes from an earlier action in **this step's own list**, which
+ * `runActionPipeline` hands forward (`ActionContext.design`). So a `file:` is
+ * written after the action that drafts, and one written first is refused when the
+ * recipe resolves — there is nothing before it to have made anything, and an
+ * action that quietly kept nothing would be `#61` wearing a destination's name.
+ */
+export const filePlugin = definePlugin("file", {
+  fields: {
+    /** Where the document goes, relative to the worktree. `whyThePathEscapes` is the rule. */
+    file: z.string().superRefine((written, ctx) => {
+      const why = whyThePathEscapes(written);
+      if (why !== null) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            `"${written}" is not a path inside the worktree — ${why}. A \`file:\` writes into the tree ` +
+            "this pass owns and nowhere else, so the path is relative to it, with no `..` in it",
+        });
+      }
+    }),
+    /**
+     * Whether the file is part of the change. **Required and undefaulted** — the
+     * paragraph above is why, and it is the one field on this plugin whose two
+     * values are two different products.
+     */
+    commit: z.boolean(),
+  },
+  /**
+   * **`design`, and it is the only step that makes something large today**
+   * (0066 §3).
+   *
+   * What crosses the boundary is `TheDesign` — the document and the locator
+   * beside it (0069 §2) — and this is the plugin that puts the second of those
+   * two on it. A second step that bought a document would declare this key
+   * beside its own drafter and nothing here would change, which is the test 0066
+   * §9 sets for whether §4 held.
+   */
+  at: { design: notBuiltYet },
 });
 
 /** Globs against the diff's file list; a match holds or fails. */
@@ -968,7 +1076,7 @@ export const backlogPlugin = definePlugin("backlog", {
 /**
  * **The closed set**, and the only list of plugins anywhere.
  *
- * It lists the plugins and not their fields: each of the twelve above declares
+ * It lists the plugins and not their fields: each of the thirteen above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
  * of them an action names (0061 §9). Every declaration there is lives here, so
  * a key is a bare word and a word that is not one of these is refused. **A
@@ -982,7 +1090,9 @@ export const backlogPlugin = definePlugin("backlog", {
  * is not closed against *new* work: §3's list is the names the v2 file gives
  * code that already runs, and a plugin doing something no code did before joins
  * the same set by the same rules — a key, a schema, and an `at` saying which
- * steps it serves.
+ * steps it serves. **`file:` is the second** (`#300`): the first destination
+ * 0066 §5 asks for, and the first member whose whole job is where an answer
+ * *goes* rather than what a step checks.
  *
  * **Two of them serve no step, and they say so themselves** (0064 §4). `queue:`
  * and `backlog:` are
@@ -1009,6 +1119,7 @@ export const backlogPlugin = definePlugin("backlog", {
 export const PLUGINS = [
   runPlugin,
   agentPlugin,
+  filePlugin,
   watchPlugin,
   humanPlugin,
   closePlugin,
@@ -1041,6 +1152,7 @@ export const PLUGINS = [
 export const StepAction = z.union([
   runPlugin.schema,
   agentPlugin.schema,
+  filePlugin.schema,
   watchPlugin.schema,
   humanPlugin.schema,
   closePlugin.schema,
@@ -1252,6 +1364,37 @@ const ONLY_CLAIM_TAKES =
   "`claim-unconfirmed`, and never as a refusal that buys a round. What is *not* this plugin is the " +
   "queue pass — `selectRunnable` in `packages/conductor/src/queue.ts` asks GitHub which issues are " +
   "on offer before a pass exists to have steps, and `backoff` is only read there";
+
+/**
+ * **Why a `file:` belongs at `design` and nowhere else** — `ONLY_CLAIM_TAKES`'s
+ * sibling, and the sixth sentence answered by the *kind* (`#300`).
+ *
+ * It is here for the reason the other five are, and `#306` is what makes the
+ * reason cheap to state rather than something to rediscover: with no branch, a
+ * `file:` at `proposed` or at `merge` would fall past every step branch to
+ * `whyThatPair`'s last paragraph and be refused with *a hold at `prepared`
+ * cannot be answered* — a sentence about a **hold**, for a plugin that writes a
+ * file, naming a step the operator did not write. Five openings shipped that and
+ * each was caught by a reviewer; this one lands with the key.
+ *
+ * The clause worth the sentence is the one that is not about placement: **a
+ * destination keeps what a step made, so it can only be written where something
+ * is made.** `design` is the one step that produces a document
+ * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * §3), and every other step's answer is a verdict, which is a sentence on the
+ * log already and has nowhere to be kept.
+ */
+const ONLY_DESIGN_KEEPS =
+  "`file:` keeps what a step *made*, and `design` is the one step that makes something large " +
+  "(0066 §3): the document goes to a path in the worktree and the path comes back as the locator, " +
+  "which is the fact `evidence` carries instead of the whole document. Every other step answers " +
+  "with a verdict — a sentence the log already holds — so there is nothing at one for a destination " +
+  "to keep. Written at `design` it is read — `createFileAction` in " +
+  "`packages/actions/src/file-action.ts` writes the file, and `commit:` says whether it is part of " +
+  "the change — and it is written **after** the action that drafts, because it keeps what an earlier " +
+  "entry in the same list produced and a `file:` written first has nothing to keep. What it returns " +
+  "is a string only this plugin reads (0066 §4): nothing in `packages/conductor` parses a locator, " +
+  "which is what lets a second destination join without the core learning about it";
 
 /**
  * **Why a `human:` and a `watch:` are refused at `merge`** — the subtraction
@@ -1494,7 +1637,10 @@ export function whyNoKindAt(
  * travels to it. `end` keeps its own sentence because it is the one that names
  * `judge:`'s `when:` in order to say what picks the three effects out.
  *
- * **And four kinds are answered that way now, not one** (`#306`). `merge:` joined
+ * **And five kinds are answered that way now, not one** (`#306`, `#300`). `file:`
+ * is the fifth and is the one that arrived with its branch rather than after it:
+ * a destination keeps what a step *made*, which is a sentence about the plugin
+ * and is wrong at nine steps for one reason (`ONLY_DESIGN_KEEPS`). `merge:` joined
  * it with `#270`; `worktree:` and `queue:` join it here, because the cells they
  * had at `prepared`, `proposed` and `merge` were being answered with the last
  * paragraph below — *a hold at `prepared` cannot be answered*, printed for a
@@ -1523,6 +1669,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   if (kind === "merge") return ONLY_THE_LANE_LANDS;
   if (kind === "worktree") return ONLY_ADMIT_CUTS;
   if (kind === "queue") return ONLY_CLAIM_TAKES;
+  if (kind === "file") return ONLY_DESIGN_KEEPS;
   // Before the step branches and not after them, for `judge:`'s reason (`#270`):
   // what is wrong with a hold at `merge` is not what `merge` asks of an action but
   // who it may reach, and the sentence below about `prepared` would otherwise be
@@ -1573,8 +1720,9 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "design") {
     return (
       "`design` produces a document before any code, or nothing, which is an answer (0058 §3), so the " +
-      "only plugin it carries is the one that can write one — `agent:`, which is the key `agentPlugin` " +
-      "declares there, and at this step it drafts rather than reviews. Nothing has been committed when " +
+      "two plugins it carries are the one that can write one — `agent:`, which is the key `agentPlugin` " +
+      "declares there, and at this step it drafts rather than reviews — and the one that keeps it, " +
+      "`file:`, which writes it to a path and returns that path as the locator. Nothing has been committed when " +
       "this step runs, so a command has no diff to check and belongs at `build`, a cold read of one is " +
       "`review`, and a glob has no file list to match. A hold is the one that reads as though it would " +
       "work: a question about a change is a question about a change that exists, and `proposed:` is " +
@@ -1665,16 +1813,19 @@ function nameOf(action: unknown): string {
  * halted at the first bad field would make a person fix one thing per attempt,
  * which is `#222`'s lesson about the build step applied to configuration.
  *
- * **Then four questions about the list rather than about one action**, asked
+ * **Then five questions about the list rather than about one action**, asked
  * last because each is only answerable once the entries either side have been
  * accepted: *does this step cut twice* (`#268`), *does it take twice* (`#269`),
  * *is anything written after the lane* and *is a step written with no lane at
- * all* (both `#270`). They are the only rules here about an action's
+ * all* (both `#270`), and *is a destination written before the thing it keeps*
+ * (`#300`). They are the only rules here about an action's
  * neighbours, and each exists because the plugin it is about does something the
  * rest do not — two of them *make* what the pass is about, the worktree and the
- * work item, and the last two are the one action that changes the base branch,
- * asked from both sides: nothing may follow the lane, and a written step that
- * could land may not omit it.
+ * work item, two are the one action that changes the base branch,
+ * asked from both sides (nothing may follow the lane, and a written step that
+ * could land may not omit it), and the last is the one that keeps rather than
+ * makes or judges, so its place in the list is the whole of whether it has
+ * anything to keep.
  *
  * `z.unknown()` rather than the union, so the dispatch is the key's and not
  * zod's: a union tries six schemas and reports six failures about one action.
@@ -1745,6 +1896,42 @@ function actionsAt(step: Step) {
                 "a step carries. This one is written after it, so it would run on a change already on the " +
                 "base branch — and a verdict it gave there would report the step refused while the merge " +
                 "stood, leaving the diff landed and the ticket blocked. Write it before the lane",
+              REFUSED_WHEN_IT_RESOLVED,
+            ),
+          });
+          return;
+        }
+
+        /**
+         * **A destination is written after the thing it keeps** (`#300`).
+         *
+         * `file:` keeps a document an earlier entry in the same list made —
+         * `runActionPipeline` hands each result's document forward on
+         * `ActionContext.design` — so a `file:` at entry 0 has nothing to keep.
+         * What it would do is pass having written nothing, with a locator nobody
+         * can follow and a card saying the step kept a design: `#61`'s failure
+         * reached through an order rather than through a missing call site, and
+         * silent in the direction that matters, because the recipe reads as
+         * though the design is being kept.
+         *
+         * Asked in the loop for the lane's reason — the entries arrive in order,
+         * so *is this the first* is the whole of the question — and by position
+         * rather than by naming `agent:`, because *which plugin makes a document*
+         * is that plugin's to know (0031 §1) and a list of them here would be a
+         * list to keep true.
+         */
+        if (kind === "file" && i === 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: [i],
+            message: kindRefusedAt(
+              step,
+              kind,
+              nameOf(action),
+              "it is the first action there, and a `file:` keeps what an earlier " +
+                "action made rather than making anything itself — so written first it has nothing to " +
+                "keep, and would pass having written no file and returned no locator. Write it after " +
+                "the action that drafts the document",
               REFUSED_WHEN_IT_RESOLVED,
             ),
           });

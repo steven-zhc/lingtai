@@ -11,6 +11,7 @@ import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKin
 import { type AgentActionDeps, createAgentAction, createDraftAction } from "./agent-action.ts";
 import { type WorkActionDeps, createWorkAction } from "./work-action.ts";
 import type { Action } from "./action.ts";
+import { createFileAction, type FileActionDeps } from "./file-action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
 import { createProcessAction } from "./process-action.ts";
@@ -69,6 +70,16 @@ export interface ActionDeps {
    * an agent about an item nobody holds.
    */
   queue?: QueueActionDeps;
+  /**
+   * The keep a `file:` action runs — the write into the worktree, and the commit
+   * where the recipe asked for one (0066 §5, `#300`).
+   *
+   * Optional for the reason the others are, and absent it refuses a `file:`
+   * action by name rather than becoming a step that passes having kept nothing —
+   * which at `design` is a locator on the card pointing at a file that was never
+   * written.
+   */
+  file?: FileActionDeps;
   /**
    * The declared names of a `run:` action → the whole environment its process
    * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
@@ -211,6 +222,17 @@ export function actionsFromRecipe(
       return step === "design"
         ? createDraftAction(agent, deps.agent)
         : createAgentAction(agent, deps.agent);
+    }
+
+    if ("file" in action) {
+      if (!deps.file) {
+        throw new ActionUnavailableError(action.name, kind, "no keep was supplied to actionsFromRecipe");
+      }
+      // `commit` is read off the action and never defaulted here: `filePlugin`
+      // requires it, because a design note in the merge and one that lives as long
+      // as the worktree are two different products and a value nobody wrote would
+      // be a behaviour nobody chose (`#300`).
+      return createFileAction({ name: action.name, path: action.file, commit: action.commit }, deps.file);
     }
 
     if ("watch" in action) {
