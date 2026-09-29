@@ -229,8 +229,11 @@ generalising `fileBrief: { read }` writes, and would have gone green. So the
 port is a value rather than a closure — `readWhatAFileKept` in
 `packages/conductor/src/file-port.ts`, the same six lines with the filesystem
 handed in — and that test calls it with each shape and asserts one resolution,
-applied unconditionally, with nothing between the argument and the read. A
-`confluence:` gets its own port beside it, never a branch inside it.
+applied unconditionally, with nothing between the argument and the read. **And
+it reads off `conduct.ts` that the value is still what `fileBrief: { read }` is
+built from**, because extracting a port otherwise only moves the branch to the
+call site: a port nothing calls guards nothing. A `confluence:` gets its own
+port beside it, never a branch inside it.
 
 **§4 stands and there is no superseding file** — a check that measures the wrong
 thing is a correction to a test, not to a decision — and this note sits here

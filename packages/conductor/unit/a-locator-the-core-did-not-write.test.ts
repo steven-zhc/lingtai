@@ -70,6 +70,16 @@
  * both are what a reader generalising `fileBrief: { read }` into one
  * destination-agnostic port writes first.
  *
+ * **And extracting a port moves that erosion path unless the call site is
+ * pinned too**, which is the seventh `it`. A test that holds
+ * `readWhatAFileKept` says nothing about `conduct.ts` still building
+ * `fileBrief: { read }` out of it, so the same classifying branch written *at
+ * the call site* leaves all six above green and `readWhatAFileKept` a function
+ * only this file imports. So the wiring is read off `conduct.ts`'s own source —
+ * `unit/one-store.test.ts`'s method, and here the only one there is: that file
+ * reaches `node:fs/promises` directly, so there is no seam to hand a fake
+ * through and nothing short of a whole pass to watch the real read go past.
+ *
  * So §9's criterion is retired and this file replaces it. §4 stands unchanged
  * and is what these tests guard; there is no superseding ADR, because a check
  * that measures the wrong thing is a correction to a test rather than to a
@@ -80,16 +90,20 @@
  * ## Broken three times on purpose, and what each break cost
  *
  * A test that guards a negative is worth what it catches, so the core was made
- * to do each of the three forbidden things once and the result recorded here
- * rather than remembered:
+ * to do each forbidden thing once and the result recorded here rather than
+ * remembered:
  *
  * ```
- * resolve      runStep's context: join(reaching.context.cwd, d.locator)   3 of 6 red
- * classify     designFrom: drop a locator containing "://"                3 of 6 red
- * canonicalise designFrom: new URL(locator).toString(), throw → as-is     3 of 6 red
- * port         file-port.ts: notRead on a "://", URL(…).pathname on the   1 of 6 red
+ * resolve      runStep's context: join(reaching.context.cwd, d.locator)   3 of 7 red
+ * classify     designFrom: drop a locator containing "://"                3 of 7 red
+ * canonicalise designFrom: new URL(locator).toString(), throw → as-is     3 of 7 red
+ * port         file-port.ts: notRead on a "://", URL(…).pathname on the   1 of 7 red
  *              rest — the shared classifying port a second destination
  *              tempts somebody into writing
+ * call site    conduct.ts: that same classifying port written inline      1 of 7 red
+ *              where `read` is wired, and again as a wrapper around
+ *              `readWhatAFileKept` — what extracting the port tempts
+ *              somebody into instead
  * ```
  *
  * **Only the classify branch of the fourth is a change**, which is worth
@@ -121,11 +135,19 @@
  * sixth `it` is the only thing that sees it, and it is the only thing that
  * needs to.
  *
+ * **The fifth is what extracting the port made possible**, and the sixth cannot
+ * see it either: `readWhatAFileKept` left in the tree behaving perfectly, and
+ * the branch written where it is wired instead. Both forms were tried — the
+ * whole port inlined at `read`, and a wrapper that classified first and
+ * delegated to the value second — and each turns the seventh `it` and only it.
+ * Neither is in the tree.
+ *
  * *reaches no event* stayed green through all three of the first, and should:
  * it is a claim about what the core writes to the log, not about what it does
- * with the string in memory. Six `it`s: three claims about the pass, the
- * board's, one about the port under it, and one about the literal the others
- * are asked with.
+ * with the string in memory. Seven `it`s: three claims about the pass, the
+ * board's, two about the port under it — what it does with a locator, and that
+ * `conduct.ts` wires that value and no other — and one about the literal the
+ * others are asked with.
  *
  * ## What is not checked here, and where it goes instead
  *
@@ -136,9 +158,14 @@
  * `doc/plugins/`, a `step-matrix` column and a `whyThatPair` branch forever, paid
  * for a probe — which is the bill 0066 §9 itemises.
  *
- * Unit by 0060 §1: no filesystem, no process, no network, no clock.
+ * Unit by 0060 §1: no process, no network, no clock, and the one file opened is
+ * this repository's own source — the subject rather than a dependency outside
+ * the system, which is why `unit/one-store.test.ts` sits in this half doing the
+ * same thing for the same kind of rule.
  */
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { TheDesign } from "@lingtai/actions";
 import { describe, expect, it } from "vitest";
 import { readWhatAFileKept } from "../src/file-port.ts";
@@ -158,6 +185,19 @@ const ends = (carried: Carried): readonly (TheDesign | undefined)[] => [
   carried.briefed,
   carried.handedBack,
 ];
+
+/**
+ * `conduct.ts` as written, with its prose stripped and its wrapping flattened.
+ *
+ * `unit/one-store.test.ts`'s `code`, and its precedent: a rule about what a
+ * source may contain is asserted by reading the source, and that file is in the
+ * unit half for the reason the header gives.
+ */
+const conductAsWritten = (): string =>
+  readFileSync(fileURLToPath(new URL("../src/conduct.ts", import.meta.url)), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ");
 
 describe("a locator the core did not write", () => {
   /**
@@ -362,5 +402,60 @@ describe("a locator the core did not write", () => {
       });
     }
     expect(refused).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)]);
+  });
+
+  /**
+   * **And the port the `it` above holds is the one `conduct.ts` runs.**
+   *
+   * That is the half a test of the extracted value cannot supply, and without
+   * it lifting the port out of `conduct.ts` moves the erosion path rather than
+   * closing it. `readWhatAFileKept` is §4's guard only while
+   * `fileBrief: { read }` is built out of it; the next person wiring a second
+   * destination writes the classifying branch **at the call site** —
+   * `if (spec.path.includes("://")) return { notRead }` above a
+   * `readFile(join(cwd, new URL(`file:///${spec.path}`).pathname))` — and
+   * `readWhatAFileKept` becomes a function only this file imports. Every `it`
+   * above stays green against that, including the sixth: none of them loads
+   * `conduct.ts` either.
+   *
+   * So the wiring is read off the file, which is `unit/one-store.test.ts`'s
+   * method and here the only one there is: `conduct.ts` reaches the filesystem
+   * through `node:fs/promises` directly, so there is no seam a unit test could
+   * hand a fake through, and running a whole pass to watch a real `readFile` go
+   * past would be integration by 0060 §1.
+   *
+   * Four things are asked of it, and the classifying call site above fails
+   * three:
+   *
+   * - the import is there and `readWhatAFileKept` is **called once** — a call
+   *   site that inlined the port calls it not at all;
+   * - that call is **the whole of `read`**, byte for byte, so nothing sits
+   *   between the port and the filesystem handed to it. A wrapper that
+   *   classified first and delegated second is a different line;
+   * - `fileBrief: { read }` is fed **that name**, so a second `read` declared
+   *   beside the port and passed instead of it is not what `file-brief:` gets;
+   * - and `readFile(` appears **once in the whole file**, inside that call — so
+   *   `conduct.ts` reaches the filesystem for a locator nowhere else.
+   *
+   * It is a source-reading test and pays that price: a rename or a reformat of
+   * that one line goes red and has to be answered rather than absorbed. That is
+   * the cost of the guard, and the reader it stops is the one moving the
+   * classification back in.
+   */
+  it("is the port `conduct.ts` wires, and the only read it wires", () => {
+    const code = conductAsWritten();
+
+    // The vacuity guard a source-reading test needs — `one-store.test.ts`'s: a
+    // file that had moved, or a subject that had been renamed, would leave the
+    // counts below true of nothing.
+    expect(code).toContain("export function runOnce(");
+    expect(code).toContain('import { readWhatAFileKept } from "./file-port.ts";');
+
+    expect(code).toContain(
+      'const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, "utf8") });',
+    );
+    expect(code).toContain("fileBrief: { read },");
+    expect(code.match(/readWhatAFileKept\(/g)).toHaveLength(1);
+    expect(code.match(/readFile\(/g)).toHaveLength(1);
   });
 });

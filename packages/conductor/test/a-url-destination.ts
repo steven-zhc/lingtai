@@ -46,9 +46,11 @@
  * here imports it, so a port taught to classify a locator leaves every arm of
  * every comparison identical. That is not a caveat on the retirement, it is
  * half of what replaces it — `readWhatAFileKept` in `src/file-port.ts` is the
- * port as a value a test can call, and *hands the locator to the filesystem
- * unclassified* is the `it` that calls it. Adding an arm here does not cover
- * it, and never will.
+ * port as a value a test can call, *hands the locator to the filesystem
+ * unclassified* is the `it` that calls it, and *is the port `conduct.ts` wires*
+ * is the one that reads the wiring off `conduct.ts` — because a value nothing
+ * calls guards nothing. Adding an arm here does not cover either, and never
+ * will.
  *
  * ## What it deliberately does not stand in for
  *
