@@ -454,6 +454,30 @@ describe("the retry's two fields, dropped on read", () => {
     // step must not be the renamer.
     expect(UPCASTERS.StepDidNotFinish?.[1]?.({ ...stored, step: "proposed", attempt: 1 })).toEqual(stored);
   });
+
+  /**
+   * **And the type that was split out of it has no chain at all** (`#296`,
+   * [014](../../../doc/experiments/014-the-log-before-the-fourth-reset.md)).
+   *
+   * `StepAsked` is the *asked* half of this event, and moving it could have been
+   * a step here — read a `StepDidNotFinish` whose `because` was `needs-input` as
+   * one of these — except that `because` was never on the event. It was the pass's
+   * field, so no stored row can be told which half it was, and an upcaster that
+   * guessed would be worse than none.
+   *
+   * So [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 is
+   * spent again and the log is reset, exactly as `#247` did for the eight `Gate*`
+   * renames. **After 1.0 this stops being free and the answer becomes an
+   * upcaster** — with a `because` on the event to upcast *from*.
+   */
+  it("gives the asked half no chain, because the log is reset instead", () => {
+    expect(SCHEMA_VER.StepAsked).toBe(1);
+    expect(UPCASTERS.StepAsked).toBeUndefined();
+    // The same payload the other half carries, and a question rather than a crash
+    // in `detail`: one shape, two names, and the name is the whole of the split.
+    const asked = { ...stored, detail: "which of the two `base` values is meant?" };
+    expect(parseStoredPayload("StepAsked", 1, asked)).toEqual(asked);
+  });
 });
 
 /**

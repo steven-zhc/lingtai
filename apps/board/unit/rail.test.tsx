@@ -752,9 +752,9 @@ describe("a card answering a refusal", () => {
   });
 });
 
-// --- the seven states ------------------------------------------------------
+// --- the eight states ------------------------------------------------------
 
-describe("the seven states", () => {
+describe("the eight states", () => {
   /**
    * Three of them look empty and mean different things. The bar has to tell
    * them apart with something that is not a lightness, or the state 0016 §4
@@ -779,6 +779,27 @@ describe("the seven states", () => {
     expect(CSS).toMatch(/\.scell\.t-never\s*\{[^}]*repeating-linear-gradient/);
     expect(CSS).toMatch(/\.scell\.t-skipped\s*\{[^}]*background:\s*transparent[^}]*dashed/);
     expect(CSS).toMatch(/\.scell\.t-pending\s*\{[^}]*background:\s*var\(--rule\)/);
+  });
+
+  /**
+   * **A question and broken machinery are drawn apart** (`#296`, and the ticket's
+   * own `Done when`).
+   *
+   * They shared `t-never` while they shared an ending, so a step that stopped to
+   * ask wore the one mark on the bar that means *this is our bug* — in the fail
+   * colour, with no verdict behind it. The hatch is kept, because *nothing judged
+   * this diff here* is still true and is what the hatch says; the colour is the
+   * one `waived` wears, because what stands in for a verdict is a person either
+   * way. Asserted on the stylesheet because that is where the treatment is
+   * decided, which is `t-never`'s own argument one row up.
+   */
+  it("hatches asked in the held colour, and never in the fail one", () => {
+    expect(CSS).toMatch(/\.scell\.t-asked\s*\{[^}]*repeating-linear-gradient/);
+    expect(CSS).toMatch(/\.scell\.t-asked\s*\{[^}]*var\(--held\)/);
+    expect(CSS).not.toMatch(/\.scell\.t-asked\s*\{[^}]*var\(--fail\)/);
+    // And the name above it is not red either: `l-bad` over a step that did not
+    // fail is the sentence the split exists to stop the card saying.
+    expect(CSS).toMatch(/\.slab\.l-held\s*\{[^}]*var\(--held\)/);
   });
 
   it("fills passed, failed, running and waived, and never waived in green", () => {

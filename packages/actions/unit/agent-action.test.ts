@@ -1063,6 +1063,55 @@ describe("the drafting agent's answer", () => {
   });
 
   /**
+   * **`NEEDS_INPUT` is compared here and nowhere above here** (`#296`).
+   *
+   * The token is what an action says; where the pass *goes* is an ending and an
+   * event type. Both were one `StepDidNotFinish` whose `because` the conductor
+   * re-read at four call sites, each of which would have compiled having lost the
+   * destination to a typo — so the comparison is made once, in the file that
+   * defines the word, and what leaves the pipeline is `askedAt` and `StepAsked`.
+   *
+   * Driven as the pair, because the whole of the claim is that they separate: the
+   * same action shape, one answer a question and one a crash, and the two fields
+   * are never both set.
+   */
+  it("leaves a question as `askedAt` and a `StepAsked`, and a crash as neither", async () => {
+    const asked = "which of the two `base` values is meant?";
+    const questions: ActionEvent[] = [];
+    const question = await runActionPipeline({
+      step: "design",
+      actions: [drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` }))],
+      context,
+      emit: (e) => void questions.push(e),
+    });
+
+    expect(question.askedAt).toEqual({ action: "draft", detail: asked });
+    // And not the other field: a reader that checked `didNotFinishAt` first would
+    // otherwise still see a crash where a person was being asked something.
+    expect(question.didNotFinishAt).toBeNull();
+    expect(questions.at(-1)?.type).toBe("StepAsked");
+    expect(questions.at(-1)?.data).toMatchObject({ step: "design", action: "draft", detail: asked });
+    // The event is a real one and the schema says so, which is what makes the
+    // reset rather than an upcaster the decision it is (`#296`).
+    expect(parsePayload("StepAsked", questions.at(-1)!.data)).toEqual(questions.at(-1)!.data);
+
+    const crashes: ActionEvent[] = [];
+    const crash = await runActionPipeline({
+      step: "design",
+      actions: [drafter(outcome({ failure: { kind: "timeout", detail: "no result within 60000ms" } }))],
+      context,
+      emit: (e) => void crashes.push(e),
+    });
+
+    expect(crash.askedAt).toBeNull();
+    expect(crash.didNotFinishAt).toMatchObject({ action: "draft" });
+    // No `because`: the drafting agent that crashed has no word of its own, so
+    // `endingOf` spells it `did-not-finish` — and nothing routes on it.
+    expect(crash.didNotFinishAt).not.toHaveProperty("because");
+    expect(crashes.at(-1)?.type).toBe("StepDidNotFinish");
+  });
+
+  /**
    * The parse, read directly, so the three states are one table rather than four
    * dispatches. The action's branches above are what each state *costs*; this is
    * what each answer *is*.

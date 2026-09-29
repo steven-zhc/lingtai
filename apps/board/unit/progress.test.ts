@@ -168,6 +168,34 @@ describe("where a run has got to", () => {
     expect(progress?.now).toBeNull();
   });
 
+  /**
+   * **A question and a crash are two states on this rail** (`#296`, 0058 §3c).
+   *
+   * They were one — both `did-not-finish`, told apart by a `because` this fold
+   * never sees — so a step waiting for an answer drew the hatch that means
+   * *Lingtai's bug*. What a person does about the two is opposite: one is *look at
+   * this, it broke* and the other is *answer this*.
+   */
+  it("reads a step that asked as asked, and a crash beside it as did-not-finish", () => {
+    const asked = [
+      ...timeline(),
+      at("2026-09-04T17:34:00Z", "StepAsked", {
+        ...step("proposed", "build"),
+        detail: "the ticket names two `base` values — which did you mean?",
+      }),
+    ];
+    expect(stateOf(foldProgress(asked, PLAN)?.steps ?? [], "proposed")).toBe("asked");
+
+    const crashed = [
+      ...timeline(),
+      at("2026-09-04T17:34:00Z", "StepDidNotFinish", {
+        ...step("proposed", "build"),
+        detail: "the turn budget was spent",
+      }),
+    ];
+    expect(stateOf(foldProgress(crashed, PLAN)?.steps ?? [], "proposed")).toBe("did-not-finish");
+  });
+
   /** A person is not a timeout, and pretending otherwise answers both wrongly. */
   it("puts no denominator on a point that is waiting for a person", () => {
     const held = [
