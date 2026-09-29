@@ -109,7 +109,17 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
     if (!("judge" in action) || action.when !== when) continue;
     return isBuiltInJudge(action.judge)
       ? { built: action.judge, named: action.name }
-      : { runtime: action.judge, named: action.name };
+      : {
+          runtime: action.judge,
+          named: action.name,
+          // **The dispatch's own half, carried on `Declared` and not on
+          // `Judging`** (`#314`, 0070 §3). What a judge is *asked* is the offer
+          // and the reason; what it *costs* is the recipe's, and
+          // `pass-steps.ts`'s key-set assertion on a brief is what keeps the two
+          // from being confused — a price is not part of the question.
+          ...(action.model === undefined ? {} : { model: action.model }),
+          ...(action.limits === undefined ? {} : { limits: action.limits }),
+        };
   }
   return null;
 }
@@ -137,7 +147,19 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
  */
 export type Declared =
   | { readonly built: BuiltInJudge; readonly named: string }
-  | { readonly runtime: RuntimeId; readonly named: string };
+  | {
+      readonly runtime: RuntimeId;
+      readonly named: string;
+      /**
+       * The recipe's `model:`, absent meaning the runtime's own default
+       * (0063 §2) — **the thing `#314` is measured by**. On `#300` this call
+       * answered in one turn for $0.42 beside an `implement` of 150 turns and
+       * $22.56, and it was the cheap one with no way to ask for a cheap model.
+       */
+      readonly model?: string;
+      /** What this one call may spend; absent takes `runtime.limits` (0070 §5). */
+      readonly limits?: { readonly turns?: number; readonly wall?: string };
+    };
 
 /**
  * Where a pass may go from a refusal, and **`human` is not a step**.

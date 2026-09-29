@@ -120,6 +120,7 @@ import {
   backoffOf,
   baseDivergence,
   baseOf,
+  ceilingOf,
   limitsFor,
   parseDuration,
   queueOf,
@@ -142,6 +143,7 @@ import {
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
+  type WorkDispatch,
   actionsFromRecipe,
   createHumanAction,
   createMergeAction,
@@ -154,6 +156,7 @@ import {
   NO_RUN_LOG,
   type RunLog,
   type Runtime,
+  createRuntime,
   missingForTier,
   taggedTrace,
 } from "@lingtai/agent";
@@ -164,12 +167,14 @@ import { fixBrief } from "./fix.ts";
 import { agentBranch, armBranch } from "./branches.ts";
 import { restartReason } from "./restart.ts";
 import { type NeverStarted, standDown } from "./never-started.ts";
+import { signedInHere } from "./projects.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
 import { nextPrompt, renderPrompt } from "./prompt.ts";
 import {
   CONTROL_STREAM,
+  type RuntimeId,
   type Step,
   type ToAppend,
   reduceControl,
@@ -198,7 +203,7 @@ import {
   bodiesFor,
 } from "./pass-steps.ts";
 import { isBuiltInJudge } from "@lingtai/recipe";
-import { judgeDeclaredAt } from "./judge.ts";
+import { type Declared, judgeDeclaredAt } from "./judge.ts";
 import { chosenIn, judgePrompt } from "./judge-agent.ts";
 
 import type { ProjectState } from "@lingtai/domain";
@@ -256,27 +261,32 @@ export interface AgentRefusal {
  * claim, and `lingtai doctor`'s recipe row, which must not be `ok` for a
  * recipe every pass of which that refusal stops.
  *
- * **Every `agent:` in the file, not only `runtime.agent`** (`#245`). A step's
- * `agent:` is a runtime too since that ticket, and one conductor dispatches one
- * runtime — the gates are handed `options.runtime`, so a `review` action naming
- * the other one would have run its cold review on the dispatched one with
- * nothing anywhere saying the named runtime was not used. That is the silent
- * pick 0046 §3 refuses, one level down from where `runtime.agent` refuses it,
- * and it is answered the same way and in the same place: before the claim, by
- * name. Per-step dispatch is not built; until it is, the only honest answer to
- * a second runtime named at a step is to say so.
+ * **The step half changed subject in `#314`, and did not go away** (0070 §7).
+ * A step's `agent:` is a runtime too since `#245`, and until per-step dispatch
+ * was built the only honest answer to a second runtime named at a step was to
+ * say so — the gates were handed `options.runtime`, so a `review` naming the
+ * other one would have run its cold review on the dispatched one with nothing
+ * anywhere saying the named runtime was not used. It is dispatched now. What is
+ * still refused, in the same shape and the same place, is a runtime **nothing
+ * on this machine is signed in to**: that is the silent pick 0046 §3 is about,
+ * and the failure it prevents is a claim taken and a worktree cut for a pass
+ * whose `review` cannot start.
  *
- * **A runtime `judge:` is the same fact and is refused the same way** (`#277`).
- * Since that ticket a `judge:` entry may name a runtime, and a judge is
- * dispatched on `options.runtime` exactly as a cold reviewer is — so a
- * `judge: codex` here would have its judgement bought from Claude Code with
- * nothing anywhere saying the named runtime was not used. A built-in `judge:` is
- * not a runtime and is passed over: `isBuiltInJudge` is the whole of that test,
- * so a second built-in is on the free side the day it is added.
+ * `signedIn` is what this machine can dispatch beyond `dispatched` — asked of
+ * `signedInProbe`, whose answer is a process per runtime and is cached for a
+ * minute. **The caller asks only where the recipe names a second runtime**, so
+ * a recipe that names none — every recipe on both machines today — spawns
+ * nothing and reaches this with an empty list it never consults.
+ *
+ * **A runtime `judge:` is the same fact and is read the same way** (`#277`).
+ * A built-in `judge:` is not a runtime and is passed over: `isBuiltInJudge` is
+ * the whole of that test, so a second built-in is on the free side the day it
+ * is added.
  */
 export function agentRefusal(
   resolved: Pick<ResolvedRecipe, "recipe" | "provenance">,
   dispatched: string,
+  signedIn: readonly string[] = [],
 ): AgentRefusal | null {
   const named = resolved.recipe.runtime.agent;
   if (named !== dispatched) {
@@ -298,12 +308,16 @@ export function agentRefusal(
             ? { key: "judge", wants: action.judge }
             : null;
       if (second === null || second.wants === dispatched) continue;
+      // **Dispatched, not refused, since `#314`.** A runtime that is merely not
+      // the pass's default is a thing the recipe is allowed to say; `runtimeFor`
+      // builds it and the step runs on it.
+      if (signedIn.includes(second.wants)) continue;
       return {
         at: "step",
         key: second.key,
         sentence:
           `steps.${step}'s "${action.name}" action names ${second.key} ${second.wants}, ` +
-          `and this conductor runs ${dispatched}`,
+          `and nothing on this machine is signed in to ${second.wants}`,
       };
     }
   }
@@ -316,6 +330,30 @@ export interface RunOnceOptions {
   /** The recipe this run obeys. `currentRecipe` — the machine's file — unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>;
   runtime: Runtime;
+  /**
+   * **How a runtime a *step* named is built** — `createRuntime` unless a test
+   * says otherwise (`#314`, 0070 §7).
+   *
+   * Beside `runtime:` and not instead of it. `runtime:` stays the pass's
+   * default, which is what `runtime.agent` resolved to and what every existing
+   * test supplies alone; this is asked only where a step names something else,
+   * so a recipe that names nothing behaves as it did and a two-runtime test
+   * hands in a map of fakes. Inverting the port into a factory the conductor
+   * calls after resolving would change a field every one of those tests passes
+   * through, to save one read (`apps/cli/src/run.ts`'s own argument, kept).
+   */
+  runtimeFor?: (id: RuntimeId) => Runtime;
+  /**
+   * **What this machine is signed in to**, asked only where a step names a
+   * runtime other than the pass's own (`#314`, 0070 §7).
+   *
+   * `signedInHere` unless a test says otherwise — the same cached probe the
+   * board and `resolveLocalRecipe` use, one process per runtime and remembered
+   * for a minute. A unit test that names one runtime never reaches it, which is
+   * what keeps the probe out of the half of the suite that may not spawn
+   * (0060 §1).
+   */
+  signedIn?: () => Promise<readonly RuntimeId[]>;
   /** The issue to work. Phase 1 nominates by number rather than taking the queue. */
   issue: number;
   /** Absolute path to the compiled `lingtai-hook`. */
@@ -535,27 +573,99 @@ export function runOnce(
     }
     // The agent the recipe resolved to is the agent that runs, or nothing runs
     // (0046 §3). Before the claim, for the same reason as the refusals around it.
-    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id);
+    /**
+     * **Every runtime a step names that is not the pass's own** (`#314`).
+     *
+     * Empty for every recipe that names none, which is the point: `signedInHere`
+     * is a process per runtime, `runOnce` is on the hot path, and a probe asked
+     * where there is nothing to decide would be a spawn bought by a feature the
+     * recipe did not use. Empty also means `agentRefusal`'s loop below never
+     * reads the list, so the two facts stay one branch.
+     */
+    const secondRuntimes = new Set<RuntimeId>();
+    for (const actions of Object.values(recipe.steps)) {
+      for (const action of actions) {
+        if ("agent" in action) secondRuntimes.add(action.agent);
+        else if ("judge" in action && !isBuiltInJudge(action.judge)) secondRuntimes.add(action.judge);
+      }
+    }
+    secondRuntimes.delete(options.runtime.capabilities.id as RuntimeId);
+    const dispatchable: readonly string[] =
+      secondRuntimes.size === 0
+        ? []
+        : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)());
+    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchable);
     if (wrongAgent !== null) {
       return {
         ok: false,
         workItemId: null,
         runId: null,
         stage: "recipe",
-        // **`no other runtime is dispatched yet` stopped being true** (`#313`).
-        // Both runtimes are dispatched now, and `conduct.ts` constructs from
-        // this very field — so the `runtime.agent` half of `agentRefusal` is an
-        // assertion that the caller picked correctly, and the half that still
-        // refuses is a step's own `agent:` or `judge:`. What is not built is
-        // per-step dispatch ([#309](https://github.com/steven-zhc/lingtai/issues/309) T2),
-        // so a step naming a second runtime has to name the one `runtime.agent`
-        // already chose.
-        detail: `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; per-step dispatch is not built, so one runtime runs a whole pass`,
+        // **Per-step dispatch is built, so the remedy is no longer *name the
+        // other one*** (`#314`, 0070 §7). The `runtime.agent` half is still an
+        // assertion that the caller picked correctly — `conduct.ts` constructs
+        // from that very field — and the step half is now about signing in
+        // rather than about what this conductor happens to run.
+        detail:
+          wrongAgent.at === "runtime.agent"
+            ? `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it`
+            : `${wrongAgent.sentence} — nothing was claimed. Sign in to it, or name a runtime this machine has`,
       };
     }
     // Safe now, and only now: past the refusal these two are the same branch.
     const base = baseOf(recipe);
-    const limits = limitsFor(recipe, "implement");
+    /**
+     * **`runtime.limits` — the ceiling, and the default under every dispatch**
+     * (`#314`, 0070 §5).
+     *
+     * It was `limitsFor(recipe, "implement")` applied to all three dispatch
+     * sites, which was one number read at three steps. `rounds` and `restarts`
+     * are the pass's and are only ever this; `turns` and `wall` are what a
+     * dispatch that declares nothing gets, and `spendFor` is where one that
+     * declares something narrows it.
+     */
+    const ceiling = ceilingOf(recipe);
+    /**
+     * **What one call may spend**: the dispatch's own `limits:` where the recipe
+     * wrote one, and the ceiling where it did not (0070 §5).
+     *
+     * Field by field, so `limits: { turns: 50 }` narrows the turns and keeps the
+     * wall. Widening is already impossible here — `Recipe` refuses a `limits:`
+     * past the ceiling when it resolves, before the claim — so this is a
+     * substitution and never a `Math.min`, and the refusal stays the one place
+     * that rule is stated.
+     */
+    const spendFor = (own?: { readonly turns?: number; readonly wall?: string }) => ({
+      turns: own?.turns ?? ceiling.turns,
+      wallMs: parseDuration(own?.wall ?? ceiling.wall),
+    });
+    /**
+     * **The runtime a step named, dispatched** (`#314`, 0070 §7).
+     *
+     * `options.runtime` is the pass's default — what `runtime.agent` resolved to,
+     * constructed by the caller — and it is returned by identity for its own id,
+     * so a recipe that names nothing else dispatches the object every test
+     * already supplies. Anything else is built from `RUNTIMES`, the one table a
+     * `RuntimeId` is dispatchable by (`#313`), and kept for the pass: three
+     * `agent:` entries naming one runtime are one process's worth of
+     * construction, and a second object would be a second adapter with its own
+     * idea of what it had been asked.
+     *
+     * `options.runtimeFor` is the seam a test hands a second fake through.
+     * Beside `runtime:` rather than replacing it, because inverting the port
+     * would change a field every test that supplies a fake passes through, to
+     * save one read (`apps/cli/src/run.ts`'s own argument).
+     */
+    const runtimeNamed = (() => {
+      const made = new Map<RuntimeId, Runtime>([[options.runtime.capabilities.id, options.runtime]]);
+      return (id: RuntimeId): Runtime => {
+        const kept = made.get(id);
+        if (kept !== undefined) return kept;
+        const built = (options.runtimeFor ?? createRuntime)(id);
+        made.set(id, built);
+        return built;
+      };
+    })();
     log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`);
 
     // ---- 2. the environment, before anything is claimed ---------------------
@@ -619,7 +729,22 @@ export function runOnce(
 
     // ---- 3. capability matching, before anything is claimed -----------------
     const tier: Tier = resolved.tier;
-    const missing = missingForTier(options.runtime.capabilities, tier);
+    /**
+     * **Asked of every runtime this pass will dispatch, not only the default**
+     * (`#314`, 0070 §8).
+     *
+     * `tier` stays per-pass — it is the containment a project requires, not a
+     * property of one call — so a step naming a runtime that cannot provide it
+     * is the *pass* being impossible, and is recorded as `DispatchRefused`
+     * before the claim rather than as a step failing halfway through one.
+     * `refusedBy` names which runtime could not, because *sandboxed: missing
+     * filesystem-sandbox* over a two-runtime recipe says nothing about which
+     * line to edit.
+     */
+    const refusedBy = [options.runtime.capabilities.id, ...secondRuntimes]
+      .map((id) => ({ id, missing: missingForTier(runtimeNamed(id as RuntimeId).capabilities, tier) }))
+      .find((each) => each.missing.length > 0);
+    const missing = refusedBy?.missing ?? [];
     const workItemId = workItemStream(project, options.issue);
 
     if (missing.length > 0) {
@@ -632,7 +757,7 @@ export function runOnce(
             actor: "conductor",
             data: parsePayload("DispatchRefused", {
               requiredTier: tier,
-              runtime: options.runtime.capabilities.id,
+              runtime: refusedBy?.id ?? options.runtime.capabilities.id,
               missing,
             }),
           },
@@ -643,7 +768,7 @@ export function runOnce(
         workItemId,
         runId: null,
         stage: "dispatch",
-        detail: `${options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(", ")}`,
+        detail: `${refusedBy?.id ?? options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(", ")}`,
       };
     }
 
@@ -709,8 +834,8 @@ export function runOnce(
      * is entitled to.
      */
     const ceilings: Ceilings = {
-      rounds: limits.rounds,
-      restartsLeft: Math.max(0, limits.restarts - folded.restarts.length),
+      rounds: ceiling.rounds,
+      restartsLeft: Math.max(0, ceiling.restarts - folded.restarts.length),
     };
 
     let released = false;
@@ -1614,7 +1739,11 @@ export function runOnce(
        * about; there is no `JudgeAsked` to fold and the route is already the
        * record of what was decided.
        */
-      const askTheAgent = async (named: string, on: Judging): Promise<Judged> => {
+      const askTheAgent = async (
+        declared: Extract<Declared, { runtime: RuntimeId }>,
+        on: Judging,
+      ): Promise<Judged> => {
+        const named = declared.named;
         const held = (why: string): Judged => ({ next: "waiting", named, why });
         if (on.offering.length < 2) {
           return held(
@@ -1624,12 +1753,20 @@ export function runOnce(
           );
         }
 
-        // **Which runtime the entry named is not read here**, and that is not it
-        // being dropped: one conductor dispatches one runtime, `options.runtime`
-        // is it, and a step naming the other is refused by `agentRefusal` before
-        // the claim — so by the time a judge is asked the two agree. That is
-        // `from-recipe.ts`'s rule for `agent:`, one plugin over.
-        const runtime = options.runtime.capabilities.id;
+        // **The runtime the entry named, dispatched** (`#314`). It used to be
+        // `options.runtime.capabilities.id` unconditionally, with a comment saying
+        // that was not the name being dropped — `agentRefusal` had refused any
+        // entry that disagreed, so the two always agreed. They need not now, and
+        // this is the reading that makes `judge: codex` beside `agent:
+        // claude-code` a thing the recipe can say.
+        const dispatched = runtimeNamed(declared.runtime);
+        const runtime = dispatched.capabilities.id;
+        // **The model is in the sentence or it is nowhere.** A judge has no event
+        // of its own by decision — *what it cost is in the sentence* — so a
+        // `judge:` whose whole point is a cheap model must say which one it
+        // bought here, where `PassRouted.why` and the run log can be read after
+        // the fact (`#314`, 0070 §2).
+        const asKnown = `${runtime}${declared.model === undefined ? "" : ` (${declared.model})`}`;
         const settings = await Effect.runPromise(
           Effect.either(host.unhookedSettings({ runId, label: "judge", home })),
         );
@@ -1637,8 +1774,8 @@ export function runOnce(
           return held(`the "${named}" judge had no settings: ${settings.left.detail}`);
         }
         judgements += 1;
-        log(`judging a "${on.when}" with ${runtime} — ${named}`);
-        runLog.note("judge", `${on.when}: asking ${runtime}`);
+        log(`judging a "${on.when}" with ${asKnown} — ${named}`);
+        runLog.note("judge", `${on.when}: asking ${asKnown}`);
 
         const outcome = await Effect.runPromise(
           Effect.scoped(
@@ -1648,7 +1785,7 @@ export function runOnce(
                 (controller) => Effect.sync(() => controller.abort()),
               );
               return yield* Effect.promise(() =>
-                options.runtime
+                dispatched
                   .run({
                     // The count is in it, so two arrivals on one pass are two
                     // sessions: a judge asked whether it still agrees with itself
@@ -1662,11 +1799,12 @@ export function runOnce(
                     // directory that exists to start in.
                     cwd: worktree?.path ?? home,
                     prompt: judgePrompt(on),
+                    ...(declared.model === undefined ? {} : { model: declared.model }),
                     settingsPath: settings.right,
                     log: taggedTrace(runLog, `judge:${on.when}`),
                     traceTools: true,
                     env: runnableEnv(env.values),
-                    limits: { turns: limits.turns, wallMs: parseDuration(limits.wall) },
+                    limits: spendFor(declared.limits),
                     signal: abort.signal,
                   })
                   .catch((err) => ({
@@ -1683,7 +1821,11 @@ export function runOnce(
           ),
         );
 
-        const spent = `${outcome.turns} turns${outcome.costUsd === null ? "" : `, $${outcome.costUsd.toFixed(2)}`}`;
+        // **Who was asked is part of what it cost** (`#314`). This string is the
+        // whole record of a judgement — there is no `JudgeAsked` to fold — and a
+        // `judge:` bought from a cheap model is one whose model has to be
+        // readable on `PassRouted.why` afterwards, or the saving is unprovable.
+        const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? "" : `, $${outcome.costUsd.toFixed(2)}`}`;
         runLog.note("judge", `${on.when}: ${outcome.failure?.kind ?? "answered"} · ${spent}`);
         /**
          * **A quota wall is the account's, so it stops the conductor rather than
@@ -1698,7 +1840,7 @@ export function runOnce(
         if (outcome.failure?.kind === "never-started") {
           return {
             neverStarted: {
-              agent: options.runtime.capabilities.id,
+              agent: runtime,
               // The runtime's own words, whole: `standDown` reads a reset time out
               // of them (0031 §4) and the pause chip shows them as what they are.
               detail: outcome.failure.detail,
@@ -1753,7 +1895,7 @@ export function runOnce(
       const judge = async (on: Judging): Promise<Judged> => {
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when);
         if (declared === null) return { noJudge: true };
-        return "built" in declared ? declared : askTheAgent(declared.named, on);
+        return "built" in declared ? declared : askTheAgent(declared, on);
       };
 
       /** `end` — the work item's own stream, read this late on purpose. */
@@ -1991,11 +2133,15 @@ export function runOnce(
           get settingsPath() {
             return reviewSettingsPath;
           },
+          // The ceiling, and the default: a `review` whose `agent:` declares a
+          // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
+          // holds the action (`#314`).
           limits: {
-            turns: limits.turns,
-            wallMs: parseDuration(limits.wall),
+            turns: ceiling.turns,
+            wallMs: parseDuration(ceiling.wall),
             diffBytes: recipe.runtime.budget.diff,
           },
+          runtimeFor: runtimeNamed,
         },
         watch: {
           changedFiles: async () => {
@@ -2021,10 +2167,10 @@ export function runOnce(
         // An arrow rather than `{ work: dispatch }`: `dispatch` is declared six
         // hundred lines down, and this object literal is evaluated here.
         work: {
-          work: (
-            spec: { readonly prompt: string; readonly model?: string },
-            context: ActionContext,
-          ) => dispatch(spec, context),
+          // `WorkDispatch` and not a written-out pair since `#314`: the spec
+          // carries `agent:` and `limits:` too, and a written-out type here would
+          // be the second place that decides what a dispatch is.
+          work: (spec: WorkDispatch, context: ActionContext) => dispatch(spec, context),
         },
         // The eighth, and the one that neither makes nor judges: `design`'s
         // `file:` action keeps the document through this (0066 §5, `#300`). It has
@@ -2308,10 +2454,7 @@ export function runOnce(
       const alsoSays = (prompt: string, extra: string): string =>
         extra === "" ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`;
 
-      const firstDispatch = async (
-        brief: Brief,
-        spec: { readonly prompt: string; readonly model?: string },
-      ): Promise<Worked> => {
+      const firstDispatch = async (brief: Brief, spec: WorkDispatch): Promise<Worked> => {
         const tree = cutTree();
         /**
          * **Where this agent found the tree** — and the whole of what the receipt
@@ -2349,9 +2492,14 @@ export function runOnce(
         }
         if (!smoke.right.ok) return { stopped: `the hook did not fail closed: ${smoke.right.detail}` };
 
-        const spend = { turns: limits.turns, wallMs: parseDuration(limits.wall) };
+        // The action's own bound where it declared one (`#314`). A fix round is
+        // this same `implement` entry again, so a narrowed `implement` bounds the
+        // rounds too — which is what makes `passCeiling`'s *then N round(s)*
+        // arithmetic true of the narrowed figure rather than of the ceiling.
+        const spend = spendFor(spec.limits);
+        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id);
         const agentEnv = runnableEnv({ ...env.values, ...wiring.env });
-        const spawned = options.runtime.invocation?.({
+        const spawned = dispatched.invocation?.({
           runId,
           cwd: tree.path,
           settingsPath: wiring.settingsPath,
@@ -2381,7 +2529,13 @@ export function runOnce(
                       actor: "conductor",
                       data: parsePayload("RunStarted", {
                         workItemId,
-                        runtime: options.runtime.capabilities.id,
+                        // **The runtime that actually ran, not the pass's
+                        // default** (`#314`). This field answers *which runtime
+                        // wrote this*, and a step naming a second one makes the
+                        // default a wrong answer to it. No schema change and no
+                        // upcaster: the field exists and `model` beside it
+                        // already carries the recipe's, or `""`.
+                        runtime: dispatched.capabilities.id,
                         // The recipe's `model:` where it named one, and the
                         // runtime's own default where it did not (0063 §2) —
                         // which is what the empty string has always meant here.
@@ -2420,7 +2574,7 @@ export function runOnce(
                 );
 
                 const outcome = yield* Effect.promise(() =>
-                  options.runtime.run({
+                  dispatched.run({
                     runId,
                     cwd: tree.path,
                     prompt: alsoSays(
@@ -2557,8 +2711,12 @@ export function runOnce(
       const fixRound = async (
         brief: Brief,
         again: NonNullable<Brief["again"]>,
-        spec: { readonly prompt: string; readonly model?: string },
+        spec: WorkDispatch,
       ): Promise<Worked> => {
+        // The same entry's runtime and bound as the run it is a round of: a fix
+        // is `implement` again, and buying it from a different agent than the one
+        // that wrote the code would be a warm review's mistake spelled backwards.
+        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id);
         const tree = cutTree();
         const round = brief.context.round ?? 1;
         const findings = brief.context.recheck ?? [];
@@ -2578,14 +2736,14 @@ export function runOnce(
             data: parsePayload("FixRequested", {
               runId,
               round,
-              of: limits.rounds,
+              of: ceiling.rounds,
               action: from,
               onSha: brief.context.onSha,
               findings,
             }),
           },
         ]);
-        log(`fixing ${from} — round ${round} of ${limits.rounds}`);
+        log(`fixing ${from} — round ${round} of ${ceiling.rounds}`);
         runLog.note("fix", `round ${round} for ${from}`);
 
         const settings = await Effect.runPromise(
@@ -2604,7 +2762,7 @@ export function runOnce(
                 (controller) => Effect.sync(() => controller.abort()),
               );
               return yield* Effect.promise(() =>
-                options.runtime
+                dispatched
                   .run({
                     runId: `${runId}:fix:${round}`,
                     cwd: tree.path,
@@ -2612,7 +2770,7 @@ export function runOnce(
                       fixBrief({
                         refusal,
                         round,
-                        of: limits.rounds,
+                        of: ceiling.rounds,
                         action: from,
                         diff: underReview,
                         diffBytes: recipe.runtime.budget.diff,
@@ -2624,7 +2782,7 @@ export function runOnce(
                     log: taggedTrace(runLog, `fix:${round}`),
                     traceTools: true,
                     env: runnableEnv(env.values),
-                    limits: { turns: limits.turns, wallMs: parseDuration(limits.wall) },
+                    limits: spendFor(spec.limits),
                     signal: abort.signal,
                   })
                   .catch((err) => ({
@@ -2669,7 +2827,7 @@ export function runOnce(
           // Whose wall it was, for the sentence the pause carries (`fixWall`).
           fixWall = { action: from, round };
           return {
-            neverStarted: { agent: options.runtime.capabilities.id, detail: fixed.failure.detail },
+            neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
           };
         }
         if (!committed) {
@@ -2704,10 +2862,7 @@ export function runOnce(
        * so no item here is the pass's own bookkeeping gone wrong. The pipeline
        * turns it into this action's verdict and the pass still reaches `end`.
        */
-      const dispatch = async (
-        spec: { readonly prompt: string; readonly model?: string },
-        context: ActionContext,
-      ): Promise<Worked> => {
+      const dispatch = async (spec: WorkDispatch, context: ActionContext): Promise<Worked> => {
         if (took === null) {
           throw new Error(
             "the `implement` step has no item — the step that makes it did not run, " +
@@ -2962,7 +3117,7 @@ export function runOnce(
             needs: "acknowledgement" as const,
             diagnosis: {
               what:
-                `the run reached the recipe's turn limit (${limits.turns}) and was stopped: ` +
+                `the run reached the recipe's turn limit (${limitsFor(recipe, "implement").turns}) and was stopped: ` +
                 `${said(turnLimit)}. The limit is a scope alarm — the ticket asks for more than ` +
                 "one run should do.",
               done: null,
@@ -3012,7 +3167,7 @@ export function runOnce(
               (stopped === null
                 ? `\`proposed\` held it for a person: ${said(why, 400)}`
                 : `the \`${at}\` step ${ending}: ${said(why, 400)}`) +
-              (roundsSpent > 0 ? ` ${roundsSpent} of ${limits.rounds} rounds were spent.` : ""),
+              (roundsSpent > 0 ? ` ${roundsSpent} of ${ceiling.rounds} rounds were spent.` : ""),
             done: repairOf ? `a repair for ${repairOf.reason} produced this diff` : null,
             raw: why,
             /**
@@ -3151,7 +3306,7 @@ export function runOnce(
        * returns git's words and pushes nothing — and every other ending is right
        * to go on regardless: a person is still owed the question, and is told the
        * branch is not there. **A restart is the one ending that cannot.** It
-       * spends one of `limits.restarts`, and the event it appends promises the
+       * spends one of `ceiling.restarts`, and the event it appends promises the
        * next agent a ref to `git fetch` (`attempts.ts`). Recorded over a refused
        * publish it spends the ceiling, names a ref that never existed, and the
        * worktree holding the commits is deleted by the finalizer a moment later.
@@ -3180,7 +3335,7 @@ export function runOnce(
           action: lastRoute?.from ?? "review",
           rounds: roundsSpent,
           n: restart,
-          of: limits.restarts,
+          of: ceiling.restarts,
         });
         yield* Effect.promise(() =>
           appendNow(workItemId, [
@@ -3190,7 +3345,7 @@ export function runOnce(
               data: parsePayload("PassRestarted", {
                 runId,
                 restart,
-                of: limits.restarts,
+                of: ceiling.restarts,
                 action: lastRoute?.from ?? "review",
                 rounds: roundsSpent,
                 // The arm and not `agent/<n>`: this approach stays fetchable when
@@ -3202,7 +3357,7 @@ export function runOnce(
             },
           ]),
         );
-        log(`starting over — restart ${restart} of ${limits.restarts}`);
+        log(`starting over — restart ${restart} of ${ceiling.restarts}`);
         runLog.note("restart", reason);
         yield* release(reason);
         return { ok: false, workItemId, runId, stage: "restart", detail: reason } satisfies RunOnceResult;

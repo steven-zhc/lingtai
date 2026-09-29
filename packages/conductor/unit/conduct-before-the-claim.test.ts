@@ -203,14 +203,19 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
    * level down, where nothing enforced it.
    *
    * `runtime.agent: claude-code` with `steps.proposed`'s `review` naming
-   * `codex` resolved cleanly: the gates are handed `options.runtime`, so the
+   * `codex` resolved cleanly: the gates were handed `options.runtime`, so the
    * cold review ran on claude-code, no refusal was raised, and nothing on the
    * log recorded that the runtime the recipe named was not the one used. That
-   * is 0046 §3's silent pick with a different name on it. Per-step dispatch is
-   * not built; the honest answer is the one `runtime.agent` already gets, and
-   * it names the point and the action so a reader knows which line is wrong.
+   * is 0046 §3's silent pick with a different name on it.
+   *
+   * **Since `#314` the subject is the machine and not the conductor** (0070 §7).
+   * A second runtime at a step is dispatched; what is refused is one *nothing
+   * here is signed in to*, which is this — `signedIn` answers `[]`, so `codex`
+   * is a name for a thing this machine cannot run, and the claim is not taken.
+   * The dispatching half is `conduct-a-whole-pass.test.ts`'s *a step's `agent:`
+   * naming the other runtime is dispatched*.
    */
-  it("refuses before the claim when a step's agent: is not the runtime it was handed", async () => {
+  it("refuses before the claim when a step's agent: names a runtime nothing is signed in to", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const codexReview = REVIEWED.replace("agent: claude-code\n      prompt:", "agent: codex\n      prompt:");
@@ -225,13 +230,16 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
         prompt: "fix {{issue}}",
         home: "/tmp/fake-home",
         store,
+        // Answered rather than probed: `signedInProbe` spawns a process per
+        // runtime, and a unit test that spawns is an integration test (0060 §1).
+        signedIn: async () => [],
       },
       fakePorts(did, store),
     );
 
     expect(result).toMatchObject({ ok: false, stage: "recipe", workItemId: null });
     expect((result as { detail: string }).detail).toContain('steps.proposed\'s "review" action names agent codex');
-    expect((result as { detail: string }).detail).toContain("this conductor runs claude-code");
+    expect((result as { detail: string }).detail).toContain("nothing on this machine is signed in to codex");
     // Nothing was claimed, so nothing was spent and no verdict was recorded
     // against a review that ran on a runtime nobody named.
     expect(did).toEqual([]);
@@ -242,18 +250,19 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
    * **And a `judge:` is a runtime too since `#277`** — the same rule again, at
    * the plugin that arrived after it was written.
    *
-   * A judge is dispatched on `options.runtime` exactly as a cold reviewer is, so
-   * a `judge: codex` here would have its judgement bought from Claude Code with
-   * nothing on the log saying the named runtime was not used. That is the same
-   * silent pick, so it is the same refusal, before the claim, naming the key —
-   * `judge` and not `agent`, because the remedy is a line an operator has to
-   * find (`#245`).
+   * A judge was dispatched on `options.runtime` exactly as a cold reviewer was,
+   * so a `judge: codex` here would have had its judgement bought from Claude
+   * Code with nothing on the log saying the named runtime was not used. It is
+   * dispatched on its own runtime since `#314`; what is still refused, before
+   * the claim and naming the key — `judge` and not `agent`, because the remedy
+   * is a line an operator has to find (`#245`) — is a runtime nothing here is
+   * signed in to.
    *
    * **A built-in `judge:` is not a runtime and is passed over**, which is the
    * other half: `REVIEWED` with `judge: same-worktree` resolves and runs, because
    * a built-in is a function and no second dispatch.
    */
-  it("refuses before the claim when a step's judge: names the other runtime", async () => {
+  it("refuses before the claim when a step's judge: names a runtime nothing is signed in to", async () => {
     const store = memoryStore();
     const did: string[] = [];
     const judged = (judge: string) =>
@@ -272,6 +281,7 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
           prompt: "fix {{issue}}",
           home: "/tmp/fake-home",
           store,
+          signedIn: async () => [],
         },
         fakePorts(did, store),
       );
@@ -281,7 +291,9 @@ describe("the conductor runs the agent the recipe names, or nothing", () => {
     expect((wrong as { detail: string }).detail).toContain(
       'steps.proposed\'s "the lines or the approach" action names judge codex',
     );
-    expect((wrong as { detail: string }).detail).toContain("this conductor runs claude-code");
+    expect((wrong as { detail: string }).detail).toContain(
+      "nothing on this machine is signed in to codex",
+    );
     expect(did).toEqual([]);
 
     // The built-in names no runtime, so there is nothing for this check to

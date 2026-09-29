@@ -25,6 +25,7 @@ export {
   listProjectStreams,
   loadProject,
   loadProjects,
+  signedInHere,
 } from "./projects.ts";
 export {
   describeFilter,

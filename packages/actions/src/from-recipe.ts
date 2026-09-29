@@ -6,8 +6,9 @@
  * supplied it would produce a green board for a change nobody approved — which
  * is worse than a run that will not start.
  */
-import type { Step } from "@lingtai/domain";
-import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
+import type { RuntimeId, Step } from "@lingtai/domain";
+import type { Runtime } from "@lingtai/agent";
+import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, parseDuration, whyNoKindAt } from "@lingtai/recipe";
 import { type AgentActionDeps, createAgentAction, createDraftAction } from "./agent-action.ts";
 import { type WorkActionDeps, createWorkAction } from "./work-action.ts";
 import type { Action } from "./action.ts";
@@ -28,7 +29,26 @@ import { createWorktreeAction, type WorktreeActionDeps } from "./worktree-action
  * loudly, rather than by quietly not running.
  */
 export interface ActionDeps {
+  /**
+   * The cold reviewer's, and the drafting agent's — **with `runtime` and
+   * `limits` as the defaults a step's own `agent:` narrows from** (`#314`).
+   *
+   * The five keys stay exactly the five `createAgentAction` reads; what a step
+   * declared is applied here, at the seam that holds both the action and the
+   * recipe entry, and `runtimeFor` below is how the first of them is answered.
+   */
   agent?: AgentActionDeps;
+  /**
+   * **Which runtime a step's `agent:` names, constructed** (`#314`, 0070 §7).
+   *
+   * Beside `agent` rather than a sixth key on it, because `AgentActionDeps` is
+   * what an *action* needs and this is what building one needs: an action is
+   * handed a runtime and never chooses between two. Absent, every action gets
+   * `deps.agent.runtime` — which is what happened for every `agent:` at every
+   * step until this ticket, because `agentRefusal` had refused any entry naming
+   * anything else.
+   */
+  runtimeFor?: (id: RuntimeId) => Runtime;
   /**
    * The dispatch the `agent:` at `implement` wraps (`#266`).
    *
@@ -152,6 +172,49 @@ export class ActionUnavailableError extends Error {
  * effects through `resolveEndActions`, and `conduct.ts`'s one line handing it
  * `recipe.steps.proposed` is pinned there too.
  */
+/**
+ * **The reviewer's deps, narrowed to what this one entry declared** (`#314`).
+ *
+ * Written out key by key rather than `{ ...deps.agent, … }`, because
+ * `AgentActionDeps.settingsPath` is a getter on purpose — *read when the action
+ * runs … so always after `cut`* — and a spread would evaluate it here, at build
+ * time, against a worktree `admit` has not made yet. Re-declared below as a
+ * getter delegating to the original, which also makes a sixth key added to
+ * `AgentActionDeps` a compile error at this line: the right place for it, since
+ * whoever adds one has to say whether a step may narrow it.
+ *
+ * `limits` is a getter for the same reason, one step weaker: nothing forces it
+ * to be read late, and reading it late keeps *building* an action free of
+ * anything but the runtime — which is what `step-matrix.test.ts` asserts ten
+ * steps' worth of, against deps it never intends to run.
+ *
+ * `diffBytes` is not in the group and is not narrowed: it is
+ * `runtime.budget.diff`, a fact about how large this repository's diffs are
+ * (0029), and not a bound on what a call may spend.
+ */
+function dispatchDeps(
+  deps: ActionDeps & { agent: AgentActionDeps },
+  action: { agent: RuntimeId; limits?: { turns?: number; wall?: string } },
+): AgentActionDeps {
+  const base = deps.agent;
+  return {
+    runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
+    issue: base.issue,
+    diff: base.diff,
+    get settingsPath() {
+      return base.settingsPath;
+    },
+    get limits() {
+      return {
+        turns: action.limits?.turns ?? base.limits.turns,
+        wallMs:
+          action.limits?.wall === undefined ? base.limits.wallMs : parseDuration(action.limits.wall),
+        diffBytes: base.limits.diffBytes,
+      };
+    },
+  };
+}
+
 export function actionsFromRecipe(
   step: Step,
   actions: readonly StepAction[],
@@ -198,13 +261,13 @@ export function actionsFromRecipe(
       // Reading the old field here would compile and send a runtime's name
       // where a reviewer's instructions belong (0063 §2).
       //
-      // `agent` itself is **not** passed on, and that is not it being dropped:
-      // one conductor dispatches one runtime, `deps.agent.runtime` is it, and a
-      // step naming the other is refused by `agentRefusal` before the claim —
-      // so by the time an action is built the two agree. `model` is spread rather
-      // than assigned, because absent has to reach `RunRequest` as absent (an
-      // explicit `undefined` and no key are the same to the adapter, but not to
-      // a reader deciding whether this seam invents a default).
+      // **`agent` is passed on since `#314`, and this is where it is read.**
+      // It used to be dropped here on the grounds that one conductor dispatched
+      // one runtime and `agentRefusal` had refused any entry disagreeing with it;
+      // 0070 §7 changed that refusal's subject, so the name now picks. `model` is
+      // spread rather than assigned, because absent has to reach `RunRequest` as
+      // absent (an explicit `undefined` and no key are the same to the adapter,
+      // but not to a reader deciding whether this seam invents a default).
       const agent = {
         name: action.name,
         prompt: action.prompt,
@@ -228,14 +291,25 @@ export function actionsFromRecipe(
         if (!deps.work) {
           throw new ActionUnavailableError(action.name, kind, "no dispatch was supplied to actionsFromRecipe");
         }
-        return createWorkAction(agent, deps.work);
+        // The dispatch is the conductor's, so `implement` hands the two names on
+        // rather than resolving them: `runtimeNamed` and `spendFor` live where
+        // the hook is wired and the receipt is measured.
+        return createWorkAction(
+          {
+            ...agent,
+            agent: action.agent,
+            ...(action.limits === undefined ? {} : { limits: action.limits }),
+          },
+          deps.work,
+        );
       }
       if (!deps.agent) {
         throw new ActionUnavailableError(action.name, kind, "no reviewer was supplied to actionsFromRecipe");
       }
+      const reviewing = dispatchDeps({ ...deps, agent: deps.agent }, action);
       return step === "design"
-        ? createDraftAction(agent, deps.agent)
-        : createAgentAction(agent, deps.agent);
+        ? createDraftAction(agent, reviewing)
+        : createAgentAction(agent, reviewing);
     }
 
     if ("file" in action) {

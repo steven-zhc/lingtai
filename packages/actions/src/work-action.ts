@@ -39,6 +39,7 @@
  * choice: `implement` is not one of `REFUSING_STEPS`, so arriving at the router
  * and refusing are different things and only one of them is charged for.
  */
+import type { RuntimeId } from "@lingtai/domain";
 import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult } from "./action.ts";
 import { boundedEvidence } from "./command.ts";
 
@@ -68,11 +69,31 @@ export type WorkedAnswer =
  * context and nothing else since `#266`, and a caller picking fields here would
  * be the second place that decides what a brief is.
  */
+/**
+ * **What the recipe asked this call to be** — the dispatch group, as `#314`
+ * made it one shape
+ * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §3).
+ *
+ * Named and exported rather than written out at the two seams that pass it,
+ * because a written-out pair is how `agent:` and `judge:` came to declare two
+ * different field lists in the first place. `agent` and `limits` are optional
+ * for the reason `model` is: absent means *the pass's*, and a recipe that
+ * declares none of the three dispatches exactly what it dispatched before this
+ * existed.
+ */
+export interface WorkDispatch {
+  /** Appended to the implementer's brief, never substituted for it. */
+  readonly prompt: string;
+  /** The recipe's `model:`; absent is the runtime's own default (0063 §2). */
+  readonly model?: string;
+  /** Which runtime; absent is `runtime.agent`, the pass's default (0070 §3). */
+  readonly agent?: RuntimeId;
+  /** What this one call may spend; absent is `runtime.limits` (0070 §5). */
+  readonly limits?: { readonly turns?: number; readonly wall?: string };
+}
+
 export interface WorkActionDeps {
-  work(
-    spec: { readonly prompt: string; readonly model?: string },
-    context: ActionContext,
-  ): Promise<WorkedAnswer>;
+  work(spec: WorkDispatch, context: ActionContext): Promise<WorkedAnswer>;
 }
 
 export interface WorkActionSpec {
@@ -89,6 +110,10 @@ export interface WorkActionSpec {
    * to a name here (`#245`, 0063 §2).
    */
   model?: string;
+  /** The recipe's `agent:` — which runtime writes the change (`#314`, 0070 §3). */
+  agent?: RuntimeId;
+  /** The recipe's `limits:` for this one call, where it narrowed the ceiling. */
+  limits?: { readonly turns?: number; readonly wall?: string };
 }
 
 export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Action {
@@ -97,8 +122,17 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
     kind: "agent",
 
     async run(context: ActionContext): Promise<ActionResult> {
+      // Spread rather than assigned, each of the three, because absent has to
+      // reach the dispatch as absent: an explicit `undefined` and no key are the
+      // same to the conductor's `??`, and not to a reader deciding whether this
+      // seam invents a default (`#245`, `#314`).
       const answer = await deps.work(
-        { prompt: spec.prompt, ...(spec.model === undefined ? {} : { model: spec.model }) },
+        {
+          prompt: spec.prompt,
+          ...(spec.model === undefined ? {} : { model: spec.model }),
+          ...(spec.agent === undefined ? {} : { agent: spec.agent }),
+          ...(spec.limits === undefined ? {} : { limits: spec.limits }),
+        },
         context,
       );
 
