@@ -970,10 +970,13 @@ export const backlogPlugin = definePlugin("backlog", {
  *
  * It lists the plugins and not their fields: each of the twelve above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
- * of them an action names (0061 §9). A closed set needs no namespace — every
- * declaration there is lives here — so a key is a bare word and a word that is
- * not one of these is refused. Being closed is what buys that: 0067 is what lets
- * a declaration come from elsewhere, and a namespace is what it will cost.
+ * of them an action names (0061 §9). Every declaration there is lives here, so
+ * a key is a bare word and a word that is not one of these is refused. **A
+ * declaration arriving from elsewhere does not change that** — 0067 §5 asks for
+ * *a key, and a word already taken is refused*, which is this rule with a wider
+ * set, not a namespace. What opening it costs is §6's three, and none of them
+ * is here: `ActionKind` stops being read off this array, the step × kind matrix
+ * becomes two, and a refusal has to name whose fault it is.
  *
  * **`refs:` is the first member that 0061 §3 did not name** (`#240`). The set
  * is not closed against *new* work: §3's list is the names the v2 file gives

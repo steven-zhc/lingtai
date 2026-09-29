@@ -2,10 +2,7 @@
 
 **Status** accepted · 2026-09-09 · supersedes
 [0016](0016-the-settled-model.md) §5's "Plugins are trusted code"; keeps the
-rest of §5 whole ·
-**§2's *there is no plugin system* superseded by
-[0067](0067-a-plugin-is-a-declaration-and-an-implementation.md)**, which narrows
-it to *the registry is closed*; §1's trust table stands whole
+rest of §5 whole
 
 ## Context
 

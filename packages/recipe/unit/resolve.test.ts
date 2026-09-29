@@ -283,7 +283,12 @@ describe("resolveRecipe", () => {
     expect((err as RecipeInvalidError).problems.join("\n")).toMatch(/LINGTAI_DATABASE_URL/);
   });
 
-  /** The same rule at the other extension point, because `run:` is the one point. */
+  /**
+   * The same rule at the other place a recipe names a command, because both run
+   * one: a `run:` action and a subscriber. They are the two that declare an
+   * `env:` at all — see `ExtensionEnvNames` — and not the two places anything
+   * outside the core can be declared, which 0067 says is a plugin's business.
+   */
   it("refuses it on a run: action too", async () => {
     const reaching = VALID.replace(
       "      run: pnpm verify",
