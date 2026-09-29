@@ -83,11 +83,33 @@ declaring it would also force an explicit `agent:` at `implement`, because a
 `file-brief:` written last in a step's list is refused. Add it after there is a
 number, not before.
 
+**That is a rule for the fortnight and not advice.** While this is running,
+`design:` is the only block that changes on the machine's file: two changes at
+once and the number attributes the saving to whichever of them it likes. Nothing
+in this repository can check that — the machine's file is outside every worktree
+(0046 §3) — so what a test can hold is the other half, that the block *published
+here* declares `design` and no other step.
+
 The block is pinned by `packages/recipe/unit/the-design-block.test.ts`, which
-reads this file, splices the block into this repository's own recipe and resolves
-it with the real `resolveRecipe`. That is the *Watch out* on `#302` made
-mechanical: a block that no longer resolves is a red test here rather than a
-refusal on the live queue.
+reads this file, splices the block into this repository's own recipe and puts it
+through **`resolveSource`** — the half of the resolve that does not care where
+the text came from (`packages/recipe/src/resolve.ts:207`), and the half that
+holds every refusal a mispasted block would earn: a plugin at a step it does not
+serve, a field it does not understand, a path that leaves the worktree. That is
+the *Watch out* on `#302` made mechanical: a block that no longer resolves is a
+red test here rather than a refusal on the live queue.
+
+**Two things that resolve is not.** It is not `resolveRecipe`, which reads
+`.lingtai/config.yaml` at a ref and then calls `resolveSource` with what it found
+(`resolve.ts:190`) — there is no file at a ref in this test. And it is not
+`resolveLocalRecipe`, which is the path the daemon actually takes for the
+machine's file and passes `resolveSource` a fourth argument: a `shape` callback
+that refuses `runtime.agent`, `runtime.limits` and `runtime.assignee` by name and
+injects the machine's own in their place (`packages/recipe/src/local.ts:398`).
+Neither is exercised here. What keeps the pin worth something anyway is that the
+block declares no `runtime:` key at all, so the shape has nothing of the block's
+to refuse — a block that grew one would resolve here and be refused on the
+machine, and that is the gap to hold this file to.
 
 ## 2. Restart before pasting, and not after
 
@@ -132,10 +154,23 @@ all.
 asymmetry is the thing to know before writing a query. `RunFinished` is the
 implementing run's receipt with `turns` and `costUsd` typed; an `agent:` action
 anywhere else splices its receipt into `evidence` as text. So *what did the design
-cost* is a regular expression over a string, and a design whose evidence was
-clipped at the bound could in principle lose its own tail. `#302` asks for the
-comparison of `implement`, which is entirely in fields; the drafter's side of the
-ledger is the parse.
+cost* is a regular expression over a string, and the hazard is the opposite of the
+one it looks like.
+
+**The receipt cannot be clipped off.** `boundedEvidence` calls `tail`
+(`packages/actions/src/command.ts:214`), which returns the head, a line counting
+what was elided, and *the end* (`command.ts:156-175`) — the last line, which is
+the receipt, is always inside the end, and in the one shape where even a head does
+not fit it returns the end alone. **What bites is the first match.** The kept head
+is the design document, and a regular expression that takes the first
+`(N turns` in that string reads the document rather than the receipt: a design
+about this repository's own turn budgets that writes `(151 turns at the wall)` or
+`$26.06)` — §Why's very figures — answers `design_turns = 151` for a drafter that
+spent twelve, and the row looks like a reading rather than a parse error. §4 takes
+the **last** match and requires the receipt's exact `· $` shape for that reason.
+
+`#302` asks for the comparison of `implement`, which is entirely in fields; the
+drafter's side of the ledger is the parse.
 
 `RunFinished` carries **no `runId`** — the run stream is the run, `run-{ulid}`, so
 the join is `stream_id`. And the trap 012 already paid for: **`WorkItemLanded`
@@ -148,31 +183,73 @@ field reads zero for every bucket and the absence looks like evidence.
 design, with what `implement` then spent:
 
 ```sql
--- one row per run: did it draft, and what did the implementer cost
+-- one row per run: which arm it is in, and what the implementer cost
 select r.stream_id,
        (r.data->>'workItemId')            as work_item,
-       (d.data->>'action')                as drafter,
        (f.data->>'turns')::int            as implement_turns,
        (f.data->>'costUsd')::numeric      as implement_usd,
+       case when d.data is null then 'without'
+            -- `agent-action.ts:975`, verbatim: the drafter's answer when it
+            -- answered nothing. Non-null, and no design at `implement`.
+            when d.data->>'evidence' like 'no design: this change needs none%' then 'without'
+            else 'with' end               as arm,
        d.data->>'evidence'                as design_evidence
 from events r
-left join events d
-       on d.stream_id = r.stream_id and d.type = 'StepPassed'
-      and d.data->>'step' = 'design'
+-- Lateral, and not a join on the step alone. `StepPassed` is one row **per
+-- action** (`action.ts:722`; `stepBase.step` is the step, `events.ts:641`), so
+-- the two-entry block leaves two rows at `design` and a join that names only the
+-- step returns every designed run twice — double-weighting the *with* arm, with
+-- the keep's locator sentence on one of the two halves. `'shape it'` is the
+-- drafter's `name:` in §1's block. `order by seq desc` is the second reason: a
+-- judge may send `design` back to itself (0058 §3c), and then the last draft is
+-- the one `implement` was given.
+left join lateral (
+  select d.data
+  from events d
+  where d.stream_id = r.stream_id and d.type = 'StepPassed'
+    and d.data->>'step' = 'design' and d.data->>'action' = 'shape it'
+  order by d.seq desc limit 1
+) d on true
 left join events f
        on f.stream_id = r.stream_id and f.type = 'RunFinished'
 where r.type = 'RunStarted'
 order by r.seq;
 ```
 
-`design_evidence is null` is the *without* arm and every run before the block was
-pasted is in it. The design's own turns come out of that column:
+**`design_evidence is null` is not the *without* arm**, which is the one way to
+get this wrong and have the output look right. A drafter that took the built-in
+prompt's stated common answer — *answering with nothing is a real answer, and it
+is the common one* (`agent-action.ts:626`) — appends `StepPassed` with `evidence`
+= `no design: this change needs none` and its receipt (`agent-action.ts:975`),
+and the keep appends *nothing to keep at `doc/design/this-change.md` — the design
+step answered that none was needed* for the same run (`file-action.ts:163`). Both
+are non-null. And `StepPassed` is `{...stepBase, evidence, findings}`
+(`packages/domain/src/events.ts:812`), so zod strips the `document` key
+`action.ts:698` only ever puts on the in-memory result: **nothing on the event
+distinguishes an empty design from a real one except that prose**, which is why
+the arm is a column here rather than a rule a reader applies. Counting those runs
+as designed dilutes the answer toward *no* with nothing in the output to show it.
+
+The design's own turns come out of that column:
 
 ```sql
-select substring(data->>'evidence' from '\((\d+) turns') ::int as design_turns,
-       substring(data->>'evidence' from '\$([0-9.]+)\)')::numeric as design_usd
-from events
-where type = 'StepPassed' and data->>'step' = 'design';
+-- the design's own receipt: the **last** match, and the receipt's exact shape.
+-- `substring(... from '\((\d+) turns')` takes the *first* match in a string
+-- whose kept head is the document, so a design that discusses turn counts
+-- answers with the number it was discussing (§3). Group 3 is null where the
+-- runtime reported no cost (`agent-action.ts:901`).
+select e.stream_id,
+       m.receipt[1]::int     as design_turns,
+       m.receipt[3]::numeric as design_usd
+from events e
+cross join lateral (
+  select receipt
+  from regexp_matches(e.data->>'evidence', '\((\d+) turns( · \$([0-9.]+))?\)', 'g')
+       with ordinality as t(receipt, n)
+  order by n desc limit 1
+) m
+where e.type = 'StepPassed' and e.data->>'step' = 'design'
+  and e.data->>'action' = 'shape it';
 ```
 
 And the pass total rather than the implementer alone, since a design that halves
@@ -195,6 +272,13 @@ group by stream_id;
   turns, at the wall** — mean the design is not earning its money at this size of
   change
 - landing in **60–90 turns** means it is
+
+**Three runs in the `with` arm**, and a run whose drafter answered nothing is not
+one of them however many turns it spent: `implement` had no design in front of it,
+so it says nothing about a design's worth and belongs beside the baseline. How
+often that answer came back is its own number and worth reporting beside the
+comparison rather than inside it — if the drafter answers *this needs none* on
+most tickets, that is the finding.
 
 Three tickets is the floor and not a sample. The arms differ in more than the
 design — the tickets are different work — so what this can answer is *did the

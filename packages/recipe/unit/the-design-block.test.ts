@@ -18,11 +18,16 @@
  *
  * What it cannot assert is that the *machine's* file resolves — that file is
  * outside every worktree (0046 §3) and carries `build:` and `review:` blocks the
- * repository's copy does not. What it does assert is the block itself, in a valid
- * recipe: the fields, their order, and the plugin's own `at`.
+ * repository's copy does not. Nor is this the read the daemon does: that is
+ * `resolveLocalRecipe`, which hands `resolveSource` a fourth argument refusing
+ * `runtime.*` by name and injecting the machine's own (`src/local.ts:398`). The
+ * block declares no `runtime:` key, which is what leaves nothing between the two.
+ * What it does assert is the block itself, in a valid recipe: the fields, their
+ * order, and the plugin's own `at`.
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 import { RECIPE_PATH, resolveSource } from "@lingtai/recipe";
 
 const root = new URL("../../../", import.meta.url);
@@ -93,14 +98,40 @@ describe("the `design:` block 015 publishes", () => {
   });
 
   /**
-   * **`implement` stays undeclared**, which is §1 of the document: the document
-   * and the locator both cross the boundary (0069 §2), so `file-brief:` buys only
-   * reading the note back off the branch — and declaring it would force an
-   * explicit `agent:` at `implement` beside it, since a `file-brief:` written last
-   * in a step's list is refused. A second thing to get wrong in the change whose
-   * purpose is one number.
+   * **The published block declares `design` and no other step**, which is the
+   * half of §1's rule a test can hold. The measurement has one moving part only
+   * while `design:` is the only block that changes, and the machine's file is
+   * outside every worktree (0046 §3) — so what is checkable here is the block a
+   * person is told to paste: a `file-brief:` at `implement` added to the
+   * document's fence, with the explicit `agent:` it would force beside it, fails
+   * this.
+   *
+   * **Asserting `steps.implement` on the spliced recipe would assert nothing.**
+   * `.lingtai/config.yaml` never mentions `implement` and the block is sliced
+   * from `  design:`, so it can only ever declare `design` — that expectation is
+   * green before the document is read, which is why it is this one instead.
    */
-  it("declares nothing at `implement`, so the measurement has one moving part", () => {
-    expect(resolved().steps.implement).toEqual([]);
+  it("publishes a block that declares `design` and no other step", () => {
+    const block = parseYaml(`steps:\n${documented()}`) as { steps: Record<string, unknown> };
+    expect(Object.keys(block.steps)).toEqual(["design"]);
+  });
+
+  /**
+   * **§4's queries name the drafter, and this is what holds the two together.**
+   * `StepPassed` is one row per action (`packages/actions/src/action.ts:722`) and
+   * `stepBase.step` is the step rather than the action, so the two-entry block
+   * leaves two rows at `design`: a query that names only the step returns every
+   * designed run twice and double-weights the whole *with* arm. Both queries
+   * therefore join on `d.data->>'action' = '…'`, and renaming the entry above
+   * without renaming it there would silently restore the double count — and
+   * `StepPassed` carries no other discriminator, since zod strips the `document`
+   * key (`packages/domain/src/events.ts:812`).
+   */
+  it("names the drafter in every query that reads the drafter's row", () => {
+    const [drafter] = resolved().steps.design;
+    const md = readFileSync(new URL(EXPERIMENT, root), "utf8");
+    const named = [...md.matchAll(/data->>'action' = '([^']*)'/g)].map((m) => m[1]);
+    expect(named.length).toBeGreaterThan(0);
+    expect(new Set(named)).toEqual(new Set([drafter!.name]));
   });
 });
