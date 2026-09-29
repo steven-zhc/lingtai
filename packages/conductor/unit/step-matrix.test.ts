@@ -421,6 +421,15 @@ describe("every step × kind cell runs or refuses", () => {
      * falling through gives `prepared`'s, and the failure names which step it
      * borrowed from. `PREPARED_OWNS` closes the one hole that leaves — a kind
      * `prepared` accepts has no `prepared` cell to collide with.
+     *
+     * **Checked by taking a branch back out, three times** (`#306`): disable
+     * `whyThatPair`'s `claim` branch and four `claim` cells go red; its `design`
+     * branch and three `design` cells do; its `build` branch — the one `#263` was
+     * refused for twice — and three `build` cells do, each naming the step whose
+     * sentence it borrowed. `run:` at `claim` and at `design` is the pair that
+     * proves the second half earns its place: `prepared` *runs* a `run:`, so
+     * there is no `prepared` cell for those two to collide with and
+     * `PREPARED_OWNS` is what catches them.
      */
     if (ANSWERED_BY_THE_KIND.includes(kind)) return;
     const mine = reasonAt(step, kind);
