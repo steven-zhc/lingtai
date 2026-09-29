@@ -38,10 +38,34 @@ export interface RuntimeOptions {
    *
    * `full` by default. `none` is the third kind of agent
    * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §1) — no
-   * worktree, no hook, no gates, and therefore no tools. Claude Code's row turns
-   * it into `--permission-mode default`; Codex's into `-s read-only`.
+   * worktree, no hook, no gates, and therefore **no tools at all**. Claude Code's
+   * row turns it into `--permission-mode default` beside a settings file that
+   * denies every tool by name; **Codex's row refuses it**, because Codex has no
+   * way to say it (`ToolsCannotBeDenied`).
    */
   tools?: "full" | "none";
+}
+
+/**
+ * A runtime asked for something it has no way to promise.
+ *
+ * Thrown rather than approximated (`#313`). `tools: "none"` is not a preference:
+ * it is the containment the third kind of agent *is*, and a row that answered it
+ * with the nearest flag it had would hand a caller an agent it believed was
+ * tool-free. 0007's rule about a tier applies to this for the same reason — it
+ * *"records `DispatchRefused` when the combination cannot meet the tier — it
+ * never silently downgrades."*
+ */
+export class ToolsCannotBeDenied extends Error {
+  override readonly name = "ToolsCannotBeDenied";
+  constructor(readonly id: RuntimeId) {
+    super(
+      `${id} has no way to be given no tools, and a discussion has no other containment: ` +
+        "measured on codex-cli 0.155.1, `-s read-only` forbids writes and forbids nothing " +
+        "else — the agent keeps a shell and read access to the whole machine, ~/.ssh " +
+        "included. Claude Code's tool-deny list is not a file Codex reads (0033 §1).",
+    );
+  }
 }
 
 export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> = {
@@ -50,11 +74,32 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
       ...(options.binary === undefined ? {} : { binary: options.binary }),
       permissionMode: options.tools === "none" ? "default" : "bypassPermissions",
     }),
-  codex: (options = {}) =>
-    createCodexRuntime({
+  codex: (options = {}) => {
+    /**
+     * **`read-only` is not `tools: "none"`, and this row says so** (`#313`).
+     *
+     * It translated the one to the other, which looked like the Codex half of
+     * 0054 and was the loss of a whole layer: `answerDiscussion` hands its
+     * runtime a settings file whose docstring is *"Every tool, denied"* — Bash,
+     * Read, Write, Glob, Grep, WebFetch, Task — and Codex reads no Claude Code
+     * settings file. `codexHookArgs` looks for a `hooks` key, finds none and
+     * returns `[]`, so nothing reported that the list had been dropped.
+     *
+     * What `-s read-only` buys is a *write* boundary. Measured: a Codex agent in
+     * an empty directory under `-s read-only` was asked to `ls /Users/steven` and
+     * printed it. Two of the three stated layers are gone and the third (the
+     * empty working directory) is one `cd` from irrelevant.
+     *
+     * Nothing else in the binary closes it: the `[permissions]` filesystem table
+     * did not restrict reads under `-s` when tried, and `enabled_tools` /
+     * `disabled_tools` are MCP server keys and not the built-in shell.
+     */
+    if (options.tools === "none") throw new ToolsCannotBeDenied("codex");
+    return createCodexRuntime({
       ...(options.binary === undefined ? {} : { binary: options.binary }),
-      sandbox: options.tools === "none" ? "read-only" : "workspace-write",
-    }),
+      sandbox: "workspace-write",
+    });
+  },
 };
 
 /**
@@ -63,6 +108,11 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
  * Total over `RuntimeId`, so there is no `undefined` branch for a caller to
  * invent a fallback in — a fallback is how `runtime.agent` came to be a field
  * that changed nothing.
+ *
+ * **Total over ids and not over options**: `ToolsCannotBeDenied` is thrown where
+ * the runtime named cannot keep the promise the options asked for. A caller that
+ * asks for `tools: "none"` has to say what it does when the answer is no, which
+ * is the point — `answerDiscussion` answers the question with the refusal.
  */
 export function createRuntime(id: RuntimeId, options?: RuntimeOptions): Runtime {
   return RUNTIMES[id](options);

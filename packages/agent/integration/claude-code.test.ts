@@ -20,7 +20,7 @@
  * `#109`'s whole risk is that the accounting reads a line the real binary does
  * not print, or fails to read one it does.
  */
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -33,6 +33,7 @@ import {
   TRACE_LINE_CHARS,
   createClaudeCodeRuntime,
   createCodexRuntime,
+  gitWritableRoots,
   meetsTier,
   missingForTier,
   neverStarted,
@@ -824,5 +825,42 @@ describe("the Codex adapter, where it reads the wiring off disk", () => {
     // Unknown cost is not free (#198).
     expect(outcome.costUsd).toBeNull();
     expect(outcome.exitCode).toBeNull();
+  });
+
+  /**
+   * **Where a worktree's commits land, read off its `.git` file.**
+   *
+   * Here rather than in `unit/` because it is `readFileSync` on a real layout,
+   * which is the filesystem (0060 §1). The *argv* it produces is a unit claim and
+   * is asserted there; what this answers is whether the two files git leaves
+   * behind — the `.git` pointer and `commondir` — are read the way git writes
+   * them. `gitWritableRoots` is what stops `-s workspace-write` refusing
+   * `index.lock`: measured on `codex-cli 0.155.1`, without it `git commit` inside
+   * the sandbox answered *Operation not permitted* and the pass committed nothing.
+   */
+  it("reads a linked worktree's git directory, and the repository it borrows from", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-worktree-"));
+    const bare = join(root, "repos", "p.git");
+    const gitDir = join(bare, "worktrees", "run-1");
+    const tree = join(root, "worktrees", "p", "run-1");
+    await mkdir(gitDir, { recursive: true });
+    await mkdir(tree, { recursive: true });
+    await writeFile(join(tree, ".git"), `gitdir: ${gitDir}\n`);
+    // Git's own spelling: relative to the worktree's git directory.
+    await writeFile(join(gitDir, "commondir"), "../..\n");
+
+    expect(gitWritableRoots(tree)).toEqual([gitDir, bare]);
+
+    // An ordinary checkout's `.git` is a directory under `--cd` and so is
+    // already writable — naming it would widen the sandbox for nothing.
+    const plain = join(root, "plain");
+    await mkdir(join(plain, ".git"), { recursive: true });
+    expect(gitWritableRoots(plain)).toEqual([]);
+
+    // Not a repository at all: a reader's empty directory, and not a reason to
+    // refuse to run.
+    expect(gitWritableRoots(join(root, "nothing-here"))).toEqual([]);
+
+    await rm(root, { recursive: true, force: true });
   });
 });

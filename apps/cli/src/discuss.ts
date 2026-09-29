@@ -35,7 +35,14 @@
  */
 import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createRuntime, FIRST_RUNTIME, NO_RUN_LOG, openRunLog, RUN_LOG_BEAT_MS } from "@lingtai/agent";
+import {
+  createRuntime,
+  FIRST_RUNTIME,
+  NO_RUN_LOG,
+  openRunLog,
+  RUN_LOG_BEAT_MS,
+  type Runtime,
+} from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
 import {
   FILE_BYTES,
@@ -271,13 +278,40 @@ export async function answerDiscussion(
    *
    * `tools: "none"` rather than `permissionMode: "default"`: the caller says what
    * the agent is *for* and each row translates, so this line does not have to know
-   * Claude Code's enum — or Codex's `-s read-only` — to say that the third kind of
-   * agent has no tools (0033 §1, 0054).
+   * Claude Code's enum to say that the third kind of agent has no tools
+   * (0033 §1, 0054).
    */
   const named = await loadProject(project)
     .then((state) => (state === null ? FIRST_RUNTIME : currentRecipe(state).then((r) => r.recipe.runtime.agent)))
     .catch(() => FIRST_RUNTIME);
-  const runtime = createRuntime(named, { tools: "none" });
+  /**
+   * **Contained, or not started at all** (`#313`).
+   *
+   * The three layers above are what a discussion has instead of a hook and the
+   * steps a run passes, and the first two are a Claude Code settings file. A runtime that
+   * cannot be given no tools is refused by name — `ToolsCannotBeDenied` —
+   * because the alternative is what the refused version of this line did: it
+   * asked Codex for `tools: "none"`, got `-s read-only`, and that forbids writes
+   * and forbids nothing else. The agent would keep a shell and read access to the
+   * whole machine while this file's header said it read nothing off the
+   * filesystem, and the run would report success.
+   *
+   * **Answered, not thrown.** This function never throws (see above), and a
+   * question that got no reply at all is worse than one told why — so the refusal
+   * becomes the round's outcome, `holdDiscussion` appends `DiscussionAnswered`
+   * for it the way it does for a crash, and the sentence names the runtime and
+   * the field that chose it.
+   */
+  let runtime: Runtime | null = null;
+  let refused = "";
+  try {
+    runtime = createRuntime(named, { tools: "none" });
+  } catch (err) {
+    refused =
+      `${(err as Error).message} — ${project}'s recipe names ${named} at runtime.agent, ` +
+      "so this question cannot be answered here. Ask it of a project whose runtime can be, " +
+      "or open it as a ticket, where the hook and the steps of a pass are the containment.";
+  }
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
   const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));
@@ -347,24 +381,38 @@ export async function answerDiscussion(
           return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES });
         },
         ask: async (prompt, round) =>
-          runtime.run({
-            // Its own id per round, so nothing resumes a session. `sessionIdFor`
-            // is a function of the run id, and reusing one would make a second
-            // question a continuation of the first one's transcript rather than a
-            // fresh read of the brief this file just built.
-            runId: `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
-            cwd,
-            prompt,
-            settingsPath,
-            // Nothing but what the runtime needs to authenticate. No token, no
-            // project values, no hook wiring — there is no hook.
-            env: runnableEnv({}),
-            limits: LIMITS,
-            // What the assistant says and thinks, as it says it. The adapter
-            // writes its own stream here (`traceOf`), which is the whole of
-            // what makes the box on the board move.
-            log: trace,
-          }),
+          runtime === null
+            ? {
+                // Nothing was spawned, so nothing is claimed about a process:
+                // no exit code, no session, and a cost of `null` rather than
+                // `0` — unknown and unspent are the same value here only
+                // because both are true (#198).
+                exitCode: null,
+                turns: 0,
+                durationMs: 0,
+                costUsd: null,
+                text: null,
+                failure: { kind: "crash", detail: refused },
+                sessionId: "",
+              }
+            : runtime.run({
+                // Its own id per round, so nothing resumes a session. `sessionIdFor`
+                // is a function of the run id, and reusing one would make a second
+                // question a continuation of the first one's transcript rather than a
+                // fresh read of the brief this file just built.
+                runId: `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
+                cwd,
+                prompt,
+                settingsPath,
+                // Nothing but what the runtime needs to authenticate. No token, no
+                // project values, no hook wiring — there is no hook.
+                env: runnableEnv({}),
+                limits: LIMITS,
+                // What the assistant says and thinks, as it says it. The adapter
+                // writes its own stream here (`traceOf`), which is the whole of
+                // what makes the box on the board move.
+                log: trace,
+              }),
       },
       {
         chatId: request.chatId,

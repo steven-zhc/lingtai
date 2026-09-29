@@ -17,7 +17,13 @@
  */
 import { describe, expect, it } from "vitest";
 import { RuntimeId } from "@lingtai/domain";
-import { FIRST_RUNTIME, RUNTIMES, createRuntime, everyRuntime } from "../src/runtimes.ts";
+import {
+  FIRST_RUNTIME,
+  RUNTIMES,
+  ToolsCannotBeDenied,
+  createRuntime,
+  everyRuntime,
+} from "../src/runtimes.ts";
 import { AUTH_PROBES } from "../src/auth.ts";
 import type { Runtime } from "../src/runtime.ts";
 
@@ -87,10 +93,31 @@ describe("what a caller may ask of any runtime", () => {
    */
   it("takes runtime-neutral options every row can answer", () => {
     for (const id of RuntimeId.options) {
-      expect(createRuntime(id, { tools: "none" }).capabilities.id).toBe(id);
       expect(createRuntime(id, { tools: "full" }).capabilities.id).toBe(id);
       expect(createRuntime(id, { binary: "/nowhere/stand-in" }).capabilities.id).toBe(id);
     }
+  });
+
+  /**
+   * **`tools: "none"` is a promise and not a preference, so a row that cannot
+   * keep it refuses by name.**
+   *
+   * Codex's row translated it to `-s read-only`, which forbids writes and forbids
+   * nothing else — measured on `codex-cli 0.155.1`, a Codex agent in an empty
+   * directory under `-s read-only` was asked to `ls /Users/steven` and printed
+   * it. `answerDiscussion`'s containment is a Claude Code settings file whose
+   * docstring is *"Every tool, denied"*, and Codex reads no such file:
+   * `codexHookArgs` looks for a `hooks` key, finds none, returns `[]`, and
+   * nothing reported that the deny list had been dropped. That is 0007's
+   * *"never silently downgrades"* one layer along.
+   */
+  it("refuses a runtime that has no way to be given no tools, by name", () => {
+    expect(createRuntime("claude-code", { tools: "none" }).capabilities.id).toBe("claude-code");
+    expect(() => createRuntime("codex", { tools: "none" })).toThrow(ToolsCannotBeDenied);
+    expect(() => createRuntime("codex", { tools: "none" })).toThrow(/read-only/);
+    // `full` is unaffected: a Codex *implementer* is what the sandbox is for.
+    expect(createRuntime("codex", { tools: "full" }).capabilities.id).toBe("codex");
+    expect(createRuntime("codex").capabilities.id).toBe("codex");
   });
 });
 

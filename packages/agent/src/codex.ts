@@ -41,9 +41,15 @@
  *   run's hook socket; that is not a tier correction, because the runtime Lingtai
  *   dispatches today provides no filesystem boundary at all and 0016 §6 refuses
  *   no tool call either way.
+ * - **And refusing `~/.lingtai` is why a worktree needs `--add-dir`.** The git
+ *   directory a worktree commits into lives there, outside `--cd`, so the
+ *   boundary that makes this runtime `sandboxed` is the same one that stopped
+ *   `git add` — `gitWritableRoots` names that directory and nothing else, and
+ *   `$HOME` stays refused. Measured both ways; see that function.
  */
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { codexAuth } from "./auth.ts";
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from "./claude-code.ts";
@@ -221,43 +227,106 @@ export interface CodexReceipt {
   errors: readonly string[];
 }
 
-export function codexOutcome(lines: readonly string[]): CodexReceipt {
-  const receipt = {
-    sessionId: "",
-    turns: 0,
-    text: null as string | null,
-    completed: false,
-    billedTokens: 0,
-    errors: [] as string[],
-  };
+/** A receipt being written. `CodexReceipt` is the readable face of it. */
+interface Tally {
+  sessionId: string;
+  turns: number;
+  text: string | null;
+  completed: boolean;
+  billedTokens: number;
+  errors: string[];
+}
 
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t.startsWith("{")) continue;
-    let event: CodexEvent;
-    try {
-      event = JSON.parse(t) as CodexEvent;
-    } catch {
-      continue;
-    }
+function emptyTally(): Tally {
+  return { sessionId: "", turns: 0, text: null, completed: false, billedTokens: 0, errors: [] };
+}
 
-    if (event.type === "thread.started" && event.thread_id) receipt.sessionId = event.thread_id;
-
-    if (event.type === "turn.completed") {
-      receipt.completed = true;
-      receipt.billedTokens = (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0);
-    }
-
-    if (event.type === "item.completed" && event.item?.type === "agent_message") {
-      receipt.turns += 1;
-      if (event.item.text) receipt.text = event.item.text;
-    }
-    if (event.type === "item.completed" && event.item?.type === "error" && event.item.message) {
-      receipt.errors.push(event.item.message);
-    }
+/** One line, folded in. Everything the receipt knows is decided here. */
+function foldLine(receipt: Tally, line: string): void {
+  const t = line.trim();
+  if (!t.startsWith("{")) return;
+  let event: CodexEvent;
+  try {
+    event = JSON.parse(t) as CodexEvent;
+  } catch {
+    return;
   }
 
+  if (event.type === "thread.started" && event.thread_id) receipt.sessionId = event.thread_id;
+
+  if (event.type === "turn.completed") {
+    receipt.completed = true;
+    receipt.billedTokens = (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0);
+  }
+
+  if (event.type === "item.completed" && event.item?.type === "agent_message") {
+    receipt.turns += 1;
+    if (event.item.text) receipt.text = event.item.text;
+  }
+  if (event.type === "item.completed" && event.item?.type === "error" && event.item.message) {
+    receipt.errors.push(event.item.message);
+  }
+}
+
+export function codexOutcome(lines: readonly string[]): CodexReceipt {
+  const receipt = emptyTally();
+  for (const line of lines) foldLine(receipt, line);
   return receipt;
+}
+
+/**
+ * The same fold, **over a stream that is never all in memory at once**.
+ *
+ * `run()` used to keep the last `RECEIPT_TAIL_CHARS` of stdout and hand
+ * `codexOutcome` that window at close, the way `claude-code.ts` does. That is
+ * sound there and wrong here, and the difference is what the two adapters read:
+ * `parseResult` looks for **one final `result` object**, which is in the tail by
+ * construction, while this receipt *accumulates* — `turns` counts every
+ * `agent_message` and `sessionId` comes off `thread.started`, the very first
+ * line. A Codex implementer streams tens of kilobytes of `aggregated_output` per
+ * `pnpm test`, so a real run passes 256 KB and the head goes over the side: the
+ * receipt then reported 4 turns of 37 and no session id, `RunFinished.turns`
+ * recorded a spend that did not happen, and nothing anywhere said the number was
+ * a fragment.
+ *
+ * So the fold happens **as the bytes arrive** and the window is gone. What is
+ * still bounded is the *tail kept for a failure's detail*, which is a quotation
+ * and not an accounting.
+ */
+export interface CodexAccount {
+  /** A chunk of stdout, at any boundary — inside a line, inside a character. */
+  chunk(text: string): void;
+  /**
+   * No more is coming.
+   *
+   * An unterminated final line is folded rather than dropped: mid-stream a
+   * fragment is a fragment, but at close it is the last thing the runtime said,
+   * and a `turn.completed` without a trailing newline is a receipt.
+   */
+  end(): void;
+  /** What the stream has said so far. */
+  readonly receipt: CodexReceipt;
+}
+
+export function codexAccount(): CodexAccount {
+  const receipt = emptyTally();
+  let pending = "";
+  return {
+    chunk(text: string) {
+      pending += text;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) foldLine(receipt, line);
+    },
+    end() {
+      if (pending === "") return;
+      foldLine(receipt, pending);
+      pending = "";
+    },
+    get receipt(): CodexReceipt {
+      return receipt;
+    },
+  };
 }
 
 /**
@@ -407,6 +476,63 @@ function hookWiringAt(settingsPath: string): unknown | null {
 }
 
 /**
+ * Where a worktree's commits actually land, **because it is not inside the
+ * worktree** (`#313`).
+ *
+ * `-s workspace-write` makes `--cd` the writable root, and a Lingtai worktree's
+ * git directory is outside it: `cutTree()` gives
+ * `~/.lingtai/worktrees/<project>/<runId>`, whose `.git` is a *file* pointing at
+ * `~/.lingtai/repos/<project>.git/worktrees/<runId>`, with the objects and refs
+ * a level up again. So the agent could edit files and not commit them — the one
+ * thing the pass is bought for — and the run would end `0057 §2`'s *committed
+ * nothing* after a whole agent was spent.
+ *
+ * **Measured, both ways, on `codex-cli 0.155.1`.** Against exactly that layout,
+ * `codex exec -s workspace-write --cd <worktree>` asked to `git add -A && git
+ * commit` answered `fatal: Unable to create
+ * '/Users/…/.lingtai/repos/<p>.git/worktrees/<runId>/index.lock': Operation not
+ * permitted`, and `git log` was unmoved. With `--add-dir` naming the common
+ * directory the same prompt committed (`1 file changed`), and a `touch $HOME/…`
+ * in the same run still answered *Operation not permitted* — so the sandbox is
+ * still a sandbox and this widens it by one directory that is already Lingtai's.
+ *
+ * **Why `/tmp` hid it**, and why a reviewer may measure the opposite: Codex's
+ * `workspace-write` permits `$TMPDIR` and `/tmp` unconditionally, so the same
+ * probe against a bare repo under `/tmp` commits happily. The layout has to be
+ * the real one for the refusal to appear.
+ *
+ * `[]` for an ordinary checkout, where `.git` is a directory under `--cd` and
+ * therefore already writable, and `[]` for anything this cannot read — a path
+ * that is not a worktree is not a reason to refuse to run.
+ */
+export function gitWritableRoots(cwd: string): readonly string[] {
+  let gitDir: string;
+  try {
+    const dotGit = join(cwd, ".git");
+    // A directory means an ordinary checkout: it is under `--cd` already.
+    if (statSync(dotGit).isDirectory()) return [];
+    const said = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"));
+    if (said === null) return [];
+    gitDir = resolve(cwd, said[1]!.trim());
+  } catch {
+    return [];
+  }
+
+  // The worktree's own git directory, and the repository it borrows objects and
+  // refs from — `git commit` writes in both, and `commondir` is how the first
+  // names the second. Usually the second contains the first, and naming both is
+  // cheaper than reasoning about when it does not.
+  const roots = [gitDir];
+  try {
+    const common = readFileSync(join(gitDir, "commondir"), "utf8").trim();
+    if (common !== "") roots.push(resolve(gitDir, common));
+  } catch {
+    // No `commondir`: this git directory is the whole of it.
+  }
+  return roots;
+}
+
+/**
  * argv, in one place — `run` and `invocation` call this with the only thing that
  * differs between them, so what the log says was run and what was run agree.
  *
@@ -419,13 +545,20 @@ function hookWiringAt(settingsPath: string): unknown | null {
 export function codexArgv(
   request: Invocable,
   prompt: string,
-  options: { settings: unknown; sandbox: CodexSandbox; extraArgs?: readonly string[] },
+  options: {
+    settings: unknown;
+    sandbox: CodexSandbox;
+    /** See `gitWritableRoots`. Empty for a reader, which commits nothing. */
+    writable?: readonly string[];
+    extraArgs?: readonly string[];
+  },
 ): string[] {
   return argsFor(
     request,
     prompt,
     codexHookArgs(options.settings),
     options.sandbox,
+    options.writable ?? [],
     options.extraArgs ?? [],
   );
 }
@@ -435,6 +568,7 @@ function argsFor(
   prompt: string,
   hookArgs: readonly string[],
   sandbox: CodexSandbox,
+  writable: readonly string[],
   extraArgs: readonly string[],
 ): string[] {
   return [
@@ -454,6 +588,10 @@ function argsFor(
     // `on-failure`, `on-request`, `granular`, `never`.
     "-c",
     "approval_policy=never",
+    // **The git directory, or the agent cannot commit what it wrote.** See
+    // `gitWritableRoots` — this is the one widening of the sandbox Lingtai asks
+    // for, and it is asked for by path rather than by turning the sandbox down.
+    ...writable.flatMap((dir) => ["--add-dir", dir]),
     ...hookArgs,
     ...(request.model ? ["--model", request.model] : []),
     ...extraArgs,
@@ -464,6 +602,17 @@ function argsFor(
     "--",
     prompt,
   ];
+}
+
+/**
+ * Asked only where something may be written.
+ *
+ * `read-only` commits nothing, so naming a directory it could write in would be
+ * a widening bought for nothing — and the sandbox is the whole of what that mode
+ * is for.
+ */
+function writableFor(sandbox: CodexSandbox, cwd: string): readonly string[] {
+  return sandbox === "workspace-write" ? gitWritableRoots(cwd) : [];
 }
 
 export function createCodexRuntime(options: CodexOptions = {}): Runtime {
@@ -486,6 +635,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         args: codexArgv(request, PROMPT_ELIDED, {
           settings: hookWiringAt(request.settingsPath),
           sandbox,
+          writable: writableFor(sandbox, request.cwd),
           extraArgs,
         }),
       };
@@ -518,7 +668,12 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         };
       }
 
-      const args = codexArgv(request, request.prompt, { settings: wiring, sandbox, extraArgs });
+      const args = codexArgv(request, request.prompt, {
+        settings: wiring,
+        sandbox,
+        writable: writableFor(sandbox, request.cwd),
+        extraArgs,
+      });
 
       return new Promise<RunOutcome>((resolve) => {
         const child = spawn(binary, args, {
@@ -537,8 +692,23 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           detached: true,
         });
 
-        /** The **end** of stdout. A stream is the transcript; the receipt is its last lines. */
-        let stdout = "";
+        /**
+         * The receipt, **folded as the bytes arrive** — see `codexAccount`.
+         *
+         * Not read off a tail at close: this accounting is cumulative, so a
+         * window would drop `thread.started` and most of the turns on any run
+         * long enough to matter.
+         */
+        const account = codexAccount();
+        /**
+         * The **end** of stdout, kept only to quote in a failure's `detail`.
+         *
+         * A bound on what one event may carry (0034 §7), and nothing reads an
+         * accounting off it: the sentence *"the receipt is its last lines"* is
+         * `claude-code.ts`'s and is true there, where `parseResult` looks for one
+         * final `result` object.
+         */
+        let stdoutTail = "";
         let stderr = "";
         let settled = false;
 
@@ -557,7 +727,8 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
 
         child.stdout.on("data", (c: Buffer) => {
           const text = outText.write(c);
-          stdout = (stdout + text).slice(-RECEIPT_TAIL_CHARS);
+          account.chunk(text);
+          stdoutTail = (stdoutTail + text).slice(-RECEIPT_TAIL_CHARS);
           stream(text);
         });
         child.stderr.on("data", (c: Buffer) => {
@@ -585,7 +756,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             costUsd: null,
             text: null,
             failure: { kind, detail },
-            sessionId: codexOutcome(stdout.split("\n")).sessionId,
+            sessionId: account.receipt.sessionId,
           });
         };
 
@@ -612,7 +783,10 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         );
 
         child.on("close", (code) => {
-          const receipt = codexOutcome(stdout.split("\n"));
+          // The last line may have arrived without its newline, and at close
+          // that is the runtime's final word rather than a fragment.
+          account.end();
+          const receipt = account.receipt;
           // Codex reports no duration, so the wall clock is the answer rather
           // than a field read off a receipt.
           const durationMs = Date.now() - started;
@@ -674,7 +848,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
               detail:
                 (receipt.errors.length > 0 ? receipt.errors.join(" · ").slice(0, 500) : "") ||
                 receipt.text?.slice(0, 500) ||
-                (stderr.trim() || stdout.trim()).slice(-500) ||
+                (stderr.trim() || stdoutTail.trim()).slice(-500) ||
                 `exited ${code}`,
             },
             sessionId: receipt.sessionId,

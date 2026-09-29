@@ -15,10 +15,17 @@
  * promises and which exits **0**.
  */
 import { describe, expect, it } from "vitest";
-import { CODEX_CAPABILITIES, codexArgv, codexHookArgs, codexOutcome, codexTrace } from "../src/codex.ts";
+import {
+  CODEX_CAPABILITIES,
+  codexAccount,
+  codexArgv,
+  codexHookArgs,
+  codexOutcome,
+  codexTrace,
+} from "../src/codex.ts";
 import { renderSettings } from "../src/hook-config.ts";
 import { meetsTier, missingForTier, RUN_LIMITS } from "../src/runtime.ts";
-import { PROMPT_ELIDED } from "../src/claude-code.ts";
+import { PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from "../src/claude-code.ts";
 
 const jsonl = (...events: readonly unknown[]): string[] => events.map((e) => JSON.stringify(e));
 
@@ -104,6 +111,94 @@ describe("the receipt, as a fold over the stream", () => {
     // Not `cached_input_tokens`, which is a discount on the input and not a
     // second charge; what is being asked is only *whether* a model was reached.
     expect(codexOutcome(clean()).billedTokens).toBe(17018 + 5);
+  });
+});
+
+/**
+ * **The fold is over the stream and not over a window of it** — the one thing
+ * `run()` got wrong, and the reason `codexAccount` exists.
+ *
+ * `run()` kept the last `RECEIPT_TAIL_CHARS` of stdout and read the receipt off
+ * that at close, copying `claude-code.ts`. It is right there and wrong here:
+ * `parseResult` looks for **one final `result` object**, which is in a tail by
+ * construction, while this receipt *accumulates* — `turns` counts every
+ * `agent_message` and `sessionId` is on the very first line. A Codex implementer
+ * streams tens of kilobytes of `aggregated_output` per `pnpm test`, so a real run
+ * passes 256 KB, the head goes over the side, and `RunFinished.turns` records a
+ * spend that did not happen.
+ */
+describe("the receipt, over a stream longer than any window", () => {
+  /** `command_execution` output, which is the volume in a real stream. */
+  const noise = (bytes: number): string =>
+    JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_n", type: "command_execution", command: "pnpm test", aggregated_output: "x".repeat(bytes) },
+    });
+
+  it("keeps every turn and the session id past RECEIPT_TAIL_CHARS", () => {
+    const account = codexAccount();
+    account.chunk(`${JSON.stringify({ type: "thread.started", thread_id: "01a0-head" })}\n`);
+    for (let i = 0; i < 37; i += 1) {
+      // 20 KB of tool output per turn: thirty-seven of them is ~740 KB, so the
+      // head — and all but the last few turns — would be outside a 256 KB tail.
+      account.chunk(`${noise(20_000)}\n`);
+      account.chunk(
+        `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: `turn ${i}` } })}\n`,
+      );
+    }
+    account.chunk(`${JSON.stringify({ type: "turn.completed", usage: { input_tokens: 9, output_tokens: 1 } })}\n`);
+    account.end();
+
+    expect(account.receipt.turns).toBe(37);
+    expect(account.receipt.sessionId).toBe("01a0-head");
+    expect(account.receipt.text).toBe("turn 36");
+    expect(account.receipt.completed).toBe(true);
+
+    // The window this replaces, for contrast: the same stream read off a tail
+    // loses the head and most of the count. This is the failure, written down.
+    const whole = [
+      JSON.stringify({ type: "thread.started", thread_id: "01a0-head" }),
+      ...Array.from({ length: 37 }, (_, i) => [
+        noise(20_000),
+        JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: `turn ${i}` } }),
+      ]).flat(),
+      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 9, output_tokens: 1 } }),
+    ].join("\n");
+    const tailed = codexOutcome(whole.slice(-RECEIPT_TAIL_CHARS).split("\n"));
+    expect(tailed.turns).toBeLessThan(37);
+    expect(tailed.sessionId).toBe("");
+  });
+
+  it("folds a line that arrived in pieces, and never half of one", () => {
+    const account = codexAccount();
+    const line = JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "split" } });
+    account.chunk(line.slice(0, 20));
+    // Half an object is a fragment of a fact and is not folded yet.
+    expect(account.receipt.turns).toBe(0);
+    account.chunk(`${line.slice(20)}\n`);
+    expect(account.receipt.turns).toBe(1);
+    expect(account.receipt.text).toBe("split");
+  });
+
+  /**
+   * At close the last line is the runtime's final word rather than a fragment —
+   * a `turn.completed` with no trailing newline is a receipt, and dropping it
+   * would answer `crash` for a run that finished.
+   */
+  it("folds an unterminated final line at end(), and not before", () => {
+    const account = codexAccount();
+    account.chunk(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 7, output_tokens: 2 } }));
+    expect(account.receipt.completed).toBe(false);
+    account.end();
+    expect(account.receipt.completed).toBe(true);
+    expect(account.receipt.billedTokens).toBe(9);
+  });
+
+  it("agrees with codexOutcome line for line, so one fold is tested twice", () => {
+    const account = codexAccount();
+    account.chunk(clean().join("\n"));
+    account.end();
+    expect(account.receipt).toEqual(codexOutcome(clean()));
   });
 });
 
@@ -223,11 +318,18 @@ describe("the invocation", () => {
     limits: { turns: 150, wallMs: 3_600_000 },
   };
 
-  const argv = (over: { sandbox?: "workspace-write" | "read-only"; settings?: unknown } = {}) =>
+  const argv = (
+    over: {
+      sandbox?: "workspace-write" | "read-only";
+      settings?: unknown;
+      writable?: readonly string[];
+    } = {},
+  ) =>
     codexArgv(invocable, PROMPT_ELIDED, {
       // `"settings" in over` rather than `??`: `null` is the case being tested.
       settings: "settings" in over ? over.settings : wiring(),
       sandbox: over.sandbox ?? "workspace-write",
+      ...(over.writable === undefined ? {} : { writable: over.writable }),
     });
 
   it("spawns `codex exec` in the worktree, sandboxed, with the prompt behind --", () => {
@@ -247,6 +349,41 @@ describe("the invocation", () => {
      */
     expect(args.at(-2)).toBe("--");
     expect(args.at(-1)).toBe(PROMPT_ELIDED);
+  });
+
+  /**
+   * **The git directory is outside `--cd`, and without this the agent cannot
+   * commit what it wrote** — the one thing the pass is bought for.
+   *
+   * Measured on `codex-cli 0.155.1` against a real
+   * `~/.lingtai/worktrees/<p>/<runId>` whose `.git` file points into
+   * `~/.lingtai/repos/<p>.git`: `git add -A && git commit` answered `fatal: Unable
+   * to create '…/worktrees/<runId>/index.lock': Operation not permitted` and
+   * `git log` was unmoved, while the run still exited 0 with a final message — so
+   * `run()` would have classified it a clean success and 0057 §2 would have
+   * stopped the pass with *committed nothing*. With `--add-dir` naming the common
+   * directory the same prompt committed, and `touch $HOME/…` in the same run was
+   * still refused.
+   *
+   * **A widening by path, never by mode**, which is why the assertion below pairs
+   * with the `danger-full-access` one.
+   */
+  it("names the git directory as writable, since a worktree's is outside --cd", () => {
+    const args = argv({ writable: ["/state/repos/p.git/worktrees/run-1", "/state/repos/p.git"] });
+    const at = args.indexOf("--add-dir");
+    expect(at).toBeGreaterThan(-1);
+    expect(args[at + 1]).toBe("/state/repos/p.git/worktrees/run-1");
+    expect(args[at + 2]).toBe("--add-dir");
+    expect(args[at + 3]).toBe("/state/repos/p.git");
+    // Still the sandbox, one directory wider.
+    expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
+    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  });
+
+  it("names nothing writable where there is nothing to commit", () => {
+    // An ordinary checkout, whose `.git` is already under `--cd`, and a reader.
+    expect(argv({ writable: [] })).not.toContain("--add-dir");
+    expect(argv()).not.toContain("--add-dir");
   });
 
   /** The flag that would make `providesTier: "sandboxed"` a lie. */

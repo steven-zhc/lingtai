@@ -40,11 +40,14 @@ export {
 } from "./claude-code.ts";
 export {
   CODEX_CAPABILITIES,
+  codexAccount,
   codexArgv,
   codexHookArgs,
   codexOutcome,
   codexTrace,
   createCodexRuntime,
+  gitWritableRoots,
+  type CodexAccount,
   type CodexOptions,
   type CodexReceipt,
   type CodexSandbox,
@@ -52,6 +55,7 @@ export {
 export {
   FIRST_RUNTIME,
   RUNTIMES,
+  ToolsCannotBeDenied,
   createRuntime,
   everyRuntime,
   type RuntimeOptions,

@@ -47,7 +47,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
 import { baseDivergence, baseOf, baseWrittenAt, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
-import { type RecordedRefusal, isEventType } from "@lingtai/domain";
+import { type RecordedRefusal, type RuntimeId, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
   codeRoot,
@@ -74,7 +74,13 @@ import {
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
-import { RUN_LIMITS, type RuntimeCapabilities, createRuntime, everyRuntime } from "@lingtai/agent";
+import {
+  RUN_LIMITS,
+  type AuthStatus,
+  type RuntimeCapabilities,
+  createRuntime,
+  everyRuntime,
+} from "@lingtai/agent";
 import {
   backlogProjection,
   describeShape,
@@ -701,9 +707,14 @@ async function settingsSources(): Promise<CheckResult> {
  * the one that runs today* — and `everyRuntime()` is the table's own values, so a
  * third runtime is asked about by having a row.
  *
- * **Green means at least one, and the per-project answer lives elsewhere**:
- * whether *this* project's named runtime can run is `recipe:` and `runtime:
- * <project> limits`, which read the recipe. This row is about the installation.
+ * **Green means at least one, and the per-project answer is `runtime: <project>
+ * signed in`.** This row is about the *installation* — is there an agent on this
+ * machine at all — and on its own it is not enough: a machine signed in to Codex
+ * alone, with a project whose recipe still carries the schema default
+ * `runtime.agent: claude-code`, is green here and dispatches a runtime that is
+ * signed out. `dispatchedAuthRow` is what asks that question, per project, off the
+ * recipe, and it is a `fail` in exactly that case. Neither row is the other's
+ * summary.
  */
 async function runtimeAuth(): Promise<CheckResult> {
   const name = "runtime: signed in";
@@ -1749,6 +1760,52 @@ export function extensionRow(
   };
 }
 
+/**
+ * Per project: **is the runtime this project will dispatch signed in?**
+ *
+ * The question `runtime: signed in` stopped being able to answer (`#313`). That
+ * row asked `createClaudeCodeRuntime()` alone while that was the only runtime
+ * dispatched, so it *was* the per-project answer; since it asks every runtime and
+ * goes green on any one of them, a machine signed in to Codex alone reads `ok`
+ * beside a project whose recipe carries the schema default
+ * `runtime.agent: claude-code` (`recipe.ts`), and the next pass spawns `claude`
+ * and dies on *"Not logged in"*. Neither `recipeRow` nor `limitsRow` closes it:
+ * the first now compares `runtime.agent` with itself, and the second reads
+ * `enforces` and asks nothing about auth.
+ *
+ * **One probe per runtime and not per project**, memoised in `asked`: the answer
+ * is a fact about the machine, and `claude`/`codex login status` is a spawn.
+ *
+ * `skip` where the runtime cannot be asked cheaply — a row that guessed would be
+ * the thing `runtime: signed in` already refuses to do.
+ */
+async function dispatchedAuthRow(
+  project: string,
+  agent: RuntimeId,
+  asked: Map<RuntimeId, AuthStatus | null>,
+): Promise<CheckResult> {
+  const name = `runtime: ${project} signed in`;
+  if (!asked.has(agent)) {
+    const runtime = createRuntime(agent);
+    // Exactly what a run gets. Not `process.env`.
+    asked.set(agent, runtime.checkAuth ? await runtime.checkAuth(runnableEnv({})) : null);
+  }
+  const status = asked.get(agent) ?? null;
+  if (status === null) {
+    return { name, status: "skip", detail: `${agent} cannot be asked cheaply` };
+  }
+  if (status.loggedIn) return { name, status: "ok", detail: `${agent} — ${status.detail}` };
+  return {
+    name,
+    status: "fail",
+    detail:
+      `${agent} reports ${status.detail}, and ${project}'s recipe names it at runtime.agent — ` +
+      `so that is what the next pass constructs and spawns. Sign in, or name a runtime this ` +
+      `machine has in ${machinePath()}. If you are signed in yourself, the run's environment ` +
+      `is missing something the credential store needs — see runtime: signed in.`,
+  };
+}
+
 export async function declaredEnvironment(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
@@ -1765,6 +1822,8 @@ export async function declaredEnvironment(
   }
 
   const results: CheckResult[] = [];
+  /** One spawn per runtime across every project — see `dispatchedAuthRow`. */
+  const asked = new Map<RuntimeId, AuthStatus | null>();
   for (const project of projects) {
     if (!project.project || !project.owner) continue;
     const label = `env: ${project.project}`;
@@ -1812,6 +1871,12 @@ export async function declaredEnvironment(
           resolved.recipe,
           createRuntime(resolved.recipe.runtime.agent).capabilities,
         ),
+      );
+      // Whether the runtime named above can actually be started — a different
+      // question from whether its declared limits bind, and the one nothing
+      // asked between `runtimeAuth` becoming per-machine and this row.
+      results.push(
+        await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked),
       );
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
