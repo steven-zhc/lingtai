@@ -109,8 +109,8 @@ read this section rather than pick whichever step reads best:
 
 | a refusing `agent:` at | what the pass does with it |
 |---|---|
-| `design` | `design` is not one of `REFUSING_STEPS`, so `endingOf` reports `did-not-finish` and **no round is bought**. A *question* is different: `because: NEEDS_INPUT` carries it to `proposed` as `needs-input`, where `BUILT_IN_FOR` has no answer, so a person holds it unless a recipe declared a judge for that direction. |
-| `implement` | the same rectangle — `implement` cannot refuse either. It passes with a commit, asks with `needs-input`, or leaves no receipt and stands the pass down (0057 §2). |
+| `design` | `design` is not one of `REFUSING_STEPS`, so `endingOf` reports `did-not-finish` and **no round is bought**. A *question* is different and is its own ending since `#296`: `because: NEEDS_INPUT` on the result is the last place that token is compared to anything — `runActionPipeline` reads it, answers `askedAt` and appends `StepAsked`, and the step ends `asked`, which reaches `proposed` as the `needs-input` direction. `BUILT_IN_FOR` has no answer there, so a person holds it unless a recipe declared a judge for it. |
+| `implement` | the same rectangle — `implement` cannot refuse either. It passes with a commit, ends `asked` with the question, or leaves no receipt and stands the pass down (0057 §2). |
 | `review` | the step ends `passed` whatever it said, and the findings travel. `proposed` then has a `findings` direction to route — **which is the point of declaring it here**. The pipeline stops at the first action that did not pass, so a second reviewer written after this one is not asked about a diff the first already has findings on. |
 | `proposed` | `proposed` is one of `REFUSING_STEPS`, so it refuses **on its own behalf** — and `ARRIVE_AT_THE_ROUTER` does not carry `proposed`, so there is nowhere to appeal to. The outcome is `blocked` and a person is asked. **No round bought.** |
 | `merge` | it arrives, and `directionOf` reads the step's ending: an action that refused says `action-refused`, which is not a direction any `judge:` answers, so the pass is held for a person. **No round bought.** |

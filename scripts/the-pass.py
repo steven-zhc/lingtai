@@ -142,7 +142,7 @@ EN = dict(
         "agent, back to the queue, or to you.",
 
     s2h="Every word on that drawing",
-    s2l="Nine terms, and Lingtai means exactly these by them.",
+    s2l="Ten terms, and Lingtai means exactly these by them.",
     th_what="term", th_who="what it means", th_crit="where you meet it",
     tbl=[
       ("step", "One of the ten. The sequence is fixed and so are the names.",
@@ -153,9 +153,15 @@ EN = dict(
       ("refuse", "A step's verdict that <i>this change is not right</i>. It "
        "costs: it sends the work back to the agent and spends one round.",
        "the card says which step refused, and why"),
-      ("did not finish", "The step stopped without judging — the agent asked a "
-       "question, a reviewer crashed. <b>Not a refusal, and it buys no round.</b>",
+      ("did not finish", "The step stopped without judging, and there is nothing "
+       "to answer — a reviewer crashed, a turn budget went. <b>Not a refusal, and "
+       "it buys no round.</b> The pass stops here.",
        "the same place, with a different reason"),
+      ("asked", "The step stopped without judging and <i>there is a question</i> "
+       "— the agent could not proceed without knowing something. It costs no "
+       "round either, and unlike the row above it has somewhere to go: "
+       "<code>proposed</code> answers it, or you do.",
+       "the card, in the held colour rather than the red one"),
       ("reason", "A short machine-readable word that travels with a refusal, so "
        "<code>proposed</code> can route on it and you can read it later.",
        "on the card, and on the log"),
@@ -241,7 +247,7 @@ EN = dict(
     ),
     f1_scope="THE WORKTREE · CUT AT ADMIT, ALIVE UNTIL THE MERGE IS DONE",
     f1_fan="a step that did not pass",
-    f1_fan2="refused, or did not finish — carrying its reason",
+    f1_fan2="refused, did not finish, or asked — carrying its reason",
     f1_ret1="and proposed answers",
     f1_ret_build="a conflict",
     f1_ret_impl="× rounds",
@@ -278,7 +284,7 @@ ZH = dict(
         "<code>proposed</code> 的回答 —— 回到 agent、回到队列，或者到你这里。",
 
     s2h="图上每一个词",
-    s2l="九个词，灵台说它们时就是这个意思。",
+    s2l="十个词，灵台说它们时就是这个意思。",
     th_what="词", th_who="它是什么", th_crit="你在哪儿会碰到它",
     tbl=[
       ("step 步", "十步之一。顺序是固定的，名字也是。",
@@ -287,9 +293,14 @@ ZH = dict(
        "一次合并。换掉它，这一步就做别的事。", "某一步下面的每一条"),
       ("refuse 拒绝", "某一步给出的裁决：<i>这次改动不对</i>。它要花钱："
        "把活打回 agent，并花掉一轮。", "卡片上会写是哪一步拒的、为什么"),
-      ("did not finish 没跑完", "这一步停了，但没有做出裁决 —— agent 问了个问题、"
-       "reviewer 崩了。<b>这不是拒绝，它不买任何一轮。</b>",
+      ("did not finish 没跑完", "这一步停了，没有做出裁决，而且没有什么可回答的 —— "
+       "reviewer 崩了、轮次预算用完了。<b>这不是拒绝，它不买任何一轮。</b>"
+       "这一趟就停在这里。",
        "同一个地方，只是 reason 不同"),
+      ("asked 问了", "这一步停了，没有做出裁决，但<i>有一个问题</i> —— "
+       "agent 不知道某件事就没法往下做。它同样不买任何一轮；"
+       "跟上一行不同的是它有去处：<code>proposed</code> 回答它，或者你回答。",
+       "卡片上，用 held 的颜色而不是红色"),
       ("reason 理由", "跟着拒绝一起走的一个机器可读的短词，"
        "好让 <code>proposed</code> 据它路由，也好让你事后读得懂。",
        "卡片上，以及日志上"),
@@ -362,7 +373,7 @@ ZH = dict(
     ),
     f1_scope="工作树 · 在 ADMIT 切出，一直活到合并完成",
     f1_fan="一个没有径直通过的步",
-    f1_fan2="被拒绝，或者没跑完 —— 带着它的 reason",
+    f1_fan2="被拒绝、没跑完，或者问了 —— 带着它的 reason",
     f1_ret1="然后由 proposed 作答",
     f1_ret_build="解掉的冲突",
     f1_ret_impl="× rounds",

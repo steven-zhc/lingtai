@@ -95,35 +95,36 @@ field.
 
 | step | also handed | may return | it is for |
 |---|---|---|---|
-| `claim` | — | pass · hold · did-not-finish · never-ran | picking the ticket. **Its body is empty and `queue:` is what runs** (`#269`): **there is no work item yet**, so the `ActionContext` has none to be about — `onSha` is the base the pass came in on, `cwd` is a directory nothing has cut, and a plugin that assumed either does not compile |
-| `admit` | — | pass · hold · did-not-finish · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
+| `claim` | — | pass · hold · did-not-finish · asked · never-ran | picking the ticket. **Its body is empty and `queue:` is what runs** (`#269`): **there is no work item yet**, so the `ActionContext` has none to be about — `onSha` is the base the pass came in on, `cwd` is a directory nothing has cut, and a plugin that assumed either does not compile |
+| `admit` | — | pass · hold · did-not-finish · asked · never-ran | starting work on it. **Its body is empty and `worktree:` is what runs** (`#268`): the tree first exists here, so this is where `head` first has a value, and the action is what reports it |
 | `prepared` | — | **+ refuse** | the tree is workable. The cheapest refusal in the pass |
-| `design` | — | pass · hold · did-not-finish · never-ran | a document before any code — **or nothing, which is an answer**. **Its body is empty and `agent:` is what runs** (`#265`): the same key as the cold reviewer and a different action — at this step it drafts, and what it answers is the document rather than findings. **There is no default**: a recipe that says nothing here runs nothing, which is what it always did |
-| `implement` | — | pass · hold · did-not-finish · never-ran | one agent in the worktree. **Its body is empty and `agent:` is what runs** (`#266`): the same key again and a third action — at this step it *writes the change*, and what it answers is the `head` it committed. **The default is the agent that wrote it before**, on `runtime.agent`, so a recipe that says nothing here buys exactly what it always did |
+| `design` | — | pass · hold · did-not-finish · asked · never-ran | a document before any code — **or nothing, which is an answer**. **Its body is empty and `agent:` is what runs** (`#265`): the same key as the cold reviewer and a different action — at this step it drafts, and what it answers is the document rather than findings. **There is no default**: a recipe that says nothing here runs nothing, which is what it always did |
+| `implement` | — | pass · hold · did-not-finish · asked · never-ran | one agent in the worktree. **Its body is empty and `agent:` is what runs** (`#266`): the same key again and a third action — at this step it *writes the change*, and what it answers is the `head` it committed. **The default is the agent that wrote it before**, on `runtime.agent`, so a recipe that says nothing here buys exactly what it always did |
 | `build` | — | **+ refuse** | is it green. A red one skips `review` |
-| `review` | — | pass · hold · did-not-finish · never-ran | read the diff, return findings, **judge nothing** |
+| `review` | — | pass · hold · did-not-finish · asked · never-ran | read the diff, return findings, **judge nothing** |
 | `proposed` | `arriving` · `offering` | **+ refuse + route** | the only step that routes |
 | `merge` | — | **+ refuse** | land it. Report a reason, decide nothing |
-| `end` | `outcome` | pass · hold · did-not-finish · never-ran | runs on **every** ending and cannot refuse |
+| `end` | `outcome` | pass · hold · did-not-finish · asked · never-ran | runs on **every** ending and cannot refuse |
 
 Read the return column as three tiers:
 
 ```
-the six that settle     passed · held · did-not-finish · never-ran
-the three that refuse   …those four, + refused          (prepared, build, merge)
-the one that routes     …those five, + routed           (proposed)
+the five that settle    passed · held · did-not-finish · asked · never-ran
+the three that refuse   …those five, + refused          (prepared, build, merge)
+the one that routes     …those six,  + routed           (proposed)
 ```
 
 **That is `EndingAt<S>`, and it is a type rather than a rule you are asked to
 remember.** A `claim` body returning `refused` does not compile; only `proposed`
 can move the pass.
 
-### The four endings every step has
+### The five endings every step has
 
 ```ts
 { ending: "passed" }                                  // carry on
 { ending: "held", at, question }                      // a person is needed, and this is the question
 { ending: "did-not-finish", because, at, detail }     // you could not tell
+{ ending: "asked", at, detail }                       // you need an answer first
 { ending: "never-ran", at, detail }                   // you did not start
 ```
 
@@ -131,6 +132,19 @@ can move the pass.
 wrong* buys a fix round; *I could not read it* does not, because there is nothing
 for the next agent to fix. A plugin that crashed and reported `refused` sends an
 agent to repair a defect that is not in the diff.
+
+**`asked` and `did-not-finish` are the other pair**, and they cost the same
+nothing — what separates them is where the pass goes. `asked` reaches `proposed`
+carrying the question, and a judge answers it or a person does; `did-not-finish`
+stops the pass, because there is no question in it for anybody to answer. So
+`detail` on an `asked` is *the question* and nothing else, and there is no
+`because`: *it asked* is the whole of the reason.
+
+Both were one ending until `#296`, told apart by `because === "needs-input"`.
+**You do not write that token on an ending.** What writes it is an action —
+`ActionResult.because`, which the pipeline reads once and answers `askedAt` for —
+and `needs-input` survives as the `when:` a `judge:` is declared at, which is a
+name in a vocabulary and not a branch.
 
 ### `worktree:` is the one that makes rather than judges
 

@@ -111,7 +111,7 @@ It read *all five* until `#227`, and the sentence is the one thing that did not
 change: the rule never counted, it quantified. `Segs` iterates `foldProgress`'s
 whole list and filters nothing, which is the only form this rule has.
 
-Three of the eight states look empty and mean different things, so the segment
+Three of the nine states look empty and mean different things, so the segment
 carries the distinction the sentence above demands:
 
 | state | segment |
@@ -124,16 +124,25 @@ carries the distinction the sentence above demands:
 | `skipped` | dashed outline, no fill. Nothing configured (`merge: []`, or a `design:` nobody declared, which has no default to fall back on); it keeps its place without claiming anything happened in it |
 | `never-ran` | hatched, `--fail`. The one segment that breaks the bar's rhythm, and the only place the fail colour appears with no verdict behind it |
 | `did-not-finish` | the same hatch. The agent *started* here and produced no receipt ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
+| `asked` | the same hatch in `--held`. The agent started and **stopped to ask something** ([0068](../decisions/0068-a-step-that-asked-is-not-a-step-that-crashed.md), `#296`): the same fact again — nothing judged this diff here — and the one where nothing has gone wrong, so the colour is `waived`'s and never the fail one |
 
-**The two hatched states share a tone and not a sentence.** `never-ran` says the
-account is walled and the conductor has stood down; `did-not-finish` says this
+**The two fail-hatched states share a tone and not a sentence.** `never-ran` says
+the account is walled and the conductor has stood down; `did-not-finish` says this
 action's agent crashed and the item is now a person's — it is run once, 0057
 §4's retry having been deleted (`#234`) for reusing the crashed attempt's
 session id and so running nothing. To a reader scanning a row they are one mark — *a step that was
-reached and judged nothing* — and a sixth colour would be asking the bar to
+reached and judged nothing* — and a fifth colour would be asking the bar to
 carry a distinction only a sentence can. The distinction survives where it is
 acted on: two events on the log, two verdicts in the fold, two different things
 for an operator to do.
+
+**`asked` is the one that did buy a colour, and the argument is that sentence used
+against itself** (`#296`). The hatch is the same and says the same thing; what the
+tone carries is the row above it — *two different things for an operator to do* —
+and here the two are `look at this, it broke` and `answer this`. A rail that drew
+them alike put *this is Lingtai's bug* over a pass that was working and waiting, in
+the one colour on the card that means something is wrong. The name above the
+segment moves with it: `--held`, not `--fail`.
 
 **`never-ran` is not an extra.** A bar that draws all ten steps must have a
 mark for *configured and did not run*, or that state renders as something it is
