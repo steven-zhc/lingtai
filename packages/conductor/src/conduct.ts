@@ -138,6 +138,7 @@ import {
   type ActionEvent,
   type CutAnswer,
   type KeptAnswer,
+  type ReadAnswer,
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
@@ -207,7 +208,7 @@ import { worktreePath, type TokenSource, type Worktree } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
 import { AgentHost, Repo } from "./ports.ts";
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { RUN_LOG_END, runLogEnd, runLogPath } from "./run-log.ts";
 
@@ -1926,6 +1927,34 @@ export function runOnce(
       };
 
       /**
+       * `implement` — the design back off the path a `file:` kept it at (0066 §4,
+       * 0069 §4, `#301`).
+       *
+       * `keep`'s mirror, and the smaller half of the pair: no `git`, because a
+       * read asks the worktree what is there rather than changing it, and the
+       * commit is what the keep already answered for.
+       *
+       * Under `cwd` for the keep's reason, and it is the same `cwd`: the locator
+       * is a path the `file:` at `design` wrote into this pass's own tree, and
+       * `whyThePathEscapes` — the schema's own rule, asked again by the action —
+       * has refused anything that is not one before this is called.
+       *
+       * **`notRead` and never a throw**, for the keep's reason: `implement` may
+       * not refuse (0058 §3), and an exception out of a plugin is a step that did
+       * not finish with no words on it. A file the destination said it wrote and
+       * that is not there — an `ENOENT` — arrives here as the sentence a person
+       * reads, which is the only thing that separates *the design was not kept*
+       * from *the design was not read*.
+       */
+      const read = async (spec: { readonly path: string }): Promise<ReadAnswer> => {
+        try {
+          return { document: await readFile(join(cwd, spec.path), "utf8") };
+        } catch (error) {
+          return { notRead: (error as Error).message };
+        }
+      };
+
+      /**
        * What a declared plugin needs in order to run — the things only a caller
        * with a machine under it can build (`PassOptions.actionsAt`).
        *
@@ -1988,6 +2017,14 @@ export function runOnce(
         // reaches it unless a recipe declared a destination, which is what lets a
         // destination be turned on one machine at a time.
         file: { keep },
+        // The ninth, and the other end of the eighth: `implement`'s
+        // `file-brief:` action reads the design back through this (0069 §4,
+        // `#301`). Its own row rather than a field on `file` above, because the
+        // two are two plugins — a recipe may keep a design without reading one
+        // back — and it has no `defaultsAt` row either: an unconfigured
+        // `implement` is briefed with the document the pass is already carrying,
+        // exactly as it was before this existed.
+        fileBrief: { read },
       };
 
       /**

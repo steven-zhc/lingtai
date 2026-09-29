@@ -113,8 +113,15 @@ export interface FileActionSpec {
   path: string;
 }
 
-/** `2.4 kB`, which is the unit 0066 §3's own example sentence is written in. */
-function sizeOf(document: string): string {
+/**
+ * `2.4 kB`, which is the unit 0066 §3's own example sentence is written in.
+ *
+ * Exported since `#301`, and only to the other half of this destination:
+ * `file-brief-action.ts` says the same thing about the document it read back, and
+ * two spellings of one size would make the pair of cards read as a disagreement
+ * about the document rather than about the unit.
+ */
+export function sizeOf(document: string): string {
   const bytes = Buffer.byteLength(document, "utf8");
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
 }

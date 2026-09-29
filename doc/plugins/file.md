@@ -160,6 +160,6 @@ understand*, and the paragraph under **Parameters** is the reason there is none.
 - `#265` — gave `design` an `agent:` that drafts, and made `implement`'s receipt
   `head === startedAt`, which is why committing here is a question about the change
   rather than about safety.
-- [`plugins/index.md`](index.md) — the thirteen, and which step each serves.
+- [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.

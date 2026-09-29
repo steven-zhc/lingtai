@@ -13,14 +13,14 @@ prefixes, `runtime.limits`. The recipe on your own machine,
 `~/.lingtai/<project>/recipe.yml`, is one example of each with nothing saying
 what the keys mean. What was missing is the operator's question — *I want a
 check at `build`; what do I write, and what does it take* — and that is what
-the thirteen pages under this one answer.
+the fourteen pages under this one answer.
 
-## The thirteen
+## The fourteen
 
 **This table is read off `PLUGINS` and not kept by hand.**
 `packages/recipe/unit/plugin-pages.test.ts` walks the closed set and fails when
 a plugin is missing a row here, when a row names a plugin that is not in the
-set, or when a row's steps are not that plugin's own `at` keys. A thirteenth
+set, or when a row's steps are not that plugin's own `at` keys. A fifteenth
 plugin is a red test rather than something somebody has to remember.
 
 | key | may be declared at | what it is for |
@@ -28,6 +28,7 @@ plugin is a red test rather than something somebody has to remember.
 | [`run`](run.md) | `prepared` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the extension point that needs nothing declared. |
 | [`agent`](agent.md) | `design` `implement` `review` `proposed` `merge` | Buys an agent a turn — to draft, to write, to read the diff cold, or to answer. |
 | [`file`](file.md) | `design` | Keeps the design the step made, as a file in the worktree, and answers with the path. |
+| [`file-brief`](file-brief.md) | `implement` | Reads that design back from where the `file:` kept it, and briefs the actions written after it. |
 | `watch` | `proposed` | Holds the pass when the diff touches a path you named. |
 | [`human`](human.md) | `proposed` | Stops for a person, and asks them the question you wrote. |
 | [`judge`](judge.md) | `proposed` | Answers *what now* when a step refused, in place of a person. |
@@ -65,13 +66,13 @@ Two consequences an operator feels:
   a run rather than during one.
 - **A key opens in one diff or not at all** (0065 §7). A plugin arriving at a
   step brings its `at` key, its default, its body and its refusal sentence
-  together — which is why these thirteen rows can be read off the code instead of
+  together — which is why these fourteen rows can be read off the code instead of
   being a promise about it.
 
 ## The shape a page under here follows
 
-One template, so the thirteen are one document in thirteen parts rather than
-thirteen documents: [`_template.md`](_template.md), which is in the repository and not on
+One template, so the fourteen are one document in fourteen parts rather than
+fourteen documents: [`_template.md`](_template.md), which is in the repository and not on
 this site — a leading underscore is how a file in a published directory says it
 is a shape and not a page.
 
@@ -88,6 +89,6 @@ own words · **related**, the ADR that decided it and the ticket that built it.
 - [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4 —
   legality lives in each plugin's own `at`, which is why this table is derived.
 - [0065](../decisions/0065-the-default-is-a-plugin.md) — the default is a
-  plugin, so every one of the thirteen is something a recipe can declare.
+  plugin, so every one of the fourteen is something a recipe can declare.
 - [0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5 —
   where a large answer *lands* is a plugin too, which is what `file:` is.

@@ -513,6 +513,16 @@ export function describeAction(
         bound: "no clock — the note rides the branch through build, review and the merge",
       };
     }
+    // **And the row that says where an answer *came from*** (`#301`), which is
+    // the same destination read at the other end. It names no path, because the
+    // path is the locator the `design` step produced rather than anything in
+    // this block — so what a reader wants off the line is which agent it is in
+    // front of, and the recipe's own order is where they see that.
+    case "file-brief":
+      return {
+        does: "reads the design back from where a `file:` kept it, and briefs the actions after it",
+        bound: "no clock — one read of the worktree",
+      };
     case "watch": {
       const a = action as Extract<StepAction, { watch: string[] }>;
       return { does: `watches ${a.watch.join(", ")}, then ${a.then}`, bound: "no clock — a match against the diff" };

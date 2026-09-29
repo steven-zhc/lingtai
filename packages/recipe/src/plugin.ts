@@ -4,7 +4,7 @@
  * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
  *
  * This file knows *what a plugin is*. It does not know which plugins exist:
- * the closed set is `PLUGINS` in `recipe.ts`, beside the thirteen declarations, and
+ * the closed set is `PLUGINS` in `recipe.ts`, beside the fourteen declarations, and
  * every function here takes the set it is to work against. That is the whole of
  * the separation — **a plugin owns its schema, and a second copy of that
  * knowledge would be a second thing to keep true**, so there is no registry of
@@ -60,7 +60,7 @@
  * `step:action`, the board draws it, `lingtai waive` names it — and no plugin
  * decides that. 0061 §2 makes `when:` and `timeout:` universal too, and they
  * are **not** hoisted here: today `when:` is legal on four plugins and
- * `timeout:` on one, and hoisting either would make it legal on all thirteen.
+ * `timeout:` on one, and hoisting either would make it legal on all fourteen.
  * That is a behavioural change, and this is not the ticket for it — and the
  * four are not one key wearing one spelling: `close:` and `labels:` read the
  * work item's *outcome* (`WHEN`), `refs:` reads the one value of it that is
@@ -123,7 +123,7 @@
  * nothing it already was.
  *
  * **Nothing declares one today**, and that is a fact rather than an oversight:
- * every field the thirteen plugins have is a name, a command, a prompt, a runtime,
+ * every field the fourteen plugins have is a name, a command, a prompt, a runtime,
  * a model, a glob, a
  * path, a branch, a strategy, a label, a flag, a direction, a severity or a GitHub login — and a login is
  * not a credential, which is the distinction worth reading (0046 §2: a wrong

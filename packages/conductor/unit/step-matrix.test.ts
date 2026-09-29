@@ -156,6 +156,11 @@ const ACTION: Record<ActionKind, StepAction> = {
   // lane's two are. `accepted` below carries a drafter ahead of it wherever the
   // step keeps, so what comes back is the cell's own answer.
   file: { name: "keep the design", file: "doc/design/x.md" },
+  // **And the one the probe cannot write last** (`#301`). A `file-brief:` briefs
+  // the entries after it, so `actionsAt` refuses one written last — the mirror of
+  // the rule above, and about the *list* rather than about this pair. `accepted`
+  // carries an agent behind it wherever the step reads a design back.
+  "file-brief": { name: "read the design back", "file-brief": true },
   watch: { name: "tamper", watch: ["**/steps.yml"], then: "fail" },
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
@@ -222,6 +227,7 @@ const EVERY_DEP: ActionDeps = {
   queue: { take: async () => ({ taken: { workItemId: "wi-nowhere-1", kind: "bug" } }) },
   work: { work: async () => ({ committed: "0".repeat(40) }) },
   file: { keep: async () => ({ at: "doc/design/x.md" }) },
+  fileBrief: { read: async () => ({ document: "the shape" }) },
 };
 const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
   prepared: { env: () => ({}) },
@@ -297,11 +303,24 @@ function runsAt(step: Step, kind: ActionKind): boolean {
  * read here as *the `design` step refuses a `file:`*, which is false — `design`
  * is the one step that takes one. So the probe puts a drafter ahead of it, which
  * is the smallest list the rule accepts.
+ *
+ * **And the agent wherever the step reads one back** (`#301`). The fourth rule is
+ * that mirror again from the other end: a `file-brief:` may not be the *last*
+ * entry, because it briefs what comes after it. A lone one at `implement` would
+ * trip it and read here as *the `implement` step refuses a `file-brief:`*, which
+ * is false. So the probe puts the agent it briefs behind it, which is the
+ * smallest list that rule accepts.
  */
 function accepted(step: Step, kind: ActionKind): string | null {
   const lands = whyNoKindAt(step, "merge") === null;
   const keeps = whyNoKindAt(step, "file") === null;
-  const probe = keeps && kind === "file" ? [ACTION.agent, ACTION[kind]] : [ACTION[kind]];
+  const briefs = whyNoKindAt(step, "file-brief") === null;
+  const probe =
+    keeps && kind === "file"
+      ? [ACTION.agent, ACTION[kind]]
+      : briefs && kind === "file-brief"
+        ? [ACTION[kind], ACTION.agent]
+        : [ACTION[kind]];
   const written = !lands || kind === "merge" ? probe : [...probe, ACTION.merge];
   const parsed = StepMap.safeParse({ [step]: written });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
@@ -365,6 +384,7 @@ const ANSWERED_BY_THE_KIND: readonly ActionKind[] = [
   "worktree",
   "queue",
   "file",
+  "file-brief",
   "close",
   "labels",
   "refs",
@@ -848,13 +868,13 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs nineteen of the hundred and thirty cells and refuses a hundred and eleven", () => {
+  it("runs twenty of the hundred and forty cells and refuses a hundred and twenty", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
-    expect(STEPS.length * PLUGINS.length).toBe(130);
-    expect(cellsThatRun).toHaveLength(19);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(111);
+    expect(STEPS.length * PLUGINS.length).toBe(140);
+    expect(cellsThatRun).toHaveLength(20);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(120);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
@@ -952,6 +972,7 @@ describe("every step × kind cell runs or refuses", () => {
 
     expect([...serving].filter(([, keys]) => keys.length > 1).map(([step]) => step)).toEqual([
       "design",
+      "implement",
       "proposed",
       "merge",
       "end",
@@ -961,6 +982,11 @@ describe("every step × kind cell runs or refuses", () => {
     // 0066 §5 asks for and the reason a destination is a plugin rather than a field
     // on the drafter.
     expect(serving.get("design")).toEqual(["agent", "file"]);
+    // **And `implement` is the third, on the same terms read backwards** (`#301`):
+    // one reads the design back off the locator and one is briefed with it, which
+    // is the same destination as `design`'s pair at the other end. Two keys and not
+    // a `destination:` field on `agent:`, for 0066 §5's reason.
+    expect(serving.get("implement")).toEqual(["agent", "file-brief"]);
     expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human", "judge"]);
     // **`merge` is not `proposed` with a fifth entry, and `#270` is where the two
     // stopped being the same list.** It carries three: two checks, and the lane the
@@ -1291,7 +1317,10 @@ describe("doc/reference.md", () => {
     expect(header, "doc/reference.md has no table of the closed set's keys").toBeGreaterThan(0);
     const table = doc.slice(header).split("\n\n")[0]!;
 
-    const rows = [...table.matchAll(/^\| `([a-z]+):` \|/gm)].map((row) => row[1]);
+    // `[a-z-]` and not `[a-z]`: a key may carry a hyphen since `file-brief:`
+    // (`#301`), and a class that could not match one would drop its row and
+    // report the table as short by a key nobody wrote.
+    const rows = [...table.matchAll(/^\| `([a-z-]+):` \|/gm)].map((row) => row[1]);
     expect(rows, "doc/reference.md's table of the keys").toEqual(PLUGINS.map((plugin) => plugin.key));
     // And the heading over it counts the same set, which is what the rows are
     // under — the nearest `##` above the table, read rather than named.

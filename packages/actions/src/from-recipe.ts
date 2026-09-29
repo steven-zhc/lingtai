@@ -12,6 +12,7 @@ import { type AgentActionDeps, createAgentAction, createDraftAction } from "./ag
 import { type WorkActionDeps, createWorkAction } from "./work-action.ts";
 import type { Action } from "./action.ts";
 import { createFileAction, type FileActionDeps } from "./file-action.ts";
+import { createFileBriefAction, type FileBriefActionDeps } from "./file-brief-action.ts";
 import { createHumanAction } from "./human-action.ts";
 import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
 import { createProcessAction } from "./process-action.ts";
@@ -80,6 +81,19 @@ export interface ActionDeps {
    * written.
    */
   file?: FileActionDeps;
+  /**
+   * The read a `file-brief:` action runs — the other end of the same
+   * destination, and what turns a locator back into the document an agent is
+   * briefed with (0066 §4, 0069 §4, `#301`).
+   *
+   * Its own dep and not a field on `file`, because the two are two plugins: a
+   * recipe may keep a design without reading one back, and a step that reads one
+   * back needs no keep. Optional for the reason the others are, and absent it
+   * refuses a `file-brief:` by name rather than becoming a step that passes
+   * having read nothing — which at `implement` is the agent dispatched on the
+   * brief the plugin was declared to replace, with a card saying it was replaced.
+   */
+  fileBrief?: FileBriefActionDeps;
   /**
    * The declared names of a `run:` action → the whole environment its process
    * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
@@ -229,6 +243,16 @@ export function actionsFromRecipe(
         throw new ActionUnavailableError(action.name, kind, "no keep was supplied to actionsFromRecipe");
       }
       return createFileAction({ name: action.name, path: action.file }, deps.file);
+    }
+
+    if ("file-brief" in action) {
+      if (!deps.fileBrief) {
+        throw new ActionUnavailableError(action.name, kind, "no read was supplied to actionsFromRecipe");
+      }
+      // No field to pass on: what it reads is the locator the `design` step
+      // produced, which arrives on `ActionContext.design` rather than out of the
+      // recipe (`fileBriefPlugin` in `@lingtai/recipe` is where that is argued).
+      return createFileBriefAction({ name: action.name }, deps.fileBrief);
     }
 
     if ("watch" in action) {

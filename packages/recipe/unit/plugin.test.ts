@@ -34,6 +34,7 @@ import {
   agentPlugin,
   canonicalRecipe,
   filePlugin,
+  fileBriefPlugin,
   definePlugin,
   disclose,
   notBuiltYet,
@@ -155,7 +156,7 @@ describe("a plugin refuses a field it does not understand", () => {
   it("names the plugins when an action names none, or two", () => {
     const none = StepMap.safeParse({ proposed: [{ name: "nothing" }] });
     expect(none.error!.issues[0]!.message).toContain('"nothing" action at the "proposed" step names no plugin');
-    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "file", "watch", "human", "close", "labels"');
+    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "file", "file-brief", "watch", "human", "close", "labels"');
 
     const two = StepMap.safeParse({ proposed: [{ name: "both", run: "x", human: "ok?" }] });
     expect(two.error!.issues[0]!.message).toContain("names 2 plugins");
@@ -721,7 +722,7 @@ describe("the one `claim` holds", () => {
    */
   it("has no `assignee:` plugin left in the closed set", () => {
     expect(PLUGINS.map((plugin) => plugin.key)).not.toContain("assignee");
-    expect(PLUGINS).toHaveLength(13);
+    expect(PLUGINS).toHaveLength(14);
     expect(pluginOf({ name: "whose", assignee: { take: "both" } })).toBeNull();
   });
 
@@ -1174,6 +1175,28 @@ describe("the one `design` keeps with", () => {
       expect(why, step).not.toContain("nothing has been committed at `prepared`");
     }
   });
+
+  /**
+   * **And its other end, which is the same argument read backwards** (`#301`).
+   *
+   * `file-brief:` is the seventh kind answered by the *kind* rather than by the
+   * step, and it arrives with its branch for `ONLY_DESIGN_KEEPS`'s reason: a
+   * plugin whose output is one step's own work cannot be explained by a
+   * sentence about what that step asks of an action. `implement` is the step a
+   * design is *for*, so the reason is the same at the nine that refuse it.
+   */
+  it("serves `implement` and says why the other steps are not its", () => {
+    expect(fileBriefPlugin.serves).toEqual(["implement"]);
+    expect(whyNoKindAt("implement", "file-brief")).toBeNull();
+    for (const step of STEPS.filter((each) => each !== "implement" && each !== "end")) {
+      const why = whyNoKindAt(step, "file-brief");
+      expect(why, `file-brief is no longer refused at ${step}`).not.toBeNull();
+      expect(why, step).toContain("`implement` is the step a design is *for*");
+      expect(why, step).toContain("createFileBriefAction");
+      expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
+      expect(why, step).not.toContain("nothing has been committed at `prepared`");
+    }
+  });
 });
 
 describe("plugin.ts's own count of who carries a universal key", () => {
@@ -1192,6 +1215,7 @@ describe("plugin.ts's own count of who carries a universal key", () => {
     "eleven",
     "twelve",
     "thirteen",
+    "fourteen",
   ] as const;
   const carrying = (field: string) =>
     PLUGINS.filter((plugin) => plugin.declares.includes(field)).length;

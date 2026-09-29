@@ -360,6 +360,55 @@ export const filePlugin = definePlugin("file", {
   at: { design: notBuiltYet },
 });
 
+/**
+ * **Reads the design back from the path a `file:` kept it at, and briefs the
+ * implementing agent with what it read** — the other end of the same
+ * destination, and the first thing anywhere that reads a locator (0066 §4,
+ * [0069](../../../doc/decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+ * §4, `#301`).
+ *
+ * `createFileBriefAction` in `packages/actions/src/file-brief-action.ts` is the
+ * work. It takes `ActionContext.design.locator`, reads the file the locator
+ * names, and answers with the text — so `runActionPipeline` advances the design
+ * and the `agent:` written after it in the same list is dispatched with what
+ * came off disk.
+ *
+ * ## Why this is a second key and not a field on `file:`
+ *
+ * 0066 §5 makes a destination a plugin rather than a `destination:` field, and
+ * the same argument makes its two *ends* two keys rather than one key that
+ * means a path at one step and nothing at another. `file:` takes the path the
+ * document goes to; there is no path to take here, because the locator is what
+ * says where it went — so a shared key would carry a field only one of its two
+ * steps uses, which is `worktree.submodules` (`#268`) and `queue:`'s three
+ * shared fields (`#269`) for a third time.
+ *
+ * **So the key names the destination and the end**, and a Confluence pair is
+ * `confluence:` and `confluence-brief:` with nothing here changing — which is
+ * 0066 §9's own test of whether §4 held.
+ *
+ * ## `true` and nothing else
+ *
+ * `close:` and `refs:`' shape, and for their reason: what this reads is decided
+ * by the locator the `design` step produced, never by a value written here. A
+ * path in this block would be a second answer to *where is the design*, and the
+ * one that disagreed with the locator would win silently.
+ */
+export const fileBriefPlugin = definePlugin("file-brief", {
+  fields: {
+    /** `true` and nothing else: the locator says where, and the recipe does not. */
+    "file-brief": z.literal(true),
+  },
+  /**
+   * **`implement`, and it is the one step that works from a design** (0058 §3).
+   *
+   * `design` makes the document and `implement` is what it was made for, so the
+   * step that reads one back is the step that uses it. Every other step either
+   * has no design to be about or has already been briefed.
+   */
+  at: { implement: notBuiltYet },
+});
+
 /** Globs against the diff's file list; a match holds or fails. */
 export const watchPlugin = definePlugin("watch", {
   fields: {
@@ -1125,6 +1174,7 @@ export const PLUGINS = [
   runPlugin,
   agentPlugin,
   filePlugin,
+  fileBriefPlugin,
   watchPlugin,
   humanPlugin,
   closePlugin,
@@ -1158,6 +1208,7 @@ export const StepAction = z.union([
   runPlugin.schema,
   agentPlugin.schema,
   filePlugin.schema,
+  fileBriefPlugin.schema,
   watchPlugin.schema,
   humanPlugin.schema,
   closePlugin.schema,
@@ -1400,6 +1451,37 @@ const ONLY_DESIGN_KEEPS =
   "entry in the same list produced and a `file:` written first has nothing to keep. What it returns " +
   "is a string only this plugin reads (0066 §4): nothing in `packages/conductor` parses a locator, " +
   "which is what lets a second destination join without the core learning about it";
+
+/**
+ * **Why a `file-brief:` belongs at `implement` and nowhere else** —
+ * `ONLY_DESIGN_KEEPS`'s other end, and the seventh sentence answered by the
+ * *kind* (`#301`).
+ *
+ * It lands with the key, which is the rule the six before it paid for: a plugin
+ * whose output is one step's own work cannot be explained by a step branch,
+ * because the sentence is about the plugin and is wrong at nine steps for one
+ * reason. Without it a `file-brief:` at `proposed` or at `merge` would fall past
+ * every step branch to `whyThatPair`'s last paragraph and be refused with *a
+ * hold at `prepared` cannot be answered* — a sentence about a hold, for a plugin
+ * that reads a file.
+ *
+ * The clause worth the sentence is the one that is not about placement: **a
+ * design is read back by the step it was written for.** `implement` is the one
+ * step that works from a document (0058 §3), so every other step either has no
+ * design to be about or has already been briefed with one.
+ */
+const ONLY_IMPLEMENT_READS_IT_BACK =
+  "`file-brief:` reads the design back from wherever a `file:` kept it, and `implement` is the step " +
+  "a design is *for* (0058 §3): `design` writes the document and `implement` is the one step that " +
+  "works from it, so the read belongs beside the agent that is briefed with it and nowhere else — at " +
+  "`design` there is no locator yet, and at every later step the change has already been written. " +
+  "Written at `implement` it is read — `createFileBriefAction` in " +
+  "`packages/actions/src/file-brief-action.ts` resolves the locator, reads the file and answers with " +
+  "the text, which `runActionPipeline` hands to the next action in the same list — and it is written " +
+  "**before** the `agent:` it briefs, because an action written after that one has nothing left to " +
+  "brief. What it reads is a locator only this plugin understands (0066 §4): a design kept somewhere " +
+  "else is read by that destination's own plugin here, and nothing in `packages/conductor` learns the " +
+  "difference";
 
 /**
  * **Why a `human:` and a `watch:` are refused at `merge`** — the subtraction
@@ -1675,6 +1757,7 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   if (kind === "worktree") return ONLY_ADMIT_CUTS;
   if (kind === "queue") return ONLY_CLAIM_TAKES;
   if (kind === "file") return ONLY_DESIGN_KEEPS;
+  if (kind === "file-brief") return ONLY_IMPLEMENT_READS_IT_BACK;
   // Before the step branches and not after them, for `judge:`'s reason (`#270`):
   // what is wrong with a hold at `merge` is not what `merge` asks of an action but
   // who it may reach, and the sentence below about `prepared` would otherwise be
@@ -1937,6 +2020,40 @@ function actionsAt(step: Step) {
                 "action made rather than making anything itself — so written first it has nothing to " +
                 "keep, and would pass having written no file and returned no locator. Write it after " +
                 "the action that drafts the document",
+              REFUSED_WHEN_IT_RESOLVED,
+            ),
+          });
+          return;
+        }
+
+        /**
+         * **And a brief is written before the thing it briefs** (`#301`).
+         *
+         * The mirror of the rule above, and the same failure read from the other
+         * end: `file-brief:` reads a design back and hands it forward on
+         * `ActionContext.design`, which only the entries **after** it are given
+         * — so one written last has nothing to brief. What it would do is pass
+         * having read a file nobody was dispatched with, on a card saying the
+         * step read the design: `#61` reached through an order again, and silent
+         * in the direction that matters, because the recipe reads as though the
+         * agent is being handed the document.
+         *
+         * By position rather than by naming `agent:`, for the reason the rule
+         * above is: *which plugin is briefed by a design* is that plugin's to
+         * know (0031 §1), and a list of them here would be a list to keep true.
+         */
+        if (kind === "file-brief" && i === written.length - 1) {
+          ctx.addIssue({
+            code: "custom",
+            path: [i],
+            message: kindRefusedAt(
+              step,
+              kind,
+              nameOf(action),
+              "it is the last action there, and a `file-brief:` reads the design back *for* the " +
+                "actions written after it rather than doing anything itself — so written last it has " +
+                "nothing to brief, and would pass having read a file no agent was dispatched with. " +
+                "Write it before the action that writes the change",
               REFUSED_WHEN_IT_RESOLVED,
             ),
           });

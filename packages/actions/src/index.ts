@@ -39,6 +39,12 @@ export {
   type FileActionSpec,
   type KeptAnswer,
 } from "./file-action.ts";
+export {
+  createFileBriefAction,
+  type FileBriefActionDeps,
+  type FileBriefActionSpec,
+  type ReadAnswer,
+} from "./file-brief-action.ts";
 export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
 export { createWatchAction, type WatchActionDeps, type WatchActionSpec } from "./watch-action.ts";
 export {

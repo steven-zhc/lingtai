@@ -253,12 +253,21 @@ export interface ActionResult {
  * Nothing in `@lingtai/actions` or `@lingtai/conductor` parses it, matches on
  * it, or checks it against the plugin declared at the next step — so a
  * `confluence:` design with a file-reading `implement` is a legal recipe that
- * runs. The `implement` plugin does not recognise the string, ignores it, and
- * works from `document`, which is there either way.
+ * runs. A plugin that does not read locators does not recognise the string,
+ * ignores it, and works from `document`, which is there either way; that is the
+ * built-in dispatch, and it was every plugin at `implement` until `#301`.
  *
  * **So there is no pairing rule, and nothing for the recipe to refuse at
  * resolve time.** The two halves are independent by construction rather than by
  * a table somebody keeps current.
+ *
+ * **A plugin declared *to* read one is the other case, and it owns it** (0069
+ * §4). `file-brief:` at `implement` reads what a `file:` kept, so a locator it
+ * does not understand is an entry in the recipe that would otherwise buy
+ * nothing and say so nowhere — `createFileBriefAction` reports it as a
+ * `did-not-finish` naming the destination it expected. That is still not this
+ * type learning a kind of locator: the recognising is inside the plugin, and
+ * the recipe that pairs the wrong two resolves exactly as before.
  *
  * ## What the other reading would have cost
  *
@@ -445,9 +454,18 @@ export interface Action {
   readonly name: string;
   /**
    * Which action shape produced it: `run`, `agent`, `watch`, `human`, `worktree`,
-   * `queue`, `merge` or `file`.
+   * `queue`, `merge`, `file` or `file-brief`.
    */
-  readonly kind: "run" | "agent" | "watch" | "human" | "worktree" | "queue" | "merge" | "file";
+  readonly kind:
+    | "run"
+    | "agent"
+    | "watch"
+    | "human"
+    | "worktree"
+    | "queue"
+    | "merge"
+    | "file"
+    | "file-brief";
   run(context: ActionContext): Promise<ActionResult>;
 }
 

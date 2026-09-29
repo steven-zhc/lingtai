@@ -263,6 +263,6 @@ run rather than during one.
   off it in the same diff.
 - [reference.md](../reference.md) — the `human:` row in the plugin table, and the
   `ApprovalRequested` / `ApprovalGranted` event shapes.
-- [`plugins/index.md`](index.md) — the thirteen, and which step each serves.
+- [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.
