@@ -551,8 +551,14 @@ export const RECEIPT_TAIL_CHARS = 262_144;
  */
 export const TRACE_LINE_CHARS = 4_000;
 
-/** `…` and the count, so a clipped line says it was clipped. */
-function clip(text: string): string {
+/**
+ * `…` and the count, so a clipped line says it was clipped.
+ *
+ * Exported for `codex.ts`, which bounds a traced line for the same reason and
+ * against the same budget (0034 §7). A second copy of the number would be a
+ * second file cap.
+ */
+export function clip(text: string): string {
   const t = text.trim();
   return t.length <= TRACE_LINE_CHARS
     ? t
@@ -631,8 +637,11 @@ export function traceOf(
  * every eight kilobytes. What is still pending when the process dies stays
  * pending: an unterminated line is a fragment of a fact, and the partial-stream
  * case is exactly where a fragment would be read as the whole.
+ *
+ * Exported for `codex.ts`: `--json` is JSONL too, so a chunk boundary is the
+ * same hazard one adapter along, and the fix is not worth writing twice.
  */
-function lineReader(onLine: (line: string) => void): (chunk: string) => void {
+export function lineReader(onLine: (line: string) => void): (chunk: string) => void {
   let pending = "";
   return (chunk: string) => {
     pending += chunk;

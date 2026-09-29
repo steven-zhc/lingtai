@@ -14,7 +14,7 @@
  * `agent:hold` before anyone has used it is none the worse for it. The recipe
  * belongs to the repository (0005), which is why this proposes and never saves.
  */
-import type { RuntimeId } from "@lingtai/domain";
+import { RuntimeId } from "@lingtai/domain";
 import { PREFIX } from "@lingtai/env";
 import { Recipe } from "./recipe.ts";
 
@@ -317,11 +317,13 @@ export async function proposeRecipe(
 
   // --- runtime.agent --------------------------------------------------------
   const signedIn = options.signedIn ?? [];
-  const runtime: RuntimeId | null = signedIn.includes("claude-code")
-    ? "claude-code"
-    : signedIn.includes("codex")
-      ? "codex"
-      : null;
+  // **The enum's own order, not a ternary** (`#313`). This picks a *preference*
+  // among ids already signed in — it constructs nothing, so it does not read
+  // `RUNTIMES` — and what it needs is an order. `RuntimeId.options` is one, and
+  // is the same order the ternary hardcoded, now derived: a third runtime is
+  // preferred after these two by being written after them in the enum, rather
+  // than by somebody remembering to extend a chain of `?:` here.
+  const runtime: RuntimeId | null = RuntimeId.options.find((id) => signedIn.includes(id)) ?? null;
   if (runtime === null) {
     refusals.push("no agent runtime is signed in on this machine — `lingtai doctor` says which is missing");
   } else if (signedIn.length > 1) {

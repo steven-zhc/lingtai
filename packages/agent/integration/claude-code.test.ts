@@ -27,7 +27,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CLAUDE_CODE_CAPABILITIES,
   CODEX_CAPABILITIES,
-  CodexNotImplementedError,
   INTERSECTION_HOOKS,
   PROMPT_ELIDED,
   RUN_LIMITS,
@@ -39,6 +38,7 @@ import {
   neverStarted,
   openRunLog,
   parseResult,
+  renderSettings,
   sessionIdFor,
   traceOf,
   type RunTrace,
@@ -176,7 +176,14 @@ describe("capabilities", () => {
 
     expect(missingForTier(notifyOnly, "guarded")).toEqual(["pre-tool-use-interception"]);
     expect(missingForTier(refusable, "guarded")).toEqual(["tier-guarded"]);
-    expect(missingForTier(notifyOnly, "sandboxed")).toEqual(["filesystem-sandbox"]);
+    // **Both promises, since `#313`.** `notifyOnly` has neither a sandbox nor a
+    // hook that stops the run, and `sandboxed` asks for both: naming only the
+    // filesystem half would send an operator to fix half of it. The names
+    // themselves are unchanged, which is what `#138` pinned here.
+    expect(missingForTier(notifyOnly, "sandboxed")).toEqual([
+      "pre-tool-use-interception",
+      "filesystem-sandbox",
+    ]);
     expect(missingForTier(notifyOnly, "open")).toEqual([]);
   });
 
@@ -197,7 +204,11 @@ describe("capabilities", () => {
   /** `#89`: a limit is declared applied only where the adapter applies it. */
   it("says which declared limits it applies", () => {
     expect([...CLAUDE_CODE_CAPABILITIES.enforces].sort()).toEqual([...RUN_LIMITS].sort());
-    expect(CODEX_CAPABILITIES.enforces).toEqual([]);
+    // `[]` until `#313`, on the grounds that nothing ran. Now `["wall"]`, because
+    // `run()` applies that one and there is no `--max-turns` to delegate the other
+    // to — measured against `codex-cli 0.155.1`. `unit/codex.test.ts` carries the
+    // reasoning; this is the pair, side by side.
+    expect(CODEX_CAPABILITIES.enforces).toEqual(["wall"]);
   });
 });
 
@@ -760,11 +771,58 @@ describe("parseResult", () => {
   });
 });
 
-describe("the Codex stub", () => {
-  it("declares capabilities but refuses to run, naming the issue", async () => {
-    const codex = createCodexRuntime();
-    expect(codex.capabilities.providesTier).toBe("sandboxed");
-    await expect(codex.run({} as never)).rejects.toBeInstanceOf(CodexNotImplementedError);
-    await expect(codex.run({} as never)).rejects.toThrow(/#34/);
+/**
+ * **The Codex adapter, only where it touches the filesystem.**
+ *
+ * It was *"the Codex stub"* and asserted that `run()` rejected, naming `#34`. It
+ * runs now, and everything about it that is a pure function — the receipt fold,
+ * the argv, the hook translation, the capabilities — is in
+ * `unit/codex.test.ts`, where `pnpm test` and therefore the `build` gate can
+ * reach it. What is left here is the one thing that is not: reading the wiring
+ * off disk (0060 §1 — *a temporary directory is still the filesystem*).
+ */
+describe("the Codex adapter, where it reads the wiring off disk", () => {
+  const settingsAt = async (contents: unknown): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), "codex-wiring-"));
+    const path = join(dir, "settings.json");
+    await writeFile(path, JSON.stringify(contents));
+    return path;
+  };
+
+  it("finds the hook the conductor rendered and points Codex at it", async () => {
+    const path = await settingsAt(
+      renderSettings({ runId: "run-1", hookBinary: "/opt/lingtai/lingtai-hook" }),
+    );
+    const { args } = createCodexRuntime().invocation!({
+      runId: "run-1",
+      cwd: "/tmp/tree",
+      settingsPath: path,
+      env: {},
+      limits: { turns: 150, wallMs: 1_000 },
+    });
+    expect(args.join(" ")).toContain("hooks.UserPromptSubmit=");
+    expect(args).toContain("--dangerously-bypass-hook-trust");
+  });
+
+  /**
+   * A Codex run with no hook produces no events and looks exactly like one that
+   * produced all of them — `smokeTestFailClosed`'s failure *"with no symptom"*,
+   * one layer up. **Refused before the spawn**, so nothing is spent on it, and as
+   * an outcome rather than a throw so the conductor records it.
+   */
+  it("refuses to start where the wiring cannot be read, rather than running unhooked", async () => {
+    const outcome = await createCodexRuntime().run({
+      runId: "run-1",
+      cwd: "/tmp/tree",
+      prompt: "do the thing",
+      settingsPath: join(tmpdir(), "lingtai-no-such-settings.json"),
+      env: {},
+      limits: { turns: 150, wallMs: 1_000 },
+    });
+    expect(outcome.failure?.kind).toBe("crash");
+    expect(outcome.failure?.detail).toMatch(/could not be read/);
+    // Unknown cost is not free (#198).
+    expect(outcome.costUsd).toBeNull();
+    expect(outcome.exitCode).toBeNull();
   });
 });

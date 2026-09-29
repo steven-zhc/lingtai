@@ -542,7 +542,15 @@ export function runOnce(
         workItemId: null,
         runId: null,
         stage: "recipe",
-        detail: `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; no other runtime is dispatched yet`,
+        // **`no other runtime is dispatched yet` stopped being true** (`#313`).
+        // Both runtimes are dispatched now, and `conduct.ts` constructs from
+        // this very field — so the `runtime.agent` half of `agentRefusal` is an
+        // assertion that the caller picked correctly, and the half that still
+        // refuses is a step's own `agent:` or `judge:`. What is not built is
+        // per-step dispatch ([#309](https://github.com/steven-zhc/lingtai/issues/309) T2),
+        // so a step naming a second runtime has to name the one `runtime.agent`
+        // already chose.
+        detail: `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it; per-step dispatch is not built, so one runtime runs a whole pass`,
       };
     }
     // Safe now, and only now: past the refusal these two are the same branch.

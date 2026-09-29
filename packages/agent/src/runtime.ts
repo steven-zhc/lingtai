@@ -257,20 +257,37 @@ export interface Runtime {
  */
 export function meetsTier(capabilities: RuntimeCapabilities, required: Tier): boolean {
   const rank: Record<Tier, number> = { open: 0, guarded: 1, sandboxed: 2 };
+  // **`guarded` is an axis, not a rung** (`#313`). For weeks this returned on
+  // rank alone, so a `providesTier: "sandboxed"` runtime satisfied a `guarded`
+  // recipe **without `canFailClosed` ever being read** — and `missingForTier`'s
+  // `guarded` branch carried the right sentence behind a comment admitting it
+  // never fired. A rank that grants `guarded` to a runtime that cannot fail
+  // closed is the *silent downgrade* 0007 forbids by name: it *"records
+  // `DispatchRefused` when the combination cannot meet the tier — it never
+  // silently downgrades"*. Filesystem containment and failing closed are
+  // different promises and a bigger number is not one of them.
+  //
+  // Dead code today and correct anyway: both runtimes declare `canFailClosed`,
+  // and Codex's was proved against the binary rather than assumed (`codex.ts`).
+  // It fires on the day a runtime arrives that only notifies its hook.
+  if (required !== "open" && !capabilities.canFailClosed) return false;
   return rank[capabilities.providesTier] >= rank[required];
 }
 
 /** What is missing, so `DispatchRefused` can name it rather than say "no". */
 export function missingForTier(capabilities: RuntimeCapabilities, required: Tier): string[] {
   if (meetsTier(capabilities, required)) return [];
-  if (required === "sandboxed") {
-    return ["filesystem-sandbox"];
+  // **Accumulated rather than branched** (`#313`), because since `meetsTier`
+  // reads two independent promises a runtime can be missing both, and a list
+  // that named only the first would send an operator to fix half of it. The
+  // names are unchanged and `DispatchRefused` records them.
+  const missing: string[] = [];
+  // The name predates 0016 and is kept because the event carries it.
+  if (!capabilities.canFailClosed) missing.push("pre-tool-use-interception");
+  if (required === "sandboxed" && capabilities.providesTier !== "sandboxed") {
+    missing.push("filesystem-sandbox");
   }
-  // A stated precondition, not a branch that fires today: both runtimes declare
-  // `canFailClosed`. The name predates 0016 and is kept because `DispatchRefused`
-  // records it.
-  if (required === "guarded" && !capabilities.canFailClosed) {
-    return ["pre-tool-use-interception"];
-  }
-  return [`tier-${required}`];
+  // Something is missing — `meetsTier` said so — and neither promise above is
+  // it. The tier itself, so the refusal still says a word rather than nothing.
+  return missing.length > 0 ? missing : [`tier-${required}`];
 }

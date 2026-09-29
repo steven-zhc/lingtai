@@ -38,7 +38,24 @@ export {
   type ClaudeCodeOptions,
   type PermissionMode,
 } from "./claude-code.ts";
-export { CODEX_CAPABILITIES, CodexNotImplementedError, createCodexRuntime } from "./codex.ts";
+export {
+  CODEX_CAPABILITIES,
+  codexArgv,
+  codexHookArgs,
+  codexOutcome,
+  codexTrace,
+  createCodexRuntime,
+  type CodexOptions,
+  type CodexReceipt,
+  type CodexSandbox,
+} from "./codex.ts";
+export {
+  FIRST_RUNTIME,
+  RUNTIMES,
+  createRuntime,
+  everyRuntime,
+  type RuntimeOptions,
+} from "./runtimes.ts";
 export {
   AgentHostFailed,
   CLAUDE_ONLY_HOOKS,

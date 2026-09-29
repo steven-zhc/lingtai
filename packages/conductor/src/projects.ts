@@ -12,7 +12,7 @@ import {
   type SignedIn,
   resolveLocalRecipe,
 } from "@lingtai/recipe";
-import { type Runtime, createClaudeCodeRuntime, createCodexRuntime } from "@lingtai/agent";
+import { type Runtime, everyRuntime } from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
 import type { RuntimeId } from "@lingtai/domain";
 import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
@@ -125,7 +125,17 @@ export function signedInProbe(
   };
 }
 
-export const signedInHere: SignedIn = signedInProbe([createClaudeCodeRuntime(), createCodexRuntime()]);
+/**
+ * **Derived from the table, not written out** (`#313`).
+ *
+ * It was `[createClaudeCodeRuntime(), createCodexRuntime()]`, beside a docstring
+ * promising *every* runtime — a list that would silently stop being every runtime
+ * the day a third arrived, and the probe is the one place where a forgotten
+ * runtime is invisible rather than broken: detection is allowed only when exactly
+ * one is signed in, so a missing row makes *the only runtime signed in* a reason
+ * that is false. `everyRuntime()` is `RUNTIMES`' own values.
+ */
+export const signedInHere: SignedIn = signedInProbe(everyRuntime());
 
 /**
  * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,

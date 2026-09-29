@@ -31,7 +31,7 @@ import { type ProjectState, passTransition, projectStream, reduceProject } from 
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import { createGitHubClient } from "@lingtai/github";
 import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { createRuntime } from "@lingtai/agent";
 import { kindsOf, queueOf } from "@lingtai/recipe/settings";
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -128,7 +128,11 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       const common = {
         project,
         client,
-        runtime: createClaudeCodeRuntime(),
+        // **The runtime the recipe named** (`#313`). `resolved` is in hand two
+        // statements up, so nothing had to be reordered here — and until this
+        // ticket `runtime.agent: codex` did not run Codex, it made
+        // `agentRefusal` refuse every pass of the project.
+        runtime: createRuntime(resolved.recipe.runtime.agent),
         // A function, not a snapshot: an installation token lasts an hour and a
         // run's wall limit is two.
         token: () => client.token(),

@@ -29,7 +29,7 @@ import { readControl } from "@lingtai/daemon";
 import type { EventStore } from "@lingtai/event-store";
 import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
 import { createGitHubClient } from "@lingtai/github";
-import { createClaudeCodeRuntime } from "@lingtai/agent";
+import { createRuntime } from "@lingtai/agent";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PortsLive } from "@lingtai/conductor";
@@ -229,10 +229,29 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       // is the whole of why `run()` no longer has to remember it on four paths.
       yield* Projector;
 
+      /**
+       * The recipe, **resolved before `common` and in both branches** (`#313`).
+       *
+       * It was resolved below, inside the queue branch only — the `--issue`
+       * branch never resolved it at all, because `runOnce` does that itself. Both
+       * need it here now, because naming the runtime is reading a field off it.
+       *
+       * Resolving it twice costs one `readFile`: `currentRecipe`'s own docstring
+       * is that *"No request is made and nothing is read from the repository"*.
+       * The alternative — inverting `RunOnceOptions.runtime` into a factory the
+       * conductor calls after resolving — would change a port every test that
+       * supplies a fake runtime passes through, to save that one read.
+       */
+      const resolved = yield* Effect.tryPromise({
+        try: () => currentRecipe(project, client),
+        catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
+      });
+
       const common = {
         project,
         client,
-        runtime: createClaudeCodeRuntime(),
+        // The runtime the recipe named, not the one this file used to hardcode.
+        runtime: createRuntime(resolved.recipe.runtime.agent),
         // Both managed repositories are private. Without this every git command in
         // the run is an anonymous one, and the clone fails before anything else
         // gets a chance to. Passed as the client's token *function*, not a string:
@@ -246,13 +265,8 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
 
       // ---- the queue ---------------------------------------------------------
       if (options.issue === undefined) {
-        // The project's *state*, not its name — the recipe is resolved from the
-        // base recorded at `lingtai add`.
-        const resolved = yield* Effect.tryPromise({
-          try: () => currentRecipe(project, client),
-          catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
-        });
-
+        // The recipe is `resolved` above now, from the project's *state* and the
+        // base recorded at `lingtai add` — not its name.
         const outcome = yield* runQueue({
           ...common,
           prompt,

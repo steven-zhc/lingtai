@@ -74,7 +74,7 @@ import {
 import { paint } from "@lingtai/env/colour";
 import { REQUIRED_PERMISSIONS } from "@lingtai/github";
 import { git } from "@lingtai/repo";
-import { RUN_LIMITS, type RuntimeCapabilities, createClaudeCodeRuntime } from "@lingtai/agent";
+import { RUN_LIMITS, type RuntimeCapabilities, createRuntime, everyRuntime } from "@lingtai/agent";
 import {
   backlogProjection,
   describeShape,
@@ -690,25 +690,47 @@ async function settingsSources(): Promise<CheckResult> {
   };
 }
 
+/**
+ * Which runtimes are signed in, **asked of every one of them** (`#313`).
+ *
+ * It asked `createClaudeCodeRuntime()` alone, which was right while that was the
+ * only runtime dispatched: this row went `fail` on a machine signed in to Codex
+ * and nothing else, telling an operator to fix a Claude Code login they did not
+ * want. Since a recipe's `runtime.agent` now decides which adapter is started,
+ * the question is the one `signedInProbe` already asks — *every runtime, not only
+ * the one that runs today* — and `everyRuntime()` is the table's own values, so a
+ * third runtime is asked about by having a row.
+ *
+ * **Green means at least one, and the per-project answer lives elsewhere**:
+ * whether *this* project's named runtime can run is `recipe:` and `runtime:
+ * <project> limits`, which read the recipe. This row is about the installation.
+ */
 async function runtimeAuth(): Promise<CheckResult> {
   const name = "runtime: signed in";
-  const runtime = createClaudeCodeRuntime();
-  if (!runtime.checkAuth) {
-    return { name, status: "skip", detail: `${runtime.capabilities.id} cannot be asked cheaply` };
-  }
-
   // Exactly what a run gets. Not `process.env`.
   const env = runnableEnv({});
-  const status = await runtime.checkAuth(env);
+  const asked = await Promise.all(
+    everyRuntime().map(async (runtime) => ({
+      id: runtime.capabilities.id,
+      // A runtime that cannot be asked cheaply must not pretend.
+      status: runtime.checkAuth ? await runtime.checkAuth(env) : null,
+    })),
+  );
 
-  if (status.loggedIn) {
-    return { name, status: "ok", detail: `${runtime.capabilities.id} — ${status.detail}` };
+  const signedIn = asked.filter((a) => a.status?.loggedIn === true);
+  const said = asked
+    .map((a) => `${a.id} — ${a.status === null ? "cannot be asked cheaply" : a.status.detail}`)
+    .join(" · ");
+
+  if (signedIn.length > 0) return { name, status: "ok", detail: said };
+  if (asked.every((a) => a.status === null)) {
+    return { name, status: "skip", detail: said };
   }
   return {
     name,
     status: "fail",
     detail:
-      `${runtime.capabilities.id} reports ${status.detail}, in the filtered environment a run gets ` +
+      `${said}, in the filtered environment a run gets ` +
       `(${Object.keys(env).sort().join(", ")}). ` +
       "If you are signed in yourself, the run's environment is missing something the credential " +
       "store needs — on macOS that is USER, because a keychain item is found by who is asking.",
@@ -1420,7 +1442,18 @@ async function projectRecipes(
     return [{ name, status: "ok", detail: "nothing is registered, so no recipe governs anything" }];
   }
 
-  return (await projectFilters(projects, recipeClientFor(env))).map((f) => recipeRow(f));
+  // **The dispatched runtime is the project's own, not this machine's** (`#313`).
+  // It defaulted to `createClaudeCodeRuntime().capabilities.id`, and a default
+  // that is right for one project and silently wrong for the next is how `#89`
+  // was possible — so it is deleted rather than re-pointed. `conduct.ts`
+  // constructs from this same field, which is what makes the answer true: the
+  // `runtime.agent` half of `agentRefusal` is now an assertion that the caller
+  // picked correctly, and the half that still refuses is a step's own `agent:`.
+  // `""` where the recipe did not resolve, and `recipeRow` never reads it there:
+  // nothing was dispatched, because there was no recipe to name a runtime.
+  return (await projectFilters(projects, recipeClientFor(env))).map((f) =>
+    recipeRow(f, f.ok ? f.recipe.runtime.agent : ""),
+  );
 }
 
 /**
@@ -1445,9 +1478,10 @@ async function projectRecipes(
  */
 function agentRemedy(refused: AgentRefusal, project: string, dispatched: string): string {
   return refused.at === "runtime.agent"
-    ? `Name runtime.agent: ${dispatched} in ${machinePath()}; no other runtime is dispatched yet`
+    ? `Name runtime.agent: ${dispatched} in ${machinePath()}; it is what this conductor was asked to dispatch`
     : `Name ${refused.key}: ${dispatched} on that action in ${recipePath(project)}, or drop the action; ` +
-      `per-step dispatch is not built, so a step's ${refused.key}: has to be the runtime this conductor runs`;
+      `per-step dispatch is not built (#309 T2), so a step's ${refused.key}: has to be the runtime ` +
+      `runtime.agent already chose`;
 }
 
 /**
@@ -1459,10 +1493,7 @@ function agentRemedy(refused: AgentRefusal, project: string, dispatched: string)
  * claim (#180) — so that is a `fail` here, in `runOnce`'s own sentence, and not
  * an `ok` that prints the agent and says nothing of it.
  */
-export function recipeRow(
-  f: ProjectFilter,
-  dispatched: string = createClaudeCodeRuntime().capabilities.id,
-): CheckResult {
+export function recipeRow(f: ProjectFilter, dispatched: string): CheckResult {
   const wrongAgent = f.ok ? agentRefusal(f, dispatched) : null;
   if (f.ok && wrongAgent !== null) {
     return {
@@ -1507,11 +1538,19 @@ export function recipeRow(
  * nothing while `#84` ran 172 — and every one of those signals said the bound
  * existed.
  *
- * **The runtime is the one that runs, not the one the recipe names.** Every
- * run is handed `createClaudeCodeRuntime()`, so that is whose `enforces` is
- * asked; a recipe naming another agent is refused by `runOnce` before its
- * claim (#180) rather than run on this one. Reading the recipe's field would
- * answer for a runtime that is never started.
+ * **The runtime is the one that runs, which since `#313` is the one the recipe
+ * names.** It used to be `createClaudeCodeRuntime()` unconditionally, because
+ * that was what every run was handed and a recipe naming another agent was
+ * refused before its claim. Now `conduct.ts` constructs from
+ * `runtime.agent`, so the recipe's field *is* the runtime that runs and reading
+ * it is the only way to answer for the adapter that will be started. The caller
+ * passes it; there is no default, because a default that is right for one
+ * project and silently wrong for the next is how `#89` was possible.
+ *
+ * **A Codex project is `fail` here, and that is this check working.** Codex's
+ * `enforces` is `["wall"]` — measured: `codex exec` has no `--max-turns` and no
+ * flag of any name bounds turns — so a recipe's `turns` is a bound nothing
+ * applies, and the sentence below says so. Do not silence it.
  *
  * Here rather than in the schema: whether a limit binds is a fact about the
  * recipe *and* the adapter, which a field's parse cannot see. A `fail` is how
@@ -1520,7 +1559,7 @@ export function recipeRow(
 export function limitsRow(
   project: string,
   recipe: Recipe,
-  capabilities: RuntimeCapabilities = createClaudeCodeRuntime().capabilities,
+  capabilities: RuntimeCapabilities,
 ): CheckResult {
   const name = `runtime: ${project} limits`;
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
@@ -1767,7 +1806,13 @@ export async function declaredEnvironment(
         });
       }
       results.push(extensionRow(project.project, resolved.recipe, agentEnv));
-      results.push(limitsRow(project.project, resolved.recipe));
+      results.push(
+        limitsRow(
+          project.project,
+          resolved.recipe,
+          createRuntime(resolved.recipe.runtime.agent).capabilities,
+        ),
+      );
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.

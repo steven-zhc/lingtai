@@ -596,11 +596,14 @@ subscribers:
 
   /**
    * `#89`'s last box: doctor says whether a declared limit is one the runtime
-   * applies. Asked of the runtime that runs — `createClaudeCodeRuntime()` —
-   * and not of `runtime.agent`, which nothing dispatches on.
+   * applies. Asked of the runtime that runs — **which since `#313` is the one
+   * `runtime.agent` names**, because `conduct.ts` constructs from that field. The
+   * capabilities are handed in; the default that used to stand here was deleted,
+   * since one that is right for one project and silently wrong for the next is
+   * how `#89` was possible.
    */
   it("says which declared limits the runtime that runs applies", async () => {
-    const row = limitsRow("demo", await recipeOf());
+    const row = limitsRow("demo", await recipeOf(), CLAUDE_CODE_CAPABILITIES);
 
     expect(row.name).toBe("runtime: demo limits");
     expect(row.status).toBe("ok");

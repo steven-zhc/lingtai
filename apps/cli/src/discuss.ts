@@ -35,7 +35,7 @@
  */
 import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createClaudeCodeRuntime, NO_RUN_LOG, openRunLog, RUN_LOG_BEAT_MS } from "@lingtai/agent";
+import { createRuntime, FIRST_RUNTIME, NO_RUN_LOG, openRunLog, RUN_LOG_BEAT_MS } from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
 import {
   FILE_BYTES,
@@ -47,7 +47,7 @@ import {
   type ReadableRef,
 } from "@lingtai/conductor/discuss";
 import { githubClientFor } from "@lingtai/conductor/filter";
-import { loadProject } from "@lingtai/conductor/projects";
+import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
 import { runLogPath } from "@lingtai/conductor/run-log";
 import {
   chatStream,
@@ -253,7 +253,31 @@ export async function answerDiscussion(
   const project = parseWorkItemStream(request.workItemId)?.project ?? "";
   const evidence = await gatherEvidence(request);
   const { cwd, settingsPath } = await prepare(request.chatId);
-  const runtime = createClaudeCodeRuntime({ permissionMode: "default" });
+  /**
+   * The runtime the project's recipe names, **asked rather than assumed**
+   * (`#313`).
+   *
+   * It was `createClaudeCodeRuntime({ permissionMode: "default" })`, so on a
+   * machine signed in to Codex alone a question spawned `claude` and the answer
+   * was whatever that failure looked like. `currentRecipe` is a file read and
+   * nothing else — its own docstring: *"No request is made and nothing is read
+   * from the repository"* — so asking costs one `readFile` on a path already
+   * loaded above.
+   *
+   * A project that is not registered, or whose recipe does not resolve, still
+   * gets an answer — `FIRST_RUNTIME` — because this function never throws: it is
+   * called from the daemon's subscription, and an exception escaping there would
+   * stop the loop over a question somebody typed.
+   *
+   * `tools: "none"` rather than `permissionMode: "default"`: the caller says what
+   * the agent is *for* and each row translates, so this line does not have to know
+   * Claude Code's enum — or Codex's `-s read-only` — to say that the third kind of
+   * agent has no tools (0033 §1, 0054).
+   */
+  const named = await loadProject(project)
+    .then((state) => (state === null ? FIRST_RUNTIME : currentRecipe(state).then((r) => r.recipe.runtime.agent)))
+    .catch(() => FIRST_RUNTIME);
+  const runtime = createRuntime(named, { tools: "none" });
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
   const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));
