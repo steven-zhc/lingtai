@@ -11,7 +11,10 @@ last two rows are corrected** (`#299`) — a run-time failure is not retried on
 the backoff, and the asking row *can* buy a round; both were written before
 anything could produce either ending, and both are now measured by
 `packages/conductor/unit/what-a-destination-costs.test.ts`. The corrections are
-at §6 and §7 below; §1–§5 and §7's first row stand
+at §6 and §7 below; §1–§5 and §7's first row stand · **§9's last paragraph — the
+test of whether §4 held — is retired** (`#303`): it named a check no destination
+could pass, and `packages/conductor/unit/a-locator-the-core-did-not-write.test.ts`
+is what measures §4 instead. §4 itself is unchanged
 
 ## 1. What is wrong today: the design is bought, used once, and cannot be kept
 
@@ -197,6 +200,24 @@ turned on one machine at a time.
 The test of whether §4 held is the **second** destination. If adding it needs a
 change in `packages/conductor`, the locator did not stay a string and this
 decision needs a superseding file rather than a patch.
+
+**Retired (`#303`): no destination can meet that criterion, and none ever
+could.** Both that landed needed `conduct.ts` — `file:` +90 lines (`819941c`),
+`file-brief:` +39 (`fa06a7a`) — and the 39 are not a parser but a **port**:
+`read`, beside `file:`'s `keep`, the way a `confluence:` would want a `fetch`.
+Every plugin that touches the world outside the pass needs one port from the
+conductor, and a port is additive. So the diff size measured the wrong thing,
+and a real second destination measures it *worse* than a fixture does, because
+the port's lines drown the signal. What §4 forbids is **the core branching on
+what a locator looks like**, which is a property of the code:
+`packages/conductor/unit/a-locator-the-core-did-not-write.test.ts` carries a URL
+locator from a fixture destination through the pass and out the other side and
+asserts it byte-for-byte at both ends, and its fixture is
+`packages/conductor/test/a-url-destination.ts`. **§4 stands and there is no
+superseding file** — a check that measures the wrong thing is a correction to a
+test, not to a decision — and this note sits here rather than only in that file
+for `#299`'s reason: a correction that lives only in a second file gets
+reinstated from the first.
 
 ## What this does not decide
 
