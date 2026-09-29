@@ -30,6 +30,8 @@ import {
   HUMAN_BEFORE_THE_LANE,
   JUDGED,
   JUDGED_BY_AN_AGENT,
+  JUDGED_BY_A_CHEAP_AGENT,
+  TWO_RUNTIMES,
   PROJECT,
   RECIPE,
   cutAtAdmit,
@@ -1254,5 +1256,125 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(routed[2]!.ceiling).toBeNull();
 
     expect(result).toMatchObject({ ok: "held", step: "proposed" });
+  });
+
+  /**
+   * **Two runtimes in one pass** — the claim `#314` exists to be testable by,
+   * and the one thing a single working runtime could not show
+   * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+   * §7).
+   *
+   * `runtime.agent: claude-code` writes the change; `review`'s own `agent: codex`
+   * reads it, bounded by a `limits:` of its own and asked for a model of its own.
+   * Until this ticket that recipe was **refused before the claim** — the honest
+   * answer while per-step dispatch was a placeholder — so the assertion that the
+   * pass gets past `stage: "recipe"` at all is half of what is being proved.
+   *
+   * Three things are asserted and each is a different failure:
+   *
+   * - **who ran what.** The reviewer is `codex` and the implementer is not, which
+   *   is the whole feature; a `runtimeFor` that answered the default would pass
+   *   every other assertion here.
+   * - **`RunStarted.runtime` is the implementer's.** That field answers *which
+   *   runtime wrote this*, and a pass whose review runs elsewhere must not
+   *   relabel the run.
+   * - **the bound is the entry's.** `limits: { turns: 4 }` narrows the ceiling's
+   *   10 for that one call and leaves the implementer at 10 — the substitution
+   *   `spendFor` makes, field by field, so a `turns` without a `wall` keeps the
+   *   pass's wall.
+   */
+  it("dispatches the runtime a step named, with that step's own model and bound", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const asked: { id: string; model: string | undefined; turns: number }[] = [];
+    const recording = (id: "claude-code" | "codex"): Runtime => ({
+      capabilities: { ...runtime.capabilities, id },
+      run: async (request) => {
+        asked.push({ id, model: request.model, turns: request.limits.turns });
+        return runtime.run(request);
+      },
+    });
+    const claude = recording("claude-code");
+    const codex = recording("codex");
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], TWO_RUNTIMES),
+        runtime: claude,
+        // The factory, and the whole of what a second runtime costs a caller.
+        // Production hands `createRuntime`; this hands a fake that records.
+        runtimeFor: () => codex,
+        // `codex` is named at a step, so the pass asks what this machine has.
+        // Answered rather than probed: a probe is a process (0060 §1).
+        signedIn: async () => ["codex"],
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+
+    // The implementer ran on the pass's own runtime at the ceiling's turns; the
+    // reviewer ran on the one its line named, at its own.
+    expect(asked).toEqual([
+      { id: "claude-code", model: undefined, turns: 10 },
+      { id: "codex", model: "gpt-5-codex", turns: 4 },
+    ]);
+
+    // And the log says which runtime wrote the change, which is still the first.
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const started = run.find((e) => e.type === "RunStarted")!.data as { runtime: string };
+    expect(started.runtime).toBe("claude-code");
+  });
+
+  /**
+   * **A `judge:` names a model, and the dispatch uses it** — the measurement
+   * 0070 §2 is built on: on `#300` the judgement answered in one turn for $0.42
+   * beside an `implement` of 150 turns and $22.56, and it was the cheap call with
+   * no way to ask for a cheap model.
+   *
+   * The model is asserted twice on purpose. Once on the request, which is the
+   * feature; and once on `PassRouted.why`, which is the *record* — a judge has no
+   * event of its own by decision (*what it cost is in the sentence*), so a model
+   * the sentence does not carry is a saving nobody can prove afterwards.
+   */
+  it("buys a judgement from the model the judge: named, and says which", async () => {
+    const store = memoryStore();
+    const did: string[] = [];
+    const models: (string | undefined)[] = [];
+    const judging: Runtime = {
+      ...refusingRuntime,
+      run: async (request) => {
+        if (!request.runId.includes(":judge:")) return refusingRuntime.run(request);
+        models.push(request.model);
+        return { ...(await refusingRuntime.run(request)), text: "implement — the lines are fixable" };
+      },
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], JUDGED_BY_A_CHEAP_AGENT),
+        runtime: judging,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts(did, store),
+    );
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+
+    expect(models).toEqual(["haiku"]);
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const routed = run.filter((e) => e.type === "PassRouted").map((e) => e.data as { why: string });
+    expect(routed[0]!.why).toContain("claude-code (haiku)");
   });
 });

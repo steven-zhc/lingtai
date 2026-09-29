@@ -2141,8 +2141,12 @@ export function runOnce(
             wallMs: parseDuration(ceiling.wall),
             diffBytes: recipe.runtime.budget.diff,
           },
-          runtimeFor: runtimeNamed,
         },
+        // **A sibling of `agent` and not a key on it** (`#314`): an action is
+        // handed one runtime and never chooses between two, so choosing belongs
+        // to the seam that builds it. `actionsFromRecipe` asks this for every
+        // `agent:` entry's own name.
+        runtimeFor: runtimeNamed,
         watch: {
           changedFiles: async () => {
             const names = await gitOrDie(changedFilesArgs(baseShaOr("HEAD")));
