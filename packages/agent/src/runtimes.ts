@@ -60,13 +60,27 @@ export interface RuntimeOptions {
  */
 export class ToolsCannotBeDenied extends Error {
   override readonly name = "ToolsCannotBeDenied";
-  constructor(readonly id: RuntimeId) {
+  /**
+   * Assigned in the body rather than declared as a constructor parameter
+   * property, which is the one TypeScript feature this repository cannot use:
+   * [0010](../../../doc/decisions/0010-source-runs-unbuilt.md) runs the source
+   * through Node's **strip-only** type removal, and a parameter property needs
+   * a transform rather than an erasure — `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`,
+   * at import, before any of this file runs.
+   *
+   * It is invisible to both gates: `tsc` and vitest each transform properly, so
+   * `pnpm test` and `pnpm typecheck` were green on the commit that broke every
+   * `lingtai` command.
+   */
+  readonly id: RuntimeId;
+  constructor(id: RuntimeId) {
     super(
       `${id} has no way to be given no tools, and a discussion has no other containment: ` +
         "measured on codex-cli 0.155.1, `-s read-only` forbids writes and forbids nothing " +
         "else — the agent keeps a shell and read access to the whole machine, ~/.ssh " +
         "included. Claude Code's tool-deny list is not a file Codex reads (0033 §1).",
     );
+    this.id = id;
   }
 }
 
