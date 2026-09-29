@@ -124,7 +124,7 @@
  *
  * **Nothing declares one today**, and that is a fact rather than an oversight:
  * every field the fourteen plugins have is a name, a command, a prompt, a runtime,
- * a model, a glob, a
+ * a model, a bound on one call, a glob, a
  * path, a branch, a strategy, a label, a flag, a direction, a severity or a GitHub login — and a login is
  * not a credential, which is the distinction worth reading (0046 §2: a wrong
  * one hands this machine somebody else's tickets, and that is a mistake that

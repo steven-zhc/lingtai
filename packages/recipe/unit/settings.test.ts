@@ -335,7 +335,21 @@ describe("nothing reaches past them", () => {
         const path = file.pathname.slice(root.pathname.length);
         // `settings.ts` is the one place that may, and a `src/` path is the
         // only thing this is about: a test may build a recipe by hand.
-        if (!path.includes("/src/") || path.endsWith("recipe/src/settings.ts")) continue;
+        //
+        // **`recipe.ts` is the second, since `#314`, and it is the declaration
+        // rather than a reader.** 0070 §5's narrowing rule is a statement about
+        // two sibling keys — a dispatch's `limits:` may not widen
+        // `runtime.limits` — and only the schema that declares both can make
+        // it. An accessor cannot serve it either: `limitsFor` *applies* the
+        // narrowing, so asking it here would be asking the answer about itself.
+        // When the setting moves onto `implement`, this file moves with it in
+        // the same diff, which is what the guard is for.
+        if (
+          !path.includes("/src/") ||
+          path.endsWith("recipe/src/settings.ts") ||
+          path.endsWith("recipe/src/recipe.ts")
+        )
+          continue;
         const text = await readFile(file, "utf8");
         for (const line of text.split("\n")) {
           // A doc comment naming the old shape is prose, not a reader.
