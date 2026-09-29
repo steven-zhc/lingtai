@@ -90,6 +90,12 @@ export type KeptAnswer =
 /**
  * The keep, as the only thing this action needs from its caller.
  *
+ * **Writes the file *and* commits it, and both are the contract rather than the
+ * caller's choice** — the `at` branch is what this action says *committed to the
+ * branch* on, and the two answers were never a field (the header says why). A
+ * keep that only wrote would make the evidence false about the one fact the card
+ * is read for; it says `notKept` instead.
+ *
  * A method on an object rather than a bare function, so the shape matches
  * `WorktreeActionDeps` and `MergeActionDeps` and a reader meets one convention.
  */

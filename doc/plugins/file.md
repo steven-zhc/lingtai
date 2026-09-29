@@ -56,7 +56,7 @@ and nothing in the plugin would change, which is the test 0066 §9 sets for whet
 | `name` | string | yes | How every verdict, waiver and reading addresses this action. |
 | `file` | string | yes | Where the document goes, relative to the worktree. No `..`, not absolute, not under a home directory. |
 
-**One field, and the commit is not one of them.** 0066 left *whether the file is
+**One field beside `name`, and no flag for the commit.** 0066 left *whether the file is
 committed* to this plugin; the answer is **always**, and the reason is that the
 other answer keeps nothing. The worktree is removed when the pass ends — on every
 ending, not just a landing — and what gets out past that is what the pass pushed,
