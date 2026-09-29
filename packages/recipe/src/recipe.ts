@@ -1195,6 +1195,65 @@ const ONLY_THE_LANE_LANDS =
   "and a second home for it would let what a pass lands disagree with what it was cut from";
 
 /**
+ * **Why a `worktree:` belongs at `admit` and nowhere else** — `ONLY_THE_LANE_LANDS`'s
+ * sibling at the other end of the spine, and the fourth sentence answered by the
+ * *kind*.
+ *
+ * It is here for the reason that one is, and `#306` is where the cost of its
+ * absence was read off the code rather than guessed at: with no branch, a
+ * `worktree:` at `proposed` or at `merge` fell past every step branch to
+ * `whyThatPair`'s last paragraph and was refused with *a hold at `prepared`
+ * cannot be answered* — a sentence about a **hold**, naming a step the operator
+ * did not write, for a plugin that is neither. That is the *worse than no
+ * reason* this function's docblock is about, and it had been printed at two
+ * cells since `#270` gave `merge` a plugin, under a matrix that asserted only
+ * that a refusal happened.
+ *
+ * The clause worth the sentence is the one that is not about placement: **the
+ * cut is what every later step runs inside**, so it happens once and before
+ * anything, and a `worktree:` further down the spine would move the ground under
+ * work already written.
+ */
+const ONLY_ADMIT_CUTS =
+  "`worktree:` is what `admit` does, and `admit` is the only step that does it (0058 §3): a pass is " +
+  "cut one branch, before anything has been claimed against it or written in it, and every step " +
+  "after that one works inside what the cut made — so a `worktree:` further down the spine would " +
+  "move the ground under a change already written, and one before `admit` would ask for a tree while " +
+  "the item is still in the queue. Written at `admit` it is read — `createWorktreeAction` in " +
+  "`packages/actions/src/worktree-action.ts` provisions it, and a recipe that declares nothing there " +
+  "runs that same action off `baseOf`/`submodulesOf` (0065 §2) — and **`base:` is written here and " +
+  "nowhere else** (0061 §4): the base is one value that flows to the merge lane rather than a setting " +
+  "with two homes, so what a pass lands cannot disagree with what it was cut from";
+
+/**
+ * **Why a `queue:` belongs at `claim` and nowhere else** — `ONLY_ADMIT_CUTS`'s
+ * sibling one step earlier, and the fifth sentence answered by the *kind*.
+ *
+ * The same two cells and the same paragraph: a `queue:` at `proposed` or at
+ * `merge` was refused with *a hold at `prepared` cannot be answered* until
+ * `#306`. And the accident that hid it is worth recording, because it is the one
+ * a keyword assertion cannot see — that paragraph ends by offering `proposed` as
+ * the remedy, so the refusal printed at `proposed` *contained the step name* and
+ * read as though it were about the step it was asked about.
+ *
+ * The clause worth the sentence is the one about what a take is: **a pass is
+ * about one item**, and the step that decides which is the first, so a second
+ * take anywhere later would be a pass working one ticket while holding another.
+ */
+const ONLY_CLAIM_TAKES =
+  "`queue:` is what `claim` does, and `claim` is the only step that does it (0058 §3): a pass is " +
+  "about one work item, `claim` is where it is decided which, and every step after it is about that " +
+  "one — so a `queue:` further down the spine would have a pass working one ticket while holding " +
+  "another. Written at `claim` it is read — `createQueueAction` in " +
+  "`packages/actions/src/queue-action.ts` re-reads the offer for the issue the pass was pointed at, " +
+  "and a recipe that declares nothing there runs that same action off `queueOf(recipe)` (0065 §2) — " +
+  "and **it cannot refuse** (0058 §2): a claim that took nothing is holding nothing, so its three " +
+  "declines are reported as `did-not-finish` carrying `passed-over`, `not-claimed` or " +
+  "`claim-unconfirmed`, and never as a refusal that buys a round. What is *not* this plugin is the " +
+  "queue pass — `selectRunnable` in `packages/conductor/src/queue.ts` asks GitHub which issues are " +
+  "on offer before a pass exists to have steps, and `backoff` is only read there";
+
+/**
  * **Why a `human:` and a `watch:` are refused at `merge`** — the subtraction
  * `#270` made, and the third sentence answered by the *pair* rather than by the
  * step alone.
@@ -1420,11 +1479,12 @@ export function whyNoKindAt(
  * is the fourth thing 0065 §7's *one diff or not at all* covers, beside the
  * `at` key, the `defaultsAt` row and the emptied body. Until a step has a
  * plugin, `whyNoKindAt` answers every kind at it from the *no plugin implements
- * this* branch and never reaches here; the moment one arrives, all eleven other
- * kinds fall through to the three paragraphs at the bottom and are told about
- * `prepared`. `admit` (`#268`), `merge` (`#270`), `claim` (`#269`) and `design`
- * (`#265`) each brought their own, and `implement` is the one step still without
- * a plugin to need one.
+ * this* branch and never reaches here; the moment one arrives, every other kind
+ * it does not serve falls through to the three paragraphs at the bottom and is
+ * told about `prepared`. `admit` (`#268`), `merge` (`#270`), `claim` (`#269`),
+ * `design` (`#265`) and `implement` (`#266`) each brought their own — **five for
+ * five, and each one caught by the cold reviewer rather than by a test**, which
+ * is what `#306` is about and what the case in `step-matrix.test.ts` now holds.
  *
  * **`judge:` is answered by kind before any step but `end`** (`#274`), and that
  * is the one inversion of the order above. Every other branch says *what this
@@ -1433,6 +1493,21 @@ export function whyNoKindAt(
  * `review` and `merge` alike — the router is `proposed`, and a refusal here
  * travels to it. `end` keeps its own sentence because it is the one that names
  * `judge:`'s `when:` in order to say what picks the three effects out.
+ *
+ * **And four kinds are answered that way now, not one** (`#306`). `merge:` joined
+ * it with `#270`; `worktree:` and `queue:` join it here, because the cells they
+ * had at `prepared`, `proposed` and `merge` were being answered with the last
+ * paragraph below — *a hold at `prepared` cannot be answered*, printed for a
+ * plugin that is not a hold, at a step the operator did not write. The rule the
+ * four share is that **their output is one step's own work**: a cut, a take, a
+ * landing, a routing decision. No step branch can say why one is meaningless
+ * somewhere else, because the sentence is about the plugin.
+ *
+ * So the step branches below answer exactly the four kinds a step *could*
+ * plausibly carry — `run:`, `agent:`, `watch:`, `human:` — and
+ * `step-matrix.test.ts` asserts, cell by cell, that each of those is answered by
+ * a sentence no other step gives: the fall-through that five openings shipped is
+ * a red test rather than a reviewer's good day.
  */
 function whyThatPair(step: Step, kind: ActionKind): string {
   if (step === "end") {
@@ -1446,6 +1521,8 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (kind === "judge") return ONLY_PROPOSED_ROUTES;
   if (kind === "merge") return ONLY_THE_LANE_LANDS;
+  if (kind === "worktree") return ONLY_ADMIT_CUTS;
+  if (kind === "queue") return ONLY_CLAIM_TAKES;
   // Before the step branches and not after them, for `judge:`'s reason (`#270`):
   // what is wrong with a hold at `merge` is not what `merge` asks of an action but
   // who it may reach, and the sentence below about `prepared` would otherwise be

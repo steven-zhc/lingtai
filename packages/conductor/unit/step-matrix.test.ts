@@ -93,6 +93,19 @@
  *   the dependencies that point's own call site supplies; or
  * - **refuses** — the recipe does not resolve, and the refusal names the
  *   action, its kind, the point and why.
+ *
+ * **And since `#306` the *why* is asserted to be about the point it was asked
+ * about.** For a year this file promised that and checked only that a refusal
+ * happened: the action, the kind and the step are read out of the opening clause,
+ * which is built from the step that was asked about and so cannot be wrong about
+ * it, while the reason behind it went unread. Five times in two days a step gained
+ * a plugin, `whyThatPair` gained no branch for it, and every other kind at that
+ * step was refused with **`prepared`'s** paragraph — green here each time, and
+ * caught by the cold reviewer each time. The cell now asserts that **no other step
+ * answers it with the same sentence**, which is what *about this step* means
+ * mechanically; `ANSWERED_BY_THE_KIND` is the short list of refusals that are
+ * about a plugin instead, and it is held to a property of its own rather than
+ * trusted.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
@@ -276,6 +289,84 @@ function accepted(step: Step, kind: ActionKind): string | null {
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
 
+/**
+ * The refusal with its opening clause taken off, which is where the *reason*
+ * starts.
+ *
+ * The opening names the action, the kind and the step — `kindRefusedAt`'s half,
+ * plus *`agent:` does not implement `build` — it serves …* — and none of it can
+ * be wrong about the step, because all of it is built from the step that was
+ * asked about. So a case that reads the opening learns nothing about whether
+ * the reason behind it is the right one, which is the whole of `#306`: the five
+ * openings below each shipped a true opening over another step's reason.
+ *
+ * Split at the first `": "`, as the `judge:` case has done since `#274`. No
+ * kind's name, no plugin's serves list and no step's name contains one — the
+ * colons in the message before this point are all inside backticks, `` `agent:`
+ * ``.
+ */
+function reasonAt(step: Step, kind: ActionKind): string | null {
+  const why = whyNoKindAt(step, kind);
+  return why === null ? null : why.slice(why.indexOf(": ") + 2);
+}
+
+/**
+ * **The kinds whose refusal is answered before `whyThatPair` reaches the step
+ * branches, and which therefore say nothing about the step they were asked
+ * about** (`#306`).
+ *
+ * This is the exemption the cell below needs, and it is a short list of real
+ * rules rather than a loophole:
+ *
+ * - `judge:`, `merge:`, `worktree:` and `queue:` — **their output is one step's
+ *   own work**, so the reason is about the *plugin* and is the same sentence at
+ *   every step that refuses it (`ONLY_PROPOSED_ROUTES`, `ONLY_THE_LANE_LANDS`,
+ *   `ONLY_ADMIT_CUTS`, `ONLY_CLAIM_TAKES`). No step branch could say it: *what
+ *   `build` asks of an action* is not why a cut belongs at `admit`.
+ * - `close:`, `labels:` and `refs:` — the effect-only rule, which is about
+ *   **what a kind is**: an effect is not a verdict, and only `end` carries
+ *   effects out.
+ * - `backlog:` — refused at all ten because nothing reads it, which
+ *   `whyNoKindAt` answers before `whyThatPair` is reached at all.
+ *
+ * **The exemption is not the loophole the fall-through went through**, and the
+ * case *answers a kind-wide refusal with one sentence everywhere* below is what
+ * keeps that true: a kind listed here has to give the **same** reason at every
+ * step it is refused at, so a kind added to this list to quiet a red cell goes
+ * red in that case instead. And a kind taken *off* the list by a future opening
+ * is checked by the cell again, which is the direction that costs nothing.
+ *
+ * `ONLY_PROPOSED_ASKS_A_PERSON` needs no entry: a hold or a glob at `merge` is
+ * refused about the pair, but the sentence it is refused with names `merge` and
+ * is given at no other step, so it passes the cell's own assertion.
+ */
+const ANSWERED_BY_THE_KIND: readonly ActionKind[] = [
+  "judge",
+  "merge",
+  "worktree",
+  "queue",
+  "close",
+  "labels",
+  "refs",
+  "backlog",
+];
+
+/**
+ * **The three paragraphs `prepared` owns**, read off `prepared` rather than
+ * copied out of `recipe.ts`.
+ *
+ * They are `whyThatPair`'s fall-through, so they are what a step with no branch
+ * of its own is answered with — *nothing has been committed at `prepared`* and
+ * *a hold at `prepared` cannot be answered*. Five openings in two days printed
+ * one of them at a step the operator never wrote.
+ *
+ * The cell below asserts no other step gives the same reason as `prepared`, and
+ * it needs this list as well, for the kinds `prepared` **accepts**: a `run:` at a
+ * newly opened step would fall through to the hold paragraph, and since
+ * `prepared` runs a `run:` there would be no `prepared` cell to collide with.
+ */
+const PREPARED_OWNS = (["agent", "watch", "human"] as const).map((kind) => reasonAt("prepared", kind));
+
 describe("every step × kind cell runs or refuses", () => {
   const cells = STEPS.flatMap((step) => KINDS.map((kind) => [step, kind] as const));
 
@@ -312,6 +403,38 @@ describe("every step × kind cell runs or refuses", () => {
     expect(refusal).toContain(`"${step}"`);
     expect(whyNoKindAt(step, kind)).not.toBeNull();
     expect(runsAt(step, kind)).toBe(false);
+    /**
+     * **And the reason is about the step it was asked about** (`#306`).
+     *
+     * The three assertions above are satisfied by the opening clause alone —
+     * *the "review" action is a "agent" at the "build" step, and `agent:` does
+     * not implement `build`* — which is built out of the step that was asked
+     * about and so cannot be wrong about it. Behind that clause, five times in
+     * two days, sat `prepared`'s paragraph: a step gained a plugin, the other
+     * kinds at it stopped taking the *no plugin implements this step* branch,
+     * `whyThatPair` had no branch for the new step, and every one of them was
+     * refused with *nothing has been committed at `prepared`*. Green here each
+     * time; caught by the cold reviewer each time.
+     *
+     * So: **no other step answers this cell with the same sentence.** A step
+     * with a branch of its own gives a reason no other step gives; a step
+     * falling through gives `prepared`'s, and the failure names which step it
+     * borrowed from. `PREPARED_OWNS` closes the one hole that leaves — a kind
+     * `prepared` accepts has no `prepared` cell to collide with.
+     */
+    if (ANSWERED_BY_THE_KIND.includes(kind)) return;
+    const mine = reasonAt(step, kind);
+    const borrowed = STEPS.filter((other) => other !== step && reasonAt(other, kind) === mine);
+    expect(
+      borrowed,
+      `the "${step}" × "${kind}" refusal answers with the reason ${borrowed.join(", ")} gives`,
+    ).toEqual([]);
+    if (step !== "prepared") {
+      expect(
+        PREPARED_OWNS,
+        `the "${step}" × "${kind}" refusal answers with one of \`prepared\`'s three paragraphs`,
+      ).not.toContain(mine);
+    }
   });
 
   /**
@@ -504,6 +627,94 @@ describe("every step × kind cell runs or refuses", () => {
     }
     // The one that runs there.
     expect(whyNoKindAt("claim", "queue")).toBeNull();
+  });
+
+  /**
+   * **The sixth and seventh of the same class, found by asserting it rather than
+   * by reading the diff** (`#306`).
+   *
+   * `#268`, `#269`, `#270`, `#265` and `#266` each opened a step and shipped
+   * `prepared`'s paragraph at it, and each was caught by the cold reviewer. The
+   * cell walk above now asserts that no other step answers a cell with the same
+   * sentence — and the first thing it said was that a `worktree:` at `proposed`
+   * or at `merge`, and a `queue:` at either, were being refused with *a hold at
+   * `prepared` cannot be answered*: a sentence about a **hold**, for a plugin
+   * that is not one, naming a step the operator never wrote.
+   *
+   * **Why those four hid where the five did not.** `proposed` and `merge` have no
+   * branch in `whyThatPair` and never needed one — every kind either of them
+   * refuses was answered by kind already, until `#270` took `watch:` and `human:`
+   * off `merge` and left these two behind. And the *keyword* check could not see
+   * it: `prepared`'s hold paragraph ends by offering `proposed` as the remedy, so
+   * the refusal printed at `proposed` contained ``` `proposed` ``` and read as
+   * though it were about the step it was asked about.
+   *
+   * So both join the four kinds that answer for themselves, which is the rule
+   * they were always under: **their output is one step's own work** — a cut, a
+   * take — and no step branch can say why that is meaningless somewhere else.
+   */
+  it("says what a cut and a take are for, rather than answering with `prepared`'s hold", () => {
+    for (const step of ["prepared", "proposed", "merge"] as const) {
+      const cut = whyNoKindAt(step, "worktree");
+      expect(cut, `worktree is no longer refused at ${step}`).not.toBeNull();
+      expect(cut, step).toContain("`worktree:` is what `admit` does");
+      expect(cut, step).toContain("createWorktreeAction");
+      const take = whyNoKindAt(step, "queue");
+      expect(take, `queue is no longer refused at ${step}`).not.toBeNull();
+      expect(take, step).toContain("`queue:` is what `claim` does");
+      expect(take, step).toContain("createQueueAction");
+      // The paragraph both of them were given until `#306`.
+      for (const why of [cut, take]) {
+        expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
+      }
+    }
+    // The steps each of them does run at, so the refusals above are about the
+    // pair and not about a key that was lost.
+    expect(whyNoKindAt("admit", "worktree")).toBeNull();
+    expect(whyNoKindAt("claim", "queue")).toBeNull();
+    // And the refusal a `worktree:` gets must not send its author to the code the
+    // pass calls itself (`#268`) — `provisionWorktree` would read as *your
+    // declaration is not what runs*, and at `admit` it is.
+    expect(whyNoKindAt("proposed", "worktree")).not.toContain("packages/repo/src/worktree.ts");
+  });
+
+  /**
+   * **The exemption the cell walk needs, held to a property rather than trusted**
+   * (`#306`).
+   *
+   * `ANSWERED_BY_THE_KIND` is a list, and a list is what failed five times. What
+   * keeps it from becoming the next fall-through's hiding place is that a kind on
+   * it has to *earn* the entry: its refusal is a fact about the plugin, so it is
+   * **one sentence at every step that refuses it**. A kind added here to quiet a
+   * red cell would be one whose reason varies by step, and this case goes red
+   * instead of the cell going quiet.
+   *
+   * `end` is excluded and that is the rule rather than an exception: it answers
+   * every kind it refuses with its own sentence — *these three effects and no
+   * others* — which is the more useful half where a plugin is an effect's
+   * neighbour, and it is asserted below by being the same sentence a `run:` gets
+   * there.
+   */
+  it("answers a kind-wide refusal with one sentence everywhere, and `end` with its own", () => {
+    for (const kind of ANSWERED_BY_THE_KIND) {
+      const refused = STEPS.filter((step) => step !== "end" && whyNoKindAt(step, kind) !== null);
+      expect(refused.length, `\`${kind}:\` is refused at no step but \`end\``).toBeGreaterThan(1);
+      const reasons = [...new Set(refused.map((step) => reasonAt(step, kind)))];
+      expect(
+        reasons,
+        `\`${kind}:\` is exempt from the cell's assertion and yet answers ${reasons.length} ways`,
+      ).toHaveLength(1);
+    }
+    // The four whose output is one step's own work take `end`'s sentence at
+    // `end`, which is the one step that answers before the kind is looked at.
+    for (const kind of ["worktree", "merge", "queue", "judge"] as const) {
+      expect(reasonAt("end", kind), kind).toBe(reasonAt("end", "run"));
+    }
+    // And the three effects are the kinds `end` accepts, so they are refused at
+    // nine steps with the effect-only rule and at none with a step's own words.
+    for (const kind of ["close", "labels", "refs"] as const) {
+      expect(whyNoKindAt("end", kind), kind).toBeNull();
+    }
   });
 
   /**
