@@ -1265,4 +1265,92 @@ describe("doc/reference.md", () => {
       "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs",
     ).toContain(`for ${NUMERAL[spendsAnAgent]} of the five directions an agent`);
   });
+
+  /**
+   * **And the table has a row per key, which is the half that went stale**
+   * (`#300`, the fix round).
+   *
+   * The heading and the prose above the table were counted up to thirteen and
+   * the table under them kept twelve rows, so the section said *each of the
+   * thirteen declared with `definePlugin`* over a list with no `file:` in it —
+   * a reader looking up what `commit:` takes finds nothing and concludes the
+   * key is not declarable. `doc/plugins/` is walked key by key by
+   * `plugin-pages.test.ts`; this column was walked by nothing.
+   *
+   * Read off `PLUGINS` rather than compared to a literal, and over the one
+   * table rather than the whole file, so the row that has to arrive with the
+   * fourteenth plugin is a red test rather than something somebody remembers.
+   */
+  it("has a row for every key in the closed set", async () => {
+    const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
+    // Found by the table's own header row and not by the heading above it: the
+    // heading carries a word `retired-names.test.ts` counts, and a test that
+    // wrote it would be raising the number that file holds `doc/reference.md`
+    // to in order to assert this one.
+    const header = doc.indexOf("| Key | Verdict comes from | Needs |");
+    expect(header, "doc/reference.md has no table of the closed set's keys").toBeGreaterThan(0);
+    const table = doc.slice(header).split("\n\n")[0]!;
+
+    const rows = [...table.matchAll(/^\| `([a-z]+):` \|/gm)].map((row) => row[1]);
+    expect(rows, "doc/reference.md's table of the keys").toEqual(PLUGINS.map((plugin) => plugin.key));
+    // And the heading over it counts the same set, which is what the rows are
+    // under — the nearest `##` above the table, read rather than named.
+    const heading = doc.slice(0, header).split(/^## /m).at(-1)!.split("\n")[0]!;
+    expect(heading, "doc/reference.md's heading over that table").toContain(`${PLUGINS.length} keys`);
+  });
+});
+
+/**
+ * **The guide's own arithmetic, against the same closed set** (`#300`, the fix
+ * round).
+ *
+ * One sentence in `doc/guide.md` says how many action kinds there are and puts
+ * them in buckets, and the line under it links to the reference section this
+ * file already guards. It said *twelve … four, two and six* while the section
+ * it linked to said thirteen — the drift `doc/reference.md`'s own preamble
+ * calls the thing that teaches a reader to disbelieve the stamp instead of the
+ * table, and nothing in `pnpm test` read that file.
+ *
+ * The total and the buckets are both derived: the numerals are read out of the
+ * sentence and summed, so a plugin that arrives with no bucket to go in is red
+ * here rather than quietly one out.
+ */
+describe("doc/guide.md", () => {
+  const NUMERAL = [
+    "no",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+  ] as const;
+
+  it("counts the action kinds, and its buckets add up to them", async () => {
+    const guide = await readFile(new URL("../../../doc/guide.md", import.meta.url), "utf8");
+    const sentence = /(\w+) action kinds, of\s+which ([\s\S]*?)\n\(\[reference\]/.exec(guide);
+    expect(sentence, "doc/guide.md no longer says how many action kinds there are").not.toBeNull();
+
+    expect(
+      sentence![1]!.toLowerCase(),
+      "doc/guide.md's count of the action kinds disagrees with PLUGINS",
+    ).toBe(NUMERAL[PLUGINS.length]);
+
+    const buckets = [...sentence![2]!.matchAll(/\b([a-z]+)\b/g)]
+      .map((word) => NUMERAL.indexOf(word[1] as (typeof NUMERAL)[number]))
+      .filter((each) => each >= 0);
+    expect(
+      buckets.reduce((sum, each) => sum + each, 0),
+      "doc/guide.md's buckets do not add up to the closed set",
+    ).toBe(PLUGINS.length);
+  });
 });

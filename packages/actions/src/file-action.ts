@@ -7,9 +7,21 @@
  * It is the first *destination*. Every other action judges something already
  * there or makes something the pass then works in; this one takes what the step
  * before it in the same list produced and **keeps it**, then answers with the
- * path — which is the locator 0066 §3 buys, and the reason `evidence` can go back
- * to being a sentence a person reads on a card instead of a whole document
- * carried on every replay of the log.
+ * path — which is the locator 0066 §3 buys, and what **this action's own**
+ * `evidence` carries in place of the document.
+ *
+ * **It does not take the document off the log, and 0066 §1 is not closed here.**
+ * The drafter is a second action at the same step with a `StepPassed` of its
+ * own, and `createDraftAction` still writes the document into that one
+ * (`agent-action.ts`, through `boundedEvidence`). §1's *uncapped* has been
+ * answered since 0066 §8 — `command.ts`'s 60 lines and 8,000 bytes, pinned by
+ * `agent-action.test.ts`'s *clips a design document, and leaves the document
+ * itself whole* — so what is left is a clipped copy of the document on an event,
+ * replayed with every rebuild. This key buys the locator and a copy somebody can
+ * read after the pass; whether a drafter whose document a destination kept should
+ * say a sentence instead is a change to `createDraftAction`, and is not made by
+ * this file. `file-action.test.ts`'s *the drafter's own event still carries the
+ * document* is what keeps that measured rather than remembered.
  *
  * **It writes and it does not decide.** `design` is not one of `REFUSING_STEPS`
  * (0058 §3), so a destination that could not be written reports
@@ -163,8 +175,9 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
       return {
         verdict: "passed",
         // 0066 §3's own sentence: *wrote a 2.4 kB design to `doc/design/x.md`* —
-        // the fact a person reads off the card, in place of the document that
-        // used to be here uncapped and carried on every replay (§1).
+        // the fact a person reads off the card, in place of the document, on the
+        // event this action appends. Not on the drafter's, which still carries
+        // the document clipped (0066 §8) — the header says what that leaves open.
         evidence:
           `wrote a ${sizeOf(drafted.document)} design to \`${answer.at}\`` +
           (spec.commit ? ", committed to the branch" : ", not committed — it lives as long as the worktree"),

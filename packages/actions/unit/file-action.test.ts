@@ -1,7 +1,8 @@
 /**
  * The file action — **the first destination**, and what is asserted here is the
  * two halves 0066 buys: the document reaches a path, and the path comes back as
- * the locator while `evidence` goes back to being a sentence.
+ * the locator while **this action's** `evidence` is a sentence. What the log
+ * still carries from the drafter beside it is the last case in this file.
  *
  * The keep is a fake throughout, which is 0060 §1 rather than convenience: a
  * real one writes to the filesystem and shells out to `git`, so a test that used
@@ -9,8 +10,10 @@
  * *decides*. What the conductor's own keep does with the same three fields is
  * `conduct.ts`'s `keep`.
  */
+import type { Runtime } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
 import { createFileAction, type KeptAnswer } from "../src/file-action.ts";
+import { createDraftAction } from "../src/agent-action.ts";
 import {
   NO_DESIGN,
   runActionPipeline,
@@ -64,9 +67,11 @@ describe("keeping the document the step made", () => {
   });
 
   /**
-   * **`evidence` is a sentence and not the document**, which is the cost 0066 §1
-   * is about: the whole document used to ride `StepPassed.evidence` uncapped, and
-   * an event is read on every replay of the log and written once.
+   * **This action's `evidence` is a sentence and not the document**, which is
+   * half of what 0066 §1 costs: an event is written once and read on every
+   * replay of the log. Half, and not the whole — the drafter's own event still
+   * carries the document, clipped since §8, which the last case in this file
+   * pins so that the page and the header cannot drift back into claiming it.
    *
    * The size and the path, in the words §3's own example uses, and the commit
    * said out loud — because *the note is in the change* and *the note is gone with
@@ -305,5 +310,81 @@ describe("the recipe's own block, built", () => {
     expect(() =>
       actionsFromRecipe("design", [{ name: "keep it", file: "doc/design/x.md", commit: true }], {}),
     ).toThrow(/no keep was supplied/);
+  });
+});
+
+/**
+ * **What the log carries after a step that kept, and it is not only the
+ * sentence** (`#300`, the fix round).
+ *
+ * `file-action.ts`'s header and `doc/plugins/file.md` both say that declaring a
+ * destination does **not** close 0066 §1, and a claim about the log is worth
+ * what can be read off it. One `design` step, the drafter and the destination,
+ * and the two `StepPassed` events they append: the destination's is §3's
+ * sentence, and the drafter's still carries the document — bounded since §8
+ * (`command.ts`), and there whether or not a `file:` was declared beside it.
+ *
+ * **A real `createDraftAction` and not a stub**, because a stub would assert
+ * that the pipeline copies an evidence the test handed it and would say nothing
+ * about what the drafter writes. The day that changes, this case is what goes
+ * red — and the two documents above it are what it is protecting.
+ */
+describe("what the drafter's own event still carries", () => {
+  const runtime = (text: string): Runtime => ({
+    capabilities: {
+      id: "claude-code",
+      hooks: [],
+      canFailClosed: true,
+      canRewriteToolCall: false,
+      providesTier: "guarded",
+      enforces: ["turns", "wall"],
+    },
+    run: async () => ({
+      exitCode: 0,
+      turns: 7,
+      durationMs: 1234,
+      costUsd: 0.42,
+      text,
+      failure: null,
+      sessionId: "s",
+    }),
+  });
+
+  const drafter = (text: string): Action =>
+    createDraftAction(
+      { name: "shape it", prompt: "" },
+      {
+        runtime: runtime(text),
+        issue: async () => ({ ref: "300", title: "a destination", body: "keep the design" }),
+        diff: async () => "",
+        settingsPath: "/tmp/settings.json",
+        limits: { turns: 40, wallMs: 60_000, diffBytes: 400_000 },
+      },
+    );
+
+  it("carries the document, while the destination's event carries the sentence", async () => {
+    const passed: { action: string; evidence: string }[] = [];
+    await runActionPipeline({
+      step: "design",
+      actions: [
+        drafter(DOCUMENT),
+        createFileAction({ name: "keep it", path: "doc/design/x.md", commit: true }, keeping()),
+      ],
+      context: context(NO_DESIGN),
+      emit: (event) => {
+        if (event.type === "StepPassed") {
+          passed.push({ action: event.data.action, evidence: event.data.evidence });
+        }
+      },
+    });
+
+    expect(passed.map((each) => each.action)).toEqual(["shape it", "keep it"]);
+    // The half this key buys: the size, the path and the commit, and no document.
+    expect(passed[1]!.evidence).toBe("wrote a 67 B design to `doc/design/x.md`, committed to the branch");
+    expect(passed[1]!.evidence).not.toContain("Six bodies");
+    // And the half it does not: the document is on the log anyway, from the
+    // action before it — so 0066 §1's third row is bounded (§8) and not gone,
+    // and closing it is a change to `createDraftAction`.
+    expect(passed[0]!.evidence).toContain("Six bodies");
   });
 });

@@ -3,10 +3,17 @@
 Keeps the document a step made, as a file in the worktree, and answers with the
 path. Without it a design is **bought, used once and cannot be kept**
 ([0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §1): it lived
-in memory until the pass ended, in one prompt, and on `StepPassed.evidence` as the
-whole document — uncapped, and carried again on every replay of the log to show
-somebody a page they will read once, if ever. This is where the document goes
-instead, and the path it went to is what `evidence` carries.
+in memory until the pass ended, and in one prompt. This is where the document goes
+instead, and the path it went to is what **this action's** `evidence` carries.
+
+**It does not take the design off the log, and §1 is not closed by declaring
+one.** The drafter is a separate action with a `StepPassed` of its own, and it
+still writes the document into that one — clipped to 60 lines and 8,000 bytes
+since §8 (`command.ts`), where it used to go whole. So §1's third row is bounded
+rather than gone: a rebuild still replays a design note's worth of event. What
+this key buys is the locator, and a copy somebody can read after the pass; a
+drafter that said a sentence instead once a destination had kept its document
+would be a change to `createDraftAction`, and no recipe line turns it on.
 
 ## What it does
 
