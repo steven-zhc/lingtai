@@ -2837,8 +2837,10 @@ export function runOnce(
            * reading *a failure needs acknowledging* over a question asks the
            * operator to tick off something that did not fail, and the thing the
            * pass is actually waiting for — an answer — is a judgement.
-           * `NEEDS_INPUT` is the same token `goesToTheRouter` let it past the
-           * gate on, read here rather than restated (0031 §1).
+           * **`asked` is the ending rather than a token on one** (`#296`): this
+           * read was `did-not-finish` plus `because === NEEDS_INPUT` and is now
+           * the same fact the router branches on, so the card and the router
+           * cannot disagree about which arrivals held a question.
            *
            * No recommendation goes with it, and that is right rather than
            * missing: `BlockRecommendation` is `approve`, `reject` or `requeue` —
@@ -2848,7 +2850,7 @@ export function runOnce(
           needs:
             stopped === null ||
             stopped.ending.ending === "held" ||
-            (stopped.ending.ending === "did-not-finish" && stopped.ending.because === NEEDS_INPUT)
+            stopped.ending.ending === "asked"
               ? ("judgement" as const)
               : ("acknowledgement" as const),
           diagnosis: {

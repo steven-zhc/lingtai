@@ -114,6 +114,21 @@ export type StepState =
    * the reason `never-ran` is not: a refusal is a sentence about the diff.
    */
   | "did-not-finish"
+  /**
+   * **Nothing judged this diff here either, and this one is a question rather
+   * than a fault** (`#296`, 0058 §3c).
+   *
+   * The point was reached, its agent started, and it stopped and asked
+   * something. The pass carried the question to `proposed`, and where no judge
+   * answered it, to a person.
+   *
+   * Beside `did-not-finish` and drawn differently, which is the whole of why it
+   * is here: the two are one hatch and one sentence to a reader of a rail, and
+   * they are opposite things to do something about — *look at this, it broke*
+   * against *answer this*. Both were `did-not-finish` until the ending split, so
+   * a rail put the fail hatch over a pass that was working and waiting.
+   */
+  | "asked"
   | "waived";
 
 /**
@@ -263,6 +278,14 @@ function stateOf(
   // pipeline and the pass both stop here (0057 §4), so a `failed` beside it on
   // the same point came from an earlier round and a commit that has moved.
   if (seen.includes("did-not-finish")) return "did-not-finish";
+  // Above `failed` for the third time and with a reason of its own (`#296`): the
+  // pipeline stops here too, and a step that asked and was then sent round again
+  // has a *later* verdict on the same action key, which `close` has already
+  // written over this one. So a surviving `asked` is the point's last word.
+  //
+  // Below the two above it, because those two are faults and this is a question:
+  // where a point somehow carries both, the fault is the more urgent reading.
+  if (seen.includes("asked")) return "asked";
   // **The comparison, made where a person is already looking.**
   // The log's own plan named actions here, the run recorded nothing at all — no
   // request, no verdict, no approval, no waiver — and the item landed, so there
@@ -447,6 +470,13 @@ export function foldProgress(
         // point that ends here is one whose last word was this, which is what
         // the pass stopped on.
         close(data, "did-not-finish");
+        break;
+
+      case "StepAsked":
+        // One per action for the same reason, and its own state rather than the
+        // one above: the pass may well have gone on from here — a judge can send
+        // the asking step round again — so this is not always the ending.
+        close(data, "asked");
         break;
 
       case "StepWaived":

@@ -263,6 +263,23 @@ export function attemptOutcome(
         break;
       }
 
+      /**
+       * And a step that stopped and asked, for the same reason once more
+       * (`#296`).
+       *
+       * A question is not evidence about the code either: the agent asked
+       * something and judged nothing, so leaving it in `unfinished` would tell
+       * the next one that a step died inside this diff. **Nor is the question
+       * itself `evidence` here** — it reaches a person, or the step that asked it
+       * via `SentBack.asked`, and a fresh attempt is not the reader either of
+       * those was written for.
+       */
+      case "StepAsked": {
+        const d = event.data as PayloadOf<"StepAsked">;
+        unfinished.delete(`${d.step}:${d.action}`);
+        break;
+      }
+
       case "StepFailed": {
         const d = event.data as PayloadOf<"StepFailed">;
         const what = `${d.step}:${d.action}`;

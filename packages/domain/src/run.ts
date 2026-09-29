@@ -31,6 +31,12 @@ import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from 
  * and it is its own value rather than `never-ran`'s because the two cost
  * opposite things — one stands the conductor down for an account-wide wall,
  * and the other is local and retried once.
+ *
+ * `asked` is the third absence and the only one with a question in it (`#296`,
+ * 0058 §3c): the agent stopped and asked something, so nothing was judged here
+ * either. Beside `did-not-finish` rather than inside it because the two are
+ * opposite things to a person — one is a question and the other is broken
+ * machinery — and for a fortnight the difference was a substring of a `because`.
  */
 export type StepVerdict =
   | "requested"
@@ -39,6 +45,7 @@ export type StepVerdict =
   | "failed"
   | "never-ran"
   | "did-not-finish"
+  | "asked"
   | "waived";
 
 export interface StepFinding {
@@ -350,6 +357,26 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           // The runtime's own sentence about the machinery, never about the
           // diff — `StepNeverRan.detail`'s reason, one row along in 0057's
           // table. No findings, because there is no verdict to have them.
+          evidence: d.detail,
+          findings: [],
+          by: null,
+          reason: null,
+        }),
+      };
+    }
+
+    case "StepAsked": {
+      const d = event.data as PayloadOf<"StepAsked">;
+      return {
+        ...state,
+        ...at,
+        steps: withStep(state, {
+          step: `${d.step}:${d.action}`,
+          verdict: "asked",
+          onSha: d.onSha,
+          // The question, in the agent's own words — and the one `detail` on
+          // this fold that is neither about the machinery nor about the diff.
+          // No findings, for `did-not-finish`'s reason: there is no verdict.
           evidence: d.detail,
           findings: [],
           by: null,

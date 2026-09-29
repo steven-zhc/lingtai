@@ -25,7 +25,7 @@
  * divides this file from the one beside it in one sentence — *the core is the
  * sequence and the outcome rules; everything that acts is a plugin.* The loop
  * owns the sequence. **A body owns the outcome rules for one step**: it asks for
- * the step's own work and says which of the six endings that answer is, in the
+ * the step's own work and says which of the seven endings that answer is, in the
  * vocabulary 0057 and 0058 §3c fix — and *which ending* is the whole of what a
  * caller downstream acts on, because a refusal buys a fix round and a
  * `did-not-finish` buys none of it.
@@ -177,8 +177,8 @@ export interface Claimed {
 }
 
 /**
- * **A step stopped and asked** — 0058 §3c's `needs-input`, and the only
- * `did-not-finish` with anywhere to go.
+ * **A step stopped and asked** — 0058 §3c's `needs-input`, and the one report
+ * with anywhere to go (`StepAsked`, its own ending since `#296`).
  *
  * One shape rather than a case written twice, because exactly two *bodies* can
  * produce it — `design` and `implement`
@@ -237,7 +237,8 @@ export type { SentBack };
  *
  * A crash, a spent turn budget, an agent that ran and committed nothing. There
  * is no question in it for anybody to answer and nothing for a judge to route,
- * which is the whole of what separates it from `Asked`.
+ * which is the whole of what separates it from `Asked` — and since `#296` that
+ * separation is two endings rather than two values of one `because`.
  */
 export interface Stopped {
   readonly stopped: string;
@@ -608,9 +609,10 @@ export const END_UNRESOLVED = "end-unresolved";
  */
 function directionOf(arriving: StepReached): JudgeWhen | null {
   const ending = arriving.ending;
-  // The only `did-not-finish` with anywhere to go, and the loop has already
-  // decided that: `goesToTheRouter` lets no other one arrive here.
-  if (ending.ending === "did-not-finish") return ending.because === NEEDS_INPUT ? NEEDS_INPUT : null;
+  // The one report with anywhere to go, and its own ending since `#296`: this is
+  // the last place `NEEDS_INPUT` is written down in the conductor, and it is a
+  // name in the recipe's `when:` vocabulary rather than a branch on a string.
+  if (ending.ending === "asked") return NEEDS_INPUT;
   if (ending.ending !== "refused") return null;
   if (arriving.step !== "merge") return "red";
   if (ending.because === "conflict") return "conflict";
@@ -734,8 +736,8 @@ function whatArrived(arriving: StepReached): Omit<Arrival, "when"> {
   const ending = arriving.ending;
   return {
     findings: arriving.results.flatMap((result) => result.findings),
-    // Every arriving ending has one — `StepRefused` and `StepDidNotFinish` are the
-    // only two the loop routes — and it is the words a person reads beside the
+    // Every arriving ending has one — `StepRefused` and `StepAsked` are the only
+    // two the loop routes — and it is the words a person reads beside the
     // judge's (0043).
     evidence: "detail" in ending ? ending.detail : "",
     // `reviewRefused`'s rule at the other door: by verdict, off the action that

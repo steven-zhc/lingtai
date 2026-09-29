@@ -860,16 +860,23 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    *
    * The clause was decided, drawn and routed for and nothing could produce the
    * token: `ARRIVE_AT_THE_ROUTER` carries `design`, `goesToTheRouter` admits a
-   * `did-not-finish` whose `because` is `needs-input`, `the-pass.py` draws the fan
-   * — and `createDraftAction` had three branches, none of which set it. So a design
-   * agent that found the ticket unanswerable wrote its doubts into the document and
-   * handed them to the implementer, which is the one reader that cannot answer them.
+   * question, `the-pass.py` draws the fan — and `createDraftAction` had three
+   * branches, none of which set it. So a design agent that found the ticket
+   * unanswerable wrote its doubts into the document and handed them to the
+   * implementer, which is the one reader that cannot answer them.
    *
    * **This is the whole path and not the action's branch**, which is what makes it
-   * worth a pass: the answer is parsed, the ending carries the token, the loop lets
-   * it past `goesToTheRouter`, `directionOf` calls it a `needs-input`,
-   * `BUILT_IN_FOR` has no built-in for one, and `DRAFTED` declares no `judge:` — so
-   * a person is the floor `#253` set, and what they are handed is the question.
+   * worth a pass: the answer is parsed, the pipeline reads `NEEDS_INPUT` and
+   * answers `askedAt`, `endingOf` reports `asked` and `StepAsked` is on the log,
+   * the loop lets it past `goesToTheRouter`, `directionOf` calls it a
+   * `needs-input`, `BUILT_IN_FOR` has no built-in for one, and `DRAFTED` declares
+   * no `judge:` — so a person is the floor `#253` set, and what they are handed is
+   * the question.
+   *
+   * **`StepAsked` and not `StepDidNotFinish`** (`#296`). The two shared an event
+   * until the ending split, so the one row on this stream that says *a person is
+   * being asked something* read *did not finish* — the same sentence a crashed
+   * reviewer writes.
    *
    * **Asserted on `events` and never on the run log** (0034): a run log is a trace
    * kept only while something is owed an explanation, and a question a person has
@@ -925,11 +932,14 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     expect(result).toMatchObject({ ok: "held", step: "design" });
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const stopped = run.find((e) => e.type === "StepDidNotFinish")!;
-    // The token is not on this event — `because` is the pass's, and what the log
-    // carries is the words. The routing it bought is the assertion below.
+    const stopped = run.find((e) => e.type === "StepAsked")!;
+    // The token is not on this event — it is what the *action* said, and what the
+    // log carries is the words. The routing it bought is the assertion below.
     expect(stopped.data).toMatchObject({ step: "design", action: "draft" });
     expect((stopped.data as { detail: string }).detail).toBe(asked);
+    // And the event a crash writes is not on this stream at all, which is the
+    // whole of what the split bought a reader of it.
+    expect(run.filter((e) => e.type === "StepDidNotFinish")).toEqual([]);
 
     // **And a person has it.** `WorkItemBlocked` is what the card reads, and
     // `raw` is the arriving step's own detail — the question, whole.

@@ -270,6 +270,9 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // and with it the *attempt 2, no more attempts* this line used to print about
   // a second attempt that never left the starting block.
   StepDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d["detail"])}`,
+  // Its own line since `#296`, and the verb is the whole of it: this row read
+  // *did not finish* over a question for as long as the two shared an event.
+  StepAsked: (d) => `${stepAt(d)} — asked: ${clip(d["detail"])}`,
   StepWaived: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
   ApprovalRequested: (d) => `${stepAt(d)} — ${clip(need(d, "question"))}`,
   ApprovalGranted: (d) => `${stepAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,

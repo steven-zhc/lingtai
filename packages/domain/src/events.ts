@@ -975,6 +975,38 @@ export const StepNeverRan = z.object({ ...stepBase, detail: z.string() });
  */
 export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() });
 
+/**
+ * The step's agent **stopped and asked something**, so it judged nothing and
+ * there is a question waiting for an answer — 0058 §3c, and `#296`.
+ *
+ * `StepDidNotFinish`'s sibling and not a flavour of it. The two cost the same
+ * nothing (0057 §1–3) and they go to different places: this one reaches
+ * `proposed`, where a judge decides between a person and *that step again,
+ * stating its assumption*, and the other stops the pass because there is no
+ * question in it for anybody to answer.
+ *
+ * **It was a `StepDidNotFinish` whose `because` happened to read `needs-input`
+ * until this event existed**, and that is what it is for. `because` is a plain
+ * `string` — it carries `conflict`, `verify-failed`, `claim-unconfirmed`,
+ * `passed-over`, `not-claimed` and whatever a crash left — so the one value the
+ * *workflow* branched on was indistinguishable, to the compiler, from the ones
+ * only a person reads. A token spelled `needs input`, or a plugin that set none,
+ * would have lost the destination silently and stopped a pass that had a
+ * question in it. `#279` is the same class caught after it cost $8.97; nothing
+ * had gone wrong here yet, which is the only good time to split a type.
+ *
+ * `detail` is the question, in the agent's own words (0043), and there is no
+ * `because`: *it asked* is the whole of the reason.
+ *
+ * **Version 1, and the log was reset rather than upcast** (`#296`,
+ * [014](../../../doc/experiments/014-the-log-before-the-fourth-reset.md)). Every
+ * row this type would have had was a `StepDidNotFinish` two days old, and 0061
+ * §7 spends a pre-1.0 history rather than carrying it, exactly as `#247` did for
+ * the eight `Gate*` renames. **After 1.0 the answer is an upcaster** and this
+ * sentence is where the next person reads which side of that line they are on.
+ */
+export const StepAsked = z.object({ ...stepBase, detail: z.string() });
+
 /** Humans need an escape hatch. It is recorded, never silent. */
 export const StepWaived = z.object({ ...stepBase, by: z.string(), reason: z.string() });
 
@@ -2088,6 +2120,7 @@ export const EVENTS = {
   StepFailed,
   StepNeverRan,
   StepDidNotFinish,
+  StepAsked,
   StepWaived,
   ApprovalRequested,
   ApprovalGranted,

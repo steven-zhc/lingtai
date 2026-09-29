@@ -940,7 +940,10 @@ describe("implement dispatches the one agent, and reports what it committed", ()
     {
       what: "asked",
       answer: { asked: "the ticket names two files and neither exists" } as Worked,
-      ending: { ending: "did-not-finish", because: NEEDS_INPUT },
+      // Its own ending since `#296`, and no `because`: *it asked* was a value of
+      // that field and is the discriminant now, which is what `routed: true`
+      // below no longer depends on a string comparison for.
+      ending: { ending: "asked" },
       routed: true,
     },
     {
@@ -1049,7 +1052,7 @@ describe("implement dispatches the one agent, and reports what it committed", ()
       "admit:passed",
       "prepared:passed",
       "design:passed",
-      "implement:did-not-finish",
+      "implement:asked",
       "proposed:routed",
       "implement:passed",
       "build:passed",
@@ -2117,12 +2120,17 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
  * and there is nothing to report a reason *about*. A question at `admit` is one
  * of those since `#268` — it is the `worktree:` plugin's `needs-approval` — so
  * what the row below asserts for it is the question rather than a `because`.
+ *
+ * **And `asked` is the third, since `#296`**, for `held`'s reason and not for
+ * `never-ran`'s: what a step that stopped to ask owes a reader is the question,
+ * which is on `detail`, and a `because` that could only ever spell *it asked* is
+ * the free-form field that ending was split out of. So `a question at
+ * \`implement\`` moved down to the row that asserts the question.
  */
 describe("every step that does not simply pass reports a reason", () => {
   it.each([
     { what: "a claim nobody could take", answers: { take: { passedOver: "no kind label" } } as Answers },
     { what: "a tree that was not cut", answers: { cut: { notCut: "no such base ref" } } as Answers },
-    { what: "a question at `implement`", answers: { dispatch: { asked: "which file?" } } as Answers },
     { what: "an agent with no receipt", answers: { dispatch: { stopped: "the budget went" } } as Answers },
     {
       what: "a merge the lane refused",
@@ -2139,13 +2147,32 @@ describe("every step that does not simply pass reports a reason", () => {
     for (const ending of reported) expect(ending.because).not.toBe("");
   });
 
-  /** And the two that report a question instead, which is the same obligation. */
+  /** And the three that report a question instead, which is the same obligation. */
   it("names the question where a step held instead of reporting", async () => {
     const { result } = await pass({ answers: { cut: { asked: "which base?" } } });
 
     const held = result.steps.map((visit) => visit.ending).filter((e) => e.ending === "held");
     expect(held).toEqual([{ ending: "held", at: "cut the branch", question: "which base?" }]);
     expect(outcomeOf(result)).toBe("blocked");
+  });
+
+  /**
+   * **And `asked`, whose question is on `detail` and whose `because` does not
+   * exist** (`#296`).
+   *
+   * The obligation is the same one and it is discharged by a different field. What
+   * this pins is that splitting the ending did not lose the words: the question
+   * the agent asked is on the ending a person and a judge both read, and no token
+   * stands in for it.
+   */
+  it("names the question where a step asked, and reports no reason beside it", async () => {
+    const { result } = await pass({ answers: { dispatch: { asked: "which file?" } } });
+
+    const asked = result.steps.map((visit) => visit.ending).filter((e) => e.ending === "asked");
+    expect(asked).toEqual([{ ending: "asked", at: "write the change", detail: "which file?" }]);
+    // The field the split removed, and the assertion that it is gone rather than
+    // empty: `"because" in ending` is what `reasonOf` reads.
+    for (const ending of asked) expect("because" in ending).toBe(false);
   });
 });
 

@@ -129,6 +129,11 @@ export interface ActionResult {
    * verdict, they cost different money, and the caller reads a field rather than
    * a sentence (0031 §1).
    *
+   * **And that token goes no further than this file** (`#296`). It is what an
+   * action says, and `runActionPipeline` is where it is read: a `did-not-finish`
+   * carrying it leaves as `askedAt` and a `StepAsked`, so no caller above the
+   * pipeline compares `because` to anything to learn where the pass goes.
+   *
    * Never a substitute for `evidence`. That is the words a person reads (0043);
    * this is the token a judge reads, and 0058 §3c asks for both.
    */
@@ -339,6 +344,11 @@ export type ActionEvent =
    *  nothing judged the diff. Appended once, because the action is run once
    *  (0057 §1, and §4's retry deleted by `#234`). */
   | { type: "StepDidNotFinish"; data: PayloadOf<"StepDidNotFinish"> }
+  /** The step's agent stopped and asked something, so nothing judged the diff
+   *  and there is a question to answer. Its own type since `#296`: it was a
+   *  `StepDidNotFinish` whose `because` happened to be `NEEDS_INPUT`, and a
+   *  destination that lives in a free-form string is one a typo loses. */
+  | { type: "StepAsked"; data: PayloadOf<"StepAsked"> }
   /** The same event `--no-merge` emits. One vocabulary for one idea. */
   | { type: "ApprovalRequested"; data: PayloadOf<"ApprovalRequested"> };
 
@@ -369,6 +379,22 @@ export interface PipelineResult {
    * reader of a sentence that 0031 §1 exists to prevent.
    */
   didNotFinishAt: { action: string; detail: string; because?: string } | null;
+  /**
+   * The action whose agent **stopped and asked something** (0058 §3c) — and
+   * `didNotFinishAt`'s sibling rather than a flavour of it, since `#296`.
+   *
+   * One verdict produces both (`did-not-finish`) and the two cost the same
+   * nothing, so 0057 grouped them; what separates them is where the pass goes,
+   * and until this field that fact was `didNotFinishAt.because === NEEDS_INPUT`
+   * — a control-flow decision read out of a string any of four call sites could
+   * misspell without the compiler noticing. The comparison is made here, once,
+   * in the file that owns the token, and every reader above this one reads a
+   * field.
+   *
+   * No `because`: *it asked* is the whole reason, where `didNotFinishAt` carries
+   * a word for each of the several unlike things that end that way.
+   */
+  askedAt: { action: string; detail: string } | null;
   /**
    * Every verdict, with the findings behind it.
    *
@@ -536,32 +562,56 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         heldAt: null,
         neverRanAt: { action: action.name, detail: result.evidence },
         didNotFinishAt: null,
+        askedAt: null,
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
       };
     }
 
     if (result.verdict === "did-not-finish") {
-      // The neighbouring absence, and no verdict event for the same reason: the
-      // agent started, produced no receipt, and nothing judged the diff. One
-      // event, because the action ran once — and it stops the pass rather than
-      // the conductor, because a crash is local (0057 §3). `didNotFinishAt` is
-      // a field rather than a sentence to be re-read.
-      await emit({ type: "StepDidNotFinish", data: { ...base, detail: result.evidence } });
+      /**
+       * **The one place `NEEDS_INPUT` is compared to anything** (`#296`).
+       *
+       * One verdict arrives here carrying two unlike outcomes — *the agent
+       * stopped and asked* and *the agent left no receipt* — and they go to
+       * different places: the first reaches `proposed` and may end at a person,
+       * the second stops the pass. That difference used to be re-derived from
+       * `because` at four call sites above this one (`endingOf`,
+       * `goesToTheRouter`, `onOffer`, `sentBackTo`), where a token spelled
+       * `"needs input"` or a plugin that forgot to set one would have silently
+       * lost the destination and every one of them would have compiled.
+       *
+       * So the string is read once, here, in the file that defines the token,
+       * and what leaves this function is a field and an event type.
+       */
+      const asked = result.because === NEEDS_INPUT;
+      // No verdict event either way, for the reason `never-ran` has none: the
+      // agent judged nothing. Which of the two it was is the event's name —
+      // `StepAsked` has a question in it and `StepDidNotFinish` has broken
+      // machinery, and a board drawing them alike is `#279`'s shape. One event,
+      // because the action ran once (0057 §1, `#234`), and it stops the pass
+      // rather than the conductor, because both are local (0057 §3).
+      await emit(
+        asked
+          ? { type: "StepAsked", data: { ...base, detail: result.evidence } }
+          : { type: "StepDidNotFinish", data: { ...base, detail: result.evidence } },
+      );
       return {
         ok: false,
         failedAt: null,
         heldAt: null,
         neverRanAt: null,
         // **The action's own word where it has one**, exactly as `failedAt` takes
-        // one from the `merge` kind: *the agent stopped to ask* is a
-        // `did-not-finish` that may reach the router, and *it left no receipt* is
-        // one that may not (`NEEDS_INPUT`, `endingOf` in `pass.ts`).
-        didNotFinishAt: {
-          action: action.name,
-          detail: result.evidence,
-          ...(result.because === undefined ? {} : { because: result.because }),
-        },
+        // one from the `merge` kind — and `NEEDS_INPUT` is no longer one of them,
+        // because it is the field beside this rather than a value in it.
+        didNotFinishAt: asked
+          ? null
+          : {
+              action: action.name,
+              detail: result.evidence,
+              ...(result.because === undefined ? {} : { because: result.because }),
+            },
+        askedAt: asked ? { action: action.name, detail: result.evidence } : null,
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
       };
@@ -581,6 +631,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         heldAt: action.name,
         neverRanAt: null,
         didNotFinishAt: null,
+        askedAt: null,
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
       };
@@ -609,6 +660,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       heldAt: null,
       neverRanAt: null,
       didNotFinishAt: null,
+      askedAt: null,
       results,
       skipped: actions.slice(index + 1).map((a) => a.name),
     };
@@ -620,6 +672,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     heldAt: null,
     neverRanAt: null,
     didNotFinishAt: null,
+    askedAt: null,
     results,
     skipped: [],
   };

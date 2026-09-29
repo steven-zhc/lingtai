@@ -91,12 +91,17 @@ function splitStep(key: string): { step: string; action: string } {
  * so a waived `review` went on the log as a waived `build`. Nothing a person
  * clicks names a gate any more; the run says which ones refused.
  *
- * `failed`, `never-ran` and `did-not-finish` alike: a gate whose agent never
- * started, or started and produced no receipt, did not pass either, and merging
- * over one is merging past a point nobody judged. A verdict on any other sha is
- * not about this diff and is left out, as `stepsOn` does.
+ * `failed`, `never-ran`, `did-not-finish` and `asked` alike: a gate whose agent
+ * never started, started and produced no receipt, or stopped to ask something,
+ * did not pass either, and merging over one is merging past a point nobody
+ * judged. A verdict on any other sha is not about this diff and is left out, as
+ * `stepsOn` does.
+ *
+ * `asked` is the newest of the four and belongs here for the reason the other
+ * three do rather than for a new one (`#296`): *there is a question about this
+ * diff and nobody answered it* is not a judgement of it.
  */
-const UNPASSED = new Set(["failed", "never-ran", "did-not-finish"]);
+const UNPASSED = new Set(["failed", "never-ran", "did-not-finish", "asked"]);
 
 export function refusingOn(run: RunState, onSha: string): string[] {
   return Object.values(run.steps)

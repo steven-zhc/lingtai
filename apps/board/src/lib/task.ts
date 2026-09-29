@@ -549,6 +549,28 @@ function refusalOn(run: RunView): Deciding | null {
     };
   }
 
+  /**
+   * And the third absence, which is the one that is not a fault (`#296`).
+   *
+   * Above the refusal below it for `did-not-finish`'s reason — the pipeline stops
+   * where a step asked, so a `failed` beside it is an earlier round's, about a
+   * commit that has moved — and *below* the two above it, because a fault is the
+   * more urgent reading where a run somehow carries both.
+   *
+   * The sentence is the question and says so. Reading *did not finish — nothing
+   * judged this diff* over a design agent's question, which is what this page did
+   * while the two shared an ending, asks a person to acknowledge a failure that
+   * did not happen instead of answering what was asked.
+   */
+  const question = [...run.steps].reverse().find((g) => g.state === "asked");
+  if (question) {
+    return {
+      attempt: run.attempt,
+      source: question.step.replace(":", " / "),
+      line: "asked — " + (oneLine(question.evidence) ?? "no question was recorded"),
+    };
+  }
+
   const refused = [...run.steps].reverse().find((g) => g.state === "failed");
   if (refused) {
     return {
@@ -892,6 +914,10 @@ const VERDICT: Record<string, string> = {
    *  with no receipt, which is local and ends the pass (0057 §1–3; §4's retry
    *  is deleted, `#234`). */
   StepDidNotFinish: "did-not-finish",
+  /** No verdict either, and a question rather than a fault: the agent stopped and
+   *  asked something, which reaches `proposed` and may end at a person (`#296`,
+   *  0058 §3c). */
+  StepAsked: "asked",
   StepWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "passed",

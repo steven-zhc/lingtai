@@ -261,10 +261,11 @@ export interface StepPassed extends LeftTheTreeAt, WroteTheDesign {
  * beside prose, because `proposed` routes on the first and `waiting` displays
  * the second ([0043](../../../doc/decisions/0043-evidence-is-plain-text.md)).
  *
- * There is exactly one value of `because` the workflow itself reads, and it is
- * not a refusal's: `NEEDS_INPUT`, on `StepDidNotFinish`, where it decides whether
- * the pass has anywhere to go. Every other token is read by a judge and by a
- * person, and neither of them needs it enumerated here.
+ * **No value of `because` decides where the pass goes**, and since `#296` that
+ * is a property of the types rather than a claim in a comment: the one that did
+ * — `NEEDS_INPUT` on a `did-not-finish` — is the `StepAsked` ending. Every token
+ * left is read by a judge and by a person, and neither of them needs it
+ * enumerated here.
  */
 export interface StepRefused extends LeftTheTreeAt {
   readonly ending: "refused";
@@ -297,24 +298,24 @@ export interface StepHeld extends LeftTheTreeAt {
 }
 
 /**
- * The step ran and produced no judgement of any kind.
+ * The step ran and produced no judgement of any kind, and there is **no
+ * question in it**.
  *
  * **Kept apart from a refusal from the start, because it costs different
  * money** ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)):
  * a refusal buys a fix round and holds the item, and this buys none of it.
  *
- * Two unlike things end this way and the difference is the whole of `because`:
+ * What ends this way is *an agent that started and left no receipt* — a crash, a
+ * spent turn budget, a body that threw — and the several mechanical declines
+ * that are nobody's judgement either: `claim`'s `passed-over`, `not-claimed` and
+ * `claim-unconfirmed`, `end`'s `END_UNRESOLVED`, and a `failed` at one of the
+ * five steps the workflow does not let refuse. 0057 §2 is the rule for all of
+ * them and it is *the pass stops*: there is nothing for a judge to route.
  *
- * - **an agent that stopped to ask** — `RunAwaitingInput`, and 0058 §3c's
- *   `needs-input`. It reaches `proposed`, which decides whether a person is
- *   worth interrupting or whether the agent should go round again stating its
- *   assumption. The token is `NEEDS_INPUT` and the loop reads it;
- * - **an agent that started and left no receipt**, a crash, a spent turn
- *   budget, a body that threw. 0057 §2 is the rule for those and it is *the
- *   pass stops*: there is no question for anybody to answer and nothing for a
- *   judge to route.
- *
- * Neither buys a fix round. Only the first has anywhere to go.
+ * **`StepAsked` was inside this type until `#296`**, told apart by
+ * `because === NEEDS_INPUT`. That is why `because` is still here and why it is no
+ * longer read for control flow: every value it carries now is for a judge and a
+ * person, and the one the *workflow* branched on is the ending below.
  */
 export interface StepDidNotFinish extends LeftTheTreeAt {
   readonly ending: "did-not-finish";
@@ -324,19 +325,52 @@ export interface StepDidNotFinish extends LeftTheTreeAt {
 }
 
 /**
- * **The one `because` the workflow itself reads**, and the reason it must be a
- * constant rather than a string spelled out at two call sites.
+ * **The step stopped and asked something** — 0058 §3c, and the one report with a
+ * destination.
  *
- * 0058 §3c gives `admit`, `design` and `implement` this token for *the step
- * stopped and asked*, and it is the only `did-not-finish` with a destination:
- * the judge's call is `waiting` with the question, or that step again with
- * *state your assumption*. Every other value of `because` belongs to the step
- * that produced it and the judge that reads it — see `StepRefused`.
+ * `admit`, `design` and `implement` can reach it: an agent stopped mid-flight
+ * through the hook (`RunAwaitingInput`), or answered a question where a document
+ * was asked for. It arrives at `proposed`, whose call is `waiting` with the
+ * question or *that step again, stating its assumption* — and nothing but the
+ * step that asked knows the question, which is why `onOffer` offers that step
+ * and no other from here.
  *
- * **It moved to `@lingtai/actions` in `#266` and is re-exported here.** The
- * agent at `implement` is a plugin now, so the token is produced one layer down
- * — `createWorkAction` sets it on the result and `endingOf` reads it back — and
- * a second definition of one word is the drift `worktree-action.ts` names.
+ * **It cost 0057's grouping nothing to split it out** (`#296`). This buys no fix
+ * round either, so by *cost* it is still `did-not-finish`'s twin and 0057 §1–3
+ * covers both; what it does not share is *destination*, and that was a
+ * `did-not-finish` whose `because` happened to equal `NEEDS_INPUT`. `because` is
+ * a plain `string` carrying a dozen unlike words, so the compiler could not tell
+ * the one the workflow branched on from the ones only a person reads: a token
+ * spelled `needs input`, a plugin that set none, an action that forgot — each is
+ * a legal `string` and each silently loses the destination and stops a pass that
+ * had a question in it. `#279` is the same class caught after it cost $8.97.
+ *
+ * **No `because`.** *It asked* is the whole of the reason, and a field that could
+ * only ever hold one value is the free-form string this ending exists to be rid
+ * of. `detail` is the question, in the agent's own words (0043).
+ */
+export interface StepAsked extends LeftTheTreeAt {
+  readonly ending: "asked";
+  /** The action whose agent asked, or null where the step's own work did. */
+  readonly at: string | null;
+  /** The question. */
+  readonly detail: string;
+}
+
+/**
+ * **The token an action says *it asked* with, and the direction a `judge:` is
+ * declared at** — no longer a value the workflow compares anything to (`#296`).
+ *
+ * It is `ActionResult.because` on the way up: the two `agent` actions that can be
+ * asked a question set it, `runActionPipeline` reads it *once* and answers
+ * `askedAt`, and `endingOf` turns that into `StepAsked`. Above the pipeline
+ * nothing spells it to decide where a pass goes; what is left is `directionOf`
+ * handing it to `proposed` as the `when:` a recipe writes, which is a name in a
+ * vocabulary rather than a branch.
+ *
+ * **It moved to `@lingtai/actions` in `#266` and is re-exported here**, because
+ * the agent at `implement` is a plugin and a second definition of one word is the
+ * drift `worktree-action.ts` names.
  */
 export { NEEDS_INPUT, type SentBack };
 
@@ -404,10 +438,17 @@ export interface StepRouted extends LeftTheTreeAt {
   readonly chose?: Destination;
 }
 
-/** The six ways a step ends: five reports, and `proposed`'s one decision. */
-export type StepEnding = StepPassed | StepRefused | StepHeld | StepDidNotFinish | StepNeverRan | StepRouted;
+/** The seven ways a step ends: six reports, and `proposed`'s one decision. */
+export type StepEnding =
+  | StepPassed
+  | StepRefused
+  | StepHeld
+  | StepDidNotFinish
+  | StepAsked
+  | StepNeverRan
+  | StepRouted;
 
-/** The five a step *reports*. Exactly the five `runActionPipeline` can produce. */
+/** The six a step *reports*. Exactly the six `runActionPipeline` can produce. */
 export type StepReport = Exclude<StepEnding, StepRouted>;
 
 /**
@@ -892,7 +933,7 @@ export function onOffer(at: Step, ending: StepEnding, ceilings: Ceilings, rounds
   // half's, which is the distinction the two sets exist to keep.
   if (at === "proposed" && ending.ending === "passed") reachable.push("claim");
 
-  if (ending.ending === "did-not-finish" && ending.because === NEEDS_INPUT) {
+  if (ending.ending === "asked") {
     // The step that asked, and nothing else: nobody but it knows the question,
     // so the edges below are not reachable from a question either.
     reachable.push(at);
@@ -960,13 +1001,18 @@ export const ARRIVE_AT_THE_ROUTER = [
  * The other half of the drawing above, read off the ending rather than off the
  * step. What does **not** arrive is written on the endings themselves —
  * `StepHeld` (the recipe already asked a person), `StepNeverRan` (the account,
- * not the diff) — and one half of `did-not-finish`: 0057 §2's crash has no
- * question in it for a judge to answer, where `needs-input` is nothing but a
- * question.
+ * not the diff), `StepDidNotFinish` (0057 §2's crash has no question in it for a
+ * judge to answer).
+ *
+ * **Two `ending` values and no `because`** (`#296`). It read
+ * `ending === "did-not-finish" && ending.because === NEEDS_INPUT` until *asked*
+ * was its own ending, which is one control-flow decision taken on a free-form
+ * string: nothing in the type system said that a plugin spelling the token
+ * differently, or forgetting it, would send a pass with a question in it to a
+ * stop instead of to a judge.
  */
-function goesToTheRouter(ending: StepEnding): ending is StepRefused | StepDidNotFinish {
-  if (ending.ending === "refused") return true;
-  return ending.ending === "did-not-finish" && ending.because === NEEDS_INPUT;
+function goesToTheRouter(ending: StepEnding): ending is StepRefused | StepAsked {
+  return ending.ending === "refused" || ending.ending === "asked";
 }
 
 // ------------------------------------------------------------- the loop ----
@@ -1483,10 +1529,7 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
   if (route.ending !== "routed" || route.to !== step) return null;
   const arrived = reached.at(-2);
   const asked =
-    arrived !== undefined &&
-    arrived.step === step &&
-    arrived.ending.ending === "did-not-finish" &&
-    arrived.ending.because === NEEDS_INPUT
+    arrived !== undefined && arrived.step === step && arrived.ending.ending === "asked"
       ? arrived.ending.detail
       : null;
   // And what it printed, where that is not the question `asked` already holds.
@@ -1639,13 +1682,13 @@ async function runStep(
  * `RefusalReason`'s doc says the old loop was built to remove. A run that
  * vanishes is the one shape an unattended pipeline cannot report.
  *
- * **`did-not-finish` at every one of the ten, and never `refused`**: a crash is
- * not a judgement about the change, so it buys no fix round and stands only the
- * pass down (0057 §1–3). `because` is `"threw"` rather than `NEEDS_INPUT`, and
- * that is not cosmetic: it is what stops a crash reaching the router, since
- * there is no question in it for a judge to answer. *The step threw* and *an
- * agent started and left no receipt* are likewise told apart by a caller
- * reading a field rather than a sentence (0031 §1) — and the message the
+ * **`did-not-finish` at every one of the ten, and never `refused` or `asked`**: a
+ * crash is not a judgement about the change, so it buys no fix round and stands
+ * only the pass down (0057 §1–3). That it does not reach the router is now the
+ * ending's own doing rather than the value of `because` — `goesToTheRouter` reads
+ * no string since `#296`, so a crash cannot acquire a destination by writing one.
+ * `because: "threw"` is what tells *the step threw* from *an agent started and
+ * left no receipt*, a field rather than a sentence (0031 §1), and the message the
  * assertion wrote is on `detail`, which is where a person reads it.
  */
 function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
@@ -1661,9 +1704,9 @@ function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
 }
 
 /**
- * The five verdicts `runActionPipeline` can produce, read once.
+ * The six endings `runActionPipeline` can produce, read once.
  *
- * Each of the four absences is asked for before `ok`, so a result that somehow
+ * Each of the five absences is asked for before `ok`, so a result that somehow
  * carries both cannot read as a pass — and a result carrying neither is a bug
  * in the pipeline rather than a step that quietly succeeded.
  *
@@ -1674,17 +1717,21 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   if (result.neverRanAt !== null) {
     return { ending: "never-ran", at: result.neverRanAt.action, detail: result.neverRanAt.detail };
   }
+  // **Asked before did-not-finish, and neither reads a string** (`#296`). The
+  // pipeline compares `NEEDS_INPUT` once, in the file that defines it, and what
+  // arrives here is two fields that are never both set: *the agent asked
+  // something* has a destination, and *the agent left no receipt* has none.
+  if (result.askedAt !== null) {
+    return { ending: "asked", at: result.askedAt.action, detail: result.askedAt.detail };
+  }
   if (result.didNotFinishAt !== null) {
     return {
       ending: "did-not-finish",
       // The pipeline's own name for it, and no finer word: it knows that an
-      // agent started and left no receipt and nothing else. It is deliberately
-      // not `NEEDS_INPUT` — nobody was asked anything, so there is nothing for
-      // the router to route and 0057 §2's *the pass stops* is the rule.
-      // **Unless the action had a word of its own** (`#266`), which is
-      // `becauseFrom`'s rule one branch down: `createWorkAction` sets
-      // `NEEDS_INPUT` when its agent stopped to ask, and *asked* is the one
-      // `did-not-finish` with a destination.
+      // agent started and left no receipt and nothing else. **Unless the action
+      // had a word of its own** (`#266`), which is `becauseFrom`'s rule one
+      // branch down — and none of the words left here is one the workflow reads,
+      // which is what the branch above bought.
       because: result.didNotFinishAt.because ?? "did-not-finish",
       at: result.didNotFinishAt.action,
       detail: result.didNotFinishAt.detail,
@@ -1744,9 +1791,9 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   }
   if (result.ok) return { ending: "passed" };
   throw new Error(
-    "runActionPipeline returned `ok: false` with no failed, held, never-ran or did-not-finish " +
-      "action. That is a pipeline that stopped for a reason it did not name, and a pass cannot " +
-      "report it — see `PipelineResult` in packages/actions/src/action.ts.",
+    "runActionPipeline returned `ok: false` with no failed, held, never-ran, did-not-finish or " +
+      "asked action. That is a pipeline that stopped for a reason it did not name, and a pass " +
+      "cannot report it — see `PipelineResult` in packages/actions/src/action.ts.",
   );
 }
 

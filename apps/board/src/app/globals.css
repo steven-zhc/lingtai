@@ -434,6 +434,20 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
   );
   box-shadow: inset 0 0 0 1px var(--fail);
 }
+/* **Reached, and it asked something** — the same hatch, in the held colour rather
+   than the fail one (`#296`).
+
+   The hatch says what the two above it say: nothing judged this diff here. The
+   colour says the part that is different, and it is the part a person acts on —
+   this is a question waiting for an answer, not machinery that broke. It wore
+   `t-never` until *asked* was its own ending, which put *Lingtai's bug* over a
+   pass that was working and waiting. */
+.scell.t-asked {
+  background: repeating-linear-gradient(
+    45deg, var(--held) 0 2px, var(--held-soft) 2px 4px
+  );
+  box-shadow: inset 0 0 0 1px var(--held);
+}
 /* The only motion on a card, and it stops when the reader has asked for stillness.
    The rule at the top of this file already covers it; this is here so that
    deleting the blanket rule cannot quietly leave a card pulsing. */
@@ -480,6 +494,9 @@ a.reading:hover { color: var(--ink); text-decoration: underline; text-underline-
    both grey, and the difference between them has to survive being grey. */
 .slab.l-off { color: var(--rule-2); font-style: italic; }
 .slab.l-bad { color: var(--fail); }
+/* A step that stopped and asked. Not the fail colour: it is the one non-pass that
+   is nothing going wrong, and the cell beside it is hatched in this colour too. */
+.slab.l-held { color: var(--held); }
 
 /* The one sentence under the bar: the action, and what bounds it. */
 .snow {

@@ -630,6 +630,7 @@ export const taskViewProjection: Projection = {
         case "StepFailed":
         case "StepNeverRan":
         case "StepDidNotFinish":
+        case "StepAsked":
         case "StepWaived":
         case "ApprovalRequested":
         case "ApprovalGranted":
@@ -707,7 +708,7 @@ export const taskViewProjection: Projection = {
 /**
  * What a card counts a gate event as.
  *
- * Seven events, six verdicts, and the distinctions are the point. `waived` and
+ * Nine events, eight verdicts, and the distinctions are the point. `waived` and
  * `approved` used to both be `passed`, which made a person overriding a red
  * build indistinguishable from a green one — the distinction a waiver records
  * who and why for (#78). A machine ran it and it went green, a machine ran it
@@ -725,6 +726,12 @@ const VERDICT: Record<string, string> = {
   // account was learned (0057). Drawn as its own state rather than as a refusal
   // — 0016 §4's rule, which is what `#133` applied one row up.
   StepDidNotFinish: "did-not-finish",
+  // A third neither, and the only one that is not a fault: the agent stopped and
+  // asked something (`#296`, 0058 §3c). Its own state because it is its own
+  // sentence to a person — *answer this* rather than *look at this* — which is
+  // 0016 §4's rule again, and the reason the card draws it in the held colour
+  // rather than in the fail hatch `did-not-finish` wears.
+  StepAsked: "asked",
   StepWaived: "waived",
   ApprovalRequested: "pending",
   ApprovalGranted: "approved",

@@ -45,20 +45,32 @@ const CELL_TONE: Record<StepState, string> = {
   // two is *whose* fault and *what to do*, which is a sentence and not a tone —
   // so it is on the segment's title and on the card, not in a sixth colour.
   "did-not-finish": "t-never",
+  // **The same hatch in the held colour, and not the fail one** (`#296`). It was
+  // `did-not-finish` until *asked* was its own ending, so a step waiting for an
+  // answer wore the mark that means *our bug*. The hatch is kept because the fact
+  // it carries is the one `never-ran` and `did-not-finish` carry too — nothing
+  // judged this diff here — and the colour is the one `waived` wears, because
+  // what is standing in for a verdict is a person either way.
+  asked: "t-asked",
   pending: "t-pending",
   skipped: "t-skipped",
 };
 
 /**
- * Which of the four weights a point's name carries.
+ * Which of the five weights a point's name carries.
  *
  * `off` is the one doing work no colour can. *Nothing configured* and *not
  * reached yet* are both grey, so the difference between them has to survive
  * being grey: it is italic.
+ *
+ * `held` is the newest and it is `bad`'s opposite number (`#296`): a step that
+ * stopped and asked is the one non-pass that is nothing going wrong, so the fail
+ * colour over its name would say the thing the ending exists to stop saying.
  */
 function labelTone(p: StepProgress, at: string | null): string {
   if (p.actions.length === 0) return "l-off";
   if (p.state === "failed" || p.state === "never-ran" || p.state === "did-not-finish") return "l-bad";
+  if (p.state === "asked") return "l-held";
   if (p.state === "running" || p.step === at) return "l-at";
   return "l-done";
 }
@@ -71,6 +83,9 @@ function segTitle(p: StepProgress): string {
   }
   if (p.state === "did-not-finish") {
     return `${p.step}: ${p.planned.join(", ")} — its agent started and produced no verdict (0057)`;
+  }
+  if (p.state === "asked") {
+    return `${p.step}: ${p.planned.join(", ")} — its agent stopped and asked something (0058 §3c)`;
   }
   return `${p.step}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
 }

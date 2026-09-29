@@ -186,10 +186,15 @@ const installFails = (evidence = "pnpm install exited 1") => ({
   at: { prepared: [canned("install", { verdict: "failed", evidence, findings: [] })] },
 });
 
-/** An `implement` body that reports 0058 §3c's `needs-input` rather than passing. */
+/**
+ * An `implement` body that reports 0058 §3c's question rather than passing.
+ *
+ * `ending: "asked"` and no `because` since `#296`: the value the workflow branched
+ * on is the discriminant now, so a body that spelled the token wrongly does not
+ * compile where it used to route to nowhere.
+ */
 const asked = (detail: string): StepBody<Step> => async () => ({
-  ending: "did-not-finish",
-  because: NEEDS_INPUT,
+  ending: "asked",
   at: null,
   detail,
 });
@@ -713,7 +718,7 @@ describe("every step that does not pass arrives at proposed", () => {
     expect(offering.affordable).toEqual(["waiting", "implement"]);
     expect(result.stoppedAt).toMatchObject({
       step: "implement",
-      ending: { ending: "did-not-finish", because: NEEDS_INPUT },
+      ending: { ending: "asked" },
     });
     expect(result.rested).toBe("waiting");
   });
@@ -911,7 +916,7 @@ describe("the workflow decides which steps the judge may choose from", () => {
   const spent: Ceilings = { rounds: 0, restartsLeft: 0 };
   const spare: Ceilings = { rounds: 2, restartsLeft: 1 };
   const refused: StepEnding = { ending: "refused", because: "action-refused", at: "check", detail: "…" };
-  const asking: StepEnding = { ending: "did-not-finish", because: NEEDS_INPUT, at: null, detail: "?" };
+  const asking: StepEnding = { ending: "asked", at: null, detail: "?" };
   /** `proposed`'s own visit, which is the `findings` direction and no other. */
   const wayThrough: StepEnding = { ending: "passed" };
 
