@@ -313,6 +313,68 @@ describe("the recipe's own block, built", () => {
       actionsFromRecipe("design", [{ name: "keep it", file: "doc/design/x.md" }], {}),
     ).toThrow(/no keep was supplied/);
   });
+
+  /**
+   * **`{{issue}}` in the path becomes the ticket's ref, and the locator is the
+   * expanded path** (`#310`) — the whole of what this ticket is for.
+   *
+   * The `evidence` assertion is the actual subject. A fixed path keeps **one**
+   * document, the newest, under a name the log handed to every pass: the
+   * sentence on ticket A's `StepPassed` still reads *wrote a 67 B design to
+   * `doc/design/this-change.md`* a year later, and what is at that path by then
+   * is ticket B's design, with nothing anywhere saying so. Worse than a dead
+   * link, because a dead link is obviously dead. So what the sentence has to
+   * carry is the expanded path and never the template.
+   *
+   * Through `actionsFromRecipe`, so the seam is asserted too: the path comes off
+   * the recipe as written and the ticket comes off `deps.file`.
+   */
+  it("expands `{{issue}}` into the path it keeps at, and into the locator", async () => {
+    const kept = keeping({ at: "doc/design/300.md" }, "300");
+    const [action] = actionsFromRecipe(
+      "design",
+      [{ name: "keep the note", file: "doc/design/{{issue}}.md" }],
+      { file: kept },
+    );
+
+    const result = await action!.run(context({ document: DOCUMENT }));
+    expect(kept.seen).toEqual([{ path: "doc/design/300.md", document: DOCUMENT }]);
+    expect(result.locator).toBe("doc/design/300.md");
+    expect(result.evidence).toBe(
+      "wrote a 67 B design to `doc/design/300.md`, committed to the branch",
+    );
+    expect(result.evidence).not.toContain("{{issue}}");
+  });
+
+  /**
+   * **And an expansion that leaves the worktree is refused before anything is
+   * written**, which is the ticket's `Watch out`: `whyThePathEscapes` runs on the
+   * written string when the recipe resolves, so a ref carrying `..` would walk
+   * out of the tree past a check that had already said yes.
+   *
+   * `did-not-finish` and not `refused` — `design` is not one of `REFUSING_STEPS`
+   * (0058 §3) and this action writes rather than judges — and **the keep was
+   * never called**, which is the half that matters: a refusal after the write is
+   * a refusal about a file already on disk.
+   *
+   * Unreachable through the conductor today, because `options.issue` is a number
+   * and `took.ticket.ref` is `String(issue.number)`. It is a guard for 0036's
+   * named evolution to `{{ref}}`, and a store whose refs read `PROJ-123`.
+   */
+  it("reports an expansion that escapes, and keeps nothing", async () => {
+    const kept = keeping({ at: "doc/design/x.md" }, "../../etc/passwd");
+    const [action] = actionsFromRecipe(
+      "design",
+      [{ name: "keep the note", file: "doc/design/{{issue}}.md" }],
+      { file: kept },
+    );
+
+    const result = await action!.run(context({ document: DOCUMENT }));
+    expect(result.verdict).toBe("did-not-finish");
+    expect(result.evidence).toContain('".." segment');
+    expect(result.evidence).toContain("doc/design/{{issue}}.md");
+    expect(kept.seen, "the keep was called with a path that escapes").toEqual([]);
+  });
 });
 
 /**

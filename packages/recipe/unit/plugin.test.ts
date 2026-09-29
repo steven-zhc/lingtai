@@ -50,6 +50,7 @@ import {
   refsPlugin,
   runPlugin,
   servesStep,
+  thePathForThisTicket,
   whyNoKindAt,
   withheld,
   whyThePathEscapes,
@@ -1120,6 +1121,75 @@ describe("the one `design` keeps with", () => {
     expect(why).toContain("with no `..` in it");
     // Refused at resolve, which is the whole of §6.
     expect(why).toContain("before a worktree, before an agent, before any money");
+  });
+
+  /**
+   * **`{{issue}}` is the path's one placeholder, and the expansion is judged by
+   * the same rule the written string was** (`#310`).
+   *
+   * A fixed path keeps one document — the newest — under a name the log handed to
+   * every pass, so ticket A's locator opens ticket B's design a week later with
+   * nothing saying so: 0066 §1 under a new spelling. The substitution is what
+   * ends that, and it runs when the action runs rather than here, because
+   * `resolveRecipe` has no ticket and `configHash` is *of the resolved form*.
+   *
+   * **The last case is the one that cannot be reached through the conductor
+   * today**, and it is why the function exists rather than a `replaceAll` inside
+   * `createFileAction`: `whyThePathEscapes` reads the string it is handed, so a
+   * ref carrying `..` would walk out of the worktree past a check that had
+   * already said yes. `options.issue` is a number, but 0036 names the evolution —
+   * *`{{issue}}` should become `{{ref}}`*, and Jira's is `PROJ-123`.
+   */
+  it("expands `{{issue}}` into the path, and judges what it expanded to", () => {
+    expect(thePathForThisTicket("doc/design/{{issue}}.md", "310")).toEqual({
+      path: "doc/design/310.md",
+    });
+    // A path with no placeholder is the same string it was written as, which is
+    // what makes this land inert on a machine whose recipe names a fixed path.
+    expect(thePathForThisTicket("doc/design/this-change.md", "310")).toEqual({
+      path: "doc/design/this-change.md",
+    });
+    // Twice in one path is twice expanded — `replaceAll`, not `replace`.
+    expect(thePathForThisTicket("doc/{{issue}}/{{issue}}.md", "310")).toEqual({
+      path: "doc/310/310.md",
+    });
+
+    const escaped = thePathForThisTicket("doc/{{issue}}.md", "../../etc/passwd");
+    expect("path" in escaped, "a ref carrying `..` reached a path").toBe(false);
+    expect((escaped as { escapes: string }).escapes).toContain('".." segment');
+    // And a ref that makes the whole path absolute, which is the other half.
+    const rooted = thePathForThisTicket("{{issue}}", "/etc/passwd");
+    expect((rooted as { escapes?: string }).escapes).toContain("absolute");
+  });
+
+  /**
+   * **A placeholder this field does not take is refused where it is written**,
+   * and it is the ticket's own failure reached by a typo rather than by a fixed
+   * path: `doc/design/{{title}}.md` escapes nothing, so without this clause a
+   * pass would commit a file literally named `{{title}}.md` to `main` and put
+   * that path on the log as the locator somebody follows a year later.
+   *
+   * `{{title}}` is left out on purpose and the refusal says so — a title in a
+   * filename is a slug problem, and none of it is worth deciding for a path.
+   */
+  it("refuses a placeholder that is not `{{issue}}`, and names the one it takes", () => {
+    const refused = StepMap.safeParse({
+      design: [DRAFTER, { name: "keep it", file: "doc/design/{{title}}.md" }],
+    });
+    expect(refused.success).toBe(false);
+    const why = refused.error!.issues[0]!.message;
+    expect(why).toContain("`{{title}}`, which a `file:` path does not take");
+    expect(why).toContain("`{{issue}}` is the one placeholder");
+    expect(why).toContain("slug problem");
+
+    // And the one it takes passes the escape check unchanged, so nothing there
+    // was loosened to make room for it: `doc`, `design`, `{{issue}}.md`.
+    expect(whyThePathEscapes("doc/design/{{issue}}.md")).toBeNull();
+    expect(
+      StepMap.safeParse({
+        design: [DRAFTER, { name: "keep it", file: "doc/design/{{issue}}.md" }],
+      }).success,
+    ).toBe(true);
   });
 
   /**
