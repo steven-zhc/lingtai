@@ -57,25 +57,37 @@
  * `#299`'s arrangement, and for its reason: a correction that lives only in a
  * second file gets reinstated from the first.
  *
- * ## Broken twice on purpose, and what each break cost
+ * ## Broken three times on purpose, and what each break cost
  *
  * A test that guards a negative is worth what it catches, so the core was made
- * to do each of the two forbidden things once and the result recorded here
+ * to do each of the three forbidden things once and the result recorded here
  * rather than remembered:
  *
  * ```
- * resolve   runStep's context: join(reaching.context.cwd, d.locator)   3 of 4 red
- * classify  designFrom: drop a locator containing "://"                3 of 4 red
+ * resolve      runStep's context: join(reaching.context.cwd, d.locator)   3 of 5 red
+ * classify     designFrom: drop a locator containing "://"                3 of 5 red
+ * canonicalise designFrom: new URL(locator).toString(), throw → as-is     3 of 5 red
  * ```
  *
- * The resolve left `/nowhere/https:/example.invalid/design/1` at both ends — the
- * doubled slash collapsed, which is exactly the quiet corruption a path-shaped
- * core does to a URL — and the classify left the locator off the ending
- * altogether. Both were reverted; neither is in the tree.
+ * The resolve left `/nowhere/https:/Example.INVALID/design/1%20a/` at both ends
+ * — the doubled slash collapsed and so did the `..`, which is exactly the quiet
+ * corruption a path-shaped core does to a URL — the classify left the locator
+ * off the ending altogether, and the canonicalise left
+ * `https://example.invalid/design/1%20a/`: a host lower-cased and a `..`
+ * resolved, with nothing else about the pass changed. All three were reverted;
+ * none is in the tree.
  *
- * *reaches no event* stayed green through both, and should: it is a claim about
- * what the core writes to the log, not about what it does with the string in
- * memory. Four `it`s, three claims, and the fourth is the board's.
+ * **The third is the one the first version of this file could not catch**, and
+ * it is why `A_URL` is deliberately not in canonical form. A validating core
+ * reaches for `new URL` before it reaches for `join`, and against
+ * `https://example.invalid/design/1` that round trip returns the string it was
+ * given — so all four `it`s stayed green and the guard said nothing. The fifth
+ * `it` now pins the literal itself.
+ *
+ * *reaches no event* stayed green through all three, and should: it is a claim
+ * about what the core writes to the log, not about what it does with the string
+ * in memory. Five `it`s: three claims about the core, the board's, and one about
+ * the literal the other four are asked with.
  *
  * ## What is not checked here, and where it goes instead
  *
@@ -109,6 +121,44 @@ const ends = (carried: Carried): readonly (TheDesign | undefined)[] => [
 
 describe("a locator the core did not write", () => {
   /**
+   * **The literal has to be one a parse would change**, or every `it` below
+   * passes against a core that parses.
+   *
+   * This is the assertion about the fixture rather than about the pass, and it
+   * is first because the other four are worth only what it is worth. `A_URL`
+   * began as `https://example.invalid/design/1` — canonical, so
+   * `new URL(locator).toString()`, the cheapest thing a core acquires on the way
+   * to validating a locator, was a round trip that changed nothing and left
+   * three of those four green. The literal now carries one thing per way of
+   * parsing:
+   *
+   * ```
+   * Example.INVALID   lower-casing a host        URL, and every HTTP client
+   * /v2/..            normalising a `..`         URL, and path.join / resolve
+   * %20               decoding a percent-escape  decodeURIComponent
+   * trailing /        trimming a trailing slash  the usual "tidy it" helper
+   * ```
+   *
+   * So a core that grew *any* of the four is caught by `toBe` — and this `it`
+   * is what stops the literal being tidied back into canonical form by somebody
+   * who reads it as a typo. It parses a string and asserts about the result,
+   * which is the one place in this file that is allowed to: the claim is about
+   * what a parse would do, and the only way to state it is to do one.
+   */
+  it("is a string no round trip through `URL` leaves alone", () => {
+    const parsed = new URL(A_URL);
+
+    expect(parsed.toString()).not.toBe(A_URL);
+    expect(A_URL).toContain("Example.INVALID");
+    expect(parsed.host).toBe("example.invalid");
+    expect(A_URL).toContain("/v2/..");
+    expect(parsed.pathname).toBe("/design/1%20a/");
+    expect(A_URL).toContain("%20");
+    expect(decodeURIComponent(A_URL)).not.toBe(A_URL);
+    expect(A_URL.endsWith("/")).toBe(true);
+  });
+
+  /**
    * **Byte for byte, at both ends** — the near one is `StepPassed.design` off
    * the `design` visit, and the far one is `ActionContext.design` as the plugin
    * at `implement` was handed it.
@@ -117,6 +167,11 @@ describe("a locator the core did not write", () => {
    * lower-cased host, a normalised `..`, a percent-decoded space. Every one of
    * those is something a core that had learned what a locator is would do, and
    * every one of them is a locator the reading plugin can no longer resolve.
+   *
+   * **All four are observable only because the literal carries one of each**,
+   * which is the `it` above and not an accident of this one: byte equality
+   * against a locator already in canonical form catches a core that resolves it
+   * and misses a core that merely parses and re-serialises it.
    *
    * The third end is the return leg: `file-brief:` answers with the locator it
    * was handed, unchanged, so the value reaches `implement`'s own ending too and
@@ -141,7 +196,7 @@ describe("a locator the core did not write", () => {
    * each action answered, what reached the log. **They must be identical.**
    *
    * A core that branched on the shape differs here however it branched: a
-   * `join(cwd, …)` leaves `/nowhere/https:/example.invalid/design/1` in the URL
+   * `join(cwd, …)` leaves `/nowhere/https:/Example.INVALID/design/1%20a/` in the URL
    * arm and `/nowhere/doc/design/x.md` in the other, so the token no longer
    * matches and the two blanked routes disagree. A core that dropped a locator
    * it did not recognise leaves `endedWith` with no `locator` key on one arm
@@ -168,8 +223,8 @@ describe("a locator the core did not write", () => {
    * opaque answers identically. That is a sharper question than *does `join`
    * appear anywhere*, and it is the one 0066 §4 actually asks.
    *
-   * It is also what says nothing stat'd it. `https://example.invalid/design/1`
-   * is not a path that exists under either `cwd`, so a core that stat'd it would
+   * It is also what says nothing stat'd it. `A_URL` is not a path that exists
+   * under either `cwd` — nor is anything it normalises to — so a core that stat'd it would
    * throw or report a failure, and the pass would not land.
    */
   it("does not resolve it against the worktree, wherever the worktree is", async () => {

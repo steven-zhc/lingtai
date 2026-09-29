@@ -80,12 +80,31 @@ const PASSED: ActionResult = { verdict: "passed", evidence: "green", findings: [
  *
  * A URL, so that every path-shaped thing the core could do to it is visible in
  * the string that comes out the other end: `join(cwd, …)` on this produces
- * `/nowhere/https:/example.invalid/design/1` — the doubled slash collapses, so
- * even a resolve that "worked" is caught. `.invalid` is the reserved TLD
- * (RFC 2606), so a test that accidentally grew a fetch would fail to resolve
- * rather than reach somebody's server.
+ * `/nowhere/https:/Example.INVALID/design/1%20a/` — the doubled slash collapses
+ * and so does the `..`, so even a resolve that "worked" is caught. `.invalid` is
+ * the reserved TLD (RFC 2606), so a test that accidentally grew a fetch would
+ * fail to resolve rather than reach somebody's server.
+ *
+ * **And it is deliberately not in canonical URL form**, which is the half that a
+ * plain `https://example.invalid/design/1` got wrong: a core that parsed the
+ * locator and re-serialised it — `new URL(locator).toString()`, the cheapest
+ * thing a validating core does — is a no-op on a canonical literal, so the one
+ * guard this file exists to provide would have missed it. Four separate
+ * rewrites are observable on this string, one per way of parsing:
+ *
+ * ```
+ * Example.INVALID   a lower-cased host        URL, and every HTTP client
+ * /v2/..            a normalised `..`         URL, and path.join / path.resolve
+ * %20               a percent-decoded space   decodeURIComponent, a naive unescape
+ * trailing /        a trimmed slash           the usual "tidy the URL" helper
+ * ```
+ *
+ * `new URL(A_URL).toString()` performs the first two together and is therefore
+ * caught; *is a string no round trip through `URL` leaves alone* in
+ * `unit/a-locator-the-core-did-not-write.test.ts` pins that, so this literal
+ * cannot be tidied into canonical form without a red test saying why not.
  */
-export const A_URL = "https://example.invalid/design/1";
+export const A_URL = "https://Example.INVALID/design/v2/../1%20a/";
 
 /**
  * **The shape `file:` returns**, as the arm to compare against.
