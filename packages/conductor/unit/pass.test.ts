@@ -26,6 +26,7 @@ import {
   ARRIVE_AT_THE_ROUTER,
   NEEDS_INPUT,
   NOT_BUILT_YET,
+  NO_DESIGN,
   NO_OFFER,
   PASS,
   REFUSING_STEPS,
@@ -796,7 +797,214 @@ describe("every step that does not pass arrives at proposed", () => {
     expect(result.stoppedAt).toBeNull();
     expect(
       result.steps.filter((visit) => visit.step === "design").at(-1)?.ending,
-    ).toMatchObject({ ending: "passed", design: "assume the first reading" });
+    ).toMatchObject({ ending: "passed", design: { document: "assume the first reading" } });
+  });
+
+  // ------------------------------------------ what crosses design → implement ----
+
+  /**
+   * **`#297`, and the decision is *both*** — the document and the locator
+   * (0066 §3, and `TheDesign` in `@lingtai/actions` is where the paragraph is).
+   *
+   * These four are the contract and not the plumbing: no plugin writes a
+   * locator yet, so what is asserted here is what the *first* one will meet.
+   * The actions are hand-built for exactly that reason — a canned
+   * `ActionResult` is the only thing in the tree that can return one today.
+   */
+  describe("what design's ending carries to implement", () => {
+    /**
+     * `proposed` passes rather than routing to a person, so the walk is the
+     * ordinary one and `implement` is genuinely reached. The default body in
+     * `watching` sends every pass to `waiting`, which is right for the router's
+     * own tests and says nothing here.
+     */
+    const THROUGH: StepBody<Step> = async () => ({ ending: "passed" });
+
+    /** A recipe with a drafting agent at `design`, and one more to keep beside it. */
+    const declaring = (names: readonly string[]) =>
+      recipeWith({
+        design: names.map((name) => ({ name, agent: "claude-code", prompt: "shape" })),
+      });
+
+    /**
+     * Runs a pass whose `design` returns `results` and whose `implement` records
+     * the design it was handed — which is the only place this is observable,
+     * because `ActionContext` is where `runStep` puts it.
+     */
+    async function handedToImplement(results: readonly ActionResult[]) {
+      const seen: (ActionContext["design"] | undefined)[] = [];
+      const { bodies } = watching({ proposed: THROUGH });
+      const { actionsAt } = watchingActions({
+        design: results.map((result, i) => canned(`draft ${i}`, result)),
+        implement: [
+          {
+            name: "write it",
+            kind: "agent",
+            run: async (context) => {
+              seen.push(context.design);
+              return PASSED;
+            },
+          },
+        ],
+      });
+      const { emit } = events();
+      const result = await runPass({
+        recipe: declaring(results.map((_, i) => `draft ${i}`)),
+        context,
+        emit,
+        bodies,
+        actionsAt,
+      });
+      return { result, handed: seen[0] };
+    }
+
+    /**
+     * **Both travel, and this is the whole of the ticket's first question.**
+     *
+     * The document because 0066 §2 depends on it — a cheaper `implement` is only
+     * possible if the job is smaller, and the document is what makes it smaller
+     * — and the locator beside it because §3 buys one and a fact dropped one step
+     * before the only step that could use it is a fact worth nothing.
+     */
+    it("hands implement the document and the locator", async () => {
+      const { result, handed } = await handedToImplement([
+        {
+          verdict: "passed",
+          evidence: "wrote a 2.4 kB design to `doc/design/x.md`",
+          findings: [],
+          document: "## The shape\n\nSix bodies.",
+          locator: "doc/design/x.md",
+        },
+      ]);
+
+      expect(handed).toEqual({ document: "## The shape\n\nSix bodies.", locator: "doc/design/x.md" });
+      expect(outcomeOf(result)).toBe("landed");
+    });
+
+    /**
+     * **The three facts stay three** (`WroteTheDesign`). Absent is *nothing at
+     * this step drafted*, `{ document: "" }` is *the agent answered that this
+     * change needs none*, and a locator beside a document is *and here is where
+     * it was kept*. The key carries the first distinction and the value the
+     * second, which is the rule `ActionResult.document` already had.
+     */
+    it("keeps drafted-nothing, drafted-empty and drafted-and-kept apart", async () => {
+      const ending = async (results: readonly ActionResult[]) =>
+        (await handedToImplement(results)).result.steps.find((visit) => visit.step === "design")?.ending;
+
+      // Nothing declared runs nothing, and the ending says so by saying nothing.
+      expect(await ending([])).toEqual({ ending: "passed" });
+      expect(await ending([{ verdict: "passed", evidence: "none needed", findings: [], document: "" }])).toEqual({
+        ending: "passed",
+        design: { document: "" },
+      });
+      expect(
+        await ending([
+          { verdict: "passed", evidence: "kept it", findings: [], document: "x", locator: "doc/design/x.md" },
+        ]),
+      ).toEqual({ ending: "passed", design: { document: "x", locator: "doc/design/x.md" } });
+    });
+
+    /**
+     * **A locator is read off the result its document came from, and off no
+     * other one.** One action makes both (0066 §3), so a pass that paired the
+     * last locator anybody said with the last document anybody wrote would be
+     * pointing `implement` at a copy of something else — and it would be this
+     * file deciding which document a location belongs to, which is `pass.ts`
+     * understanding locators one step before 0066 §4 says it must not.
+     */
+    it("ignores a locator from an action that wrote no document", async () => {
+      const { handed } = await handedToImplement([
+        { verdict: "passed", evidence: "drafted", findings: [], document: "the shape", locator: "doc/design/x.md" },
+        { verdict: "passed", evidence: "filed a copy", findings: [], locator: "https://confluence/…/99" },
+      ]);
+
+      expect(handed).toEqual({ document: "the shape", locator: "doc/design/x.md" });
+    });
+
+    /**
+     * **The ticket's *watch out*, and the answer is that it is not a failure.**
+     *
+     * A `confluence:` locator and an `implement` that can only read files: the
+     * plugin does not recognise the string, works from `document` — which is
+     * there either way — and the pass lands. So the two halves are independent
+     * by construction, there is nothing for a recipe to pair, and nothing to
+     * refuse at resolve time. That is what carrying *both* buys, and the price
+     * is on `TheDesign`: two copies of one document and nothing that notices
+     * when they differ.
+     */
+    it("lands when implement cannot read the locator, because it reads the document", async () => {
+      const read: string[] = [];
+      const { bodies } = watching({ proposed: THROUGH });
+      const { actionsAt } = watchingActions({
+        design: [
+          canned("draft", {
+            verdict: "passed",
+            evidence: "wrote it to the wiki",
+            findings: [],
+            document: "## The shape",
+            locator: "https://confluence.example/pages/99",
+          }),
+        ],
+        implement: [
+          {
+            name: "write it",
+            kind: "agent",
+            run: async (seenWith) => {
+              // A file-reading plugin: it knows repository paths and nothing else.
+              const locator = seenWith.design?.locator ?? "";
+              read.push(locator.startsWith("http") ? seenWith.design?.document ?? "" : `read ${locator}`);
+              return PASSED;
+            },
+          },
+        ],
+      });
+      const { emit } = events();
+
+      const result = await runPass({
+        recipe: declaring(["draft"]),
+        context,
+        emit,
+        bodies,
+        actionsAt,
+      });
+
+      expect(read).toEqual(["## The shape"]);
+      expect(result.stoppedAt).toBeNull();
+      expect(outcomeOf(result)).toBe("landed");
+    });
+
+    /**
+     * **And nothing behaves differently for a recipe that declares no `design:`**
+     * (0065 §4), which is the property the whole of `#297` had to keep: the step
+     * runs nothing, its ending carries no key, and `implement` is handed
+     * `NO_DESIGN` — one brief with the agent that answered *this change needs
+     * none*, because the ticket is what it works from either way (0058 §3).
+     */
+    it("hands implement NO_DESIGN where no design is declared", async () => {
+      const seen: (ActionContext["design"] | undefined)[] = [];
+      const { bodies } = watching({ proposed: THROUGH });
+      const { actionsAt } = watchingActions({
+        implement: [
+          {
+            name: "write it",
+            kind: "agent",
+            run: async (seenWith) => {
+              seen.push(seenWith.design);
+              return PASSED;
+            },
+          },
+        ],
+      });
+      const { emit } = events();
+
+      const result = await runPass({ recipe: recipeWith({}), context, emit, bodies, actionsAt });
+
+      expect(seen[0]).toEqual(NO_DESIGN);
+      expect(seen[0]?.locator).toBeUndefined();
+      expect(result.steps.find((visit) => visit.step === "design")?.ending).toEqual({ ending: "passed" });
+      expect(outcomeOf(result)).toBe("landed");
+    });
   });
 
   /**

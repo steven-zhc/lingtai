@@ -74,6 +74,7 @@
 import { STEPS, type Step } from "@lingtai/domain";
 import {
   NEEDS_INPUT,
+  NO_DESIGN,
   runActionPipeline,
   type Action,
   type ActionContext,
@@ -82,6 +83,7 @@ import {
   type ActionVerdict,
   type PipelineResult,
   type SentBack,
+  type TheDesign,
 } from "@lingtai/actions";
 import type { Recipe, StepAction } from "@lingtai/recipe";
 import type { TerminalOutcome } from "./end-step.ts";
@@ -231,10 +233,25 @@ export interface LeftTheTreeAt {
  * is the nine steps and every unconfigured `design`, and *the agent answered that
  * this change needs none* is a document it wrote. `implement` is briefed
  * identically either way (0058 §3), and a person reading the card is not.
+ *
+ * **Three facts since `#297`, and the third is where the document was kept.**
+ * `TheDesign` is the shape, and the paragraph deciding what crosses this
+ * boundary is on it: the document *and* the locator travel, the document is the
+ * source of truth, and nothing above the plugin that wrote the locator reads it
+ * (0066 §3, §4). The key here still carries *drafted at all*; the value carries
+ * the other two.
+ *
+ * **Still in memory and still not on an event.** This is the visit's ending,
+ * which `runPass` holds; what reaches the log is `evidence`, and 0066 §3's whole
+ * point is that a locator is what belongs there. Widening this widens nothing a
+ * replay pays for.
  */
 export interface WroteTheDesign {
-  /** The document the step's own work produced, when it produced one. */
-  readonly design?: string;
+  /**
+   * What the step's own work produced and where it kept it, when it produced
+   * something. `TheDesign`.
+   */
+  readonly design?: TheDesign;
 }
 
 /** Nothing to report. The pass moves to the next step on the spine. */
@@ -372,7 +389,7 @@ export interface StepAsked extends LeftTheTreeAt {
  * the agent at `implement` is a plugin and a second definition of one word is the
  * drift `worktree-action.ts` names.
  */
-export { NEEDS_INPUT, type SentBack };
+export { NEEDS_INPUT, NO_DESIGN, type SentBack, type TheDesign };
 
 /**
  * The step was reached and its agent never started.
@@ -1492,8 +1509,8 @@ function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
 }
 
 /**
- * **What `design` drafted, for the step that works from it** — and `""` where it
- * drafted nothing.
+ * **What `design` drafted, for the step that works from it** — and `NO_DESIGN`
+ * where it drafted nothing.
  *
  * Read off the `design` step's own visit rather than off a variable somebody
  * carried, for `findingsIn`'s reason: the pass is holding it in memory and a
@@ -1503,11 +1520,19 @@ function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
  *
  * **The last `design` visit and not the first**: a pass routed back through it
  * would have a second document, and the one to work from is the one the round
- * was bought for.
+ * was bought for — with the locator that came with *that* document, because the
+ * two were made by one action and a pass holding the second draft beside the
+ * first draft's location would be pointing `implement` at the wrong copy
+ * (`#297`).
+ *
+ * `NO_DESIGN` rather than a bare `""` since `#297`, and it is the same brief:
+ * this step is where *drafted nothing* and *never ran* stop being distinguished,
+ * because `implement` works from the issue either way (0058 §3). The
+ * distinction survives on the ending, where the card is rendered from.
  */
-function designOn(reached: readonly StepReached[]): string {
+function designOn(reached: readonly StepReached[]): TheDesign {
   const drafted = reached.filter((visit) => visit.step === "design").at(-1);
-  return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? "") : "";
+  return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? NO_DESIGN) : NO_DESIGN;
 }
 
 /**
@@ -1832,13 +1857,29 @@ function headFrom(result: PipelineResult): { head?: string } {
  * for a verdict.
  *
  * Spread rather than assigned, so *nothing here drafted* stays an absent key:
- * `designOn` in `pass-steps.ts` reads it with `??`, and an empty document is a
- * real answer that must not read as an absence — the whole of 0058 §3's *or
- * nothing, which is an answer* lives in that distinction.
+ * `designOn` reads it with `??`, and an empty document is a real answer that
+ * must not read as an absence — the whole of 0058 §3's *or nothing, which is an
+ * answer* lives in that distinction.
+ *
+ * **And the locator comes off the same result as the document** (`#297`). One
+ * action makes both (0066 §3), so reading them off two results would be this
+ * function deciding which document a location belongs to — which is the
+ * pipeline understanding locators, one step before §4 says it must not. An
+ * action that returned a locator and no document is therefore silent here, and
+ * that is the whole of the rule.
  */
-function designFrom(result: PipelineResult): { design?: string } {
+function designFrom(result: PipelineResult): { design?: TheDesign } {
   const drafted = result.results.filter((each) => each.document !== undefined).at(-1);
-  return drafted?.document === undefined ? {} : { design: drafted.document };
+  if (drafted?.document === undefined) return {};
+  return {
+    design: {
+      document: drafted.document,
+      // Spread for `headFrom`'s reason: *it was kept nowhere* is an absent key,
+      // and `TheDesign.locator` is optional so that a reader cannot tell an
+      // explicit `undefined` from a destination that said nothing.
+      ...(drafted.locator === undefined ? {} : { locator: drafted.locator }),
+    },
+  };
 }
 
 /**

@@ -75,7 +75,7 @@
  * not carry it:
  *
  * ```
- * the design      design → implement                      and `""` is an answer
+ * the design      design → implement          a document and where it was kept
  * ```
  *
  * It is held by `bodiesFor`, cleared at `claim` so one closure may conduct one
@@ -126,7 +126,7 @@
  * and the whole of what the ticket asks for; the effects never decide whether
  * the ending happened, and neither does this file's failure to resolve them.
  */
-import type { ActionContext, ActionFinding } from "@lingtai/actions";
+import type { ActionContext, ActionFinding, TheDesign } from "@lingtai/actions";
 import type { Envelope, Step, ToAppend } from "@lingtai/domain";
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
@@ -285,13 +285,20 @@ export type Worked =
 export interface Brief {
   readonly ticket: Ticket;
   /**
-   * The design, and `""` where `design` produced none.
+   * The design — the document, and where whatever kept it says it is.
    *
-   * **`implement` works from the issue when this is empty, and there is no
-   * conditional step** (0058 §3): the sequence stays fixed and the judgement
+   * **`implement` works from the issue when the document is empty, and there is
+   * no conditional step** (0058 §3): the sequence stays fixed and the judgement
    * sits in the one thing that could make it. A typo fix costs no design.
+   *
+   * **A `TheDesign` and not a `string`, since `#297`**, which is the ticket that
+   * decided what crosses this boundary: *both* — the document, which is what the
+   * built-in dispatch renders into the prompt, and the locator, which it does
+   * not read and a destination-aware plugin might. Never optional: `NO_DESIGN`
+   * is what a pass with no `design:` is handed, so a caller cannot forget the
+   * empty case into an absent one.
    */
-  readonly design: string;
+  readonly design: TheDesign;
   /**
    * **Why this step is being run a second time**, or `null` on the way through.
    *

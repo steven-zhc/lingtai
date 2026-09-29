@@ -205,7 +205,115 @@ export interface ActionResult {
    * keeping is on `evidence`, where a person reads it.
    */
   document?: string;
+  /**
+   * **Where it kept that document** — absent where it kept it nowhere, which is
+   * every action today (`#297`, 0066 §3).
+   *
+   * `document`'s other half and never its replacement: an action that makes
+   * something large returns the thing, for whatever in the pass needs it, and a
+   * string saying where the thing went, for the log. Nothing produces one yet —
+   * the `agent:` at `design` writes no file — so this is the shape the first
+   * destination plugin returns rather than a field with a reader.
+   *
+   * **Read only off the same result the document came from** (`designFrom` in
+   * `packages/conductor/src/pass.ts`). An action that reports a locator and no
+   * document reports nothing: a location for a document nobody has is not a
+   * fact about this pass, and pairing them across two results would be the
+   * pipeline deciding which document a locator belongs to.
+   *
+   * Opaque here and everywhere above here — see `TheDesign.locator`.
+   */
+  locator?: string;
 }
+
+/**
+ * **What `design` made, as the step after it sees it** (`#297`, deciding what
+ * [0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * §3 and §9 left open).
+ *
+ * The answer is **both**. The document travels because 0066 §2's whole thesis
+ * is that a smaller `implement` job can be done by a cheaper model, and it is
+ * the document that makes the job smaller. The locator travels beside it
+ * because §3 buys one and a fact the pass drops one step before the only step
+ * that could use it is a fact worth nothing.
+ *
+ * ## The document is the source of truth; the locator is a pointer to a copy
+ *
+ * They can disagree — a plugin may have reformatted what it kept, a page may be
+ * edited between the two steps — and the rule is that the one the pass made
+ * wins. `implement`'s prompt renders `document` and fetches nothing
+ * (`renderPrompt` in `packages/conductor/src/prompt.ts`), so the disagreement
+ * costs nothing unless a plugin goes looking for it. That is the price of
+ * carrying both, and it is written down rather than designed against: **there
+ * is no machinery here that notices when the two differ.**
+ *
+ * ## A locator nothing at `implement` can read is not a failure
+ *
+ * `locator` is a string and only the plugin that wrote it reads it (0066 §4).
+ * Nothing in `@lingtai/actions` or `@lingtai/conductor` parses it, matches on
+ * it, or checks it against the plugin declared at the next step — so a
+ * `confluence:` design with a file-reading `implement` is a legal recipe that
+ * runs. The `implement` plugin does not recognise the string, ignores it, and
+ * works from `document`, which is there either way.
+ *
+ * **So there is no pairing rule, and nothing for the recipe to refuse at
+ * resolve time.** The two halves are independent by construction rather than by
+ * a table somebody keeps current.
+ *
+ * ## What the other reading would have cost
+ *
+ * The alternative is *only the locator travels*: every `implement` plugin,
+ * including the default, reads the document back from wherever it went. One
+ * source of truth for the text, and three costs. It makes a locator the plugin
+ * cannot read a pass with **no design at all**, at run time, after the money —
+ * which then needs the resolve-time pairing rule this one does not, and that
+ * rule is the core learning which kinds of locator exist, which is the thing
+ * §4 is written to prevent. It puts a network call inside a step that needs
+ * none today. And it makes `design` unable to hand anything to `implement`
+ * without a destination, so 0065 §4's *`design`'s default is nothing* stops
+ * being free. This interface takes the duplication instead.
+ *
+ * ## Three facts, and they stay three
+ *
+ * Absent — `WroteTheDesign.design` unset — is *nothing at this step drafted*:
+ * the nine other steps, and every recipe with no `design:`. `{ document: "" }`
+ * is *the agent answered that this change needs none*. A `locator` beside a
+ * document is *and here is where it was kept*. The key carries the first
+ * distinction and the value carries the second, which is the rule
+ * `ActionResult.document` already had; this widens it rather than changing it.
+ */
+export interface TheDesign {
+  /**
+   * The document itself, and `""` where the step answered that none was needed.
+   * `implement` is briefed identically either way (0058 §3) and a person reading
+   * the card is not.
+   */
+  readonly document: string;
+  /**
+   * **Where the document was kept, in the words of whatever kept it** — absent
+   * where nothing kept it, which is every pass today.
+   *
+   * A repository path from a `file:` plugin, a page URL from a `confluence:`
+   * one, whatever the destination after that can read back. Not a union, not a
+   * tagged shape, not a path type (0066 §4): the moment anything above the
+   * plugin understands three kinds of locator, the fourth destination is a
+   * change to the core rather than a plugin, and the extension point has
+   * quietly closed.
+   */
+  readonly locator?: string;
+}
+
+/**
+ * **No design, and it is a document rather than an absence** — what `implement`
+ * is handed where `design` drafted nothing or was never declared.
+ *
+ * One value for both, because they are one brief: a step that did not run and a
+ * step that answered *this change needs none* both leave `implement` working
+ * from the issue (0058 §3). The distinction between them is kept where it is
+ * read — the absent key on `WroteTheDesign.design`, and `evidence`, where a
+ * person sees it.
+ */
+export const NO_DESIGN: TheDesign = { document: "" };
 
 /**
  * **The step asked a question, and a judge is what answers it** (0058 §3c).
@@ -294,20 +402,25 @@ export interface ActionContext {
    * no agent and writes nothing further. Absent, nothing is written.
    */
   /**
-   * **What `design` drafted**, and `""` where it drafted nothing (`#266`).
+   * **What `design` drafted, and where it was kept** (`#266`, `#297`).
    *
    * On the context rather than on a spec for `recheck`'s reason: it is a fact
    * about *this run of the pipeline* and not about the action the recipe wrote.
-   * `designFrom` in `packages/conductor/src/pass.ts` is what puts it here, off
+   * `designOn` in `packages/conductor/src/pass.ts` is what puts it here, off
    * the `design` step's own visit — so the one action that writes code reads what
    * the one action that writes a document produced, without either knowing the
    * other exists.
    *
-   * **`""` is a document and not an absence** (`ActionResult.document`): an agent
-   * that answered *this change needs no design* and a step that drafts nothing
-   * are one brief, because the ticket is what it works from either way.
+   * **A type rather than a convention, since `#297`.** It was a bare `string`
+   * and the three facts it carries lived in this docblock; they are
+   * `TheDesign`'s now, which is what a plugin at `implement` reads them off —
+   * and it is the same object `design`'s own plugin returned, so a second
+   * destination joins without this line changing. `NO_DESIGN` is the empty one.
+   *
+   * Absent is *no pipeline filled it in*, which is a context somebody built by
+   * hand: `runStep` sets it on every verdicts pipeline it runs.
    */
-  design?: string;
+  design?: TheDesign;
   /**
    * **Why this step is being run a second time**, or `null` on the way through.
    *
@@ -418,6 +531,8 @@ export interface PipelineResult {
     about?: RefusedAbout;
     /** The document it wrote, where it wrote one. `ActionResult.document`. */
     document?: string;
+    /** Where it kept that document, where it kept it. `ActionResult.locator`. */
+    locator?: string;
   }[];
   /** Actions never reached because an earlier one failed or is waiting. */
   skipped: string[];
@@ -536,6 +651,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // are different facts, and `designFrom` in `pass.ts` distinguishes them by
       // the key rather than by the string (`#265`).
       ...(result.document === undefined ? {} : { document: result.document }),
+      // Spread for `head`'s reason a fifth time, and *beside* the document
+      // rather than instead of it (`#297`): 0066 §3's two things are two fields
+      // on one result, and `designFrom` reads the pair off one result so that a
+      // locator whose document did not survive is a locator nothing carries.
+      ...(result.locator === undefined ? {} : { locator: result.locator }),
     });
 
     if (result.verdict === "passed") {

@@ -132,6 +132,7 @@ import { currentRecipe } from "./projects.ts";
 import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
 import {
   NEEDS_INPUT,
+  NO_DESIGN,
   type Action,
   type ActionContext,
   type ActionEvent,
@@ -2290,7 +2291,14 @@ export function runOnce(
                         // an `agent:` there buys a document, and a document nothing
                         // hands on is an agent run bought by a line in the recipe whose
                         // answer no reader ever sees. `""` renders as it always did.
-                        brief.design,
+                        //
+                        // **The document and not the locator** (`#297`). The built-in
+                        // dispatch is a file-reading plugin's opposite: it fetches
+                        // nothing, so it renders the copy the pass is already holding
+                        // and never learns what kind of string `TheDesign.locator` is
+                        // (0066 §4). A plugin at `implement` that wants the location
+                        // reads it off `context.design` itself.
+                        brief.design.document,
                       ),
                       // The recipe's own words at `implement`, appended (`#266`).
                       spec.prompt,
@@ -2564,7 +2572,7 @@ export function runOnce(
         }
         const brief: Brief = {
           ticket: took.ticket,
-          design: context.design ?? "",
+          design: context.design ?? NO_DESIGN,
           again: context.again ?? null,
           context,
         };

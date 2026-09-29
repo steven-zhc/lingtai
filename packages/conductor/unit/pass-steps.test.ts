@@ -16,6 +16,7 @@
 import type { RunOutcome, Runtime } from "@lingtai/agent";
 import type { QueueActionDeps, WorkActionDeps } from "@lingtai/actions";
 import {
+  NO_DESIGN,
   createAgentAction,
   createDraftAction,
   createMergeAction,
@@ -322,7 +323,7 @@ function portsAnswering(
     work: async (_spec, context) => {
       const brief: Brief = {
         ticket: (took ?? ITEM).ticket,
-        design: context.design ?? "",
+        design: context.design ?? NO_DESIGN,
         again: context.again ?? null,
         context,
       };
@@ -804,7 +805,7 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
 
     expect(result.steps[3]).toEqual({ step: "design", ending: { ending: "passed" }, results: [] });
     expect(asked.draft).toEqual([]);
-    expect(asked.dispatch[0]?.design).toBe("");
+    expect(asked.dispatch[0]?.design).toEqual({ document: "" });
     expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body);
     expect(result.stoppedAt).toBeNull();
     expect(outcomeOf(result)).toBe("landed");
@@ -819,12 +820,12 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
   it("passes on an empty document, and `implement` is still briefed from the issue", async () => {
     const { result, asked } = await pass({ steps: DECLARED, answers: { draft: { text: "" } } });
 
-    expect(result.steps[3]?.ending).toEqual({ ending: "passed", design: "" });
+    expect(result.steps[3]?.ending).toEqual({ ending: "passed", design: { document: "" } });
     expect(asked.draft).toHaveLength(1);
     // The ticket is in the prompt, and the rule that makes the empty answer real.
     expect(asked.draft[0]).toContain(ITEM.ticket.body);
     expect(asked.draft[0]).toContain("Answering with nothing is a real answer");
-    expect(asked.dispatch[0]?.design).toBe("");
+    expect(asked.dispatch[0]?.design).toEqual({ document: "" });
     expect(outcomeOf(result)).toBe("landed");
   });
 
@@ -834,7 +835,10 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
       answers: { draft: { text: "## The shape\n\nSix bodies." } },
     });
 
-    expect(asked.dispatch[0]?.design).toBe("## The shape\n\nSix bodies.");
+    expect(asked.dispatch[0]?.design).toEqual({ document: "## The shape\n\nSix bodies." });
+    // And no locator, because nothing kept it anywhere: the `agent:` at `design`
+    // writes no file, so the third of `TheDesign`'s facts is absent (`#297`).
+    expect(asked.dispatch[0]?.design.locator).toBeUndefined();
   });
 
   /**

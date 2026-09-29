@@ -1,6 +1,7 @@
 export {
   runActionPipeline,
   NEEDS_INPUT,
+  NO_DESIGN,
   type Action,
   type ActionContext,
   type ActionEvent,
@@ -10,6 +11,7 @@ export {
   type PipelineOptions,
   type PipelineResult,
   type SentBack,
+  type TheDesign,
 } from "./action.ts";
 export {
   createProcessAction,

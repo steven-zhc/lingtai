@@ -220,6 +220,14 @@ function join(blocks: readonly string[]): string {
  * property `prompt.test.ts` asserts about attempt 1 and is why the parameter
  * defaults to `""`.
  *
+ * **The document and not `TheDesign`, since `#297`.** What crosses the step
+ * boundary is the document *and* the locator; what reaches a prompt is the
+ * document alone, because this function renders text it is handed and a locator
+ * is a string only the plugin that wrote it can resolve (0066 §4). A prompt
+ * carrying *your design is at `https://…`* would either be a URL the agent
+ * cannot open or an instruction to go and fetch what it was already given — so
+ * the caller reads `.document` and this signature does not widen.
+ *
  * **Two callers pass nothing and are right to.** The board previews the *next*
  * attempt's prompt (`apps/board/src/lib/prompt.ts`), and the design does not exist
  * until that attempt runs `design` — a preview that invented one would be showing a
