@@ -65,7 +65,7 @@ Two consequences an operator feels:
   a run rather than during one.
 - **A key opens in one diff or not at all** (0065 §7). A plugin arriving at a
   step brings its `at` key, its default, its body and its refusal sentence
-  together — which is why these twelve rows can be read off the code instead of
+  together — which is why these thirteen rows can be read off the code instead of
   being a promise about it.
 
 ## The shape a page under here follows

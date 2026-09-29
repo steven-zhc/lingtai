@@ -313,6 +313,6 @@ of that test.
 - `#274` — made the entry legal at all, opening `judgePlugin.at.proposed`.
 - `#277` — made a runtime a legal name, so `findings` is a line in the recipe
   rather than a person's every time.
-- [`plugins/index.md`](index.md) — the twelve, and which step each serves.
+- [`plugins/index.md`](index.md) — the thirteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.

@@ -856,10 +856,10 @@ English one, there is a row to put it in and three numbers that must agree.
 | file | token | of which English | the sentence |
 |---|---|---|---|
 
-## gate action — 12 keys, of which 4 produce a verdict
+## gate action — 13 keys, of which 4 produce a verdict
 
 What runs at a point. Source: `PLUGINS` and `kindOfAction` in
-`packages/recipe/src/recipe.ts`, each of the twelve declared with
+`packages/recipe/src/recipe.ts`, each of the thirteen declared with
 `definePlugin` from `plugin.ts`.
 
 **Each one owns its schema and validates its own fields**
@@ -877,9 +877,9 @@ that stopped at the first bad field would make a person fix one thing per
 attempt, which is [#222](https://github.com/steven-zhc/lingtai/issues/222)'s
 lesson about the build step applied to configuration.
 
-A field may be marked `no_log`, and **none of the twelve is today**: every field
-they have is a name, a command, a prompt, a runtime, a model, a glob, a branch, a
-strategy, a label,
+A field may be marked `no_log`, and **none of the thirteen is today**: every field
+they have is a name, a command, a prompt, a runtime, a model, a glob, a path, a
+branch, a strategy, a label, a flag,
 a severity or a GitHub login — and a login is not a credential, which is the distinction
 worth reading (0046 §2: a wrong one hands this machine somebody else's tickets,
 which is a mistake that shows itself). 0021 keeps values out of the file in the
@@ -1033,7 +1033,11 @@ the cell nobody had decided — and
 [0063](decisions/0063-every-setting-is-the-recipes.md) §3 has since made it a
 *field* of `queue:` rather than a plugin beside it, so the closed set went to
 eleven (`#244`) — and back to twelve with `refs:` (`#240`), which is the first
-member 0061 §3 did not name at all. The set is not closed against *new* work:
+member 0061 §3 did not name at all, and thirteen with `file:`
+([#300](https://github.com/steven-zhc/lingtai/issues/300)), which is the second
+and the first *destination*: where a large answer lands is a plugin too
+([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5). The set is
+not closed against *new* work:
 §3's list is the names the v2 file gives code that already runs, and a plugin
 doing something no code did before joins by the same rules — a key, a schema,
 and an `at` saying which steps it serves.
