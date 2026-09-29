@@ -1808,15 +1808,19 @@ the runtime that actually runs stops a run at it
 `runtime.agent` names**, since `#313` — `conduct.ts` constructs from that field,
 so reading it is the only way to answer for the adapter that will be started;
 until then every run was handed `createClaudeCodeRuntime()` and this row asked
-that regardless of the recipe. It is `fail` when the runtime applies *none* of
-the limits, which is a run nothing will ever stop, and `warn` when it applies
-some and merely carries the rest — the state `turns` was in while `#84` ran 172
-against a declared 150, and the state a Codex project is in permanently, because
-`codex exec` has no flag that bounds turns and `runtime.limits.turns` always has
-a value. `warn` rather than `fail` for that one because no edit to a recipe
-clears it and a check that is always red is a check nobody reads; the lever it
-names is `runtime.agent`. A run stopped at `turns` ends as `RunFailed` with kind
-`out-of-turns`, distinct from the wall's `timeout`.
+that regardless of the recipe. It is `fail` when a declared limit is one the
+runtime merely carries — the state `turns` was in while `#84` ran 172 against a
+declared 150 — and the detail says which of the two sizes it is: a run something
+else still stops, or a run nothing will stop at all. **A Codex project reads red
+there permanently**, because `codex exec` has no flag that bounds turns and
+`runtime.limits.turns` always has a value with no spelling for *unbounded*; the
+lever the row names is `runtime.agent`, and `--despite-doctor` is the waiver
+until either Codex bounds turns or the schema can say unbounded. It was a `warn`
+for one round, on the grounds that a permanent red is a red nobody reads — but
+`warn` is not counted by `lingtai restart` (`gatingFailures`), so the check `#89`
+added could no longer stop the daemon starting on the exact state it was built to
+catch. A run stopped at `turns` ends as `RunFailed` with kind `out-of-turns`,
+distinct from the wall's `timeout`.
 
 `runtime: <project> signed in` is the other half of that field: whether the
 runtime this project will dispatch can actually be started on this machine. The

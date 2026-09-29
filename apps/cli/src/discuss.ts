@@ -301,8 +301,15 @@ export async function answerDiscussion(
    * nothing about it requires the project's own. Refusing instead cost a project
    * whose recipe names Codex *every* question, every round, permanently — a
    * capability traded away for a field it has nothing to do with.
-   * `createToollessRuntime` prefers `named` and falls back, so a machine signed
-   * in to one runtime still answers with the one it has.
+   * `createToollessRuntime` prefers `named` and falls back.
+   *
+   * **The fallback asks nothing about what is signed in**, and is not a claim that
+   * what comes back is. It reads which rows can be given no tools, which is a fact
+   * about the table; so on a machine signed in to Codex alone this spawns a
+   * `claude` that is signed out, `ask` answers a crash, and every round of every
+   * question is `answered: false`. `lingtai doctor`'s `runtime: signed in` and
+   * `runtime: <project> signed in` are the rows that say so — nothing here does,
+   * and `say()` below names the substitution rather than vouching for it.
    *
    * **Answered, not thrown.** This function never throws (see above), so the
    * `null` — no row in the table can be given no tools, which is unreachable
@@ -381,7 +388,8 @@ export async function answerDiscussion(
     if (asked?.instead != null) {
       say(
         `answered by ${asked.id}: ${asked.instead} cannot be given no tools, and no tools is what ` +
-          `a discussion has instead of a hook and the steps of a pass (0033 §1)`,
+          `a discussion has instead of a hook and the steps of a pass (0033 §1). Whether ${asked.id} ` +
+          `is signed in on this machine is not asked here — lingtai doctor's "runtime: signed in" is`,
       );
     }
 

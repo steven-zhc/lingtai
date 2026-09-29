@@ -20,6 +20,7 @@
  * `#109`'s whole risk is that the accounting reads a line the real binary does
  * not print, or fails to read one it does.
  */
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -837,19 +838,39 @@ describe("the Codex adapter, where it reads the wiring off disk", () => {
    * them. `gitWritableRoots` is what stops `-s workspace-write` refusing
    * `index.lock`: measured on `codex-cli 0.155.1`, without it `git commit` inside
    * the sandbox answered *Operation not permitted* and the pass committed nothing.
+   *
+   * **And it names the stores, not the repository directory that holds them.** It
+   * named `~/.lingtai/repos/<p>.git` itself, whose `hooks/` is the one a linked
+   * worktree's `$GIT_DIR/hooks` resolves to — so an implementer under the sandbox
+   * could write `hooks/pre-push`, and the merge lane runs `git push` from the
+   * conductor process, unsandboxed, holding the installation token. A writable
+   * `hooks/` is a way out of the boundary `providesTier: "sandboxed"` promises,
+   * which is why the assertion below is an exact list and not a `toContain`.
    */
-  it("reads a linked worktree's git directory, and the repository it borrows from", async () => {
+  it("names a linked worktree's git directory and the borrowed stores, not the repository", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-worktree-"));
     const bare = join(root, "repos", "p.git");
     const gitDir = join(bare, "worktrees", "run-1");
     const tree = join(root, "worktrees", "p", "run-1");
     await mkdir(gitDir, { recursive: true });
     await mkdir(tree, { recursive: true });
+    await mkdir(join(bare, "hooks"), { recursive: true });
     await writeFile(join(tree, ".git"), `gitdir: ${gitDir}\n`);
     // Git's own spelling: relative to the worktree's git directory.
     await writeFile(join(gitDir, "commondir"), "../..\n");
 
-    expect(gitWritableRoots(tree)).toEqual([gitDir, bare]);
+    const roots = gitWritableRoots(tree);
+    expect(roots).toEqual([gitDir, join(bare, "objects"), join(bare, "refs"), join(bare, "logs")]);
+    // The two that would put a script, or a command git reads out of `config`,
+    // inside the writable set.
+    expect(roots).not.toContain(bare);
+    expect(roots).not.toContain(join(bare, "hooks"));
+
+    // **`logs` is created, not assumed.** A mirror nothing has committed to has
+    // none, git makes it itself in the repository directory, and a sandbox cannot
+    // create its own root: with it missing, the same commit answered `fatal:
+    // cannot update the ref … unable to create directory for '…/logs/refs/heads/…'`.
+    expect(existsSync(join(bare, "logs"))).toBe(true);
 
     // An ordinary checkout's `.git` is a directory under `--cd` and so is
     // already writable — naming it would widen the sandbox for nothing.

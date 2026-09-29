@@ -44,11 +44,14 @@
  * - **And refusing `~/.lingtai` is why a worktree needs `--add-dir`.** The git
  *   directory a worktree commits into lives there, outside `--cd`, so the
  *   boundary that makes this runtime `sandboxed` is the same one that stopped
- *   `git add` — `gitWritableRoots` names that directory and nothing else, and
- *   `$HOME` stays refused. Measured both ways; see that function.
+ *   `git add` — `gitWritableRoots` names that directory, and of the repository it
+ *   borrows objects and refs from **the three stores a commit writes to and not
+ *   the directory holding them**, because that one holds `hooks/` and the merge
+ *   lane runs git outside the sandbox. `$HOME` stays refused. Measured every way;
+ *   see that function.
  */
 import { spawn } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { codexAuth } from "./auth.ts";
@@ -105,10 +108,12 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * `wall` is the `setTimeout` in `run`, which is ours. `turns` has no flag to
    * delegate to — `codex exec --help` at 0.155.1 offers none, and `strings` finds
    * no hidden one the way `claude --max-turns` was hidden — so a recipe's `turns`
-   * is a bound nothing applies, and `limitsRow` says so for every Codex project.
-   * It says it as a **`warn`**: `runtime.limits.turns` has a schema default that
-   * is always present, so a `fail` there was a red no recipe could clear and
-   * `lingtai restart` refused on every invocation. The wall still stops the run.
+   * is a bound nothing applies, and `limitsRow` says so for every Codex project —
+   * **as a `fail`, and permanently**, because `runtime.limits.turns` has a schema
+   * default that is always present and no spelling for *unbounded*. Declaring it
+   * honestly here is what makes that red true; softening the row instead put
+   * `#89`'s own state past `lingtai restart`, which counts `fail` and not `warn`.
+   * The wall still stops the run, and the row says so.
    *
    * **Counting turns off the stream is not enforcing them.** `codexOutcome`
    * counts them, for the receipt and for the never-started question, and `run()`
@@ -445,18 +450,71 @@ export function codexClose(
      * it and became the recorded reason for every failed Codex run: on the board,
      * in `attempts.ts`, and handed to `parseResetAt` in place of the reset time.
      * The order below is what each source can actually be trusted to be about:
-     * `failed` is about this turn, stderr is about the process, `text` is the
-     * agent's last word, the notices are about the invocation, and `stdoutTail`
-     * is raw JSONL kept only so that something is said at all.
+     * `failed` is about this turn, the *arithmetic* is the one failure nothing
+     * states in words, stderr is about the process, `text` is the agent's last
+     * word, the notices are about the invocation, and `stdoutTail` is raw JSONL
+     * kept only so that something is said at all.
      */
     detail:
       receipt.failed?.slice(0, 500) ||
-      closed.stderr.trim().slice(-500) ||
+      failedClosed(receipt) ||
+      saidOnStderr(closed.stderr).slice(-500) ||
       receipt.text?.slice(0, 500) ||
       (receipt.errors.length > 0 ? receipt.errors.join(" · ").slice(0, 500) : "") ||
       closed.stdoutTail.trim().slice(-500) ||
       `exited ${closed.exitCode}`,
   };
+}
+
+/**
+ * **The one failure the stream states only by arithmetic** — and the one the
+ * record said nothing about until this was written.
+ *
+ * A `UserPromptSubmit` hook that exits non-zero stops the run before the model,
+ * which is the whole of what `canFailClosed` promises and the case
+ * `smokeTestFailClosed` buys. Codex reports it as a success: exit **0**, a
+ * `turn.completed`, no `turn.failed`, the hook's own stderr swallowed — and the
+ * evidence is the two numbers being zero. So it has no sentence anywhere, and
+ * `RunFinished`/`StepFailed` carried whatever the chain reached next: the stdin
+ * notice below, or before that the bypass notice. A reader of the board was told
+ * the run failed because Codex read its prompt from an argument.
+ *
+ * `""` where the signature is not met, so it composes into the chain the way a
+ * missing `failed` does.
+ */
+function failedClosed(receipt: CodexReceipt): string {
+  return receipt.completed && receipt.turns === 0 && receipt.billedTokens === 0
+    ? "the turn completed having reached no model — 0 tokens billed and no message produced, which " +
+        "is a hook refusing the prompt: `lingtai-hook` exited non-zero at UserPromptSubmit, or the " +
+        "conductor it reports to was gone and it failed closed rather than let the run produce " +
+        "nothing and look like it produced everything"
+    : "";
+}
+
+/**
+ * stderr, with what `codex exec` says about **the invocation** taken out.
+ *
+ * Measured on `codex-cli 0.155.1` with stdin at `/dev/null`, which is exactly how
+ * `run()` spawns it (`stdio: ["ignore", …]`): every invocation writes
+ * `Reading additional input from stdin...` to stderr and nothing else on a clean
+ * run. So `closed.stderr.trim()` is **never empty**, and reading it as *what went
+ * wrong* short-circuited the chain for every Codex failure whose stream carried
+ * no `turn.failed` — the fail-closed refusal above among them, which is the one
+ * case `canFailClosed: true` exists for. It is the previous round's finding one
+ * source along: a notice about how the binary is called, displacing the reason.
+ *
+ * A filter and not a `[]`: on a run that really did fail at the process, stderr is
+ * the only account there is — *"Not inside a trusted directory"*, `codex: command
+ * not found` — and the same probe printed the notice **and** the reason, one line
+ * each. Taken by prefix, because the notice is a sentence Codex may punctuate
+ * either way (`…stdin...` was measured; the header quotes an ellipsis).
+ */
+function saidOnStderr(stderr: string): string {
+  return stderr
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("Reading additional input from stdin"))
+    .join("\n")
+    .trim();
 }
 
 /**
@@ -646,6 +704,34 @@ function hookWiringAt(settingsPath: string): unknown | null {
  * probe against a bare repo under `/tmp` commits happily. The layout has to be
  * the real one for the refusal to appear.
  *
+ * **The stores, and never the directory that holds them.** This named the common
+ * directory itself, and `~/.lingtai/repos/<project>.git/hooks` is in it: a linked
+ * worktree's `$GIT_DIR/hooks` *is* the common directory's, `core.hooksPath` is
+ * unset, and the merge lane then runs `git merge` and `git push` from the
+ * conductor process (`packages/repo/src/integrate.ts`) — not sandboxed, holding
+ * the installation token. A writable `hooks/` is therefore a script the operator
+ * runs, which is a path straight out of the boundary `providesTier: "sandboxed"`
+ * promises, and nothing in the pass reads that path: `tamper` watches repository
+ * files, the recipe lives outside every worktree, and `build`/`review` see the
+ * diff. `config` is in there too — an alias, `core.pager`, `core.fsmonitor` are
+ * all commands git executes.
+ *
+ * So what is named is the worktree's own git directory (the index, `HEAD`,
+ * `index.lock` — what the refusal above was about) and, of the repository it
+ * borrows from, **`objects`, `refs` and `logs` only**. Measured on this layout by
+ * taking write permission off the common directory itself and leaving those three:
+ * `git add`, `git commit`, `git commit --amend`, `git stash push`/`pop` and
+ * `git checkout -b` all succeed in the worktree, and `hooks/`, `config`,
+ * `packed-refs` and `worktrees/` cannot be written.
+ *
+ * **`logs` is created rather than assumed**, which is the one surprise in here. A
+ * bare mirror has no `logs/` until a ref is first updated, and git makes it
+ * *itself*, in the common directory — so with that directory read-only the same
+ * measurement answered `fatal: cannot update the ref 'refs/heads/<branch>':
+ * unable to create directory for '<common>/logs/refs/heads/<branch>'` and the
+ * commit was lost. A sandbox cannot create its own root, so this does, before the
+ * argv that names it.
+ *
  * `[]` for an ordinary checkout, where `.git` is a directory under `--cd` and
  * therefore already writable, and `[]` for anything this cannot read — a path
  * that is not a worktree is not a reason to refuse to run.
@@ -663,19 +749,40 @@ export function gitWritableRoots(cwd: string): readonly string[] {
     return [];
   }
 
-  // The worktree's own git directory, and the repository it borrows objects and
-  // refs from — `git commit` writes in both, and `commondir` is how the first
-  // names the second. Usually the second contains the first, and naming both is
-  // cheaper than reasoning about when it does not.
+  // The worktree's own git directory: its index — `index.lock` is what the
+  // refusal named — its `HEAD`, its `COMMIT_EDITMSG` and its own reflog.
   const roots = [gitDir];
+  let common: string;
   try {
-    const common = readFileSync(join(gitDir, "commondir"), "utf8").trim();
-    if (common !== "") roots.push(resolve(gitDir, common));
+    const said = readFileSync(join(gitDir, "commondir"), "utf8").trim();
+    if (said === "") return roots;
+    common = resolve(gitDir, said);
   } catch {
     // No `commondir`: this git directory is the whole of it.
+    return roots;
+  }
+
+  // Where a commit's objects, its branch and its reflog land, and nothing else in
+  // the repository it borrows them from. See the note above on each of the three.
+  for (const store of GIT_STORES) {
+    const path = join(common, store);
+    try {
+      // Present already, except `logs` on a mirror nothing has committed to yet.
+      mkdirSync(path, { recursive: true });
+    } catch {
+      // Unwritable, or not a directory. Naming it would be a root the sandbox
+      // cannot take, so it is left out and git says what it could not write.
+    }
+    if (existsSync(path)) roots.push(path);
   }
   return roots;
 }
+
+/**
+ * The three directories of a repository a commit made in a linked worktree
+ * writes to — measured, by taking every other one away. See `gitWritableRoots`.
+ */
+const GIT_STORES = ["objects", "refs", "logs"] as const;
 
 /**
  * argv, in one place — `run` and `invocation` call this with the only thing that

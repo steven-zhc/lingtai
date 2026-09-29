@@ -129,8 +129,8 @@ describe("what a caller may ask of any runtime", () => {
    * whose recipe named Codex then had *every* board question answered with the
    * refusal, permanently — 0033's third kind of agent traded away for a field that
    * decides which runtime works the project's tickets and has nothing to do with a
-   * discussion. Preferring the named one is still right, because a machine signed
-   * in to one runtime alone should answer with the one it has; what is wrong is
+   * discussion. Preferring the named one is still right, because a recipe naming a
+   * runtime has said something about what its operator has; what is wrong is
    * stopping there. The containment is not what falls back: what comes back can be
    * given no tools, which is the whole of what was asked for.
    */
@@ -146,6 +146,29 @@ describe("what a caller may ask of any runtime", () => {
 
     // Every id gets an answer, which is the claim the board depends on.
     for (const id of RuntimeId.options) expect(createToollessRuntime(id)).not.toBeNull();
+  });
+
+  /**
+   * **And the fallback is the table's order, not a question about this machine** —
+   * which is what the docstrings claim now and for a round did not.
+   *
+   * They said *"a machine signed in to one runtime alone should answer with the one
+   * it has"*, and this function asks no such thing: `checkAuth` is a spawn and this
+   * is synchronous. So on a machine signed in to Codex alone, a Codex project's
+   * discussion is handed `claude-code` — a `claude` that is absent or signed out,
+   * `ask` answering a crash, and `DiscussionAnswered` with `answered: false` for
+   * every question and every round. An operator who read the old sentence looked
+   * for the fault in `prepare` or the settings file. The rows that answer it are
+   * `lingtai doctor`'s `runtime: signed in` and `runtime: <project> signed in`.
+   */
+  it("falls back by the enum's order and asks nothing about what is signed in", () => {
+    const asked = createToollessRuntime("codex");
+
+    // `claude-code` because it is the first row that can keep the promise, on any
+    // machine, signed into anything or nothing at all.
+    expect(asked?.id).toBe(RuntimeId.options.find((id) => id !== "codex"));
+    // The probe that *would* ask lives on the runtime, and this never calls it.
+    expect(asked?.runtime.checkAuth).toBeTypeOf("function");
   });
 });
 

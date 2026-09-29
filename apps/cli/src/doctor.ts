@@ -1558,29 +1558,39 @@ export function recipeRow(f: ProjectFilter, dispatched: string): CheckResult {
  * passes it; there is no default, because a default that is right for one
  * project and silently wrong for the next is how `#89` was possible.
  *
- * **`fail` is for a run with no bound at all; a run still bounded is `warn`.**
- * That line is where a Codex project put it. Codex's `enforces` is `["wall"]` —
- * measured: `codex exec` has no `--max-turns` and no flag of any name bounds
- * turns — and `runtime.limits.turns` has a schema default of `300` that is
- * always present, so an unconditional `fail` here was a red **no edit to any
- * recipe could clear**: `lingtai doctor` red for ever, `lingtai restart`
- * refusing on every invocation until `--despite-doctor` is typed, and that
- * waiver — whose own comment in `restart.ts` is that gating like this *"would
- * make `--despite-doctor` the ordinary case"* — disarmed for the failures it
- * exists to surface. `CheckStatus`'s own docstring names the trap: a check that
- * is always red is a check nobody reads.
+ * **Any declared limit the runtime does not apply is `fail`, and the size of it
+ * is in the sentence rather than in the status.**
  *
- * So the two situations are told apart, because they are not the same size. A
- * limit the runtime carries beside one it applies is spend that **something will
- * still stop** — the wall — and what an operator can do about it is choose a
- * runtime, which is `runtime.agent` and is said in the sentence: `warn`, which
- * is *"nothing is wrong and you should know anyway"*. A runtime that applies
- * **none** of them is a run nothing will ever stop, which is `#89` whole and is
- * red.
+ * For one round this was a `warn` wherever *some* other limit still bound, on the
+ * grounds that a Codex project cannot clear it: `enforces` is `["wall"]` —
+ * measured, `codex exec` has no `--max-turns` and no flag of any name bounds
+ * turns — and `runtime.limits.turns` has a schema default of `300` that is always
+ * present, so red there is red for ever and `CheckStatus`'s docstring names that
+ * trap. **The downgrade cost more than the trap.** `RUN_LIMITS` is two names and
+ * every runtime in `RUNTIMES` applies at least one of them, so `fail` became a
+ * branch no real project could reach, and the state `#89` was built to catch
+ * reported `warn` —
+ * which `gatingFailures` does not count (`restart.ts`), so `lingtai restart` would
+ * start a daemon and a pass could run 172 turns against a declared 150 with
+ * nothing red anywhere. That is `#84` verbatim, with the check that exists to
+ * catch it passing.
+ *
+ * So the red is back, and what is permanently red is a **true** sentence about a
+ * runtime that cannot keep a bound the recipe declares. The lever is real and is
+ * named: `runtime.agent`, a runtime that applies it. What has no spelling is *"I
+ * accept an unbounded turn count"* — `turns` is `z.number().int().positive()` with
+ * a default, so a Codex project reads red until either Codex bounds turns or the
+ * schema can say unbounded, and **that is a decision for a person and not a status
+ * this function should soften**. `--despite-doctor` is the waiver meanwhile.
+ *
+ * The two sizes are still told apart, because they are not the same failure: a
+ * limit carried beside one that binds is spend the wall will still stop, and a
+ * runtime applying **none** of them is a run nothing will ever stop. Both are red;
+ * the detail says which.
  *
  * Here rather than in the schema: whether a limit binds is a fact about the
- * recipe *and* the adapter, which a field's parse cannot see. Saying it at all
- * is how the schema's acceptance stops being silent.
+ * recipe *and* the adapter, which a field's parse cannot see. A `fail` is how the
+ * schema's acceptance stops being silent.
  */
 export function limitsRow(
   project: string,
@@ -1602,24 +1612,23 @@ export function limitsRow(
 
   if (ignored.length === 0) return { name, status: "ok", detail };
 
+  const applied = RUN_LIMITS.filter((limit) => capabilities.enforces.includes(limit));
   const carries =
     `${capabilities.id} carries ${ignored.join(" and ")} and bounds nothing ` +
     `with ${ignored.length === 1 ? "it" : "them"}`;
-  // Nothing applied at all: the run has no bound, which is the failure `#89` is.
-  return ignored.length === RUN_LIMITS.length
-    ? {
-        name,
-        status: "fail",
-        detail: `${detail} — ${carries}, so nothing will stop a run of this project at all`,
-      }
-    : {
-        name,
-        status: "warn",
-        detail:
-          `${detail} — ${carries}, so what a pass may spend is bounded by ` +
-          `${RUN_LIMITS.filter((l) => capabilities.enforces.includes(l)).join(" and ")} and not by ` +
-          `${ignored.join(" or ")}. No edit to the recipe changes that: the lever is runtime.agent`,
-      };
+  return {
+    name,
+    status: "fail",
+    detail:
+      `${detail} — ${carries}, so the recipe declares a spend nothing will stop. ` +
+      // Both are red; which one this is decides what an overspending run costs.
+      (applied.length === 0
+        ? "Nothing will stop a run of this project at all. "
+        : `What still stops one is ${applied.join(" and ")}, and not ${ignored.join(" or ")}. `) +
+      // Named, because no edit to the recipe clears it: `turns` is always present
+      // and has no spelling for *unbounded*.
+      `The lever is runtime.agent — name a runtime that applies ${ignored.join(" and ")}`,
+  };
 }
 
 /**

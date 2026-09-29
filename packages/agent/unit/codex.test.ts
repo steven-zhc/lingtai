@@ -99,10 +99,21 @@ const failedTurnless = () =>
 /** What the wall says, and the sentence `parseResetAt` is handed (0031 §4). */
 const QUOTA = "You have hit your usage limit. Try again in 3 hours.";
 
-/** Nothing else came back from the process. */
+/**
+ * What `codex exec` writes to stderr about **being called**, on every invocation.
+ *
+ * Measured on 0.155.1 with stdin at `/dev/null`, which is exactly how `run()`
+ * spawns it: a clean run's whole stderr is these 38 characters. It is in the
+ * fixture below rather than in one test, because a `stderr` that defaults to `""`
+ * is a process no Codex run is — which is how a notice about the invocation came
+ * to be recorded as why every hook-blocked run failed.
+ */
+const STDIN_NOTICE = "Reading additional input from stdin...";
+
+/** Nothing else came back from the process — and stderr is never empty. */
 const closed = (exitCode: number | null, stderr = "", stdoutTail = "") => ({
   exitCode,
-  stderr,
+  stderr: stderr === "" ? `${STDIN_NOTICE}\n` : `${STDIN_NOTICE}\n${stderr}\n`,
   stdoutTail,
 });
 
@@ -238,6 +249,39 @@ describe("what a closed run is", () => {
 
     expect(said).not.toBeNull();
     expect(said?.kind).toBe("crash");
+  });
+
+  /**
+   * **And says so, which the record did not.**
+   *
+   * The fail-closed refusal is the one failure with no sentence on the stream:
+   * exit 0, a `turn.completed`, no `turn.failed`, the hook's own stderr swallowed
+   * by Codex. So `detail` reached past it — to the stdin notice every invocation
+   * writes, and before that to the bypass notice — and `RunFinished` recorded
+   * *"Reading additional input from stdin..."* as why the run failed, on the case
+   * `canFailClosed: true` exists for.
+   */
+  it("says a hook refused the prompt, and not what codex says about being called", () => {
+    const said = codexClose(codexOutcome(blocked()), closed(0));
+
+    expect(said?.detail).toMatch(/hook refusing the prompt/);
+    expect(said?.detail).toMatch(/UserPromptSubmit/);
+    expect(said?.detail).not.toMatch(/stdin/);
+    expect(said?.detail).not.toMatch(/bypass-hook-trust/);
+  });
+
+  /**
+   * The notice is filtered and stderr is not discarded: on a run that really did
+   * fail at the process, stderr is the only account there is, and the same probe
+   * printed the notice and the reason one line each.
+   */
+  it("keeps what the process said beside the notice, having dropped the notice", () => {
+    const said = codexClose(
+      codexOutcome([]),
+      closed(1, "Not inside a trusted directory and --skip-git-repo-check was not specified."),
+    );
+
+    expect(said?.detail).toBe("Not inside a trusted directory and --skip-git-repo-check was not specified.");
   });
 
   /**
@@ -603,10 +647,10 @@ describe("Codex's capabilities, each measured against the binary", () => {
   /**
    * **`wall` only.** `codex exec --help` at 0.155.1 offers no `--max-turns` and
    * no flag of any name bounds turns, so a recipe's `turns` is a bound nothing
-   * applies — and `limitsRow` says so for every Codex project. It says it as a
-   * `warn` and not a `fail`, because `runtime.limits.turns` has a schema default
-   * that is always present: a red no recipe can clear is a red nobody reads, and
-   * the wall still stops the run. See that function.
+   * applies — and `limitsRow` says so for every Codex project, red and
+   * permanently, because `runtime.limits.turns` has a schema default that is
+   * always present and no spelling for *unbounded*. See that function for why the
+   * `warn` it was for one round put `#89`'s own state past `lingtai restart`.
    */
   it("applies the wall and says so, and claims nothing about turns", () => {
     expect(CODEX_CAPABILITIES.enforces).toEqual(["wall"]);

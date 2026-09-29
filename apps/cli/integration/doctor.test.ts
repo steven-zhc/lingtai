@@ -611,37 +611,42 @@ subscribers:
   });
 
   /**
-   * **A limit carried beside one applied is a `warn`, and the reason is that no
-   * recipe can clear it** (`#313`).
+   * **This is `#89`, and it is red** — the adapter as it was before `#89`, and
+   * `enforces: ["wall"]` is Codex's own declaration now.
    *
-   * It was a `fail`, written when `enforces: ["wall"]` was hypothetical — the
-   * adapter as it was before `#89`. It is Codex's own declaration now, and
-   * `runtime.limits.turns` has a schema default of 300 that is always present, so
-   * a `fail` here was red for every Codex project on every run of doctor with
-   * nothing an operator could write to clear it: `lingtai restart` refusing until
-   * `--despite-doctor` is typed each time, which is the habit `restart.ts`'s own
-   * comment says gating like this creates. The fact is unchanged and still said in
-   * the detail; what changed is that the run is still bounded, by the wall.
+   * It was downgraded to `warn` for one round, because a Codex project cannot
+   * clear it: `runtime.limits.turns` has a schema default of 300 that is always
+   * present. The downgrade cost more than the permanent red did. `gatingFailures`
+   * counts `fail` and nothing else, so `lingtai restart` would start a daemon on
+   * this and a pass could run 172 turns against a declared 150 with nothing red
+   * anywhere — `#84` verbatim, past the check built to catch it. And with
+   * `RUN_LIMITS` two names long, `fail` was then a branch no runtime in the table
+   * could reach at all.
+   *
+   * What an operator can do is in the detail and is real; what they cannot do is
+   * write *unbounded* in a recipe, and that is a decision for a person rather than
+   * a status this row should soften.
    */
-  it("warns when the runtime carries a declared limit and bounds nothing with it", async () => {
+  it("is red when the runtime carries a declared limit and bounds nothing with it", async () => {
     const row = limitsRow("demo", await recipeOf(), {
       ...CLAUDE_CODE_CAPABILITIES,
       enforces: ["wall"],
     });
 
-    expect(row.status).toBe("warn");
+    expect(row.status).toBe("fail");
     expect(row.detail).toContain("turns 300 ← not applied");
     expect(row.detail).toContain("wall 2h ← applied by claude-code");
     expect(row.detail).toContain("claude-code carries turns and bounds nothing with it");
+    // The size of it: this run is still stopped by something, which the one below
+    // is not — said in the sentence, because both are the same status.
+    expect(row.detail).toContain("What still stops one is wall");
     // What an operator can actually do about it, which is not in the recipe.
     expect(row.detail).toContain("runtime.agent");
   });
 
   /**
-   * **And `#89` keeps its red for the case that is one**: a runtime that applies
-   * *none* of them is a run nothing will ever stop, which is a different size of
-   * problem from one bound not binding, and is not about a default anybody is
-   * stuck with.
+   * The other size, and the same red: a runtime that applies *none* of them is a
+   * run nothing will ever stop.
    */
   it("is red when the runtime bounds a run with nothing at all", async () => {
     const row = limitsRow("demo", await recipeOf(), {
@@ -652,7 +657,7 @@ subscribers:
     expect(row.status).toBe("fail");
     expect(row.detail).toContain("turns 300 ← not applied");
     expect(row.detail).toContain("wall 2h ← not applied");
-    expect(row.detail).toContain("nothing will stop a run of this project at all");
+    expect(row.detail).toContain("Nothing will stop a run of this project at all");
   });
 });
 

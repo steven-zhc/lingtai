@@ -127,9 +127,9 @@ export function createRuntime(id: RuntimeId, options?: RuntimeOptions): Runtime 
  * deny-everything settings file and an empty working directory, and **not the
  * project's business**. Which runtime works a project's tickets is the recipe's
  * `runtime.agent`; which one answers a question about one is whichever can be
- * held to no tools, and there is no reason those must be the same. Asking for
- * the recipe's first is still worth doing — a machine signed in to one runtime
- * alone should answer with the one it has — so this prefers it and falls back
+ * held to no tools, and there is no reason those must be the same. Asking for the
+ * recipe's first is still worth doing, because a project that names a runtime has
+ * said something about what its operator has — so this prefers it and falls back
  * rather than refusing.
  *
  * Falling back and not refusing, because the alternative was measured against
@@ -139,6 +139,19 @@ export function createRuntime(id: RuntimeId, options?: RuntimeOptions): Runtime 
  * as the price of choosing a runtime for passes. The containment is not lost
  * with it: what comes back can be given no tools, which is the whole of what the
  * caller asked for.
+ *
+ * **What this does not ask is what is signed in, and the fallback is not a claim
+ * that anything is.** It reads one thing — which rows can be given no tools —
+ * which is a fact about the table and never about the machine; asking otherwise
+ * is `checkAuth`, a spawn, and this is synchronous. So on a machine signed in to
+ * Codex alone, `createToollessRuntime("codex")` returns `claude-code`, `ask`
+ * answers `{failure: {kind: "crash"}}` from a `claude` that is absent or signed
+ * out, and `holdDiscussion` appends `DiscussionAnswered` with `answered: false`.
+ * The row that says *that* is `lingtai doctor`'s `runtime: signed in`, which asks
+ * every runtime — and `runtime: <project> signed in`, which asks the one the
+ * recipe names. Neither is asked here, and a reader looking for why a discussion
+ * answered nothing should look there rather than at `prepare` or the settings
+ * file.
  *
  * `null` where **no** row can keep the promise, so the caller still has to say
  * what it does then. Unreachable while `claude-code` has a row, and a type is a
