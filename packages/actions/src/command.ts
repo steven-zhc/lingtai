@@ -13,10 +13,15 @@
  * the dependency already runs that way — the conductor imports the actions — and a
  * package with one file in it is a worse answer than a slightly wide name.
  *
- * It is also the extension mechanism, and there is no other one:
- * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §2 —
- * *"There is no plugin system. An extension is a command."* §4 fixes the shape
- * of the conversation with that command, and this file is where it is spoken:
+ * It is also the extension that needs nothing declared. A plugin needs one — a
+ * key, its fields, the steps it serves — and today every declaration lives in
+ * `PLUGINS`;
+ * [0067](../../../doc/decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)
+ * is what lets one come from elsewhere, and the code it names is still a
+ * subprocess, run the way this file runs one.
+ * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §4 fixes the
+ * shape of the conversation with that command, and this file is where it is
+ * spoken:
  * **context in on stdin, verdict out by the exit code and optionally a file.**
  * The constraint that shapes all of it is that every `run:` in every recipe
  * today reads no stdin and writes no file, and must go on behaving exactly as

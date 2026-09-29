@@ -437,7 +437,10 @@ matrix is filled in as each plugin lands.
 - [0058](0058-lingtai-is-a-development-pipeline.md) — the ten steps, and that
   everything which acts is a plugin. This is its file shape.
 - [0037](0037-an-extension-is-a-command.md) §2 — *there is no plugin system, an
-  extension is a command*. The reason §2 needs no namespace.
+  extension is a command*. The reason §2 needs no namespace. **That section is
+  superseded by [0067](0067-a-plugin-is-a-declaration-and-an-implementation.md)**,
+  which finds a plugin system was built after all and narrows the claim to *the
+  registry is closed*; the namespace argument stands on the narrower one.
 - [0046](0046-lingtai-is-personal.md) §3 — the recipe is the machine's, at
   `~/.lingtai/<project>/recipe.yml`. Nothing here moves it.
 - [0047](0047-the-recipe-a-run-got-is-on-the-log.md) — what a run was given is

@@ -36,8 +36,10 @@ import { parseDuration } from "./duration.ts";
  * The names an **extension** may read, declared beside the extension itself
  * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
  *
- * `run:` is the single extension point (0037 §2), its code is not trusted, and
- * this is where it says which of this machine's credentials it needs. The
+ * `run:` is the extension point that needs nothing declared — a plugin needs a
+ * key, its fields and the steps it serves, and today every declaration lives in
+ * `PLUGINS` (0067). Its code is not trusted (0037 §1), and this is where it says
+ * which of this machine's credentials it needs. The
  * values are 0021's — `~/.lingtai/env/<project>.env` over the machine's own
  * file — so this file stays a list of names and stays safe to commit, exactly
  * as `env.required` does. **This is 0021's second consumer, not a second
@@ -964,9 +966,10 @@ export const backlogPlugin = definePlugin("backlog", {
  *
  * It lists the plugins and not their fields: each of the twelve above declares
  * what it accepts, and this array is what the resolve walks to find out *which*
- * of them an action names (0061 §9). A closed set needs no namespace — 0037 §2
- * settled that there is no plugin system and an extension is a command — so a
- * key is a bare word and a word that is not one of these is refused.
+ * of them an action names (0061 §9). A closed set needs no namespace — every
+ * declaration there is lives here — so a key is a bare word and a word that is
+ * not one of these is refused. Being closed is what buys that: 0067 is what lets
+ * a declaration come from elsewhere, and a namespace is what it will cost.
  *
  * **`refs:` is the first member that 0061 §3 did not name** (`#240`). The set
  * is not closed against *new* work: §3's list is the names the v2 file gives
@@ -1891,8 +1894,8 @@ const SubscribedEvent = z.string().superRefine((name, ctx) => {
  * nothing reads the exit code: a gate action's verdict is about a commit, and
  * this one has no verdict. That is 0016 §5's rule — *if the loop must wait for
  * it, it is a gate action; if it cannot affect the outcome, it is a
- * subscriber* — with the mechanism filled in and no plugin system underneath
- * it.
+ * subscriber* — with the mechanism filled in and nothing declared underneath
+ * it: a subscriber is a command, so no key of its own goes in `PLUGINS`.
  *
  * **One mechanism doing two jobs.** `on:` is both the declaration of what this
  * subscriber is for and the subscription itself, so the core knows what it

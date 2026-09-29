@@ -1582,9 +1582,12 @@ export interface DeclaredExtension {
  * Every extension a recipe declares, and the names it asked for.
  *
  * A `run:` action at any of the ten steps, and every subscriber — which is
- * the whole of the extension mechanism
- * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §2: *"there
- * is no plugin system, an extension is a command"*). Reading the recipe's own
+ * everything that extends Lingtai without declaring anything. A plugin declares
+ * a key, its fields and the steps it serves, and today every declaration lives
+ * in `PLUGINS`; what
+ * [0067](../../../doc/decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)
+ * lets come from elsewhere is that declaration, and the code under it is still a
+ * subprocess with an env of its own to collect. Reading the recipe's own
  * shape rather than a list of steps here meant that the five steps 0058 §3
  * added were covered by arithmetic instead of by remembering — which is what
  * that sentence was written for, and it has now been collected on.

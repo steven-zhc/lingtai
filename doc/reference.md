@@ -1392,9 +1392,13 @@ caller that builds actions in code rather than reading a recipe.
 
 ## extension environment — declared, and the declaration is the whole of it
 
-`run:` is the single extension point
-([0037](decisions/0037-an-extension-is-a-command.md) §2), its code is not
-trusted (§1), and `env:` beside it is **every credential its process gets**.
+`run:` is the extension point that needs nothing declared — a plugin needs a
+key, its fields and the steps it serves, and today every declaration lives in
+`PLUGINS`
+([0067](decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)). Its
+code is not trusted
+([0037](decisions/0037-an-extension-is-a-command.md) §1), and `env:` beside it is
+**every credential its process gets**.
 Source: `ExtensionEnvNames` in `packages/recipe/src/recipe.ts` — a field of the
 `run:` plugin's schema and of `Subscriber`'s, and of nothing else — and
 `extensionEnv` in `packages/agent-env/src/index.ts`.
