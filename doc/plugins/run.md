@@ -3,13 +3,9 @@
 `run:` runs one command in the worktree and takes its exit code as the verdict —
 zero passes, anything else refuses. It is **the extension point that needs
 nothing declared**, so every check Lingtai does not make itself is written as one
-of these. A plugin needs a declaration — a key, its fields, the steps it serves —
-and today every one of those lives in `PLUGINS`;
-[0067](../decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md) is
-what lets one come from elsewhere, with the code still a subprocess. The failure it prevents is the one an agent cannot
-see from inside its own turn: a change that satisfies the ticket and breaks the
-build, landing on the base branch because nothing between the agent and `main`
-ever compiled it.
+of these. The failure it prevents is the one an agent cannot see from inside its
+own turn: a change that satisfies the ticket and breaks the build, landing on the
+base branch because nothing between the agent and `main` ever compiled it.
 
 ## What it does
 
@@ -264,9 +260,11 @@ merge:
 
 ## Related
 
-- [0037](../decisions/0037-an-extension-is-a-command.md) — *there is no plugin
-  system; an extension is a command*, which is why this is the one key that
-  declares an `env:` and the one whose code is not trusted.
+- [0037](../decisions/0037-an-extension-is-a-command.md) §1 — an extension's
+  code is not trusted, which is why this is the one key that declares an `env:`.
+  **§2's *there is no plugin system* is superseded by
+  [0067](../decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)**:
+  a plugin is a declaration, and `PLUGINS` is where every one of them lives.
 - [0021](../decisions/0021-the-recipe-decides-the-environment.md) — the recipe
   decides the environment, in layers with different owners. `env:` here is its
   second consumer rather than a second mechanism.

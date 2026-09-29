@@ -140,6 +140,76 @@ describe("a page per plugin, once one is written", () => {
   });
 });
 
+/**
+ * A section an ADR's own Status line says is superseded, cited as though current.
+ *
+ * `run:`'s lede led with *0037 §2, there is no plugin system* for as long as
+ * that was true and for a while after it stopped being: 0067 found a plugin
+ * system had been built and narrowed §2 to *the registry is closed*. Nothing
+ * failed — a superseded citation reads exactly like a live one — so the page
+ * kept telling a stranger that a third party can never do more than run a
+ * command, which is the conclusion 0067 exists to stop.
+ *
+ * **Derived from the ADR's own Status block**, which is where this repository
+ * records a partial supersession (`0030`'s §2, `0042`'s §8, and now `0037`'s
+ * §2). A list of superseded sections kept beside this test would be the
+ * hand-kept table the rest of the file exists to refuse.
+ *
+ * The rule is *name the superseder*, not *do not cite*: a page may quote a dead
+ * section — `run:`'s `## Related` does — as long as the same page says which
+ * decision replaced it, so a reader following the link is never left with the
+ * old rule alone.
+ */
+describe("a page does not cite a superseded section as current", () => {
+  it("names the superseding decision wherever it cites a superseded section", async () => {
+    const replaced = await supersededSections();
+    expect(replaced.size, "no ADR Status line records a partial supersession").toBeGreaterThan(0);
+
+    for (const name of await pagesUnderPlugins()) {
+      const body = await readFile(pluginDoc + name, "utf8");
+      for (const [adr, section] of citationsIn(body)) {
+        const by = replaced.get(`${adr} §${section}`);
+        if (by === undefined) continue;
+        expect(
+          body.includes(by),
+          `doc/plugins/${name} cites ${adr} §${section}, which ${adr}'s own Status says ${by} superseded`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+/** Every `[NNNN](../decisions/NNNN-….md) §M` on a page, as `NNNN` and `M`. */
+function citationsIn(body: string): [string, string][] {
+  const cited = /\]\(\.\.\/decisions\/(\d{4})-[^)]+\.md\)\s*§(\d+)/g;
+  return [...body.matchAll(cited)].map((m) => [m[1]!, m[2]!]);
+}
+
+/**
+ * `"0037 §2"` → `"0067"`, off each decision's own Status block.
+ *
+ * The block is the paragraph under the title, and the `·` between its clauses
+ * is what bounds one: *supersedes [0016] §5's "Plugins are trusted code"* and
+ * *§2's … superseded by [0067]* are two clauses on 0037's line, and only the
+ * second is about a section of 0037's own.
+ */
+async function supersededSections(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const decisions = `${root}doc/decisions/`;
+  for (const name of (await readdir(decisions)).filter((n) => n.endsWith(".md"))) {
+    const body = await readFile(decisions + name, "utf8");
+    const status = /\*\*Status\*\*([\s\S]*?)\n\n/.exec(body)?.[1];
+    if (status === undefined) continue;
+    const self = /^(\d{4})/.exec(name)?.[1];
+    if (self === undefined) continue;
+    for (const clause of status.split("·")) {
+      const m = /§(\d+)'s[^§]*?superseded by\s*\[(\d{4})\]/.exec(clause);
+      if (m !== null) out.set(`${self} §${m[1]!}`, m[2]!);
+    }
+  }
+  return out;
+}
+
 /** A document's `##` headings, in order — which is the whole of "the shape". */
 function sectionsOf(body: string): string[] {
   return [...body.matchAll(/^## (.+)$/gm)].map((m) => m[1]!.trim());

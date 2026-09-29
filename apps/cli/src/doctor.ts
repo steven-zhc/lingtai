@@ -1581,16 +1581,23 @@ export interface DeclaredExtension {
 /**
  * Every extension a recipe declares, and the names it asked for.
  *
- * A `run:` action at any of the ten steps, and every subscriber — which is
- * everything that extends Lingtai without declaring anything. A plugin declares
- * a key, its fields and the steps it serves, and today every declaration lives
- * in `PLUGINS`; what
+ * A `run:` action at any of the four steps `runPlugin.at` allows — `prepared`,
+ * `build`, `proposed`, `merge`, and the recipe refuses one at the other six —
+ * and every subscriber: that is everything which extends Lingtai without
+ * declaring anything. A plugin declares a key, its fields and the steps it
+ * serves, and today every declaration lives in `PLUGINS`; what
  * [0067](../../../doc/decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)
  * lets come from elsewhere is that declaration, and the code under it is still a
- * subprocess with an env of its own to collect. Reading the recipe's own
- * shape rather than a list of steps here meant that the five steps 0058 §3
- * added were covered by arithmetic instead of by remembering — which is what
- * that sentence was written for, and it has now been collected on.
+ * subprocess with an env of its own to collect. *Four of the ten* is 0067 §2's
+ * whole argument for opening the registry, so it is the number to read off `at`
+ * rather than off this sentence.
+ *
+ * Reading the recipe's own shape rather than a list of steps here meant that the
+ * five steps 0058 §3 added were covered by arithmetic instead of by remembering
+ * — which is what 0037 §2's *"there is no plugin system, an extension is a
+ * command"* was written for, and it has now been collected on. That sentence is
+ * the one this function was written against and not 0067's: 0067 supersedes §2
+ * afterwards, and takes none of the arithmetic back.
  */
 export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
   const out: DeclaredExtension[] = [];

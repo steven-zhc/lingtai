@@ -31,7 +31,12 @@ export interface ProcessActionSpec {
    * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
    *
    * Not `ActionContext.env`, and that is the change: a `run:` action is the
-   * extension point (0037 §2), its code is not trusted, and it used to be
+   * extension point that needs nothing declared — a plugin declares a key, its
+   * fields and the steps it serves, and today every declaration lives in
+   * `PLUGINS`;
+   * [0067](../../../doc/decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)
+   * is what lets one come from elsewhere, and it supersedes 0037 §2. Its code is
+   * not trusted (0037 §1), and it used to be
    * handed the environment the *agent* was given — so a credential put there
    * for one command reached every command. Required rather than optional so
    * that a caller cannot forget it and get the old behaviour by accident; the

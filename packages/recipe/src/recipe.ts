@@ -93,11 +93,15 @@ const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
 
 /**
  * A command. Its exit code is the verdict, and `env` is every credential it
- * gets — see `ExtensionEnvNames`. This is the extension point (0037 §2), which
- * is why it is the only one of the six declaring an `env` field at all:
- * `agent`, `watch` and `human` are the core's own and run in the core's own
- * process, so a recipe writing `env:` under one of them is refused by name
- * (0061 §9) rather than having it accepted and ignored.
+ * gets — see `ExtensionEnvNames`. This is the extension point that needs
+ * nothing declared: a plugin declares a key, its fields and the steps it
+ * serves, and today every declaration lives in `PLUGINS` — 0067 is what lets
+ * one come from elsewhere, and it supersedes 0037 §2's *there is no plugin
+ * system*. Needing no declaration is also why this is the only one of the
+ * twelve declaring an `env` field at all: `agent`, `watch` and `human` are the
+ * core's own and run in the core's own process, so a recipe writing `env:`
+ * under one of them is refused by name (0061 §9) rather than having it accepted
+ * and ignored.
  */
 export const runPlugin = definePlugin("run", {
   fields: {
