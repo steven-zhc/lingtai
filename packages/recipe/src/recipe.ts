@@ -258,8 +258,12 @@ export const agentPlugin = definePlugin("agent", {
  * Windows. What is legal is a relative path with no `..` in it, which is the
  * same rule `git` itself applies to a pathspec.
  *
- * **Refused where it is written and never checked again**, which is 0066 §6's
- * *before a worktree, before an agent, before any money*: a `..` caught at run
+ * **Refused where it is written, and asked again about what the ticket made of
+ * it** (`#310`). 0066 §6's *before a worktree, before an agent, before any
+ * money* is still the rule for the string a person wrote — that is this
+ * function's caller in `filePlugin` below. Since `{{issue}}` expands when the
+ * action runs, there is a second string nobody wrote, and
+ * `thePathForThisTicket` asks the same question about it; a `..` caught at run
  * time is one claim, one clone and one paid agent, and then a person answering a
  * refusal a schema line could have printed (§6's correction, `#299`).
  */
@@ -279,6 +283,59 @@ export function whyThePathEscapes(written: string): string | null {
     return "it has an empty segment, so it names a directory rather than a file to write";
   }
   return null;
+}
+
+/**
+ * **The one placeholder a `file:` path takes**, and the whole of the vocabulary
+ * this field borrows ([0036](../../../doc/decisions/0036-the-core-takes-a-ticket.md),
+ * `#310`).
+ *
+ * `{{title}}` is deliberately not here: a title in a filename is a slug problem —
+ * spaces, slashes, length, two tickets under one title — and none of it is worth
+ * deciding for a path. Widening this is a decision somebody makes on purpose,
+ * which is the point of writing the list down rather than matching `{{…}}`.
+ */
+const THE_PLACEHOLDER = "{{issue}}";
+
+/**
+ * **What a `file:` path is for one ticket, or why that answer escapes the
+ * worktree** — the substitution `#310` buys, and the second half of 0066 §6.
+ *
+ * A fixed path keeps **one** document, the newest, under a name the log hands
+ * out to every pass: ticket A's locator on `StepPassed.evidence` opens ticket
+ * B's design a week later, with nothing anywhere saying so. So the path is
+ * per-ticket, and `{{issue}}` is how a recipe says which part of it.
+ *
+ * ## Why this runs when the action runs, and not when the recipe resolves
+ *
+ * `resolveRecipe` has no ticket and must not acquire one: it produces
+ * `configHash`, *of the resolved form rather than the file's bytes*, so that a
+ * replay asking *did results change after I edited the pipeline?* can answer
+ * from it. A path expanded at resolve would make an unedited recipe hash
+ * differently on every ticket, and that hash is on every `RunStarted` and on
+ * `ProjectConfigured`. The recipe resolves once per daemon; the path is one per
+ * pass. `createFileAction` is where this is called from, and its header carries
+ * the same paragraph for a reader who arrives there first.
+ *
+ * ## Substitute first, refuse second
+ *
+ * `whyThePathEscapes` reads the string it is given, so asking it before the
+ * substitution would let a ticket reference containing `..` or a leading `/`
+ * walk out of the worktree past a check that already said yes. It is asked
+ * **here**, about the expansion. A GitHub number cannot do that today — 0036's
+ * named evolution to `{{ref}}`, and a store whose refs read `PROJ-123`, is what
+ * the check is for, and it is reachable from a test without one.
+ */
+export type ThePathForThisTicket =
+  /** Where this pass's document goes, expanded, and already judged. */
+  | { readonly path: string }
+  /** The clause `whyThePathEscapes` answered about the expansion (0043). */
+  | { readonly escapes: string };
+
+export function thePathForThisTicket(written: string, ref: string): ThePathForThisTicket {
+  const path = written.replaceAll(THE_PLACEHOLDER, ref);
+  const why = whyThePathEscapes(path);
+  return why === null ? { path } : { escapes: why };
 }
 
 /**
@@ -331,10 +388,35 @@ export function whyThePathEscapes(written: string): string | null {
  * written after the action that drafts, and one written first is refused when the
  * recipe resolves — there is nothing before it to have made anything, and an
  * action that quietly kept nothing would be `#61` wearing a destination's name.
+ *
+ * ## The path is per ticket, and the substitution is not at resolve
+ *
+ * `{{issue}}` in the path becomes the ticket's number, because a fixed path
+ * keeps **one** document — the newest — under a name the log handed to every
+ * pass, and a locator kept for ticket A then opens ticket B's design with
+ * nothing saying so (`#310`, 0066 §1 again under a new spelling).
+ *
+ * **It expands when the action runs and not here**, and that is the one place a
+ * later reader will be tempted to move it to, *earlier, where the other refusal
+ * is*. It cannot go there: `resolveRecipe` has no ticket, and acquiring one
+ * would put a per-ticket string into `configHash` — which is *of the resolved
+ * form rather than the file's bytes* precisely so that a replay asking *did
+ * results change after I edited the pipeline?* can answer from it, and which is
+ * on every `RunStarted` and on `ProjectConfigured`. A recipe nobody edited would
+ * hash differently on every ticket. The recipe resolves once per daemon; the
+ * path is one per pass.
+ *
+ * So the refusal is made twice, on two strings, at two times: the field above
+ * refuses what a person wrote, at resolve and before any money (0066 §6), and
+ * `thePathForThisTicket` refuses what the ticket made of it, when it runs.
  */
 export const filePlugin = definePlugin("file", {
   fields: {
-    /** Where the document goes, relative to the worktree. `whyThePathEscapes` is the rule. */
+    /**
+     * Where the document goes, relative to the worktree. `whyThePathEscapes` is
+     * the rule, and `{{issue}}` is the one placeholder — expanded when the action
+     * runs, by `thePathForThisTicket`, which asks the same rule about the answer.
+     */
     file: z.string().superRefine((written, ctx) => {
       const why = whyThePathEscapes(written);
       if (why !== null) {
@@ -343,6 +425,28 @@ export const filePlugin = definePlugin("file", {
           message:
             `"${written}" is not a path inside the worktree — ${why}. A \`file:\` writes into the tree ` +
             "this pass owns and nowhere else, so the path is relative to it, with no `..` in it",
+        });
+        return;
+      }
+      // **A placeholder this field does not take is refused rather than
+      // written** (`#310`). `doc/design/{{title}}.md` escapes nothing, so the
+      // clause above says yes to it and a pass would commit a file literally
+      // named `{{title}}.md` to `main` and put that path on the log as a
+      // locator — this key's own failure, reached by a typo instead of by a
+      // fixed path. Here and not in `whyThePathEscapes`, which is also asked
+      // about a *locator* at `implement`, where the string has already been
+      // expanded and the only question left is whether it escapes.
+      const unknown = [...written.matchAll(/\{\{[^{}]*\}\}/g)]
+        .map((match) => match[0])
+        .find((each) => each !== THE_PLACEHOLDER);
+      if (unknown !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            `"${written}" names \`${unknown}\`, which a \`file:\` path does not take — \`${THE_PLACEHOLDER}\` ` +
+            "is the one placeholder, and it becomes the ticket's number when the pass runs. A `{{title}}` in " +
+            "a filename is a slug problem — spaces, slashes, length, two tickets under one title — so it is " +
+            "left out on purpose rather than forgotten",
         });
       }
     }),

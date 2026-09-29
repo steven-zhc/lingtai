@@ -250,6 +250,10 @@ describe("the two halves of one destination, end to end", () => {
         const document = files.get(spec.path);
         return document === undefined ? { notRead: `ENOENT: ${spec.path}` } : { document };
       },
+      // The keep's other dep since `#310` — the paths in this file carry no
+      // `{{issue}}`, so what it answers never reaches one; it is here because a
+      // `file:` cannot be built without a ticket to expand from.
+      issue: async () => ({ ref: "301" }),
     };
   }
 

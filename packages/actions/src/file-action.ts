@@ -57,7 +57,35 @@
  *
  * So the keep writes **and** commits, and `evidence` says the note is on the
  * branch because it is.
+ *
+ * ## The path is this ticket's, and why the substitution is here
+ *
+ * `{{issue}}` in `spec.path` becomes the ticket's ref before anything is
+ * written (`#310`). A fixed path keeps **one** document — the newest — under a
+ * name the log handed to every pass, so the locator this action put on ticket
+ * A's `StepPassed` opens ticket B's design a week later, with nothing anywhere
+ * saying so. That is 0066 §1's *bought, used once, and cannot be kept* under a
+ * new spelling, and it is the failure this substitution closes.
+ *
+ * **It is here and not at resolve, and that is the tempting move to undo.**
+ * `resolveRecipe` has no ticket and must not acquire one: it produces
+ * `configHash`, *of the resolved form rather than the file's bytes*, which is on
+ * every `RunStarted` and on `ProjectConfigured` — a path expanded there would
+ * make a recipe nobody edited hash differently on every ticket. The recipe
+ * resolves once per daemon; the path is one per pass. `filePlugin` in
+ * `packages/recipe/src/recipe.ts` carries the same paragraph beside the field.
+ *
+ * So `whyThePathEscapes` is asked **twice, about two strings**: the schema asks
+ * it about what a person wrote, at resolve and before any money (0066 §6), and
+ * `thePathForThisTicket` asks it here about what the ticket made of that. The
+ * second is a guard for a future rather than for today — `options.issue` is a
+ * number and `took.ticket.ref` is `String(issue.number)`, so nothing a GitHub
+ * ticket can contribute escapes anything — but 0036 names the evolution
+ * (*`{{issue}}` should become `{{ref}}`*, and Jira's is `PROJ-123`), and a ref
+ * with a `/` or a leading `..` in it would otherwise walk out of the worktree
+ * through a check that had already said yes.
  */
+import { thePathForThisTicket } from "@lingtai/recipe";
 import type { Action, ActionContext, ActionResult } from "./action.ts";
 
 /**
@@ -101,15 +129,40 @@ export type KeptAnswer =
  */
 export interface FileActionDeps {
   keep(spec: {
-    /** Relative to the worktree, and `whyThePathEscapes` has already refused anything else. */
+    /**
+     * Relative to the worktree, `{{issue}}` already expanded, and
+     * `whyThePathEscapes` has refused anything else — both about what a person
+     * wrote and about what this ticket made of it.
+     */
     readonly path: string;
     readonly document: string;
   }): Promise<KeptAnswer>;
+
+  /**
+   * The ticket this pass is about, for the one placeholder the path takes —
+   * `AgentActionDeps.issue` narrowed to the field that appears in a filename.
+   *
+   * **Narrowed on purpose, and required rather than optional.** The narrowing is
+   * the mechanism for *`{{issue}}` and nothing else*: a `{{title}}` in a path is
+   * a type somebody has to widen first rather than a line somebody forgot to
+   * write. And required, because an accessor with a fallback would let a
+   * placeholder survive unexpanded into a filename — which is the silently-wrong
+   * class `#310` exists to close, arrived at from the other side.
+   *
+   * **The conductor hands this and `AgentActionDeps.issue` the same closure**
+   * (`conduct.ts`): `{{issue}}` in a `prompt:` and `{{issue}}` in a `file:` are
+   * one number, and two expressions that agree today are two things that can
+   * drift.
+   */
+  issue: () => Promise<{ readonly ref: string }>;
 }
 
 export interface FileActionSpec {
   name: string;
-  /** Where the document goes, relative to the worktree. `filePlugin`'s `file:` field. */
+  /**
+   * Where the document goes, relative to the worktree — `filePlugin`'s `file:`
+   * field, **as written**, with `{{issue}}` still in it. `run` expands it.
+   */
   path: string;
 }
 
@@ -126,12 +179,46 @@ export function sizeOf(document: string): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
 }
 
+/**
+ * **The sentence an expansion that left the worktree is refused with**, and it
+ * names both strings — what the recipe wrote and what this ticket made of it —
+ * because neither on its own says where the `..` came from.
+ *
+ * `notThisDestination` in `file-brief-action.ts` is the shape this follows: the
+ * clause `whyThePathEscapes` answered, composed into a sentence about what this
+ * destination expected.
+ */
+function notThisTicketsPath(written: string, ref: string, why: string): string {
+  return (
+    `the design was not kept: \`${written}\` is \`${ref}\`'s path, and that is not a path inside the ` +
+    `worktree — ${why}. A \`file:\` expands \`{{issue}}\` into the ticket's ref when the pass runs, and ` +
+    "asks the same question of the answer that the recipe was asked of the string (0066 §6)"
+  );
+}
+
 export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Action {
   return {
     name: spec.name,
     kind: "file",
 
     async run(context: ActionContext): Promise<ActionResult> {
+      // **First, so that every sentence below names the path the document
+      // actually goes to** and not the template a person wrote. The accessor is
+      // the ticket the pass already holds, so this costs nothing where there
+      // turns out to be nothing to keep.
+      const ref = (await deps.issue()).ref;
+      const expanded = thePathForThisTicket(spec.path, ref);
+      if ("escapes" in expanded) {
+        // `did-not-finish` and never `refused`: `design` is not one of
+        // `REFUSING_STEPS` (0058 §3), and this action writes rather than judges.
+        return {
+          verdict: "did-not-finish",
+          evidence: notThisTicketsPath(spec.path, ref, expanded.escapes),
+          findings: [],
+        };
+      }
+      const path = expanded.path;
+
       const drafted = context.design;
       if (drafted === undefined) {
         // A context nothing filled in, which is one built by hand: `runStep`
@@ -160,16 +247,16 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
       if (drafted.document === "") {
         return {
           verdict: "passed",
-          evidence: `nothing to keep at \`${spec.path}\` — the design step answered that none was needed`,
+          evidence: `nothing to keep at \`${path}\` — the design step answered that none was needed`,
           findings: [],
         };
       }
 
-      const answer = await deps.keep({ path: spec.path, document: drafted.document });
+      const answer = await deps.keep({ path, document: drafted.document });
       if ("notKept" in answer) {
         return {
           verdict: "did-not-finish",
-          evidence: `the design was not kept at \`${spec.path}\`: ${answer.notKept}`,
+          evidence: `the design was not kept at \`${path}\`: ${answer.notKept}`,
           findings: [],
         };
       }

@@ -34,8 +34,12 @@ const context = (design?: TheDesign): ActionContext => ({
   ...(design === undefined ? {} : { design }),
 });
 
-/** A keep that records what it was asked and answers what the test wants. */
-function keeping(answer: KeptAnswer = { at: "doc/design/x.md" }) {
+/**
+ * A keep that records what it was asked and answers what the test wants, with
+ * the ticket beside it — `{{issue}}` in the path is expanded from `ref` before
+ * anything is kept (`#310`), so the two are one fake and a case can move either.
+ */
+function keeping(answer: KeptAnswer = { at: "doc/design/x.md" }, ref = "310") {
   const seen: { path: string; document: string }[] = [];
   return {
     seen,
@@ -43,6 +47,7 @@ function keeping(answer: KeptAnswer = { at: "doc/design/x.md" }) {
       seen.push(spec);
       return answer;
     },
+    issue: async () => ({ ref }),
   };
 }
 

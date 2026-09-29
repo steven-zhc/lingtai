@@ -1862,8 +1862,11 @@ export function runOnce(
        * destination be turned on one machine at a time.
        *
        * Under `cwd`, which is the worktree and the only place a pass writes: the
-       * path has already been refused by `whyThePathEscapes` when the recipe
-       * resolved, so what is left here is `join` and the directories above it.
+       * path has already been refused by `whyThePathEscapes` **twice** — once by
+       * the schema, about the string a person wrote, when the recipe resolved,
+       * and once by `createFileAction` itself, about what `{{issue}}` made of
+       * that string, before it called this (`#310`). So what is left here is
+       * `join` and the directories above it.
        * A trailing newline is added where the document has none, because a file in
        * a repository is read by `git diff` and by editors that both complain about
        * one that has not got one.
@@ -1943,6 +1946,22 @@ export function runOnce(
       const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, "utf8") });
 
       /**
+       * **The ticket, for every plugin that writes part of it down** — the one
+       * the `queue:` action took, or the number this run was started with where
+       * nothing took one.
+       *
+       * A `const` handed to two rows below rather than an expression written at
+       * each (`#310`). `{{issue}}` in a `prompt:` and `{{issue}}` in a `file:`
+       * path have to be the same number, and two expressions that agree today
+       * are two things that can drift apart tomorrow; one closure makes the
+       * agreement structural rather than a coincidence a test has to notice.
+       *
+       * Read when the action runs and not here, so `took` is the claim this pass
+       * made rather than whatever it was before `claim`.
+       */
+      const issue = async () => took?.ticket ?? { ref: String(options.issue), title: "", body: "" };
+
+      /**
        * What a declared plugin needs in order to run — the things only a caller
        * with a machine under it can build (`PassOptions.actionsAt`).
        *
@@ -1955,7 +1974,7 @@ export function runOnce(
         env: envForExtension,
         agent: {
           runtime: options.runtime,
-          issue: async () => took?.ticket ?? { ref: String(options.issue), title: "", body: "" },
+          issue,
           diff: () => gitOrDie(["diff", `${baseShaOr("HEAD")}...HEAD`]),
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
@@ -2004,7 +2023,10 @@ export function runOnce(
         // no `defaultsAt` row, because `design`'s default is nothing — so nothing
         // reaches it unless a recipe declared a destination, which is what lets a
         // destination be turned on one machine at a time.
-        file: { keep },
+        // `issue` is the same closure `agent` above was handed, because the
+        // placeholder a `file:` path expands and the one a `prompt:` expands are
+        // one number (`#310`).
+        file: { keep, issue },
         // The ninth, and the other end of the eighth: `implement`'s
         // `file-brief:` action reads the design back through this (0069 §4,
         // `#301`). Its own row rather than a field on `file` above, because the
