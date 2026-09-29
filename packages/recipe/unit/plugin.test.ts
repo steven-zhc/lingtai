@@ -1219,7 +1219,7 @@ describe("the one `design` keeps with", () => {
       design: [
         DRAFTER,
         { name: "the note in the repository", file: "doc/design/notes.md" },
-        { name: "and one beside the ticket", file: "doc/design/300.md" },
+        { name: "and one beside the ticket", file: "doc/design/{{issue}}.md" },
       ],
     });
     expect(parsed.success).toBe(true);

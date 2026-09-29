@@ -303,6 +303,15 @@ locator distinguishes neither, which is half of what 0066 §3 bought a locator
 for. A templated path is a separate ticket against `filePlugin`; nothing here
 needs one to get a number.
 
+> Since `#310` a `file:` path takes `{{issue}}`, expanded when the action runs,
+> so `doc/design/{{issue}}.md` gives each pass its own note. **This experiment's
+> own recipe is unchanged by that landing** — the value on the conducting
+> machine's file is still the literal, a path with no placeholder takes the same
+> route and comes out identical, and §4's rule is that `design:` is the only
+> block that moves while this runs. Whether to point it at `{{issue}}` before
+> the fortnight is out is the owner's call; changing the path changes neither
+> whether a design is made nor what it costs.
+
 **The note is in the diff `review` reads, and that is not free.** The keep commits
 (`file.md`, **Parameters** — there is no field for the other answer, because an
 uncommitted note does not survive the worktree's removal), so the cold reviewer

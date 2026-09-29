@@ -54,7 +54,41 @@ and nothing in the plugin would change, which is the test 0066 §9 sets for whet
 | field | type | required | what it means |
 |---|---|---|---|
 | `name` | string | yes | How every verdict, waiver and reading addresses this action. |
-| `file` | string | yes | Where the document goes, relative to the worktree. No `..`, not absolute, not under a home directory. |
+| `file` | string | yes | Where the document goes, relative to the worktree. No `..`, not absolute, not under a home directory. `{{issue}}` in it becomes the ticket's number when the pass runs. |
+
+**`{{issue}}`, and it is the only placeholder.** A fixed path keeps **one**
+document — the newest — under a name the log handed to every pass: ticket A
+lands, the sentence *wrote a 2.4 kB design to `doc/design/this-change.md`* is on
+its `StepPassed` forever, and a week later ticket B is cut from a `main` that
+already has A's file, writes over it, and merges cleanly. Following A's locator
+then gives you B's document with nothing anywhere saying so — worse than a dead
+link, because a dead link is obviously dead. Only `git log` remembers A. So
+point `file:` at `doc/design/{{issue}}.md` and each pass's note lands at its own
+path (`#310`, 0066 §1).
+
+**`{{title}}` deliberately is not taken**, and a path that names it — or any
+other `{{…}}` — is refused when the recipe resolves rather than written out
+literally. A title in a filename is a slug problem: spaces, slashes, length, two
+tickets under one title. None of that is worth deciding for a path, and leaving
+it out as a refusal rather than as silence is what keeps a typo from committing
+a file called `{{title}}.md` to `main` and putting *that* on the log as a
+locator.
+
+**The substitution happens when the action runs, not when the recipe resolves.**
+`resolveRecipe` has no ticket — `lingtai add` and the daemon at start both run
+before any queue pass — and it must not acquire one, because it produces
+`configHash` *of the resolved form rather than the file's bytes*, so that a
+replay asking *did results change after I edited the pipeline?* can answer from
+it. A path expanded at resolve would make a recipe nobody edited hash
+differently on every ticket, on every `RunStarted` and on `ProjectConfigured`.
+The recipe resolves once per daemon; the path is one per pass.
+
+So the path is judged **twice**, on two strings, at two times: the schema
+refuses what a person wrote, before a worktree and before any money (0066 §6),
+and `createFileAction` refuses what the ticket made of it, before it writes
+anything. Both are `whyThePathEscapes`. Today a GitHub number cannot escape
+anything; the second check is for 0036's named evolution to `{{ref}}`, where
+Jira's is `PROJ-123` and a store's may carry a slash.
 
 **One field beside `name`, and no flag for the commit.** 0066 left *whether the file is
 committed* to this plugin; the answer is **always**, and the reason is that the
@@ -100,12 +134,14 @@ it.
   - name: the note in the repository
     file: doc/design/notes.md
   - name: and one beside the ticket
-    file: doc/design/300.md
+    file: doc/design/{{issue}}.md
 ```
 
 Two keeps rather than one plugin with a list (0066 §5). The locator that crosses
 to `implement` is the **last** one, because that is the result the document came
-off (0069 §5).
+off (0069 §5). The second path is this ticket's and the first is not, so a second
+pass overwrites `notes.md` and leaves `310.md` where it was — which is the whole
+of what `{{issue}}` is for, shown as a pair.
 
 ## What it refuses
 
@@ -131,6 +167,29 @@ design:
 An absolute path and one starting at `~` are the same refusal with their own
 clause. The check is `whyThePathEscapes`, and it is string rules rather than
 `node:path` so that the operator's machine and the daemon answer alike.
+
+```yaml
+design:
+  - name: keep it
+    file: doc/design/{{title}}.md
+```
+
+> "doc/design/{{title}}.md" names `{{title}}`, which a `file:` path does not
+> take — `{{issue}}` is the one placeholder, and it becomes the ticket's number
+> when the pass runs. A `{{title}}` in a filename is a slug problem — spaces,
+> slashes, length, two tickets under one title — so it is left out on purpose
+> rather than forgotten.
+
+Refused rather than written out, because the file it would otherwise commit to
+`main` is literally called `{{title}}.md` and the log would carry that path as
+the locator somebody follows a year later — this key's own failure, reached by a
+typo instead of by a fixed path.
+
+A path whose `{{issue}}` **expands** into something outside the worktree gets
+the first refusal's clause, but at run time and on the card: `did-not-finish` at
+`design`, nothing written, and a sentence naming both the path as written and
+the ref it was given. Today no GitHub number can do that; 0036's `{{ref}}` and a
+`PROJ-123` can, which is why the check is there rather than assumed away.
 
 ```yaml
 design:
