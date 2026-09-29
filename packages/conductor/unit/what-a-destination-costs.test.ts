@@ -11,15 +11,23 @@
  *
  * The first row is most of the work and the cheapest outcome, and it is the one
  * the other two are worth nothing without: a configuration error that survives
- * to run time is retried on the recipe's backoff — **every hour here** — and
- * each retry claims the ticket, cuts a worktree, dispatches and fails again
- * (0066 §6). So what is asserted about it is that the pass is never reached at
- * all, which is a different kind of claim from the two below it.
+ * to run time costs a whole pass — the claim, the worktree, the design agent —
+ * and then ends `blocked`, which puts the item on *Waiting on you* and leaves it
+ * there. It is **not** retried on the recipe's backoff, which is what 0066 §6
+ * expects of it: a block folds to `state: "waiting"` and `selectRunnable` drops
+ * any row that is not `queued` before it consults the backoff at all
+ * (`queue.ts`, and `integration/queue.test.ts`'s *passes over an item asked a
+ * question before any run*). So what is asserted about this row is that the pass
+ * is never reached, which is a different kind of claim from the two below it.
  *
  * **`design` may not refuse** — it is a rectangle in 0058 §3's list, and
- * `REFUSING_STEPS` is where that is written down — so none of the three buys a
- * fix round, and that is the feature rather than the gap: a broken destination
- * costs the design run and nothing more.
+ * `REFUSING_STEPS` is where that is written down — but that is a fact about
+ * `refused` and not about what these cost, because **a round is bought at the
+ * router**. Rows one and two reach no router and so buy nothing. The third
+ * reaches it with `design` on the offer, so a `judge:` declared at
+ * `when: needs-input` can spend a round on a second design run — which is what
+ * the last case here measures, and what makes the asking row the only one that
+ * can cost more than once.
  *
  * **No plugin is a destination yet**, which is 0069's *what the first
  * destination plugin is … is `#295`'s remaining tickets*. So the destination
@@ -202,7 +210,15 @@ describe("a destination fails three ways, and a step has one way to say so", () 
       // And nothing after `design` ran: `implement` is not among the visits, so
       // the expensive half of the pass was never bought.
       expect(visited(result)).toEqual(["claim", "admit", "prepared", "design", "end"]);
+      // **`blocked` and never `failed`**, which is the whole of what the next
+      // pass does about it: `failed` releases the claim and the backoff offers
+      // the item again, where `blocked` folds to `state: "waiting"` and
+      // `selectRunnable` drops any row that is not `queued` before it looks at
+      // the backoff (`queue.ts`). So this row waits for a person and is not
+      // retried, however cheap the failure was — the line 0066 §6 gets wrong
+      // about a configuration error that reaches run time.
       expect(outcomeOf(result)).toBe("blocked");
+      expect(outcomeOf(result)).not.toBe("failed");
       // `StepDidNotFinish` and not `StepAsked` — broken machinery, not a
       // question (0068).
       expect(events.filter((e) => e.type === "StepAsked")).toEqual([]);
@@ -300,6 +316,24 @@ describe("a destination fails three ways, and a step has one way to say so", () 
       // Nobody but the step that asked knows the question, so the offer is that
       // step and a person, and never `implement`.
       expect(onOffer("design", question, SPARE, 0).reachable).not.toContain("implement");
+    });
+
+    /**
+     * **And what `design` on that offer costs is a round**, which is why *none
+     * of the three buys a fix round* is the wrong reading of *`design` may not
+     * refuse*: a round is bought at the router, and refusing is a different
+     * transaction (0058 §3). Spend the ceiling and the same question is
+     * answerable only by a person — so a `judge:` declared at
+     * `when: needs-input` that keeps answering `design` is paying for a second
+     * design run each time, up to `runtime.limits.rounds` and no further.
+     */
+    it("charges a round for `design` again, and stops offering it once they are spent", () => {
+      const question: StepEnding = { ending: "asked", at: "keep it", detail: "which space?" };
+
+      expect(onOffer("design", question, SPARE, SPARE.rounds).affordable).toEqual(["waiting"]);
+      // Reachable all the same: having no round left is the budget's answer and
+      // not the workflow's, which is the distinction the two sets exist to keep.
+      expect(onOffer("design", question, SPARE, SPARE.rounds).reachable).toEqual(["waiting", "design"]);
     });
   });
 });

@@ -157,28 +157,50 @@ written down (0066 §7) and
 | what happened | how you say it | what it costs |
 |---|---|---|
 | the recipe is wrong | **you say nothing** — the schema refused it | nothing: no claim, no worktree, no agent |
-| the destination was briefly unreachable | `did-not-finish` | the pass stops; no round, and no judge is asked |
-| the destination needs a person | `did-not-finish` with `because: NEEDS_INPUT` | reaches `proposed`, and with no `judge:` declared, a person |
+| the destination was briefly unreachable | `did-not-finish` | the pass stops and the item waits for a person; no round, and no judge is asked |
+| the destination needs a person | `did-not-finish` with `because: NEEDS_INPUT` | reaches `proposed`: a person, or a `judge:` at `needs-input` — which may buy `design` again |
 
 **The first row is the one that is easy to lose and the expensive one to
 lose.** A missing field, a path that is not a path, a destination named with no
 credentials: say it in the **schema**, and a recipe carrying it never resolves —
 so the daemon claims nothing until a person fixes the line. Check the same thing
-when your action *runs* and it is retried on the recipe's backoff instead —
-every hour on this machine — and each retry claims the ticket, cuts a worktree
-and fails again in the same place. You get this row by declaring your fields and
-writing no code for it; what loses it is a loose field checked at run time.
+when your action *runs* and the same typo costs a whole pass: the ticket is
+claimed, a worktree is cut, the design agent is paid, and then the pass ends
+`blocked` — which takes the item **off the queue** and onto *Waiting on you*,
+where nothing brings it back. `outcomeOf` reads a `did-not-finish` as `blocked`,
+`conduct.ts` appends `WorkItemBlocked`, `task_view` folds that to
+`state: "waiting"`, and `selectRunnable` drops any row that is not `queued`
+*before* it consults the backoff (`queue.ts`). So a run-time-checked `path:` is
+not retried every hour — it is worse than that: one claim, one worktree, one
+agent run, and then a person, who is being asked to read a refusal a schema line
+could have printed before anything was claimed. You get this row by declaring
+your fields and writing no code for it; what loses it is a loose field checked at
+run time.
 
 **Start every runtime failure at the second row.** *Unreachable* and *needs a
 person* are the same event seen at two moments, and which is which is a
-measurement rather than a judgement — move one to the third row when it is seen
-to retry without ever succeeding, and say in the ticket which one moved and why.
+measurement rather than a judgement. What you cannot measure it by is retries:
+**both rows end `blocked`**, so neither comes round again on its own — the queue
+passes over a `waiting` row however long its backoff has run. The observable is
+the person. Move a failure to the third row when the person the block reached
+answers it with something only they knew — a space, a path, a credential —
+rather than by running it again, and say in the ticket which one moved and why.
 
-And none of the three buys a fix round at `design`, because `design` is not one
-of the four steps that may refuse ([0058](decisions/0058-lingtai-is-a-development-pipeline.md)
-§3). That is the feature: a broken destination costs the design run and nothing
-more. **Reaching for `refused` to get attention is not available and would not
-be worth it** — it would buy an agent a fix round to be told about a typo.
+**A round is bought at the router and not by refusing**, so *`design` may not
+refuse* ([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3) settles
+nothing about what these cost, and the answer differs by row. Rows one and two
+buy nothing: one never reaches a pass at all, and a `did-not-finish` never
+reaches the router, so there is no offer and nothing to spend. The third does
+reach it, and `onOffer("design", asked, …)` puts **`design` itself** on the offer
+while a round remains — nobody but the step that asked knows the question, so
+*that step again* is the only step it can go back to (0058 §3c). Declare no
+`judge:` at `when: needs-input` and the floor is a person with the round unspent;
+declare one, and every answer of `design` pays for a second design run. So the
+row that asks is the only one that can cost more than once, and what it costs is
+set in the recipe rather than by your plugin. **Reaching for `refused` to get
+attention is not available anyway** — `design` is not one of `REFUSING_STEPS`, so
+a `failed` verdict here is read as the second row, and a `refused` that did land
+would buy an agent a fix round to be told about a typo.
 
 ### `worktree:` is the one that makes rather than judges
 
