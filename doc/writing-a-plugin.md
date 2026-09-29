@@ -146,6 +146,40 @@ Both were one ending until `#296`, told apart by `because === "needs-input"`.
 and `needs-input` survives as the `when:` a `judge:` is declared at, which is a
 name in a vocabulary and not a branch.
 
+### A plugin that keeps something somewhere fails three ways
+
+A **destination** — a plugin that writes the design into the tree, or files it on
+a wiki ([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5) —
+can fail in a way the three endings above do not obviously sort, so the table is
+written down (0066 §7) and
+`packages/conductor/unit/what-a-destination-costs.test.ts` drives it:
+
+| what happened | how you say it | what it costs |
+|---|---|---|
+| the recipe is wrong | **you say nothing** — the schema refused it | nothing: no claim, no worktree, no agent |
+| the destination was briefly unreachable | `did-not-finish` | the pass stops; no round, and no judge is asked |
+| the destination needs a person | `did-not-finish` with `because: NEEDS_INPUT` | reaches `proposed`, and with no `judge:` declared, a person |
+
+**The first row is the one that is easy to lose and the expensive one to
+lose.** A missing field, a path that is not a path, a destination named with no
+credentials: say it in the **schema**, and a recipe carrying it never resolves —
+so the daemon claims nothing until a person fixes the line. Check the same thing
+when your action *runs* and it is retried on the recipe's backoff instead —
+every hour on this machine — and each retry claims the ticket, cuts a worktree
+and fails again in the same place. You get this row by declaring your fields and
+writing no code for it; what loses it is a loose field checked at run time.
+
+**Start every runtime failure at the second row.** *Unreachable* and *needs a
+person* are the same event seen at two moments, and which is which is a
+measurement rather than a judgement — move one to the third row when it is seen
+to retry without ever succeeding, and say in the ticket which one moved and why.
+
+And none of the three buys a fix round at `design`, because `design` is not one
+of the four steps that may refuse ([0058](decisions/0058-lingtai-is-a-development-pipeline.md)
+§3). That is the feature: a broken destination costs the design run and nothing
+more. **Reaching for `refused` to get attention is not available and would not
+be worth it** — it would buy an agent a fix round to be told about a typo.
+
 ### `worktree:` is the one that makes rather than judges
 
 Every other kind is handed `context.onSha` and says yes or no about it. The
