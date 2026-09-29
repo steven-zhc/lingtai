@@ -1864,11 +1864,15 @@ export function runOnce(
        * exception out of a plugin is a step that did not finish with no words on
        * it; this way the sentence a person reads is the write's own.
        *
-       * **A commit that had nothing to commit is still kept.** Running the same
-       * ticket twice writes the same bytes, and `git commit` exits non-zero on an
-       * empty index — which is *the file is already there*, not a failure to keep
-       * it. So the commit is attempted and the head is read back either way, and
-       * what advances `onSha` is the head rather than the exit code.
+       * **A commit that had nothing to commit is still kept, and it is asked
+       * rather than inferred from the exit code.** Running the same ticket twice
+       * writes the same bytes, and `git commit` exits non-zero on an empty index —
+       * so *the file is already there* and *the commit was refused* arrive the same
+       * way, and an unconditional `rev-parse` after both would report the base as
+       * though the note had landed on it. `git diff --cached --quiet` separates
+       * them first: nothing staged is kept at the head there already, and a commit
+       * that then failed is `notKept`, because the evidence says *committed to the
+       * branch* and that has to be true where it says it.
        */
       const keep = async (spec: {
         readonly path: string;
@@ -1886,14 +1890,26 @@ export function runOnce(
 
         const added = await gitAsked(["add", "--", spec.path]);
         if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` };
-        await gitAsked([
-          "commit",
-          "-m",
-          `docs(design): the shape for #${options.issue}`,
-          "--only",
-          "--",
-          spec.path,
-        ]);
+        // `--quiet` implies `--exit-code`, so a *right* here is *nothing staged*
+        // and a left is a difference to commit — the one place in this file where
+        // the failing branch is the ordinary one.
+        const staged = await gitAsked(["diff", "--cached", "--quiet", "--", spec.path]);
+        if (Either.isLeft(staged)) {
+          // `--only`, so a commit at `design` cannot pick up anything else the
+          // worktree happens to be holding: what this action is answering for is
+          // the one path it wrote.
+          const committed = await gitAsked([
+            "commit",
+            "-m",
+            `docs(design): the shape for #${options.issue}`,
+            "--only",
+            "--",
+            spec.path,
+          ]);
+          if (Either.isLeft(committed)) {
+            return { notKept: `git commit refused it: ${committed.left.detail}` };
+          }
+        }
         const head = await gitAsked(["rev-parse", "HEAD"]);
         return Either.isLeft(head) ? { at: spec.path } : { at: spec.path, head: head.right };
       };
