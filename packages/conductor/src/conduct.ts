@@ -137,6 +137,7 @@ import {
   type ActionContext,
   type ActionEvent,
   type CutAnswer,
+  type KeptAnswer,
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
@@ -206,6 +207,8 @@ import { worktreePath, type TokenSource, type Worktree } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
 import { AgentHost, Repo } from "./ports.ts";
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { RUN_LOG_END, runLogEnd, runLogPath } from "./run-log.ts";
 
 export const changedFilesArgs = (baseSha: string): string[] => [
@@ -1842,6 +1845,60 @@ export function runOnce(
       };
 
       /**
+       * `design` — the document into the worktree, and onto the branch where the
+       * recipe asked for that (0066 §5, `#300`).
+       *
+       * **The dep of a plugin and never a step's own work.** `design`'s default is
+       * nothing (0065 §4), so there is no `defaultsAt` row for this and a recipe
+       * that declares no `file:` never reaches it — which is what lets a
+       * destination be turned on one machine at a time.
+       *
+       * Under `cwd`, which is the worktree and the only place a pass writes: the
+       * path has already been refused by `whyThePathEscapes` when the recipe
+       * resolved, so what is left here is `join` and the directories above it.
+       * A trailing newline is added where the document has none, because a file in
+       * a repository is read by `git diff` and by editors that both complain about
+       * one that has not got one.
+       *
+       * **`notKept` and never a throw.** `design` may not refuse (0058 §3), and an
+       * exception out of a plugin is a step that did not finish with no words on
+       * it; this way the sentence a person reads is the write's own.
+       *
+       * **A commit that had nothing to commit is still kept.** Running the same
+       * ticket twice writes the same bytes, and `git commit` exits non-zero on an
+       * empty index — which is *the file is already there*, not a failure to keep
+       * it. So the commit is attempted and the head is read back either way, and
+       * what advances `onSha` is the head rather than the exit code.
+       */
+      const keep = async (spec: {
+        readonly path: string;
+        readonly document: string;
+        readonly commit: boolean;
+      }): Promise<KeptAnswer> => {
+        const at = join(cwd, spec.path);
+        try {
+          await mkdir(dirname(at), { recursive: true });
+          await writeFile(at, spec.document.endsWith("\n") ? spec.document : `${spec.document}\n`, "utf8");
+        } catch (error) {
+          return { notKept: (error as Error).message };
+        }
+        if (!spec.commit) return { at: spec.path };
+
+        const added = await gitAsked(["add", "--", spec.path]);
+        if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` };
+        await gitAsked([
+          "commit",
+          "-m",
+          `docs(design): the shape for #${options.issue}`,
+          "--only",
+          "--",
+          spec.path,
+        ]);
+        const head = await gitAsked(["rev-parse", "HEAD"]);
+        return Either.isLeft(head) ? { at: spec.path } : { at: spec.path, head: head.right };
+      };
+
+      /**
        * What a declared plugin needs in order to run — the things only a caller
        * with a machine under it can build (`PassOptions.actionsAt`).
        *
@@ -1898,6 +1955,12 @@ export function runOnce(
             context: ActionContext,
           ) => dispatch(spec, context),
         },
+        // The eighth, and the one that neither makes nor judges: `design`'s
+        // `file:` action keeps the document through this (0066 §5, `#300`). It has
+        // no `defaultsAt` row, because `design`'s default is nothing — so nothing
+        // reaches it unless a recipe declared a destination, which is what lets a
+        // destination be turned on one machine at a time.
+        file: { keep },
       };
 
       /**
