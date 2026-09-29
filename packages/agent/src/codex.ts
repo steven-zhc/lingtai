@@ -105,9 +105,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * `wall` is the `setTimeout` in `run`, which is ours. `turns` has no flag to
    * delegate to — `codex exec --help` at 0.155.1 offers none, and `strings` finds
    * no hidden one the way `claude --max-turns` was hidden — so a recipe's `turns`
-   * is a bound nothing applies, and `limitsRow` turns `fail` for every Codex
-   * project with its own sentence: *the recipe declares a spend nothing will
-   * stop*. That is visible on purpose.
+   * is a bound nothing applies, and `limitsRow` says so for every Codex project.
+   * It says it as a **`warn`**: `runtime.limits.turns` has a schema default that
+   * is always present, so a `fail` there was a red no recipe could clear and
+   * `lingtai restart` refused on every invocation. The wall still stops the run.
    *
    * **Counting turns off the stream is not enforcing them.** `codexOutcome`
    * counts them, for the receipt and for the never-started question, and `run()`
@@ -165,6 +166,19 @@ interface CodexEvent {
     output_tokens?: number;
     reasoning_output_tokens?: number;
   };
+  /**
+   * On `turn.failed` — **why the turn ended**, which is not an `item`.
+   *
+   * Measured on 0.155.1: a 400 from the model provider streamed
+   * `{"type":"error","message":"…"}` and then
+   * `{"type":"turn.failed","error":{"message":"…"}}`, and no `turn.completed`
+   * at all. `TurnFailedEvent`/`turn.failed` are in the binary's own event
+   * vocabulary beside `TurnCompletedEvent`, so this is the shape a quota wall
+   * takes too.
+   */
+  error?: { message?: string };
+  /** On a top-level `{"type":"error"}`, which precedes `turn.failed`. */
+  message?: string;
 }
 
 /**
@@ -190,14 +204,33 @@ export interface CodexReceipt {
   /** The last `agent_message`, which is the model's final message. */
   text: string | null;
   /**
-   * Whether a `turn.completed` arrived at all — *whether there is a receipt*.
+   * Whether a `turn.completed` arrived at all — *whether the turn finished*.
    *
-   * The gate on ever answering `never-started`. Without it an unparseable
-   * stream leaves `turns` at zero and `billedTokens` at zero by ignorance rather
-   * than by evidence, and `neverStarted`'s docstring forbids exactly that:
-   * *"a caller has to have actually seen the runtime say so."*
+   * **It is not the gate on `never-started`, and reading it as one was wrong.**
+   * A turn that met a wall ends `turn.failed` and never `turn.completed`, so an
+   * account-wide refusal — the one thing 0031 exists for — had `completed:
+   * false` and was classified `crash`, while the one case that did reach
+   * `never-started` was our own hook refusing the prompt, which is not about the
+   * account at all. `failed` is the gate now; see it and `codexClose`.
    */
   completed: boolean;
+  /**
+   * Why the **turn** ended, where the runtime said the turn failed — the
+   * message off `turn.failed`, or off a top-level `{"type":"error"}` where that
+   * is all there was.
+   *
+   * **This is the evidence a failed Codex run has, and nothing else is.** Not
+   * `errors`, which on every hooked run already holds the bypass notice; not the
+   * exit code, which a hook-blocked run leaves at 0. `turn.failed` is the
+   * runtime speaking about its own turn: *"You have hit your usage limit"*, *"the
+   * model is not supported"*. So it leads `detail` and it is what
+   * `standDown`'s reset-time reading is handed (0031 §4).
+   *
+   * Null where no such statement arrived, which includes every clean run and
+   * every stream that simply stopped. Null is *no statement* and never *no
+   * failure*.
+   */
+  failed: string | null;
   /**
    * Input plus output tokens off the last `turn.completed`.
    *
@@ -216,13 +249,15 @@ export interface CodexReceipt {
    */
   billedTokens: number;
   /**
-   * `error` items, in order.
+   * `error` **items**, in order — which are notices and not the failure.
    *
-   * **An `error` item is not a failure.** `--dangerously-bypass-hook-trust`
-   * emits two of them on every hooked run — *"Enabled hooks may run without
-   * review for this invocation"* — so classifying on their presence would make
-   * every run Lingtai dispatches a failed one. They are detail, and the
-   * classification is `completed`, `billedTokens` and the exit code.
+   * `--dangerously-bypass-hook-trust` emits two on every hooked run (*"Enabled
+   * hooks may run without review for this invocation"*), and a fallback-metadata
+   * warning is another, so neither their presence nor their text says anything
+   * about how the run ended. **They are last in `detail` for that reason**: they
+   * led it once, and on every hooked run the bypass notice short-circuited the
+   * chain and was recorded as why the run failed — the quota sentence, the
+   * stderr and the reset time all displaced by a notice about a flag.
    */
   errors: readonly string[];
 }
@@ -233,12 +268,13 @@ interface Tally {
   turns: number;
   text: string | null;
   completed: boolean;
+  failed: string | null;
   billedTokens: number;
   errors: string[];
 }
 
 function emptyTally(): Tally {
-  return { sessionId: "", turns: 0, text: null, completed: false, billedTokens: 0, errors: [] };
+  return { sessionId: "", turns: 0, text: null, completed: false, failed: null, billedTokens: 0, errors: [] };
 }
 
 /** One line, folded in. Everything the receipt knows is decided here. */
@@ -257,6 +293,19 @@ function foldLine(receipt: Tally, line: string): void {
   if (event.type === "turn.completed") {
     receipt.completed = true;
     receipt.billedTokens = (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0);
+  }
+
+  // **The turn ending in failure, which `turn.completed` never says.** The
+  // runtime's own account of a quota wall, a refused model, a dropped stream —
+  // and the only place it appears, since the exit code is 0 on some of them and
+  // the `error` items are notices.
+  if (event.type === "turn.failed") {
+    receipt.failed = event.error?.message?.trim() || "the runtime said the turn failed and said nothing more";
+  }
+  // A top-level `error` precedes `turn.failed` carrying the same message; taken
+  // only where no `turn.failed` followed, so the turn-ending statement wins.
+  if (event.type === "error" && event.message?.trim() && receipt.failed === null) {
+    receipt.failed = event.message.trim();
   }
 
   if (event.type === "item.completed" && event.item?.type === "agent_message") {
@@ -329,6 +378,87 @@ export function codexAccount(): CodexAccount {
   };
 }
 
+/** What a closed process said besides its stream. */
+export interface CodexClosed {
+  exitCode: number | null;
+  /** All of stderr. */
+  stderr: string;
+  /** The **end** of stdout, for quoting — never for accounting. */
+  stdoutTail: string;
+}
+
+/**
+ * How the run ended, decided from the receipt and the exit — `null` for one that
+ * answered.
+ *
+ * Pure and exported for the reason `codexOutcome` is: `pnpm test` is the `build`
+ * gate and runs the unit project only, so a classification left inside `run()`'s
+ * `close` handler is one no test inside a pass can reach. Both of the mistakes
+ * this function is the correction of were in that handler.
+ *
+ * **`never-started` is an account-wide refusal, and the evidence for it is
+ * `turn.failed`.** 0031 §3's whole mechanism is that the conductor stops rather
+ * than the item, *because every other item in the queue would meet the same
+ * thing* — a quota, a signed-out runtime, a model the account cannot use. Codex
+ * says exactly that on `turn.failed`, with no `turn.completed` and nothing
+ * billed, and it exits non-zero:
+ *
+ *     {"type":"turn.failed","error":{"message":"You have hit your usage limit…"}}
+ *
+ * This was gated on `receipt.completed` instead, which is the *opposite* test: a
+ * wall never emits `turn.completed`, so every account-wide refusal was a `crash`
+ * — `did-not-finish`, the item back on the queue, the next ticket claimed, a
+ * worktree cut, the same wall met again, all the way through the queue, which is
+ * the run 0041 and `pass-steps.ts`'s *"about the account rather than about the
+ * diff"* exist to prevent. And the one case that *did* reach `never-started` was
+ * a `turn.completed` with nothing billed — our own hook refusing the prompt,
+ * which is about this diff's wiring and not about the account, so it paused the
+ * whole conductor and sent `parseResetAt` looking for a reset time in a run that
+ * had no quota problem.
+ *
+ * **`turns === 0` is the spend leg, and `billedTokens` cannot be.** Usage arrives
+ * only on `turn.completed`, so on a failed turn `billedTokens` is zero by
+ * ignorance — the very thing `neverStarted`'s docstring forbids resting on.
+ * `turns` counts `agent_message` items as they stream, so zero of them is an
+ * observation: nothing was produced. A wall met after twenty messages is a
+ * `crash`, because that pass did spend.
+ */
+export function codexClose(
+  receipt: CodexReceipt,
+  closed: CodexClosed,
+): { kind: "crash" | "never-started"; detail: string } | null {
+  const reachedAModel = receipt.billedTokens > 0;
+  if (receipt.completed && closed.exitCode === 0 && reachedAModel && receipt.turns > 0) return null;
+
+  // The runtime saying its own turn ended in failure. A turn that *completed* is
+  // not one that failed, however little it billed — that is the hook refusal, and
+  // it is this diff's business rather than the account's.
+  const endedInFailure = receipt.failed !== null && !receipt.completed;
+
+  return {
+    kind: endedInFailure && receipt.turns === 0 ? "never-started" : "crash",
+    /**
+     * **The runtime's own account of the failure first, and the notices last.**
+     *
+     * `receipt.errors` led this chain, and on every hooked run it already holds
+     * `--dangerously-bypass-hook-trust`'s notice — so the notice short-circuited
+     * it and became the recorded reason for every failed Codex run: on the board,
+     * in `attempts.ts`, and handed to `parseResetAt` in place of the reset time.
+     * The order below is what each source can actually be trusted to be about:
+     * `failed` is about this turn, stderr is about the process, `text` is the
+     * agent's last word, the notices are about the invocation, and `stdoutTail`
+     * is raw JSONL kept only so that something is said at all.
+     */
+    detail:
+      receipt.failed?.slice(0, 500) ||
+      closed.stderr.trim().slice(-500) ||
+      receipt.text?.slice(0, 500) ||
+      (receipt.errors.length > 0 ? receipt.errors.join(" · ").slice(0, 500) : "") ||
+      closed.stdoutTail.trim().slice(-500) ||
+      `exited ${closed.exitCode}`,
+  };
+}
+
 /**
  * What one line of the stream is worth saying in the run log.
  *
@@ -352,6 +482,14 @@ export function codexTrace(
   } catch {
     return [["stdout", clip(t)]];
   }
+
+  // **Why the turn ended, which is not an `item` and would otherwise reach no
+  // reader at all.** A quota wall's whole account of itself is here; the log is
+  // where somebody watching a run finds out why it stopped.
+  if (event.type === "turn.failed" && event.error?.message?.trim()) {
+    return [["codex", clip(event.error.message)]];
+  }
+  if (event.type === "error" && event.message?.trim()) return [["codex", clip(event.message)]];
 
   const item = event.item;
   if (item === undefined) return [];
@@ -398,10 +536,17 @@ export function codexTrace(
  * per-run `CODEX_HOME` holding only our hooks is a run that is not signed in —
  * `checkAuth` passing and the run failing.
  *
- * **Filtering to the hooks Codex serves is required, not tidiness.** An event
- * name Codex does not know makes `config.toml` fail to load, which kills the run
- * at spawn — and `renderSettings` includes `Notification`, which Codex has no
- * dispatcher for.
+ * **Filtering to the hooks Codex serves is not about spawn safety**, and saying
+ * it was got the measurement wrong. Measured on 0.155.1: `-c
+ * 'hooks.Notification=[…]'` **loads** and the run proceeds — an event key Codex
+ * has no dispatcher for is accepted and silently ignored. The `hooks` table *is*
+ * validated, just not on event names: `-c 'hooks.Stop=[{…{type="bogus"…}}]'`
+ * answers *"Error loading config.toml: unknown variant bogus, expected one of
+ * command, mcp_tool, prompt, agent"*, and `-c hooks=<path>` answers *"invalid
+ * type: string"*. So what the filter buys is that nothing here claims a
+ * hook is wired when Codex will never dispatch it — `renderSettings` includes
+ * `Notification`, which Codex has no dispatcher for, and passing it would put a
+ * hook in the argv, in the log and in a reader's head that cannot fire.
  *
  * `--dangerously-bypass-hook-trust` rides along only when there is a hook to
  * trust: *"Intended only for automation that already vets hook sources"*, and
@@ -751,7 +896,15 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           hard.unref?.();
           finish({
             exitCode: null,
-            turns: 0,
+            // **What the stream counted, not zero.** A run stopped at the wall
+            // spent every turn it had taken, and `RunFinished.turns` is what
+            // `attempts.ts` tells a person it cost — `0 turn(s)` beside a
+            // two-hour timeout is the audit record disagreeing with what
+            // happened that folding this receipt was for. `claude-code.ts` writes
+            // zero here honestly, because `parseResult` only ever sees a receipt
+            // at the end and zero there means *no receipt*; here the number was
+            // measured as the bytes arrived.
+            turns: account.receipt.turns,
             durationMs: Date.now() - started,
             costUsd: null,
             text: null,
@@ -795,62 +948,26 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             "receipt",
             receipt.completed
               ? `${receipt.turns} turns · ${receipt.billedTokens} tokens · cost unrecorded · exit ${code}`
-              : `no receipt on the stream · exit ${code}`,
+              : `${receipt.turns} turns · no turn.completed · exit ${code}`,
           );
 
-          const reachedAModel = receipt.billedTokens > 0;
-          if (receipt.completed && code === 0 && reachedAModel && receipt.turns > 0) {
-            finish({
-              exitCode: code,
-              turns: receipt.turns,
-              durationMs,
-              // Never `0`: unknown cost is not free (#198), and the type honours it.
-              costUsd: null,
-              text: receipt.text,
-              failure: null,
-              sessionId: receipt.sessionId,
-            });
-            return;
-          }
+          // One decision, and a pure one — `codexClose`. `out-of-turns` is not
+          // among its answers and that is correct: nothing bounds turns, so no
+          // run can be stopped at one.
+          const failure = codexClose(receipt, {
+            exitCode: code,
+            stderr,
+            stdoutTail,
+          });
 
           finish({
             exitCode: code,
             turns: receipt.turns,
             durationMs,
+            // Never `0`: unknown cost is not free (#198), and the type honours it.
             costUsd: null,
             text: receipt.text,
-            failure: {
-              /**
-               * 0031's three facts, with Codex's own evidence for each: **a
-               * receipt exists, nothing was billed, no message was produced.**
-               *
-               * `receipt.completed` is the gate, and it is what keeps this from
-               * being 0031's bug again: a stream that never reached
-               * `turn.completed` is a `crash`, because zeros from a stream that
-               * stopped are ignorance and not evidence. The measured case this
-               * catches is the hook refusing the prompt — `input_tokens: 0`, no
-               * `agent_message`, and **exit 0**, which classified on the exit
-               * code alone would have been a clean run of no turns.
-               *
-               * `out-of-turns` is not reachable here and that is correct:
-               * nothing bounds turns, so no run can be stopped at one.
-               */
-              kind:
-                receipt.completed && !reachedAModel && receipt.turns === 0
-                  ? "never-started"
-                  : "crash",
-              /**
-               * Whatever went wrong, something says so. Codex's `error` items
-               * first, because they are the runtime's own words about the
-               * invocation; then the end of stderr or stdout, which under a
-               * stream is whatever it managed to say before it stopped.
-               */
-              detail:
-                (receipt.errors.length > 0 ? receipt.errors.join(" · ").slice(0, 500) : "") ||
-                receipt.text?.slice(0, 500) ||
-                (stderr.trim() || stdoutTail.trim()).slice(-500) ||
-                `exited ${code}`,
-            },
+            failure,
             sessionId: receipt.sessionId,
           });
         });

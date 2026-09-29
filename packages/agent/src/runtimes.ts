@@ -13,7 +13,9 @@
  * an `undefined` at whichever call site reached for it first. That is the whole of
  * the third-runtime claim: one enum value, one row, and nothing else to find.
  */
-import type { RuntimeId } from "@lingtai/domain";
+// The enum itself and not only its type: `createToollessRuntime` walks
+// `RuntimeId.options`, so a third runtime is a candidate by being in the enum.
+import { RuntimeId } from "@lingtai/domain";
 import { createClaudeCodeRuntime } from "./claude-code.ts";
 import { createCodexRuntime } from "./codex.ts";
 import type { Runtime } from "./runtime.ts";
@@ -111,11 +113,50 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
  *
  * **Total over ids and not over options**: `ToolsCannotBeDenied` is thrown where
  * the runtime named cannot keep the promise the options asked for. A caller that
- * asks for `tools: "none"` has to say what it does when the answer is no, which
- * is the point — `answerDiscussion` answers the question with the refusal.
+ * asks for `tools: "none"` has to say what it does when the answer is no, and
+ * `createToollessRuntime` is what a caller that must still answer does.
  */
 export function createRuntime(id: RuntimeId, options?: RuntimeOptions): Runtime {
   return RUNTIMES[id](options);
+}
+
+/**
+ * A runtime that can be given **no tools**, preferring the one named.
+ *
+ * For the third kind of agent (0033) — a discussion — whose containment is a
+ * deny-everything settings file and an empty working directory, and **not the
+ * project's business**. Which runtime works a project's tickets is the recipe's
+ * `runtime.agent`; which one answers a question about one is whichever can be
+ * held to no tools, and there is no reason those must be the same. Asking for
+ * the recipe's first is still worth doing — a machine signed in to one runtime
+ * alone should answer with the one it has — so this prefers it and falls back
+ * rather than refusing.
+ *
+ * Falling back and not refusing, because the alternative was measured against
+ * this repository's own board: `createRuntime("codex", {tools: "none"})` throws,
+ * and a project whose recipe named Codex then had **every** question answered
+ * with the refusal, permanently — a capability 0033 calls a kind of agent, lost
+ * as the price of choosing a runtime for passes. The containment is not lost
+ * with it: what comes back can be given no tools, which is the whole of what the
+ * caller asked for.
+ *
+ * `null` where **no** row can keep the promise, so the caller still has to say
+ * what it does then. Unreachable while `claude-code` has a row, and a type is a
+ * better guarantee than that sentence staying true.
+ */
+export function createToollessRuntime(
+  preferred: RuntimeId,
+): { id: RuntimeId; runtime: Runtime; instead: RuntimeId | null } | null {
+  for (const id of [preferred, ...RuntimeId.options.filter((one) => one !== preferred)]) {
+    try {
+      return { id, runtime: createRuntime(id, { tools: "none" }), instead: id === preferred ? null : preferred };
+    } catch (err) {
+      // Only the promise being refused. Anything else is this table being
+      // broken, and swallowing it here would make that look like a preference.
+      if (!(err instanceof ToolsCannotBeDenied)) throw err;
+    }
+  }
+  return null;
 }
 
 /**

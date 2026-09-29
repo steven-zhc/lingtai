@@ -1766,7 +1766,7 @@ asks.
 
 `help` (`--help`, `-h`) is the fallthrough rather than a subcommand.
 
-## doctor check — 22 fixed, 5 per project, 3 deferred
+## doctor check — 22 fixed, 6 per project, 3 deferred
 
 Source: the `results.push` sequence in `runDoctor`, `apps/cli/src/doctor.ts`.
 **Read off the file, in the order the command prints them**; the previous
@@ -1786,14 +1786,15 @@ by four checks and two names.
 | credentials (2) | `github: app credentials` · `runtime: signed in` |
 | visibility (1) | `runtime: other settings in scope` — reports what configures a run besides the recipe |
 
-**Five more run once per configured project**, so the total depends on how many
+**Six more run once per configured project**, so the total depends on how many
 there are: `recipe: resolves for every project`,
 `env: declared names, and which layer`, `env: <project> extensions`,
-`runtime: <project> limits` and
+`runtime: <project> limits`, `runtime: <project> signed in` and
 `recipe: the rules and the merge target are one branch`. Each reports under the
 project's own name (`recipe: lingtai`, `env: lingtai`,
-`env: lingtai extensions`, `runtime: lingtai limits`, `base: lingtai`) when it
-has something to say about that project in particular.
+`env: lingtai extensions`, `runtime: lingtai limits`,
+`runtime: lingtai signed in`, `base: lingtai`) when it has something to say
+about that project in particular.
 
 `env: <project> extensions` is 0037 §1's half: what each `run:` action and each
 subscriber declared, and whether this machine holds it. It is `fail` rather than
@@ -1802,11 +1803,27 @@ so a missing name is a command that starts, finds nothing and exits — and a
 subscriber's exit code is discarded.
 
 `runtime: <project> limits` is `#89`'s: each of `runtime.limits`, and whether
-the runtime that actually runs — `createClaudeCodeRuntime()`, not the recipe's
-declarative `runtime.agent` — stops a run at it (`RuntimeCapabilities.enforces`).
-It is `fail` when a limit is merely carried, which is the state `turns` was in
-while `#84` ran 172 against a declared 150. A run stopped at `turns` ends as
-`RunFailed` with kind `out-of-turns`, distinct from the wall's `timeout`.
+the runtime that actually runs stops a run at it
+(`RuntimeCapabilities.enforces`). **That runtime is the one the recipe's
+`runtime.agent` names**, since `#313` — `conduct.ts` constructs from that field,
+so reading it is the only way to answer for the adapter that will be started;
+until then every run was handed `createClaudeCodeRuntime()` and this row asked
+that regardless of the recipe. It is `fail` when the runtime applies *none* of
+the limits, which is a run nothing will ever stop, and `warn` when it applies
+some and merely carries the rest — the state `turns` was in while `#84` ran 172
+against a declared 150, and the state a Codex project is in permanently, because
+`codex exec` has no flag that bounds turns and `runtime.limits.turns` always has
+a value. `warn` rather than `fail` for that one because no edit to a recipe
+clears it and a check that is always red is a check nobody reads; the lever it
+names is `runtime.agent`. A run stopped at `turns` ends as `RunFailed` with kind
+`out-of-turns`, distinct from the wall's `timeout`.
+
+`runtime: <project> signed in` is the other half of that field: whether the
+runtime this project will dispatch can actually be started on this machine. The
+installation-wide `runtime: signed in` asks every runtime and goes green on any
+one of them, so it cannot answer this — a machine signed in to Codex alone is
+green there beside a project whose recipe carries the schema default
+`runtime.agent: claude-code`.
 
 Four statuses: `ok`, **`warn`** (nothing is wrong and you should know anyway),
 `fail`, `skip`. `warn` was added with `runtime: other settings in scope`: folding

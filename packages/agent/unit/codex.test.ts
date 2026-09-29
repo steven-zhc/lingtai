@@ -10,15 +10,18 @@
  * actually writes.
  *
  * **Every fixture line below was copied off a real `codex exec --json` stream**
- * from `codex-cli 0.155.1` on 2026-09-29, not invented. The one that matters is
- * `blocked`: a hook refusing the prompt, which is the shape `canFailClosed`
- * promises and which exits **0**.
+ * from `codex-cli 0.155.1` on 2026-09-29, not invented. Two of them matter:
+ * `blocked`, a hook refusing the prompt, which is the shape `canFailClosed`
+ * promises and which exits **0**; and `failedTurn`, a turn that ended in failure,
+ * which carries no `turn.completed` at all and is the shape an account-wide
+ * refusal takes.
  */
 import { describe, expect, it } from "vitest";
 import {
   CODEX_CAPABILITIES,
   codexAccount,
   codexArgv,
+  codexClose,
   codexHookArgs,
   codexOutcome,
   codexTrace,
@@ -59,6 +62,49 @@ const blocked = () =>
     { type: "turn.started" },
     { type: "turn.completed", usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 } },
   );
+
+/** The notice `--dangerously-bypass-hook-trust` emits on every hooked run — twice. */
+const BYPASS =
+  "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.";
+
+/**
+ * **A turn that ended in failure**, which is the shape an account-wide refusal
+ * takes and the one `turn.completed` can never carry.
+ *
+ * Measured: `codex exec --json -m <not-a-model>` on 0.155.1 streamed
+ * `thread.started`, the notices, `turn.started`, a top-level
+ * `{"type":"error","message":…}` and then
+ * `{"type":"turn.failed","error":{"message":…}}` — **no `turn.completed` at
+ * all**. The lines are that stream's; the message is the caller's, because a
+ * quota wall is these same lines with the provider's sentence in them.
+ */
+const failedTurn = (message: string, ...before: readonly unknown[]) =>
+  jsonl(
+    { type: "thread.started", thread_id: "01a0eecc-89a1-7940-81b6-e33dbebbd82d" },
+    { type: "item.completed", item: { id: "item_0", type: "error", message: BYPASS } },
+    { type: "item.completed", item: { id: "item_1", type: "error", message: BYPASS } },
+    { type: "turn.started" },
+    ...before,
+    { type: "error", message },
+    { type: "turn.failed", error: { message } },
+  );
+
+/** The notices and nothing else: a stream that stopped after them. */
+const failedTurnless = () =>
+  jsonl(
+    { type: "thread.started", thread_id: "01a0eecc-0000-7940-81b6-e33dbebbd82d" },
+    { type: "item.completed", item: { id: "item_0", type: "error", message: BYPASS } },
+  );
+
+/** What the wall says, and the sentence `parseResetAt` is handed (0031 §4). */
+const QUOTA = "You have hit your usage limit. Try again in 3 hours.";
+
+/** Nothing else came back from the process. */
+const closed = (exitCode: number | null, stderr = "", stdoutTail = "") => ({
+  exitCode,
+  stderr,
+  stdoutTail,
+});
 
 describe("the receipt, as a fold over the stream", () => {
   it("reads the session id off thread.started, because nothing supplies one", () => {
@@ -111,6 +157,126 @@ describe("the receipt, as a fold over the stream", () => {
     // Not `cached_input_tokens`, which is a discount on the input and not a
     // second charge; what is being asked is only *whether* a model was reached.
     expect(codexOutcome(clean()).billedTokens).toBe(17018 + 5);
+  });
+
+  /**
+   * `turn.failed` is the runtime saying why its own turn ended, and it is the
+   * only place that sentence appears: the exit code says nothing, and the `error`
+   * items are notices about the invocation.
+   */
+  it("reads why the turn ended off turn.failed, which no completed turn carries", () => {
+    const receipt = codexOutcome(failedTurn(QUOTA));
+    expect(receipt.failed).toBe(QUOTA);
+    expect(receipt.completed).toBe(false);
+    expect(receipt.turns).toBe(0);
+    // A run that answered said nothing of the kind.
+    expect(codexOutcome(clean()).failed).toBeNull();
+  });
+
+  it("lets the turn-ending statement win over the top-level error before it", () => {
+    // Both carry the same message on a real stream; where they differ, the one
+    // about *the turn* is the one that ended it.
+    const said = codexOutcome([
+      JSON.stringify({ type: "error", message: "stream hiccup" }),
+      JSON.stringify({ type: "turn.failed", error: { message: QUOTA } }),
+    ]);
+    expect(said.failed).toBe(QUOTA);
+    // And a top-level error on its own is still a statement.
+    expect(codexOutcome([JSON.stringify({ type: "error", message: "stream hiccup" })]).failed).toBe(
+      "stream hiccup",
+    );
+  });
+});
+
+/**
+ * **How the run ended** — the two classifications this adapter got wrong, both of
+ * them provable here because `codexClose` is pure.
+ */
+describe("what a closed run is", () => {
+  /**
+   * The wall, and the whole of 0031 §3: a run that met something *account-wide*
+   * stops the conductor rather than the item, because every other item in the
+   * queue would meet it identically.
+   *
+   * It was gated on `receipt.completed`, which is the opposite test — a failed
+   * turn never emits `turn.completed` — so an account-wide refusal went down as
+   * `crash`, became `did-not-finish`, released the item, and the next pass claimed
+   * the next ticket, cut a worktree, spawned codex and met the same wall, all the
+   * way through the queue.
+   */
+  it("calls a turn that failed having produced nothing never-started", () => {
+    const said = codexClose(codexOutcome(failedTurn(QUOTA)), closed(1));
+
+    expect(said?.kind).toBe("never-started");
+  });
+
+  /**
+   * **The reset time reaches `standDown`, and the bypass notice does not
+   * displace it** (0031 §4).
+   *
+   * `receipt.errors` led `detail`, and it already holds the bypass notice on
+   * every run Lingtai dispatches — so the notice became the recorded reason for
+   * every failed Codex run: on the board, in `attempts.ts`, and handed to
+   * `parseResetAt` in place of the sentence with the time in it.
+   */
+  it("records why it failed, and not the notice every hooked run carries", () => {
+    const said = codexClose(codexOutcome(failedTurn(QUOTA)), closed(1, "some stderr"));
+
+    expect(said?.detail).toBe(QUOTA);
+    expect(said?.detail).not.toMatch(/bypass-hook-trust/);
+  });
+
+  /**
+   * **A hook refusing the prompt is not account-wide**, and it was the *only*
+   * thing that reached `never-started`: a `turn.completed` with nothing billed.
+   * Standing the whole conductor down for it paused a system that had no quota
+   * problem, and sent `parseResetAt` looking for a reset time in a run that had
+   * none.
+   */
+  it("calls the hook-blocked run a crash, since nothing about it is the account", () => {
+    const said = codexClose(codexOutcome(blocked()), closed(0));
+
+    expect(said).not.toBeNull();
+    expect(said?.kind).toBe("crash");
+  });
+
+  /**
+   * **`turns` is the spend leg and `billedTokens` cannot be**: usage arrives only
+   * on `turn.completed`, so on a failed turn zero tokens is ignorance. A wall met
+   * after the agent had been talking is a pass that spent, which is a `crash`.
+   */
+  it("calls a wall met after the agent produced work a crash, not never-started", () => {
+    const after = failedTurn(
+      QUOTA,
+      { type: "item.completed", item: { type: "agent_message", text: "first" } },
+      { type: "item.completed", item: { type: "agent_message", text: "second" } },
+    );
+    const receipt = codexOutcome(after);
+
+    expect(receipt.billedTokens).toBe(0);
+    expect(receipt.turns).toBe(2);
+    expect(codexClose(receipt, closed(1))?.kind).toBe("crash");
+  });
+
+  it("is null for a run that answered, which is the one case with no failure", () => {
+    expect(codexClose(codexOutcome(clean()), closed(0))).toBeNull();
+    // Exit code, receipt, spend and a message: all four, or it is a failure.
+    expect(codexClose(codexOutcome(clean()), closed(1))?.kind).toBe("crash");
+  });
+
+  it("falls back through stderr and the notices to the exit code, in that order", () => {
+    // Nothing on the stream at all: a crash, because zeros from a stream that
+    // never started are ignorance and not evidence.
+    const nothing = codexClose(codexOutcome([]), closed(127, "codex: command not found"));
+    expect(nothing?.kind).toBe("crash");
+    expect(nothing?.detail).toBe("codex: command not found");
+
+    // The notices are the last thing said before the exit code, and never the
+    // first.
+    const onlyNotices = codexClose(codexOutcome(failedTurnless()), closed(3));
+    expect(onlyNotices?.detail).toContain("bypass-hook-trust");
+
+    expect(codexClose(codexOutcome([]), closed(3))?.detail).toBe("exited 3");
   });
 });
 
@@ -268,12 +434,19 @@ describe("the hook wiring, translated", () => {
   });
 
   /**
-   * **Filtering is required, not tidiness.** An event name Codex has no
-   * dispatcher for makes `config.toml` fail to load, which kills the run at
-   * spawn — and `renderSettings` writes `Notification`, which Codex does not
-   * have.
+   * **What filtering buys is that nothing claims a hook is wired when it is
+   * not** — and the measurement this used to cite was wrong.
+   *
+   * It said an event name Codex has no dispatcher for makes `config.toml` fail to
+   * load and kills the run at spawn. Measured on 0.155.1: `-c
+   * 'hooks.Notification=[…]'` loads and the run proceeds, with or without
+   * `--dangerously-bypass-hook-trust` — an unknown event key is accepted and
+   * silently ignored. The table *is* validated, just not there: an unknown
+   * handler `type` answers *"Error loading config.toml: unknown variant bogus"*.
+   * So `renderSettings`'s `Notification` is dropped because Codex would never
+   * dispatch it, not because the run would refuse to start.
    */
-  it("passes over a hook Codex does not serve, rather than failing the run at spawn", () => {
+  it("passes over a hook Codex does not serve, so nothing believes it is wired", () => {
     const args = codexHookArgs(settings(true));
     expect(args.join(" ")).not.toContain("Notification");
     expect(args.join(" ")).toContain("hooks.SessionStart=");
@@ -430,8 +603,10 @@ describe("Codex's capabilities, each measured against the binary", () => {
   /**
    * **`wall` only.** `codex exec --help` at 0.155.1 offers no `--max-turns` and
    * no flag of any name bounds turns, so a recipe's `turns` is a bound nothing
-   * applies — and `limitsRow` turns `fail` for every Codex project with its own
-   * sentence. That is `#89` working, not a regression.
+   * applies — and `limitsRow` says so for every Codex project. It says it as a
+   * `warn` and not a `fail`, because `runtime.limits.turns` has a schema default
+   * that is always present: a red no recipe can clear is a red nobody reads, and
+   * the wall still stops the run. See that function.
    */
   it("applies the wall and says so, and claims nothing about turns", () => {
     expect(CODEX_CAPABILITIES.enforces).toEqual(["wall"]);

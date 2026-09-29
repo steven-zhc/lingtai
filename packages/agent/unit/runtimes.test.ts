@@ -22,6 +22,7 @@ import {
   RUNTIMES,
   ToolsCannotBeDenied,
   createRuntime,
+  createToollessRuntime,
   everyRuntime,
 } from "../src/runtimes.ts";
 import { AUTH_PROBES } from "../src/auth.ts";
@@ -118,6 +119,33 @@ describe("what a caller may ask of any runtime", () => {
     // `full` is unaffected: a Codex *implementer* is what the sandbox is for.
     expect(createRuntime("codex", { tools: "full" }).capabilities.id).toBe("codex");
     expect(createRuntime("codex").capabilities.id).toBe("codex");
+  });
+
+  /**
+   * **A row that cannot be given no tools is a reason to ask another row, not to
+   * stop answering.**
+   *
+   * `answerDiscussion` is the caller and it refused instead for a while: a project
+   * whose recipe named Codex then had *every* board question answered with the
+   * refusal, permanently — 0033's third kind of agent traded away for a field that
+   * decides which runtime works the project's tickets and has nothing to do with a
+   * discussion. Preferring the named one is still right, because a machine signed
+   * in to one runtime alone should answer with the one it has; what is wrong is
+   * stopping there. The containment is not what falls back: what comes back can be
+   * given no tools, which is the whole of what was asked for.
+   */
+  it("falls back to a runtime that can be given no tools, preferring the one named", () => {
+    const first = createToollessRuntime("claude-code");
+    expect(first?.id).toBe("claude-code");
+    // Null means *the named one answered*, so a caller can say which is which.
+    expect(first?.instead).toBeNull();
+
+    const second = createToollessRuntime("codex");
+    expect(second?.id).toBe("claude-code");
+    expect(second?.instead).toBe("codex");
+
+    // Every id gets an answer, which is the claim the board depends on.
+    for (const id of RuntimeId.options) expect(createToollessRuntime(id)).not.toBeNull();
   });
 });
 

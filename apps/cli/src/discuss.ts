@@ -36,7 +36,7 @@
 import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  createRuntime,
+  createToollessRuntime,
   FIRST_RUNTIME,
   NO_RUN_LOG,
   openRunLog,
@@ -285,33 +285,39 @@ export async function answerDiscussion(
     .then((state) => (state === null ? FIRST_RUNTIME : currentRecipe(state).then((r) => r.recipe.runtime.agent)))
     .catch(() => FIRST_RUNTIME);
   /**
-   * **Contained, or not started at all** (`#313`).
+   * **Contained, and preferring the one the recipe named** (`#313`).
    *
    * The three layers above are what a discussion has instead of a hook and the
-   * steps a run passes, and the first two are a Claude Code settings file. A runtime that
-   * cannot be given no tools is refused by name — `ToolsCannotBeDenied` —
-   * because the alternative is what the refused version of this line did: it
-   * asked Codex for `tools: "none"`, got `-s read-only`, and that forbids writes
-   * and forbids nothing else. The agent would keep a shell and read access to the
-   * whole machine while this file's header said it read nothing off the
-   * filesystem, and the run would report success.
+   * steps a run passes, and the first two are a Claude Code settings file. So
+   * `tools: "none"` is not a preference here, it is the containment: a runtime
+   * that cannot be given it must not be handed this prompt. Codex cannot —
+   * `-s read-only` forbids writes and forbids nothing else, so the agent would
+   * keep a shell and read access to the whole machine while this file's header
+   * said it read nothing off the filesystem.
    *
-   * **Answered, not thrown.** This function never throws (see above), and a
-   * question that got no reply at all is worse than one told why — so the refusal
-   * becomes the round's outcome, `holdDiscussion` appends `DiscussionAnswered`
-   * for it the way it does for a crash, and the sentence names the runtime and
-   * the field that chose it.
+   * **And that is a reason to ask a different runtime, not to stop answering.**
+   * Which runtime works a project's tickets is `runtime.agent`; a discussion is
+   * 0033's third kind of agent, with no worktree, no hook and no gates, and
+   * nothing about it requires the project's own. Refusing instead cost a project
+   * whose recipe names Codex *every* question, every round, permanently — a
+   * capability traded away for a field it has nothing to do with.
+   * `createToollessRuntime` prefers `named` and falls back, so a machine signed
+   * in to one runtime still answers with the one it has.
+   *
+   * **Answered, not thrown.** This function never throws (see above), so the
+   * `null` — no row in the table can be given no tools, which is unreachable
+   * while `claude-code` has one — becomes the round's outcome rather than an
+   * exception: `holdDiscussion` appends `DiscussionAnswered` for it the way it
+   * does for a crash.
    */
-  let runtime: Runtime | null = null;
-  let refused = "";
-  try {
-    runtime = createRuntime(named, { tools: "none" });
-  } catch (err) {
-    refused =
-      `${(err as Error).message} — ${project}'s recipe names ${named} at runtime.agent, ` +
-      "so this question cannot be answered here. Ask it of a project whose runtime can be, " +
-      "or open it as a ticket, where the hook and the steps of a pass are the containment.";
-  }
+  const asked = createToollessRuntime(named);
+  const runtime: Runtime | null = asked?.runtime ?? null;
+  const refused =
+    asked === null
+      ? `no runtime on this machine can be given no tools, and that is the whole of a discussion's ` +
+        `containment (0033 §1) — so this question cannot be answered here. Open it as a ticket, ` +
+        `where the hook and the steps of a pass are the containment instead.`
+      : "";
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
   const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));
@@ -370,6 +376,14 @@ export async function answerDiscussion(
 
   try {
     say(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(" · ")}`);
+    // Which runtime is answering, said only where it is not the one the recipe
+    // named — otherwise it is noise on every question.
+    if (asked?.instead != null) {
+      say(
+        `answered by ${asked.id}: ${asked.instead} cannot be given no tools, and no tools is what ` +
+          `a discussion has instead of a hook and the steps of a pass (0033 §1)`,
+      );
+    }
 
     const held = await holdDiscussion(
       {
