@@ -241,7 +241,7 @@ runs, what happened has happened.
 **Five steps, and two of them are easy to forget.**
 
 1. **Write the plugin** — a schema and an `at`, as above. It lives in the tree:
-   `packages/recipe/src/` beside the twelve that exist.
+   `packages/recipe/src/` beside the thirteen that exist.
 
 2. **Add it to `PLUGINS`** in `recipe.ts`. That array is the closed set — what
    is not in it is not a plugin, and a recipe naming it is refused as an unknown

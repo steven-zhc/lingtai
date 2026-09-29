@@ -417,6 +417,14 @@ export interface ActionContext {
    * and it is the same object `design`'s own plugin returned, so a second
    * destination joins without this line changing. `NO_DESIGN` is the empty one.
    *
+   * **And advanced within a step by `runActionPipeline`, since `#300`.**
+   * `designOn` answers off the last `design` *visit*, which is the right answer
+   * at `implement` and is nothing at `design` itself — where the step is still
+   * producing one. So the pipeline replaces it as each entry returns a document,
+   * and that is what a destination plugin reads: a `file:` written after the
+   * drafter keeps what the drafter made. The value is the one `designFrom` will
+   * end the step with, because both read the last entry that carried a document.
+   *
    * Absent is *no pipeline filled it in*, which is a context somebody built by
    * hand: `runStep` sets it on every verdicts pipeline it runs.
    */
@@ -437,9 +445,9 @@ export interface Action {
   readonly name: string;
   /**
    * Which action shape produced it: `run`, `agent`, `watch`, `human`, `worktree`,
-   * `queue` or `merge`.
+   * `queue`, `merge` or `file`.
    */
-  readonly kind: "run" | "agent" | "watch" | "human" | "worktree" | "queue" | "merge";
+  readonly kind: "run" | "agent" | "watch" | "human" | "worktree" | "queue" | "merge" | "file";
   run(context: ActionContext): Promise<ActionResult>;
 }
 
@@ -562,8 +570,27 @@ export interface PipelineOptions {
  * reading that it is three-quarters fine.
  */
 export async function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
-  const { actions, step, context, emit } = options;
+  const { actions, step, emit } = options;
   const results: PipelineResult["results"] = [];
+  /**
+   * **The context, advanced as the step's own list produces a design** (`#300`).
+   *
+   * Every other field is the same object at every entry — `onSha` is the commit
+   * the whole pipeline is about, `recheck` is what the round was bought on — and
+   * this one is not, because a destination plugin keeps what an earlier entry
+   * *made*. `runStep` fills `design` in from the last `design` **visit**
+   * (`designOn`); within one visit the step is producing it, and an action that
+   * could not see what the entry before it wrote would make the whole of 0066 §5
+   * unbuildable: `file:` would have no document to write.
+   *
+   * **The same rule `designFrom` reads the results by** — the last entry that
+   * carried a document wins, and the locator comes off that same entry (0069 §5)
+   * — so the value a later action is handed is the value the step will end with.
+   * Not a mutation of the caller's object: `runStep` holds `reaching.context` and
+   * a pipeline that edited it would leave `design` behind for the next step to
+   * read instead of `designOn`'s answer.
+   */
+  let context = options.context;
 
   for (const [index, action] of actions.entries()) {
     // `step:` is the **event payload's** field and stays that spelling until the
@@ -657,6 +684,20 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // locator whose document did not survive is a locator nothing carries.
       ...(result.locator === undefined ? {} : { locator: result.locator }),
     });
+
+    // And the same pair onto the context the *next* action is handed, so a
+    // destination written after the drafter keeps what the drafter made. Read the
+    // way `designFrom` reads it: off the result the document came from, and never
+    // pairing a locator with somebody else's document (0069 §5).
+    if (result.document !== undefined) {
+      context = {
+        ...context,
+        design: {
+          document: result.document,
+          ...(result.locator === undefined ? {} : { locator: result.locator }),
+        },
+      };
+    }
 
     if (result.verdict === "passed") {
       // Findings go on a pass as well as a refusal: a minor does not stop the

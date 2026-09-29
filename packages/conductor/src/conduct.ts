@@ -137,6 +137,7 @@ import {
   type ActionContext,
   type ActionEvent,
   type CutAnswer,
+  type KeptAnswer,
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
@@ -206,6 +207,8 @@ import { worktreePath, type TokenSource, type Worktree } from "@lingtai/repo";
 import { Data, Effect, Either } from "effect";
 import { AgentHost, Repo } from "./ports.ts";
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { RUN_LOG_END, runLogEnd, runLogPath } from "./run-log.ts";
 
 export const changedFilesArgs = (baseSha: string): string[] => [
@@ -1842,6 +1845,87 @@ export function runOnce(
       };
 
       /**
+       * `design` — the document into the worktree, and onto the branch (0066 §5,
+       * `#300`).
+       *
+       * **Both, always.** The finalizer below removes the worktree on every
+       * ending, and the only thing that gets out past it is what
+       * `publishWhatIsCommitted` pushed — so a note that was written and not
+       * committed is gone when the pass ends, together with everything the
+       * locator points at. `filePlugin` is where that is argued and why there is
+       * no field for the other answer.
+       *
+       * **The dep of a plugin and never a step's own work.** `design`'s default is
+       * nothing (0065 §4), so there is no `defaultsAt` row for this and a recipe
+       * that declares no `file:` never reaches it — which is what lets a
+       * destination be turned on one machine at a time.
+       *
+       * Under `cwd`, which is the worktree and the only place a pass writes: the
+       * path has already been refused by `whyThePathEscapes` when the recipe
+       * resolved, so what is left here is `join` and the directories above it.
+       * A trailing newline is added where the document has none, because a file in
+       * a repository is read by `git diff` and by editors that both complain about
+       * one that has not got one.
+       *
+       * **`notKept` and never a throw.** `design` may not refuse (0058 §3), and an
+       * exception out of a plugin is a step that did not finish with no words on
+       * it; this way the sentence a person reads is the write's own.
+       *
+       * **A commit that had nothing to commit is still kept, and it is asked
+       * rather than inferred from the exit code.** Running the same ticket twice
+       * writes the same bytes, and `git commit` exits non-zero on an empty index —
+       * so *the file is already there* and *the commit was refused* arrive the same
+       * way, and an unconditional `rev-parse` after both would report the base as
+       * though the note had landed on it. `git diff --cached --quiet` separates
+       * them first: nothing staged is kept at the head there already, and a commit
+       * that then failed is `notKept`, because the evidence says *committed to the
+       * branch* and that has to be true where it says it.
+       */
+      const keep = async (spec: {
+        readonly path: string;
+        readonly document: string;
+      }): Promise<KeptAnswer> => {
+        const at = join(cwd, spec.path);
+        try {
+          await mkdir(dirname(at), { recursive: true });
+          await writeFile(at, spec.document.endsWith("\n") ? spec.document : `${spec.document}\n`, "utf8");
+        } catch (error) {
+          return { notKept: (error as Error).message };
+        }
+
+        // `-f`, so a project whose own `.gitignore` covers the path it asked for
+        // is told by `git add` rather than by a note that silently never landed:
+        // a plain `git add --` answers *the following paths are ignored* and
+        // exits 0, and this keep would then report a commit it did not make.
+        // Narrow by construction — the argument is the one path just written,
+        // and `--only` below keeps the commit to it too.
+        const added = await gitAsked(["add", "-f", "--", spec.path]);
+        if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` };
+        // `--quiet` implies `--exit-code`, so a *right* here is *nothing staged*
+        // and a left is a difference to commit — the one place in this file where
+        // the failing branch is the ordinary one.
+        const staged = await gitAsked(["diff", "--cached", "--quiet", "--", spec.path]);
+        if (Either.isLeft(staged)) {
+          // `--only`, so a commit at `design` cannot pick up anything else the
+          // worktree happens to be holding: what this action is answering for is
+          // the one path it wrote.
+          const committed = await gitAsked([
+            "commit",
+            "-m",
+            `docs(design): the shape for #${options.issue}`,
+            "--only",
+            "--",
+            spec.path,
+          ]);
+          if (Either.isLeft(committed)) {
+            return { notKept: `git commit refused it: ${committed.left.detail}` };
+          }
+        }
+        const head = await gitAsked(["rev-parse", "HEAD"]);
+        return Either.isLeft(head) ? { at: spec.path } : { at: spec.path, head: head.right };
+      };
+
+      /**
        * What a declared plugin needs in order to run — the things only a caller
        * with a machine under it can build (`PassOptions.actionsAt`).
        *
@@ -1898,6 +1982,12 @@ export function runOnce(
             context: ActionContext,
           ) => dispatch(spec, context),
         },
+        // The eighth, and the one that neither makes nor judges: `design`'s
+        // `file:` action keeps the document through this (0066 §5, `#300`). It has
+        // no `defaultsAt` row, because `design`'s default is nothing — so nothing
+        // reaches it unless a recipe declared a destination, which is what lets a
+        // destination be turned on one machine at a time.
+        file: { keep },
       };
 
       /**

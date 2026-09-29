@@ -143,10 +143,10 @@ scoped too large — a megabyte produces a worse review, not a better one."*
 
 Ten steps, closed forever — `claim`, `admit`, `prepared`, `design`,
 `implement`, `build`, `review`, `proposed`, `merge`, `end`
-([reference](reference.md#step--10-closed-forever)). Twelve action kinds, of
-which four produce a verdict, two run for effect, and six are names for code
-the pass calls itself and no step yet reads
-([reference](reference.md#gate-action--12-keys-of-which-4-produce-a-verdict)).
+([reference](reference.md#step--10-closed-forever)). Thirteen action kinds, of
+which four produce a verdict, two run for effect, one keeps what a step made,
+and six are names for code the pass calls itself and no step yet reads
+([reference](reference.md#gate-action--13-keys-of-which-4-produce-a-verdict)).
 The design question a repository actually faces is not which steps exist; it is
 what to hang on them — and today that is six of the ten, because no plugin
 implements `claim`, `admit`, `design` or `implement`. It was four until

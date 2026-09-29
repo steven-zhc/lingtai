@@ -33,6 +33,7 @@ import {
   Recipe,
   agentPlugin,
   canonicalRecipe,
+  filePlugin,
   definePlugin,
   disclose,
   notBuiltYet,
@@ -50,6 +51,7 @@ import {
   servesStep,
   whyNoKindAt,
   withheld,
+  whyThePathEscapes,
   worktreePlugin,
   type StepAction,
 } from "../src/index.ts";
@@ -153,7 +155,7 @@ describe("a plugin refuses a field it does not understand", () => {
   it("names the plugins when an action names none, or two", () => {
     const none = StepMap.safeParse({ proposed: [{ name: "nothing" }] });
     expect(none.error!.issues[0]!.message).toContain('"nothing" action at the "proposed" step names no plugin');
-    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "watch", "human", "close", "labels"');
+    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "file", "watch", "human", "close", "labels"');
 
     const two = StepMap.safeParse({ proposed: [{ name: "both", run: "x", human: "ok?" }] });
     expect(two.error!.issues[0]!.message).toContain("names 2 plugins");
@@ -719,7 +721,7 @@ describe("the one `claim` holds", () => {
    */
   it("has no `assignee:` plugin left in the closed set", () => {
     expect(PLUGINS.map((plugin) => plugin.key)).not.toContain("assignee");
-    expect(PLUGINS).toHaveLength(12);
+    expect(PLUGINS).toHaveLength(13);
     expect(pluginOf({ name: "whose", assignee: { take: "both" } })).toBeNull();
   });
 
@@ -1044,6 +1046,136 @@ describe("the one that deletes", () => {
   });
 });
 
+/**
+ * **The first destination, and the two questions 0066 left to it** (`#300`).
+ *
+ * §5 decided that where a large answer lands is a plugin rather than a field, and
+ * left two things to whoever built the first one: *whether the file is committed*
+ * and *what refuses a path that escapes the worktree*. Both are schema here —
+ * which is §6's rule, *a configuration error is refused when the recipe resolves*
+ * — so the cases below are what an operator meets before a worktree, before an
+ * agent and before any money.
+ */
+describe("the one `design` keeps with", () => {
+  const DRAFTER = { name: "shape it", agent: "claude-code", prompt: "write down the shape" };
+
+  /**
+   * **The file is committed, and there is no field for the other answer** —
+   * which is 0066's open question answered rather than passed on (`#300`).
+   *
+   * The reason is that the other answer keeps nothing. `runOnce` adds one
+   * finalizer that removes the worktree on every ending, and what gets out past
+   * it is what `publishWhatIsCommitted` pushed — commits. So an uncommitted note
+   * and everything its locator points at are gone at the end of the pass that
+   * bought them, which is 0066 §1 again rather than a second product.
+   *
+   * Pinned as **`commit:` refused by name**, because that is what an operator who
+   * wanted the other answer would write, and 0061 §9 already says a plugin
+   * refuses a field it does not understand. Somebody bringing the option back has
+   * to come through this test and its paragraph.
+   */
+  it("declares `file:` and no `commit:`, and refuses one by name", () => {
+    expect(filePlugin.declares).toEqual(["name", "file"]);
+
+    const asked = StepMap.safeParse({
+      design: [DRAFTER, { name: "keep it", file: "doc/design/x.md", commit: false }],
+    });
+    expect(asked.success).toBe(false);
+    expect(asked.error!.issues[0]!.message).toContain('"file" declares no "commit" field');
+
+    expect(
+      StepMap.safeParse({ design: [DRAFTER, { name: "keep it", file: "doc/design/x.md" }] }).success,
+    ).toBe(true);
+  });
+
+  /**
+   * **A path that escapes the worktree is refused where it is written** (0066 §6).
+   * A `..` that survived to run time costs one claim, one clone and one paid agent
+   * and then a person answering a refusal a schema line could have printed — §6's
+   * own correction (`#299`), because such a pass ends `blocked` and sits there.
+   *
+   * `whyThePathEscapes` is asserted directly as well as through the schema: it is
+   * string rules rather than `node:path` so that the operator's machine and the
+   * daemon answer alike, and each clause names what is wrong rather than saying
+   * *invalid*.
+   */
+  it("refuses a path that leaves the worktree, by the clause that is wrong with it", () => {
+    expect(whyThePathEscapes("doc/design/x.md")).toBeNull();
+    expect(whyThePathEscapes("./x.md")).toBeNull();
+    expect(whyThePathEscapes("")).toContain("empty");
+    expect(whyThePathEscapes("/etc/passwd")).toContain("absolute");
+    expect(whyThePathEscapes("C:\\notes\\x.md")).toContain("absolute");
+    expect(whyThePathEscapes("~/notes/x.md")).toContain("home directory");
+    expect(whyThePathEscapes("../../notes/x.md")).toContain('".." segment');
+    expect(whyThePathEscapes("doc/..\\x.md")).toContain('".." segment');
+    expect(whyThePathEscapes("doc/design/")).toContain("empty segment");
+
+    const refused = StepMap.safeParse({
+      design: [DRAFTER, { name: "keep it", file: "../../notes/x.md" }],
+    });
+    expect(refused.success).toBe(false);
+    const why = refused.error!.issues[0]!.message;
+    expect(why).toContain('"../../notes/x.md" is not a path inside the worktree');
+    expect(why).toContain("with no `..` in it");
+    // Refused at resolve, which is the whole of §6.
+    expect(why).toContain("before a worktree, before an agent, before any money");
+  });
+
+  /**
+   * **A destination is written after the thing it keeps.** It keeps what an
+   * earlier entry made — `runActionPipeline` hands each result's document forward
+   * — so a `file:` at entry 0 would pass having written no file and returned no
+   * locator, under a recipe that reads as though the design is being kept. That is
+   * `#61` reached through an order, and it is refused instead.
+   */
+  it("refuses a `file:` written first, because it would keep nothing", () => {
+    const first = StepMap.safeParse({
+      design: [{ name: "keep it", file: "doc/design/x.md" }, DRAFTER],
+    });
+    expect(first.success).toBe(false);
+    expect(first.error!.issues[0]!.message).toContain("it is the first action there");
+    expect(first.error!.issues[0]!.message).toContain("Write it after the action that drafts");
+  });
+
+  /**
+   * **Two destinations are a legal list**, which is 0066 §5 read forwards: a
+   * plugin per destination and no field carrying a list, so *the note under
+   * `doc/`* and *the brief the ticket asked for* are two entries rather than one
+   * block somebody half-wrote.
+   */
+  it("takes two destinations, each with its own path", () => {
+    const parsed = StepMap.safeParse({
+      design: [
+        DRAFTER,
+        { name: "the note in the repository", file: "doc/design/notes.md" },
+        { name: "and one beside the ticket", file: "doc/design/300.md" },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.design).toHaveLength(3);
+  });
+
+  /**
+   * **And it serves `design` alone, answered by the kind** (`#306`'s rule applied
+   * before the fall-through could happen). Its output is one step's own work — a
+   * destination keeps what a step *made* — so no step branch can say why it is
+   * meaningless elsewhere, and the sentence is the same at the nine that refuse it.
+   */
+  it("serves `design` and says why the other steps are not its", () => {
+    expect(filePlugin.serves).toEqual(["design"]);
+    expect(whyNoKindAt("design", "file")).toBeNull();
+    for (const step of STEPS.filter((each) => each !== "design" && each !== "end")) {
+      const why = whyNoKindAt(step, "file");
+      expect(why, `file is no longer refused at ${step}`).not.toBeNull();
+      expect(why, step).toContain("`design` is the one step that makes something large");
+      expect(why, step).toContain("createFileAction");
+      // Not one of `prepared`'s three paragraphs, which is what `#306` is about.
+      expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
+      expect(why, step).not.toContain("nothing has been committed at `prepared`");
+    }
+  });
+});
+
 describe("plugin.ts's own count of who carries a universal key", () => {
   const NUMERAL = [
     "no",
@@ -1059,6 +1191,7 @@ describe("plugin.ts's own count of who carries a universal key", () => {
     "ten",
     "eleven",
     "twelve",
+    "thirteen",
   ] as const;
   const carrying = (field: string) =>
     PLUGINS.filter((plugin) => plugin.declares.includes(field)).length;

@@ -856,10 +856,10 @@ English one, there is a row to put it in and three numbers that must agree.
 | file | token | of which English | the sentence |
 |---|---|---|---|
 
-## gate action — 12 keys, of which 4 produce a verdict
+## gate action — 13 keys, of which 4 produce a verdict
 
 What runs at a point. Source: `PLUGINS` and `kindOfAction` in
-`packages/recipe/src/recipe.ts`, each of the twelve declared with
+`packages/recipe/src/recipe.ts`, each of the thirteen declared with
 `definePlugin` from `plugin.ts`.
 
 **Each one owns its schema and validates its own fields**
@@ -877,9 +877,9 @@ that stopped at the first bad field would make a person fix one thing per
 attempt, which is [#222](https://github.com/steven-zhc/lingtai/issues/222)'s
 lesson about the build step applied to configuration.
 
-A field may be marked `no_log`, and **none of the twelve is today**: every field
-they have is a name, a command, a prompt, a runtime, a model, a glob, a branch, a
-strategy, a label,
+A field may be marked `no_log`, and **none of the thirteen is today**: every field
+they have is a name, a command, a prompt, a runtime, a model, a glob, a path, a
+branch, a strategy, a label, a flag,
 a severity or a GitHub login — and a login is not a credential, which is the distinction
 worth reading (0046 §2: a wrong one hands this machine somebody else's tickets,
 which is a mistake that shows itself). 0021 keeps values out of the file in the
@@ -909,6 +909,7 @@ written as a stand-in.
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
 | `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): same three fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
+| `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **The note is committed, and there is no field for the other answer**: the worktree is removed when the pass ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question. **`proposed` only, since `#270`**: 0058 §3b gives `merge` three ways out and the third is *anything else → `proposed`, and only `proposed` may send it to a person* — and the landing is an action in `merge`'s own list now, so a hold beside it would be asked about a merge already made | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
@@ -1033,7 +1034,11 @@ the cell nobody had decided — and
 [0063](decisions/0063-every-setting-is-the-recipes.md) §3 has since made it a
 *field* of `queue:` rather than a plugin beside it, so the closed set went to
 eleven (`#244`) — and back to twelve with `refs:` (`#240`), which is the first
-member 0061 §3 did not name at all. The set is not closed against *new* work:
+member 0061 §3 did not name at all, and thirteen with `file:`
+([#300](https://github.com/steven-zhc/lingtai/issues/300)), which is the second
+and the first *destination*: where a large answer lands is a plugin too
+([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5). The set is
+not closed against *new* work:
 §3's list is the names the v2 file gives code that already runs, and a plugin
 doing something no code did before joins by the same rules — a key, a schema,
 and an `at` saying which steps it serves.

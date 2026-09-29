@@ -33,6 +33,12 @@ export {
   type Drafted,
   type ReviewIssue,
 } from "./agent-action.ts";
+export {
+  createFileAction,
+  type FileActionDeps,
+  type FileActionSpec,
+  type KeptAnswer,
+} from "./file-action.ts";
 export { createHumanAction, type HumanActionSpec } from "./human-action.ts";
 export { createWatchAction, type WatchActionDeps, type WatchActionSpec } from "./watch-action.ts";
 export {

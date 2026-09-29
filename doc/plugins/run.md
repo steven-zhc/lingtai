@@ -283,6 +283,6 @@ merge:
 - `#256` — the conductor runs the ten steps, deleting `run-once.ts`'s five gate
   points; `build:` opened on 2026-09-27 (`a417908`) because a red command at
   `proposed` had stopped buying a round.
-- [`plugins/index.md`](index.md) — the twelve, and which step each serves.
+- [`plugins/index.md`](index.md) — the thirteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.

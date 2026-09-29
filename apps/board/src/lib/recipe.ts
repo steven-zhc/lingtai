@@ -501,6 +501,18 @@ export function describeAction(
               : "a cold reviewer";
       return { does: `${job} on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
     }
+    // **The one row that says where an answer *went*** (`#300`, 0066 §5). Every
+    // other line here is a check, a dispatch or an effect on the issue; this one
+    // is a destination, and what a person reading the recipe wants off it is
+    // that the note is in the change — which is the whole of why `bound` says
+    // where it goes rather than saying *no clock* and stopping.
+    case "file": {
+      const a = action as Extract<StepAction, { file: string }>;
+      return {
+        does: `keeps the design at ${a.file}, committed to the branch`,
+        bound: "no clock — the note rides the branch through build, review and the merge",
+      };
+    }
     case "watch": {
       const a = action as Extract<StepAction, { watch: string[] }>;
       return { does: `watches ${a.watch.join(", ")}, then ${a.then}`, bound: "no clock — a match against the diff" };

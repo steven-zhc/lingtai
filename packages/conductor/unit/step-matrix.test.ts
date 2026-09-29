@@ -1,5 +1,5 @@
 /**
- * **A hundred and twenty cells, and each one runs or refuses by name.** There
+ * **A hundred and thirty cells, and each one runs or refuses by name.** There
  * is no third answer, and for a year ten of them gave it: an action at `admit`, or
  * anything but an effect at `end`, was accepted by the schema, resolved into
  * `StepsResolved`, printed by `lingtai add`, drawn on the board, and never
@@ -8,7 +8,7 @@
  * and the other eleven kinds at that step refuse in `admit`'s own terms.
  *
  * **There is no matrix any more, and the cells are still there** (`#261`).
- * `KINDS_AT` was a hand-written table of which of the twelve plugins each of
+ * `KINDS_AT` was a hand-written table of which of the thirteen plugins each of
  * the ten steps runs; since
  * [0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md)
  * §4 a plugin declares the steps it serves and that declaration is what makes
@@ -29,10 +29,11 @@
  * `judge:` (`#238`) and a hundred and twenty until it grew `backlog:` (`#237`)
  * — a hundred and ten again when 0063 §3 made `assignee` a field of
  * `queue:` rather than a plugin beside it (`#244`), and a hundred and twenty
- * once more with `refs:` (`#240`). **A column that goes is
+ * once more with `refs:` (`#240`), and a hundred and thirty with `file:` (`#300`)
+ * — the first column whose whole job is where an answer *goes*. **A column that goes is
  * the same event as a column that arrives**: the cells it had have to stop
  * existing rather than stop being walked.
- * Eighteen of the hundred and twenty cells run and **a hundred and two
+ * Nineteen of the hundred and thirty cells run and **a hundred and eleven
  * refuse**; **none of those is a step no plugin implements any more** — `#266`
  * gave `implement` an `agent:` and emptied that class — and ten are the one
  * plugin that serves no step. The two classes no longer overlap, because there
@@ -52,7 +53,9 @@
  * opening whose step keeps its old behaviour, because its default is nothing;
  * and seventeen until `agentPlugin` also took `implement` (`#266`) — **the
  * opening that empties the *no plugin implements this step* class**, since it
- * was the last step in it: **eighteen now**. Every other entry moves a cell from refusing to
+ * was the last step in it: eighteen; and eighteen until `filePlugin` took `design`
+ * beside the drafter (`#300`) — **the first opening that gives a step a *second*
+ * plugin rather than its first: nineteen now**. Every other entry moves a cell from refusing to
  * running and can take a whole step or a whole plugin out of a column that
  * refused everything. **The counts are asserted** — *the arithmetic of the two
  * closed sets is what the paragraph above says* is a case a few rows down, so a
@@ -60,7 +63,7 @@
  * in a docblock. It is the one thing in this file that used to be able to go
  * quietly stale, and it did, twice.
  *
- * **`refs:` is the first column that is not a name for code that already
+ * **`refs:` was the first column that is not a name for code that already
  * ran**, and it arrives serving a step rather than serving none: the other five new
  * plugins were 0061 §3's names for the pass's own calls, and four of those five
  * have since been wired to the step whose code they named — `worktree:` (`#268`),
@@ -147,6 +150,12 @@ import { decideBacklog } from "../src/backlog.ts";
 const ACTION: Record<ActionKind, StepAction> = {
   run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
   agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
+  // **The one action the probe cannot write alone** (`#300`). A `file:` keeps what
+  // an earlier entry made, so `actionsAt` refuses one at entry 0 — which is a rule
+  // about the *list* and not about the pair this matrix asks about, exactly as the
+  // lane's two are. `accepted` below carries a drafter ahead of it wherever the
+  // step keeps, so what comes back is the cell's own answer.
+  file: { name: "keep the design", file: "doc/design/x.md" },
   watch: { name: "tamper", watch: ["**/steps.yml"], then: "fail" },
   human: { name: "approve", human: "merge this?" },
   close: { name: "close the ticket", close: true, when: "landed" },
@@ -212,6 +221,7 @@ const EVERY_DEP: ActionDeps = {
   merge: { land: async () => ({ merged: "0".repeat(40) }) },
   queue: { take: async () => ({ taken: { workItemId: "wi-nowhere-1", kind: "bug" } }) },
   work: { work: async () => ({ committed: "0".repeat(40) }) },
+  file: { keep: async () => ({ at: "doc/design/x.md" }) },
 };
 const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
   prepared: { env: () => ({}) },
@@ -280,11 +290,19 @@ function runsAt(step: Step, kind: ActionKind): boolean {
  * false — a check before the lane is exactly where a check at `merge` goes. So
  * the probe is put in the smallest list that satisfies the list-level rules, and
  * what comes back is the cell's own answer.
+ *
+ * **And the drafter wherever the step keeps** (`#300`). The third list-level rule
+ * is the mirror of the lane's: a `file:` may not be the *first* entry, because it
+ * keeps what an earlier one made. A lone `file:` at `design` would trip it and
+ * read here as *the `design` step refuses a `file:`*, which is false — `design`
+ * is the one step that takes one. So the probe puts a drafter ahead of it, which
+ * is the smallest list the rule accepts.
  */
 function accepted(step: Step, kind: ActionKind): string | null {
   const lands = whyNoKindAt(step, "merge") === null;
-  const written =
-    !lands || kind === "merge" ? [ACTION[kind]] : [ACTION[kind], ACTION.merge];
+  const keeps = whyNoKindAt(step, "file") === null;
+  const probe = keeps && kind === "file" ? [ACTION.agent, ACTION[kind]] : [ACTION[kind]];
+  const written = !lands || kind === "merge" ? probe : [...probe, ACTION.merge];
   const parsed = StepMap.safeParse({ [step]: written });
   return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
 }
@@ -318,11 +336,12 @@ function reasonAt(step: Step, kind: ActionKind): string | null {
  * This is the exemption the cell below needs, and it is a short list of real
  * rules rather than a loophole:
  *
- * - `judge:`, `merge:`, `worktree:` and `queue:` — **their output is one step's
- *   own work**, so the reason is about the *plugin* and is the same sentence at
- *   every step that refuses it (`ONLY_PROPOSED_ROUTES`, `ONLY_THE_LANE_LANDS`,
- *   `ONLY_ADMIT_CUTS`, `ONLY_CLAIM_TAKES`). No step branch could say it: *what
- *   `build` asks of an action* is not why a cut belongs at `admit`.
+ * - `judge:`, `merge:`, `worktree:`, `queue:` and `file:` — **their output is one
+ *   step's own work**, so the reason is about the *plugin* and is the same sentence
+ *   at every step that refuses it (`ONLY_PROPOSED_ROUTES`, `ONLY_THE_LANE_LANDS`,
+ *   `ONLY_ADMIT_CUTS`, `ONLY_CLAIM_TAKES`, `ONLY_DESIGN_KEEPS`). No step branch
+ *   could say it: *what `build` asks of an action* is not why a cut belongs at
+ *   `admit`, or why a destination keeps only what `design` made (`#300`).
  * - `close:`, `labels:` and `refs:` — the effect-only rule, which is about
  *   **what a kind is**: an effect is not a verdict, and only `end` carries
  *   effects out.
@@ -345,6 +364,7 @@ const ANSWERED_BY_THE_KIND: readonly ActionKind[] = [
   "merge",
   "worktree",
   "queue",
+  "file",
   "close",
   "labels",
   "refs",
@@ -553,13 +573,18 @@ describe("every step × kind cell runs or refuses", () => {
    * `run:` at `design` is told the step produces a document and that a command
    * that checks the diff is `build`'s, which is the part they can act on.
    */
-  it("says why `design` takes only the agent that drafts, and not `prepared`'s reason", () => {
+  it("says why `design` takes the drafter and the destination, and not `prepared`'s reason", () => {
     for (const kind of ["run", "watch", "human"] as const) {
       const why = whyNoKindAt("design", kind);
       expect(why, `${kind} is no longer refused at design`).not.toBeNull();
       expect(why).toContain(`\`${kind}:\` does not implement \`design\``);
       expect(why).toContain("`design` produces a document before any code");
       expect(why).toContain("at this step it drafts rather than reviews");
+      // **And the destination beside it since `#300`**, which is the one clause
+      // this sentence gained: the step carries two plugins now, one that makes the
+      // document and one that keeps it, so a refusal naming only the drafter would
+      // send its reader looking for a `destination:` field that does not exist.
+      expect(why).toContain("the one that keeps it, `file:`");
       // Not the sentences about a step this operator never wrote.
       expect(why).not.toContain("no plugin implements `design`");
       expect(why).not.toContain("at `prepared`");
@@ -714,9 +739,9 @@ describe("every step × kind cell runs or refuses", () => {
         `\`${kind}:\` is exempt from the cell's assertion and yet answers ${reasons.length} ways`,
       ).toHaveLength(1);
     }
-    // The four whose output is one step's own work take `end`'s sentence at
+    // The five whose output is one step's own work take `end`'s sentence at
     // `end`, which is the one step that answers before the kind is looked at.
-    for (const kind of ["worktree", "merge", "queue", "judge"] as const) {
+    for (const kind of ["worktree", "merge", "queue", "judge", "file"] as const) {
       expect(reasonAt("end", kind), kind).toBe(reasonAt("end", "run"));
     }
     // And the three effects are the kinds `end` accepts, so they are refused at
@@ -823,13 +848,13 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs eighteen of the hundred and twenty cells and refuses a hundred and two", () => {
+  it("runs nineteen of the hundred and thirty cells and refuses a hundred and eleven", () => {
     const cellsThatRun = STEPS.flatMap((step) =>
       PLUGINS.filter((plugin) => servesStep(plugin, step)),
     );
-    expect(STEPS.length * PLUGINS.length).toBe(120);
-    expect(cellsThatRun).toHaveLength(18);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(102);
+    expect(STEPS.length * PLUGINS.length).toBe(130);
+    expect(cellsThatRun).toHaveLength(19);
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(111);
 
     // The two classes the header decomposes the refusals into, and their overlap.
     const stepsNobodyImplements = STEPS.filter((step) =>
@@ -926,10 +951,16 @@ describe("every step × kind cell runs or refuses", () => {
     );
 
     expect([...serving].filter(([, keys]) => keys.length > 1).map(([step]) => step)).toEqual([
+      "design",
       "proposed",
       "merge",
       "end",
     ]);
+    // **`design` is the second step to hold more than one, and the two are not two
+    // checks** (`#300`): one makes the document and one keeps it, which is the pair
+    // 0066 §5 asks for and the reason a destination is a plugin rather than a field
+    // on the drafter.
+    expect(serving.get("design")).toEqual(["agent", "file"]);
     expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human", "judge"]);
     // **`merge` is not `proposed` with a fifth entry, and `#270` is where the two
     // stopped being the same list.** It carries three: two checks, and the lane the
@@ -1233,5 +1264,93 @@ describe("doc/reference.md", () => {
       doc,
       "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs",
     ).toContain(`for ${NUMERAL[spendsAnAgent]} of the five directions an agent`);
+  });
+
+  /**
+   * **And the table has a row per key, which is the half that went stale**
+   * (`#300`, the fix round).
+   *
+   * The heading and the prose above the table were counted up to thirteen and
+   * the table under them kept twelve rows, so the section said *each of the
+   * thirteen declared with `definePlugin`* over a list with no `file:` in it —
+   * a reader looking up what a `file:` takes finds nothing and concludes the
+   * key is not declarable. `doc/plugins/` is walked key by key by
+   * `plugin-pages.test.ts`; this column was walked by nothing.
+   *
+   * Read off `PLUGINS` rather than compared to a literal, and over the one
+   * table rather than the whole file, so the row that has to arrive with the
+   * fourteenth plugin is a red test rather than something somebody remembers.
+   */
+  it("has a row for every key in the closed set", async () => {
+    const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
+    // Found by the table's own header row and not by the heading above it: the
+    // heading carries a word `retired-names.test.ts` counts, and a test that
+    // wrote it would be raising the number that file holds `doc/reference.md`
+    // to in order to assert this one.
+    const header = doc.indexOf("| Key | Verdict comes from | Needs |");
+    expect(header, "doc/reference.md has no table of the closed set's keys").toBeGreaterThan(0);
+    const table = doc.slice(header).split("\n\n")[0]!;
+
+    const rows = [...table.matchAll(/^\| `([a-z]+):` \|/gm)].map((row) => row[1]);
+    expect(rows, "doc/reference.md's table of the keys").toEqual(PLUGINS.map((plugin) => plugin.key));
+    // And the heading over it counts the same set, which is what the rows are
+    // under — the nearest `##` above the table, read rather than named.
+    const heading = doc.slice(0, header).split(/^## /m).at(-1)!.split("\n")[0]!;
+    expect(heading, "doc/reference.md's heading over that table").toContain(`${PLUGINS.length} keys`);
+  });
+});
+
+/**
+ * **The guide's own arithmetic, against the same closed set** (`#300`, the fix
+ * round).
+ *
+ * One sentence in `doc/guide.md` says how many action kinds there are and puts
+ * them in buckets, and the line under it links to the reference section this
+ * file already guards. It said *twelve … four, two and six* while the section
+ * it linked to said thirteen — the drift `doc/reference.md`'s own preamble
+ * calls the thing that teaches a reader to disbelieve the stamp instead of the
+ * table, and nothing in `pnpm test` read that file.
+ *
+ * The total and the buckets are both derived: the numerals are read out of the
+ * sentence and summed, so a plugin that arrives with no bucket to go in is red
+ * here rather than quietly one out.
+ */
+describe("doc/guide.md", () => {
+  const NUMERAL = [
+    "no",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+  ] as const;
+
+  it("counts the action kinds, and its buckets add up to them", async () => {
+    const guide = await readFile(new URL("../../../doc/guide.md", import.meta.url), "utf8");
+    const sentence = /(\w+) action kinds, of\s+which ([\s\S]*?)\n\(\[reference\]/.exec(guide);
+    expect(sentence, "doc/guide.md no longer says how many action kinds there are").not.toBeNull();
+
+    expect(
+      sentence![1]!.toLowerCase(),
+      "doc/guide.md's count of the action kinds disagrees with PLUGINS",
+    ).toBe(NUMERAL[PLUGINS.length]);
+
+    const buckets = [...sentence![2]!.matchAll(/\b([a-z]+)\b/g)]
+      .map((word) => NUMERAL.indexOf(word[1] as (typeof NUMERAL)[number]))
+      .filter((each) => each >= 0);
+    expect(
+      buckets.reduce((sum, each) => sum + each, 0),
+      "doc/guide.md's buckets do not add up to the closed set",
+    ).toBe(PLUGINS.length);
   });
 });

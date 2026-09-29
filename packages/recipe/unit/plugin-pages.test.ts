@@ -1,5 +1,5 @@
 /**
- * `doc/plugins/` against the closed set — the list of twelve is **derived and
+ * `doc/plugins/` against the closed set — the list of thirteen is **derived and
  * never typed**.
  *
  * A hand-kept count of steps or plugins has been wrong three times in two days
@@ -38,15 +38,15 @@ interface Row {
 }
 
 /**
- * The table under `## The twelve`, parsed rather than counted.
+ * The table under `## The thirteen`, parsed rather than counted.
  *
  * Only that section: the page has other tables' worth of prose around it, and a
  * parser that swept the whole file would judge whatever the next edit adds.
  */
 async function rowsOnTheParentPage(): Promise<Row[]> {
   const body = await readFile(`${pluginDoc}index.md`, "utf8");
-  const section = body.split(/^## /m).find((part) => part.startsWith("The twelve"));
-  if (section === undefined) throw new Error("doc/plugins/index.md has no `## The twelve` section");
+  const section = body.split(/^## /m).find((part) => part.startsWith("The thirteen"));
+  if (section === undefined) throw new Error("doc/plugins/index.md has no `## The thirteen` section");
 
   const rows: Row[] = [];
   for (const line of section.split("\n")) {
@@ -87,7 +87,7 @@ describe("the parent page lists the closed set", () => {
       const row = rows.get(plugin.key);
       expect(row, `\`${plugin.key}:\` has no row on doc/plugins/index.md`).toBeDefined();
       // `serves` is `Object.keys(at)`, which is the order the plugin declares
-      // them in — pipeline order for every one of the twelve. Order and all:
+      // them in — pipeline order for every one of the thirteen. Order and all:
       // a reader uses the column to see *when* in a pass the key is reached.
       expect(row!.steps, `the steps listed for \`${plugin.key}:\``).toEqual([...plugin.serves]);
     }
@@ -130,7 +130,7 @@ describe("a page per plugin, once one is written", () => {
   it("follows the template's sections, in the template's order", async () => {
     // The shape is read off `_template.md` rather than written here, for the
     // reason the whole file exists: a list of sections kept beside the template
-    // is a second copy of it. Twelve pages, one shape.
+    // is a second copy of it. Thirteen pages, one shape.
     const shape = sectionsOf(await readFile(`${pluginDoc}_template.md`, "utf8"));
     expect(shape.length, "the template has lost its sections").toBeGreaterThan(3);
     for (const name of (await pagesUnderPlugins()).filter((n) => n !== "index.md")) {

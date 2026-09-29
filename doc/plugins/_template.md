@@ -6,7 +6,7 @@
 > skips an underscore-prefixed file, and `unpublished()` then names it on the
 > docs index with a link to it on GitHub — skipped, never hidden.
 >
-> **Twelve pages, one shape.** The sections below are in this order and none of
+> **Thirteen pages, one shape.** The sections below are in this order and none of
 > them is optional; a page missing one is a page a reader has to read
 > differently from the last one. If a section has nothing true to say, say that
 > — `backlog:` serves no step and its *Where it may be declared* is the most
@@ -116,6 +116,6 @@ step:
 > anywhere in this repository. A `seq` is not a citation here; an issue number
 > is ([design/1.0.md](../design/1.0.md)).
 
-- [`plugins/index.md`](index.md) — the twelve, and which step each serves.
+- [`plugins/index.md`](index.md) — the thirteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.

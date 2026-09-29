@@ -390,6 +390,6 @@ the parameters above.
   calling every `agent:` a cold reviewer.
 - `#279` — an answer that cannot be read has its own word, because *the machinery
   lost a judgement* and *the reviewer had an opinion* must not park the same way.
-- [`plugins/index.md`](index.md) — the twelve, and which step each serves.
+- [`plugins/index.md`](index.md) — the thirteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.
