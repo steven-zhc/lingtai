@@ -62,6 +62,7 @@ import {
   type ActionResult,
   type SentBack,
 } from "./action.ts";
+import { boundedEvidence } from "./command.ts";
 
 export interface AgentActionSpec {
   name: string;
@@ -488,7 +489,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
             // The runtime's own words, whole. `conduct.ts` reads a reset time
             // out of them (0031 §4) and the board shows them as what they are:
             // evidence about the account, never about the diff.
-            evidence: outcome.failure.detail,
+            evidence: boundedEvidence(outcome.failure.detail),
             findings: [],
           };
         }
@@ -519,7 +520,9 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          */
         return {
           verdict: "did-not-finish",
-          evidence: `the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
+          evidence: boundedEvidence(
+            `the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
+          ),
           findings: [],
         };
       }
@@ -545,7 +548,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          */
         return {
           verdict: "failed",
-          evidence: `the reviewer's answer was not readable as findings:\n${(outcome.text ?? "").slice(0, 2_000)}`,
+          evidence: boundedEvidence(`the reviewer's answer was not readable as findings:\n${outcome.text ?? ""}`),
           findings: [],
           unreadable: true,
         };
@@ -555,7 +558,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       const cost = outcome.costUsd === null ? "" : ` · $${outcome.costUsd.toFixed(2)}`;
       return {
         verdict,
-        evidence: `${summarise(findings)}\n\n(${outcome.turns} turns${cost})`,
+        evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns${cost})`),
         findings,
         /**
          * **The reviewer's own classification of its refusal, and only of a
@@ -883,11 +886,13 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         // (0031 §1), exactly as the reviewer above: at most one turn, no cost
         // and an error is `never-started`, and everything else started.
         if (outcome.failure.kind === "never-started") {
-          return { verdict: "never-ran", evidence: outcome.failure.detail, findings: [] };
+          return { verdict: "never-ran", evidence: boundedEvidence(outcome.failure.detail), findings: [] };
         }
         return {
           verdict: "did-not-finish",
-          evidence: `the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
+          evidence: boundedEvidence(
+            `the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
+          ),
           findings: [],
         };
       }
@@ -925,10 +930,11 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         return {
           verdict: "did-not-finish",
           because: NEEDS_INPUT,
-          evidence:
+          evidence: boundedEvidence(
             drafted.draft === ""
               ? drafted.question
               : `${drafted.question}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
+          ),
           findings: [],
         };
       }
@@ -950,7 +956,10 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
          */
         return {
           verdict: "failed",
-          evidence: `the design agent announced a question and did not ask one — the \`question\` block was empty or never closed, so the answer is neither a design nor a question:\n${drafted.answer.slice(0, 2_000)}`,
+          evidence: boundedEvidence(
+            "the design agent announced a question and did not ask one — the `question` block was " +
+              `empty or never closed, so the answer is neither a design nor a question:\n${drafted.answer}`,
+          ),
           findings: [],
           unreadable: true,
         };
@@ -963,9 +972,10 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         // document and a document are one brief to the agent — it works from
         // the issue either way — and two different things to a person reading
         // what this pass spent its turns on.
-        evidence:
+        evidence: boundedEvidence(
           (document === "" ? "no design: this change needs none" : document) +
-          `\n\n(${outcome.turns} turns${cost})`,
+            `\n\n(${outcome.turns} turns${cost})`,
+        ),
         findings: [],
         document,
       };

@@ -18,7 +18,7 @@ import {
   parseFindings,
   verdictFor,
 } from "../src/agent-action.ts";
-import { NEEDS_INPUT, type ActionEvent, runActionPipeline } from "../src/action.ts";
+import { NEEDS_INPUT, type Action, type ActionEvent, runActionPipeline } from "../src/action.ts";
 import { REVIEW_THAT_DID_NOT_PARSE } from "../test/fixtures/review-269-attempt-3.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
@@ -1180,5 +1180,102 @@ describe("the design prompt", () => {
     expect(prompt).toContain("which of the two readings is meant?");
     expect(prompt).toContain("assume the ticket means the first reading");
     expect(prompt).toContain("**Do not ask again.**");
+  });
+});
+
+/**
+ * **The bound a `run:` had and an `agent:` did not** (`#298`, 0066 §8).
+ *
+ * `command.ts` has clipped a command's output to `EVIDENCE_LINES` and
+ * `EVIDENCE_BYTES` since it was written — *enough to act on, bounded*. An
+ * `agent:` action put on the log whatever the model produced, and the only
+ * thing holding it down was a sentence in a prompt asking for brevity: at
+ * `design` that is the whole document, at `review` whatever the answer was.
+ *
+ * **Asserted on the event and not on the result**, because the event is the
+ * thing that outlives this: `task_view` and `finding_backlog` are folds, so an
+ * unbounded string is replayed on every rebuild, for as long as the log exists.
+ *
+ * The three properties together, because two of them without the third is a
+ * quieter bug than the one being fixed — it is bounded, the turn count and the
+ * start both survive the cut, and **it says it was cut**. A card that shows the
+ * first half of a design with no mark where it stops is a person told they have
+ * the whole answer.
+ */
+describe("an agent's evidence on the log", () => {
+  /** Comfortably above `EVIDENCE_BYTES` and its quarter-sized head. */
+  const BOUND = 12_000;
+
+  type Step = Parameters<typeof runActionPipeline>[0]["step"];
+
+  const evidenceOf = async (action: Action, step: Step) => {
+    const events: ActionEvent[] = [];
+    await runActionPipeline({ step, actions: [action], context, emit: (e) => void events.push(e) });
+    const last = events.at(-1);
+    if (last === undefined || !("evidence" in last.data)) throw new Error(`no evidence on ${last?.type}`);
+    return last.data.evidence as string;
+  };
+
+  it("clips a review that said far too much, and says that it clipped it", async () => {
+    const many = Array.from({ length: 400 }, (_, i) =>
+      finding({ file: `src/f${i}.ts`, line: i, claim: `the guard at ${i} is not asserted in the write` }),
+    );
+
+    const evidence = await evidenceOf(
+      actionWith(outcome({ text: JSON.stringify({ findings: many }) })),
+      "review",
+    );
+
+    expect(evidence.length).toBeLessThan(BOUND);
+    // The start is what a reader needs first, and `tail` keeps it.
+    expect(evidence).toContain("src/f0.ts:0");
+    // The end is what carries the cost, and it is the last thing appended.
+    expect(evidence).toContain("(7 turns · $0.42)");
+    expect(evidence).toContain("this is not the whole answer");
+  });
+
+  /**
+   * `design` is the case 0066 §8 names, and the worst of them: `createDraftAction`
+   * put the entire document on `evidence`. The document itself still leaves the
+   * action whole on `result.document` — `WroteTheDesign` is where a design is
+   * kept, and clipping the card's copy of it costs nothing.
+   */
+  it("clips a design document, and leaves the document itself whole", async () => {
+    const document = Array.from({ length: 4_000 }, (_, i) => `- line ${i} of the design`).join("\n");
+    const drafter = createDraftAction(
+      { name: "draft", prompt: "" },
+      {
+        runtime: reviewer(outcome({ text: document })),
+        issue: async () => ISSUE,
+        diff: async () => "",
+        settingsPath: "/tmp/settings.json",
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    );
+
+    const result = await drafter.run(context);
+    expect(result.document).toBe(document);
+
+    const evidence = await evidenceOf(drafter, "design");
+
+    expect(document.length).toBeGreaterThan(80_000);
+    expect(evidence.length).toBeLessThan(BOUND);
+    expect(evidence).toContain("- line 0 of the design");
+    expect(evidence).toContain("(7 turns · $0.42)");
+    expect(evidence).toContain("this is not the whole answer");
+  });
+
+  /**
+   * The other half, and the one a careless fix breaks: nearly every evidence is
+   * short, and a bound that rewrote those would put a clip marker on answers
+   * nothing was cut from.
+   */
+  it("leaves an evidence that fits exactly as it was", async () => {
+    const evidence = await evidenceOf(
+      actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) })),
+      "review",
+    );
+
+    expect(evidence).toBe("blocker src/x.ts:42 — the guard is not asserted in the write\n\n(7 turns · $0.42)");
   });
 });

@@ -40,6 +40,7 @@
  * and refusing are different things and only one of them is charged for.
  */
 import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult } from "./action.ts";
+import { boundedEvidence } from "./command.ts";
 
 /**
  * What the dispatch answers. The same four arms `Worked` carries in
@@ -117,7 +118,7 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
         return {
           verdict: "did-not-finish",
           because: NEEDS_INPUT,
-          evidence: answer.asked,
+          evidence: boundedEvidence(answer.asked),
           findings: [],
         };
       }
@@ -127,9 +128,13 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
         // reads, and this is the detail it quotes. Which runtime met it is the
         // conductor's — one conductor dispatches one — so a name spliced in here
         // would be the second place it is said.
-        return { verdict: "never-ran", evidence: answer.neverStarted.detail, findings: [] };
+        return {
+          verdict: "never-ran",
+          evidence: boundedEvidence(answer.neverStarted.detail),
+          findings: [],
+        };
       }
-      return { verdict: "did-not-finish", evidence: answer.stopped, findings: [] };
+      return { verdict: "did-not-finish", evidence: boundedEvidence(answer.stopped), findings: [] };
     },
   };
 }

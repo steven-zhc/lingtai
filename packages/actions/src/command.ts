@@ -176,6 +176,48 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
 }
 
 /**
+ * **The same bound, for an action whose output a model wrote** (`#298`).
+ *
+ * A `run:` action's evidence has been clipped to `EVIDENCE_LINES` and
+ * `EVIDENCE_BYTES` since this file was written — *enough to act on, bounded*.
+ * An `agent:` action's was not: at `design` it is the whole document, at
+ * `review` and at `proposed` it is whatever the answer was, and the only thing
+ * holding any of it down was a sentence in a prompt asking for brevity. One
+ * action kind knew to bound what it put on the log and the other did not, and
+ * the one that did not is the one whose length a model chose.
+ *
+ * An event is read far more often than it is written: `task_view` and
+ * `finding_backlog` are folds, so an unbounded string is carried again on every
+ * rebuild.
+ *
+ * **These numbers and not `runtime.budget.evidence`**, which is a different
+ * limit wearing a similar name — *how much of one earlier failure's output the
+ * next prompt carries*, a prompt budget. Reusing that one here would tie two
+ * unrelated limits together; reusing this one reuses the one that already means
+ * the same thing, which is why the function lives beside it rather than in a
+ * home of its own.
+ *
+ * **It is called in the action and never where the event is written**
+ * ([0031](../../../doc/decisions/0031-the-adapter-classifies.md) §1): the layer
+ * that knows what the text is is the layer that trims it. `tail` keeping the
+ * start *and* the end is what makes that safe — a turn count appended after a
+ * document survives, a quota message's reset time is not cut out from under
+ * `standDown`, and an answer that broke one brace short of valid JSON still
+ * shows where it broke.
+ *
+ * **And a clipped evidence says it was clipped.** `tail` marks its own cut in
+ * the ordinary case; the line below is what makes that a guarantee rather than
+ * a usual outcome, since `tail` has one shape — a first line longer than a
+ * quarter of the budget — where it drops whole lines and says nothing. A person
+ * reading a card must not come away thinking they have the whole answer.
+ */
+export function boundedEvidence(text: string): string {
+  const clipped = tail(text);
+  if (clipped === plain(text).trimEnd()) return clipped;
+  return `${clipped}\n\n…clipped to ${EVIDENCE_LINES} lines and ${EVIDENCE_BYTES} bytes; this is not the whole answer…`;
+}
+
+/**
  * Run the command and wait for it. An action's exit code is a verdict, so
  * this is the caller an action uses.
  */
