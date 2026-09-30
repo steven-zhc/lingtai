@@ -2154,6 +2154,25 @@ const REFUSED_WHEN_IT_RESOLVED =
 function pluginRefusedAt(step: Step, action: unknown, named: readonly Plugin[]): string {
   const called = nameOf(action);
   const legal = PLUGINS.map((plugin) => `"${plugin.key}"`).join(", ");
+  /**
+   * **`discuss:` by name, ahead of the generic *names no plugin* refusal**
+   * (0061 §6, `#243`).
+   *
+   * `discuss` is not in `PLUGINS`, so a `- discuss: …` action would otherwise
+   * fall into the sentence below and read as a typo — *names no plugin, and
+   * the legal ones are* — which is true but not why. It is a top-level node
+   * beside `steps:` and `subscribers:` rather than a plugin any step runs: a
+   * discussion is started by a person, runs while nothing else is, and
+   * advances no work item, so there is no step it could be declared at.
+   */
+  if (named.length === 0 && typeof action === "object" && action !== null && "discuss" in action) {
+    return (
+      `the "${called}" action at the "${step}" step names \`discuss\`, which is not a plugin any step ` +
+      "runs — a discussion is a top-level node beside `steps:` and `subscribers:` (0061 §6): it is " +
+      "started by a person, runs while nothing else is, and advances no work item. Move it to " +
+      "`discuss:` at the top of the file, beside `steps:`."
+    );
+  }
   return named.length === 0
     ? `the "${called}" action at the "${step}" step names no plugin — an action carries exactly one of ` +
         `${legal}, and that key is what it is. Refusing rather than accepting it: an action that is ` +
@@ -2641,6 +2660,106 @@ const Version = z.number().int().superRefine((written, ctx) => {
   });
 });
 
+/**
+ * The subset of `RuntimeId` a discussion may name — every runtime that can be
+ * held to `tools: "none"` — and not `RuntimeId` itself, so a name nothing can
+ * run is refused when the recipe resolves rather than at the call a person is
+ * watching (0070 §3, `#243`).
+ *
+ * Today that subset is `["claude-code"]`: `@lingtai/agent`'s `RUNTIMES` table
+ * has one row that can be given no tools, and Codex's throws
+ * `ToolsCannotBeDenied` — measured on codex-cli 0.155.1, `-s read-only`
+ * forbids writes and forbids nothing else, so the agent would keep a shell and
+ * read access to the whole machine while a discussion's whole containment is
+ * *no tools at all* (0033 §1).
+ *
+ * **Not read off `@lingtai/agent`.** `packages/recipe/package.json` depends on
+ * `@lingtai/domain`, `@lingtai/env`, `picomatch` and `yaml`, and answering this
+ * by importing the agent package would give the recipe a dependency on every
+ * runtime adapter to name three letters. `apps/cli/unit/discuss-agent.test.ts`
+ * pins the two against each other instead — it constructs every `RuntimeId`
+ * with `tools: "none"` and asserts that the ones which do not throw are
+ * exactly this enum's options — so a runtime that gains the ability to be
+ * given no tools is a test failure there rather than a schema this file
+ * forgot to widen.
+ */
+export const DiscussAgent = z.enum(["claude-code"]);
+export type DiscussAgent = z.infer<typeof DiscussAgent>;
+
+/**
+ * **`discuss:`, a top-level node beside `steps:` and `subscribers:`, not a
+ * plugin** ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md)
+ * §6, `#243`).
+ *
+ * A discussion is not a step: it is started by a person, runs while nothing
+ * else is, and advances no work item — so it carries no `at`, is not one of
+ * `PLUGINS`, and `pluginRefusedAt` names it by hand when an action written at
+ * a step carries a `discuss` key, sending whoever wrote it here instead.
+ *
+ * **One object, not a list** (the ticket's §1). A step is a list because its
+ * plugins run in the order written and the first that yields a work item
+ * wins — a rule that decides nothing here, where two agents would each
+ * produce an answer. A list would put a question in the recipe that the
+ * recipe has no way to answer. If two answerers are ever wanted, that is a
+ * decision made when the need is real rather than a shape kept open for one
+ * that may never come.
+ *
+ * **`limits` has defaults of its own, unlike `DISPATCH.limits`.** Absent
+ * means `runtime.limits` for a dispatch embedded in a step, because that
+ * dispatch runs inside a pass whose ceiling is already stated once (0070 §5).
+ * A discussion runs outside every pass (0061 §6), so falling back to
+ * `runtime.limits` would silently take it from 40 turns and 5 minutes to 300
+ * turns and 2 hours the day an operator raised the pass's own ceiling for an
+ * unrelated reason. The defaults are today's constants, unchanged —
+ * `apps/cli/src/discuss.ts`'s old `LIMITS` and `WALL_MS`.
+ *
+ * **And no narrowing check against `runtime.limits` either.** 0070 §5's
+ * refusal protects `lingtai status`'s one-line answer to *what may a pass
+ * spend*, and a discussion is not in a pass. A machine file that sets
+ * `runtime.limits.turns: 30` must not make a recipe nobody edited stop
+ * resolving because this default is 40.
+ *
+ * **`prompt:` is optional**, unlike `DISPATCH.prompt`. A recipe with no
+ * `discuss:` still has to resolve, and there is no per-ticket diff to hand a
+ * discussion the way `implement` hands one to `review`. When given, it is
+ * appended after `buildBrief`'s own text and never replaces it — that text is
+ * the reply protocol `parseReply` reads (`discuss.ts:365`), the same reason
+ * 0070 §3 gives for `judge:` taking no `prompt:` of its own.
+ *
+ * **One `ask` call is one round, and `holdDiscussion` may make up to
+ * `MAX_READ_ROUNDS + 1` of them for one question** (`discuss.ts:517`) — so a
+ * question may spend up to five times what `limits` states. That is a fact
+ * about the conductor's loop rather than a second recipe field: 0033 §4
+ * already answers *how many rounds*, and this group answers only *what one
+ * call may spend*.
+ */
+export const Discuss = z.strictObject({
+  /** Which runtime answers. Enum-refused rather than `RuntimeId` — see `DiscussAgent`. */
+  agent: DiscussAgent.default("claude-code"),
+  /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
+  model: DISPATCH.model,
+  /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
+  prompt: DISPATCH.prompt.optional(),
+  /** What one `ask` call may spend. Defaults are `apps/cli/src/discuss.ts`'s old constants. */
+  limits: z
+    .strictObject({
+      turns: z.number().int().positive().default(40),
+      wall: z
+        .string()
+        .default("5m")
+        .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 5m" }),
+    })
+    .default({ turns: 40, wall: "5m" }),
+});
+export type Discuss = z.infer<typeof Discuss>;
+
+/**
+ * What a recipe that says nothing about `discuss:` gets — `apps/cli/src/discuss.ts`'s
+ * fallback for a project nothing has registered, and `Recipe`'s own default
+ * below, the same way `LIMIT_DEFAULTS` is `runtime.limits`'s.
+ */
+export const DISCUSS_DEFAULTS = Discuss.parse({});
+
 export const Recipe = z.object({
   version: Version,
   /**
@@ -2784,6 +2903,16 @@ export const Recipe = z.object({
     merge: [],
     end: [],
   }),
+
+  /**
+   * The third of 0061 §6's top-level nodes — an agent, paid for a judgement,
+   * that a person rather than the pass starts. See `Discuss`.
+   *
+   * Defaulted rather than optional, like `steps` and `subscribers`: a recipe
+   * that says nothing about `discuss:` has *declared the defaults*, which is a
+   * thing `lingtai add` and the board can read, rather than an absence.
+   */
+  discuss: Discuss.default(DISCUSS_DEFAULTS),
 
   /**
    * Who is told what happened, and about which events.

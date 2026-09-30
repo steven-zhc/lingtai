@@ -413,11 +413,18 @@ env:
    * is the reset (`the-pipeline.md`'s T5), not an upcaster. Until then, an
    * attempt recorded before this commit cannot have its recipe proved, and the
    * board says so.
+   *
+   * **The pin moved a second time for `#243`.** `discuss:` is a new top-level
+   * node with defaults of its own (0061 §6), so `forHash`'s `{ ...recipe,
+   * steps }` now carries it for every recipe, including one that names no
+   * `discuss:` at all — the same cost the paragraph above already accepted,
+   * paid again for the same reason: a recipe that resolves to a value has
+   * that value in its hash, whether or not the file wrote it.
    */
   it("gives a v2 recipe a digest nothing recomputes it from", async () => {
     const a = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), "develop");
 
-    expect(a.configHash).toBe("cefec6a9497a47f86eb56b9bd3b8d23fe78793bc34888ffad6dedf27f6399a85");
+    expect(a.configHash).toBe("255cbdfe463cca1177d756840de675ef2740b1e6665cc0e3bbd8cd412ca02b53");
     // And the body on the event is the document that digest is of (0047 §2),
     // so the five are out of both or neither — a strip on one side only makes
     // `hashRecipe(StepsResolved.recipe) === configHash` false.

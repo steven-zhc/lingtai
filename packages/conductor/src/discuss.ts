@@ -62,6 +62,7 @@
  */
 import { chatStream, parsePayload, type Envelope, type ToAppend } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
+import { DISCUSS_DEFAULTS, parseDuration } from "@lingtai/recipe";
 import { editHash } from "./attempts.ts";
 import { tellGitHub, type IssueChannel } from "./tell.ts";
 
@@ -263,6 +264,12 @@ export function buildBrief(input: {
   served: readonly { at: string; text: string | null }[];
   /** Rounds of reading left. Zero means answer now. */
   roundsLeft: number;
+  /**
+   * The recipe's `discuss.prompt`, appended after the fixed brief below and
+   * never substituted for it — that brief is the reply protocol `parseReply`
+   * reads, which is 0070 §3's reason `judge:` takes no `prompt:` either.
+   */
+  prompt?: string;
 }): string {
   const { evidence } = input;
   const index = evidence.refs
@@ -334,7 +341,7 @@ ${budget}
 ## The question
 
 ${input.question}
-`;
+${input.prompt === undefined || input.prompt.trim() === "" ? "" : `\n${input.prompt.trim()}\n`}`;
 }
 
 // ----------------------------------------------------------------- reply ----
@@ -432,11 +439,12 @@ export interface DiscussionPorts {
    * Runs the assistant once.
    *
    * A port rather than a `Runtime`, because what this needs is *one prompt in,
-   * one answer out* — no worktree, no settings, no environment. The host
-   * decides which runtime answers and what it is allowed to do; this decides
-   * what it is asked.
+   * one answer out* — no worktree, no settings, no environment. **The host
+   * chooses which runtime answers, off the recipe's `discuss.agent` (#243);
+   * what one call may spend arrives through `call`, on every round, off the
+   * same recipe's `discuss.limits`.**
    */
-  ask(prompt: string, round: number): Promise<Answered>;
+  ask(prompt: string, round: number, call: { model?: string; turns: number; wallMs: number }): Promise<Answered>;
   store: EventStore;
   log?: (line: string) => void;
 }
@@ -446,6 +454,15 @@ export interface HoldOptions {
   evidence: DiscussionEvidence;
   question: string;
   by: string;
+  /**
+   * What one `ask` call may spend, and which model — the recipe's `discuss:`
+   * (#243). Optional, and absent takes `DISCUSS_DEFAULTS` — the same recipe
+   * default a project that declares no `discuss:` resolves to — so a caller
+   * with no recipe in hand (a test, `lingtai ask`) still asks something real.
+   */
+  call?: { model?: string; turns: number; wallMs: number };
+  /** The recipe's `discuss.prompt`, forwarded to `buildBrief` on every round. */
+  prompt?: string;
 }
 
 /** What one question cost and what it concluded. */
@@ -473,6 +490,12 @@ export async function holdDiscussion(
   const log = ports.log ?? (() => {});
   const stream = chatStream(options.chatId);
   const before = await ports.store.read(stream);
+  const call =
+    options.call ?? {
+      ...(DISCUSS_DEFAULTS.model === undefined ? {} : { model: DISCUSS_DEFAULTS.model }),
+      turns: DISCUSS_DEFAULTS.limits.turns,
+      wallMs: parseDuration(DISCUSS_DEFAULTS.limits.wall),
+    };
 
   // `by` is already an actor — `human:steven`, the same string the board's card
   // actions record. Prefixing it here would make it `human:human:steven` and
@@ -521,9 +544,10 @@ export async function holdDiscussion(
       question: options.question,
       served,
       roundsLeft: MAX_READ_ROUNDS - round,
+      prompt: options.prompt,
     });
 
-    const outcome = await ports.ask(prompt, round).catch(
+    const outcome = await ports.ask(prompt, round, call).catch(
       (err: unknown): Answered => ({
         turns: 0,
         durationMs: 0,

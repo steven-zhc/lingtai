@@ -36,6 +36,9 @@ const EVIDENCE: DiscussionEvidence = {
   refs: [{ ref: "main", sha: "abc1234", paths: ["packages/agent/src/claude-code.ts"], truncated: false }],
 };
 
+/** What one `ask` call may spend — a stand-in for the recipe's `discuss.limits`. */
+const CALL = { turns: 40, wallMs: 300_000 };
+
 describe("what was readable, said by Lingtai", () => {
   /**
    * The blind spot that killed `#89`'s repair, and the reason this function
@@ -178,19 +181,23 @@ describe("holding one question", () => {
    */
   it("appends the ask before it runs anything, and records a failure's cost", async () => {
     const store = fakeStore();
+    const calls: unknown[] = [];
     const held = await holdDiscussion(
       {
         store: store.store,
         serve: async () => null,
-        ask: async (): Promise<Answered> => ({
-          turns: 3,
-          durationMs: 120,
-          costUsd: 0.42,
-          text: null,
-          failure: { kind: "timeout", detail: "no result within 300000ms" },
-        }),
+        ask: async (_prompt, _round, call): Promise<Answered> => {
+          calls.push(call);
+          return {
+            turns: 3,
+            durationMs: 120,
+            costUsd: 0.42,
+            text: null,
+            failure: { kind: "timeout", detail: "no result within 300000ms" },
+          };
+        },
       },
-      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven" },
+      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven", call: CALL },
     );
 
     expect(store.types()).toEqual(["DiscussionAsked", "DiscussionAnswered"]);
@@ -198,6 +205,8 @@ describe("holding one question", () => {
     const answer = store.appended[1]?.data as { costUsd: number; failure: string };
     expect(answer.costUsd).toBe(0.42);
     expect(answer.failure).toContain("timeout");
+    // Every round — and here, the only one — receives the `HoldOptions.call` it was handed.
+    expect(calls).toEqual([CALL]);
   });
 
   it("serves the files it is asked for, then answers with them", async () => {
@@ -227,7 +236,7 @@ describe("holding one question", () => {
           };
         },
       },
-      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven" },
+      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven", call: CALL },
     );
 
     expect(served).toEqual(["main:a.ts"]);
@@ -252,7 +261,7 @@ describe("holding one question", () => {
           failure: null,
         }),
       },
-      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven" },
+      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven", call: CALL },
     );
 
     const answer = store.appended[1]?.data as { failure: string };

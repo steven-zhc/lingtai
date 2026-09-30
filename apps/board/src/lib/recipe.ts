@@ -14,6 +14,7 @@
 import { homedir } from "node:os";
 import { STEPS, type ProjectState, type Step } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
+import { MAX_READ_ROUNDS } from "@lingtai/conductor/discuss";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
@@ -822,6 +823,16 @@ export function readRecipe(recipe: Recipe): Reading[] {
       // `attempts` and leaves the rest to the schema has one source for one of
       // them and `default` for three, and the row says both.
       keys: Object.keys(budget).map((key) => `runtime.budget.${key}`),
+    },
+    {
+      name: "discussions",
+      // One `ask` call is one round, and `holdDiscussion` may make up to
+      // `MAX_READ_ROUNDS + 1` of them for one question (`#243`).
+      says:
+        `${recipe.discuss.agent}, ${recipe.discuss.model ?? "its default model"}, ` +
+        `${recipe.discuss.limits.turns} turns and ${recipe.discuss.limits.wall} per answer, ` +
+        `up to ${MAX_READ_ROUNDS + 1} answers a question`,
+      keys: ["discuss.agent", "discuss.model", "discuss.limits.turns", "discuss.limits.wall"],
     },
   ];
 }

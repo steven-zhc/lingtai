@@ -29,18 +29,21 @@
  * ## No spend limit
  *
  * 0033 §4: a run is unattended and needs a hard bound; a discussion is attended
- * and the person is the loop. `WALL_MS` below is not that bound — it is how
- * long one turn may hang before the person is told it hung, which is a
- * different question and has to be answerable or the meter never updates.
+ * and the person is the loop. What one `ask` call may spend — `turns` and
+ * `wall`, reaching the binary as `--max-turns` and a wall clock (`#89`) — is
+ * not that bound either: it is how long one round may hang before the person
+ * is told it hung, which is a different question and has to be answerable or
+ * the meter never updates. It is the recipe's `discuss.limits` now (`#243`),
+ * not a constant here — see `@lingtai/recipe`'s `Discuss`.
  */
 import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  createToollessRuntime,
-  FIRST_RUNTIME,
+  createRuntime,
   NO_RUN_LOG,
   openRunLog,
   RUN_LOG_BEAT_MS,
+  type RunTrace,
   type Runtime,
 } from "@lingtai/agent";
 import { runnableEnv } from "@lingtai/agent-env";
@@ -51,6 +54,7 @@ import {
   outstanding,
   readingFor,
   type DiscussionEvidence,
+  type DiscussionPorts,
   type ReadableRef,
 } from "@lingtai/conductor/discuss";
 import { githubClientFor } from "@lingtai/conductor/filter";
@@ -67,24 +71,8 @@ import {
 } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { eventStore } from "@lingtai/event-store";
+import { DISCUSS_DEFAULTS, parseDuration, type Discuss } from "@lingtai/recipe";
 import { listAt, readAt, refSha } from "@lingtai/repo";
-
-/**
- * How long one turn of a discussion may take before it is called hung.
- *
- * Not a spend limit (see the header). Five minutes is long for a question that
- * reads a handful of files and short enough that a person watching learns
- * something went wrong rather than concluding the feature does not work.
- */
-export const WALL_MS = 5 * 60_000;
-
-/**
- * `turns` reaches the binary as `--max-turns` (`#89`), so a discussion round
- * that has not answered in 40 turns ends as `out-of-turns`. Not a spend limit
- * in 0033 §4's sense — the person is still the loop — but a round that reads
- * forty times without answering has lost the question.
- */
-const LIMITS = { turns: 40, wallMs: WALL_MS };
 
 /**
  * Every tool, denied.
@@ -248,6 +236,38 @@ function bySeq(a: Envelope, b: Envelope): number {
 }
 
 /**
+ * The `ask` port, closed over one turn's fixed pieces — the runtime, the
+ * working directory, the settings and the trace — so what a round's `call`
+ * becomes on `RunRequest` is checkable against a real `ask`, not only against
+ * the schema that produced `call` (`#243`).
+ *
+ * `model` is spread in only when present: `RunRequest.model` is optional and
+ * absent means the runtime's own default (0063 §2), which an explicit
+ * `undefined` would not say the same way to every runtime adapter.
+ */
+export function discussionAsk(
+  runtime: Runtime,
+  fixed: { runId: (round: number) => Promise<string>; cwd: string; settingsPath: string; log: RunTrace },
+): DiscussionPorts["ask"] {
+  return async (prompt, round, call) =>
+    runtime.run({
+      runId: await fixed.runId(round),
+      cwd: fixed.cwd,
+      prompt,
+      ...(call.model === undefined ? {} : { model: call.model }),
+      settingsPath: fixed.settingsPath,
+      // Nothing but what the runtime needs to authenticate. No token, no
+      // project values, no hook wiring — there is no hook.
+      env: runnableEnv({}),
+      limits: { turns: call.turns, wallMs: call.wallMs },
+      // What the assistant says and thinks, as it says it. The adapter
+      // writes its own stream here (`traceOf`), which is the whole of what
+      // makes the box on the board move.
+      log: fixed.log,
+    });
+}
+
+/**
  * Answer one question.
  *
  * Never throws: it is called from the daemon's subscription, and an exception
@@ -261,70 +281,38 @@ export async function answerDiscussion(
   const evidence = await gatherEvidence(request);
   const { cwd, settingsPath } = await prepare(request.chatId);
   /**
-   * The runtime the project's recipe names, **asked rather than assumed**
-   * (`#313`).
+   * The recipe's own `discuss:`, **asked rather than assumed** (`#313`, `#243`).
    *
-   * It was `createClaudeCodeRuntime({ permissionMode: "default" })`, so on a
-   * machine signed in to Codex alone a question spawned `claude` and the answer
-   * was whatever that failure looked like. `currentRecipe` is a file read and
-   * nothing else — its own docstring: *"No request is made and nothing is read
-   * from the repository"* — so asking costs one `readFile` on a path already
-   * loaded above.
+   * It was `runtime.agent` behind `createToollessRuntime`'s fallback — a field
+   * that decides which runtime works a project's *tickets* and has nothing to
+   * do with a discussion — so `#243` gives a discussion its own field instead.
+   * `currentRecipe` is a file read and nothing else — its own docstring: *"No
+   * request is made and nothing is read from the repository"* — so asking
+   * costs one `readFile` on a path already loaded above.
    *
    * A project that is not registered, or whose recipe does not resolve, still
-   * gets an answer — `FIRST_RUNTIME` — because this function never throws: it is
-   * called from the daemon's subscription, and an exception escaping there would
-   * stop the loop over a question somebody typed.
-   *
-   * `tools: "none"` rather than `permissionMode: "default"`: the caller says what
-   * the agent is *for* and each row translates, so this line does not have to know
-   * Claude Code's enum to say that the third kind of agent has no tools
-   * (0033 §1, 0054).
+   * gets an answer — `DISCUSS_DEFAULTS` — because this function never throws:
+   * it is called from the daemon's subscription, and an exception escaping
+   * there would stop the loop over a question somebody typed.
    */
-  const named = await loadProject(project)
-    .then((state) => (state === null ? FIRST_RUNTIME : currentRecipe(state).then((r) => r.recipe.runtime.agent)))
-    .catch(() => FIRST_RUNTIME);
+  const discuss: Discuss = await loadProject(project)
+    .then((state) => (state === null ? DISCUSS_DEFAULTS : currentRecipe(state).then((r) => r.recipe.discuss)))
+    .catch(() => DISCUSS_DEFAULTS);
   /**
-   * **Contained, and preferring the one the recipe named** (`#313`).
+   * **Contained by construction, not by fallback** (`#243`).
    *
    * The three layers above are what a discussion has instead of a hook and the
    * steps a run passes, and the first two are a Claude Code settings file. So
    * `tools: "none"` is not a preference here, it is the containment: a runtime
-   * that cannot be given it must not be handed this prompt. Codex cannot —
-   * `-s read-only` forbids writes and forbids nothing else, so the agent would
-   * keep a shell and read access to the whole machine while this file's header
-   * said it read nothing off the filesystem.
-   *
-   * **And that is a reason to ask a different runtime, not to stop answering.**
-   * Which runtime works a project's tickets is `runtime.agent`; a discussion is
-   * 0033's third kind of agent, with no worktree, no hook and no gates, and
-   * nothing about it requires the project's own. Refusing instead cost a project
-   * whose recipe names Codex *every* question, every round, permanently — a
-   * capability traded away for a field it has nothing to do with.
-   * `createToollessRuntime` prefers `named` and falls back.
-   *
-   * **The fallback asks nothing about what is signed in**, and is not a claim that
-   * what comes back is. It reads which rows can be given no tools, which is a fact
-   * about the table; so on a machine signed in to Codex alone this spawns a
-   * `claude` that is signed out, `ask` answers a crash, and every round of every
-   * question is `answered: false`. `lingtai doctor`'s `runtime: signed in` and
-   * `runtime: <project> signed in` are the rows that say so — nothing here does,
-   * and `say()` below names the substitution rather than vouching for it.
-   *
-   * **Answered, not thrown.** This function never throws (see above), so the
-   * `null` — no row in the table can be given no tools, which is unreachable
-   * while `claude-code` has one — becomes the round's outcome rather than an
-   * exception: `holdDiscussion` appends `DiscussionAnswered` for it the way it
-   * does for a crash.
+   * that cannot be given it must not be handed this prompt. `discuss.agent`'s
+   * schema is `@lingtai/recipe`'s `DiscussAgent` — the subset of `RuntimeId`
+   * that can be held to `tools: "none"` — so this call cannot throw
+   * `ToolsCannotBeDenied`: a recipe naming a runtime that cannot be contained
+   * this way was already refused when it resolved, before a worktree, before
+   * an agent, before any money.
    */
-  const asked = createToollessRuntime(named);
-  const runtime: Runtime | null = asked?.runtime ?? null;
-  const refused =
-    asked === null
-      ? `no runtime on this machine can be given no tools, and that is the whole of a discussion's ` +
-        `containment (0033 §1) — so this question cannot be answered here. Open it as a ticket, ` +
-        `where the hook and the steps of a pass are the containment instead.`
-      : "";
+  const runtime: Runtime = createRuntime(discuss.agent, { tools: "none" });
+  const call = { model: discuss.model, turns: discuss.limits.turns, wallMs: parseDuration(discuss.limits.wall) };
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
   const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));
@@ -383,15 +371,6 @@ export async function answerDiscussion(
 
   try {
     say(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(" · ")}`);
-    // Which runtime is answering, said only where it is not the one the recipe
-    // named — otherwise it is noise on every question.
-    if (asked?.instead != null) {
-      say(
-        `answered by ${asked.id}: ${asked.instead} cannot be given no tools, and no tools is what ` +
-          `a discussion has instead of a hook and the steps of a pass (0033 §1). Whether ${asked.id} ` +
-          `is signed in on this machine is not asked here — lingtai doctor's "runtime: signed in" is`,
-      );
-    }
 
     const held = await holdDiscussion(
       {
@@ -402,45 +381,25 @@ export async function answerDiscussion(
           if (sha === undefined) return null;
           return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES });
         },
-        ask: async (prompt, round) =>
-          runtime === null
-            ? {
-                // Nothing was spawned, so nothing is claimed about a process:
-                // no exit code, no session, and a cost of `null` rather than
-                // `0` — unknown and unspent are the same value here only
-                // because both are true (#198).
-                exitCode: null,
-                turns: 0,
-                durationMs: 0,
-                costUsd: null,
-                text: null,
-                failure: { kind: "crash", detail: refused },
-                sessionId: "",
-              }
-            : runtime.run({
-                // Its own id per round, so nothing resumes a session. `sessionIdFor`
-                // is a function of the run id, and reusing one would make a second
-                // question a continuation of the first one's transcript rather than a
-                // fresh read of the brief this file just built.
-                runId: `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
-                cwd,
-                prompt,
-                settingsPath,
-                // Nothing but what the runtime needs to authenticate. No token, no
-                // project values, no hook wiring — there is no hook.
-                env: runnableEnv({}),
-                limits: LIMITS,
-                // What the assistant says and thinks, as it says it. The adapter
-                // writes its own stream here (`traceOf`), which is the whole of
-                // what makes the box on the board move.
-                log: trace,
-              }),
+        ask: discussionAsk(runtime, {
+          // Its own id per round, so nothing resumes a session. `sessionIdFor`
+          // is a function of the run id, and reusing one would make a second
+          // question a continuation of the first one's transcript rather than a
+          // fresh read of the brief this file just built.
+          runId: async (round) =>
+            `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
+          cwd,
+          settingsPath,
+          log: trace,
+        }),
       },
       {
         chatId: request.chatId,
         evidence,
         question: request.question,
         by: request.by,
+        call,
+        ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
       },
     );
 
