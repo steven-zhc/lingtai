@@ -959,19 +959,25 @@ reviewer's spawn — `from-recipe.ts` carries it onto the gate and `agent-gate.t
 onto `RunRequest.model`, which is `--model` for `claude-code` — so writing a
 cheap model on `review` actually buys a cheap review.
 
-**What `agent:` does not yet buy is a second runtime in one pass**, and that is
-refused rather than ignored. One conductor dispatches one runtime and the gates
-are handed it, so `agentRefusal` (`conductor/src/conduct.ts`) now reads every
-`agent:` in the file and not only `runtime.agent`: a step naming the other one
-stops the pass before the claim, naming the point and the action, and
-`lingtai doctor`'s recipe row says the same refusal. **The remedy is the one
-thing the two refusals do not share**: `runtime.agent` is written in
+**A second runtime in one pass is dispatched since `#314`**
+([0070](decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+§7). The runtime a step's `agent:` names is the one that step runs on —
+`actionsFromRecipe` hands the action `runtimeFor(action.agent)`, and
+`implement`'s dispatch builds the same name — so `review: agent: codex` beside
+`runtime.agent: claude-code` runs its cold review on Codex. What is still refused
+before the claim is a runtime **nothing on this machine is signed in to**:
+`agentRefusal` (`conductor/src/conduct.ts`) reads every `agent:` in the file and
+not only `runtime.agent`, and a step naming one this machine cannot start stops
+the pass before the claim, naming the point and the action — *`steps.review`'s
+"review" action names agent codex, and nothing on this machine is signed in to
+codex* — and `lingtai doctor`'s recipe row says the same refusal. **The remedy is
+the one thing the two refusals do not share**: `runtime.agent` is written in
 `~/.lingtai/config.yml` and a step's `agent:` in `~/.lingtai/<project>/recipe.yml`,
-so the refusal carries which of the two it is and the row names that file — a
-row that offered the machine file for a step's refusal sent an operator to a
-line that already said the dispatched runtime. The alternative was the silent pick
-0046 §3 exists to refuse — a cold review running on the dispatched runtime with
-nothing anywhere recording that the named one was not used.
+so the refusal carries which of the two it is and the row names that file. For a
+step the way out is signing in to that runtime or naming one this machine has —
+never repeating `runtime.agent`, which is no longer required. The alternative was
+the silent pick 0046 §3 exists to refuse — a claim taken and a worktree cut for a
+pass whose `review` cannot start.
 
 **`worktree:` and `judge:` were two of the five and are the two now wired**
 (`#268`, `#274`, [0065](decisions/0065-the-default-is-a-plugin.md) §4).

@@ -237,15 +237,23 @@ export const changedFilesArgs = (baseSha: string): string[] => [
  * than being re-derived by reading the sentence.
  */
 export interface AgentRefusal {
-  /** Which `agent:` is wrong and what this conductor runs. */
+  /**
+   * Which `agent:` is wrong and why: for `runtime.agent`, what this conductor
+   * runs instead; for a step, since `#314`, that **nothing on this machine is
+   * signed in to** the runtime it names — a second runtime at a step is
+   * dispatched, so its remedy is signing in or naming another, never repeating
+   * `runtime.agent`.
+   */
   sentence: string;
   /** Where that `agent:` is written, which is the file whose line must change. */
   at: "runtime.agent" | "step";
   /**
    * **Which key on that line names the runtime** (`#277`).
    *
-   * `agent:` and a runtime `judge:` are the same fact — a second runtime named
-   * at a step — and they are refused by the same sentence; the remedy has to
+   * `agent:` and a runtime `judge:` are the same fact — a runtime named at a
+   * step that nothing on this machine is signed in to (since `#314`; a second
+   * runtime alone is legal and dispatched) — and they are refused by the same
+   * sentence; the remedy has to
    * name the key, because *Name `agent:` …* sends an operator to edit a key the
    * line does not have. The file is the same either way, which is what `at`
    * carries and why this is a field beside it rather than a third value of it.

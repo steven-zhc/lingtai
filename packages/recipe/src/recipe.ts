@@ -147,43 +147,6 @@ export const runPlugin = definePlugin("run", {
 });
 
 /**
- * A cold reviewer, given the diff: **which runtime runs it**, optionally which
- * model, and the prompt it is handed
- * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §2).
- *
- * `agent:` carried the prompt until `#245`. It is the runtime now, because
- * [0053](../../../doc/decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)
- * has said since 2026-09-17 that *which* CLI does a project's work is the
- * recipe's decision and not the machine's — and a prompt kept in one file with
- * its runtime in another splits one decision across two sources. `model:` and
- * `prompt:` sit beside the key rather than under it, so the scalar stays a
- * single value (0063 §2).
- *
- * **The enum is the whole safety of that reinterpretation, not a style
- * choice.** A `z.string()` here would take the paragraph of prose a file
- * written before `#245` puts under `agent:`, parse it cleanly, and hand it on
- * as the *name of a runtime* — failing at spawn, in a worktree, a long way from
- * the line that is wrong. `z.enum` refuses it where it is written, by name, at
- * resolve: that is 0016 §4, and it is the shape
- * [#230](https://github.com/steven-zhc/lingtai/issues/230) hit when a leftover
- * a retired key was dropped by a `z.object` with the suite green.
- *
- * `model` is optional, and **absent means the runtime's own default** — which
- * is a thing a reader can be shown rather than a blank. Lingtai does not carry
- * a table of each runtime's default here: naming one would be a second place
- * for it to be wrong, and the runtime already knows. Present, it is carried by
- * `actionsFromRecipe` onto `AgentActionSpec` and by `createAgentAction` onto
- * `RunRequest.model`, so the key changes what is spawned rather than only what
- * is hashed.
- *
- * **This schema says which runtime, and no step dispatches a second one yet.**
- * One conductor runs one runtime and hands it to every gate, so a value here
- * that is not the dispatched one cannot be honoured — and is refused before the
- * claim by `agentRefusal` (`conductor/src/conduct.ts`), which reads every
- * `agent:` in the file rather than `runtime.agent` alone. The enum is what a
- * *name* has to be in; the refusal is what makes the name true of the run.
- */
-/**
  * **A number that bounds the pass and not one call**, declared inside a
  * dispatch's `limits:` in order to be **refused by name** there
  * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md),
@@ -284,6 +247,46 @@ const DISPATCH = {
     .optional(),
 } as const;
 
+/**
+ * A cold reviewer, given the diff: **which runtime runs it**, optionally which
+ * model, and the prompt it is handed
+ * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §2).
+ *
+ * `agent:` carried the prompt until `#245`. It is the runtime now, because
+ * [0053](../../../doc/decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)
+ * has said since 2026-09-17 that *which* CLI does a project's work is the
+ * recipe's decision and not the machine's — and a prompt kept in one file with
+ * its runtime in another splits one decision across two sources. `model:` and
+ * `prompt:` sit beside the key rather than under it, so the scalar stays a
+ * single value (0063 §2).
+ *
+ * **The enum is the whole safety of that reinterpretation, not a style
+ * choice.** A `z.string()` here would take the paragraph of prose a file
+ * written before `#245` puts under `agent:`, parse it cleanly, and hand it on
+ * as the *name of a runtime* — failing at spawn, in a worktree, a long way from
+ * the line that is wrong. `z.enum` refuses it where it is written, by name, at
+ * resolve: that is 0016 §4, and it is the shape
+ * [#230](https://github.com/steven-zhc/lingtai/issues/230) hit when a leftover
+ * a retired key was dropped by a `z.object` with the suite green.
+ *
+ * `model` is optional, and **absent means the runtime's own default** — which
+ * is a thing a reader can be shown rather than a blank. Lingtai does not carry
+ * a table of each runtime's default here: naming one would be a second place
+ * for it to be wrong, and the runtime already knows. Present, it is carried by
+ * `actionsFromRecipe` onto `AgentActionSpec` and by `createAgentAction` onto
+ * `RunRequest.model`, so the key changes what is spawned rather than only what
+ * is hashed.
+ *
+ * **This field is what picks the runtime for this step, since `#314`** (0070 §7).
+ * It is not a check against `runtime.agent`: `actionsFromRecipe` hands the
+ * action `runtimeFor(action.agent)` and `implement`'s dispatch builds the same
+ * name with `runtimeNamed`, so `agent: codex` beside `runtime.agent:
+ * claude-code` runs on Codex. What is still refused before the claim, by
+ * `agentRefusal` (`conductor/src/conduct.ts`), is a runtime **nothing on this
+ * machine is signed in to** — it reads every `agent:` in the file rather than
+ * `runtime.agent` alone. The enum is what a *name* has to be in; the refusal is
+ * what makes the name one this machine can run.
+ */
 export const agentPlugin = definePlugin("agent", {
   /**
    * **`agent:` is the *which*, and the other three are `DISPATCH`'s** (0070 §3).
