@@ -124,6 +124,15 @@ export interface InitWorld {
   database: (url: string) => Promise<DatabaseCheck>;
   /** The App this machine is configured with, asked with a real call. */
   app: () => Promise<AppCheck>;
+  /**
+   * Copies a verified App's id, key path and webhook secret into
+   * `~/.lingtai/config.yml` (#308) — the same rule as `database.url`: write
+   * only what a real call already confirmed. Null, and nothing written, when
+   * there is nothing to copy: the App already came from `config.yml`, or its
+   * key is inline rather than a path (`config.yml` has no inline-key form).
+   * Called only once `app()` has answered `ok`.
+   */
+  recordApp: () => Promise<string | null>;
   /** Resolves once an App is configured and answers — written by the board's first screen. */
   appeared: () => Promise<{ slug: string; owner: string }>;
   /**
@@ -248,6 +257,10 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       ? paint.pass(`app          ${app.slug}, owned by ${app.owner} — it answered`)
       : "app          none yet — the board's first screen creates it through GitHub's manifest flow",
   );
+  if (app.configured && app.ok) {
+    const recorded = await world.recordApp();
+    if (recorded !== null) world.log(paint.pass(recorded));
+  }
 
   // ---- the board, on the wizard ---------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of
@@ -583,6 +596,7 @@ export function liveInitWorld(): InitWorld {
       }
     },
     app: liveApp,
+    recordApp: liveRecordApp,
     appeared: async () => {
       for (;;) {
         const app = await liveApp();
@@ -647,4 +661,42 @@ async function liveApp(): Promise<AppCheck> {
   } catch (err) {
     return { configured: true, ok: false, why: (err as Error).message };
   }
+}
+
+/**
+ * Copies a verified App's credentials into `~/.lingtai/config.yml` (#308),
+ * the same rule `chooseStore` follows for `database.url`: write only what a
+ * real call already confirmed, never a guess.
+ *
+ * `githubApp()` re-reads its sources fresh — it always does — so this asks it
+ * again rather than being handed what `liveApp` saw; there is nothing to save
+ * by threading it through, and `app()` and `recordApp()` staying two
+ * independent reads is what keeps a test double honest about which one it is
+ * answering.
+ */
+async function liveRecordApp(): Promise<string | null> {
+  const env = await import("@lingtai/env");
+  let credentials;
+  try {
+    credentials = env.githubApp();
+  } catch {
+    // `app()` answered `ok` a moment ago; a read that fails now is not this
+    // function's to explain, and the next `lingtai doctor` will.
+    return null;
+  }
+  const target = configPath(process.env);
+  if (credentials.source === target) return null;
+  // config.yml has no inline-key form (doc/design/the-shape-for-308's own
+  // rule) — an App carrying LINGTAI_GITHUB_APP_PRIVATE_KEY rather than a path
+  // keeps reading from wherever it already does.
+  if (credentials.keySource === `${env.PREFIX}GITHUB_APP_PRIVATE_KEY`) return null;
+
+  const config = readConfig(target);
+  if ("refused" in config) return null;
+  config.setIn(["github", "app_id"], credentials.appId);
+  config.setIn(["github", "private_key_path"], env.resolvePath(credentials.keySource));
+  const secret = env.githubWebhookSecret();
+  if (secret) config.setIn(["github", "webhook_secret"], secret);
+  writeConfig(target, config, stateDir(process.env));
+  return `app          ${credentials.appId} → ${target}`;
 }

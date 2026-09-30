@@ -29,6 +29,8 @@ interface Script {
   /** Added to the environment init reads — a `LINGTAI_DATABASE_URL` is the exported one. */
   env?: NodeJS.ProcessEnv;
   app?: AppCheck;
+  /** What `recordApp()` answers — null (nothing to copy) unless scripted otherwise. */
+  recordApp?: string | null;
   git?: string | null;
   board?: { url: string } | { refused: string };
   /** A board already up on the port. Its port is then taken, so starting another is refused. */
@@ -45,6 +47,8 @@ interface Recorded {
   boards: number;
   /** Calls made to ask the App whether it answers. */
   apps: number;
+  /** Calls made to copy a verified App into config.yml. */
+  recordedApps: number;
 }
 
 /** The database's state survives between runs, as a real one would: tables made once are there the next time. */
@@ -53,7 +57,7 @@ function database() {
 }
 
 function world(home: string, script: Script, db = database()): { world: InitWorld; seen: Recorded } {
-  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0, apps: 0 };
+  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0, apps: 0, recordedApps: 0 };
   const answers = [...(script.answers ?? [])];
   let interrupt = script.interruptAt;
   const step = (name: Step) => {
@@ -93,6 +97,10 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         step("app");
         seen.apps++;
         return script.app ?? { configured: false };
+      },
+      recordApp: async () => {
+        seen.recordedApps++;
+        return script.recordApp ?? null;
       },
       appeared: async () => {
         step("appeared");
@@ -225,6 +233,41 @@ describe("lingtai init (#186)", () => {
     expect(await initCommand([], failing.world)).toBe(1);
     expect(failing.seen.apps).toBe(1);
     expect(failing.seen.lines.join("\n")).not.toContain("it answered");
+  });
+
+  /**
+   * #308. `recordApp()` — the copy into `~/.lingtai/config.yml` — is only
+   * worth asking once a real call has proved the App answers, and its line is
+   * printed rather than swallowed.
+   */
+  it("copies a verified App into config.yml, and only once the App answers", async () => {
+    const home = freshHome();
+    // Not configured: nothing to copy.
+    const none = world(home, { answers: [URL_] });
+    expect(await initCommand([], none.world)).toBe(0);
+    expect(none.seen.recordedApps).toBe(0);
+
+    // Configured but not answering: still nothing to copy — the credentials
+    // are not to be trusted, and `app()` already refused the run over it.
+    const failing = world(home, { app: { configured: true, ok: false, why: "401 Bad credentials" } });
+    expect(await initCommand([], failing.world)).toBe(1);
+    expect(failing.seen.recordedApps).toBe(0);
+
+    // Configured and answering, with nothing to copy (already in config.yml):
+    // recordApp is asked, and null means nothing is printed for it.
+    const already = world(home, { app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" } });
+    expect(await initCommand([], already.world)).toBe(0);
+    expect(already.seen.recordedApps).toBe(1);
+    expect(already.seen.lines.join("\n")).not.toContain(" → ");
+
+    // Configured, answering, and there is something to copy: its line is printed.
+    const copies = world(home, {
+      app: { configured: true, ok: true, slug: "lingtai-me", owner: "me" },
+      recordApp: `app          42 → ${configPath({ LINGTAI_HOME: home })}`,
+    });
+    expect(await initCommand([], copies.world)).toBe(0);
+    expect(copies.seen.recordedApps).toBe(1);
+    expect(copies.seen.lines.join("\n")).toContain(`42 → ${configPath({ LINGTAI_HOME: home })}`);
   });
 
   describe("a failure returns to the choice", () => {
