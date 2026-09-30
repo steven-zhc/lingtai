@@ -311,19 +311,22 @@ proposed:
 ```
 
 > the "the lines" action is a "judge" at the "proposed" step, and "judge" declares
-> no "rounds" field — what it declares is "name", "judge", "when". A plugin
+> no "rounds" field — what it declares is "name", "judge", "when", "model",
+> "limits". A plugin
 > refuses a field it does not understand, rather than accepting it and ignoring it
 > (0061 §9). Refused when the recipe resolves, before a worktree, before an agent,
 > before any money.
 
 One refusal on this page is not the schema's, and it is worth knowing it exists:
-a **runtime** `judge:` naming a runtime this conductor does not dispatch is
-refused before the claim by `agentRefusal` in `conduct.ts` — *`steps.proposed`'s
-"the lines" action names judge codex, and this conductor runs claude-code*. One
-conductor dispatches one runtime, so `judge: codex` on a Claude Code conductor
-would have its judgement bought from the wrong model with nothing anywhere saying
-so. A built-in names no runtime and is passed over: `isBuiltInJudge` is the whole
-of that test.
+a **runtime** `judge:` naming a runtime nothing on this machine is signed in to
+is refused before the claim by `agentRefusal` in `conduct.ts` —
+*`steps.proposed`'s "the lines" action names judge codex, and nothing on this
+machine is signed in to codex*. Since `#314` a judge's runtime is dispatched, so
+`judge: codex` beside `runtime.agent: claude-code` on a machine signed in to both
+buys its judgement from Codex — a second runtime bought for a judgement is legal,
+and the refusal is only for one this machine cannot start, which would otherwise
+be a claim taken and a worktree cut for a judgement that never runs. A built-in
+names no runtime and is passed over: `isBuiltInJudge` is the whole of that test.
 
 ## Related
 

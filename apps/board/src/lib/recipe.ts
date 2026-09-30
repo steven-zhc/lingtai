@@ -624,17 +624,39 @@ export function describeAction(
       };
     }
     // And the one `proposed` will hold, whose `bound` is the whole of why it is
-    // worth naming: the ceilings are the workflow's and a judge never sees
-    // them, so what this row says about money is true of any judge a project
-    // writes, including one that is somebody else's code (0061 §3).
+    // worth naming: the *pass's* ceilings — rounds and restarts — are the
+    // workflow's and a judge never sees them, so that half of what this row says
+    // about money is true of any judge a project writes, including one that is
+    // somebody else's code (0061 §3).
+    //
+    // **What bounds the one call is the entry's, since `#314`** (0070 §3, §5).
+    // A runtime `judge:` may name a `model:` and a `limits:`, and this row names
+    // both the way the `agent:` row does — an operator who has just written
+    // `model: haiku` and `limits: { turns: 5 }` and reads back only the rounds
+    // concludes neither key took.
     case "judge": {
-      const a = action as Extract<StepAction, { judge: string; when: string }>;
+      const a = action as Extract<
+        StepAction,
+        { judge: string; when: string; model?: string; limits?: { turns?: number; wall?: string } }
+      >;
+      const counts = "the workflow counts the rounds and restarts, and offers only the steps still left";
+      if (a.judge === "same-worktree") {
+        return {
+          does: `decides a ${a.when} refusal with a built-in: back to implement, spending nothing`,
+          bound: counts,
+        };
+      }
+      const own = [
+        a.limits?.wall === undefined ? null : a.limits.wall,
+        a.limits?.turns === undefined ? null : `${a.limits.turns} turns`,
+      ].filter((each): each is string => each !== null);
+      const call =
+        own.length === 0
+          ? "runtime.limits, with no bound of its own"
+          : `${own.join(" and ")} on this one call, narrowing runtime.limits`;
       return {
-        does:
-          a.judge === "same-worktree"
-            ? `decides a ${a.when} refusal with a built-in: back to implement, spending nothing`
-            : `asks ${a.judge} which step is next, for a ${a.when} refusal`,
-        bound: "the workflow counts the rounds and restarts, and offers only the steps still left",
+        does: `asks ${a.judge}, ${a.model ?? "its default model"}, which step is next, for a ${a.when} refusal`,
+        bound: `${call}; ${counts}`,
       };
     }
     // And the one that sits beside it and decides nothing about where the pass

@@ -1178,12 +1178,15 @@ not having ([the-plugin-body.md](design/the-plugin-body.md) §5). `ask-or-assume
 from 0061 §3's example is still refused, and now it is alone there: nothing
 implements it.
 
-**And the runtime has to be the one this conductor dispatches**, which is
-`agent:`'s rule and is enforced in the same place: `agentRefusal` walks every
-step's actions before the claim, so a `judge: codex` on a Claude Code machine
-refuses every pass of that project by name and `lingtai doctor` says which line
-to change. Per-step dispatch is not built, so the answer is never *configure the
-other runtime*. A built-in `judge:` names no runtime and is passed over.
+**And the runtime has to be one this machine is signed in to**, which is
+`agent:`'s rule and is enforced in the same place. Since `#314` the runtime a
+`judge:` names is dispatched — `askTheAgent` builds it with `runtimeNamed`, so
+`judge: codex` beside `runtime.agent: claude-code` buys its judgement from Codex,
+and a runtime judge does not have to repeat `runtime.agent`. What `agentRefusal`
+still refuses before the claim is a runtime **nothing on this machine is signed
+in to** — *`steps.proposed`'s "the lines" action names judge codex, and nothing
+on this machine is signed in to codex* — and `lingtai doctor` says which line to
+change. A built-in `judge:` names no runtime and is passed over.
 
 **The two halves are two kinds of decider and the difference is what answering
 costs.** A built-in is a synchronous function, applied where the router reads it;

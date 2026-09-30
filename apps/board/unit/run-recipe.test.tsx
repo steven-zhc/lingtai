@@ -652,3 +652,29 @@ describe("describeAction, on a cold reviewer", () => {
     expect(said.does).toContain("its default model");
   });
 });
+
+describe("describeAction, on a runtime judge", () => {
+  /**
+   * **A runtime `judge:` names its model and its own bound, as `agent:` does**
+   * (`#314`, 0070 §3). The block `doc/plugins/judge.md` gives an operator to
+   * paste writes `model: haiku` and `limits: { turns: 5 }`, and a row that read
+   * back only *the workflow counts the rounds* would say neither key took. The
+   * rounds are still the workflow's, so that half stays.
+   */
+  it("says the model and the limits the entry declared", () => {
+    const priced = describeAction({
+      name: "the lines or the approach",
+      judge: "claude-code",
+      model: "haiku",
+      limits: { turns: 5 },
+      when: "findings",
+    } as never);
+    expect(priced.does).toBe("asks claude-code, haiku, which step is next, for a findings refusal");
+    expect(priced.bound).toContain("5 turns on this one call, narrowing runtime.limits");
+    expect(priced.bound).toContain("the workflow counts the rounds and restarts");
+
+    const plain = describeAction({ name: "j", judge: "codex", when: "findings" } as never);
+    expect(plain.does).toContain("its default model");
+    expect(plain.bound).toContain("runtime.limits, with no bound of its own");
+  });
+});
