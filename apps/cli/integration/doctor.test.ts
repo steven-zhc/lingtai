@@ -44,6 +44,21 @@ const env = (over: Record<string, string | undefined>): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv;
 
 /**
+ * What `runDoctor`'s default `store` argument, `() => storeChoice()`, used to
+ * answer for a bare test process — before `test-support/teardown.ts` started
+ * exporting `LINGTAI_TEST_SQLITE_PATH` into the whole integration run (#275).
+ * That export now makes the real default answer `sqlite`, which would take
+ * every check below into the file-backed fork instead of the `environment`
+ * row they exist to exercise. These tests are about the Postgres pair the
+ * `env` argument carries, so they hand in the "nothing chosen" answer
+ * directly, the same way `wroteSqlite` below hands in a sqlite one.
+ */
+const notSetUp = (): StoreChoice => ({
+  because: "nothing chosen",
+  refused: "nothing on this machine says which store it runs",
+});
+
+/**
  * Generic, so the check's own type survives the lookup.
  *
  * It took `{ name: string }[]` and therefore returned one — every `.status` and
@@ -60,7 +75,7 @@ function find<T extends { name: string }>(results: readonly T[], name: string): 
 describe("lingtai doctor — environment", () => {
   it("fails, and names which variable, when one is missing", async () => {
     // The pooled one: the direct one has a stand-in (#176), the pooled one has none.
-    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
+    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }), () => undefined, notSetUp);
     const e = find(report.results, "environment");
 
     expect(e.status).toBe("fail");
@@ -70,14 +85,14 @@ describe("lingtai doctor — environment", () => {
   });
 
   it("names both when neither is set", async () => {
-    const e = find((await runDoctor(env({}))).results, "environment");
+    const e = find((await runDoctor(env({}), () => undefined, notSetUp)).results, "environment");
     expect(e.detail).toContain("LINGTAI_DATABASE_URL and LINGTAI_DIRECT_DATABASE_URL");
   });
 
   it("refuses a pooled URL standing in for the direct one, and says to set it", async () => {
     // #176's trap: the fallback only fills a gap, and on Supabase the gap it
     // fills with the pooler is the connection that loses a NOTIFY silently.
-    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }));
+    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }), () => undefined, notSetUp);
     const e = find(report.results, "environment");
 
     expect(e.status).toBe("fail");
@@ -88,34 +103,46 @@ describe("lingtai doctor — environment", () => {
 
   it("reads ~/.lingtai/config.yml's database.url when neither variable is set, as postgresUrl does (#186)", async () => {
     // A pooler URL, so the check fails on its shape and nothing is connected to.
-    const report = await runDoctor(env({}), () => POOLED);
+    const report = await runDoctor(env({}), () => POOLED, notSetUp);
     const e = find(report.results, "environment");
     expect(e.detail).toContain("~/.lingtai/config.yml database.url :6543");
     expect(e.detail).toContain("cannot stand in");
 
     // The variable wins, and the file is not asked.
-    const set = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }), () => {
-      throw new Error("asked");
-    });
+    const set = await runDoctor(
+      env({ LINGTAI_DATABASE_URL: POOLED }),
+      () => {
+        throw new Error("asked");
+      },
+      notSetUp,
+    );
     expect(find(set.results, "environment").detail).toContain("LINGTAI_DATABASE_URL :6543");
   });
 
   it("fails by the file's own complaint when config.yml does not parse", async () => {
-    const report = await runDoctor(env({}), () => {
-      throw new Error("/home/me/.lingtai/config.yml could not be parsed as YAML");
-    });
+    const report = await runDoctor(
+      env({}),
+      () => {
+        throw new Error("/home/me/.lingtai/config.yml could not be parsed as YAML");
+      },
+      notSetUp,
+    );
     const e = find(report.results, "environment");
     expect(e.status).toBe("fail");
     expect(e.detail).toContain("could not be parsed");
   });
 
   it("does not attempt Postgres once the environment is wrong", async () => {
-    const report = await runDoctor(env({}));
+    const report = await runDoctor(env({}), () => undefined, notSetUp);
     expect(find(report.results, "postgres").status).toBe("skip");
   });
 
   it("reports the two URLs separately, and never prints either", async () => {
-    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }));
+    const report = await runDoctor(
+      env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }),
+      () => undefined,
+      notSetUp,
+    );
     const detail = find(report.results, "environment").detail;
 
     expect(detail).toContain(":6543");
@@ -135,6 +162,8 @@ describe("lingtai doctor — environment", () => {
   it("fails when the direct URL still carries pgbouncer=true", async () => {
     const report = await runDoctor(
       env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: `${DIRECT}?pgbouncer=true` }),
+      () => undefined,
+      notSetUp,
     );
     const e = find(report.results, "environment");
 
@@ -148,6 +177,8 @@ describe("lingtai doctor — environment", () => {
         LINGTAI_DATABASE_URL: POOLED,
         LINGTAI_DIRECT_DATABASE_URL: "postgresql://u:p@other.example.com:5432/postgres",
       }),
+      () => undefined,
+      notSetUp,
     );
     // A subscriber listening to one log while the writer appends to another is
     // not a configuration with a meaning.
@@ -725,7 +756,7 @@ describe("lingtai doctor — reporting", () => {
   });
 
   it("says how many failed, and every check says what it found", async () => {
-    const report = await runDoctor(env({}));
+    const report = await runDoctor(env({}), () => undefined, notSetUp);
     expect(formatReport(report)).toContain("FAILED");
     expect(report.results.every((r) => r.detail.length > 0)).toBe(true);
   });

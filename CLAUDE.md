@@ -367,15 +367,17 @@ from `@lingtai/event-store/memory`, which is held to the same contract as the
 real store — `packages/event-store/test/contract.ts` runs against both, so a
 divergence is a failing test rather than a surprise.
 
-**This system's own database url may not go through a pooler** (#157) — its
-finding stayed true when the second one it used to be about went away.
-`LINGTAI_DATABASE_URL` pointed at `aws-0-us-east-1.pooler.supabase.com` for
-months and the suite that exercised it failed often enough that a red gate
-meant nothing — `30 passed → 10 failed → 31 passed` on one commit inside an
-hour, every failure a dropped connection and not an assertion. On the direct
-host, `db.<project-ref>.supabase.co:5432`, the same suite runs ten times in a
-row green at 480–502s. The dashboard offers the pooler first, which is how this
-happens; `.env.example` says it at the line where it matters.
+**Neither connection string may go through a pooler** (#157), and that holds
+for this system's own log too, not only the test side. The measurement is the
+test side's: under `inTest`, `dbVar` sends every read to the `TEST_` pair
+(`packages/env/src/index.ts:124`), so it was `LINGTAI_TEST_DATABASE_URL` that
+pointed at `aws-0-us-east-1.pooler.supabase.com` for months and failed often
+enough that a red gate meant nothing — `30 passed → 10 failed → 31 passed` on
+one commit inside an hour, every failure a dropped connection and not an
+assertion. On the direct host, `db.<project-ref>.supabase.co:5432`, the same
+suite ran ten times in a row green at 480–502s. The dashboard offers the
+pooler first, which is how this happens on `LINGTAI_DATABASE_URL` as much as
+on the test pair; `.env.example` says so at both lines.
 
 `LINGTAI_TEST_SQLITE_PATH` is what makes the default above safe: a directory
 made for one run alone, by `test-support/teardown.ts`'s `setup()`, never

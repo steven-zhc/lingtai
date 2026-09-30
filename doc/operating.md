@@ -114,12 +114,17 @@ table.
 Give the test database its schema the same way the main one gets it, with
 `LINGTAI_TEST=1` in front — see [Bringing the database up](#bringing-the-database-up).
 
-**A recipe working this repository declares neither name any more** (#275): the
-`env.required` that used to ask an agent for `LINGTAI_TEST_DATABASE_URL` is
-`[]`, written out rather than left absent, because nothing the gate runs still
-needs it. An operator who wants the `ON_POSTGRES` files exercised locally still
-copies the pair into the project's own file — a `LINGTAI_` name never crosses
-from the machine file, whatever a recipe declares:
+**This repository's own copy of the recipe declares neither name any more**
+(#275): `.lingtai/config.yaml`'s `env.required` is `[]`, written out rather
+than left absent, because nothing the gate runs still needs it. But nothing
+reads that copy — the conducting machine's own
+`~/.lingtai/lingtai/recipe.yml` is what a pass actually resolves, and it still
+names `LINGTAI_TEST_DATABASE_URL` until somebody copies this block over by
+hand. **Without it, every run against this repository refuses by name before
+it claims anything** (0021). An operator who wants the `ON_POSTGRES` files
+exercised locally still copies the pair into the project's own file — a
+`LINGTAI_` name never crosses from the machine file, whatever a recipe
+declares:
 
 ```bash
 mkdir -p ~/.lingtai/env
