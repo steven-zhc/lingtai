@@ -485,6 +485,38 @@ process startup alone was 17ms.
 **Four tools count as mutations** (`hook-socket.ts`), and only these produce
 `RunTouchedFile`: `Write` · `Edit` · `MultiEdit` · `NotebookEdit`.
 
+## prompt placeholder — 5
+
+| | |
+|---|---|
+| **Does** | `renderPrompt` (`packages/conductor/src/prompt.ts`) fills five `{{…}}` names in the **ticket template**. |
+| **Where they work** | `prompts/ticket.md`, and only there. |
+| **Where they do not** | A recipe's `prompt:` — `{{issue}}` written there reaches the model as five literal characters, and nothing refuses or warns. |
+| **Watch out** | Copying the idiom from the template into a recipe is the mistake this page exists for. |
+
+| placeholder | expands to | in `prompts/ticket.md` today |
+|---|---|---|
+| `{{issue}}` | the ticket's number | yes |
+| `{{title}}` | the ticket's title | yes |
+| `{{body}}` | the ticket's body | yes |
+| `{{failure}}` | what refused the last attempt, `""` on the first | yes |
+| `{{design}}` | the design note `design` produced, under a heading, `""` when none ran | **supported and unused** |
+
+A template with no slot for `{{failure}}` or `{{design}}` has that text
+**appended** instead, so neither is dropped: one rule, not two.
+
+**Templates are substituted; a recipe's `prompt:` is not.** `prompts/ticket.md` is
+read from the repository root and run through `renderPrompt`. A step's `prompt:` is
+interpolated raw — `${spec.prompt}` under *Also for this project* at
+`packages/actions/src/agent-action.ts:263` and `:695` — because the agent already
+has the ticket in the prompt Lingtai builds, so a placeholder there would mostly
+repeat it. `prompts/session-brief.md` has no placeholders and nothing renders it.
+
+[0036](decisions/0036-the-core-takes-a-ticket.md) records that `{{issue}}` should
+become `{{ref}}` — *a number is not a ticket* — so that rename is an edit to the
+first row. `packages/conductor/unit/prompt.test.ts` holds this table against
+`renderPrompt`: a sixth name, or a row that does not expand, is a red test.
+
 ## step — 10, closed forever
 
 A step is a **place in the pass**, not a kind of check. The set may never grow.

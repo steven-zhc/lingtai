@@ -190,6 +190,12 @@ function join(blocks: readonly string[]): string {
 }
 
 /**
+ * The placeholders, and where they do not work, are a table in
+ * [`doc/reference.md`](../../../doc/reference.md) — *prompt placeholder*. It is
+ * here rather than in `prompts/ticket.md` because that file is sent to the agent
+ * as written: a comment in it would be part of every prompt.
+ */
+/**
  * Fills the ticket into the prompt.
  *
  * `{{issue}}` was the only placeholder, and a number is not a ticket. The
