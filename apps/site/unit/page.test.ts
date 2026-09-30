@@ -67,16 +67,17 @@ describe("the home page's argument", () => {
     expect(text).toContain('<section className="home-evidence"');
   });
 
-  it("keeps repository docs out of the public site except the tutorial", async () => {
+  it("keeps repository docs out of the public site except the tutorial and the plugin pages", async () => {
     const [home, chrome] = await Promise.all([
       prose(),
       readFile(path.resolve(import.meta.dirname, "../src/app/chrome.tsx"), "utf8"),
     ]);
     expect(DOCS_PUBLIC).toBe(false);
-    expect(PUBLIC_SLUGS).toEqual(["tutorial"]);
+    expect(PUBLIC_SLUGS).toEqual(["tutorial", "plugins"]);
     const links = [...`${home}\n${chrome}`.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1]);
-    expect(links.every((l) => l === "/docs/tutorial/")).toBe(true);
+    expect(links.every((l) => l === "/docs/tutorial/" || l === "/docs/plugins/")).toBe(true);
     expect(chrome).toContain('href="/docs/tutorial/"');
+    expect(chrome).toContain('href="/docs/plugins/"');
     expect(home).toContain('href="#setup"');
   });
 });

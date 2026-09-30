@@ -53,19 +53,26 @@ export const GITHUB_BLOB = "https://github.com/steven-zhc/lingtai/blob/main/";
 export const DOCS_PUBLIC = false;
 
 /**
- * The one page that is public while `DOCS_PUBLIC` is off: the tutorial is the
- * way in for somebody about to install Lingtai, and nothing else in `doc/` has
- * been through that edit yet. Slugs, as `slugOf` gives them.
+ * What is public while `DOCS_PUBLIC` is off: the tutorial, which is the way in for
+ * somebody about to install Lingtai, and `plugins` — the parent page and the
+ * fourteen under it, which are the recipe's vocabulary and were written for a
+ * reader who has never seen the source. Nothing else in `doc/` has been through
+ * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
+ * directory, everything beneath it.
  *
  * Everything that would otherwise 404 on the site — a link from the tutorial to
  * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
  */
-export const PUBLIC_SLUGS = ["tutorial"];
+export const PUBLIC_SLUGS = ["tutorial", "plugins"];
+
+export function isPublicSlug(slug: string): boolean {
+  return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`));
+}
 
 /** The files the site serves right now, relative to `doc/`. */
 export async function servable(): Promise<string[]> {
   const all = await published();
-  return DOCS_PUBLIC ? all : all.filter((f) => PUBLIC_SLUGS.includes(slugOf(f)));
+  return DOCS_PUBLIC ? all : all.filter((f) => isPublicSlug(slugOf(f)));
 }
 
 export interface Section {

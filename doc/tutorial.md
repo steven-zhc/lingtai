@@ -206,7 +206,8 @@ next action.
 - [Guide](guide.md) — write issues that agents can finish and checks can judge
 - [Operating](operating.md) — pause, restart, recover, and understand refusals
 - [The pass](the-pass.html) — the full loop as one diagram
-- [Reference](reference.md) — every recipe key, command, state, and default
+- [Plugins](plugins/index.md) — every recipe key: what it does, where it may be written, and a real example
+- [Reference](reference.md) — every command, state, and default
 
 To stop taking new work while you adjust things:
 

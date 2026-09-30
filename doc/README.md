@@ -29,6 +29,8 @@ command as the build — and each sentence names the step and the plugin that do
 **Hand-written, and the only page here that is**: it carries no generated drawing, so
 unlike the two above, editing the HTML is how it is edited.
 
+**[plugins/index.md](plugins/index.md)** — the recipe's vocabulary, one page per key: what it does, which steps it may be written at, its parameters, real examples, and what it refuses. Start here when you are *writing a recipe*; [writing-a-plugin.md](writing-a-plugin.md) is for *extending Lingtai*.
+
 **[writing-a-plugin.md](writing-a-plugin.md)** — the same ground in prose, for somebody extending
 Lingtai rather than running it: what a plugin is, what its function is handed
 at each of the ten steps, what it may return, and where it is legal. Like the
