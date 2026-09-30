@@ -13,6 +13,12 @@ async function prose(): Promise<string> {
 }
 
 describe("the home page's argument", () => {
+  it("uses the public home as the installer front door", async () => {
+    const chrome = await readFile(path.resolve(import.meta.dirname, "../src/app/chrome.tsx"), "utf8");
+    expect(chrome).toContain('export const SITE_URL = "https://lingtai.hczhang.com"');
+    expect(chrome).toContain('export const INSTALL_URL = `${SITE_URL}/install.sh`');
+  });
+
   it("does not lead with internals or event-log claims", async () => {
     const text = await prose();
     const section = text.indexOf("The work, in the open");

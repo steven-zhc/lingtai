@@ -1,7 +1,7 @@
 #!/bin/sh
 # Lingtai's installer (#184, doc/decisions/0051-a-version-is-a-directory.md).
 #
-#   curl -fsSL https://lingtai.nextloom.ai/install.sh | sh
+#   curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 #
 # **Two addresses, and they are not interchangeable.** The one above is the
 # front door. The one that cannot move is the release asset:

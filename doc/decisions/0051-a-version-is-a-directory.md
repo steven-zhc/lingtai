@@ -52,7 +52,7 @@ alike. Nothing here packs or publishes: a tag does, in
 `.github/workflows/release.yml`.
 
 **4. `install.sh` is served by the site**, as `apps/site/public/install.sh`, so
-`https://lingtai.nextloom.ai/install.sh` is a static file. It detects the
+`https://lingtai.hczhang.com/install.sh` is a static file. It detects the
 platform and refuses anything else by name, asks `releases/latest` unless
 `LINGTAI_VERSION` says, and edits no shell profile.
 
@@ -99,7 +99,7 @@ with **200 and an HTML challenge page**. `curl -f` does not catch it — it is
 not an error status — and `sh` then runs HTML. `/install.sh` needs a WAF skip,
 and the check after any deploy is one line:
 
-    curl -fsSL https://lingtai.nextloom.ai/install.sh | head -1   # #!/bin/sh
+    curl -fsSL https://lingtai.hczhang.com/install.sh | head -1   # #!/bin/sh
 
 **Caching and content type are pinned in `apps/site/public/_headers`**, which
 `public/` copies to the root of `out/` where Cloudflare reads it: `text/plain`

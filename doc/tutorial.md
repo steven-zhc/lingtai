@@ -25,7 +25,7 @@ the agent.
 Install the CLI:
 
 ```bash
-curl -fsSL https://lingtai.nextloom.ai/install.sh | sh
+curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 ```
 
 The installer verifies the downloaded archive, installs `lingtai` under

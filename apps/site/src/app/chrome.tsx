@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 export const REPO = "https://github.com/steven-zhc/lingtai";
+export const SITE_URL = "https://lingtai.hczhang.com";
 
 /**
  * Where `install.sh` is fetched from — the two addresses, and they are not
@@ -18,7 +19,7 @@ export const REPO = "https://github.com/steven-zhc/lingtai";
  * (`apps/cli/src/install.ts`'s `RELEASES_API`) — so a domain that moves breaks
  * new installs and nothing else.
  */
-export const INSTALL_URL = "https://lingtai.nextloom.ai/install.sh";
+export const INSTALL_URL = `${SITE_URL}/install.sh`;
 export const INSTALL_FALLBACK = `${REPO}/releases/latest/download/install.sh`;
 
 /**

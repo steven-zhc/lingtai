@@ -15,6 +15,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "../../../board/src/app/globals.css";
 import "./site.css";
 import "./home.css";
+import { SITE_URL } from "./chrome";
 
 /**
  * The two faces the product uses, self-hosted, exactly as the board loads them
@@ -40,6 +41,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Lingtai — let your backlog move",
     template: "%s — Lingtai",
