@@ -9,6 +9,11 @@
  * the ones where a wrong answer would be indistinguishable from a right one —
  * a zone, midnight, a time that has already gone past today.
  *
+ * Efficiency is not always a longer wait, though (#210): a miss waits longer
+ * only while the true reset is sooner than the backoff. Behind a weekly wall it
+ * resumes early and meets it again every hour, so the weekly wording is pinned
+ * verbatim, and a miss is asserted to *say* it was a miss.
+ *
  * Unit, under `--project unit`. Nothing here reads a clock it was not
  * handed, which is why every assertion can be about a specific instant.
  */
@@ -17,6 +22,15 @@ import { parseResetAt, standDown } from "../src/never-started.ts";
 
 /** What the log actually held, six times, on the night 0031 is about. */
 const QUOTA = "You've hit your session limit · resets 11pm (America/Chicago)";
+
+/**
+ * The weekly limit's wording, verbatim as the runtime produced it at 12:35:13
+ * Chicago time on 2026-09-17 (#210) — middle dot and all. A date between
+ * `resets` and the time is the whole of what the session limit's form lacks.
+ */
+const WEEKLY = "You've hit your weekly limit · resets Sep 19 at 9am (America/Chicago)";
+/** 12:35:13 in Chicago, when the weekly wall was first met. */
+const WEEKLY_MET = new Date("2026-09-17T17:35:13Z");
 
 describe("parseResetAt", () => {
   /**
@@ -54,6 +68,47 @@ describe("parseResetAt", () => {
       now,
     );
     expect(at?.toISOString()).toBe("2026-09-09T11:00:00.000Z");
+  });
+
+  /**
+   * The weekly limit (#210). `Sep 19 at 9am` in Chicago is `14:00Z` — forty-five
+   * hours past the moment it was met, and read as `resets 9` it would have been
+   * nothing at all.
+   */
+  it("reads the weekly limit's date, verbatim as the runtime writes it", () => {
+    expect(parseResetAt(WEEKLY, WEEKLY_MET)?.toISOString()).toBe("2026-09-19T14:00:00.000Z");
+  });
+
+  /**
+   * The neighbours, pinned because this is a regex and the risk is next door:
+   * the session limit's own form, with minutes, must keep reading as a time of
+   * day and never have its hour taken for a day of the month.
+   */
+  it("keeps reading the session limit's form beside the dated one", () => {
+    const at = parseResetAt("You've hit your session limit · resets 4:20am (America/Chicago)", WEEKLY_MET);
+    // 04:20 in Chicago has gone by at 12:35, so it is tomorrow's.
+    expect(at?.toISOString()).toBe("2026-09-18T09:20:00.000Z");
+    expect(parseResetAt(QUOTA, WEEKLY_MET)?.toISOString()).toBe("2026-09-18T04:00:00.000Z");
+  });
+
+  /**
+   * A date names that day and no other. A bare time already gone by is
+   * tomorrow's; a date already gone by is not next year's — it is a message
+   * this cannot account for, and the week ceiling refuses the other reading.
+   */
+  it("does not roll a date that has gone by forward to the next one", () => {
+    const after = new Date("2026-09-19T15:00:00Z");
+    expect(parseResetAt(WEEKLY, after)).toBeNull();
+  });
+
+  it("reads a date across the turn of a year, and a year when one is written", () => {
+    const now = new Date("2026-12-30T12:00:00Z");
+    expect(parseResetAt("resets Jan 2 at 9am (UTC)", now)?.toISOString()).toBe("2027-01-02T09:00:00.000Z");
+    expect(parseResetAt("resets January 2, 2027 at 9:15am (UTC)", now)?.toISOString()).toBe(
+      "2027-01-02T09:15:00.000Z",
+    );
+    // A day the month does not have is not a date.
+    expect(parseResetAt("resets Feb 30 at 9am (UTC)", new Date("2027-02-26T00:00:00Z"))).toBeNull();
   });
 
   /**
@@ -144,6 +199,67 @@ describe("standDown", () => {
     // And still the account-wide half, which is the reason for pausing at all.
     expect(reason).toContain("Every queued item would meet the same thing");
     expect(reason).toContain("You've hit your session limit");
+  });
+
+  /** The weekly wall, stood down for until it lifts rather than for an hour (#210). */
+  it("stands down until the weekly limit lifts", () => {
+    const { until, reason } = standDown({
+      detail: WEEKLY,
+      backoffMs: 3_600_000,
+      what: { of: "run" },
+      now: WEEKLY_MET,
+    });
+
+    expect(until.toISOString()).toBe("2026-09-19T14:00:00.000Z");
+    expect(reason).toContain("read from the message itself");
+    expect(reason).toContain("You've hit your weekly limit");
+  });
+
+  /**
+   * **A reset that was named and not read is said as such** (#210). The chip
+   * used to say *it named no reset time* in the same sentence that quoted the
+   * time it named, which sent a reader away from the one string that answered
+   * the question. Each of these named something; none of them named nothing.
+   */
+  it("says a reset was named and could not be read, distinctly from one never named", () => {
+    for (const [detail, at] of [
+      [WEEKLY, new Date("2026-09-19T15:00:00Z")],
+      ["resets 25pm", now],
+      ["resets 11:74pm", now],
+      ["resets 11pm (Nowhere/Nothing)", now],
+      ['resets_at":"2027-01-01T00:00:00Z', now],
+      // Codex's wall (`packages/agent/unit/codex.test.ts`). A relative duration
+      // is not read here, but it is not *no* time either.
+      ["You have hit your usage limit. Try again in 3 hours.", now],
+    ] as const) {
+      const { until, reason } = standDown({ detail, backoffMs: 3_600_000, what: { of: "run" }, now: at });
+      expect(until.getTime(), detail).toBe(at.getTime() + 3_600_000);
+      expect(reason, detail).toContain("named a reset time");
+      expect(reason, detail).toContain("could not read");
+      expect(reason, detail).toContain("a bug in parseResetAt");
+      expect(reason, detail).not.toContain("it named no reset time");
+    }
+
+    // And the fragment is quoted, so the reader is pointed at it.
+    const { reason } = standDown({
+      detail: WEEKLY,
+      backoffMs: 3_600_000,
+      what: { of: "run" },
+      now: new Date("2026-09-19T15:00:00Z"),
+    });
+    expect(reason).toContain("(`resets Sep 19 at 9am (America/Chicago)`)");
+  });
+
+  /** And a message that named nothing still says so, and nothing more. */
+  it("still says no reset was named when none was", () => {
+    const { reason } = standDown({
+      detail: "Not logged in · Please run /login",
+      backoffMs: 3_600_000,
+      what: { of: "run" },
+      now,
+    });
+    expect(reason).toContain("it named no reset time, so this is the recipe's backoff");
+    expect(reason).not.toContain("could not read");
   });
 
   /** The run's own sentence, unchanged — 0031 §3 is not being restated. */
