@@ -140,6 +140,27 @@ describe("a page per plugin, once one is written", () => {
   });
 });
 
+describe("a page stays inside the budget", () => {
+  it("is no longer than the template says, and opens on a TL;DR table", async () => {
+    // The limit is read off `_template.md` ("no page over N lines") rather than
+    // written here: a number kept beside the sentence that states it is a second
+    // copy of it. The budget was prose for a month and every page written in that
+    // time was over it, so it is a test now.
+    const template = await readFile(`${pluginDoc}_template.md`, "utf8");
+    const limit = Number(/no page over (\d+) lines/.exec(template)?.[1]);
+    expect(limit, "the template no longer states a line budget").toBeGreaterThan(0);
+
+    for (const name of (await pagesUnderPlugins()).filter((n) => n !== "index.md")) {
+      const body = await readFile(pluginDoc + name, "utf8");
+      const lines = body.trimEnd().split("\n").length;
+      expect(lines, `doc/plugins/${name} is ${lines} lines against a budget of ${limit}`).toBeLessThanOrEqual(limit);
+      // The TL;DR is the first thing after the title: a table, before any heading.
+      const beforeFirstSection = body.split(/^## /m)[0]!;
+      expect(beforeFirstSection, `doc/plugins/${name} has no TL;DR table`).toMatch(/^\| \*\*Does\*\* \|/m);
+    }
+  });
+});
+
 /**
  * A section an ADR's Status block says is superseded, cited as though current.
  *
