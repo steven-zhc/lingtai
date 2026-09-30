@@ -25,35 +25,45 @@
  *
  * **Three secrets come back and this module is the only thing that sees them.**
  * The PEM is written to a `0600` file and its *path* is reported; the webhook
- * secret goes into the env file; the OAuth pair never reaches here at all,
- * because `CreatedApp` drops it at the seam. Nothing returned from this module
- * carries a key, so nothing a page renders or a log records can.
+ * secret goes into `~/.lingtai/config.yml`; the OAuth pair never reaches here
+ * at all, because `CreatedApp` drops it at the seam. Nothing returned from
+ * this module carries a key, so nothing a page renders or a log records can.
  *
  * **It ends on "usable now", and names no restart.** `githubApp()` always
  * re-read the key file per call, but read `LINGTAI_GITHUB_APP_ID` from
  * `process.env`, fixed when the process started — so a credential minted at
  * runtime worked by half, and the board that wrote it went on answering *no
- * GitHub App configured*. `@lingtai/env` now reads the id and the key path from
- * `.env.local` on disk when the environment does not set them, so the App is
- * usable the moment the file is written, in every process, including a daemon
- * that was already running. `lingtai restart` restarts the daemon and not the
- * board, and a page naming it would promise what it does not do.
+ * GitHub App configured*. `@lingtai/env` now reads the id and the key path
+ * from `~/.lingtai/config.yml` on disk when the environment does not set them
+ * (#308), so the App is usable the moment the file is written, in every
+ * process, including a daemon that was already running. `lingtai restart`
+ * restarts the daemon and not the board, and a page naming it would promise
+ * what it does not do.
+ *
+ * **`config.yml`, not `.env.local`.** The App is a fact about this machine
+ * rather than about this checkout — 0046, and `#308`'s argument, reused
+ * verbatim: an installed binary and a daemon started from `~` find no
+ * checkout to hold `.env.local` in. `.env.local` stays what this reads for
+ * the shadow check below; it is no longer where this writes.
  *
  * **And the guard reads the file too.** *Is an App already configured* decides
  * whether the button is drawn and whether a returning code is applied, and its
- * answer lives in `.env.local` — the file this writes — where `process.env`
- * only holds what was in it at start. `configuration()` is
- * that question, asked of the file, of the environment and of the log, each for
- * the one thing it knows.
+ * answer lives in `config.yml` — the file this writes — and in `.env.local`
+ * and `.env`, which this does not write but must not write *over*, silently
+ * shadowing a configuration those files still name. `process.env` alone only
+ * holds what was in it at start. `configuration()` is that question, asked of
+ * each file, of the environment and of the log, each for the one thing it
+ * knows.
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { ENV_FILE_MODE, parseEnvFile, setEnvLine } from "@lingtai/agent-env";
+import { Document, isMap, parse as parseYamlText, parseDocument } from "yaml";
+import { parseEnvFile } from "@lingtai/agent-env";
 import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
-import { PREFIX, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
+import { PREFIX, hasGitHubApp, optional, repoRoot, resolvePath, stateDir } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import {
   type AppManifest,
@@ -119,8 +129,8 @@ export type Outcome =
       name: string;
       /** The file the PEM is in. **The path, never the key.** */
       keyPath: string;
-      /** The file the three names were written to. */
-      envFile: string;
+      /** `~/.lingtai/config.yml`, where the three names were written. */
+      configFile: string;
       /** False when the hook was declared inactive, which is the ordinary case. */
       webhookActive: boolean;
       /** Something true that is not a failure — the log, when it would not take the record. */
@@ -189,7 +199,18 @@ export interface FinishOptions {
   store?: EventStore;
   /** The environment the App ID and the key path are read from and written for. */
   env?: NodeJS.ProcessEnv;
-  /** Overridable for a test that must not write into a real `.env.local`. */
+  /**
+   * `~/.lingtai/config.yml`, where the id, the key path and the webhook
+   * secret are written. Overridable for a test that must not write into a
+   * real one.
+   */
+  configFile?: string;
+  /**
+   * `.env.local` at the checkout root — no longer written, but still read for
+   * the shadow check: an App named there or in the sibling `.env` must not be
+   * silently replaced by one minted here. Overridable for the same reason
+   * `configFile` is.
+   */
   envFile?: string;
   keyPath?: string;
   fetch?: typeof fetch;
@@ -455,6 +476,7 @@ async function convertAndWrite(
 
   const env = options.env ?? process.env;
   const envFile = options.envFile ?? join(repoRoot(), ".env.local");
+  const configFile = options.configFile ?? join(stateDir(env), "config.yml");
   // **The question the page and `start/route.ts` asked, asked again where the
   // writing happens.** A `state` is good for a whole hour and neither of those
   // two checks is one this path makes, so a first tab left on GitHub's naming
@@ -501,7 +523,7 @@ async function convertAndWrite(
       previous.finished ? null : minted,
     );
   }
-  const already = await configuration({ env, envFile, store: options.store ?? eventStore });
+  const already = await configuration({ env, envFile, configFile, store: options.store ?? eventStore });
   if (already.configured !== null) {
     return refuse(
       `a GitHub App is already configured here — app ${already.configured.appId}, ${
@@ -631,15 +653,28 @@ async function convertAndWrite(
   }
 
   try {
-    await writeEnv(
-      envFile,
-      {
-        [APP_ID_VAR]: String(created.id),
-        [KEY_PATH_VAR]: keyPath,
-        [WEBHOOK_SECRET_VAR]: created.webhookSecret,
-      },
-      APP_ID_VAR,
-    );
+    // **Asked again, of all three sources, one statement before the write.**
+    // `writeGithubConfig`'s own re-read only watches `configFile` — the file
+    // it is about to change — so it cannot see an id that appeared in
+    // `.env.local` or `.env` during the round trip this conversion just made.
+    // Asking `configuration()` again here is what keeps that window the same
+    // size it was for the single file this used to be.
+    const justBefore = await configuration({ env, envFile, configFile, store: options.store ?? eventStore });
+    if (justBefore.configured !== null) {
+      throw new Error(
+        `app ${justBefore.configured.appId} is already configured — ${
+          justBefore.configured.where === "environment"
+            ? "in this process's environment"
+            : `in ${justBefore.configured.file}`
+        } — named there between this page's check and this write, and replacing it would send Lingtai ` +
+          "to a different App",
+      );
+    }
+    await writeGithubConfig(configFile, {
+      appId: String(created.id),
+      keyPath,
+      webhookSecret: created.webhookSecret,
+    });
   } catch (err) {
     // Two of the three values can be written by hand from this sentence. The
     // third cannot: GitHub generates the webhook secret during the conversion
@@ -650,13 +685,13 @@ async function convertAndWrite(
     // why. So the refusal names it and gives the one remedy there is.
     return refuse(
       `the App was created — ${created.name} (app ${created.id}) — and its key is at ${keyPath}, ` +
-        `but ${envFile} could not be written: ${(err as Error).message}. Add these two lines to it ` +
-        `by hand: ${APP_ID_VAR}=${created.id} and ${KEY_PATH_VAR}=${keyPath}. The third value is ` +
-        `lost: ${WEBHOOK_SECRET_VAR} was generated by GitHub during this exchange and is handed ` +
-        "back once, so it is not in that file and cannot be read off the App's page — and without " +
-        "it every delivery to /api/webhook is refused. Set a new webhook secret on the App's own " +
-        "page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write " +
-        `that one here as ${WEBHOOK_SECRET_VAR}.` +
+        `but ${configFile} could not be written: ${(err as Error).message}. Add this to it by hand, ` +
+        `under a github: section: app_id: "${created.id}" and private_key_path: ${JSON.stringify(keyPath)}. ` +
+        "The third value is lost: the webhook secret was generated by GitHub during this exchange " +
+        "and is handed back once, so it is not in that file and cannot be read off the App's page — " +
+        "and without it every delivery to /api/webhook is refused. Set a new webhook secret on the " +
+        "App's own page (Settings → Developer settings → GitHub Apps → General → Webhook secret), " +
+        "and write that one here as webhook_secret." +
         andTheLog,
       minted,
     );
@@ -678,7 +713,7 @@ async function convertAndWrite(
     slug: created.slug,
     name: created.name,
     keyPath,
-    envFile,
+    configFile,
     webhookActive: attempt.webhookUrl !== null,
     warning,
     at: now,
@@ -725,71 +760,99 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/** `~/.lingtai/config.yml`'s own mode, since #186 — a database URL is not the only credential in it now. */
+const GITHUB_CONFIG_MODE = 0o600;
+
 /**
- * Three lines into Lingtai's own env file, and every other line left alone.
+ * `github.app_id` in `path`'s YAML, or null where the file is absent, does
+ * not parse, is not a mapping, or names none. The `keep` guard for
+ * `writeGithubConfig` below, and nothing else — a caller that wants to *read*
+ * the App wants `@lingtai/env`'s `githubApp()`, which this module does not
+ * import for the reason `namedIn` below does not either: reading fresh from
+ * disk here is deliberately not the same read as the rest of the process's.
+ */
+function githubAppIdIn(text: string): string | null {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0 || doc.contents === null || !isMap(doc.contents)) return null;
+  const github = doc.get("github", true);
+  if (github === undefined || !isMap(github)) return null;
+  const value = github.get("app_id");
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/**
+ * The id, the key path and the webhook secret into `~/.lingtai/config.yml`'s
+ * `github:` section (#308) — the sibling of what used to be `writeEnv`, on a
+ * YAML document rather than dotenv lines, and keeping every one of its
+ * guarantees:
  *
- * `setEnvLine` is `lingtai env set`'s, so a file with comments in it stays a
- * file with comments in it — and `client_id` and `client_secret` are not here
- * because they never reached this module: `CreatedApp` drops them.
+ * - refuses when `github.app_id` is already set (`keep`, below);
+ * - the file is read once more as late as there is anywhere to put it, and
+ *   anything that changed in between is refused rather than overwritten —
+ *   this narrows the race and does not close it, exactly as `writeEnv`'s did;
+ * - writes beside and renames over, as `apps/cli/src/init.ts`'s own
+ *   `writeConfig` does, so an interruption mid-write leaves the old file or
+ *   the new one, never half of either;
+ * - edits a `parseDocument` tree, so `database:`, `runtime:` and `projects:`
+ *   survive with their comments;
+ * - `chmod 0600` **every time**, not only when the file is created — a
+ *   machine whose `config.yml` the wizard wrote (`packages/conductor/src/
+ *   wizard.ts`) can be `0644` from before this write, and a webhook secret
+ *   must not land in it at that mode.
  *
- * The file is created `0600` when it did not exist. Its mode is not changed
- * when it did: that mode is the operator's, and a command that widened a file
- * somebody had narrowed, while claiming to secure it, would be worse than one
- * that never touched it (`agent-env`'s own rule).
- *
- * **`keep` is the guard where the guard belongs.** `configuration()` asks this
- * same file whether an App is configured, and refuses the whole flow when it
- * says yes — but that read is minutes and a round trip to GitHub away from this
- * write, and what happens in between is somebody adding the two lines by hand
- * because the manifest flow would not work for them. So the line that must not
- * be replaced is named here and asked of the bytes this function itself read,
- * minutes later than the page's check and one statement before the write.
- *
- * **It is a read and a write, and those are two syscalls: this narrows the
- * race and does not close it.** There is no compare-and-swap for a file, and a
- * whole-file rewrite loses whatever was written between the two — so the bytes
- * are read once more as late as there is anywhere to put it, anything that
- * changed in between is refused rather than overwritten, and a file that was
- * absent is created exclusively (`wx`), which a second creator loses. A person
- * saving `.env.local` in an editor inside the remaining window gets a sentence
- * they can act on instead of a silent loss.
+ * **`keep` is the guard where the guard belongs.** `configuration()` asks
+ * this same file whether an App is configured, and refuses the whole flow
+ * when it says yes — but that read is minutes and a round trip to GitHub away
+ * from this write, and what happens in between is somebody adding the lines
+ * by hand because the manifest flow would not work for them. So the check is
+ * asked again here, of the bytes this function itself reads, one statement
+ * before the write.
  *
  * **What makes two returns of this flow safe is not this guard.** It is the
- * `converting` serialisation in `createCreationSession`: one conversion writes
- * at a time, so the re-read above is never racing another return of Lingtai's
- * own. That serialisation is load-bearing and nothing here makes it redundant.
+ * `converting` serialisation in `createCreationSession`: one conversion
+ * writes at a time, so the re-read here is never racing another return of
+ * Lingtai's own. That serialisation is load-bearing and nothing here makes it
+ * redundant.
  */
-async function writeEnv(file: string, values: Record<string, string>, keep: string): Promise<void> {
-  const before = await readOrNull(file);
-  const created = before === null;
+async function writeGithubConfig(
+  path: string,
+  values: { appId: string; keyPath: string; webhookSecret: string },
+): Promise<void> {
+  const before = await readOrNull(path);
   const refuseKept = (text: string) => {
-    if (named(parseEnvFile(text).values, keep) !== null) {
+    if (githubAppIdIn(text) !== null) {
       throw new Error(
-        `${keep} is already set in ${file} — it was written between this page's check and this write, ` +
-          "and replacing it would send Lingtai to a different App",
+        `github.app_id is already set in ${path} — it was written between this page's check and this ` +
+          "write, and replacing it would send Lingtai to a different App",
       );
     }
   };
   if (before !== null) refuseKept(before);
 
-  let text = before ?? header();
-  for (const [name, value] of Object.entries(values)) text = setEnvLine(text, name, value);
-
-  await mkdir(dirname(file), { recursive: true });
+  await mkdir(dirname(path), { recursive: true });
   // As late as there is anywhere to put it. What arrived in between is
-  // somebody else's line, and rewriting the whole file is how it is lost.
-  const nowOnDisk = await readOrNull(file);
+  // somebody else's write, and rewriting the whole file is how it is lost.
+  const nowOnDisk = await readOrNull(path);
   if (nowOnDisk !== before) {
     if (nowOnDisk !== null) refuseKept(nowOnDisk);
     throw new Error(
-      `${file} changed between this write's own read of it and the write itself — nothing was ` +
+      `${path} changed between this write's own read of it and the write itself — nothing was ` +
         "written, because rewriting the whole file would have lost that change",
     );
   }
-  // `wx` on a file that was not there: two creators race and the second is
-  // refused by the kernel rather than by a check it can outrun.
-  await writeFile(file, text, created ? { mode: ENV_FILE_MODE, flag: "wx" } : { mode: ENV_FILE_MODE });
-  if (created) await chmod(file, ENV_FILE_MODE);
+
+  const doc = before === null ? new Document({}) : parseDocument(before);
+  if (doc.errors.length > 0) {
+    throw new Error(`${path} does not parse as YAML (${doc.errors[0]!.message}) — fix it by hand and try again`);
+  }
+  if (doc.contents === null || !isMap(doc.contents)) doc.contents = doc.createNode({});
+  doc.set("github", { app_id: values.appId, private_key_path: values.keyPath, webhook_secret: values.webhookSecret });
+
+  const partial = `${path}.${process.pid}.partial`;
+  await writeFile(partial, doc.toString(), { mode: GITHUB_CONFIG_MODE });
+  await chmod(partial, GITHUB_CONFIG_MODE);
+  await rename(partial, path);
+  await chmod(path, GITHUB_CONFIG_MODE);
 }
 
 /**
@@ -812,13 +875,6 @@ async function readOrNull(file: string): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function header(): string {
-  return (
-    "# Lingtai's own values. Copy .env.example beside it for everything else.\n" +
-    "# The GitHub App lines below were written by the board's setup page (#169).\n"
-  );
 }
 
 // ------------------------------------------------------- what to offer ----
@@ -845,11 +901,12 @@ export interface Configured {
   /** The App's name on GitHub, when the log agrees this is that App. */
   slug: string | null;
   /**
-   * Which source named it: the process environment, or an env file on disk.
-   * Both are read per call by `githubApp()`, so either is usable as it stands.
+   * Which source named it: the process environment, an env file on disk, or
+   * `~/.lingtai/config.yml`. All three are read per call by `githubApp()`, so
+   * any of them is usable as it stands.
    */
-  where: "environment" | "file";
-  /** The env file, when that is what says so — the page names it. */
+  where: "environment" | "file" | "config.yml";
+  /** The file, when one is what says so — the page names it. */
   file: string | null;
 }
 
@@ -888,6 +945,7 @@ export interface Configured {
 async function configuration(options: {
   env: NodeJS.ProcessEnv;
   envFile: string;
+  configFile: string;
   store: EventStore;
 }): Promise<{
   configured: Configured | null;
@@ -903,11 +961,11 @@ async function configuration(options: {
   }
 
   // **Both files `@lingtai/env` reads, and in its order.** It loads
-  // `.env.local` and then `.env`, first to name a value winning — so an id
-  // added by hand to `.env` after this process started is a real configuration
-  // that this process's environment cannot see, and writing `.env.local` would
-  // shadow it rather than replace it: the same accident with an extra file in
-  // it. The write target is still only the first.
+  // `.env.local` and then `.env`, first to name a value winning — so an id in
+  // either is a real configuration that writing `config.yml` must not
+  // silently shadow. Neither is the write target any more (#308): this flow
+  // writes `config.yml`, behind both in the election, and asks these two only
+  // so it never replaces what they still name.
   const inTarget = await namedIn(options.envFile, APP_ID_VAR);
   const inFiles = inTarget ?? (await namedIn(join(dirname(options.envFile), ".env"), APP_ID_VAR));
   const envAppId = optional(APP_ID_VAR, options.env) ?? null;
@@ -916,8 +974,12 @@ async function configuration(options: {
   // `.env.local` answered *the environment has one* while the environment's own
   // id was null — and the id, the slug and the install link all went with it.
   const inEnvironment = envAppId !== null && hasGitHubApp(options.env, []);
+  // The third source, and asked last: a `config.yml` naming an id is a real
+  // configuration too, and this is the one `convertAndWrite` is about to write
+  // — so the guard that stops it minting a second App has to see the first.
+  const inConfig = await namedInGithubConfig(options.configFile);
 
-  const appId = inEnvironment ? envAppId : (inFiles?.value ?? null);
+  const appId = inEnvironment ? envAppId : (inFiles?.value ?? inConfig?.value ?? null);
   // **The id is the configuration's and the slug is the log's**, so the slug
   // describes this App only when the log is about this App. An operator who
   // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
@@ -932,7 +994,9 @@ async function configuration(options: {
       ? { appId: envAppId, slug, where: "environment", file: null }
       : inFiles !== null
         ? { appId: inFiles.value, slug, where: "file", file: inFiles.file }
-        : null;
+        : inConfig !== null
+          ? { appId: inConfig.value, slug, where: "config.yml", file: inConfig.file }
+          : null;
   return { configured, minted, unanswered };
 }
 
@@ -941,7 +1005,7 @@ async function configuration(options: {
  *
  * **A named id is enough here, where the environment needs both.**
  * `hasGitHubApp` asks for an id *and* a key because that is what it takes to
- * use one; this reads the file the flow *writes*, and a half-finished
+ * use one; this reads the file the flow used to write, and a half-finished
  * configuration in it is still a line that would be replaced by a different
  * App's.
  */
@@ -950,6 +1014,28 @@ async function namedIn(file: string, name: string): Promise<{ value: string; fil
   if (text === null) return null;
   const value = named(parseEnvFile(text).values, name);
   return value === null ? null : { value, file };
+}
+
+/**
+ * `github.app_id` from `config.yml`, with the file it said it in — or null,
+ * including where the file exists and does not parse: **a file that cannot be
+ * read says nothing**, the same rule `@lingtai/env`'s `appValues` follows —
+ * `convertAndWrite`'s refusal for an unreadable log already covers the case
+ * where nothing here can be trusted either way, and this function's callers
+ * only ever ask *is there already an App*, never *is this machine healthy*.
+ */
+async function namedInGithubConfig(path: string): Promise<{ value: string; file: string } | null> {
+  const text = await readOrNull(path);
+  if (text === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = parseYamlText(text);
+  } catch {
+    return null;
+  }
+  const github = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["github"] : undefined;
+  const value = github !== null && typeof github === "object" ? (github as Record<string, unknown>)["app_id"] : undefined;
+  return typeof value === "string" && value !== "" ? { value, file: path } : null;
 }
 
 export interface Offer {
@@ -1015,7 +1101,9 @@ export interface Offer {
 export async function offerCreation(
   options: {
     env?: NodeJS.ProcessEnv;
-    /** The write target, which is also what `configured` is read from. */
+    /** `~/.lingtai/config.yml`, the write target — one of the three `configured` is read from. */
+    configFile?: string;
+    /** `.env.local` at the checkout root — not written, but still one of the three `configured` is read from. */
     envFile?: string;
     store?: EventStore;
     session?: CreationSession;
@@ -1024,10 +1112,12 @@ export async function offerCreation(
 ): Promise<Offer> {
   const env = options.env ?? process.env;
   const envFile = options.envFile ?? join(repoRoot(), ".env.local");
+  const configFile = options.configFile ?? join(stateDir(env), "config.yml");
   const session = options.session ?? creation;
   const { configured, minted, unanswered } = await configuration({
     env,
     envFile,
+    configFile,
     store: options.store ?? eventStore,
   });
   const outcome = session.outcome();

@@ -15,6 +15,7 @@
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
 import { createMemoryEventStore } from "@lingtai/event-store/memory";
@@ -27,6 +28,18 @@ import {
   createCreationSession,
   offerCreation,
 } from "../src/create-app.ts";
+
+/** The `github:` section a successful write leaves in `config.yml`, or null before one. */
+async function readGithubSection(configFile: string): Promise<Record<string, string> | null> {
+  let text: string;
+  try {
+    text = await readFile(configFile, "utf8");
+  } catch {
+    return null;
+  }
+  const parsed = parseYaml(text) as Record<string, unknown>;
+  return (parsed?.["github"] as Record<string, string> | undefined) ?? null;
+}
 
 const PEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAz9\n-----END RSA PRIVATE KEY-----\n";
 
@@ -48,18 +61,34 @@ const asText = (events: readonly unknown[]): string =>
 const conversion = (body: unknown = CONVERSION, status = 200): typeof fetch =>
   (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
 
+/** Whether a file exists — used to assert a write never happened. */
+const there = (path: string) =>
+  readFile(path, "utf8").then(
+    () => true,
+    () => false,
+  );
+
 /**
- * A temporary home for the two files this writes, never the real ones.
+ * A temporary home for the three files this reads and writes, never the real
+ * ones.
  *
- * **Every call that reaches `configuration()` passes this `envFile`, including
- * the ones that write nothing.** The parameter is optional and its default is
- * this repository's `.env.local`, so a `finish` or an `offerCreation` that
- * leaves it out is not reading *no* App — it is reading whatever App the
- * machine running the suite happens to be configured with (#224).
+ * **Every call that reaches `configuration()` or `writeGithubConfig` passes
+ * `envFile` and `configFile`, including the ones that write nothing.** Both
+ * parameters are optional and their defaults are this repository's own
+ * `.env.local` and this machine's own `~/.lingtai/config.yml`, so a `finish`
+ * or an `offerCreation` that leaves either out is not reading *no* App — it
+ * is reading whatever App the machine running the suite happens to be
+ * configured with (#224), and a call that reaches a write with the default
+ * `configFile` left in would write into that real file.
  */
 async function workspace() {
   const dir = await mkdtemp(join(tmpdir(), "lingtai-app-"));
-  return { dir, keyPath: join(dir, "agent.private-key.pem"), envFile: join(dir, ".env.local") };
+  return {
+    dir,
+    keyPath: join(dir, "agent.private-key.pem"),
+    envFile: join(dir, ".env.local"),
+    configFile: join(dir, "config.yml"),
+  };
 }
 
 /** Everything the process said, so a test can grep it for a secret. */
@@ -123,7 +152,7 @@ describe("the form GitHub is sent", () => {
   });
 
   it("is finished by the state GitHub reads off that URL", async () => {
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const session = createCreationSession();
     const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
 
@@ -139,6 +168,7 @@ describe("the form GitHub is sent", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
     });
 
     expect(outcome.ok).toBe(true);
@@ -229,14 +259,8 @@ describe("a return from a tab the operator forgot", () => {
   const APP_111 = { ...CONVERSION, id: 111, slug: "lingtai-first", name: "lingtai-first" };
   const APP_222 = { ...CONVERSION, id: 222, slug: "lingtai-second", name: "lingtai-second" };
 
-  const there = (path: string) =>
-    readFile(path, "utf8").then(
-      () => true,
-      () => false,
-    );
-
   it("leaves the App that was created second configured, and writes nothing for the first", async () => {
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const store = createMemoryEventStore();
     const session = createCreationSession();
     const at = new Date("2026-09-15T10:00:00Z");
@@ -253,6 +277,7 @@ describe("a return from a tab the operator forgot", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
       now: new Date(at.getTime() + 60_000),
     });
     expect(made.ok).toBe(true);
@@ -267,6 +292,7 @@ describe("a return from a tab the operator forgot", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
       now: new Date(at.getTime() + 20 * 60_000),
     });
 
@@ -274,9 +300,8 @@ describe("a return from a tab the operator forgot", () => {
     expect(late.ok === false && late.refusal).toContain("222");
     expect(late.ok === false && late.refusal).toContain("nothing was written");
     // The three places the second App's configuration lives, all untouched.
-    const env = await readFile(envFile, "utf8");
-    expect(env).toContain(`${APP_ID_VAR}="222"`);
-    expect(env).not.toContain(`${APP_ID_VAR}="111"`);
+    const github = await readGithubSection(configFile);
+    expect(github?.["app_id"]).toBe("222");
     expect(await there(keyPath.replace(/\.pem$/, ".111.pem"))).toBe(false);
     const events = await store.readAll(0n, 100);
     expect(events.map((e) => (e.data as { appId: string }).appId)).toEqual(["222"]);
@@ -301,10 +326,10 @@ describe("a return from a tab the operator forgot", () => {
    * where the key would be fetched.
    */
   it("refuses the second tab when the first minted an App and every write failed", async () => {
-    const { dir, keyPath } = await workspace();
+    const { dir, keyPath, envFile } = await workspace();
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory\n");
-    const envFile = join(blocker, ".env.local");
+    const configFile = join(blocker, "config.yml");
     // The Postgres blip: readable, and it will not take an append.
     const half = {
       read: async () => [],
@@ -328,13 +353,14 @@ describe("a return from a tab the operator forgot", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
       now: new Date(at.getTime() + 10_000),
     });
 
-    // Minted, and nothing landed: not the env file, not the log.
+    // Minted, and nothing landed: not config.yml, not the log.
     expect(first.ok).toBe(false);
     expect(first.ok === false && first.minted).toEqual({ appId: "111", slug: "lingtai-first" });
-    expect(await there(envFile)).toBe(false);
+    expect(await there(configFile)).toBe(false);
 
     // Postgres comes back, and twenty seconds later tab B returns.
     let exchanges = 0;
@@ -352,6 +378,7 @@ describe("a return from a tab the operator forgot", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
       now: new Date(at.getTime() + 30_000),
     });
 
@@ -365,7 +392,7 @@ describe("a return from a tab the operator forgot", () => {
 
     // And the page names 111 on this process's memory alone — the log holds
     // nothing — while leaving the door open (#169).
-    const offer = await offerCreation({ env: {}, envFile, store: half, session });
+    const offer = await offerCreation({ env: {}, envFile, configFile, store: half, session });
     expect(offer.offered).toBe(true);
     expect(offer.minted).toEqual({ appId: "111", slug: "lingtai-first" });
   });
@@ -376,7 +403,7 @@ describe("a return from a tab the operator forgot", () => {
    * close the door the ticket says must stay open.
    */
   it("lets through a form posted after the stranding, and still names the stranded App", async () => {
-    const { dir, keyPath } = await workspace();
+    const { dir, keyPath, envFile } = await workspace();
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory\n");
     const at = new Date("2026-09-15T10:00:00Z");
@@ -392,7 +419,8 @@ describe("a return from a tab the operator forgot", () => {
       store,
       env: {},
       keyPath,
-      envFile: join(blocker, ".env.local"),
+      envFile,
+      configFile: join(blocker, "config.yml"),
       now: new Date(at.getTime() + 10_000),
     });
     expect(first.ok === false && first.minted).toEqual({ appId: "111", slug: "lingtai-first" });
@@ -403,8 +431,8 @@ describe("a return from a tab the operator forgot", () => {
       redirectUrl: "http://127.0.0.1:3200/created",
       now: new Date(at.getTime() + 60_000),
     });
-    const { envFile } = await workspace();
-    expect((await offerCreation({ env: {}, envFile, store, session })).minted).toEqual({
+    const { envFile: envFile2, configFile } = await workspace();
+    expect((await offerCreation({ env: {}, envFile: envFile2, configFile, store, session })).minted).toEqual({
       appId: "111",
       slug: "lingtai-first",
     });
@@ -416,12 +444,13 @@ describe("a return from a tab the operator forgot", () => {
       store,
       env: {},
       keyPath,
-      envFile,
+      envFile: envFile2,
+      configFile,
       now: new Date(at.getTime() + 90_000),
     });
 
     expect(second.ok).toBe(true);
-    expect(await readFile(envFile, "utf8")).toContain(`${APP_ID_VAR}="222"`);
+    expect((await readGithubSection(configFile))?.["app_id"]).toBe("222");
   });
 
   /**
@@ -462,7 +491,7 @@ describe("a return from a tab the operator forgot", () => {
   });
 
   it("takes a form posted after the App the log records, since the page named it first", async () => {
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const at = new Date("2026-09-15T10:00:00Z");
     const store = createMemoryEventStore({ now: () => at });
     await store.append(GITHUB_APP_STREAM, 0, [
@@ -488,6 +517,7 @@ describe("a return from a tab the operator forgot", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
       now: new Date(at.getTime() + 120_000),
     });
 
@@ -531,7 +561,7 @@ describe("a return from a tab the operator forgot", () => {
  */
 describe("a return that arrives twice", () => {
   it("hands the reload the first exchange's answer, and exchanges the code once", async () => {
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const store = createMemoryEventStore();
     const session = createCreationSession();
     const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
@@ -558,6 +588,7 @@ describe("a return that arrives twice", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
     };
     const first = session.finish({ ...returning });
     const reload = session.finish({ ...returning });
@@ -569,13 +600,13 @@ describe("a return that arrives twice", () => {
     expect(second).toBe(settled);
     // The screen reads this, and it is not a refusal.
     expect(session.outcome()).toBe(settled);
-    expect(await readFile(envFile, "utf8")).toContain(`${APP_ID_VAR}="1234567"`);
+    expect((await readGithubSection(configFile))?.["app_id"]).toBe("1234567");
   });
 });
 
 describe("what the six returned values become", () => {
   const finish = async () => {
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const store = createMemoryEventStore();
     const session = createCreationSession();
     const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
@@ -589,33 +620,35 @@ describe("what the six returned values become", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
     });
     capture.stop();
-    return { outcome, store, keyPath, envFile, said: capture.said() };
+    return { outcome, store, keyPath, envFile, configFile, said: capture.said() };
   };
 
-  it("writes the id, the key path and the webhook secret, and the key at 0600", async () => {
-    const { outcome, keyPath, envFile } = await finish();
+  it("writes the id, the key path and the webhook secret, and config.yml at 0600", async () => {
+    const { outcome, keyPath, configFile } = await finish();
 
     expect(outcome.ok).toBe(true);
     expect(await readFile(keyPath, "utf8")).toBe(PEM);
     // `writeFile`'s mode is narrowed by a umask, so the mode is asked for
     // outright. This is the assertion that says it was.
     expect((await stat(keyPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(configFile)).mode & 0o777).toBe(0o600);
 
-    const env = await readFile(envFile, "utf8");
-    expect(env).toContain(`${APP_ID_VAR}="1234567"`);
-    expect(env).toContain(`${KEY_PATH_VAR}=${JSON.stringify(keyPath)}`);
-    expect(env).toContain(`${WEBHOOK_SECRET_VAR}="webhook-secret-abcdef"`);
+    const github = await readGithubSection(configFile);
+    expect(github?.["app_id"]).toBe("1234567");
+    expect(github?.["private_key_path"]).toBe(keyPath);
+    expect(github?.["webhook_secret"]).toBe("webhook-secret-abcdef");
   });
 
   /** A secret kept for a use that does not exist is a secret with no owner. */
   it("writes neither client_id nor client_secret anywhere", async () => {
-    const { envFile, store, said } = await finish();
-    const env = await readFile(envFile, "utf8");
+    const { configFile, store, said } = await finish();
+    const config = await readFile(configFile, "utf8");
     const log = asText(await store.readAll(0n, 100));
 
-    for (const written of [env, log, said]) {
+    for (const written of [config, log, said]) {
       expect(written).not.toContain("oauth-secret-never-written");
       expect(written).not.toContain("Iv1.0123456789abcdef");
       expect(written).not.toContain("client_secret");
@@ -647,13 +680,13 @@ describe("what the six returned values become", () => {
 
   /**
    * The webhook secret is generated by GitHub during the conversion and handed
-   * back once. If the env file will not take it, it is gone — so the refusal
-   * has to name it, or the operator writes the two lines it *does* name and is
+   * back once. If config.yml will not take it, it is gone — so the refusal
+   * has to name it, or the operator writes the lines it *does* name and is
    * left with an active hook signed by a secret that exists nowhere.
    */
-  /** The env file cannot be written: a directory `mkdir` will refuse to make. */
+  /** config.yml cannot be written: a directory `mkdir` will refuse to make. */
   const unwritable = async () => {
-    const { dir, keyPath } = await workspace();
+    const { dir, keyPath, envFile } = await workspace();
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory\n");
     const store = createMemoryEventStore();
@@ -672,17 +705,18 @@ describe("what the six returned values become", () => {
       store,
       env: {},
       keyPath,
-      envFile: join(blocker, ".env.local"),
+      envFile,
+      configFile: join(blocker, "config.yml"),
     });
     return { outcome, store, session };
   };
 
-  it("names the webhook secret, and its remedy, when the env file cannot be written", async () => {
+  it("names the webhook secret, and its remedy, when config.yml cannot be written", async () => {
     const { outcome } = await unwritable();
 
     expect(outcome.ok).toBe(false);
     const refusal = outcome.ok === false ? outcome.refusal : "";
-    expect(refusal).toContain(WEBHOOK_SECRET_VAR);
+    expect(refusal).toContain("webhook_secret");
     expect(refusal).toContain("Set a new webhook secret on the App's own page");
     // Named, and never quoted: a refusal is rendered on a page and kept in the
     // session, which is not where a live secret belongs.
@@ -698,7 +732,7 @@ describe("what the six returned values become", () => {
    * first, and the same refusal again, with the record that exists to stop a
    * second App holding none of them.
    */
-  it("records the App that was minted even though the env file refused it", async () => {
+  it("records the App that was minted even though config.yml refused it", async () => {
     const { outcome, store, session } = await unwritable();
     const events = await store.readAll(0n, 100);
 
@@ -710,9 +744,9 @@ describe("what the six returned values become", () => {
 
     // In this process and in a restarted one, the second on the log alone: the
     // App is named, and creation stays offered (#169).
-    const { envFile } = await workspace();
+    const { envFile, configFile } = await workspace();
     for (const asked of [session, createCreationSession()]) {
-      const offer = await offerCreation({ env: {}, envFile, store, session: asked });
+      const offer = await offerCreation({ env: {}, envFile, configFile, store, session: asked });
       expect(offer.offered).toBe(true);
       // **`minted` and not `configured`.** Nothing was written — that is what
       // this test just made happen — so a page that read the record as a
@@ -763,7 +797,7 @@ describe("what the six returned values become", () => {
    * the page *will* offer another, and the operator is the only guard left.
    */
   it("says the log holds no record either, when the log is unreachable too", async () => {
-    const { dir, keyPath } = await workspace();
+    const { dir, keyPath, envFile } = await workspace();
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory\n");
     const half = {
@@ -783,7 +817,8 @@ describe("what the six returned values become", () => {
       store: half,
       env: {},
       keyPath,
-      envFile: join(blocker, ".env.local"),
+      envFile,
+      configFile: join(blocker, "config.yml"),
     });
 
     expect(outcome.ok === false && outcome.refusal).toContain("The log did not record it either");
@@ -803,7 +838,7 @@ describe("what the six returned values become", () => {
    * the only copy of one credential in order to store another.
    */
   it("never writes over a key that is already there", async () => {
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     await writeFile(keyPath, "-----BEGIN RSA PRIVATE KEY-----\nSOMEBODY ELSE\n", { mode: 0o600 });
     const session = createCreationSession();
     const begun = session.begin({ name: "x", redirectUrl: "http://127.0.0.1:3200/created" });
@@ -817,6 +852,7 @@ describe("what the six returned values become", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
     });
 
     expect(await readFile(keyPath, "utf8")).toContain("SOMEBODY ELSE");
@@ -976,12 +1012,14 @@ describe("what the screen offers", () => {
    * rewritten, and the refusal is the one that names the webhook secret.
    */
   it("refuses a line that appeared during the conversion, and leaves it exactly as it was", async () => {
-    const { envFile, keyPath } = await workspace();
+    const { envFile, keyPath, configFile } = await workspace();
     const byHand = `# added by hand while GitHub was answering\n${APP_ID_VAR}=999\n${KEY_PATH_VAR}=${keyPath}\n`;
     const session = createCreationSession();
     const begun = session.begin({ name: "lingtai-x", redirectUrl: "http://127.0.0.1:3200/created" });
     // The conversion's round trip is the window, so this is where the hand
-    // edit lands: after the page's check and before the write.
+    // edit lands: after the page's check and before the write — into
+    // `.env.local`, not `config.yml`, since that is where `configuration()`'s
+    // shadow check will see it.
     const slowly = (async () => {
       await writeFile(envFile, byHand);
       return new Response(JSON.stringify(CONVERSION), { status: 200 });
@@ -996,12 +1034,17 @@ describe("what the screen offers", () => {
       env: {},
       keyPath: join(await mkdtemp(join(tmpdir(), "lingtai-key-")), "agent.private-key.pem"),
       envFile,
+      configFile,
     });
 
     expect(outcome.ok).toBe(false);
-    expect(outcome.ok === false && outcome.refusal).toContain(APP_ID_VAR);
-    // The operator's own lines, byte for byte.
+    // `configuration()`, asked again right before the write, sees it —
+    // `writeGithubConfig`'s own re-read only watches `configFile`, which
+    // nothing touched here.
+    expect(outcome.ok === false && outcome.refusal).toContain("999");
+    // The operator's own lines, byte for byte, and config.yml untouched.
     expect(await readFile(envFile, "utf8")).toBe(byHand);
+    expect(await there(configFile)).toBe(false);
     // The App was minted before that write could fail, so the refusal carries
     // it and the webhook secret's remedy is named — it is handed back once.
     expect(outcome.ok === false && outcome.minted).toEqual({ appId: "1234567", slug: "lingtai-steven" });
@@ -1017,7 +1060,7 @@ describe("what the screen offers", () => {
   it("does not put the log's slug beside an environment naming a different App", async () => {
     const log = store();
     const session = createCreationSession();
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
     await session.finish({
       code: "fresh",
@@ -1028,6 +1071,7 @@ describe("what the screen offers", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
     });
 
     const offer = await offerCreation({
@@ -1078,7 +1122,7 @@ describe("what the screen offers", () => {
   it("sees the App it has just written, in a process whose environment predates it", async () => {
     const log = store();
     const session = createCreationSession();
-    const { keyPath, envFile } = await workspace();
+    const { keyPath, envFile, configFile } = await workspace();
     const begun = session.begin({ name: "lingtai-steven", redirectUrl: "http://127.0.0.1:3200/created" });
     await session.finish({
       code: "fresh",
@@ -1089,18 +1133,19 @@ describe("what the screen offers", () => {
       env: {},
       keyPath,
       envFile,
+      configFile,
     });
 
     // A fresh session, as a restarted board would have: the environment is
     // still empty and the offer is still refused.
-    const offer = await offerCreation({ env: {}, envFile, store: log, session: createCreationSession() });
+    const offer = await offerCreation({ env: {}, envFile, configFile, store: log, session: createCreationSession() });
 
     expect(offer.offered).toBe(false);
     expect(offer.configured).toEqual({
       appId: "1234567",
       slug: "lingtai-steven",
-      where: "file",
-      file: envFile,
+      where: "config.yml",
+      file: configFile,
     });
     expect(offer.minted).toEqual({ appId: "1234567", slug: "lingtai-steven" });
     expect(offer.installUrl).toBe("https://github.com/apps/lingtai-steven/installations/new");

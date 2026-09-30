@@ -26,7 +26,7 @@
  * claim that it fixes both: #167's defect, one surface along.
  */
 import Link from "next/link";
-import { type Offer, offerCreation } from "@lingtai/conductor/create-app";
+import { type Configured as ConfiguredApp, type Offer, offerCreation } from "@lingtai/conductor/create-app";
 
 export const dynamic = "force-dynamic";
 
@@ -200,7 +200,7 @@ function Created({
           private key: <code>{outcome.keyPath}</code>, mode <code>0600</code>
         </li>
         <li>
-          <code>LINGTAI_GITHUB_APP_ID</code> and the webhook secret: <code>{outcome.envFile}</code>
+          the id and the webhook secret: <code>{outcome.configFile}</code>
         </li>
         <li>
           webhooks:{" "}
@@ -210,11 +210,11 @@ function Created({
         </li>
       </ul>
       {outcome.warning === null ? null : <p className="refusal">{outcome.warning}</p>}
-      {/* No restart here. The App ID and the key path are read from the env
-          file on every call, so this board and a running daemon both have the
+      {/* No restart here. The App ID and the key path are read from config.yml
+          on every call, so this board and a running daemon both have the
           App from the moment it was written. */}
       <p className="note">
-        This board and a daemon that is already running use it from now on — the env file is read
+        This board and a daemon that is already running use it from now on — config.yml is read
         on every call, so nothing has to be restarted.
       </p>
       <p className="note">
@@ -238,7 +238,7 @@ function Configured({
   configured,
   installUrl,
 }: {
-  configured: { appId: string; slug: string | null; where: "environment" | "file"; file: string | null };
+  configured: ConfiguredApp;
   installUrl: string | null;
 }) {
   return (
