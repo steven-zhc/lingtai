@@ -29,16 +29,16 @@ plugin is a red test rather than something somebody has to remember.
 | [`agent`](agent.md) | `design` `implement` `review` `proposed` `merge` | Buys an agent a turn — to draft, to write, to read the diff cold, or to answer. |
 | [`file`](file.md) | `design` | Keeps the design the step made, as a file in the worktree, and answers with the path. |
 | [`file-brief`](file-brief.md) | `implement` | Reads that design back from where the `file:` kept it, and briefs the actions written after it. |
-| `watch` | `proposed` | Holds the pass when the diff touches a path you named. |
+| [`watch`](watch.md) | `proposed` | Holds the pass when the diff touches a path you named. |
 | [`human`](human.md) | `proposed` | Stops for a person, and asks them the question you wrote. |
 | [`judge`](judge.md) | `proposed` | Answers *what now* when a step refused, in place of a person. |
-| `worktree` | `admit` | Cuts the branch and the worktree this pass owns. |
-| `queue` | `claim` | Picks which ticket the pass is about. |
-| `merge` | `merge` | Lands the branch on the base, with the base's own verify. |
-| `close` | `end` | Closes the issue the pass was about. |
-| `labels` | `end` | Sets the issue's labels, replacing Lingtai's own and keeping everybody else's. |
-| `refs` | `end` | Deletes the history refs a landed ticket left on `origin`. |
-| `backlog` | nothing yet | The bar at or below which a finding is filed instead of buying a round. |
+| [`worktree`](worktree.md) | `admit` | Cuts the branch and the worktree this pass owns. |
+| [`queue`](queue.md) | `claim` | Picks which ticket the pass is about. |
+| [`merge`](merge.md) | `merge` | Lands the branch on the base, with the base's own verify. |
+| [`close`](close.md) | `end` | Closes the issue the pass was about. |
+| [`labels`](labels.md) | `end` | Sets the issue's labels, replacing Lingtai's own and keeping everybody else's. |
+| [`refs`](refs.md) | `end` | Deletes the history refs a landed ticket left on `origin`. |
+| [`backlog`](backlog.md) | nothing yet | The bar at or below which a finding is filed instead of buying a round. |
 
 `backlog` is the row worth reading twice. It is in the closed set and it has a
 field, and its `at` is `{}` — *no step reads it; the bar is a literal in two
@@ -76,7 +76,8 @@ fourteen documents: [`_template.md`](_template.md), which is in the repository a
 this site — a leading underscore is how a file in a published directory says it
 is a shape and not a page.
 
-Its six sections, in order: **what it does** · **where it may be declared**, and
+It opens with a **TL;DR** table — *does · write it at · needs · refuses · watch
+out* — for the reader who stops there. Then its six sections, in order: **what it does** · **where it may be declared**, and
 why those steps and not others · **parameters**, as a table · **examples**, at
 least three and every one of them real · **what it refuses**, in the schema's
 own words · **related**, the ADR that decided it and the ticket that built it.

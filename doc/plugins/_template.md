@@ -30,7 +30,24 @@
 > words, and the trap a reader would otherwise walk into. Prose about *why the
 > design is good* is what goes — that lives in the ADR the page links to.
 
-> One paragraph, before any heading: what this plugin does, **and the failure it
+> **TL;DR — a four-to-six-row table, directly under the title and before the
+> lede.** It is the page for a reader who will read nothing else, so every row is
+> one line and every cell a fact rather than a pointer:
+>
+> | | |
+> |---|---|
+> | **Does** | one sentence: what it does, and the failure it prevents |
+> | **Write it at** | the steps from `<key>Plugin.at`, bare — the why is below |
+> | **Needs** | the required fields, and the default of every optional one |
+> | **Refuses** | the one wrong shape a person will actually write |
+> | **Watch out** | the trap, or leave the row out when there is none |
+>
+> It is a table and not a section: the test holds `##` headings, and `ledeOf`
+> skips a block that starts with `|`, so the lede below it is still what the docs
+> index shows. **Say it once applies here too** — a row that repeats the lede is
+> a row to cut.
+
+> One paragraph, before any heading (and after the TL;DR table): what this plugin does, **and the failure it
 > prevents rather than the mechanism it uses**. The mechanism is in the code and
 > the code moves; the failure is why the key exists. This paragraph is also the
 > page's lede on the docs index (`ledeOf`), so it has to stand alone.
