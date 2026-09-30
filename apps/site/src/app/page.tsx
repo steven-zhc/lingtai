@@ -106,7 +106,7 @@ export default async function Home() {
             </div>
           </section>
 
-          <section className="setup" aria-labelledby="setup-title">
+          <section className="home-setup" aria-labelledby="setup-title">
             <div className="setup-lead">
               <p className="kicker">How you use it</p>
               <h2 id="setup-title">Start with one repository.</h2>
@@ -141,7 +141,7 @@ export default async function Home() {
             </ol>
           </section>
 
-          <section className="evidence" aria-labelledby="evidence-title">
+          <section className="home-evidence" aria-labelledby="evidence-title">
             <div className="section-intro">
               <div>
                 <p className="kicker">The work, in the open</p>
@@ -206,7 +206,7 @@ function RunDiagram() {
           </div>
           <div className="diagram-footnote">Your labels choose the work</div>
         </div>
-        <div className="diagram-arrow" aria-hidden="true">→</div>
+        <div className="diagram-arrow" aria-hidden="true" />
         <div className="diagram-column middle">
           <div className="diagram-label"><span>02</span> LINGTAI</div>
           <div className="diagram-card work-card">
@@ -217,7 +217,7 @@ function RunDiagram() {
           </div>
           <div className="diagram-footnote">Your local recipe sets the rules</div>
         </div>
-        <div className="diagram-arrow" aria-hidden="true">→</div>
+        <div className="diagram-arrow" aria-hidden="true" />
         <div className="diagram-column result-column">
           <div className="diagram-label"><span>03</span> THE RESULT</div>
           <div className="diagram-card outcome-card landed-outcome"><span>✓</span><strong>It lands</strong><small>when allowed</small></div>

@@ -43,8 +43,8 @@
 .diagram-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 600; }
 .diagram-mark { display: inline-block; width: 17px; height: 17px; background: var(--mark) center / contain no-repeat; }
 .diagram-body {
-  display: grid; grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1.2fr) 20px minmax(0, 1fr);
-  gap: 6px; align-items: center; min-height: 300px; padding: 25px 18px 27px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1.2fr) 32px minmax(0, 1fr);
+  gap: 8px; align-items: center; min-height: 300px; padding: 25px 18px 27px;
   background-color: var(--surface-2);
   background-image: linear-gradient(var(--rule) 1px, transparent 1px), linear-gradient(90deg, var(--rule) 1px, transparent 1px);
   background-size: 28px 28px;
@@ -58,7 +58,16 @@
 .source-card strong { font-size: 14px; line-height: 1.3; }
 .diagram-tag { background: var(--accent-soft); color: var(--accent-ink); border-radius: 3px; padding: 3px 6px; font: 10px var(--mono); }
 .diagram-footnote { margin-top: 11px; font-size: 11px; line-height: 1.3; color: var(--muted); }
-.diagram-arrow { color: var(--accent-ink); font: 24px var(--mono); align-self: center; text-align: center; margin-top: -16px; }
+.diagram-arrow { position: relative; width: 100%; height: 12px; align-self: center; margin-top: -16px; }
+.diagram-arrow::before {
+  content: ""; position: absolute; left: 0; right: 7px; top: 5px;
+  height: 2px; border-radius: 2px; background: var(--accent-ink);
+}
+.diagram-arrow::after {
+  content: ""; position: absolute; right: 0; top: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  border-left: 8px solid var(--accent-ink);
+}
 .work-card { min-height: 182px; padding: 12px 13px; }
 .work-branch { border-bottom: 1px solid var(--rule); padding-bottom: 9px; margin-bottom: 11px; color: var(--accent-ink); font: 11px var(--mono); white-space: nowrap; }
 .branch-symbol { font-size: 17px; line-height: 0; vertical-align: -2px; margin-right: 4px; }
@@ -120,7 +129,7 @@
 .comparison .comparison-head { background: var(--surface-2); font: 10px var(--mono); letter-spacing: .04em; }
 .comparison .comparison-head span:last-child { color: var(--accent-ink); }
 
-.home .setup { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: clamp(40px, 8vw, 120px); }
+.home .home-setup { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: clamp(40px, 8vw, 120px); }
 .setup-lead p:not(.kicker) { color: var(--ink-2); font-size: 16px; }
 .setup-steps { list-style: none; margin: 0; padding: 0; }
 .setup-steps li { display: grid; grid-template-columns: 44px 1fr; gap: 16px; position: relative; padding: 0 0 29px; }
@@ -132,10 +141,10 @@
 .command span { color: var(--accent); margin-right: 8px; }
 .setup-steps .command + p { margin-top: 9px; }
 
-.home .evidence { border-top: 1px solid var(--rule); }
-.home .evidence .snap { border-radius: 8px; }
-.home .evidence .snap .cols { min-height: 0; }
-.home .evidence .no-snapshot { border-radius: 8px; background: var(--surface); border-left: 3px solid var(--rule-2); max-width: none; }
+.home .home-evidence { border-top: 1px solid var(--rule); }
+.home .home-evidence .snap { border-radius: 8px; }
+.home .home-evidence .snap .cols { min-height: 0; }
+.home .home-evidence .no-snapshot { border-radius: 8px; background: var(--surface); border-left: 3px solid var(--rule-2); max-width: none; }
 .home .limits { border-top: 1px solid var(--rule); }
 .limit-list { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 0; margin: 0; }
 .limit-list li { padding: 18px; background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
@@ -156,7 +165,7 @@
 }
 @media (max-width: 800px) {
   .home section { padding: 64px 0; }
-  .home .section-intro, .home .difference, .home .setup, .home .more { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .home .section-intro, .home .difference, .home .home-setup, .home .more { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .home .section-intro { margin-bottom: 24px; }
   .benefit-grid, .limit-list { grid-template-columns: minmax(0, 1fr); }
   .benefit-card { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); column-gap: 22px; align-items: center; }
@@ -172,7 +181,7 @@
   .diagram-column { align-self: stretch; }
   .diagram-card { min-height: 0; }
   .source-card { gap: 6px; }
-  .diagram-arrow { margin: 0; line-height: 1; transform: rotate(90deg); }
+  .diagram-arrow { width: 28px; margin: 8px auto; transform: rotate(90deg); }
   .diagram-footnote { margin-top: 5px; }
   .work-card { min-height: 0; }
   .work-line { margin: 5px 0; }

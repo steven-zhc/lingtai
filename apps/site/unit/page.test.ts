@@ -46,6 +46,14 @@ describe("the home page's argument", () => {
     expect(text).toContain("ILLUSTRATION");
     expect(text).toContain("snapshot === null ? <NoSnapshot /> : <SnapshotBoard snapshot={snapshot} />");
   });
+
+  it("keeps page sections out of the board's generic setup and evidence classes", async () => {
+    const text = await prose();
+    expect(text).not.toContain('<section className="setup"');
+    expect(text).not.toContain('<section className="evidence"');
+    expect(text).toContain('<section className="home-setup"');
+    expect(text).toContain('<section className="home-evidence"');
+  });
 });
 
 describe("the six docs entries go somewhere", () => {
