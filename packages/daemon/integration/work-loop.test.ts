@@ -3,18 +3,17 @@
  *
  * Every property here is one of the three holes the file exists to close, so
  * none of them can be tested against a fake subscription: "a completion event
- * wakes it" is a claim about Postgres notifying, and "it does not replay
- * history" is a claim about where the subscription started.
+ * wakes it" is a claim about the store's own waker nudging — Postgres's
+ * `LISTEN`/`NOTIFY` or SQLite's `POLL_MS` (#275), whichever this process
+ * opened — and "it does not replay history" is a claim about where the
+ * subscription started.
  */
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import { directPostgresUrl } from "@lingtai/env";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { SUBSCRIBER_STREAM } from "@lingtai/domain";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createWorkLoop } from "../src/index.ts";
 
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 const landed = (id: string) => ({
@@ -33,21 +32,7 @@ async function until(what: () => boolean, ms = 20_000): Promise<void> {
 }
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
-});
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const id of created) await c.query("delete from events where stream_id = $1", [id]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
+  store = await processEventStore();
 });
 
 describe("the work loop", () => {

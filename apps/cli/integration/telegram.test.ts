@@ -30,11 +30,10 @@ import { projectEnvPath, resolveAgentEnv } from "@lingtai/agent-env";
 import type { ProjectFilter } from "@lingtai/conductor";
 import { createWorkLoop, type WorkLoop } from "@lingtai/daemon";
 import { SUBSCRIBER_STREAM, workItemStream } from "@lingtai/domain";
-import { boardUrl, directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { boardUrl } from "@lingtai/env";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { resolveRecipe, type Subscriber as SubscriberSpec } from "@lingtai/recipe";
-import pg from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildSubscribers, createSubjectResolver } from "../src/subscribers.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -42,32 +41,15 @@ const PROJECT = `esctesttg${crypto.randomUUID().slice(0, 6)}`;
 const TOKEN = "123456:not-a-real-token";
 const created = new Set<string>();
 
-let client: Db;
 let store: EventStore;
 let shipped: SubscriberSpec;
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   const resolved = await resolveRecipe(async (path) => readFile(join(ROOT, path), "utf8"), "HEAD");
   const found = resolved.recipe.subscribers.find((s) => s.name === "telegram");
   if (!found) throw new Error(".lingtai/config.yaml declares no telegram subscriber");
   shipped = found;
-});
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [[...created]]);
-    await c.query("delete from events where stream_id = $1 and data->>'project' = $2", [SUBSCRIBER_STREAM, PROJECT]);
-    await c.query("delete from task_view where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
 });
 
 let server: Server | undefined;

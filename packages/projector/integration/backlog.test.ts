@@ -5,16 +5,13 @@
  * does; the same finding on a second attempt is the same entry; a decision
  * closes it; and dropping the table and replaying the log gives the same rows.
  */
-import { directPostgresUrl } from "@lingtai/env";
 import { backlogStream, findingKey } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
+import { beforeAll, describe, expect, it } from "vitest";
 import { backlogProjection, createProjectionRunner, readBacklog } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 const track = (id: string) => {
@@ -78,8 +75,7 @@ const keyOf = (claim: string) =>
   findingKey({ issue: "1", step: "proposed", action: "review", file: "src/a.ts", claim });
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   // The test database is shared, and may hold this table in an older shape.
   // A rebuild is how any drift is answered, here as anywhere.
   await rebuild();
@@ -118,20 +114,6 @@ beforeAll(async () => {
   await attempt(1, 3, [minor("the error message is vague", 22), minor("the name shadows an import", 11)]);
   await fold();
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const id of created) await c.query("delete from events where stream_id = $1", [id]);
-    await c.query("delete from finding_backlog where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("finding_backlog", () => {
   it("holds a passing gate's minors, one entry per finding however many attempts said it", async () => {

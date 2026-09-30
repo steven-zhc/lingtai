@@ -19,33 +19,20 @@
  * state.
  */
 import { isPending, projectStream } from "@lingtai/domain";
-import {
-  createDb,
-  createEventStore,
-  type Db,
-  directPostgresUrl,
-  type EventStore,
-  type Log,
-} from "@lingtai/event-store";
-// Postgres by name, from its own module: the barrel hands out the store this
-// machine chose and names no implementation (#179).
-import { createPostgresLog } from "@lingtai/event-store/log";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { processLog, type EventStore, type Log } from "@lingtai/event-store";
+import { beforeAll, describe, expect, it } from "vitest";
 import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";
 
 const PENDING = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`;
 
-let client: Db;
 let store: EventStore;
 /** The store above and the questions beside it, as one log (#221). */
 let log: Log;
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
-  log = createPostgresLog({ store });
+  log = await processLog();
+  store = log.store;
   await store.append(projectStream(PENDING), 0, [
     {
       type: "ProjectOnboardingStarted",
@@ -60,21 +47,6 @@ beforeAll(async () => {
       data: { project: LIVE, owner: "steven-zhc", base: "main", configHash: "h", fromSha: "s" },
     },
   ]);
-});
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [
-      [projectStream(PENDING), projectStream(LIVE)],
-    ]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
 });
 
 describe("the projects a conductor may take work from", () => {

@@ -7,11 +7,12 @@
  * between a projection and a caller that reads one.
  */
 import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
+import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
 import { createProjectionRunner } from "@lingtai/projector";
 import { taskViewProjection } from "@lingtai/projector";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { reduceWorkItem } from "@lingtai/domain";
 import { answer, ask, heldUntil, inWords, requeue, selectRunnable } from "../src/index.ts";
 
@@ -23,7 +24,6 @@ import { answer, ask, heldUntil, inWords, requeue, selectRunnable } from "../src
 const HOUR = 60 * 60_000;
 
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 /** The projection has to exist before the queue can subtract from it. */
@@ -37,22 +37,8 @@ async function build(): Promise<void> {
 }
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [[...created]]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("selectRunnable", () => {
   const other = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -182,7 +168,12 @@ describe("selectRunnable", () => {
    * sides of the window are checked from the same log by moving `now`, which is
    * why `now` is injectable at all.
    */
-  it("holds a released item for the backoff, and offers it once the window passes", async () => {
+  // #275: `readAttempt`/`drop` below read and clean `task_view` with a raw,
+  // Postgres-only `pg.Client` — skipped rather than converted where no
+  // LINGTAI_TEST_DATABASE_URL is set, so the skip is visible in vitest's own
+  // count. Every other case in this describe runs on whichever store the
+  // process chose.
+  it.skipIf(!postgresUnderTest())("holds a released item for the backoff, and offers it once the window passes", async () => {
     const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
     const item = `wi-${project}-7`;
     const runId = `run-${crypto.randomUUID()}`;
@@ -240,10 +231,6 @@ describe("selectRunnable", () => {
     expect(impatient.map((r) => r.issue)).toEqual(["7"]);
 
     await drop(project);
-  });
-
-  afterAll(async () => {
-    await drop(other);
   });
 });
 

@@ -12,32 +12,40 @@
  * append-only rule disabled for the delete: do not run it against a database a
  * conductor is writing to.
  */
-import { afterAll, beforeAll } from "vitest";
+import { afterAll, beforeAll, describe } from "vitest";
 import { createDb, createEventStore, type Db, directPostgresUrl } from "../src/index.ts";
 // The implementation under test by its own module, not the barrel (#179).
 import { createPostgresLogQueries } from "../src/queries.ts";
 import { cleanupStreams, created } from "../test/support.ts";
 import { describeLogQueriesContract } from "../test/queries-contract.ts";
+import { postgresUnderTest } from "../test/postgres.ts";
 
 let client: Db;
 
-beforeAll(() => {
-  client = createDb();
-});
+// #275: the Postgres side of the queries contract — three anti-joins with
+// `jsonb_array_elements` and `distinct on` — is skipped rather than converted
+// where no LINGTAI_TEST_DATABASE_URL is set, so the skip is visible in
+// vitest's own count. `integration/sqlite.test.ts` runs the same contract
+// against SQLite unconditionally.
+describe.skipIf(!postgresUnderTest())("against Postgres", () => {
+  beforeAll(() => {
+    client = createDb();
+  });
 
-afterAll(async () => {
-  await client.close();
-  await cleanupStreams();
-});
+  afterAll(async () => {
+    await client.close();
+    await cleanupStreams();
+  });
 
-describeLogQueriesContract("postgres", () => ({
-  store: createEventStore(client),
-  // The direct connection, which is what `lingtai doctor` asks these on: the
-  // pooler is where a dropped connection turns an audit into a red check that
-  // has nothing to do with the log (`#157`).
-  queries: createPostgresLogQueries({ url: directPostgresUrl() }),
-  // A project per assertion, because the contract reuses issue numbers and the
-  // database does not go away between them.
-  project: `esctest${crypto.randomUUID().slice(0, 6)}`,
-  note: (streamId) => created.add(streamId),
-}));
+  describeLogQueriesContract("postgres", () => ({
+    store: createEventStore(client),
+    // The direct connection, which is what `lingtai doctor` asks these on: the
+    // pooler is where a dropped connection turns an audit into a red check that
+    // has nothing to do with the log (`#157`).
+    queries: createPostgresLogQueries({ url: directPostgresUrl() }),
+    // A project per assertion, because the contract reuses issue numbers and the
+    // database does not go away between them.
+    project: `esctest${crypto.randomUUID().slice(0, 6)}`,
+    note: (streamId) => created.add(streamId),
+  }));
+});

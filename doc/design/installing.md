@@ -144,19 +144,30 @@ two implementations disagree. The file says why that matters:
 
 ### The rule must not reach the test variables
 
-`env/index.ts:145` refuses to run the suite without
-`LINGTAI_TEST_DATABASE_URL`, and gives its reason:
+`env/index.ts:145` refused to run the suite without
+`LINGTAI_TEST_DATABASE_URL`, and gave its reason:
 
 > The suite writes real events, and writing them to the operator's own log
 > leaves work items and board cards that **only deleting from an append-only
 > table can remove**.
 
-If *absence chooses SQLite* is implemented at that layer, `pnpm test:db` falls
-back to SQLite and passes — a suite whose stated purpose is asserting Postgres
-itself, green against something else. That is this repository's signature
-defect, and the guard is one line away from it.
+If *absence chooses SQLite* were implemented at that layer for **every**
+integration file, `pnpm test:db` would fall back to SQLite and pass — a suite
+whose stated purpose is asserting Postgres itself, green against something
+else. That is this repository's signature defect, and the guard was one line
+away from it.
 
-**Absence chooses for the application. It chooses nothing for the tests.**
+**#275 is that layer, narrowed to the files it is actually true of.** Most
+integration files never asserted anything Postgres-specific — `createDb()` and
+a cleanup block, nothing a fake or a file could not equally well stand in for
+— so absence now chooses SQLite for the suite as a whole, and the guard above
+moved to the small, named set that still needs the real thing
+([0074](../decisions/0074-the-test-side-defaults-to-a-file-of-its-own.md)).
+Those files still refuse to be quietly answered by SQLite; they skip instead,
+visibly, which is the same defect avoided by a narrower door.
+
+**Absence chooses for the application. It chooses nothing for the tests that
+still need Postgres.**
 
 ## What the references do that we do not
 

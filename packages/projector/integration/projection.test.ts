@@ -33,10 +33,17 @@ import {
   type ProjectionFixture,
 } from "../test/contract.ts";
 import { cleanupStreams, created, streamId, waitFor } from "@lingtai/event-store/test-support";
+import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
 
 let client: Db;
 let store: EventStore;
 const openRunners: ProjectionRunner[] = [];
+
+// #275: the Postgres projection store and `projectionShape` — skipped rather
+// than converted where no LINGTAI_TEST_DATABASE_URL is set, so the skip is
+// visible in vitest's own count. `integration/sqlite.test.ts` runs the runner
+// contract against SQLite unconditionally.
+describe.skipIf(!postgresUnderTest())("against the real database", () => {
 
 function runStream(): string {
   return streamId("run");
@@ -450,4 +457,5 @@ describe("projection runner", () => {
 
     expect(await snapshot(TEST_TABLE, "seq")).toBe(once);
   });
+});
 });

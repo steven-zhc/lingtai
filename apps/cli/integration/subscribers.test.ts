@@ -16,11 +16,9 @@
  * have passed for the version that was refused, because the thing it got wrong
  * was what the log actually holds.
  */
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { integrationStream, workItemStream } from "@lingtai/domain";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createSubjectResolver } from "../src/subscribers.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -28,9 +26,7 @@ const wi = workItemStream(PROJECT, 7);
 const runId = `run-${crypto.randomUUID()}`;
 const startless = `run-${crypto.randomUUID()}`;
 const lane = integrationStream(PROJECT, "main");
-const streams = [wi, runId, startless, lane];
 
-let client: Db;
 let store: EventStore;
 let subject: ReturnType<typeof createSubjectResolver>;
 
@@ -43,8 +39,7 @@ const head = async (streamId: string) => {
 };
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   subject = createSubjectResolver(store);
 
   // A run stream, opened the way `conduct.ts` opens one: `RunStarted` first,
@@ -107,20 +102,6 @@ beforeAll(async () => {
     { type: "RunAwaitingInput", actor: `agent:${startless}`, data: { prompt: "anybody there?" } },
   ]);
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [streams]);
-    await c.query("delete from task_view where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("createSubjectResolver", () => {
   const card = { id: wi, project: PROJECT, issue: "7" };

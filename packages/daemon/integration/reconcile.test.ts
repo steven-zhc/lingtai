@@ -11,16 +11,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { selectRunnable } from "@lingtai/conductor/queue";
 import type { ProjectState } from "@lingtai/domain";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { exists, findOrphanLogs, findOrphans, reconcile } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 let home: string;
 
@@ -68,23 +65,9 @@ const started = (taskId: string) => ({
 });
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   home = await mkdtemp(join(tmpdir(), "lingtai-reconcile-"));
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const id of created) await c.query("delete from events where stream_id = $1", [id]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("reconciliation", () => {
   it("removes a worktree the log says is finished, and leaves a live one alone", async () => {

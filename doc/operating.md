@@ -91,31 +91,42 @@ The event store must be **its own database**, not one belonging to a managed
 project — Lingtai has to keep running while a managed project is the thing
 being changed.
 
-**The tests need their own string, and refuse to run without it.**
-`LINGTAI_TEST_DATABASE_URL`, and `LINGTAI_TEST_DIRECT_DATABASE_URL` behind a pooler, point at a *different*
-database — the pair falls back within itself, never to the operator's. The suite is not mocked — it appends real events, runs real
-projections — so pointed at your own log it
-leaves work items and board cards behind. It did: twenty-four cards from ten
-throwaway `esctest*` projects, and none from a real one. Cleaning that up is
-not cheap either, because rebuilding a projection replays the log and brings
-the cards straight back; the only way to remove them is to delete from an
-append-only table.
+**The integration half needs no string of its own any more** (#275). With
+neither `LINGTAI_TEST_DATABASE_URL` nor `LINGTAI_TEST_DIRECT_DATABASE_URL` set,
+`pnpm test:integration` runs on a SQLite file made and removed for that run
+alone — never the operator's own log, and never shared between two runs. **A
+small, named set of files still needs a real database**: two clients racing an
+append or a claim, `LISTEN`/`NOTIFY`, and the Postgres store's and queries'
+own SQL. `@lingtai/event-store/test/postgres`'s `ON_POSTGRES` names each one
+and why; without a URL those skip rather than fail, and the skip shows in
+vitest's own count.
+
+Point at a real database only to run that named set. Same pair as the
+operator's own, at a *different* database — it falls back within itself, never
+to the operator's — because the suite is not mocked on those files: it appends
+real events, runs real projections, and pointed at your own log it leaves work
+items and board cards behind. It did: twenty-four cards from ten throwaway
+`esctest*` projects, and none from a real one. Cleaning that up is not cheap
+either, because rebuilding a projection replays the log and brings the cards
+straight back; the only way to remove them is to delete from an append-only
+table.
 
 Give the test database its schema the same way the main one gets it, with
 `LINGTAI_TEST=1` in front — see [Bringing the database up](#bringing-the-database-up).
 
-**And a fifth place, if Lingtai is to work on Lingtai.** An agent working this
-repository has to run this suite, so its recipe requires the two
-`LINGTAI_TEST_*` names — and a `LINGTAI_` name never crosses from the machine
-file, whatever a recipe declares. Copy them into the project's own file:
+**A recipe working this repository declares neither name any more** (#275): the
+`env.required` that used to ask an agent for `LINGTAI_TEST_DATABASE_URL` is
+`[]`, written out rather than left absent, because nothing the gate runs still
+needs it. An operator who wants the `ON_POSTGRES` files exercised locally still
+copies the pair into the project's own file — a `LINGTAI_` name never crosses
+from the machine file, whatever a recipe declares:
 
 ```bash
 mkdir -p ~/.lingtai/env
 grep '^LINGTAI_TEST_' .env.local > ~/.lingtai/env/lingtai.env
 ```
 
-Without it, every run against this repository refuses by name before it claims
-anything. `pnpm lingtai doctor` says which layer each name came from. See
+`pnpm lingtai doctor` says which layer each name came from. See
 [The layers](#the-layers).
 
 **Empty its log now and then.** The suite cleans up its own streams but the log

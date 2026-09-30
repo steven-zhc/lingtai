@@ -32,6 +32,29 @@
  *
  * Set `LINGTAI_KEEP_TEST_DATA=1` to skip this and inspect what a run produced.
  *
+ * **Since #275, `setup()` is no longer empty.** With no
+ * `LINGTAI_TEST_DATABASE_URL` anywhere it `mkdtemp`s a directory and exports
+ * `LINGTAI_TEST_SQLITE_PATH` at a file inside it — `storeChoice` answers SQLite
+ * from that name (`packages/env/src/index.ts`), so the integration half runs
+ * with no Postgres at all unless a URL is set. **Never `join(stateDir(),
+ * SQLITE_LOG)`**: on a machine that ran `lingtai init` and chose SQLite, that
+ * path is the operator's own log, and defaulting to it would be exactly the
+ * failure the rest of this file exists to describe, one file over — "twenty-
+ * four cards from ten throwaway `esctest*` projects" with SQLite standing in
+ * for Postgres. A path under `tmpdir()` with a fixed name would fail too, the
+ * other way: two worktrees running the suite at once would share it. The
+ * directory has to be made fresh, by this run, for this run.
+ *
+ * `teardown()` removes that directory when it made one, which is the whole of
+ * the SQLite cleanup — there is no residue sweep, because there is no shared
+ * table.
+ *
+ * Vitest 4's default pool is `forks`, forked *after* `globalSetup` runs, so the
+ * workers inherit `process.env` as `setup()` leaves it, and a CLI child a test
+ * spawns inherits it from its worker in turn. `vitest.config.ts`'s
+ * `fileParallelism: false` means one worker for the whole integration project,
+ * so one directory is all one run ever needs.
+ *
  * Three things here fail *silently* if you get them wrong, and all three did
  * once, in this order:
  *
@@ -51,6 +74,9 @@
  */
 // Side effect: loads `.env.local` from the workspace root. See above.
 import "@lingtai/env";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pg from "pg";
 
 /**
@@ -76,11 +102,27 @@ import pg from "pg";
  */
 const THROWAWAY = String.raw`(esctest|test-[0-9a-f]{8}$)`;
 
-/** Nothing to prepare. The suite builds its own fixtures. */
-export function setup(): void {}
+/**
+ * A directory made for this run alone, when nothing named a Postgres test URL
+ * — see the module comment. `null` on a run that has one, so `teardown` knows
+ * which cleanup is its to do.
+ */
+let sqliteDir: string | null = null;
+
+export async function setup(): Promise<void> {
+  if (process.env["LINGTAI_TEST_DATABASE_URL"]) return;
+  sqliteDir = await mkdtemp(join(tmpdir(), "lingtai-test-"));
+  process.env["LINGTAI_TEST_SQLITE_PATH"] = join(sqliteDir, "lingtai.db");
+}
 
 export async function teardown(): Promise<void> {
   if (process.env["LINGTAI_KEEP_TEST_DATA"]) return;
+
+  if (sqliteDir) {
+    await rm(sqliteDir, { recursive: true, force: true });
+    return;
+  }
+
   // Session mode, like every other statement that is not an ordinary query.
   // `LINGTAI_`-prefixed since `#63`: every name Lingtai reads for itself is.
   const url =
@@ -89,9 +131,10 @@ export async function teardown(): Promise<void> {
   // two by whether it thinks it is in a test. This file may only ever touch the
   // test one, and naming it is how that stays checkable.
   //
-  // Missing means the suite could not have run at all, and saying so here would
-  // be the second complaint — `@lingtai/env` already refuses, by name, before a
-  // single test starts.
+  // Missing means `setup()` made a SQLite directory instead, and this already
+  // returned above — or the suite could not have run at all, and saying so here
+  // would be the second complaint: `@lingtai/env` already refuses, by name,
+  // before a single test starts.
   if (!url) return;
 
   const c = new pg.Client({ connectionString: url });

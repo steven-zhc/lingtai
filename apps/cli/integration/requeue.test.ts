@@ -13,11 +13,9 @@
  */
 import { projectStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
 import { requeue } from "@lingtai/conductor";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { userInfo } from "node:os";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { requeueCommand } from "../src/requeue.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -36,7 +34,6 @@ const run = (n: number) => `run-${PROJECT}-${n}`;
 const ACTOR = `human:${userInfo().username}`;
 const NOTE = "the agent gate refused every review; the block is the harness, not the diff";
 
-let client: Db;
 let store: EventStore;
 
 const discovered = (n: number) => ({
@@ -71,8 +68,7 @@ const blocked = (n: number) => ({
 });
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
 
   // Registered, because the command refuses a project it has never heard of
   // before it goes looking for a work item.
@@ -92,30 +88,6 @@ beforeAll(async () => {
   ]);
   await store.append(wi(RUNNING), 0, [discovered(RUNNING), claimed(RUNNING)]);
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [
-      [
-        projectStream(PROJECT),
-        wi(FROM_CLI),
-        wi(FROM_BOARD),
-        wi(RUNNING),
-        run(FROM_CLI),
-        run(FROM_BOARD),
-        run(RUNNING),
-      ],
-    ]);
-    await c.query("delete from task_view where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("lingtai requeue", () => {
   it("puts a blocked item back in the queue, carrying the note", async () => {

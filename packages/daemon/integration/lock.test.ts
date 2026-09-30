@@ -1,5 +1,5 @@
 /**
- * The daemon, against the real database.
+ * The daemon, against the real store.
  *
  * The lock itself needs none since #193, and is tested in `integration/file-lock.test.ts`
  * — the contract, a killed holder, the queue. What is left here starts a
@@ -8,7 +8,6 @@
  * Each test uses its own key so the suite does not fight the operator's daemon
  * — or itself.
  */
-import { directPostgresUrl } from "@lingtai/env";
 import { taskViewProjection } from "@lingtai/projector";
 import { describe, expect, it } from "vitest";
 import { acquireDaemonLock, createFileLocker, startDaemon } from "../src/index.ts";
@@ -48,10 +47,5 @@ describe("the daemon", () => {
     started.daemon.stop();
     expect(await started.daemon.stopped).toBe("asked");
     expect(started.daemon.failure).toBeNull();
-
-    // The connection string is read through the loader, never process.env —
-    // asserting it here keeps that rule true in the package that opens the
-    // longest-lived connection in the system.
-    expect(directPostgresUrl()).toBeTruthy();
   });
 });

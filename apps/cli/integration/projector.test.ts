@@ -14,15 +14,13 @@
  * *during* it, and that the process can still exit afterwards.
  */
 import { readTasks } from "@lingtai/projector";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { projectionLag } from "@lingtai/projector";
 import { execFile } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { withProjector } from "../src/projector.ts";
 
 const run = promisify(execFile);
@@ -31,27 +29,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const wi = `wi-${PROJECT}-1`;
 const runId = `run-${PROJECT}-1`;
-let client: Db;
 let store: EventStore;
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [[wi, runId]]);
-    await c.query("delete from task_view where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("withProjector", () => {
   /**

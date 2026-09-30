@@ -65,30 +65,26 @@ source:
   backoff: 1h
 
 env:
-  # The test database, and nothing else.
+  # Nothing required, since #275.
   #
-  # The suite refuses to run without LINGTAI_TEST_DATABASE_URL, and every test
-  # appends real events — so an agent needs it. What an agent must never have is
+  # The integration half used to refuse to run without LINGTAI_TEST_DATABASE_URL,
+  # because every test appends real events — so an agent needed it, named here so
+  # a run that could not supply it refused the whole project before it claimed
+  # anything. Since #275 the suite defaults to a SQLite file of its own instead,
+  # and only the handful of files on `@lingtai/event-store/test/postgres`'s list
+  # — the ones asserting Postgres itself, LISTEN/NOTIFY, two clients racing —
+  # still call for a real database, and those are skipped rather than failed
+  # where none is configured. Nothing here needs to be required for a run to
+  # claim a ticket.
+  #
+  # `required` is a *check*, not a filter, and `[]` is written out rather than
+  # left absent (0064 §5): a missing key and a deliberate empty list read the
+  # same, and this file writes its policy out. What an agent must never have is
   # LINGTAI_DATABASE_URL: that is this system's own log, the thing it is
-  # keeping. Naming only these two is what keeps them apart.
-  #
-  # `required` is a *check*, not a filter: naming a variable here says this
-  # repository needs one, and a run that cannot supply it refuses the whole
-  # project before it claims anything. `allow` and `deny` are the filters, and
-  # this recipe sets neither — so the two files' contents reach the agent, minus
-  # anything that is Lingtai's own ([0021](../doc/decisions/0021-the-recipe-decides-the-environment.md), #60).
-  #
-  # The names carry `LINGTAI_` since #63, and that prefix is doing the work the
-  # old `TEST_*`/RESERVED asymmetry used to. No managed application asks for a
-  # LINGTAI_* name, so a project whose own file is missing a line gets an
-  # *absent* value — which `required` refuses loudly — instead of silently
-  # inheriting Lingtai's.
-  #
-  # Only the pooled name, since #176: an absent LINGTAI_TEST_DIRECT_DATABASE_URL
-  # is LINGTAI_TEST_DATABASE_URL, so one test database needs one line. Set, the
-  # direct one still reaches the agent and still wins.
-  required:
-    - LINGTAI_TEST_DATABASE_URL
+  # keeping, and `allow`/`deny` — which this recipe sets neither of — are the
+  # filters that would matter if it were ever declared
+  # ([0021](../doc/decisions/0021-the-recipe-decides-the-environment.md), #60).
+  required: []
 
   # Host segments a value is refused for, whatever reaches the agent from either
   # file (#51) — on top of `prod` and `production`, which a recipe cannot remove.

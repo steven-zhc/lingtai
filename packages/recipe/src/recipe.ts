@@ -66,11 +66,13 @@ import { parseDuration } from "./duration.ts";
  * one.
  *
  * It costs Lingtai's own recipe nothing, and that is worth writing down because
- * it looks like it should: `LINGTAI_TEST_DATABASE_URL` is what this repository's
- * suite needs, and `pnpm typecheck && pnpm test` reads it from the `.env.local`
- * this run planted in the worktree (`env.plantAt`), not from its environment.
- * A project's own file keeps its own names, so no other repository has a
- * `LINGTAI_` name to declare in the first place.
+ * it looks like it should: since #275 the suite runs on a SQLite file by
+ * default and needs no variable at all, and where a file on
+ * `@lingtai/event-store/test/postgres`'s list still needs
+ * `LINGTAI_TEST_DATABASE_URL`, `pnpm typecheck && pnpm test` reads it from the
+ * `.env.local` this run planted in the worktree (`env.plantAt`), not from its
+ * environment. A project's own file keeps its own names, so no other
+ * repository has a `LINGTAI_` name to declare in the first place.
  */
 export const ExtensionEnvNames = z
   .array(z.string())

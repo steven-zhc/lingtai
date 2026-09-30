@@ -27,6 +27,7 @@ import {
   readTasks,
   taskViewProjection,
 } from "../src/index.ts";
+import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
@@ -506,6 +507,15 @@ async function fold(): Promise<void> {
 const card = (tasks: Awaited<ReturnType<typeof readTasks>>, n: number) =>
   tasks.find((t) => t.issue === String(n));
 
+// #275: `seed()` calls `appendRetired`, a raw insert of a retired event type
+// straight into `events` — the store's own `append` refuses one, which is
+// right for every real writer and leaves this as the only way to put a
+// pre-retirement row in front of a rebuild. The insert's placeholders and its
+// `::jsonb` cast are Postgres's syntax, so the whole fixture — and every case
+// below, since all of them read what `seed()` wrote — needs the real thing.
+// Skipped rather than converted where no LINGTAI_TEST_DATABASE_URL is set, so
+// the skip is visible in vitest's own count.
+describe.skipIf(!postgresUnderTest())("against the real store", () => {
 beforeAll(async () => {
   client = createDb();
   store = createEventStore(client);
@@ -913,4 +923,5 @@ describe("task_view", () => {
     const kept = await readTasks({ project: PROJECT, retentionDays: 3650 });
     expect(card(kept, 5)?.note).toBe("abc1234def");
   });
+});
 });

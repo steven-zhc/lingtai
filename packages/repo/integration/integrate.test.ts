@@ -11,14 +11,12 @@
  * real conflicts, no network.
  */
 import { integrationStream } from "@lingtai/domain";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ensureMirror, integrate } from "../src/index.ts";
 
@@ -39,7 +37,6 @@ let home: string;
 const streams = new Set<string>();
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
-let client: Db;
 let store: EventStore;
 
 /** A fresh origin with `develop` and one commit, and a fresh mirror for it. */
@@ -88,8 +85,7 @@ beforeAll(async () => {
   originPath = join(root, "origin.git");
   work = join(root, "work");
   home = join(root, "home");
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   streams.add(integrationStream(PROJECT, "develop"));
 });
 
@@ -99,16 +95,6 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1::text[])", [[...streams]]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
   await rm(root, { recursive: true, force: true });
 });
 

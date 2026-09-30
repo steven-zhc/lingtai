@@ -13,10 +13,8 @@
  * `DiscussionHeld` on the item's — which is exactly the shape a single-stream
  * fake cannot check.
  */
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   concludeDiscussion,
   holdDiscussion,
@@ -28,7 +26,6 @@ import {
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 let n = 0;
@@ -62,22 +59,8 @@ const answers = (text: string) => async (): Promise<Answered> => ({
 });
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const stream of created) await c.query("delete from events where stream_id = $1", [stream]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("a discussion, on the log", () => {
   it("writes the exchange to its own stream, under its own actor", async () => {

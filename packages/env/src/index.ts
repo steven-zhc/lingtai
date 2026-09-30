@@ -86,12 +86,17 @@ function inTest(from: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
- * The connection a test may use, which is never the operator's.
+ * The Postgres connection a caller that must have Postgres may use, which is
+ * never the operator's.
  *
- * This is a choke point on purpose. The alternative — teaching each test to
- * pick the right URL — leaves every default I did not audit still pointing at
- * the real database, and `integrate()` and `approve()` both fall back to the
- * default store when no store is passed.
+ * Since #275 the suite as a whole no longer needs this: `storeChoice` defaults
+ * a test run with no `LINGTAI_TEST_DATABASE_URL` to a SQLite file of its own
+ * (below), and most of the integration half runs on that. What is left calling
+ * `postgresUrl()`/`directPostgresUrl()` under `inTest` is the handful of files
+ * on `@lingtai/event-store/test/postgres`'s list — the ones asserting Postgres
+ * itself, `LISTEN`/`NOTIFY`, two clients racing — and this is a choke point for
+ * exactly those: the alternative, teaching each of them to pick a URL, leaves
+ * every one I did not audit still pointing at the real database.
  *
  * It **throws** when the test URL is missing rather than falling back. A silent
  * fallback is how the operator's board came to hold twenty-four cards from ten
@@ -178,12 +183,11 @@ function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
   if (!value) {
     const was = renamedFrom(full, from);
     throw new Error(
-      `${full} is not set, and the tests will not run against ${PREFIX}${name}. ` +
+      `${full} is not set, and this caller needs Postgres. ` +
         (was ? `${was} is set — it was renamed to ${full} (#63). ` : "") +
-        "The suite writes real events, and writing them to the operator's own log " +
-        "leaves work items and board cards that only deleting from an append-only " +
-        `table can remove. Set ${PREFIX}TEST_DATABASE_URL and ` +
-        `${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own — see .env.example.`,
+        "Since #275 the suite runs on a SQLite file of its own without it — only the files on " +
+        "@lingtai/event-store/test/postgres's list, which assert Postgres itself, need " +
+        `${full} and ${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own — see .env.example.`,
     );
   }
   return value;
@@ -549,7 +553,37 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
   }
 
   const path = machineChoiceFile(from);
-  if (path === null) return notSetUp(name, null);
+  if (path === null) {
+    // **The test side, since #275.** `machineChoiceFile` answers null here in
+    // the two cases that matter: this process's own environment under
+    // `inTest`, and a hand-built `from` naming no `LINGTAI_HOME` of its own —
+    // never for a `from` that names one, which is a machine file a test is
+    // simulating on purpose (see `packages/env/integration/store.test.ts`'s
+    // "four answers") and goes on being read below as it always was.
+    //
+    // A test run that named no `LINGTAI_TEST_DATABASE_URL` used to refuse here
+    // unconditionally, which is right for the operator's machine and wrong for
+    // the suite: nothing here needs Postgres to run, and demanding a second
+    // database nobody wants to keep was the whole of this ticket (#275).
+    // `LINGTAI_TEST_SQLITE_PATH` is set by
+    // `packages/event-store/test-support/teardown.ts`'s `setup()`, to a file
+    // under a directory made for this run alone — never `stateDir()`, which on
+    // a machine that chose SQLite is the operator's own log (0055 §2, 0056 §4;
+    // see 0074).
+    if (inTest(from)) {
+      const sqlitePath = optional(`${PREFIX}TEST_SQLITE_PATH`, from);
+      if (sqlitePath !== undefined) {
+        return {
+          store: "sqlite",
+          path: sqlitePath,
+          where: "environment",
+          from: `${PREFIX}TEST_SQLITE_PATH, exported into this process`,
+        };
+      }
+      return notSetUp(`${name} or ${PREFIX}TEST_SQLITE_PATH`, null);
+    }
+    return notSetUp(name, null);
+  }
   let text: string;
   try {
     text = readFileSync(path, "utf8");

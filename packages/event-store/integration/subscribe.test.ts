@@ -31,11 +31,16 @@ import {
   waitFor,
 } from "../test/support.ts";
 import { describeWakerContract } from "../test/wake-contract.ts";
+import { postgresUnderTest } from "../test/postgres.ts";
 
 let client: Db;
 let store: EventStore;
 const open: Subscription[] = [];
 
+// #275: LISTEN/NOTIFY is Postgres's alone — skipped rather than converted
+// where no LINGTAI_TEST_DATABASE_URL is set, so the skip is visible in
+// vitest's own count.
+describe.skipIf(!postgresUnderTest())("against the real database", () => {
 beforeAll(() => {
   client = createDb();
   store = createEventStore(client);
@@ -194,4 +199,5 @@ describe("subscribe", () => {
     expect(phases).toContain("handler");
     await expect(sub.caughtUp()).rejects.toThrow();
   });
+});
 });

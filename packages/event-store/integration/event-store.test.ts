@@ -25,6 +25,7 @@ import {
 import { isEventType, parsePayload } from "@lingtai/domain";
 import { cleanupStreams, discovered, streamId } from "../test/support.ts";
 import { describeEventStoreContract } from "../test/contract.ts";
+import { postgresUnderTest } from "../test/postgres.ts";
 
 /** Every SQLSTATE in an error's `cause` chain. */
 function sqlStates(err: unknown): string[] {
@@ -43,6 +44,12 @@ let b: Db;
 let store: EventStore;
 let rival: EventStore;
 
+// #275: this whole file is `@lingtai/event-store/test/postgres`'s
+// event-store.test.ts entry — retired types on stored rows, upcasting, two
+// clients racing, none of which a fake or a SQLite file has anything to say
+// about. Skipped rather than converted where no LINGTAI_TEST_DATABASE_URL is
+// set, so the skip shows up in vitest's own count.
+describe.skipIf(!postgresUnderTest())("against the real store", () => {
 beforeAll(() => {
   // Two clients, each with its own pool. Not a convenience — see the file header.
   a = createDb();
@@ -270,4 +277,5 @@ describe("retired event types", () => {
     ]);
     expect(w?.version).toBe(1);
   });
+});
 });

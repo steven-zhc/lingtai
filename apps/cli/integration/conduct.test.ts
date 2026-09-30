@@ -12,9 +12,8 @@
  */
 import { loadProject } from "@lingtai/conductor";
 import { projectStream } from "@lingtai/domain";
-import { createDb, createEventStore, type Db, directPostgresUrl, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
+import { beforeAll, describe, expect, it } from "vitest";
 import { type PassOutcome, conductProjects } from "../src/conduct.ts";
 
 const BROKEN = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -23,12 +22,10 @@ const REFUSAL = `lingtai: .lingtai/config.yaml on main is not valid:\n  env: Unr
 const OLD = "cc6e856".padEnd(40, "0");
 const NEW = "be9fd26".padEnd(40, "0");
 
-let client: Db;
 let store: EventStore;
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   for (const project of [BROKEN, HEALTHY]) {
     await store.append(projectStream(project), 0, [
       {
@@ -37,21 +34,6 @@ beforeAll(async () => {
         data: { project, owner: "steven-zhc", base: "main", configHash: "h", fromSha: "s" },
       },
     ]);
-  }
-});
-
-// Now rather than at the global teardown: `doctor`'s own test asserts the
-// database is green, and an unrecovered refusal left here would be red there.
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [[projectStream(BROKEN), projectStream(HEALTHY)]]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
   }
 });
 

@@ -12,6 +12,7 @@
  */
 import { directPostgresUrl } from "@lingtai/env";
 import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { claimWorkItem, releaseWorkItem } from "../src/index.ts";
@@ -21,6 +22,11 @@ let a: Db;
 let b: Db;
 let store: EventStore;
 let rival: EventStore;
+
+// #275: two claimants racing is only Postgres's `UNIQUE (stream_id, version)`
+// to prove — skipped rather than converted where no LINGTAI_TEST_DATABASE_URL
+// is set, so the skip is visible in vitest's own count.
+describe.skipIf(!postgresUnderTest())("against the real store", () => {
 
 /** A work item that has been discovered and nothing else. */
 async function discovered(): Promise<string> {
@@ -165,4 +171,5 @@ describe("claimWorkItem", () => {
       expect(claims).toHaveLength(1);
     }
   });
+});
 });

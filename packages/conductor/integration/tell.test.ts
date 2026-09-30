@@ -13,16 +13,13 @@
  * selects on — so Lingtai deleted its own queue's selection criteria. That is
  * the regression this case exists for.
  */
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
+import { beforeAll, describe, expect, it } from "vitest";
 import { foreignLabels, labelsFor } from "../src/labels.ts";
 import { type IssueChannel, tellGitHub } from "../src/tell.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 const wi = (n: number) => {
@@ -71,22 +68,8 @@ const last = async (id: string) => {
 };
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const id of created) await c.query("delete from events where stream_id = $1", [id]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("tellGitHub", () => {
   it("keeps labels that are somebody else's, and records what it set", async () => {

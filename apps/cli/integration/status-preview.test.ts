@@ -14,12 +14,10 @@
  */
 import { firstPass } from "@lingtai/conductor/wizard";
 import { projectStream } from "@lingtai/domain";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import type { GitHubClient, Issue, Label } from "@lingtai/github";
 import { type ResolvedRecipe, resolveRecipe } from "@lingtai/recipe";
-import pg from "pg";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { status } from "../src/status.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
@@ -99,13 +97,11 @@ const github: GitHubClient = {
   },
 };
 
-let client: Db;
 let store: EventStore;
 let resolved: ResolvedRecipe;
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   resolved = await resolveRecipe(async () => YAML, "develop");
   await store.append(projectStream(PROJECT), 0, [
     {
@@ -121,19 +117,6 @@ beforeAll(async () => {
     },
   ]);
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = $1", [projectStream(PROJECT)]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 it("shows the queue lingtai status will print, in the same order and the same words", async () => {
   const preview = await firstPass({ client: github, recipe: resolved.recipe });

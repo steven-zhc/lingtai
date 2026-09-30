@@ -10,14 +10,12 @@
  * not a second one.
  */
 import { projectStream, reduceProject } from "@lingtai/domain";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { GitHubError, type GitHubClient, type Issue, type Label } from "@lingtai/github";
 import { type Recipe, machinePath, recipePath, resolveLocalRecipe, resolveRecipe } from "@lingtai/recipe";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { passedOver } from "../src/discover.ts";
 import { selectRunnable } from "../src/queue.ts";
@@ -74,7 +72,6 @@ runtime:
 `;
 
 let recipe: Recipe;
-let client: Db;
 let store: EventStore;
 
 const issue = (
@@ -196,23 +193,12 @@ function blinks(): EventStore {
 }
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   recipe = (await resolveRecipe(async () => YAML, "develop")).recipe;
 }, 120_000);
 
 afterAll(async () => {
   for (const home of homes) await rm(home, { recursive: true, force: true });
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [[...created]]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
 });
 
 describe("the queue preview", () => {

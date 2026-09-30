@@ -116,9 +116,11 @@ export function hostLooksProduction(host: string, patterns: readonly string[]): 
  * **It applies to the machine's file only.** `.env.local` holds this system's
  * own log and the key that signs its tokens; a managed repository must never
  * receive those, whatever its recipe says. The *project's* file is written by
- * the operator for one project, so a `LINGTAI_TEST_DATABASE_URL` there is the
- * operator handing Lingtai's own test database to Lingtai's own run — which is
- * how this repository is self-hosted, and is the asymmetry that keeps working.
+ * the operator for one project, so a `LINGTAI_TEST_DATABASE_URL` there — for
+ * this repository, when a run touches one of the files on `@lingtai/event-
+ * store/test/postgres`'s list (#275) — is the operator handing Lingtai's own
+ * test database to Lingtai's own run, on purpose, which is the asymmetry that
+ * keeps working.
  */
 function isMachineOwn(name: string): boolean {
   return name.startsWith(PREFIX);

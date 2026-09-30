@@ -6,7 +6,9 @@
  * imported `provisionWorktree`, `git`, `integrate`, `createHookServer` and
  * `resolveAgentEnv` directly, so **the only way to test a decision was to
  * perform it** — which is why every one of this package's tests appends real
- * events and the suite refuses to start without `LINGTAI_TEST_DATABASE_URL`.
+ * events, against whichever store `storeChoice` picks for a test run (#275) —
+ * a SQLite file by default, and Postgres only where the files on
+ * `@lingtai/event-store/test/postgres`'s list need it.
  *
  * `tellGitHub`'s `IssueChannel` (`f52229b`) drew the first port this way and
  * this copies its shape: the method set the caller actually uses, no wider.

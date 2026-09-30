@@ -11,17 +11,14 @@
  * The second property is the one that makes it convergence rather than retry:
  * an issue somebody fixed by hand gets no write at all.
  */
-import { directPostgresUrl } from "@lingtai/env";
 import type { GitHubClient, Issue } from "@lingtai/github";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import type { ProjectState } from "@lingtai/domain";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { convergeIssues, findIssueDrift } from "../src/index.ts";
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
-let client: Db;
 let store: EventStore;
 
 const project: ProjectState = {
@@ -76,22 +73,8 @@ async function seed(stream: string, events: { type: string; data: unknown }[]): 
 }
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [[...created]]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("convergeIssues", () => {
   /** #69's test, verbatim: fail a label write, reconcile, GitHub matches the log. */

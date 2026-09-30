@@ -351,25 +351,36 @@ hid every package after it (#222). `HOME=/nonexistent pnpm test` is green, and
 that is the claim rather than a habit — run it that way when you have touched
 what a test reaches for.
 
-What the integration half asserts is Postgres itself — the projections,
-`LISTEN`/`NOTIFY`, two clients racing — and everything that spawns, writes or
-fetches. A test that only *records* events gets `createMemoryEventStore()` from
-`@lingtai/event-store/memory`, which is held to the same contract as the real
-store — `packages/event-store/test/contract.ts` runs against both, so a
+**Since #275 the integration half runs on a SQLite file of its own by
+default, and only a named few files still assert Postgres itself** — the
+projections, `LISTEN`/`NOTIFY`, two clients racing, and everything else that
+only Postgres has. Which files those are is not kept in this prose:
+`@lingtai/event-store/test/postgres`'s `ON_POSTGRES` names each one and why, and
+`packages/event-store/unit/on-postgres.test.ts` holds that list to the code — a
+file that reaches `pg`, `createDb(` or `createPostgres…(` without being listed
+fails the unit half. Those files wrap themselves in
+`describe.skipIf(!postgresUnderTest())`, so where no
+`LINGTAI_TEST_DATABASE_URL` is set they are skipped rather than failed, and the
+skip is visible in vitest's own count rather than a green that asserted
+nothing (0074). A test that only *records* events gets `createMemoryEventStore()`
+from `@lingtai/event-store/memory`, which is held to the same contract as the
+real store — `packages/event-store/test/contract.ts` runs against both, so a
 divergence is a failing test rather than a surprise.
 
-**Neither test connection string may go through a pooler** (#157). Both pointed
-at `aws-0-us-east-1.pooler.supabase.com` for months and the suite failed often
-enough that a red gate meant nothing — `30 passed → 10 failed → 31 passed` on
-one commit inside an hour, every failure a dropped connection and not an
-assertion. On the direct host, `db.<project-ref>.supabase.co:5432`, the same
-suite runs ten times in a row green at 480–502s. The dashboard offers the
-pooler first, which is how this happens; `.env.example` says it at the line
-where it matters.
+**This system's own database url may not go through a pooler** (#157) — its
+finding stayed true when the second one it used to be about went away.
+`LINGTAI_DATABASE_URL` pointed at `aws-0-us-east-1.pooler.supabase.com` for
+months and the suite that exercised it failed often enough that a red gate
+meant nothing — `30 passed → 10 failed → 31 passed` on one commit inside an
+hour, every failure a dropped connection and not an assertion. On the direct
+host, `db.<project-ref>.supabase.co:5432`, the same suite runs ten times in a
+row green at 480–502s. The dashboard offers the pooler first, which is how this
+happens; `.env.example` says it at the line where it matters.
 
-The suite appends real events and refuses to run without
-`LINGTAI_TEST_DATABASE_URL`. `LINGTAI_DATABASE_URL` is this system's own log,
-and an agent is never given it. **Every name Lingtai reads for itself begins
+`LINGTAI_TEST_SQLITE_PATH` is what makes the default above safe: a directory
+made for one run alone, by `test-support/teardown.ts`'s `setup()`, never
+`~/.lingtai`'s own file. `LINGTAI_DATABASE_URL` is this system's own log, and an
+agent is never given it. **Every name Lingtai reads for itself begins
 `LINGTAI_`** (#63) — a project's own file keeps its own names, so `DATABASE_URL`
 there is the project's application, never this one.
 

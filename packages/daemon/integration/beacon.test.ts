@@ -16,6 +16,7 @@
  * `lastBeat`, which is now the one place either of them asks it.
  */
 import { directPostgresUrl } from "@lingtai/env";
+import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import {
@@ -29,6 +30,12 @@ import {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// #275: the beacon's own row is Postgres's `daemon_status`, so this describe —
+// and the cleanup beside it — is skipped rather than converted where no
+// LINGTAI_TEST_DATABASE_URL is set, and the skip is visible in vitest's own
+// count. "what the beacon's row means" below needs no database at all: `lastBeat`
+// is a pure function, so it runs unconditionally.
+describe.skipIf(!postgresUnderTest())("against the real row", () => {
 /**
  * `daemon_status` is one row for the whole installation, so a test that leaves
  * one behind is a test that tells the next package's `lingtai doctor` a daemon
@@ -121,6 +128,7 @@ describe("the beacon", () => {
     await beacon.stop("stopping");
     expect((await readStatus())?.state).toBe("stopping");
   });
+});
 });
 
 describe("what the beacon's row means", () => {

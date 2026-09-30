@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./test-support": "./test/support.ts",
+    "./test/postgres": "./test/postgres.ts",
     "./memory": "./test/memory.ts",
     "./store": "./src/event-store.ts",
     "./queries": "./src/queries.ts",

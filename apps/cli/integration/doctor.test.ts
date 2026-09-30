@@ -25,6 +25,7 @@ import {
   runDoctor,
 } from "../src/doctor.ts";
 import { createSqliteLogQueries, openSqliteLog } from "@lingtai/event-store/sqlite";
+import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
 import type { LogQueries } from "@lingtai/event-store";
 import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -774,7 +775,13 @@ describe("lingtai doctor — refusals on the log", () => {
   });
 });
 
-describe("lingtai doctor — against the real database", () => {
+// #275: this describe is the one part of the file the header above means by
+// "the last one does need it" — `is green` opens a real connection and checks
+// the session-mode and pooler rows against it, and the two tests after it do
+// the same to leave a clean daemon_status row and a clean events row. Skipped
+// rather than converted where no LINGTAI_TEST_DATABASE_URL is set, so the skip
+// is visible in vitest's own count. Every other describe in this file is pure.
+describe.skipIf(!postgresUnderTest())("against the real database", () => {
   /**
    * Phase 0's exit criterion, as an assertion: *`lingtai doctor` is green*.
    *

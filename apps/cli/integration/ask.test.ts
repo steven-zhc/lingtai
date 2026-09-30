@@ -9,12 +9,10 @@
  * Real events, throwaway project, as every database-touching test here does.
  */
 import { projectStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
+import { processEventStore, type EventStore } from "@lingtai/event-store";
 import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
 import { userInfo } from "node:os";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { answerCommand, askCommand } from "../src/ask.ts";
 import { requeueCommand } from "../src/requeue.ts";
 import { status } from "../src/status.ts";
@@ -33,7 +31,6 @@ const ACTOR = `human:${userInfo().username}`;
 const QUESTION = "which of the three designs for the production-credential tripwire?";
 const CHOICE = "the second — refuse at the hook";
 
-let client: Db;
 let store: EventStore;
 
 /**
@@ -52,8 +49,7 @@ async function fold(): Promise<void> {
 }
 
 beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
+  store = await processEventStore();
   await store.append(projectStream(PROJECT), 0, [
     {
       type: "ProjectConfigured",
@@ -69,22 +65,6 @@ beforeAll(async () => {
     },
   ]);
 }, 120_000);
-
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    await c.query("delete from events where stream_id = any($1)", [
-      [projectStream(PROJECT), wi(ASKED), wi(RUNNING), wi(WITHDRAWN)],
-    ]);
-    await c.query("delete from task_view where project = $1", [PROJECT]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
 
 describe("lingtai ask / answer", () => {
   it("asks before any run, and status prints the question rather than counting it", async () => {

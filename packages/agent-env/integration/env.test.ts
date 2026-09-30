@@ -200,19 +200,25 @@ describe("resolveAgentEnv — merge first, filter second", () => {
   /**
    * …and the asymmetry that keeps self-hosting working: a `LINGTAI_` name the
    * operator wrote into *this project's* file is the operator handing Lingtai's
-   * own test database to Lingtai's own run.
+   * own name to Lingtai's own run, on purpose.
+   *
+   * Not `LINGTAI_TEST_DATABASE_URL` any more: since #275 the suite runs on a
+   * SQLite file by default and only a handful of files still declare that name
+   * (see `@lingtai/event-store/test/postgres`), so it is no longer this
+   * repository's one standing example of the asymmetry — a name invented for
+   * this test is.
    */
   it("passes a LINGTAI_ name the project's own file supplies", async () => {
-    await project("LINGTAI_TEST_DATABASE_URL=postgres://the-test-one\n");
+    await project("LINGTAI_TEST_EXAMPLE=postgres://the-test-one\n");
     const env = await resolveAgentEnv({
       project: PROJECT,
       home,
-      required: ["LINGTAI_TEST_DATABASE_URL"],
+      required: ["LINGTAI_TEST_EXAMPLE"],
       machine: {},
     });
 
     expect(env.refusal).toBeNull();
-    expect(env.values["LINGTAI_TEST_DATABASE_URL"]).toBe("postgres://the-test-one");
+    expect(env.values["LINGTAI_TEST_EXAMPLE"]).toBe("postgres://the-test-one");
   });
 
   it("refuses a value that looks like production, from either file", async () => {
