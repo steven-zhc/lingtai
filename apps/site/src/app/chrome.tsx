@@ -39,6 +39,7 @@ export function Bar({ note }: { note?: string }) {
       </Link>
       <span className="spacer" />
       {note !== undefined && <span className="chip">{note}</span>}
+      <Link href="/docs/tutorial/">Tutorial</Link>
       <a href={REPO}>GitHub</a>
     </header>
   );

@@ -52,6 +52,22 @@ export const GITHUB_BLOB = "https://github.com/steven-zhc/lingtai/blob/main/";
  */
 export const DOCS_PUBLIC = false;
 
+/**
+ * The one page that is public while `DOCS_PUBLIC` is off: the tutorial is the
+ * way in for somebody about to install Lingtai, and nothing else in `doc/` has
+ * been through that edit yet. Slugs, as `slugOf` gives them.
+ *
+ * Everything that would otherwise 404 on the site — a link from the tutorial to
+ * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
+ */
+export const PUBLIC_SLUGS = ["tutorial"];
+
+/** The files the site serves right now, relative to `doc/`. */
+export async function servable(): Promise<string[]> {
+  const all = await published();
+  return DOCS_PUBLIC ? all : all.filter((f) => PUBLIC_SLUGS.includes(slugOf(f)));
+}
+
 export interface Section {
   id: string;
   label: string;
@@ -366,7 +382,7 @@ export function resolveHref(from: string, href: string, isPublished: (file: stri
 
   if (rel.startsWith("../")) return GITHUB_BLOB + rel.replace(/^(\.\.\/)+/, "") + suffix;
   if (rel.endsWith(".md") && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`;
-  if (HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`;
+  if (DOCS_PUBLIC && HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`;
   return `${GITHUB_BLOB}doc/${rel}${suffix}`;
 }
 

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  DOCS_PUBLIC,
   decidedOn,
   decisionsByNumber,
   docRoot,
@@ -179,9 +180,9 @@ describe("where a link inside a document goes", () => {
     );
   });
 
-  it("sends architecture.html to the copy the build made", () => {
+  it("sends architecture.html to the copy the build made, or to GitHub while docs are private", () => {
     expect(resolveHref("decisions/0022-the-seams.md", "../architecture.html", isPublished)).toBe(
-      "/doc/architecture.html",
+      DOCS_PUBLIC ? "/doc/architecture.html" : `${GITHUB_BLOB}doc/architecture.html`,
     );
   });
 

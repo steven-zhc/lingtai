@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { DOCS_PUBLIC } from "@/lib/docs";
+import { DOCS_PUBLIC, PUBLIC_SLUGS } from "@/lib/docs";
 
 /** The home page leads with a visitor's outcome and keeps its proof honest. */
 
@@ -67,13 +67,16 @@ describe("the home page's argument", () => {
     expect(text).toContain('<section className="home-evidence"');
   });
 
-  it("keeps repository docs out of the public site until they are ready", async () => {
+  it("keeps repository docs out of the public site except the tutorial", async () => {
     const [home, chrome] = await Promise.all([
       prose(),
       readFile(path.resolve(import.meta.dirname, "../src/app/chrome.tsx"), "utf8"),
     ]);
     expect(DOCS_PUBLIC).toBe(false);
-    expect(`${home}\n${chrome}`).not.toMatch(/href="\/docs|href="\/doc\//);
+    expect(PUBLIC_SLUGS).toEqual(["tutorial"]);
+    const links = [...`${home}\n${chrome}`.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1]);
+    expect(links.every((l) => l === "/docs/tutorial/")).toBe(true);
+    expect(chrome).toContain('href="/docs/tutorial/"');
     expect(home).toContain('href="#setup"');
   });
 });
