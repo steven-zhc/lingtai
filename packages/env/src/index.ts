@@ -1222,8 +1222,14 @@ interface AppValues {
  * caller that is about to refuse and wants to say why.
  */
 function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): AppValues {
-  const idName = `${PREFIX}GITHUB_APP_ID`;
-  const environment: AppSource = { label: "environment", values: pickGithubNames(from) };
+  // **`from === process.env` already carries every env file's value**, merged
+  // into it by dotenv at import (`config({...})`, above) — so `from` itself
+  // cannot tell a variable that was really exported from one that only ever
+  // lived in a file. `realEnvironment` is the pre-dotenv snapshot, as
+  // `storeChoice` uses it: asking it is what keeps an App ID somebody really
+  // exported from being paired with a key or secret that only ever lived in
+  // `.env.local`.
+  const environment: AppSource = { label: "environment", values: pickGithubNames(realEnvironment(from)) };
   const fileSources: AppSource[] = [];
   for (const file of files) {
     let parsed: Record<string, string>;
@@ -1241,17 +1247,7 @@ function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): AppValues
 
   const elected = electGithubSource([environment, ...fileSources, ...machineSource]);
 
-  // **`from === process.env` already carries every env file's values**, merged
-  // into it by dotenv at import (`config({...})`, above) — so "environment"
-  // alone cannot tell a variable that was really exported from one that only
-  // ever lived in a file. Ask the pre-dotenv snapshot, as `storeChoice` does.
-  let source = elected.source;
-  if (source === "environment" && from === process.env && optional(idName, realEnvironment(from)) === undefined) {
-    const fromFile = fileSources.find((s) => s.values[idName]);
-    if (fromFile !== undefined) source = fromFile.label;
-  }
-
-  return { get: elected.get, source, unreadable: machine.unreadable ?? null };
+  return { get: elected.get, source: elected.source, unreadable: machine.unreadable ?? null };
 }
 
 /**
@@ -1267,6 +1263,21 @@ export function githubWebhookSecret(
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): string | undefined {
   return appValues(from, files).get(`${PREFIX}GITHUB_WEBHOOK_SECRET`);
+}
+
+/**
+ * Why the App reads as not configured, when it is because `~/.lingtai/config.yml`
+ * exists and could not be read or parsed — `null` otherwise, including when the
+ * App simply is not configured. `hasGitHubApp` cannot say this itself without
+ * becoming something other than a boolean, so `lingtai doctor`
+ * (`apps/cli/src/doctor.ts`) asks this too, to tell an operator's broken file
+ * from an operator who has not configured one yet.
+ */
+export function githubAppUnreadable(
+  from: NodeJS.ProcessEnv = process.env,
+  files: readonly string[] = from === process.env ? envFiles() : [],
+): string | null {
+  return appValues(from, files).unreadable;
 }
 
 /**
@@ -1294,8 +1305,8 @@ export function githubApp(
         (value.unreadable ? `${value.unreadable} ` : "") +
         (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
           ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
-          : "Copy .env.example to .env.local at the repo root and fill it in, or lingtai init writes a " +
-            "github: section in ~/.lingtai/config.yml once an App answers."),
+          : "Copy .env.example to .env.local at the repo root and fill it in, or write a github: section " +
+            "(app_id, private_key_path, webhook_secret) in ~/.lingtai/config.yml."),
     );
   }
   const path = value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`);
@@ -1320,8 +1331,10 @@ export function githubApp(
 }
 
 /**
- * Whether the App is configured at all, without throwing to find out — asked of
- * the environment and then of the env files as they are now, like `githubApp`.
+ * Whether the App is configured at all, without throwing to find out — read
+ * the same way as `githubApp`: from the environment, an env file, or
+ * `~/.lingtai/config.yml`, whichever names the App ID, and that source alone
+ * for every name. There is no per-name fallback between them.
  */
 export function hasGitHubApp(
   from: NodeJS.ProcessEnv = process.env,

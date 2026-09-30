@@ -10,14 +10,19 @@ import {
   directUrlIfSet,
   envFiles,
   githubApp,
+  githubAppUnreadable,
   githubWebhookSecret,
   hasGitHubApp,
   logConfigured,
   machineDatabaseUrl,
   postgresUrl,
   postgresUrlIfSet,
+  repoRoot,
   resolvePath,
 } from "../src/index.ts";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 describe("resolvePath", () => {
   /**
@@ -173,6 +178,53 @@ describe("the App is read from the env file as it is now", () => {
     expect(hasGitHubApp({})).toBe(false);
     expect(envFiles().map((f) => f.split("/").pop())).toEqual([".env.local", ".env"]);
   });
+
+  /**
+   * #320. `from === process.env` already carries every env file's value,
+   * merged in by dotenv at import — so a name really exported by the operator
+   * cannot be told apart from one that only ever lived in `.env.local` by
+   * reading `process.env` alone. That distinction only exists at process
+   * start (`realEnvironment`'s snapshot), so this spawns a real process and
+   * assigns to `process.env` *after* `githubApp` is imported — mimicking what
+   * dotenv's merge would have left behind — the same way `store.test.ts`
+   * probes the database URL without writing an env file into the repository.
+   */
+  it("never pairs a really-exported id with a different App's key that only ever lived in a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lingtai-env-probe-"));
+    const index = pathToFileURL(join(repoRoot(), "packages", "env", "src", "index.ts")).href;
+    const file = join(dir, "probe.mjs");
+    writeFileSync(
+      file,
+      `import { githubApp } from ${JSON.stringify(index)};\n` +
+        // App 222's key and secret, as if a copied .env.local had supplied
+        // them — dotenv would have merged these into process.env before this
+        // line ran, same as it does for the real file at import.
+        `process.env.LINGTAI_GITHUB_APP_PRIVATE_KEY = "app 222's key";\n` +
+        `process.env.LINGTAI_GITHUB_WEBHOOK_SECRET = "secret-222";\n` +
+        `try {\n` +
+        `  console.log(JSON.stringify({ ok: true, value: githubApp(process.env, []) }));\n` +
+        `} catch (err) {\n` +
+        `  console.log(JSON.stringify({ ok: false, message: err.message }));\n` +
+        `}\n`,
+    );
+    const home = mkdtempSync(join(tmpdir(), "lingtai-env-probe-home-"));
+    const ran = spawnSync(process.execPath, [file], {
+      encoding: "utf8",
+      // App 111's id is really exported into the child process — before the
+      // script runs, and so before `githubApp`'s module captures its
+      // pre-dotenv snapshot at import.
+      env: { PATH: process.env["PATH"] ?? "", HOME: home, LINGTAI_HOME: home, LINGTAI_GITHUB_APP_ID: "111" },
+    });
+    expect(ran.stderr, ran.stderr).toBe("");
+    const result = JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as { ok: boolean; message?: string };
+
+    // App 111's id, really exported, has no key anywhere it was really
+    // exported — refusing is the correct answer. Answering `ok: true` here
+    // would mean App 111's id got signed with App 222's key, the pairing
+    // #320 forbids.
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("PRIVATE_KEY");
+  });
 });
 
 /**
@@ -225,6 +277,15 @@ describe("the App's third source, config.yml", () => {
 
     expect(hasGitHubApp(env, [])).toBe(false);
     expect(() => githubApp(env, [])).toThrow(join(home, "config.yml"));
+    // `hasGitHubApp` alone cannot tell "not configured" from "config.yml is
+    // broken" — `lingtai doctor` asks this too, so it can name the file
+    // instead of reporting the App as simply not set (#320).
+    expect(githubAppUnreadable(env, [])).toContain(join(home, "config.yml"));
+  });
+
+  it("answers null from githubAppUnreadable when the App is simply not configured", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    expect(githubAppUnreadable({ LINGTAI_HOME: home }, [])).toBeNull();
   });
 });
 

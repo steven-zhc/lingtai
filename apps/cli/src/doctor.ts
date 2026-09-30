@@ -67,6 +67,7 @@ import {
   type StoreChoice,
   directUrlIfSet,
   githubApp,
+  githubAppUnreadable,
   hasGitHubApp,
   machineDatabaseUrl,
   postgresUrlIfSet,
@@ -752,6 +753,10 @@ async function runtimeAuth(): Promise<CheckResult> {
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = "github: app credentials";
   if (!hasGitHubApp(env)) {
+    const unreadable = githubAppUnreadable(env);
+    if (unreadable !== null) {
+      return { name, status: "fail", detail: unreadable };
+    }
     return {
       name,
       status: "skip",
