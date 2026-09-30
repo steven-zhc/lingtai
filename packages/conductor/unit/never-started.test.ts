@@ -242,10 +242,12 @@ describe("standDown", () => {
 
   /**
    * The night #317 is about: Codex named a reset and the conductor said it
-   * named none, resuming 2h37m early. Reading it in the host's own zone
-   * (nothing passed for `zone`) is what production does; `standDown`'s
-   * fallback is `hostZone()`, so this only pins the sentence and the reason,
-   * not the zone guess — that is `parseResetAt`'s own test above.
+   * named none, resuming 2h37m early. `zone` is pinned to `"America/Chicago"`
+   * here, the same as `parseResetAt`'s own test above, so this asserts the
+   * sentence, the reason, *and* the zone-guess reading together rather than
+   * leaving the reading to whichever zone the test runner's host happens to
+   * be in. Production passes no `zone` and falls back to `hostZone()`; that
+   * path is not exercised by either test.
    */
   it("waits for Codex's named reset time rather than the recipe's backoff", () => {
     const { until, reason } = standDown({

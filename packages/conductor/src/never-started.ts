@@ -70,7 +70,21 @@
  * the reason in the header: guessing wrong resumes at the wrong moment and
  * costs a pass, not a decision. `zone` exists so a test can pin a zone without
  * touching `process.env.TZ`, which is process-global; production calls this
- * with nothing in that slot.
+ * with nothing in that slot, so a production read depends on the conducting
+ * host's own zone matching whichever zone the runtime rendered its message
+ * in — undocumented anywhere but here, and untested, because there is nothing
+ * to pin it against without inventing a second, configured source of truth
+ * for the host's zone (#317 leaves that undecided).
+ *
+ * **A dated match (a month and a day given) does not degrade the way a bare
+ * time does when the guess is wrong.** A bare time rolls forward to the next
+ * occurrence regardless of which zone was guessed, so a wrong guess only
+ * shifts the answer by hours. A date with its year already written is tried
+ * once, in the guessed zone, and refused outright if that reading is already
+ * behind `now` — which a wrong guess can make true of a date that has not, in
+ * the runtime's own zone, arrived yet. The refusal is safe (`standDown` falls
+ * back to the recipe's backoff, never to a wrong instant), but it forfeits the
+ * saving #317 exists for on any host whose zone the guess gets wrong.
  *
  * Anything further out than a week is refused. A `seven_day` limit is the
  * longest thing this can legitimately be describing — the dated form is that
