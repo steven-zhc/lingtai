@@ -240,16 +240,16 @@ time instead of a day later. See
 with nothing configured and it links to `/setup/github-app`, which posts an App
 *manifest* to GitHub: you name the App on GitHub's own screen, press **Create
 GitHub App**, and GitHub hands the credentials back — the page writes the id,
-the webhook secret and the private key at `0600`, and never shows you the key.
-The permissions below are in the manifest, so they are not a question and
-cannot be answered wrong, which is the whole of why 0006's founding failure
-cannot happen on that path.
+the webhook secret and the private key path into `~/.lingtai/config.yml`'s
+`github:` section, at `0600`, and never shows you the key (`#308` — it used to
+write `.env.local`, which an installed binary and a daemon started from `~`
+cannot find).
 
 Nothing has to be restarted afterwards. `hasGitHubApp()` and `githubApp()` read
-the App ID and the key path from `.env.local` on disk whenever the environment
-does not set them, so the App is usable at once — by the board that wrote it and
-by a daemon that was already running. A variable set in the environment still
-wins over the file.
+the App ID and the key path from `config.yml` on disk whenever neither the
+environment nor an env file sets them, so the App is usable at once — by the
+board that wrote it and by a daemon that was already running. A variable set
+in the environment, or named in `.env.local`, still wins over the file.
 
 **What is below is the fallback, and it stays one.** A person may prefer to
 create the App themselves; an organisation role that cannot create an App has
@@ -318,17 +318,28 @@ that repository (Settings → GitHub Apps → Configure), then run lingtai add a
 
 ### 4. Point Lingtai at it
 
-In `.env.local` at the repository root:
+In `~/.lingtai/config.yml`, beside `database:`:
+
+```yaml
+github:
+  app_id: "123456"
+  private_key_path: ~/.lingtai-app.pem
+  webhook_secret: …
+```
+
+Or, for this checkout only, in `.env.local` at its root — it wins over
+`config.yml` if both name an App:
 
 ```bash
 LINGTAI_GITHUB_APP_ID=123456
 LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=~/.lingtai-app.pem
 ```
 
-`~` is expanded, and a relative path is relative to *this repository's root* —
-not to whichever directory you ran the command from. Where only a single-line
-value can be carried, `LINGTAI_GITHUB_APP_PRIVATE_KEY` takes the PEM itself with `\n`
-escapes instead.
+`~` is expanded, and in `.env.local` a relative path is relative to *this
+repository's root* — not to whichever directory you ran the command from; in
+`config.yml` it is relative to `~/.lingtai`. Where only a single-line value can
+be carried, `LINGTAI_GITHUB_APP_PRIVATE_KEY` takes the PEM itself with `\n`
+escapes instead — `config.yml` has no inline-key form.
 
 No installation id is needed. It is looked up per repository, which is what
 turns "the App is not installed there" into a sentence rather than a 404.

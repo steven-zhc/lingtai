@@ -66,11 +66,20 @@ LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=~/.ssh/lingtai-agent.private-key.pem
 name rather than reporting the variable as unset — because for a while this
 document told you to write it that way.
 
-**The key is re-read on every call.** `readFileSync` sits inside `githubApp()`,
-not at module scope, so a key that appears at that path later is picked up by a
-process already running. **The App ID is not** — it comes from `process.env` and
-is fixed when the process starts. That asymmetry is
-[creating-the-app.md](design/creating-the-app.md)'s subject.
+**Three sources, in order: a real export, an env file, then `~/.lingtai/config.yml`
+(#308).** The env file is `.env.local` at a checkout's root — a convenience for
+one, and the only place the board's setup page used to write. It has moved:
+the App is a fact about the machine and not about any one checkout, so the
+setup page and `lingtai init` now write a `github:` section in `config.yml`
+instead, which is where an installed binary and a daemon started from `~` —
+neither of which finds a checkout at all — read it from. `.env.local` still
+works and still wins if it names the id, exactly as a real export wins over
+both files.
+
+**Both the key and the id are re-read on every call**, from whichever source
+named the id — `readFileSync` sits inside `githubApp()`, not at module scope,
+so a key or an id that appears later is picked up by a process already
+running, with nothing to restart.
 
 ## `token()` is a function, and that is the point
 
