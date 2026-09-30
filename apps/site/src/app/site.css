@@ -409,5 +409,14 @@ footer.foot {
   border-top: 1px solid var(--rule); background: var(--surface);
   padding: 28px 0 40px; font-size: 13px; color: var(--muted);
 }
-footer.foot p { max-width: var(--measure); }
+footer.foot .wrap { max-width: 80rem; }
+.foot-layout {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: clamp(36px, 6vw, 88px); align-items: start;
+}
+footer.foot p { max-width: none; margin: 0; }
 footer.foot a { color: var(--ink-2); }
+
+@media (max-width: 700px) {
+  .foot-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+}

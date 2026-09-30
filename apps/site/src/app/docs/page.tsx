@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import {
+  DOCS_PUBLIC,
   entriesOf,
   GITHUB_BLOB,
   HTML_DOCS,
@@ -25,6 +27,8 @@ export const metadata: Metadata = {
  * out of `doc/README.md`, which is where this repository keeps them.
  */
 export default async function Docs() {
+  if (!DOCS_PUBLIC) notFound();
+
   const sections = await Promise.all(
     SECTIONS.map(async (section) => ({ section, entries: await entriesOf(section) })),
   );

@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { FRONT_PAGE_DOCS } from "@/lib/docs";
 import { readSnapshot, stamp } from "@/lib/snapshot";
 import { Bar, Foot, INSTALL_FALLBACK, INSTALL_URL, REPO } from "./chrome";
 import { NoSnapshot, SnapshotBoard } from "./snapshot-board";
@@ -33,9 +31,9 @@ export default async function Home() {
                 </p>
               </div>
               <div className="hero-actions">
-                <Link className="way-in" href="/docs/tutorial/">
-                  Get started <span aria-hidden="true">↗</span>
-                </Link>
+                <a className="way-in" href="#setup">
+                  Set up Lingtai <span aria-hidden="true">↓</span>
+                </a>
                 <a className="second" href="#how-it-works">
                   See how it works <span aria-hidden="true">↓</span>
                 </a>
@@ -95,7 +93,6 @@ export default async function Home() {
               <p className="kicker">Why Lingtai</p>
               <h2 id="difference-title">An agent can make a patch. Who runs the rest of the loop?</h2>
               <p>Giving an agent a task is one thing. Keeping a queue moving safely, especially when you are away, needs a way to choose work, check it, and hand failures back.</p>
-              <Link className="link" href="/docs/guide/">Learn what makes a good issue →</Link>
             </div>
             <div className="comparison" aria-label="What Lingtai adds around a coding agent">
               <div className="comparison-head"><span>THE QUESTION</span><span>LINGTAI&rsquo;S ANSWER</span></div>
@@ -106,12 +103,11 @@ export default async function Home() {
             </div>
           </section>
 
-          <section className="home-setup" aria-labelledby="setup-title">
+          <section className="home-setup" id="setup" aria-labelledby="setup-title">
             <div className="setup-lead">
               <p className="kicker">How you use it</p>
               <h2 id="setup-title">Start with one repository.</h2>
               <p>Set it up on your machine, tell it which issues count, then let it run.</p>
-              <Link className="link" href="/docs/tutorial/">Follow the complete tutorial →</Link>
             </div>
             <ol className="setup-steps">
               <li>
@@ -164,22 +160,8 @@ export default async function Home() {
               <li><b>Postgres is required.</b> A database of its own — not one belonging to a project you manage. Running entirely on SQLite is decided and three-quarters built: it becomes a choice you make at setup, not a default you fall into. <a className="link" href={`${REPO}/issues/179`}>Track #179</a></li>
               <li><b>Not a container sandbox.</b> Guarded runs use a worktree, a filtered environment, and a recording hook; <code>sandboxed</code> is a tier the schema names and nothing enforces yet.</li>
               <li><b>A running daemon holds the code it started with.</b> Merging does not reach the process that is conducting, so picking up new code is <code>lingtai restart</code> — which refuses first, on a commit the remote has not got, a dirty tree, or a red doctor.</li>
-              <li><b>0.9.0 is the first release.</b> It exists to prove this path end to end: four binaries, a board, checksums, and an installer. <Link className="link" href="/docs/operating/">Read the operating guide</Link></li>
+              <li><b>0.9.0 is the first release.</b> It exists to prove this path end to end: four binaries, a board, checksums, and an installer.</li>
             </ul>
-          </section>
-
-          <section className="more" aria-labelledby="more-title">
-            <div>
-              <p className="kicker">Keep exploring</p>
-              <h2 id="more-title">See the details when you need them.</h2>
-              <p>Start with the tutorial, or go straight to the source and the operating notes.</p>
-            </div>
-            <div className="more-links">
-              {FRONT_PAGE_DOCS.map((doc) => (
-                <a key={doc.href} href={doc.href}>{doc.title}<span aria-hidden="true">↗</span></a>
-              ))}
-              <a href={REPO}>GitHub source<span aria-hidden="true">↗</span></a>
-            </div>
           </section>
         </div>
       </main>

@@ -37,10 +37,6 @@ export function Bar({ note }: { note?: string }) {
         <span className="mark" aria-hidden />
         Lingtai
       </Link>
-      <span className="sep" />
-      <Link href="/docs/">Docs</Link>
-      <Link href="/docs/tutorial/">Tutorial</Link>
-      <a href="/doc/architecture.html">Architecture</a>
       <span className="spacer" />
       {note !== undefined && <span className="chip">{note}</span>}
       <a href={REPO}>GitHub</a>
@@ -51,22 +47,15 @@ export function Bar({ note }: { note?: string }) {
 export function Foot() {
   return (
     <footer className="foot">
-      <div className="wrap">
+      <div className="wrap foot-layout">
         <p>
           <b>Lingtai runs on one machine of yours.</b> It owns a Postgres database, a clone of each
           repository it manages, and the agent processes it starts. There is no hosted service and
-          nothing to sign up for — install the CLI, run <code>lingtai init</code>, and follow{" "}
-          <Link className="link" href="/docs/tutorial/">
-            the tutorial
-          </Link>
-          .
+          nothing to sign up for — install the CLI and run <code>lingtai init</code>.
         </p>
-        <p style={{ marginTop: 14 }}>
-          Every page under <code>/docs</code> is rendered from a file in{" "}
-          <a className="link" href={`${REPO}/tree/main/doc`}>
-            <code>doc/</code>
-          </a>{" "}
-          at build time. Nothing here is a second copy of anything in the repository.
+        <p>
+          <b>Built in the open.</b> Source, releases, and issues live on{" "}
+          <a className="link" href={REPO}>GitHub</a>.
         </p>
       </div>
     </footer>

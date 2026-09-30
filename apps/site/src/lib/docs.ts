@@ -45,6 +45,13 @@ export const docRoot = path.join(repoRoot, "doc");
 /** Where a file that is not projected is read instead. */
 export const GITHUB_BLOB = "https://github.com/steven-zhc/lingtai/blob/main/";
 
+/**
+ * The repository docs stay private to the build until their information
+ * architecture is ready for visitors. Flip this one switch to restore the
+ * generated index, document routes, and carried HTML drawings together.
+ */
+export const DOCS_PUBLIC = false;
+
 export interface Section {
   id: string;
   label: string;
@@ -119,7 +126,7 @@ export const HTML_DOCS = [
 ];
 
 /**
- * The six the front page offers, and no more.
+ * The six the front page can offer once `DOCS_PUBLIC` is enabled, and no more.
  *
  * The index at `/docs` is generated and lists everything in `doc/`; six is a
  * choice about where a stranger should start, so it is written down rather than

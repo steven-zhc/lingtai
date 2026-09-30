@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import {
   decidedOn,
   decisionsByNumber,
+  DOCS_PUBLIC,
   GITHUB_BLOB,
   headingsOf,
   ledeOf,
@@ -36,6 +37,10 @@ import { Document } from "../document";
  * build time is how a file nobody meant to publish gets published.
  */
 export async function generateStaticParams() {
+  // Next's static exporter rejects an empty list for a dynamic route. Build
+  // one inert 404 so the route module can stay in place while no real document
+  // slug — and therefore no repository content — enters the export.
+  if (!DOCS_PUBLIC) return [{ slug: ["__hidden"] }];
   const files = await published();
   // `slugOf` and not a `.md` stripped here: a directory's `index.md` is the
   // directory (`plugins/index.md` → `/docs/plugins/`), and a second answer to
@@ -44,9 +49,12 @@ export async function generateStaticParams() {
   return files.map((file) => ({ slug: slugOf(file).split("/") }));
 }
 
+export const dynamicParams = false;
+
 type Params = { params: Promise<{ slug: string[] }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  if (!DOCS_PUBLIC) return {};
   const doc = await readDoc((await params).slug.join("/"));
   if (doc === null) return {};
   return { title: doc.title, description: ledeOf(doc.body).slice(0, 200) };
@@ -72,6 +80,7 @@ async function decisionStatus(slug: string): Promise<StatusPart[]> {
 }
 
 export default async function DocPage({ params }: Params) {
+  if (!DOCS_PUBLIC) notFound();
   const slug = (await params).slug.join("/");
   const [doc, files] = await Promise.all([readDoc(slug), published()]);
   if (doc === null || !files.includes(doc.source)) notFound();

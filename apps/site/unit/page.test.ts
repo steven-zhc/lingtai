@@ -1,8 +1,7 @@
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { docRoot, FRONT_PAGE_DOCS, HTML_DOCS, published } from "@/lib/docs";
+import { DOCS_PUBLIC } from "@/lib/docs";
 
 /** The home page leads with a visitor's outcome and keeps its proof honest. */
 
@@ -17,6 +16,14 @@ describe("the home page's argument", () => {
     const chrome = await readFile(path.resolve(import.meta.dirname, "../src/app/chrome.tsx"), "utf8");
     expect(chrome).toContain('export const SITE_URL = "https://lingtai.hczhang.com"');
     expect(chrome).toContain('export const INSTALL_URL = `${SITE_URL}/install.sh`');
+  });
+
+  it("lays the two footer facts out as a responsive pair", async () => {
+    const chrome = await readFile(path.resolve(import.meta.dirname, "../src/app/chrome.tsx"), "utf8");
+    const css = await readFile(path.resolve(import.meta.dirname, "../src/app/site.css"), "utf8");
+    expect(chrome).toContain('className="wrap foot-layout"');
+    expect(chrome).not.toContain("style={{ marginTop: 14 }}");
+    expect(css).toMatch(/\.foot-layout\s*{[^}]*display:\s*grid/s);
   });
 
   it("does not lead with internals or event-log claims", async () => {
@@ -37,7 +44,6 @@ describe("the home page's argument", () => {
       "How you use it",
       "The work, in the open",
       "Know the edges",
-      "Keep exploring",
     ];
     const at = order.map((heading) => ({ heading, at: text.indexOf(heading) }));
     const missing = at.filter((s) => s.at < 0).map((s) => s.heading);
@@ -60,31 +66,14 @@ describe("the home page's argument", () => {
     expect(text).toContain('<section className="home-setup"');
     expect(text).toContain('<section className="home-evidence"');
   });
-});
 
-describe("the six docs entries go somewhere", () => {
-  it("names a file that is still in doc/", () => {
-    expect(FRONT_PAGE_DOCS).toHaveLength(6);
-    for (const doc of FRONT_PAGE_DOCS) {
-      expect(existsSync(path.join(docRoot, doc.source)), `doc/${doc.source} is gone`).toBe(true);
-    }
-  });
-
-  it("links to a page this site publishes", async () => {
-    const all = await published();
-    for (const doc of FRONT_PAGE_DOCS) {
-      if (doc.href.startsWith("/doc/")) {
-        // Carried, not converted: `architecture.html` is copied into the export
-        // by `scripts/doc-assets.ts` and served as itself.
-        const file = doc.href.slice("/doc/".length);
-        expect(HTML_DOCS.map((d) => d.file), `${doc.href} is not carried`).toContain(file);
-      } else if (doc.href.startsWith("/docs/#")) {
-        // A section of the generated index, which is a directory of `doc/`.
-        expect(all.some((f) => f.startsWith(`${doc.source}/`))).toBe(true);
-      } else {
-        // A rendered page, so the markdown behind it has to be published.
-        expect(all, `${doc.href} renders nothing`).toContain(doc.source);
-      }
-    }
+  it("keeps repository docs out of the public site until they are ready", async () => {
+    const [home, chrome] = await Promise.all([
+      prose(),
+      readFile(path.resolve(import.meta.dirname, "../src/app/chrome.tsx"), "utf8"),
+    ]);
+    expect(DOCS_PUBLIC).toBe(false);
+    expect(`${home}\n${chrome}`).not.toMatch(/href="\/docs|href="\/doc\//);
+    expect(home).toContain('href="#setup"');
   });
 });
