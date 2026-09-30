@@ -25,6 +25,13 @@ import { parse as parseYaml } from "yaml";
  * (#186). `postgresUrl` and `directUrlIfSet` fall back to it when neither the
  * environment nor an env file names one — see `machineDatabaseUrl` — so a
  * command that connects with no variable and no env file is reading that file.
+ *
+ * **The GitHub App has the same third source, since #308**: a `github:`
+ * section in the same file, beside `database:`, in the same position — behind
+ * the environment and behind the env files. `githubApp()` and
+ * `githubWebhookSecret()` fall back to it, so an installed binary or a daemon
+ * started from `~`, neither of which finds a checkout's `.env.local`, can
+ * still authenticate. See `appValues` for the reader and the election.
  */
 const here = dirname(fileURLToPath(import.meta.url));
 /**
@@ -966,6 +973,12 @@ export interface GitHubAppCredentials {
   privateKey: string;
   /** Where the key came from, for diagnostics. Never the key itself. */
   keySource: string;
+  /**
+   * Where the App ID came from — `"environment"` for a variable really
+   * exported into this process, or the path of the file that named it: an env
+   * file, or `~/.lingtai/config.yml`. `lingtai doctor` reports it.
+   */
+  source: string;
 }
 
 /**
@@ -1031,9 +1044,156 @@ export function envFiles(): string[] {
   return [resolve(root, ".env.local"), resolve(root, ".env")];
 }
 
+/** The `github:` section's own keys, mapped to the names `appValues` asks for. */
+const GITHUB_CONFIG_KEYS: Record<string, string> = {
+  app_id: `${PREFIX}GITHUB_APP_ID`,
+  private_key_path: `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`,
+  webhook_secret: `${PREFIX}GITHUB_WEBHOOK_SECRET`,
+};
+
 /**
- * The App's names, from the environment or else the files as they are **now**
- * (#169) — and **every name from the source that names the App ID**.
+ * `parseYaml`'s answer, narrowed to the `github:` map — or undefined where
+ * there is none. Its own function so the YAML-text step and the section step
+ * are each testable on their own.
+ */
+function githubSectionFrom(parsed: unknown): Record<string, unknown> | undefined {
+  const github = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["github"] : undefined;
+  return github !== null && typeof github === "object" ? (github as Record<string, unknown>) : undefined;
+}
+
+/**
+ * The `github:` section, translated to the `LINGTAI_GITHUB_*` names — pure, so
+ * the pairing election below is unit-testable on plain objects rather than on
+ * a file (#308).
+ *
+ * **`private_key_path` resolves against `home`, never against `root`.**
+ * `resolvePath` resolves a relative path against the checkout
+ * (`repoRoot()`/`root`), which bundled is a directory under `versions/` no
+ * writer ever creates (`root`, above) — so a relative path written here would
+ * point nowhere on an installed binary. `home` is `stateDir()`, the same
+ * directory this file itself lives in.
+ */
+export function githubRecordFromSection(
+  section: Record<string, unknown> | undefined,
+  home: string,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (section === undefined) return out;
+  for (const [key, envName] of Object.entries(GITHUB_CONFIG_KEYS)) {
+    const value = section[key];
+    if (typeof value !== "string" || value === "") continue;
+    out[envName] = envName === `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH` ? resolveAgainst(value, home) : value;
+  }
+  return out;
+}
+
+/** As `resolvePath`, but a relative path resolves against `home` rather than the checkout. */
+function resolveAgainst(path: string, home: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return resolve(homedir(), path.slice(2));
+  return resolve(home, path);
+}
+
+interface MachineGithub {
+  /** The section's values, translated — present even when the section is empty or absent. */
+  values?: Record<string, string>;
+  /** Why the file could not be read at all — never *it names no section*. */
+  unreadable?: string;
+}
+
+/**
+ * The `github:` section of `~/.lingtai/config.yml`, under `machineChoiceFile`'s
+ * rule rather than `machineUrl`'s: `lingtai doctor` calls `githubApp(env)` with
+ * an environment handed in (`apps/cli/src/doctor.ts`), and that is what lets a
+ * test point it at a temporary home. `machineUrl`'s rule only ever reads this
+ * process's own environment, which would leave doctor unable to report on
+ * anything but the operator's real machine.
+ */
+function machineGithub(from: NodeJS.ProcessEnv): MachineGithub {
+  const path = machineChoiceFile(from);
+  if (path === null) return {};
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(text);
+  } catch (err) {
+    return {
+      unreadable: `${path} could not be parsed as YAML, so its github section could not be read: ${(err as Error).message}`,
+    };
+  }
+  return { values: githubRecordFromSection(githubSectionFrom(parsed), stateDir(from)) };
+}
+
+/** One place a name might come from, already narrowed to what it says about the App. */
+interface AppSource {
+  /** `"environment"`, or the path this was read from. */
+  label: string;
+  values: Record<string, string>;
+}
+
+/** The four names `appValues` ever asks a source for. */
+const GITHUB_APP_NAMES = [
+  `${PREFIX}GITHUB_APP_ID`,
+  `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`,
+  `${PREFIX}GITHUB_APP_PRIVATE_KEY`,
+  `${PREFIX}GITHUB_WEBHOOK_SECRET`,
+] as const;
+
+function pickGithubNames(from: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of GITHUB_APP_NAMES) {
+    const value = from[name];
+    if (value) out[name] = value;
+  }
+  return out;
+}
+
+/**
+ * **Which source wins, and what it says** — pure, over sources that are
+ * already parsed, so this is unit-testable without touching a file (#308).
+ *
+ * `appValues` is not a plain fallback chain: whichever source names the App
+ * ID is asked first *for every other name*, so the id and the key path can
+ * never come from different Apps (`.env.local` shipping the key path filled
+ * in and the id blank is exactly how that pairing broke before, see the
+ * history on `appValues`). The same rule now has to hold with a third source:
+ * a `config.yml` that names the id supplies the key path too, even when a
+ * stale key path is exported or sits in an env file, and an env file that
+ * names the id still wins over `config.yml` for every name.
+ */
+export function electGithubSource(sources: readonly AppSource[]): { get: (name: string) => string | undefined; source: string } {
+  const idName = `${PREFIX}GITHUB_APP_ID`;
+  const owner = sources.find((s) => s.values[idName]);
+  const ordered = owner === undefined ? sources : [owner, ...sources.filter((s) => s !== owner)];
+  return {
+    get: (name) => {
+      for (const s of ordered) {
+        const value = s.values[name];
+        if (value) return value;
+      }
+      return undefined;
+    },
+    source: owner?.label ?? "environment",
+  };
+}
+
+interface AppValues {
+  get: (name: string) => string | undefined;
+  /** Where the App ID came from — `"environment"`, an env file's path, or `config.yml`'s path. */
+  source: string;
+  /** `config.yml` exists and could not be parsed — never *it names no App*. */
+  unreadable: string | null;
+}
+
+/**
+ * The App's names, from the environment, or an env file as it is **now**
+ * (#169), or `~/.lingtai/config.yml` (#308) — and **every name from the
+ * source that names the App ID**, via `electGithubSource`.
  *
  * The private key was always re-read per call — `readFileSync` is inside
  * `githubApp` — while the App ID came from `process.env`, which Next.js and
@@ -1043,22 +1203,15 @@ export function envFiles(): string[] {
  * id the way the key is read closes that, in every process, with nothing to
  * restart.
  *
- * **One source per App, not one per name.** The id and the key are a pair, and
- * a `.env.local` copied from `.env.example` ships the key path filled in with
- * the id blank — so `process.env` holds a key path from start while the id is
- * only ever in the file. Asked name by name, the id came from the file and the
- * key path from that stale snapshot: the setup page writes a key aside because
- * one is already at the default path, points the file at it, and every call
- * signs the new App's JWT with the old App's key. So the source that names the
- * id is asked first for every other name, and the rest only for what it does
- * not say.
- *
  * `process.env` keeps winning where it names the id, so a deployment that
  * supplies the variables directly is unaffected. A file that cannot be read
- * says nothing.
+ * says nothing — `config.yml`'s `unreadable` is carried separately, for the
+ * caller that is about to refuse and wants to say why.
  */
-function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): (name: string) => string | undefined {
-  const sources: ((name: string) => string | undefined)[] = [(name) => optional(name, from)];
+function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): AppValues {
+  const idName = `${PREFIX}GITHUB_APP_ID`;
+  const environment: AppSource = { label: "environment", values: pickGithubNames(from) };
+  const fileSources: AppSource[] = [];
   for (const file of files) {
     let parsed: Record<string, string>;
     try {
@@ -1066,17 +1219,26 @@ function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): (name: st
     } catch {
       continue;
     }
-    sources.push((name) => parsed[name] || undefined);
+    fileSources.push({ label: file, values: pickGithubNames(parsed) });
   }
-  const owner = sources.find((source) => source(`${PREFIX}GITHUB_APP_ID`) !== undefined);
-  const ordered = owner === undefined ? sources : [owner, ...sources.filter((s) => s !== owner)];
-  return (name) => {
-    for (const source of ordered) {
-      const value = source(name);
-      if (value) return value;
-    }
-    return undefined;
-  };
+  const machine = machineGithub(from);
+  const machinePath = machineChoiceFile(from);
+  const machineSource: AppSource[] =
+    machine.values !== undefined && machinePath !== null ? [{ label: machinePath, values: machine.values }] : [];
+
+  const elected = electGithubSource([environment, ...fileSources, ...machineSource]);
+
+  // **`from === process.env` already carries every env file's values**, merged
+  // into it by dotenv at import (`config({...})`, above) — so "environment"
+  // alone cannot tell a variable that was really exported from one that only
+  // ever lived in a file. Ask the pre-dotenv snapshot, as `storeChoice` does.
+  let source = elected.source;
+  if (source === "environment" && from === process.env && optional(idName, realEnvironment(from)) === undefined) {
+    const fromFile = fileSources.find((s) => s.values[idName]);
+    if (fromFile !== undefined) source = fromFile.label;
+  }
+
+  return { get: elected.get, source, unreadable: machine.unreadable ?? null };
 }
 
 /**
@@ -1091,7 +1253,7 @@ export function githubWebhookSecret(
   from: NodeJS.ProcessEnv = process.env,
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): string | undefined {
-  return appValues(from, files)(`${PREFIX}GITHUB_WEBHOOK_SECRET`);
+  return appValues(from, files).get(`${PREFIX}GITHUB_WEBHOOK_SECRET`);
 }
 
 /**
@@ -1112,24 +1274,31 @@ export function githubApp(
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): GitHubAppCredentials {
   const value = appValues(from, files);
-  const appId = value(`${PREFIX}GITHUB_APP_ID`);
+  const appId = value.get(`${PREFIX}GITHUB_APP_ID`);
   if (!appId) {
     throw new Error(
       `${PREFIX}GITHUB_APP_ID is not set. ` +
+        (value.unreadable ? `${value.unreadable} ` : "") +
         (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
           ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
-          : "Copy .env.example to .env.local at the repo root and fill it in."),
+          : "Copy .env.example to .env.local at the repo root and fill it in, or lingtai init writes a " +
+            "github: section in ~/.lingtai/config.yml once an App answers."),
     );
   }
-  const path = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`);
-  const inline = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`);
+  const path = value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`);
+  const inline = value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY`);
 
   if (path) {
-    return { appId, privateKey: readFileSync(resolvePath(path), "utf8"), keySource: path };
+    return { appId, privateKey: readFileSync(resolvePath(path), "utf8"), keySource: path, source: value.source };
   }
   if (inline) {
     // Some hosts can only carry the key as one line; \n restores the PEM.
-    return { appId, privateKey: inline.replace(/\\n/g, "\n"), keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY` };
+    return {
+      appId,
+      privateKey: inline.replace(/\\n/g, "\n"),
+      keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY`,
+      source: value.source,
+    };
   }
   throw new Error(
     `Neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ${PREFIX}GITHUB_APP_PRIVATE_KEY is set. ` +
@@ -1147,7 +1316,7 @@ export function hasGitHubApp(
 ): boolean {
   const value = appValues(from, files);
   return Boolean(
-    value(`${PREFIX}GITHUB_APP_ID`) &&
-      (value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
+    value.get(`${PREFIX}GITHUB_APP_ID`) &&
+      (value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
   );
 }

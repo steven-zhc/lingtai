@@ -757,7 +757,8 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       status: "skip",
       detail:
         "LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
-        "See doc/decisions/0006-github-app.md.",
+        "The board's setup page or lingtai init writes a github: section in ~/.lingtai/config.yml; " +
+        "see doc/decisions/0006-github-app.md.",
     };
   }
   try {
@@ -769,7 +770,7 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       name,
       status: "ok",
       detail:
-        `app ${app.appId}, key from ${app.keySource} · ` +
+        `app ${app.appId} from ${app.source}, key from ${app.keySource} · ` +
         `requires ${REQUIRED_PERMISSIONS.map((p) => `${p.name}:${p.level}`).join(", ")} ` +
         "(verified per repository by lingtai add)",
     };

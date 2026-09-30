@@ -109,7 +109,12 @@ describe("the App is read from the env file as it is now", () => {
     await writeFile(envLocal, `LINGTAI_GITHUB_APP_ID=4242\nLINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=${key}\n`);
 
     expect(hasGitHubApp(env, [envLocal])).toBe(true);
-    expect(githubApp(env, [envLocal])).toEqual({ appId: "4242", privateKey: "not a real key", keySource: key });
+    expect(githubApp(env, [envLocal])).toEqual({
+      appId: "4242",
+      privateKey: "not a real key",
+      keySource: key,
+      source: envLocal,
+    });
   });
 
   it("lets a variable in the environment win over the file", async () => {
@@ -140,7 +145,12 @@ describe("the App is read from the env file as it is now", () => {
     await writeFile(envLocal, `LINGTAI_GITHUB_APP_ID=222\nLINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=${newKey}\n`);
     const started = { LINGTAI_GITHUB_APP_ID: "", LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH: oldKey };
 
-    expect(githubApp(started, [envLocal])).toEqual({ appId: "222", privateKey: "app 222's key", keySource: newKey });
+    expect(githubApp(started, [envLocal])).toEqual({
+      appId: "222",
+      privateKey: "app 222's key",
+      keySource: newKey,
+      source: envLocal,
+    });
   });
 
   /** The setup page writes the secret while the board runs; the receiver must see it. */
@@ -158,6 +168,59 @@ describe("the App is read from the env file as it is now", () => {
     // `lingtai doctor` reports on the environment it is given (see `githubApp`).
     expect(hasGitHubApp({})).toBe(false);
     expect(envFiles().map((f) => f.split("/").pop())).toEqual([".env.local", ".env"]);
+  });
+});
+
+/**
+ * #308. `githubApp()` and `githubWebhookSecret()` answer from
+ * `~/.lingtai/config.yml` on a machine with no checkout — an installed binary,
+ * a daemon started from `~`, or a launchd job, none of which find a
+ * checkout's `.env.local`.
+ */
+describe("the App's third source, config.yml", () => {
+  it("answers with no environment variable and no env file anywhere, from config.yml alone", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    const key = join(home, "app.pem");
+    await writeFile(key, "the App's key");
+    await writeFile(
+      join(home, "config.yml"),
+      `github:\n  app_id: "999"\n  private_key_path: ${key}\n  webhook_secret: from-config\n`,
+    );
+    const env = { LINGTAI_HOME: home };
+
+    expect(hasGitHubApp(env, [])).toBe(true);
+    expect(githubApp(env, [])).toEqual({ appId: "999", privateKey: "the App's key", keySource: key, source: join(home, "config.yml") });
+    expect(githubWebhookSecret(env, [])).toBe("from-config");
+  });
+
+  it("resolves a relative private_key_path against LINGTAI_HOME, not the checkout", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "app.pem"), "relative key");
+    await writeFile(join(home, "config.yml"), `github:\n  app_id: "1"\n  private_key_path: app.pem\n`);
+
+    expect(githubApp({ LINGTAI_HOME: home }, []).privateKey).toBe("relative key");
+  });
+
+  it("lets an env file that names the id win over config.yml for the id and the key", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), `github:\n  app_id: "1"\n`);
+    const dir = await mkdtemp(join(tmpdir(), "lingtai-env-"));
+    const envLocal = join(dir, ".env.local");
+    await writeFile(envLocal, "LINGTAI_GITHUB_APP_ID=2\nLINGTAI_GITHUB_APP_PRIVATE_KEY=from-file\n");
+
+    const app = githubApp({ LINGTAI_HOME: home }, [envLocal]);
+    expect(app.appId).toBe("2");
+    expect(app.privateKey).toBe("from-file");
+    expect(app.source).toBe(envLocal);
+  });
+
+  it("is silent about a config.yml it cannot parse, and the file is named in the refusal", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "github: [unclosed\n");
+    const env = { LINGTAI_HOME: home };
+
+    expect(hasGitHubApp(env, [])).toBe(false);
+    expect(() => githubApp(env, [])).toThrow(join(home, "config.yml"));
   });
 });
 
