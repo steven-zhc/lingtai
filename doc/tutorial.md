@@ -54,6 +54,8 @@ lingtai init
 3. open the local board;
 4. guide you through creating or verifying a GitHub App.
 
+![Lingtai runs on your machine: GitHub holds the issues and the code; the daemon, the agent, Postgres and the board are all yours.](img/machine.svg)
+
 It writes machine settings to `~/.lingtai/config.yml`. If setup is interrupted,
 run `lingtai init` again; verified answers are kept and setup resumes at the
 first unfinished choice.
@@ -99,6 +101,8 @@ The recipe is local to this machine. Nothing is committed to the repository you
 manage. It records which labels count as work, what checks run, and whether a
 person must approve.
 
+![The recipe feeds three gates between an issue and a merge: is it work, does it pass, do you approve.](img/recipe.svg)
+
 If a run needs project secrets, add only the names required by the recipe:
 
 ```bash
@@ -123,6 +127,8 @@ output tells you why. The common reasons are:
 - `no-kind` — the issue has none of the recipe's eligible labels;
 - `excluded-label` — it carries a label the recipe holds back;
 - `blocked-by` — GitHub says an open issue blocks it.
+
+![Each open issue passes three filters — a kind label, no hold label, no open blocker — and what fails one is named.](img/queue.svg)
 
 When the queue looks right, keep the board terminal open and start Lingtai in
 the second terminal:
@@ -158,6 +164,8 @@ Behind those four states, Lingtai:
 4. asks for approval if you required it;
 5. merges passing work and performs configured end actions.
 
+![One pass: claim, worktree, agent, checks, approval, merge, end. A red check returns to the agent for a fix round; anything unresolved stops at Waiting on you.](img/pass.svg)
+
 Your normal checkout is not the agent's workspace. The agent cannot decide that
 its own checks passed, and it cannot silently skip a configured gate.
 
@@ -178,6 +186,8 @@ the next issue taken.
 
 Open the card. The board shows which attempt stopped, the failing check or hold,
 what it cost, and any run log still needed to explain it.
+
+![Read which hold or check stopped it, then approve, requeue with a note, or attach to the run log.](img/waiting.svg)
 
 If the only hold is the approval you configured, approve on the board or run:
 

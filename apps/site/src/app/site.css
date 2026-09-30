@@ -381,6 +381,11 @@ p { max-width: var(--measure); }
 }
 .tutorial-prose h2[id^="step-"] { border-top-color: var(--accent); }
 .tutorial-prose h3 { margin-top: 32px; font-size: 18px; }
+.tutorial-prose img {
+  display: block; width: 100%; height: auto; margin: 22px 0 26px;
+  padding: 14px 10px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--surface);
+}
 .tutorial-prose pre {
   margin: 18px 0; border-left: 3px solid var(--accent);
   box-shadow: 0 3px 10px rgba(15, 24, 28, .035);
