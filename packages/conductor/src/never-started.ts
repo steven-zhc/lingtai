@@ -22,6 +22,12 @@
  * make it slower. That is why the same brittle text is safe here and unsafe in
  * `neverStarted`.
  *
+ * "Slower" has a figure behind a gate step, not just in front of the queue
+ * (#317): a miss there wakes the conductor, which claims the ticket and pays
+ * for a whole `implement` — about $10 — before the same step meets the same
+ * wall again. A pause that is too long merely idles; one that is too short
+ * spends real money rediscovering what the runtime already said.
+ *
  * **Which way the cost runs depends on the wall, and that is what hid #210.**
  * A miss means waiting *longer* only while the true reset is sooner than the
  * backoff — a `five_hour` limit and a one-hour backoff. When the reset is
@@ -50,12 +56,21 @@
  *                    is tried first and taken as it stands.
  *   a dated clock    `resets Sep 19 at 9am (America/Chicago)` — the weekly
  *                    limit's wording: a month and a day, then a time of day.
- *   a wall clock     `resets 11pm (America/Chicago)`, `resets at 3:30am` — a
+ *   a wall clock     `resets 11pm (America/Chicago)`, `resets at 3:30am`,
+ *                    Codex's `try again at Sep 30th, 2026 2:00 AM` (#317) — a
  *                    time of day, and a zone when the sentence names one.
  *
- * A wall clock with no zone is read in this host's zone. That is a guess, and
- * it is allowed to be one for the reason in the header: guessing wrong resumes
- * at the wrong moment and costs a pass, not a decision.
+ * The lead-in is either runtime's own word for it — `resets` or `try again
+ * at` — everything after is one grammar, read the same way regardless of
+ * which runtime wrote it (#317): a reset time is a fact about a wall, not
+ * about a vendor.
+ *
+ * A wall clock with no zone is read in `zone`, when the caller names one, and
+ * this host's zone otherwise. That is a guess, and it is allowed to be one for
+ * the reason in the header: guessing wrong resumes at the wrong moment and
+ * costs a pass, not a decision. `zone` exists so a test can pin a zone without
+ * touching `process.env.TZ`, which is process-global; production calls this
+ * with nothing in that slot.
  *
  * Anything further out than a week is refused. A `seven_day` limit is the
  * longest thing this can legitimately be describing — the dated form is that
@@ -66,8 +81,8 @@
  * named a reset this could not read; `standDown` needs them apart and uses
  * `readReset` for it.
  */
-export function parseResetAt(detail: string, now: Date = new Date()): Date | null {
-  const read = readReset(detail, now);
+export function parseResetAt(detail: string, now: Date = new Date(), zone?: string): Date | null {
+  const read = readReset(detail, now, zone);
   return read !== null && "at" in read ? read.at : null;
 }
 
@@ -81,12 +96,13 @@ type Reset =
   | null;
 
 /**
- * Where a message talks about its reset: `resets`, a `resets_at` field, or
- * Codex's `Try again in 3 hours`. The last is not parsed — a relative duration
- * is its own ticket — but it is a reset that was named, and saying otherwise is
- * the false sentence #210 is about.
+ * Where a message talks about its reset: `resets`, a `resets_at` field,
+ * Codex's `try again at <date> <time>`, or its `Try again in 3 hours`. The
+ * last is not parsed — a relative duration is its own ticket — but it is a
+ * reset that was named, and saying otherwise is the false sentence #210 is
+ * about.
  */
-const RESET_MARKER = /\bresets?\b|\bresets_at\b|\btry again in\b/i;
+const RESET_MARKER = /\bresets?\b|\bresets_at\b|\btry again at\b|\btry again in\b/i;
 
 /** English month names and their abbreviations, as the runtime writes them. */
 const MONTHS = [
@@ -104,11 +120,11 @@ const MONTHS = [
   "dec",
 ] as const;
 
-function readReset(detail: string, now: Date): Reset {
+function readReset(detail: string, now: Date, zone: string | undefined): Reset {
   const iso = /\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/.exec(
     detail,
   );
-  const at = iso ? within(new Date(iso[1]!.replace(" ", "T")), now) : clockReset(detail, now);
+  const at = iso ? within(new Date(iso[1]!.replace(" ", "T")), now) : clockReset(detail, now, zone);
   if (at) return { at };
 
   const marker = RESET_MARKER.exec(detail);
@@ -120,14 +136,15 @@ function readReset(detail: string, now: Date): Reset {
   return { named };
 }
 
-function clockReset(detail: string, now: Date): Date | null {
-  // `resets`, optionally a month and a day (and a year), optionally `at`, then
-  // a time; then a parenthesised zone if the sentence carries one. Deliberately
-  // narrow — a looser pattern would start reading times out of tickets, file
-  // names and shas. The date is a month *name*, never a bare number, so
-  // `resets 11pm` cannot have its hour read as a day.
+function clockReset(detail: string, now: Date, zone: string | undefined): Date | null {
+  // `resets` or Codex's `try again at`, optionally a month and a day (and a
+  // year), optionally `at`, then a time; then a parenthesised zone if the
+  // sentence carries one. Deliberately narrow — a looser pattern would start
+  // reading times out of tickets, file names and shas. The date is a month
+  // *name*, never a bare number, so `resets 11pm` cannot have its hour read
+  // as a day.
   const clock = new RegExp(
-    String.raw`\bresets?\b` +
+    String.raw`(?:\bresets?\b|\btry again at\b)` +
       String.raw`(?:\s+(?:on\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?,?)?` +
       String.raw`(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?`,
     "i",
@@ -149,23 +166,23 @@ function clockReset(detail: string, now: Date): Date | null {
     return null;
   }
 
-  const zone = zoned?.[1] ?? hostZone();
-  if (!knownZone(zone)) return null;
+  const inferredZone = zoned?.[1] ?? zone ?? hostZone();
+  if (!knownZone(inferredZone)) return null;
 
-  if (clock[1] === undefined) return within(nextWallClock(now, zone, hour, minute), now);
+  if (clock[1] === undefined) return within(nextWallClock(now, inferredZone, hour, minute), now);
 
   // A date names *that* day. It is never rolled forward to the next one, which
   // is right for a bare time and wrong for a date: a date already gone by is a
   // message this cannot account for, and says so.
   const month = MONTHS.indexOf(clock[1].slice(0, 3).toLowerCase() as (typeof MONTHS)[number]) + 1;
   const day = Number(clock[2]);
-  const thisYear = partsIn(now, zone)["year"]!;
+  const thisYear = partsIn(now, inferredZone)["year"]!;
   const named = clock[3] === undefined ? null : Number(clock[3]);
   for (const year of named === null ? [thisYear, thisYear + 1] : [named]) {
     // Date.UTC would read `Feb 30` as the 2nd of March; a day the month does
     // not have is not a date at all.
     if (day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null;
-    const at = wallClockOn(zone, year, month, day, hour, minute);
+    const at = wallClockOn(inferredZone, year, month, day, hour, minute);
     // The next year only for a date with no year that has gone by this one —
     // `resets Jan 2` read on the 30th of December. The week ceiling is what
     // refuses every other reading of it.
@@ -269,9 +286,11 @@ export function standDown(input: {
   backoffMs: number;
   what: NeverStarted;
   now?: Date;
+  /** The zone a wall clock with no zone of its own is read in. Tests only — production leaves it to `hostZone()`. */
+  zone?: string;
 }): { until: Date; reason: string } {
   const now = input.now ?? new Date();
-  const reset = readReset(input.detail, now);
+  const reset = readReset(input.detail, now, input.zone);
   const until = reset !== null && "at" in reset ? reset.at : new Date(now.getTime() + input.backoffMs);
   const said = input.detail.trim().replace(/\s+/g, " ").slice(0, 200);
   // Three branches and not two (#210). A reset that was named and could not be

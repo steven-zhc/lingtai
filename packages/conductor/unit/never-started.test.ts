@@ -32,6 +32,18 @@ const WEEKLY = "You've hit your weekly limit · resets Sep 19 at 9am (America/Ch
 /** 12:35:13 in Chicago, when the weekly wall was first met. */
 const WEEKLY_MET = new Date("2026-09-17T17:35:13Z");
 
+/**
+ * Codex's wording, verbatim from `run-1c087f2a`'s log at 22:23:12 Chicago
+ * time on 2026-09-29 (#317) — URLs and all. The two URLs are the noise a
+ * looser lead-in would trip on; the sentence names no zone, so the reading is
+ * a guess, exactly as an unzoned `resets` sentence's is.
+ */
+const CODEX_USAGE =
+  "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit " +
+  "https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 30th, 2026 2:00 AM.";
+/** 22:23:12 in Chicago on 2026-09-29, when the Codex wall was met. */
+const CODEX_MET = new Date("2026-09-30T03:23:12Z");
+
 describe("parseResetAt", () => {
   /**
    * The sentence itself. `11pm (America/Chicago)` on 9 September 2026 is
@@ -99,6 +111,19 @@ describe("parseResetAt", () => {
   it("does not roll a date that has gone by forward to the next one", () => {
     const after = new Date("2026-09-19T15:00:00Z");
     expect(parseResetAt(WEEKLY, after)).toBeNull();
+  });
+
+  /**
+   * Codex's own wording (#317). `#210` taught this file Claude's `resets`;
+   * the same night Codex said `try again at` instead, and the conductor
+   * paused itself saying it named no reset time. The grammar after the
+   * lead-in is unchanged — only the lead-in and the zone (Codex names none)
+   * differ from the `resets`-led forms above.
+   */
+  it("reads Codex's `try again at`, in the zone it is handed", () => {
+    expect(parseResetAt(CODEX_USAGE, CODEX_MET, "America/Chicago")?.toISOString()).toBe(
+      "2026-09-30T07:00:00.000Z",
+    );
   });
 
   it("reads a date across the turn of a year, and a year when one is written", () => {
@@ -216,6 +241,28 @@ describe("standDown", () => {
   });
 
   /**
+   * The night #317 is about: Codex named a reset and the conductor said it
+   * named none, resuming 2h37m early. Reading it in the host's own zone
+   * (nothing passed for `zone`) is what production does; `standDown`'s
+   * fallback is `hostZone()`, so this only pins the sentence and the reason,
+   * not the zone guess — that is `parseResetAt`'s own test above.
+   */
+  it("waits for Codex's named reset time rather than the recipe's backoff", () => {
+    const { until, reason } = standDown({
+      detail: CODEX_USAGE,
+      backoffMs: 3_600_000,
+      what: { of: "step", step: "review:review" },
+      now: CODEX_MET,
+      zone: "America/Chicago",
+    });
+
+    expect(until.toISOString()).toBe("2026-09-30T07:00:00.000Z");
+    expect(reason).toContain("read from the message itself");
+    expect(reason).not.toContain("it named no reset time");
+    expect(reason).toContain("try again at Sep 30th, 2026 2:00 AM");
+  });
+
+  /**
    * **A reset that was named and not read is said as such** (#210). The chip
    * used to say *it named no reset time* in the same sentence that quoted the
    * time it named, which sent a reader away from the one string that answered
@@ -224,6 +271,11 @@ describe("standDown", () => {
   it("says a reset was named and could not be read, distinctly from one never named", () => {
     for (const [detail, at] of [
       [WEEKLY, new Date("2026-09-19T15:00:00Z")],
+      // Codex's date already gone by, same as WEEKLY above — named, refused,
+      // never read as nothing. No zone is passed here (production passes
+      // none either), so the instant is a day past the named date in every
+      // zone `hostZone()` could name, not just the one the incident was in.
+      [CODEX_USAGE, new Date("2026-10-01T00:00:00Z")],
       ["resets 25pm", now],
       ["resets 11:74pm", now],
       ["resets 11pm (Nowhere/Nothing)", now],
