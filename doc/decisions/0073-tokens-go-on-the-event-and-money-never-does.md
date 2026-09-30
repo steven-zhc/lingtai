@@ -31,11 +31,20 @@ It **sums** two of the five numbers the stream carries (`:167-172`:
 rather than accumulates, inside the `turn.completed` branch — and `turns` is
 counted off that same stream (`:118`, *"Counting turns off the stream is not
 enforcing them"*), so a run has many and each overwrites the last; the field's
-own docblock says *"off the **last** `turn.completed`"*. And it **reaches
-nothing**: `billedTokens` appears in `codex.ts` and `codex.test.ts` and in no
-third file. Not an event, not a projection, not the board, not `lingtai status`.
-The test says so in its own words — *"`turns` is the spend leg and
-`billedTokens` cannot be"*.
+own docblock says *"off the **last** `turn.completed`"*. And it **reaches only
+the thing that gets deleted**: `codex.ts:1057` prints it into the run log —
+`4 turns · 1971890 tokens · cost unrecorded` is a real line from `#243`'s
+reviewer on 2026-09-29 — and nowhere else. Not an event, not a projection, not
+the board, not `lingtai status`; `billedTokens` is set at `:300`, rendered at
+`:1057`, and otherwise appears only in `codex.test.ts`, which says the rest in
+its own words — *"`turns` is the spend leg and `billedTokens` cannot be"*.
+
+**The run log is the worst possible destination for it, and 0034 says why.** A
+trace is *"a bounded explanation, not the durable record"*, and the file is kept
+only while something is still owed an explanation — **a run that landed has no
+log**. So the count is legible for exactly as long as nobody needs it, and is
+gone at the moment a person asks what the reviewer cost. The honest line
+`cost unrecorded` is doing its job in a file with a deletion date.
 
 So the first pass with a Codex reviewer produces a board on which that reviewer
 cost nothing, beside a `$22.56` implementer. That is
