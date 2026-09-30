@@ -1219,8 +1219,8 @@ export type JudgeWhen = z.infer<typeof JudgeWhen>;
  * will not leave open — the same rule that gives `merge:` one `strategy`: the
  * enum says what the code does, and grows when the code does.
  */
-export const BUILT_IN_JUDGES = ["same-worktree"] as const;
-export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
+export { BUILT_IN_JUDGES, type BuiltInJudge, isBuiltInJudge } from "./judges.ts";
+import { BUILT_IN_JUDGES, isBuiltInJudge } from "./judges.ts";
 
 /**
  * Who decides a direction — **the built-ins, and the runtimes beside them**
@@ -1255,20 +1255,6 @@ export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
  */
 export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options]);
 export type JudgeName = z.infer<typeof JudgeName>;
-
-/**
- * Which half of `JudgeName` a name is — **a function rather than a comparison
- * anybody writes twice**.
- *
- * The distinction is what decides whether answering costs money, so it is read
- * off `BUILT_IN_JUDGES` in one place: a second built-in added to that list is
- * spending nothing here on the day it is added, and a hand-written
- * `name === "same-worktree"` somewhere else would be the cell that stayed a
- * dispatch.
- */
-export function isBuiltInJudge(name: JudgeName): name is BuiltInJudge {
-  return (BUILT_IN_JUDGES as readonly string[]).includes(name);
-}
 
 /**
  * **Which step is next when something refuses** — a name for the decision

@@ -63,7 +63,8 @@
  */
 import { STEPS, type Step } from "@lingtai/domain";
 import { parseDuration } from "./duration.ts";
-import { isBuiltInJudge, type QueueSettings, type Recipe, type StepAction } from "./recipe.ts";
+import { isBuiltInJudge } from "./judges.ts";
+import type { QueueSettings, Recipe, StepAction } from "./recipe.ts";
 
 /**
  * What one call this step makes may spend, **as a dispatch's own `limits:`**, or
