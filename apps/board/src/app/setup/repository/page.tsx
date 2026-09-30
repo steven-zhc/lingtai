@@ -21,7 +21,7 @@ import { offerCreation } from "@lingtai/conductor/create-app";
 import { type Choice, type Picker, choose, listRepositories, taken, unrecorded } from "@lingtai/conductor/pick-repository";
 import { loadAllProjects } from "@lingtai/conductor/projects";
 import type { ProjectState } from "@lingtai/domain";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
+import { githubApp, githubAppUnreadable, hasGitHubApp } from "@lingtai/env";
 import { REQUIRED_PERMISSIONS, createAppReader } from "@lingtai/github";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,14 @@ export default async function PickRepository({
 }
 
 async function load(): Promise<Loaded> {
-  if (!hasGitHubApp()) return { state: "no-app" };
+  if (!hasGitHubApp()) {
+    // Not configured and cannot be read are different states: the second one
+    // has a fix (repair or replace the file) that "Create it first" hides by
+    // pointing at minting a second App instead (#320).
+    const unreadable = githubAppUnreadable();
+    if (unreadable !== null) return { state: "unreadable", why: unreadable };
+    return { state: "no-app" };
+  }
   let projects: ProjectState[] = [];
   let logUnanswered: string | null = null;
   try {

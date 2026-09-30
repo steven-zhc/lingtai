@@ -2031,6 +2031,12 @@ export async function runDoctor(
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
   load: typeof loadProjects = loadProjects,
+  // Same reason `machine` is injected rather than read inline: the default
+  // reads `env`, the literal object every test in `doctor.test.ts` hands in,
+  // so those keep seeing exactly that object. `doctorReport()` overrides this
+  // with a closure over real `process.env` — see its own comment for why a
+  // copy cannot stand in for it here.
+  github: () => CheckResult = () => githubCredentials(env),
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -2169,7 +2175,7 @@ export async function runDoctor(
     });
   }
 
-  results.push(githubCredentials(env));
+  results.push(github());
   results.push(...(await projectRecipes(env, load)));
   results.push(...(await declaredEnvironment(env, load)));
   results.push(...(await recipeGovernsItsBase(env, load)));
@@ -2204,7 +2210,23 @@ export async function doctorReport(): Promise<DoctorReport> {
   // `storeChoice()` and not `storeChoice(env)`: the choice is read from the
   // variables really exported into this process, and `doctorEnvironment` hands
   // out a copy carrying what the env files supplied too (0056 §4).
-  return runDoctor(env, () => machineDatabaseUrl(env), () => storeChoice());
+  return runDoctor(
+    env,
+    () => machineDatabaseUrl(env),
+    () => storeChoice(),
+    log.queries,
+    loadProjects,
+    // `githubCredentials(process.env)`, never `githubCredentials(env)`:
+    // `env` is `doctorEnvironment()`'s copy, and `appValues` (packages/env)
+    // treats a handed-in environment as a test's — it reads `config.yml` only
+    // when the copy itself names `LINGTAI_HOME`, which an ordinary machine's
+    // real `process.env` does not, and it reads the environment names off the
+    // copy as given rather than off the pre-dotenv snapshot `realEnvironment`
+    // keeps for real identity to `process.env`. Passing the real object
+    // (`process.env`, not a copy of it) is what lets both work the way they do
+    // for every other caller.
+    () => githubCredentials(process.env),
+  );
 }
 
 /**
