@@ -2760,6 +2760,20 @@ export type Discuss = z.infer<typeof Discuss>;
  */
 export const DISCUSS_DEFAULTS = Discuss.parse({});
 
+/**
+ * `discuss:`, resolved into what one `ask` call may spend — the one place this
+ * mapping is written, so `apps/cli/src/discuss.ts`'s production call and
+ * `packages/conductor/src/discuss.ts`'s `DISCUSS_DEFAULTS` fallback build the
+ * same shape from the same fields rather than each rebuilding it by hand.
+ */
+export function callFor(discuss: Discuss): { model?: string; turns: number; wallMs: number } {
+  return {
+    ...(discuss.model === undefined ? {} : { model: discuss.model }),
+    turns: discuss.limits.turns,
+    wallMs: parseDuration(discuss.limits.wall),
+  };
+}
+
 export const Recipe = z.object({
   version: Version,
   /**

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { NO_RUN_LOG, type Runtime, type RunOutcome, type RunRequest } from "@lingtai/agent";
+import { callFor, Discuss, DISCUSS_DEFAULTS } from "@lingtai/recipe";
 import { discussionAsk } from "../src/discuss.ts";
 
 function stubRuntime(): { runtime: Runtime; requests: RunRequest[] } {
@@ -69,5 +70,19 @@ describe("discussionAsk", () => {
 
     expect(requests[0]?.model).toBe("haiku");
     expect(requests[0]?.runId).toBe("chat-1:0:1");
+  });
+});
+
+describe("callFor", () => {
+  it("resolves a recipe's discuss.limits and discuss.model into the call", () => {
+    expect(callFor(Discuss.parse({ model: "haiku", limits: { turns: 7, wall: "90s" } }))).toEqual({
+      model: "haiku",
+      turns: 7,
+      wallMs: 90_000,
+    });
+  });
+
+  it("resolves the recipe defaults the same way", () => {
+    expect(callFor(DISCUSS_DEFAULTS)).toEqual({ turns: 40, wallMs: 300_000 });
   });
 });

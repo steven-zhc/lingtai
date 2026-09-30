@@ -28,6 +28,9 @@ const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
 const created = new Set<string>();
 let store: EventStore;
 
+/** What one `ask` call may spend — a stand-in for the recipe's `discuss.limits`. */
+const CALL = { turns: 40, wallMs: 300_000 };
+
 let n = 0;
 
 function id(prefix: "wi" | "chat"): string {
@@ -73,7 +76,13 @@ describe("a discussion, on the log", () => {
         serve: async () => null,
         ask: answers('{"answer":"the flag is never passed","cannot":["whether the binary accepts it"],"proposal":{"kind":"prompt","text":"pass --max-turns"}}'),
       },
-      { chatId, evidence: evidence(workItemId), question: "why did attempt 2 produce nothing?", by: "human:steven" },
+      {
+        chatId,
+        evidence: evidence(workItemId),
+        question: "why did attempt 2 produce nothing?",
+        by: "human:steven",
+        call: CALL,
+      },
     );
 
     const chat = await store.read(chatId);
@@ -95,7 +104,7 @@ describe("a discussion, on the log", () => {
 
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
-      { chatId, evidence: evidence(workItemId), question: "why?", by: "human:steven" },
+      { chatId, evidence: evidence(workItemId), question: "why?", by: "human:steven", call: CALL },
     );
 
     const result = await concludeDiscussion({
@@ -127,7 +136,7 @@ describe("a discussion, on the log", () => {
     const chatId = id("chat");
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
-      { chatId, evidence: evidence(workItemId), question: "why?", by: "human:steven" },
+      { chatId, evidence: evidence(workItemId), question: "why?", by: "human:steven", call: CALL },
     );
 
     let written: string | null = null;
@@ -164,7 +173,7 @@ describe("a discussion, on the log", () => {
     const second = id("chat");
     await holdDiscussion(
       { store, serve: async () => null, ask: answers('{"answer":"x","cannot":[],"proposal":null}') },
-      { chatId: second, evidence: evidence(workItemId), question: "again?", by: "human:steven" },
+      { chatId: second, evidence: evidence(workItemId), question: "again?", by: "human:steven", call: CALL },
     );
     const refused = await concludeDiscussion({
       store,

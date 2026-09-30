@@ -72,6 +72,10 @@ describe("resolveLocalRecipe", () => {
     const silent = await resolveLocalRecipe("app", withMachine(undefined));
     expect(silent.provenance?.["source.backoff"]).toBe("1h ← default");
     expect(silent.provenance?.["runtime.budget.attempts"]).toBe("5 ← default");
+    // `discuss:` is a recipe that names no discussion — the row exists and
+    // says `default`, not nothing (#243).
+    expect(silent.provenance?.["discuss.agent"]).toBe("claude-code ← default");
+    expect(silent.provenance?.["discuss.limits.turns"]).toBe("40 ← default");
 
     const spoken = await resolveLocalRecipe("app", {
       home: HOME,
@@ -80,6 +84,8 @@ describe("resolveLocalRecipe", () => {
         [recipePath("app", HOME)]: `${RECIPE.replace("  kinds: [bug]", "  kinds: [bug]\n  backoff: 30m")}
 runtime:
   budget: { attempts: 9 }
+discuss:
+  limits: { turns: 7 }
 `,
       }),
     });
@@ -88,6 +94,10 @@ runtime:
     // are still the schema's, and saying otherwise is the same falsehood.
     expect(spoken.provenance?.["runtime.budget.attempts"]).toBe(`9 ← ${HOME}/app/recipe.yml`);
     expect(spoken.provenance?.["runtime.budget.diff"]).toBe("400000 ← default");
+    // Same rule for `discuss.limits`: a file that names `turns` only is silent
+    // about `wall`, and provenance may not say otherwise.
+    expect(spoken.provenance?.["discuss.limits.turns"]).toBe(`7 ← ${HOME}/app/recipe.yml`);
+    expect(spoken.provenance?.["discuss.limits.wall"]).toBe("5m ← default");
   });
 
   /**

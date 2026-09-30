@@ -71,7 +71,7 @@ import {
 } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { eventStore } from "@lingtai/event-store";
-import { DISCUSS_DEFAULTS, parseDuration, type Discuss } from "@lingtai/recipe";
+import { callFor, DISCUSS_DEFAULTS, type Discuss } from "@lingtai/recipe";
 import { listAt, readAt, refSha } from "@lingtai/repo";
 
 /**
@@ -312,7 +312,7 @@ export async function answerDiscussion(
    * an agent, before any money.
    */
   const runtime: Runtime = createRuntime(discuss.agent, { tools: "none" });
-  const call = { model: discuss.model, turns: discuss.limits.turns, wallMs: parseDuration(discuss.limits.wall) };
+  const call = callFor(discuss);
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
   const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));

@@ -62,7 +62,6 @@
  */
 import { chatStream, parsePayload, type Envelope, type ToAppend } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
-import { DISCUSS_DEFAULTS, parseDuration } from "@lingtai/recipe";
 import { editHash } from "./attempts.ts";
 import { tellGitHub, type IssueChannel } from "./tell.ts";
 
@@ -456,11 +455,13 @@ export interface HoldOptions {
   by: string;
   /**
    * What one `ask` call may spend, and which model — the recipe's `discuss:`
-   * (#243). Optional, and absent takes `DISCUSS_DEFAULTS` — the same recipe
-   * default a project that declares no `discuss:` resolves to — so a caller
-   * with no recipe in hand (a test, `lingtai ask`) still asks something real.
+   * (#243), resolved by `@lingtai/recipe`'s `callFor`. Required: the one
+   * production caller (`apps/cli/src/discuss.ts`) always has a recipe in hand,
+   * and an optional field with a silent default is exactly the failure this
+   * ticket exists to remove — a recipe's value written, believed, and reaching
+   * nothing.
    */
-  call?: { model?: string; turns: number; wallMs: number };
+  call: { model?: string; turns: number; wallMs: number };
   /** The recipe's `discuss.prompt`, forwarded to `buildBrief` on every round. */
   prompt?: string;
 }
@@ -490,12 +491,7 @@ export async function holdDiscussion(
   const log = ports.log ?? (() => {});
   const stream = chatStream(options.chatId);
   const before = await ports.store.read(stream);
-  const call =
-    options.call ?? {
-      ...(DISCUSS_DEFAULTS.model === undefined ? {} : { model: DISCUSS_DEFAULTS.model }),
-      turns: DISCUSS_DEFAULTS.limits.turns,
-      wallMs: parseDuration(DISCUSS_DEFAULTS.limits.wall),
-    };
+  const call = options.call;
 
   // `by` is already an actor — `human:steven`, the same string the board's card
   // actions record. Prefixing it here would make it `human:human:steven` and

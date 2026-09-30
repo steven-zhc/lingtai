@@ -438,6 +438,12 @@ export async function resolveLocalRecipe(
   for (const [key, value] of Object.entries(recipe.runtime.budget)) {
     recipeValues[`runtime.budget.${key}`] = String(value);
   }
+  // Beside `runtime.budget`: a discussion's own agent and spend, not asked of
+  // the file until #243 gave `discuss:` a place to be written (0061 §6).
+  recipeValues["discuss.agent"] = recipe.discuss.agent;
+  recipeValues["discuss.model"] = recipe.discuss.model ?? "(none)";
+  recipeValues["discuss.limits.turns"] = String(recipe.discuss.limits.turns);
+  recipeValues["discuss.limits.wall"] = recipe.discuss.limits.wall;
   const from = originIn(wrote, resolved.preset, path);
   for (const [key, value] of Object.entries(recipeValues))
     provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;

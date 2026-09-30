@@ -13,9 +13,7 @@
  * an `undefined` at whichever call site reached for it first. That is the whole of
  * the third-runtime claim: one enum value, one row, and nothing else to find.
  */
-// The enum itself and not only its type: `createToollessRuntime` walks
-// `RuntimeId.options`, so a third runtime is a candidate by being in the enum.
-import { RuntimeId } from "@lingtai/domain";
+import type { RuntimeId } from "@lingtai/domain";
 import { createClaudeCodeRuntime } from "./claude-code.ts";
 import { createCodexRuntime } from "./codex.ts";
 import type { Runtime } from "./runtime.ts";
