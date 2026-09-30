@@ -62,7 +62,7 @@ when somebody checks this file against the published page. The exception is
 
 **`from` is 2026-06-24 for every row because that is the date of the reference
 these came from, not a date anybody verified.** This file was written
-2026-09-30, so the rows are three months old on arrival and are the first thing
+2026-09-29, so the rows are three months old on arrival and are the first thing
 to check. They are recorded with the date they are true of rather than the date
 they were typed, which is what makes that checkable at all.
 

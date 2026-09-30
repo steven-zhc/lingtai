@@ -1,6 +1,6 @@
 # 0073 — Tokens go on the event and money never does, and the rate card is a file a person edits
 
-**Status** accepted · **Date** 2026-09-30 · **Decides** what a paid call records
+**Status** accepted · **Date** 2026-09-29 · **Decides** what a paid call records
 about what it consumed, now that a pass may dispatch two runtimes and only one of
 them reports dollars · **Depends on**
 [0070](0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §3, the
@@ -11,7 +11,7 @@ runtime made
 
 ## 1. The number that is not on the board
 
-`review` runs on Codex in this repository since 2026-09-30, one step after
+`review` runs on Codex in this repository since 2026-09-29, one step after
 [#314](https://github.com/steven-zhc/lingtai/issues/314) made a step's `agent:`
 dispatched rather than refused. The recipe's own comment at that step names the
 cost of the move — *"So this step's dollars leave the accounting"* — and
