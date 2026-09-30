@@ -17,7 +17,7 @@ import type { GitHubClient } from "@lingtai/github";
 import { currentRecipe } from "@lingtai/conductor/projects";
 import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
-import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
+import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, boundsBesides, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
 /** The limits `a pass` is made of, from the recipe rather than listed again here. */
 const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
@@ -499,7 +499,32 @@ export function describeAction(
             : step === undefined
               ? "an agent"
               : "a cold reviewer";
-      return { does: `${job} on ${on}: ${a.prompt}`, bound: "no timeout in the recipe" };
+      /**
+       * **What this entry declared, and the ceiling where it declared nothing**
+       * (`#314`, 0070 §5).
+       *
+       * `no timeout in the recipe` was true while an `agent:` had no bound of
+       * its own to name, and this is the one column whose job is to say what
+       * bounds an action — so an operator who has just written
+       * `limits: { wall: 30m }` and reads that sentence back concludes the
+       * narrowing did not take, or goes raising `runtime.limits.wall` looking
+       * for the bound the page says is missing.
+       *
+       * Field by field, because the narrowing is: an absent one is the
+       * ceiling's, which is what the second half of each sentence says rather
+       * than this row reaching for a recipe it is not handed. `does` names
+       * `a.model` for the same reason — what this reviewer costs is what an
+       * operator is deciding from here.
+       */
+      const own = [
+        a.limits?.wall === undefined ? null : a.limits.wall,
+        a.limits?.turns === undefined ? null : `${a.limits.turns} turns`,
+      ].filter((each): each is string => each !== null);
+      const bound =
+        own.length === 0
+          ? "runtime.limits, with no bound of its own"
+          : `${own.join(" and ")} on this one call, narrowing runtime.limits`;
+      return { does: `${job} on ${on}: ${a.prompt}`, bound };
     }
     // **The one row that says where an answer *went*** (`#300`, 0066 §5). Every
     // other line here is a check, a dispatch or an effect on the issue; this one
@@ -599,17 +624,39 @@ export function describeAction(
       };
     }
     // And the one `proposed` will hold, whose `bound` is the whole of why it is
-    // worth naming: the ceilings are the workflow's and a judge never sees
-    // them, so what this row says about money is true of any judge a project
-    // writes, including one that is somebody else's code (0061 §3).
+    // worth naming: the *pass's* ceilings — rounds and restarts — are the
+    // workflow's and a judge never sees them, so that half of what this row says
+    // about money is true of any judge a project writes, including one that is
+    // somebody else's code (0061 §3).
+    //
+    // **What bounds the one call is the entry's, since `#314`** (0070 §3, §5).
+    // A runtime `judge:` may name a `model:` and a `limits:`, and this row names
+    // both the way the `agent:` row does — an operator who has just written
+    // `model: haiku` and `limits: { turns: 5 }` and reads back only the rounds
+    // concludes neither key took.
     case "judge": {
-      const a = action as Extract<StepAction, { judge: string; when: string }>;
+      const a = action as Extract<
+        StepAction,
+        { judge: string; when: string; model?: string; limits?: { turns?: number; wall?: string } }
+      >;
+      const counts = "the workflow counts the rounds and restarts, and offers only the steps still left";
+      if (a.judge === "same-worktree") {
+        return {
+          does: `decides a ${a.when} refusal with a built-in: back to implement, spending nothing`,
+          bound: counts,
+        };
+      }
+      const own = [
+        a.limits?.wall === undefined ? null : a.limits.wall,
+        a.limits?.turns === undefined ? null : `${a.limits.turns} turns`,
+      ].filter((each): each is string => each !== null);
+      const call =
+        own.length === 0
+          ? "runtime.limits, with no bound of its own"
+          : `${own.join(" and ")} on this one call, narrowing runtime.limits`;
       return {
-        does:
-          a.judge === "same-worktree"
-            ? `decides a ${a.when} refusal with a built-in: back to implement, spending nothing`
-            : `asks ${a.judge} which step is next, for a ${a.when} refusal`,
-        bound: "the workflow counts the rounds and restarts, and offers only the steps still left",
+        does: `asks ${a.judge}, ${a.model ?? "its default model"}, which step is next, for a ${a.when} refusal`,
+        bound: `${call}; ${counts}`,
       };
     }
     // And the one that sits beside it and decides nothing about where the pass
@@ -753,7 +800,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: "a pass",
-      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall) }),
+      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall), steps: boundsBesides(recipe, "implement") }),
       keys: LIMIT_KEYS.map((key) => `runtime.limits.${key}`),
     },
     // **Beside the limits, because it is the other half of the same answer.**

@@ -33,7 +33,7 @@ import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
 import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { backoffOf, baseOf, excludeOf, kindsOf, limitsFor } from "./settings.ts";
+import { backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -502,7 +502,11 @@ export function machineFiles(input: {
   const path = machinePath(home);
   const choose = (kept: unknown) => ({
     agent: input.recipe.runtime.agent,
-    limits: { ...limitsFor(input.recipe, "implement") },
+    // **The ceiling and not `implement`'s bound** (`#314`). This writes
+    // `~/.lingtai/config.yml`'s `runtime.limits`, which is what every step
+    // narrows *from*; saving a narrowed figure here would lower the ceiling to
+    // whatever one step asked for, permanently, on a save nobody read as a change.
+    limits: { ...ceilingOf(input.recipe) },
     ...(written !== undefined ? { assignee: written } : kept !== undefined ? { assignee: kept } : {}),
   });
 

@@ -15,7 +15,7 @@ import type { ProjectState } from "@lingtai/domain";
 import type { GitHubClient } from "@lingtai/github";
 import { describe, expect, it } from "vitest";
 import { type RecipeFor, describeAssignee, describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
-import { resolveRecipe } from "@lingtai/recipe";
+import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from "@lingtai/recipe";
 
 const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
 
@@ -315,6 +315,49 @@ describe("what a pass may spend", () => {
     expect(none).toContain("runtime.limits.restarts: 0");
     expect(none).toContain("goes to you");
     expect(none).not.toContain("restart(s) —");
+  });
+
+  /**
+   * **A recipe that narrows nothing prints today's sentence, character for
+   * character** (`#314`, 0070 §8).
+   *
+   * Byte-identical and not *contains*: this line is on `lingtai status`,
+   * `lingtai add`, `lingtai doctor` and the board's chip, a person reads it
+   * every day, and *an empty `steps` changes nothing* is a claim a substring
+   * assertion cannot make. `LIMIT_DEFAULTS` rather than a hand-written pair, so
+   * the recipe it is asserted about is the one every project has.
+   */
+  it("prints exactly what it printed before a step could narrow", () => {
+    const defaults = {
+      rounds: LIMIT_DEFAULTS.rounds,
+      restarts: LIMIT_DEFAULTS.restarts,
+      turns: LIMIT_DEFAULTS.turns,
+      wall: LIMIT_DEFAULTS.wall,
+      wallMs: parseDuration(LIMIT_DEFAULTS.wall),
+    };
+    expect(passCeiling({ ...defaults, steps: [] })).toBe(passCeiling(defaults));
+    expect(passCeiling(defaults)).toBe(
+      "up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused " +
+        "it. 2h and 300 turns each, so at most 6h. A pass whose rounds are spent goes to you " +
+        "(runtime.limits.restarts: 0)",
+    );
+  });
+
+  /**
+   * **And a step that narrows is named, on the same line** (`#314`, 0070 §9).
+   *
+   * The figure and the product stay `implement`'s, because the rounds are rounds
+   * at `implement` and they are what the product multiplies; the cold reviewer's
+   * own wall was never in this arithmetic and making it a true sum would move the
+   * number every recipe prints today. So the other bounds are *named* rather than
+   * added, which is what keeps this one line and keeps it true.
+   */
+  it("names the dispatching steps bounded differently from the one it prints", () => {
+    const said = passCeiling({ ...limits(2), steps: [{ step: "review", turns: 50, wall: "30m" }] });
+
+    expect(said).toContain("1h and 150 turns each at implement (review 30m/50 turns)");
+    // The arithmetic is untouched: three runs of `implement`'s hour.
+    expect(said).toContain("at most 3h");
   });
 });
 

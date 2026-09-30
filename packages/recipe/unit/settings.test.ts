@@ -49,6 +49,8 @@ import {
   backoffOf,
   baseOf,
   baseWrittenAt,
+  boundsBesides,
+  ceilingOf,
   excludeOf,
   kindsOf,
   limitsFor,
@@ -68,6 +70,9 @@ describe("the accessors", () => {
   it("read what the recipe holds today", () => {
     expect(baseOf(RECIPE)).toBe("develop");
     expect(kindsOf(RECIPE)).toEqual(["bug", "tech-debt"]);
+    // By identity, and that is the cheap proof of *a recipe nobody edited
+    // resolves to the same values*: nothing at `implement` narrows, so the
+    // ceiling object itself comes back rather than a copy of its fields.
     expect(limitsFor(RECIPE, "implement")).toBe(RECIPE.runtime.limits);
   });
 
@@ -273,12 +278,97 @@ describe("the accessors", () => {
   });
 
   /**
-   * Not an implementation detail: the step is unread *today* and the two calls
-   * are not the same question, so a caller passing the step it is at is right
-   * both before 0061 §4's move and after it.
+   * **The test this replaces was called *answer the same for every step, because
+   * the settings have not moved yet***, and its body was
+   * `expect(limitsFor(RECIPE, "build")).toEqual(limitsFor(RECIPE, "implement"))`.
+   * 0070 §5 moved them; this is its opposite, and it is the unit-level proof of
+   * the whole feature (`#314`).
+   *
+   * Three claims in one recipe, because they are three ways the same reading
+   * goes wrong:
+   *
+   * - a step that narrows answers its own figure, and `build` — which dispatches
+   *   nothing — still answers the ceiling;
+   * - the narrowing is **field by field**: `turns: 4` without a `wall` keeps the
+   *   pass's wall, so a step cannot silently lose a bound by naming one;
+   * - `rounds` and `restarts` are untouched, because they count calls and are the
+   *   pass's (0040).
    */
-  it("answer the same for every step, because the settings have not moved yet", () => {
-    expect(limitsFor(RECIPE, "build")).toEqual(limitsFor(RECIPE, "implement"));
+  it("answer a step's own bound where a dispatch there narrowed it", () => {
+    const narrowed = Recipe.parse({
+      ...WRITTEN,
+      steps: {
+        implement: [{ name: "write it", agent: "claude-code", prompt: "go", limits: { turns: 4 } }],
+      },
+    });
+    expect(limitsFor(narrowed, "implement").turns).toBe(4);
+    expect(limitsFor(narrowed, "implement").wall).toBe(ceilingOf(narrowed).wall);
+    expect(limitsFor(narrowed, "implement").rounds).toBe(ceilingOf(narrowed).rounds);
+    expect(limitsFor(narrowed, "build")).toBe(ceilingOf(narrowed));
+  });
+
+  /**
+   * **A step's upper bound and never one dispatch's own.**
+   *
+   * `StepMap` refuses a second `worktree:` or `queue:` at a step and refuses no
+   * second `agent:`, so a `review` holding a narrowed entry beside an undeclared
+   * one may still spend the ceiling — and a reading that answered `4` there
+   * would under-report what a pass can cost, which is the one direction this
+   * number must never be wrong in.
+   */
+  it("answer the maximum where a step holds two dispatches", () => {
+    const both = Recipe.parse({
+      ...WRITTEN,
+      steps: {
+        review: [
+          { name: "cheap", agent: "claude-code", prompt: "a", limits: { turns: 4 } },
+          { name: "whatever the ceiling allows", agent: "claude-code", prompt: "b" },
+        ],
+      },
+    });
+    expect(limitsFor(both, "review")).toBe(ceilingOf(both));
+  });
+
+  /**
+   * **`ceilingOf` is `runtime.limits` and `limitsFor` is not, and `pnpm
+   * typecheck` cannot tell them apart** — both return the same type, and four
+   * callers write the value they get back into the machine file. This is the
+   * assertion that stands in for the compiler (`#314`).
+   */
+  it("keep the ceiling and a step's bound as two questions", () => {
+    expect(ceilingOf(RECIPE)).toBe(RECIPE.runtime.limits);
+    const narrowed = Recipe.parse({
+      ...WRITTEN,
+      steps: {
+        implement: [{ name: "write it", agent: "claude-code", prompt: "go", limits: { turns: 4 } }],
+      },
+    });
+    expect(ceilingOf(narrowed).turns).toBe(RECIPE.runtime.limits.turns);
+    expect(limitsFor(narrowed, "implement").turns).not.toBe(ceilingOf(narrowed).turns);
+  });
+
+  /**
+   * What `passCeiling`'s sentence names, and **only steps that dispatch**.
+   *
+   * `limitsFor` truthfully answers the ceiling for a step with no `agent:` and
+   * no runtime `judge:` — nothing there spends anything — so a list built off
+   * that alone would print `admit 1h/150 turns` beside a narrowed `implement`,
+   * which is a bound on a step that buys no agent at all.
+   */
+  it("name the dispatching steps whose bound is not the one already printed", () => {
+    const mixed = Recipe.parse({
+      ...WRITTEN,
+      steps: {
+        implement: [{ name: "write it", agent: "claude-code", prompt: "go" }],
+        review: [{ name: "cold", agent: "claude-code", prompt: "read", limits: { turns: 4 } }],
+      },
+    });
+    expect(boundsBesides(mixed, "implement")).toEqual([
+      { step: "review", turns: 4, wall: ceilingOf(mixed).wall },
+    ]);
+    // A recipe that narrows nothing names nothing, which is what keeps today's
+    // sentence character for character (0070 §8).
+    expect(boundsBesides(RECIPE, "implement")).toEqual([]);
   });
 
   it("do not invent a default — a resolved recipe has every value", () => {
@@ -335,7 +425,21 @@ describe("nothing reaches past them", () => {
         const path = file.pathname.slice(root.pathname.length);
         // `settings.ts` is the one place that may, and a `src/` path is the
         // only thing this is about: a test may build a recipe by hand.
-        if (!path.includes("/src/") || path.endsWith("recipe/src/settings.ts")) continue;
+        //
+        // **`recipe.ts` is the second, since `#314`, and it is the declaration
+        // rather than a reader.** 0070 §5's narrowing rule is a statement about
+        // two sibling keys — a dispatch's `limits:` may not widen
+        // `runtime.limits` — and only the schema that declares both can make
+        // it. An accessor cannot serve it either: `limitsFor` *applies* the
+        // narrowing, so asking it here would be asking the answer about itself.
+        // When the setting moves onto `implement`, this file moves with it in
+        // the same diff, which is what the guard is for.
+        if (
+          !path.includes("/src/") ||
+          path.endsWith("recipe/src/settings.ts") ||
+          path.endsWith("recipe/src/recipe.ts")
+        )
+          continue;
         const text = await readFile(file, "utf8");
         for (const line of text.split("\n")) {
           // A doc comment naming the old shape is prose, not a reader.

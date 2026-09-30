@@ -147,6 +147,107 @@ export const runPlugin = definePlugin("run", {
 });
 
 /**
+ * **A number that bounds the pass and not one call**, declared inside a
+ * dispatch's `limits:` in order to be **refused by name** there
+ * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md),
+ * [0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
+ *
+ * Left undeclared, `z.strictObject` answers *Unrecognized key: "rounds"*, which
+ * says the key is not allowed and not why — and *why* is the whole of what is
+ * being said here: `turns` and `wall` bound one agent run and may move to a
+ * step; `rounds` and `restarts` count **how many** runs a pass and a ticket buy,
+ * which is not a thing one action can have an opinion about. `z.never()` under
+ * an `.optional()` passes an absent key and refuses a present one in the
+ * recipe's own voice, which is 0061 §9's rule — *a plugin refuses a field it
+ * does not understand* — applied one level down, to a field of a field.
+ */
+function boundsThePass(field: "rounds" | "restarts"): z.ZodType {
+  const counts =
+    field === "rounds"
+      ? "how many times a pass sends the agent back"
+      : "how many times a ticket starts the work over";
+  return z
+    .never({
+      error:
+        `\`${field}\` bounds the pass and not one call (0040): it counts ${counts}, which is a fact ` +
+        "about the pass rather than about one dispatch. Write it at `runtime.limits`, where the " +
+        "ceiling is stated once (0070 §5)",
+    })
+    .optional();
+}
+
+/**
+ * **What one paid call is**, as three fields any plugin that buys a model embeds
+ * (0070 §3).
+ *
+ *     model   which model, and absent means the runtime's own default
+ *     prompt  what it is handed
+ *     limits  what that one call may spend — `turns` and `wall`, and nothing else
+ *
+ * **A spread of field schemas and not a nested object**, because 0063 §2 settled
+ * that `model:` and `prompt:` sit *beside* the key rather than under it, so the
+ * scalar a recipe writes stays a single value. What is shared is each field's
+ * schema and the paragraph on it; **which** runtime or judge the call is for
+ * stays the plugin's own key, because only `judge:` knows that *not a runtime at
+ * all* is a legal answer (0070 §3).
+ *
+ * **Each plugin picks which of the three it pays for**, and a spread of all
+ * three would decide a question 0070 leaves open: `judge:`'s prompt is
+ * `judgePrompt`'s, the one question a judge exists to be asked, and a `prompt:`
+ * key beside `judge:` would be a way to rewrite it. So `agentPlugin` embeds all
+ * three and `judgePlugin` embeds two.
+ *
+ * **Nothing here is defaulted, and that is load-bearing.** `configHash` is the
+ * hash of the *resolved* recipe (0047 §2), so a `.default({})` on `limits` would
+ * change the hash of every project's recipe — including the one stored on every
+ * `RunStarted` and `StepsResolved` — for a file nobody edited. Absent is not
+ * empty (0064 §5), and here absent means `runtime.limits`, exactly as before this
+ * group existed.
+ */
+const DISPATCH = {
+  /**
+   * The recipe's `model:`, handed to the runtime as-is — and **absent means the
+   * runtime's own default** (0063 §2).
+   *
+   * Lingtai carries no table of what each runtime defaults to: naming one here
+   * would be a second place for it to be wrong, and the runtime already knows.
+   */
+  model: z.string().optional(),
+  /** The prose this call is handed. Appended to the fixed brief, never substituted for it. */
+  prompt: z.string(),
+  /**
+   * **What this one call may spend, and it may only narrow `runtime.limits`**
+   * (0070 §5).
+   *
+   * Two numbers and not four: `turns` and `wall` bound one agent run, which is
+   * what this is; `rounds` and `restarts` count calls and are refused above by
+   * name. Both optional, and an absent one takes the pass's — so `limits: {
+   * turns: 50 }` narrows the turns and keeps the wall.
+   *
+   * **The widening refusal is on `Recipe`** and not here, because `steps` and
+   * `runtime` are sibling keys and zod parses them independently: nothing at
+   * this depth can see the ceiling it would have to compare against.
+   */
+  limits: z
+    .strictObject({
+      turns: z.number().int().positive().optional(),
+      /**
+       * A duration, checked where it is written for `runtime.limits.wall`'s own
+       * reason: `parseDuration` throws, and a throw out of something *reading* a
+       * resolved recipe names neither the key nor the file (#218). The
+       * narrowing rule never meets a malformed one, because this refuses first.
+       */
+      wall: z
+        .string()
+        .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 30m" })
+        .optional(),
+      rounds: boundsThePass("rounds"),
+      restarts: boundsThePass("restarts"),
+    })
+    .optional(),
+} as const;
+
+/**
  * A cold reviewer, given the diff: **which runtime runs it**, optionally which
  * model, and the prompt it is handed
  * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §2).
@@ -176,18 +277,27 @@ export const runPlugin = definePlugin("run", {
  * `RunRequest.model`, so the key changes what is spawned rather than only what
  * is hashed.
  *
- * **This schema says which runtime, and no step dispatches a second one yet.**
- * One conductor runs one runtime and hands it to every gate, so a value here
- * that is not the dispatched one cannot be honoured — and is refused before the
- * claim by `agentRefusal` (`conductor/src/conduct.ts`), which reads every
- * `agent:` in the file rather than `runtime.agent` alone. The enum is what a
- * *name* has to be in; the refusal is what makes the name true of the run.
+ * **This field is what picks the runtime for this step, since `#314`** (0070 §7).
+ * It is not a check against `runtime.agent`: `actionsFromRecipe` hands the
+ * action `runtimeFor(action.agent)` and `implement`'s dispatch builds the same
+ * name with `runtimeNamed`, so `agent: codex` beside `runtime.agent:
+ * claude-code` runs on Codex. What is still refused before the claim, by
+ * `agentRefusal` (`conductor/src/conduct.ts`), is a runtime **nothing on this
+ * machine is signed in to** — it reads every `agent:` in the file rather than
+ * `runtime.agent` alone. The enum is what a *name* has to be in; the refusal is
+ * what makes the name one this machine can run.
  */
 export const agentPlugin = definePlugin("agent", {
+  /**
+   * **`agent:` is the *which*, and the other three are `DISPATCH`'s** (0070 §3).
+   *
+   * `model:` and `prompt:` were written out here and `limits:` did not exist;
+   * they are the group now, so the second plugin that buys a model gets the same
+   * three fields with the same meanings rather than a subset somebody chose.
+   */
   fields: {
     agent: RuntimeId,
-    model: z.string().optional(),
-    prompt: z.string(),
+    ...DISPATCH,
   },
   /** Not `prepared`: nothing has been committed there, so there is no diff to read. */
   /**
@@ -1192,11 +1302,31 @@ export function isBuiltInJudge(name: JudgeName): name is BuiltInJudge {
  * *which of these*, never *what is legal*.
  */
 export const judgePlugin = definePlugin("judge", {
+  /**
+   * **Two of `DISPATCH`'s three, and leaving `prompt:` out is a decision** (0070 §3).
+   *
+   * A runtime `judge:` is *an agent, paid for a judgement*, and until `#314` it
+   * was the only paid call in the pass with no way to name a model: measured on
+   * `#300`, it answered in one turn for $0.42 beside an `implement` of 150 turns
+   * and $22.56, and it is the cheap one that could not ask for a cheap model.
+   * `model:` and `limits:` are the group's, with the group's meanings.
+   *
+   * `prompt:` is not spread in. What a judge is handed is `judgePrompt`'s — the
+   * offered set and the reason the last step gave — and a key beside `judge:`
+   * that could replace it would be a way to ask something other than the one
+   * question this plugin exists to ask. 0070 leaves it open; this is it left open.
+   *
+   * **A built-in takes neither**, and that is refused on `Recipe` rather than by
+   * a second schema: `same-worktree` is a synchronous function the router
+   * applies, so it spends nothing and has no model to name.
+   */
   fields: {
     /** A built-in, which spends nothing, or a runtime, which is a dispatch (`JudgeName`). */
     judge: JudgeName,
     /** The direction it answers. Required, undefaulted: one entry per `when:`. */
     when: JudgeWhen,
+    model: DISPATCH.model,
+    limits: DISPATCH.limits,
   },
   /**
    * **`proposed` since `#274`, and it is the one step that routes** (0058 §3b).
@@ -2851,7 +2981,91 @@ export const Recipe = z.object({
       })
       .default({ evidence: 2_000, attempts: 5, findings: 5, diff: 400_000 }),
   }),
-});
+})
+  /**
+   * **A dispatch may only narrow the ceiling, and a built-in judge has none**
+   * (0070 §5, §7).
+   *
+   * Here and not on `actionsAt(step)`, where the other cross-action refusals
+   * live, because nothing smaller than `Recipe` sees both numbers: `steps` and
+   * `runtime` are sibling keys and zod parses them independently, so a check
+   * inside a step's list has no ceiling to compare against. `path` puts the
+   * issue on the step, so `resolveRecipe` prints it against the line rather
+   * than against the file.
+   *
+   * **Narrowing is what keeps `lingtai status` readable from the top of the
+   * file.** A step that could raise its own bound would make what a pass may
+   * spend knowable only after reading every action in every step — so the
+   * ceiling is said once at `runtime.limits`, and every other number is a
+   * reduction from it. An operator who wants `implement` to have 300 turns
+   * raises `runtime.limits.turns` and narrows the others.
+   *
+   * **Equal is not wider.** A `limits:` restating the ceiling is legal and says
+   * a true thing — *this step is deliberately at the bound* — and refusing it
+   * would be refusing a recipe for being explicit.
+   */
+  .superRefine((recipe, ctx) => {
+    const ceiling = recipe.runtime.limits;
+    /**
+     * **A duration this refinement is handed may be malformed, and it may not
+     * throw on one** (#218).
+     *
+     * The leaf `.refine`s on both `wall` keys raise a non-aborting `custom`
+     * issue, so zod runs this refinement *after* one of them has already
+     * refused — with the bad string still in hand. A bare `parseDuration` here
+     * throws out of `Recipe.safeParse`, and `resolveSource` only inspects
+     * `safeParse`'s failure *result*: the throw escapes past the
+     * `RecipeInvalidError` that names the key and the file, so `lingtai add`,
+     * the board's reading and the wizard all print a bare duration message
+     * naming neither `runtime.limits.wall` nor which file to open. That is
+     * exactly the failure `#218` was opened on, one layer up.
+     *
+     * So a wall the leaf already refused is a wall this has nothing to say
+     * about: `null`, and the comparison is skipped. The named refusal the leaf
+     * raised is the one the operator reads, which is the right one — *what a
+     * step may narrow* is not a useful thing to hear about a ceiling that is
+     * not a duration.
+     */
+    const msOf = (text: string): number | null => (positiveDuration(text) ? parseDuration(text) : null);
+    const ceilingWallMs = msOf(ceiling.wall);
+    for (const [step, actions] of Object.entries(recipe.steps)) {
+      for (const action of actions) {
+        const refuse = (message: string): void => {
+          ctx.addIssue({ code: "custom", path: ["steps", step], message });
+        };
+        if ("judge" in action && isBuiltInJudge(action.judge)) {
+          for (const field of ["model", "limits"] as const) {
+            if (action[field] === undefined) continue;
+            refuse(
+              `steps.${step}'s "${action.name}" names the built-in judge \`${action.judge}\` and a ` +
+                `\`${field}:\` — but a built-in judge is a synchronous function the router applies ` +
+                "(0070 §3): it dispatches nothing, so it has no model to name and no call to bound. " +
+                `A \`${field}:\` belongs beside a \`judge:\` naming a runtime`,
+            );
+          }
+          continue;
+        }
+        if (!("limits" in action) || action.limits === undefined) continue;
+        const { turns, wall } = action.limits;
+        if (turns !== undefined && turns > ceiling.turns) {
+          refuse(
+            `steps.${step}'s "${action.name}" asks for ${turns} turns; runtime.limits.turns is ` +
+              `${ceiling.turns}, and a step may only narrow it (0070 §5)`,
+          );
+        }
+        // Both sides through `msOf`, and either one being `null` skips the
+        // comparison: a malformed `wall` at *this* end has been refused by the
+        // leaf too, and a second issue about narrowing would be noise beside it.
+        const wallMs = wall === undefined ? null : msOf(wall);
+        if (wallMs !== null && ceilingWallMs !== null && wallMs > ceilingWallMs) {
+          refuse(
+            `steps.${step}'s "${action.name}" asks for ${wall} of wall clock; runtime.limits.wall is ` +
+              `${ceiling.wall}, and a step may only narrow it (0070 §5)`,
+          );
+        }
+      }
+    }
+  });
 export type Recipe = z.infer<typeof Recipe>;
 
 export { formatDuration, parseDuration } from "./duration.ts";

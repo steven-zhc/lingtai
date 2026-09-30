@@ -34,6 +34,7 @@ import {
   loadProjects,
   passCeiling,
   projectFilters,
+  signedInHere,
 } from "@lingtai/conductor";
 import type { GitHubClient } from "@lingtai/github";
 // The submodule, not the barrel: these two checks run on the *direct*
@@ -46,7 +47,7 @@ import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/
 // are asked on a machine whose log is a file; a Postgres machine keeps naming
 // the direct connection, for the reason the import above gives.
 import { log } from "@lingtai/event-store";
-import { baseDivergence, baseOf, baseWrittenAt, limitsFor, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
+import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
 import { type RecordedRefusal, type RuntimeId, isEventType } from "@lingtai/domain";
 import {
   codeCurrency,
@@ -1462,8 +1463,12 @@ async function projectRecipes(
   // picked correctly, and the half that still refuses is a step's own `agent:`.
   // `""` where the recipe did not resolve, and `recipeRow` never reads it there:
   // nothing was dispatched, because there was no recipe to name a runtime.
+  // **What this machine can dispatch beyond each project's own** (`#314`). One
+  // cached probe for the whole report rather than one per project: the answer is
+  // about the machine, and `signedInProbe` remembers it for a minute anyway.
+  const signedIn = await signedInHere();
   return (await projectFilters(projects, recipeClientFor(env))).map((f) =>
-    recipeRow(f, f.ok ? f.recipe.runtime.agent : ""),
+    recipeRow(f, f.ok ? f.recipe.runtime.agent : "", signedIn),
   );
 }
 
@@ -1478,8 +1483,11 @@ async function projectRecipes(
  * matched — so re-writing the same value there changes nothing and the project
  * goes on taking no work, with the line that must change never mentioned.
  *
- * Both halves end in why there is no other way out: per-step dispatch is not
- * built, so the answer is never "configure the other runtime".
+ * **The step's half stopped saying *name the other one* in `#314`.** Per-step
+ * dispatch is built, so a step naming a second runtime is legal; what is refused
+ * is a runtime nothing on this machine is signed in to, and the two ways out of
+ * that are signing in and naming something else. `lingtai doctor`'s own
+ * `runtime: signed in` row is where the first is checked.
  *
  * **And the step's half names the key rather than assuming `agent:`** (`#277`).
  * A `judge:` may name a runtime too, and it is the same refusal for the same
@@ -1490,9 +1498,8 @@ async function projectRecipes(
 function agentRemedy(refused: AgentRefusal, project: string, dispatched: string): string {
   return refused.at === "runtime.agent"
     ? `Name runtime.agent: ${dispatched} in ${machinePath()}; it is what this conductor was asked to dispatch`
-    : `Name ${refused.key}: ${dispatched} on that action in ${recipePath(project)}, or drop the action; ` +
-      `per-step dispatch is not built (#309 T2), so a step's ${refused.key}: has to be the runtime ` +
-      `runtime.agent already chose`;
+    : `Sign in to it, or name a runtime this machine has as that action's ${refused.key}: in ` +
+      `${recipePath(project)} — see the runtime: signed in row above`;
 }
 
 /**
@@ -1504,8 +1511,12 @@ function agentRemedy(refused: AgentRefusal, project: string, dispatched: string)
  * claim (#180) — so that is a `fail` here, in `runOnce`'s own sentence, and not
  * an `ok` that prints the agent and says nothing of it.
  */
-export function recipeRow(f: ProjectFilter, dispatched: string): CheckResult {
-  const wrongAgent = f.ok ? agentRefusal(f, dispatched) : null;
+export function recipeRow(
+  f: ProjectFilter,
+  dispatched: string,
+  signedIn: readonly string[] = [],
+): CheckResult {
+  const wrongAgent = f.ok ? agentRefusal(f, dispatched, signedIn) : null;
   if (f.ok && wrongAgent !== null) {
     return {
       name: `recipe: ${f.project}`,
@@ -1599,8 +1610,11 @@ export function limitsRow(
 ): CheckResult {
   const name = `runtime: ${project} limits`;
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
-    turns: String(limitsFor(recipe, "implement").turns),
-    wall: limitsFor(recipe, "implement").wall,
+    // The ceiling beside its provenance: this row is about what
+    // `~/.lingtai/config.yml` says and whether the runtime applies it, and a
+    // step's reduction is neither (`#314`).
+    turns: String(ceilingOf(recipe).turns),
+    wall: ceilingOf(recipe).wall,
   };
   const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
   const detail = RUN_LIMITS.map(

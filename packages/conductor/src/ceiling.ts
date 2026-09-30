@@ -32,6 +32,20 @@ import { formatDuration } from "@lingtai/recipe/duration";
  *
  * Turns are named too, and not multiplied: they bound a run and do not add up
  * across runs the way time does.
+ *
+ * **`steps` is the per-step half, and it is a list rather than a longer sum**
+ * (`#314`, [0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+ * §9). Since a dispatch may narrow the ceiling, the one figure this sentence
+ * names stopped being true of every step — so the steps that disagree with it
+ * are named, and the arithmetic is untouched. `turns`, `wall` and `wallMs` stay
+ * `implement`'s, because `rounds` are rounds *at* `implement` and they are what
+ * the product multiplies; a true sum over every dispatching step is a different
+ * sentence, would move the number every recipe prints today, and was never what
+ * this said — the cold reviewer's own wall has never been in it.
+ *
+ * **Empty is today's string, character for character**, which is 0070 §8's *a
+ * recipe nobody edited* asserted on the line a person reads every day. It stays
+ * one line: a step that narrows costs seven words, not a second row.
  */
 export function passCeiling(limits: {
   rounds: number;
@@ -39,13 +53,20 @@ export function passCeiling(limits: {
   turns: number;
   wall: string;
   wallMs: number;
+  /** The dispatching steps whose own bound is not the figure named above. */
+  steps?: readonly { step: string; turns: number; wall: string }[];
 }): string {
+  const elsewhere =
+    limits.steps === undefined || limits.steps.length === 0
+      ? ""
+      : ` (${limits.steps.map((s) => `${s.step} ${s.wall}/${s.turns} turns`).join(", ")})`;
+  const at = elsewhere === "" ? "" : " at implement";
   const pass =
     limits.rounds === 0
-      ? `one agent run — ${limits.wall}, ${limits.turns} turns`
+      ? `one agent run — ${limits.wall}, ${limits.turns} turns${at}${elsewhere}`
       : `up to ${limits.rounds + 1} agent runs — the work, then ${limits.rounds} round(s) ` +
         `back to the agent carrying what refused it. ${limits.wall} and ${limits.turns} ` +
-        `turns each, so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}`;
+        `turns each${at}${elsewhere}, so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}`;
 
   // **Said whether it buys anything or not**, like a `skipped` gate point and
   // like `rounds: 0` below it: a default that spends money has to be auditable

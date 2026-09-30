@@ -305,6 +305,26 @@ things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
+**And a step may narrow the first two, never widen them** (`#314`,
+[0070](decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
+`turns` and `wall` bound one call, so a dispatch may write its own `limits:` —
+`agent:` and a runtime `judge:` both — and `limits: { turns: 50 }` narrows the
+turns and keeps the pass's wall. A figure past the ceiling is refused when the
+recipe resolves, by name:
+
+> steps.implement's "write the change" asks for 300 turns; runtime.limits.turns
+> is 150, and a step may only narrow it (0070 §5)
+
+The ceiling is said **once**, here, and every other number is a reduction from
+it — otherwise what a pass may spend would only be knowable after reading every
+action in every step, and `passCeiling`'s sentence would stop being an upper
+bound. `rounds` and `restarts` may not move at all: they count *how many* calls,
+which is not a thing one action can have an opinion about, and writing either
+inside a dispatch's `limits:` is refused by name too. Where a step does narrow,
+`passCeiling` names it on the same line — *1h and 150 turns each at implement
+(review 30m/50 turns), so at most 3h* — and a recipe that narrows nothing prints
+exactly what it always printed.
+
 **Why the default is two and not one.** 0025 §3's rule for a spending default is
 the smallest number that makes the feature exist. `rounds` replaces two ceilings
 that were one each, and [0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
@@ -908,7 +928,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): same three fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Three fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, and `prompt:` is what it is given | the conductor's own runtime, which `agent:` has to name — **per-step dispatch is not built**, and a step naming the other one is refused before the claim rather than run on the dispatched one |
+| `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
 | `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **`{{issue}}` in the path becomes the ticket's number when the pass runs** (`#310`), so each pass's note lands at its own path and the locator on an old `StepPassed` still opens the document it named; `{{issue}}` is the only placeholder — any other `{{…}}` is refused at resolve, and the expansion is asked `whyThePathEscapes` again before anything is written. **The note is committed, and there is no field for the other answer**: the worktree is removed when the pass ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
 | `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the pass was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
@@ -939,19 +959,25 @@ reviewer's spawn — `from-recipe.ts` carries it onto the gate and `agent-gate.t
 onto `RunRequest.model`, which is `--model` for `claude-code` — so writing a
 cheap model on `review` actually buys a cheap review.
 
-**What `agent:` does not yet buy is a second runtime in one pass**, and that is
-refused rather than ignored. One conductor dispatches one runtime and the gates
-are handed it, so `agentRefusal` (`conductor/src/conduct.ts`) now reads every
-`agent:` in the file and not only `runtime.agent`: a step naming the other one
-stops the pass before the claim, naming the point and the action, and
-`lingtai doctor`'s recipe row says the same refusal. **The remedy is the one
-thing the two refusals do not share**: `runtime.agent` is written in
+**A second runtime in one pass is dispatched since `#314`**
+([0070](decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+§7). The runtime a step's `agent:` names is the one that step runs on —
+`actionsFromRecipe` hands the action `runtimeFor(action.agent)`, and
+`implement`'s dispatch builds the same name — so `review: agent: codex` beside
+`runtime.agent: claude-code` runs its cold review on Codex. What is still refused
+before the claim is a runtime **nothing on this machine is signed in to**:
+`agentRefusal` (`conductor/src/conduct.ts`) reads every `agent:` in the file and
+not only `runtime.agent`, and a step naming one this machine cannot start stops
+the pass before the claim, naming the point and the action — *`steps.review`'s
+"review" action names agent codex, and nothing on this machine is signed in to
+codex* — and `lingtai doctor`'s recipe row says the same refusal. **The remedy is
+the one thing the two refusals do not share**: `runtime.agent` is written in
 `~/.lingtai/config.yml` and a step's `agent:` in `~/.lingtai/<project>/recipe.yml`,
-so the refusal carries which of the two it is and the row names that file — a
-row that offered the machine file for a step's refusal sent an operator to a
-line that already said the dispatched runtime. The alternative was the silent pick
-0046 §3 exists to refuse — a cold review running on the dispatched runtime with
-nothing anywhere recording that the named one was not used.
+so the refusal carries which of the two it is and the row names that file. For a
+step the way out is signing in to that runtime or naming one this machine has —
+never repeating `runtime.agent`, which is no longer required. The alternative was
+the silent pick 0046 §3 exists to refuse — a claim taken and a worktree cut for a
+pass whose `review` cannot start.
 
 **`worktree:` and `judge:` were two of the five and are the two now wired**
 (`#268`, `#274`, [0065](decisions/0065-the-default-is-a-plugin.md) §4).
@@ -1158,12 +1184,15 @@ not having ([the-plugin-body.md](design/the-plugin-body.md) §5). `ask-or-assume
 from 0061 §3's example is still refused, and now it is alone there: nothing
 implements it.
 
-**And the runtime has to be the one this conductor dispatches**, which is
-`agent:`'s rule and is enforced in the same place: `agentRefusal` walks every
-step's actions before the claim, so a `judge: codex` on a Claude Code machine
-refuses every pass of that project by name and `lingtai doctor` says which line
-to change. Per-step dispatch is not built, so the answer is never *configure the
-other runtime*. A built-in `judge:` names no runtime and is passed over.
+**And the runtime has to be one this machine is signed in to**, which is
+`agent:`'s rule and is enforced in the same place. Since `#314` the runtime a
+`judge:` names is dispatched — `askTheAgent` builds it with `runtimeNamed`, so
+`judge: codex` beside `runtime.agent: claude-code` buys its judgement from Codex,
+and a runtime judge does not have to repeat `runtime.agent`. What `agentRefusal`
+still refuses before the claim is a runtime **nothing on this machine is signed
+in to** — *`steps.proposed`'s "the lines" action names judge codex, and nothing
+on this machine is signed in to codex* — and `lingtai doctor` says which line to
+change. A built-in `judge:` names no runtime and is passed over.
 
 **The two halves are two kinds of decider and the difference is what answering
 costs.** A built-in is a synchronous function, applied where the router reads it;
@@ -1215,9 +1244,14 @@ A judge that could carry its own `rounds` could answer *back to `implement`*
 for ever, at ~31 turns and ~$3.40 a round
 ([012 §3](experiments/012-where-the-turns-go.md)), and nothing anywhere would
 report a fault. So the plugin declares **no `rounds:` and no `restarts:`** —
-they are universal keys on the steps they bound, written today as
-`runtime.limits` — and a recipe writing either under a judge is refused by
-name. The workflow counts what is spent, works out the set of steps on offer
+not beside `judge:` and not inside the `limits:` it gained in `#314`; they are
+universal keys on the steps they bound, written today as `runtime.limits`, and a
+recipe writing either under a judge is refused by name. What it *does* declare
+since that ticket is `model:` and `limits:` — which model buys the judgement and
+what that one call may spend, the same two fields with the same meanings
+`agent:` carries (0070 §3) — because the cheapest call in a pass by two orders
+of magnitude was the one with no way to ask for a cheap model. A built-in takes
+neither: it is a function the router applies and spends nothing. The workflow counts what is spent, works out the set of steps on offer
 (`stepsOnOffer` in `packages/conductor/src/judge.ts`) and hands the judge that
 set; **the set depends on how far the pass got, not only on what is left to
 spend**, so `prepared`'s refusal offers no `implement` with every round unspent,

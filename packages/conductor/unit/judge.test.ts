@@ -323,9 +323,16 @@ describe("the judge chooses, and cannot widen anything", () => {
    * The recipe-side half of the same property: `rounds` and `restarts` are
    * universal keys on the steps they bound, and a recipe writing one under a
    * judge is refused by name, listing what the plugin does declare (0061 §9).
+   *
+   * **A `limits:` since `#314` is not a widening of either**
+   * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
+   * It bounds *one* call — `turns` and `wall` — and may only narrow
+   * `runtime.limits`; `rounds` and `restarts` count calls and are refused
+   * inside it by name, which is the same refusal one level down rather than a
+   * hole in it. `packages/recipe/unit/plugin.test.ts` is where both are held.
    */
-  it("declares no ceiling of its own", () => {
-    expect(judgePlugin.declares).toEqual(["name", "judge", "when"]);
+  it("declares no ceiling over the pass", () => {
+    expect(judgePlugin.declares).toEqual(["name", "judge", "when", "model", "limits"]);
     for (const ceiling of ["rounds", "restarts"] as const) {
       const problems = readFields(judgePlugin, {
         name: "the lines or the approach",
@@ -336,6 +343,15 @@ describe("the judge chooses, and cannot widen anything", () => {
       expect(problems).toHaveLength(1);
       expect(problems[0]!.field).toBe(ceiling);
       expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`);
+
+      const inside = readFields(judgePlugin, {
+        name: "the lines or the approach",
+        judge: "claude-code",
+        when: "findings",
+        limits: { [ceiling]: 9 },
+      }).problems!;
+      expect(inside).toHaveLength(1);
+      expect(inside[0]!.why).toContain("bounds the pass and not one call (0040)");
     }
   });
 });

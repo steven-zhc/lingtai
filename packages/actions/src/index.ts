@@ -64,6 +64,7 @@ export {
   createWorkAction,
   type WorkActionDeps,
   type WorkActionSpec,
+  type WorkDispatch,
   type WorkedAnswer,
 } from "./work-action.ts";
 export {

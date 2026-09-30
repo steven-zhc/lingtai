@@ -465,9 +465,13 @@ describe("actionsFromRecipe", () => {
    * with a prompt the recipe never wrote. So this asserts on `RunRequest`, past
    * every layer that could have dropped one: the action, the spec, the request.
    *
-   * `agent:` itself does not travel, and that is the third fact rather than a
-   * gap: one conductor dispatches one runtime, `deps.agent.runtime` is it, and
-   * a step naming the other is refused before the claim by `agentRefusal`.
+   * `agent:` itself is not asserted here, and not because it is dropped: since
+   * `#314` it is what selects the runtime at this seam — `dispatchDeps` hands
+   * the action `deps.runtimeFor(action.agent)` where a `runtimeFor` is supplied,
+   * and `deps.agent.runtime` where none is, which is this test. A step naming a
+   * second runtime is dispatched on it; `agentRefusal` upstream refuses only a
+   * runtime nothing on the machine is signed in to, so nothing guarantees one
+   * runtime per pass any more.
    */
   it("carries an agent action's prompt and model as far as the reviewer's spawn", async () => {
     const seen: RunRequest[] = [];

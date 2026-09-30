@@ -30,7 +30,7 @@ import {
 import { startOnboarding } from "@lingtai/conductor/wizard";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, editRecipe, hashRecipe, limitsFor, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, ceilingOf, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
@@ -115,7 +115,8 @@ export async function editExisting(
   // The file's half: everything the page changed but the machine's two fields.
   const after = Recipe.parse({
     ...drafted,
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: limitsFor(recipe, "implement") },
+    // The machine file's ceiling, not a step's reduction from it (`#314`).
+    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: ceilingOf(recipe) },
   });
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);

@@ -598,7 +598,39 @@ describe("describeAction, on a cold reviewer", () => {
     expect(said.does).toContain("look for races");
     expect(said.does).toContain("claude-haiku-4-5");
     expect(said.does).toContain("claude-code");
-    expect(said.bound).toBe("no timeout in the recipe");
+    expect(said.bound).toBe("runtime.limits, with no bound of its own");
+  });
+
+  /**
+   * **And the bound is the entry's own where it declared one** (`#314`, 0070 §5).
+   *
+   * This column exists to say what bounds an action, and until that ticket an
+   * `agent:` had none to name — `no timeout in the recipe` was the honest
+   * answer. It is not any more: the pass honours `limits:` (`dispatchDeps`
+   * narrows `wallMs`), so a row that still said it would tell an operator who
+   * had just written a 30-minute bound that the recipe declares no timeout, and
+   * the next thing they do is raise `runtime.limits.wall` looking for it.
+   *
+   * Field by field, because the narrowing is: `turns` alone keeps the pass's
+   * wall, so the row names what moved and says the ceiling is what the rest is.
+   */
+  it("says what a `limits:` on the entry bounds, field by field", () => {
+    const both = describeAction({
+      name: "the cold reviewer",
+      agent: "codex",
+      prompt: "look for races",
+      limits: { turns: 50, wall: "30m" },
+    } as never);
+    expect(both.bound).toBe("30m and 50 turns on this one call, narrowing runtime.limits");
+
+    const turnsOnly = describeAction({
+      name: "the cold reviewer",
+      agent: "codex",
+      prompt: "look for races",
+      limits: { turns: 50 },
+    } as never);
+    expect(turnsOnly.bound).toBe("50 turns on this one call, narrowing runtime.limits");
+    expect(turnsOnly.bound).not.toContain("30m");
   });
 
   /** Two actions that differ only in the prose do not read identically. */
@@ -618,5 +650,31 @@ describe("describeAction, on a cold reviewer", () => {
     const said = describeAction({ name: "review", agent: "claude-code", prompt: "look for races" } as never);
 
     expect(said.does).toContain("its default model");
+  });
+});
+
+describe("describeAction, on a runtime judge", () => {
+  /**
+   * **A runtime `judge:` names its model and its own bound, as `agent:` does**
+   * (`#314`, 0070 §3). The block `doc/plugins/judge.md` gives an operator to
+   * paste writes `model: haiku` and `limits: { turns: 5 }`, and a row that read
+   * back only *the workflow counts the rounds* would say neither key took. The
+   * rounds are still the workflow's, so that half stays.
+   */
+  it("says the model and the limits the entry declared", () => {
+    const priced = describeAction({
+      name: "the lines or the approach",
+      judge: "claude-code",
+      model: "haiku",
+      limits: { turns: 5 },
+      when: "findings",
+    } as never);
+    expect(priced.does).toBe("asks claude-code, haiku, which step is next, for a findings refusal");
+    expect(priced.bound).toContain("5 turns on this one call, narrowing runtime.limits");
+    expect(priced.bound).toContain("the workflow counts the rounds and restarts");
+
+    const plain = describeAction({ name: "j", judge: "codex", when: "findings" } as never);
+    expect(plain.does).toContain("its default model");
+    expect(plain.bound).toContain("runtime.limits, with no bound of its own");
   });
 });

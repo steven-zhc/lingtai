@@ -870,14 +870,21 @@ describe("the one `proposed` will hold", () => {
    * sixty times to reach a mechanical conclusion, and makes anyone replacing it
    * reimplement the mechanical branches correctly or the loop never terminates.
    *
-   * **And it carries no ceiling**, which is the half that costs money if it is
-   * got wrong: a judge that could carry its own `rounds` could answer *back to
-   * `implement`* for ever at ~$3.40 a round with nothing reporting a fault. The
-   * bounds stay the workflow's — `packages/conductor/unit/judge.test.ts` is
-   * where the other side of that is held.
+   * **And it carries no ceiling over the pass**, which is the half that costs
+   * money if it is got wrong: a judge that could carry its own `rounds` could
+   * answer *back to `implement`* for ever at ~$3.40 a round with nothing
+   * reporting a fault. The bounds stay the workflow's —
+   * `packages/conductor/unit/judge.test.ts` is where the other side of that is
+   * held.
+   *
+   * **`limits:` since `#314` is not that ceiling and the distinction is 0040's**
+   * (0070 §5). A `limits:` beside a `judge:` bounds *one* call — `turns` and
+   * `wall` — and is refused for widening `runtime.limits`; `rounds` and
+   * `restarts` count calls and are refused twice over, once as fields this
+   * plugin does not declare and once inside `limits:` by name.
    */
-  it("makes `judge:` one entry per `when:`, with no ceiling of its own", () => {
-    expect(judgePlugin.declares).toEqual(["name", "judge", "when"]);
+  it("makes `judge:` one entry per `when:`, with no ceiling over the pass", () => {
+    expect(judgePlugin.declares).toEqual(["name", "judge", "when", "model", "limits"]);
 
     expect(
       judgePlugin.schema.parse({ name: "the approach", judge: "same-worktree", when: "findings" }),
@@ -902,7 +909,19 @@ describe("the one `proposed` will hold", () => {
       expect(problems).toHaveLength(1);
       expect(problems[0]!.field).toBe(ceiling);
       expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`);
-      expect(problems[0]!.why).toContain('"name", "judge", "when"');
+      expect(problems[0]!.why).toContain('"name", "judge", "when", "model", "limits"');
+
+      // And inside the dispatch's own `limits:`, where `strictObject` alone
+      // would answer *Unrecognized key* and never say why (0070 §5).
+      const inside = readFields(judgePlugin, {
+        name: "the approach",
+        judge: "claude-code",
+        when: "findings",
+        limits: { [ceiling]: 9 },
+      }).problems!;
+      expect(inside).toHaveLength(1);
+      expect(inside[0]!.why).toContain("bounds the pass and not one call (0040)");
+      expect(inside[0]!.why).toContain("Write it at `runtime.limits`");
     }
   });
 
@@ -1382,5 +1401,214 @@ describe("plugin.ts's own count of who carries a universal key", () => {
       PLUGINS.filter((plugin) => plugin.secrets.length > 0),
       "a plugin declares a no_log field, and plugin.ts's header says nothing does",
     ).toEqual([]);
+  });
+});
+
+/**
+ * **One dispatch shape, embedded rather than re-declared**
+ * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md),
+ * `#314`).
+ *
+ * The evidence 0070 was written from is that two plugins buying a model had two
+ * field lists: `agent:` took `model:` and `prompt:` and `judge:` took neither,
+ * so the cheapest call in a pass — one turn, $0.42 measured on `#300` — was the
+ * one with no way to ask for a cheap model. The fix is a group, and what makes
+ * it a group rather than a coincidence is asserted here: a fourth paid plugin
+ * that writes its own list fails these rather than shipping.
+ *
+ * The three refusals are 0070 §7's, and every one of them is **at resolve,
+ * before the money**: the recipe is parsed on the conducting machine before a
+ * worktree is cut and before anything is claimed.
+ */
+describe("a dispatch is one shape", () => {
+  /**
+   * **What is shared is *how*, and what stays the plugin's is *which*** (0070 §3).
+   *
+   * `agent:` names a runtime and only a runtime; `judge:` names a built-in *or*
+   * a runtime, and only that plugin needs *not a runtime at all* to be legal.
+   * Those two keys are deliberately not merged. What is merged is the rest.
+   *
+   * **`prompt:` is `agent:`'s alone and that is a decision** — 0070 §3 names
+   * three fields and leaves `judge:`'s prompt open, so a spread of all three
+   * would settle it by accident and hand an operator a way to rewrite the one
+   * question `judgePrompt` exists to ask.
+   */
+  it("gives both paid plugins the same `model:` and `limits:`, and `prompt:` only to `agent:`", () => {
+    for (const plugin of [agentPlugin, judgePlugin]) {
+      expect(plugin.declares, `${plugin.key} does not embed the dispatch group`).toContain("model");
+      expect(plugin.declares, `${plugin.key} does not embed the dispatch group`).toContain("limits");
+    }
+    expect(agentPlugin.declares).toContain("prompt");
+    expect(judgePlugin.declares).not.toContain("prompt");
+
+    // The same schema object and not a second copy of it: a field re-declared
+    // beside the group is the divergence this whole shape exists to end.
+    expect(agentPlugin.schema.parse({ name: "n", agent: "claude-code", prompt: "p", limits: { turns: 5 } })).toEqual(
+      { name: "n", agent: "claude-code", prompt: "p", limits: { turns: 5 } },
+    );
+    expect(
+      judgePlugin.schema.parse({ name: "n", judge: "claude-code", when: "findings", limits: { turns: 5 } }),
+    ).toEqual({ name: "n", judge: "claude-code", when: "findings", limits: { turns: 5 } });
+  });
+
+  /**
+   * **Nothing in the group is defaulted, and absent stays absent** (0064 §5).
+   *
+   * `configHash` is the hash of the *resolved* recipe (0047 §2), so a
+   * `.default({})` on `limits` would change the hash of every project's recipe
+   * — including the one stored on every `RunStarted` and `StepsResolved` — for a
+   * file nobody edited. `agentPlugin`'s own promise is *nothing changes for a
+   * file nobody edited*, and this is that promise as a test rather than a hope
+   * about it (0070 §8).
+   */
+  it("changes nothing for a file nobody edited", () => {
+    const written = { name: "the cold reviewer", agent: "claude-code", prompt: "read it" };
+    const recipe = Recipe.parse({ ...BASE, steps: { review: [written] } });
+    expect(recipe.steps.review[0]).toEqual(written);
+    expect(Object.keys(recipe.steps.review[0]!)).not.toContain("limits");
+    expect(Object.keys(recipe.steps.review[0]!)).not.toContain("model");
+  });
+
+  /**
+   * **A dispatch may only narrow, and the sentence names both numbers** (0070 §5).
+   *
+   * The ceiling is said once at `runtime.limits`; a step that could raise its own
+   * would make what a pass may spend knowable only after reading every action in
+   * every step, which is what `lingtai status`'s one-line reading rests on.
+   */
+  it("refuses a `limits:` that widens the ceiling, naming the step and both numbers", () => {
+    const at = (limits: unknown) =>
+      Recipe.safeParse({
+        ...BASE,
+        runtime: { limits: { turns: 150, wall: "1h" } },
+        steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "", limits }] },
+      });
+
+    const turns = at({ turns: 300 });
+    expect(turns.success).toBe(false);
+    expect(turns.error!.issues[0]!.message).toBe(
+      'steps.implement\'s "write the change" asks for 300 turns; runtime.limits.turns is 150, ' +
+        "and a step may only narrow it (0070 §5)",
+    );
+    expect(turns.error!.issues[0]!.path).toEqual(["steps", "implement"]);
+
+    const wall = at({ wall: "3h" });
+    expect(wall.success).toBe(false);
+    expect(wall.error!.issues[0]!.message).toBe(
+      'steps.implement\'s "write the change" asks for 3h of wall clock; runtime.limits.wall is 1h, ' +
+        "and a step may only narrow it (0070 §5)",
+    );
+
+    // Narrower resolves, and so does equal: a step written at the bound on
+    // purpose is saying a true thing, and refusing it would refuse a recipe for
+    // being explicit.
+    expect(at({ turns: 60, wall: "30m" }).success).toBe(true);
+    expect(at({ turns: 150, wall: "1h" }).success).toBe(true);
+  });
+
+  /**
+   * **`safeParse` returns a refusal for a malformed duration and never throws
+   * one** (`#218`, and the reason the narrowing check parses nothing eagerly).
+   *
+   * The leaf `.refine`s on both `wall` keys raise a *non-aborting* `custom`
+   * issue, so zod runs the object-level refinement afterwards with the bad
+   * string still in hand — and `parseDuration` throws. `resolveSource` only
+   * inspects `safeParse`'s failure *result*, so a throw escapes past the
+   * `RecipeInvalidError` that names the key and the file, and `lingtai add`, the
+   * board's `recipeAtSha` and the setup wizard each print a bare duration
+   * message naming neither `runtime.limits.wall` nor which file to open. That is
+   * `#218`'s own failure, reintroduced one layer up by a check that compares
+   * durations.
+   *
+   * `wall: "90"` — the unit forgotten — is that ticket's exact typo, and it is
+   * asserted at **both** ends, because the comparison parses both.
+   */
+  it("refuses a malformed `wall` by name at either end, rather than throwing out of `safeParse`", () => {
+    const ceiling = Recipe.safeParse({
+      ...BASE,
+      runtime: { limits: { wall: "90" } },
+      steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "" }] },
+    });
+    expect(ceiling.success).toBe(false);
+    expect(ceiling.error!.issues).toEqual([
+      expect.objectContaining({
+        path: ["runtime", "limits", "wall"],
+        message: "must be a positive duration, like 2h",
+      }),
+    ]);
+
+    // And a step's own, which the same line parses. The refusal is the leaf's,
+    // named at the field — nothing about narrowing, because a ceiling or a bound
+    // that is not a duration is not a thing to compare.
+    const own = Recipe.safeParse({
+      ...BASE,
+      runtime: { limits: { wall: "1h" } },
+      steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "", limits: { wall: "90" } }] },
+    });
+    expect(own.success).toBe(false);
+    expect(own.error!.issues[0]!.path).toEqual(["steps", "implement", 0, "limits", "wall"]);
+    expect(own.error!.issues[0]!.message).toContain("must be a positive duration, like 30m");
+    expect(own.error!.issues.map((issue) => issue.message).join("\n")).not.toContain("may only narrow");
+  });
+
+  /**
+   * **`rounds` and `restarts` bound the pass, so they are refused inside one
+   * dispatch** (0040, 0070 §5).
+   *
+   * Declared inside `limits` in order to be refused *by name*: `z.strictObject`
+   * alone answers *Unrecognized key: "rounds"*, which says the key is not
+   * allowed and never says why — and why is the whole of 0040's split.
+   */
+  it("refuses `rounds` and `restarts` inside a dispatch's `limits:`, in the recipe's own voice", () => {
+    for (const [field, counts] of [
+      ["rounds", "how many times a pass sends the agent back"],
+      ["restarts", "how many times a ticket starts the work over"],
+    ] as const) {
+      const refused = Recipe.safeParse({
+        ...BASE,
+        steps: { implement: [{ name: "w", agent: "claude-code", prompt: "", limits: { [field]: 1 } }] },
+      });
+      expect(refused.success).toBe(false);
+      const why = refused.error!.issues.map((issue) => issue.message).join("\n");
+      expect(why).toContain(`\`${field}\` bounds the pass and not one call (0040)`);
+      expect(why).toContain(counts);
+      expect(why).toContain("Write it at `runtime.limits`");
+    }
+  });
+
+  /**
+   * **A built-in judge spends nothing, which is the whole of what its name
+   * promises** (0070 §3).
+   *
+   * `same-worktree` is a synchronous function the router applies — nothing is
+   * dispatched — so there is no model to name and no call to bound. Refused
+   * rather than accepted and ignored, which is 0061 §9 one level along.
+   */
+  it("refuses a `model:` or a `limits:` on a built-in judge", () => {
+    for (const built of BUILT_IN_JUDGES) {
+      for (const field of ["model", "limits"] as const) {
+        const value = field === "model" ? "haiku" : { turns: 5 };
+        const refused = Recipe.safeParse({
+          ...BASE,
+          steps: { proposed: [{ name: "a red build", judge: built, when: "red", [field]: value }] },
+        });
+        expect(refused.success).toBe(false);
+        const why = refused.error!.issues.map((issue) => issue.message).join("\n");
+        expect(why).toContain(`names the built-in judge \`${built}\``);
+        expect(why).toContain("it dispatches nothing");
+      }
+      // And the same fields beside a runtime judge resolve, because that one is
+      // an agent paid for a judgement.
+      expect(
+        Recipe.safeParse({
+          ...BASE,
+          steps: {
+            proposed: [
+              { name: "the lines or the approach", judge: "claude-code", when: "findings", model: "haiku", limits: { turns: 5 } },
+            ],
+          },
+        }).success,
+      ).toBe(true);
+    }
   });
 });

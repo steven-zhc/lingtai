@@ -93,12 +93,21 @@ describe("the recipe row, with no App configured", () => {
     const row = recipeRow(await projectFilter(state, recipeClientFor({})), "claude-code");
     expect(row.status).toBe("fail");
     expect(row.detail).toContain('steps.proposed\'s "review" action names agent codex');
-    // The remedy: this action, in the file it is written in.
-    expect(row.detail).toContain("Name agent: claude-code on that action");
+    // The remedy: this action, in the file it is written in. Since `#314` a
+    // second runtime at a step is dispatched, so what is refused is one nothing
+    // on this machine is signed in to — `signedIn` is `[]` here — and the way
+    // out is signing in or naming another, never *repeat runtime.agent*.
+    expect(row.detail).toContain("nothing on this machine is signed in to codex");
+    expect(row.detail).toContain("Sign in to it, or name a runtime this machine has as that action's agent:");
     expect(row.detail).toContain(join(home, "app", "recipe.yml"));
     // And never the machine file's `runtime.agent`, which is already
     // `claude-code` here — editing it is the one thing that cannot help.
     expect(row.detail).not.toContain("Name runtime.agent:");
+
+    // And signed in to it, the same recipe is dispatched rather than refused.
+    expect(
+      recipeRow(await projectFilter(state, recipeClientFor({})), "claude-code", ["codex"]).status,
+    ).toBe("ok");
 
     const fixed = `${RECIPE}    - { name: review, agent: claude-code, prompt: "look at it coldly" }\n`;
     await writeFile(join(home, "app", "recipe.yml"), fixed);

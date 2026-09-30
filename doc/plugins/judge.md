@@ -134,12 +134,29 @@ rather than one they are waiting for.
 | `name` | string | yes | How every verdict, waiver and reading addresses this action. It is what the route's own sentence names — *the "the lines or the approach" judge* — so a refusal says which line of the recipe to edit rather than which built-in disagreed. Worth writing as the decision it makes. |
 | `judge` | `same-worktree` \| `claude-code` \| `codex` | yes | Who decides. `JudgeName` is `BUILT_IN_JUDGES` and `RuntimeId` joined, and the two halves cost differently — see the table above. `ask-or-assume` from 0061 §3's own example is **not** in it, because nothing implements it: the enum says what the code does and grows when the code does. |
 | `when` | `red` \| `verify-failed` \| `conflict` \| `needs-input` \| `findings` | yes, and **undefaulted** | The direction this entry answers. No default is the schema enforcing *one entry per `when:`*: no entry can answer for all five, so one judge cannot be paid sixty times to reach a mechanical conclusion. Where a file writes two for one direction the first wins, and neither is dropped quietly — both are in `StepsResolved` and on the board. |
+| `model` | string | no — **the runtime's own default** | Which model buys the judgement. **The field this plugin did not have and most needed**: measured on `#300`, the judgement answered in one turn for $0.42 beside an `implement` of 150 turns and $22.56, and it was the cheap call with no way to ask for a cheap model (`#314`, [0070](../decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §2). Handed to the runtime as-is and not validated: the legal names are the runtime's to know. |
+| `limits` | `{ turns?, wall? }` | no — **`runtime.limits`** | What this one call may spend, and **it may only narrow** the ceiling (0070 §5). A judgement is one turn's work and 150 is what it was bounded by. |
+
+`model` and `limits` are two of the three fields in the **dispatch group**
+[`agent:`](agent.md) embeds — the same fields with the same meanings, on every
+plugin that pays for a model. **`prompt:` is the third and is deliberately not
+here** (0070's *What this does not decide*): what a judge is handed is
+`judgePrompt`'s — the offered set and the reason the last step gave — and a key
+beside `judge:` that could replace it would be a way to ask something other than
+the one question this plugin exists to ask.
+
+**A built-in takes neither, and that is not a gap.** `same-worktree` is a
+synchronous function the router applies: it spends nothing, which is the whole of
+what its name promises, so it has no model to name and no call to bound. Writing
+either beside one is refused when the recipe resolves.
 
 **What it does not declare is the point of the table.** There is no `rounds:`
-and no `restarts:` here, and writing either is refused by name. The two bounds
-are universal keys on the steps they bound — `rounds` on `implement`, `restarts`
-on `claim`, written today as `runtime.limits` — because a bound a judge can set
-is not a bound.
+and no `restarts:` here — not beside `judge:` and not inside `limits:` — and
+writing either is refused **by name** rather than as an unrecognised key. The two
+bounds are universal keys on the steps they bound — `rounds` on `implement`,
+`restarts` on `claim`, written today as `runtime.limits` — because a bound a
+judge can set is not a bound, and `rounds` under a judge is the loop that only
+spends.
 
 ## Examples
 
@@ -178,6 +195,26 @@ and each ticket cost a hand-landing. This buys one dispatch per arrival at
 `findings` and spends a round when the answer is `implement`; `runtime.limits.rounds`
 is what bounds it. The other two judgement directions are still a person's,
 deliberately.
+
+```yaml
+# the same entry, priced — `#314`
+proposed:
+  - name: the lines or the approach
+    judge: claude-code
+    model: haiku
+    limits: { turns: 5 }
+    when: findings
+```
+
+**What `#314` adds, and the measurement it was opened on.** The block above buys
+its judgement from whatever the runtime defaults to and bounds it at
+`runtime.limits.turns` — 150, for a call that answered in one turn. Two keys
+change both: `model:` names the cheap model, and `limits:` says out loud that
+this is a one-turn question. Neither is required and neither changes what the
+judge is asked; a file that writes neither behaves exactly as the block above
+did. What it costs is on `PassRouted.why` afterwards — *the "the lines or the
+approach" judge: … (claude-code (haiku) · 1 turns, $0.04)* — because a judge has
+no event of its own and the sentence is the whole record.
 
 ```yaml
 # packages/conductor/test/one-pass.ts — `JUDGED`, with one round to spend
@@ -274,19 +311,22 @@ proposed:
 ```
 
 > the "the lines" action is a "judge" at the "proposed" step, and "judge" declares
-> no "rounds" field — what it declares is "name", "judge", "when". A plugin
+> no "rounds" field — what it declares is "name", "judge", "when", "model",
+> "limits". A plugin
 > refuses a field it does not understand, rather than accepting it and ignoring it
 > (0061 §9). Refused when the recipe resolves, before a worktree, before an agent,
 > before any money.
 
 One refusal on this page is not the schema's, and it is worth knowing it exists:
-a **runtime** `judge:` naming a runtime this conductor does not dispatch is
-refused before the claim by `agentRefusal` in `conduct.ts` — *`steps.proposed`'s
-"the lines" action names judge codex, and this conductor runs claude-code*. One
-conductor dispatches one runtime, so `judge: codex` on a Claude Code conductor
-would have its judgement bought from the wrong model with nothing anywhere saying
-so. A built-in names no runtime and is passed over: `isBuiltInJudge` is the whole
-of that test.
+a **runtime** `judge:` naming a runtime nothing on this machine is signed in to
+is refused before the claim by `agentRefusal` in `conduct.ts` —
+*`steps.proposed`'s "the lines" action names judge codex, and nothing on this
+machine is signed in to codex*. Since `#314` a judge's runtime is dispatched, so
+`judge: codex` beside `runtime.agent: claude-code` on a machine signed in to both
+buys its judgement from Codex — a second runtime bought for a judgement is legal,
+and the refusal is only for one this machine cannot start, which would otherwise
+be a claim taken and a worktree cut for a judgement that never runs. A built-in
+names no runtime and is passed over: `isBuiltInJudge` is the whole of that test.
 
 ## Related
 

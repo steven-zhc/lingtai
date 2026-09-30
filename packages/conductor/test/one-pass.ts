@@ -266,6 +266,64 @@ runtime:
 `;
 
 /**
+ * **Two runtimes in one pass** (`#314`, 0070 §6) — `runtime.agent: claude-code`
+ * writes the change, and `review:`'s own `agent: codex` reads it.
+ *
+ * The narrowing is deliberate and small: `turns: 4` against a ceiling of 10, and
+ * no `wall`, so the substitution can be seen to be field by field. A `model:`
+ * beside it, because *which runtime* and *which model* are two keys the group
+ * carries together and a fixture that exercised one would leave the other to a
+ * reader's imagination.
+ *
+ * **This recipe was refused before the claim until `#314`** — `agentRefusal`
+ * returned `stage: "recipe"` for any step naming a second runtime — so it is the
+ * fixture for the behaviour and for its absence at once.
+ */
+export const TWO_RUNTIMES = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  review:
+    - name: the cold reviewer
+      agent: codex
+      model: gpt-5-codex
+      limits: { turns: 4 }
+      prompt: look for races
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`;
+
+/**
+ * **`JUDGED_BY_AN_AGENT` with a cheap model on the judge** (`#314`).
+ *
+ * `rounds: 1` rather than two: one arrival, one dispatch, one model to read off
+ * the request — the collision `JUDGED_BY_AN_AGENT`'s two rounds exist to show
+ * (`#195`) is not what this one is about, and a second round would only make the
+ * assertion a list.
+ */
+export const JUDGED_BY_A_CHEAP_AGENT = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  review:
+    - name: cold reviewer
+      agent: claude-code
+      prompt: look for races
+  proposed:
+    - name: the lines or the approach
+      judge: claude-code
+      model: haiku
+      limits: { turns: 2 }
+      when: findings
+runtime:
+  agent: claude-code
+  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
+`;
+
+/**
  * **A drafting agent at `design:`** — the block `#265` tells a person to paste,
  * and the only way the step does anything.
  *
