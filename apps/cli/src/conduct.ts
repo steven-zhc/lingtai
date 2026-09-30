@@ -51,6 +51,17 @@ export interface ConductOptions {
    * too old for a good one (#148).
    */
   codeSha?: string | null;
+  /**
+   * Whether the conductor is paused *now*, as a sentence, or null — asked
+   * before each project and before each ticket, not once for the pass (#210).
+   *
+   * The control read below is once per pass, and a pass walks every registered
+   * project: a run that meets an account-wide wall appends the conductor's own
+   * pause (0031 §3), and without this the next project was claimed in the same
+   * pass, straight into the same wall. Scoped by the caller to what was
+   * appended while it runs (#159), which is why it is handed in.
+   */
+  paused?: () => Promise<string | null>;
   log?: (line: string) => void;
 }
 
@@ -104,6 +115,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
     codeSha: options.codeSha ?? null,
     outcome,
     log,
+    ...(options.paused ? { paused: options.paused } : {}),
     work: async (project, where) => {
       const name = project.project!;
       const client = await createGitHubClient({
@@ -201,6 +213,10 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
             ...common,
             recipe: resolved.recipe,
             max: options.max ?? 1,
+            // One ticket today, so the loop's own check comes first; handed in
+            // anyway so a `max` above one cannot walk into a wall the ticket
+            // before it just met.
+            ...(options.paused ? { paused: options.paused } : {}),
           }).pipe(Effect.provide(PortsLive)),
         );
         outcome.ran += ran.ran.length;
@@ -236,6 +252,12 @@ export interface ProjectsOptions {
   codeSha: string | null;
   outcome: PassOutcome;
   log: (line: string) => void;
+  /**
+   * Asked before each project, and a sentence back ends the pass there (#210).
+   * A pause one project's run appended stands for every project after it: the
+   * wall it met is the account's, not the repository's.
+   */
+  paused?: () => Promise<string | null>;
   store?: EventStore;
 }
 
@@ -253,6 +275,13 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
   for (const project of options.projects) {
     const name = project.project;
     if (!name || !project.owner) continue;
+    if (options.paused) {
+      const why = await options.paused();
+      if (why !== null) {
+        log(`${name}: not looked at — ${why}`);
+        break;
+      }
+    }
     outcome.projects += 1;
     let looked = false;
     const where: Where = {

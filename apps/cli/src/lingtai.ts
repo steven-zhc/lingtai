@@ -908,6 +908,19 @@ async function daemonCommand(
           // The commit read at startup, so a refusal on the log says which
           // process refused (#148).
           codeSha: code.sha,
+          // Asked again inside the pass, before each project and ticket, with
+          // the same scope as the loop's own (#159): a run that stands the
+          // conductor down must stop the next claim in this pass, not the next
+          // pass (#210).
+          paused: async () => {
+            try {
+              const c = await readControl(undefined, since);
+              return c.paused ? `paused by ${c.by} — ${c.reason}` : null;
+            } catch (err) {
+              // Not "not paused": a pause that could not be read is not consent.
+              return `could not read whether the conductor is paused: ${(err as Error).message}`;
+            }
+          },
           log: (line) => console.log(line),
         });
         // The run told GitHub as it went (0022), so there is nothing left
