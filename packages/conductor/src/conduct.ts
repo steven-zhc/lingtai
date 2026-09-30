@@ -165,6 +165,7 @@ import { claimWorkItem, releaseWorkItem } from "./claim.ts";
 import { diagnoseRefusal } from "./attribution.ts";
 import { fixBrief } from "./fix.ts";
 import { agentBranch, armBranch } from "./branches.ts";
+import { armsOnOrigin } from "./arms.ts";
 import { restartReason } from "./restart.ts";
 import { type NeverStarted, standDown } from "./never-started.ts";
 import { signedInHere } from "./projects.ts";
@@ -817,11 +818,18 @@ export function runOnce(
     }
     const previous = priorAttempts(before).at(-1);
     const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null;
+    // Asked of `origin` and only for a requeued pass (#315): a first attempt has
+    // no arm to name and makes no request, which keeps its prompt byte-identical.
+    const arms = previous ? yield* Effect.promise(() => armsOnOrigin(options.client, branch)) : null;
+    if (previous && arms === null) {
+      log(`could not list ${branch}'s arms on origin — the brief names none`);
+    }
     const next = nextPrompt({
       base: basePromptVersion,
       budget: recipe.runtime.budget,
       item: before,
       lastRun,
+      arms,
     });
     const promptVersion = next.version;
     if (previous) {

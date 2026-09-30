@@ -556,6 +556,67 @@ describe("attemptBrief", () => {
   });
 });
 
+/**
+ * **Where an earlier attempt's commits are** (#315, 0072 §4): the arm's name,
+ * derived from the attempt's ordinal and printed only when `origin` has it, in
+ * the row that says how that attempt ended.
+ */
+describe("attemptBrief, naming the arms", () => {
+  const item = stream("wi-lingtai-314");
+  const history = [
+    item("WorkItemClaimed", claim("run-1")),
+    item("WorkItemReleased", { runId: "run-1", reason: "the run hit its session limit" }),
+    item("WorkItemClaimed", claim("run-2")),
+    item("WorkItemReleased", { runId: "run-2", reason: "refused: the approach" }),
+  ];
+  const onOrigin = (...names: string[]) => ({ branch: "agent/314", onOrigin: new Set(names) });
+
+  it("names an attempt's arm in the same row as how it ended", () => {
+    const brief = attemptBrief(priorAttempts(history), BUDGET, onOrigin("agent/314-attempt-1"));
+
+    expect(brief).toContain(
+      "| 1 | `run-1` | the run hit its session limit | `agent/314-attempt-1` |",
+    );
+  });
+
+  /** An attempt that died before it committed pushed no arm, and its name is not offered. */
+  it("names no ref for an attempt that pushed nothing", () => {
+    const brief = attemptBrief(priorAttempts(history), BUDGET, onOrigin("agent/314-attempt-1"));
+    const row = brief.split("\n").find((line) => line.startsWith("| 2 |"));
+
+    expect(row).toBe("| 2 | `run-2` | refused: the approach |  |");
+    expect(brief).not.toContain("agent/314-attempt-2");
+  });
+
+  /** Null is *nobody asked*; an empty set is *origin has none*. Neither names a ref. */
+  it("renders a lookup nobody made the same as one that found nothing", () => {
+    const attempts = priorAttempts(history);
+
+    expect(attemptBrief(attempts, BUDGET, null)).toBe(attemptBrief(attempts, BUDGET, onOrigin()));
+    expect(attemptBrief(attempts, BUDGET, null)).not.toContain("-attempt-");
+  });
+
+  it("is still empty for a first attempt, whatever it is told about arms", () => {
+    expect(attemptBrief([], BUDGET, onOrigin("agent/314-attempt-1"))).toBe("");
+  });
+
+  /**
+   * **The brief offers and does not instruct** (0072 §5). This is the half that
+   * erodes silently: a sentence telling the agent to continue from an arm reads
+   * as helpful, and it is the accretion 0072 refused.
+   */
+  it("offers the arms without telling the agent to build on them", () => {
+    const attempts = priorAttempts(history);
+    const brief = attemptBrief(attempts, BUDGET, onOrigin("agent/314-attempt-1"));
+
+    expect(brief).toContain("git show <ref>:<path>");
+    expect(brief).toContain("Read them against how");
+    expect(brief).toContain("yours to judge");
+    expect(brief).not.toMatch(/build(ing)? on|continu(e|ing) from|start(ing)? from|cherry-pick/i);
+    expect(attemptBrief(attempts, BUDGET, onOrigin())).not.toContain("git show <ref>");
+  });
+});
+
 describe("promptVersionFor", () => {
   /**
    * The criterion that made the defect invisible. Both attempts at `#59`

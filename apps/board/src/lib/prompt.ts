@@ -23,7 +23,9 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { repoRoot } from "@lingtai/env";
 import { nextPrompt, renderPrompt } from "@lingtai/conductor/prompt";
-import { projectFilter } from "@lingtai/conductor/filter";
+import { githubClientFor, projectFilter } from "@lingtai/conductor/filter";
+import { armsOnOrigin } from "@lingtai/conductor/arms";
+import { agentBranch } from "@lingtai/conductor/branches";
 import { loadProject } from "@lingtai/conductor/projects";
 import type { Envelope } from "@lingtai/domain";
 import type { TicketView } from "./task.ts";
@@ -149,6 +151,17 @@ export async function outgoingFor(input: {
   const filter = await projectFilter(state);
   if (!filter.ok) return refused(`the recipe could not be read: ${filter.problem}`);
 
+  // What `conduct.ts` asks, asked the same way (#315): only where there was an
+  // earlier attempt, so a first attempt's preview makes no request. A client
+  // that cannot be built is the same null as a listing that failed — no ref
+  // named, rather than no prompt shown.
+  const arms =
+    input.streams.length === 0
+      ? null
+      : await githubClientFor(state)
+          .then((client) => armsOnOrigin(client, agentBranch(ticket.ref)))
+          .catch(() => null);
+
   const next = nextPrompt({
     // The same version `conduct.ts` and `lingtai run` pass, computed the same
     // way from the same file.
@@ -156,6 +169,7 @@ export async function outgoingFor(input: {
     budget: filter.recipe.runtime.budget,
     item: input.own,
     lastRun: input.streams.length === 0 ? null : (input.streams.at(-1) ?? []),
+    arms,
   });
 
   const filled = { number: Number(ticket.ref), title: ticket.title ?? "", body: ticket.body };

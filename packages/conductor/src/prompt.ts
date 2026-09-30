@@ -33,6 +33,7 @@ import {
   promptVersionFor,
   type PromptBudget,
 } from "./attempts.ts";
+import type { ArmsOnOrigin } from "./arms.ts";
 
 /**
  * Re-exported so that everything about *the document an attempt is handed* has
@@ -100,6 +101,11 @@ export function nextPrompt(input: {
   item: readonly Envelope[];
   /** The previous attempt's stream, or null when there is no previous attempt. */
   lastRun: readonly Envelope[] | null;
+  /**
+   * The ticket's arms `origin` holds (`armsOnOrigin`), so a row can name where
+   * that attempt's commits are (#315). Null is *nobody asked*, and names none.
+   */
+  arms?: ArmsOnOrigin | null;
 }): NextPrompt {
   const attempts = priorAttempts(input.item);
   const state = reduceWorkItem(input.item);
@@ -130,7 +136,7 @@ export function nextPrompt(input: {
   // the page's edit, which is why it sits inside `composed`.
   const history = join([
     answersBrief(state.answers),
-    attemptBrief(attempts, input.budget),
+    attemptBrief(attempts, input.budget, input.arms ?? null),
     repair ? repairBrief(repair) : "",
   ]);
   const failure = join([history, humanBrief(edit)]);

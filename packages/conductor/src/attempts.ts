@@ -37,6 +37,8 @@
  */
 import type { AnswerRecord, Envelope, PayloadOf } from "@lingtai/domain";
 import { createHash } from "node:crypto";
+import type { ArmsOnOrigin } from "./arms.ts";
+import { armBranch } from "./branches.ts";
 
 /**
  * How much an attempt is told about the ones before it.
@@ -336,7 +338,11 @@ function findingsAppended(
  * what ended them is the fact that matters, and their output is not worth what
  * it costs.
  */
-export function attemptBrief(attempts: readonly PriorAttempt[], budget: PromptBudget): string {
+export function attemptBrief(
+  attempts: readonly PriorAttempt[],
+  budget: PromptBudget,
+  arms: ArmsOnOrigin | null = null,
+): string {
   if (attempts.length === 0) return "";
 
   const last = attempts[attempts.length - 1]!;
@@ -351,13 +357,27 @@ export function attemptBrief(attempts: readonly PriorAttempt[], budget: PromptBu
     "this same ticket, and produced what follows. Read it before you plan anything:",
     "repeating the previous attempt costs what it cost and ends where it ended.",
     "",
-    "| # | run | how it ended |",
-    "| --- | --- | --- |",
-    ...(hidden > 0 ? [`| … | | ${hidden} earlier attempt(s), omitted |`] : []),
-    ...shown.map(
-      (a) => `| ${a.n} | \`${a.runId}\` | ${cell(a.ended ?? "no ending recorded")} |`,
-    ),
+    "| # | run | how it ended | its commits |",
+    "| --- | --- | --- | --- |",
+    ...(hidden > 0 ? [`| … | | ${hidden} earlier attempt(s), omitted | |`] : []),
+    ...shown.map((a) => {
+      const ref = armOf(a, arms);
+      return `| ${a.n} | \`${a.runId}\` | ${cell(a.ended ?? "no ending recorded")} | ${ref === null ? "" : `\`${ref}\``} |`;
+    }),
   ];
+
+  // An offer and not an instruction (0072 §5): the ref sits beside how that
+  // attempt ended because some were refused for good reasons, and a sentence
+  // telling the agent to continue from one would be the accretion 0072 refused.
+  // `unit/attempts.test.ts` reads this wording for the verbs it must not use.
+  if (shown.some((a) => armOf(a, arms) !== null)) {
+    lines.push(
+      "",
+      "Where a row names a ref, that attempt's commits are on it and readable from this",
+      "worktree — `git show <ref>:<path>`, `git diff HEAD <ref>`. Read them against how",
+      "that attempt ended; whether any of it is worth anything here is yours to judge.",
+    );
+  }
 
   if (last.refusal) {
     lines.push(
@@ -420,6 +440,20 @@ export function attemptBrief(attempts: readonly PriorAttempt[], budget: PromptBu
   }
 
   return lines.join("\n");
+}
+
+/**
+ * The arm an attempt pushed, **only when `origin` was asked and has it** (#315).
+ *
+ * Derived, never stored: `a.n` is the ordinal `conduct.ts` pushed the arm under.
+ * Null for an attempt that pushed nothing and for a caller that did not ask,
+ * because a ref that does not resolve costs the agent turns and a missing one
+ * costs nothing.
+ */
+function armOf(a: PriorAttempt, arms: ArmsOnOrigin | null): string | null {
+  if (arms === null) return null;
+  const name = armBranch(arms.branch, a.n);
+  return arms.onOrigin.has(name) ? name : null;
 }
 
 /**
