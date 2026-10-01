@@ -33,7 +33,7 @@ export const StreamId = z
   .regex(
     /^(wi|run|int|prj|ctl|chat|ext|bkl)-[\w.-]+$/,
     // `bkl` is one minor finding's decision
-    // ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+    // ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
     // §5, `#137`). Not the work item's stream: a person triages the backlog
     // while a later attempt of the same ticket may be appending there, and a
     // decision must not become a `ConcurrencyError` in the middle of that run.
@@ -42,14 +42,14 @@ export const StreamId = z
     // and a pause that only stopped one repository would be a surprise.
     //
     // `chat` is one discussion about one work item
-    // ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §6). Its
+    // ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6). Its
     // own aggregate because a forty-turn exploration on the work item's stream
     // would drown the history the detail page exists to show — permanently,
     // the log being append-only. The work item keeps one `DiscussionHeld`
     // pointing at it.
     //
     // `ext` is what an extension did that no work item is answerable for
-    // ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
+    // ([0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
     // names the two kinds). A subscriber failure cannot go on the stream of the
     // event it failed on: the daemon follows the log while a run is appending
     // to that stream, so writing back to it would turn a notifier's bad day

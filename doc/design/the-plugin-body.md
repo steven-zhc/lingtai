@@ -7,7 +7,7 @@ open at `proposed` and a lookup reads it, and
 dispatch it said was missing; `at`'s *value* is still `notBuiltYet`, which is what
 the rest of this page is about) · **Date** 2026-09-26 ·
 **About**
-[0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §§2–3, 5,
+[0064](../decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §§2–3, 5,
 7 and the two tickets that were to build them
 ([#262](https://github.com/steven-zhc/lingtai/issues/262),
 [#267](https://github.com/steven-zhc/lingtai/issues/267))
@@ -405,12 +405,12 @@ a person* is that a person is what it wants.
 
 ## Related
 
-- [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §§2, 3,
+- [0064](../decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §§2, 3,
   5, 6, 7 — the decision. §6 names the cost of the move and reserves the
   workflow's half; §1 above is that reservation meeting `endingOf`. §7 is
   `#267`'s subject, and its *What does not move* is the half that landed:
   `offering` stopped being a menu.
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §2 — *the
+- [0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §2 — *the
   workflow fixes which steps may refuse*, which is why a verdict and an ending
   are not one type.
 - [writing-a-plugin.md](../writing-a-plugin.md) — the page whose *half built*

@@ -1,7 +1,7 @@
 /**
  * The worktree action: **the branch a pass owns, cut — as a plugin rather than
  * as a step's body**
- * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#268`).
+ * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2, `#268`).
  *
  * It is the first action that *makes* something the rest of the pass needs
  * rather than judging something already there, and that is why it carries a
@@ -20,7 +20,7 @@
  * **Why `did-not-finish` and never `failed` when the cut does not happen.** A
  * clone that did not finish is not a judgement about the change — nothing has
  * been written yet, so there is nothing to have been judged
- * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1–3). So
+ * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1–3). So
  * it buys no fix round and stands the pass down, which is exactly what `admit`'s
  * own body said before this existed: *it cannot refuse*.
  *

@@ -5,7 +5,7 @@
  * (`runnableNow`), the log says what Lingtai is already doing (`task_view`),
  * and this returns the difference. Neither side is stored: the offer is asked
  * for at the moment it is needed, and the log's side is a fold and nothing
- * else ([0022](../../../doc/decisions/0022-the-seams.md), `#65`).
+ * else ([0022](../../../doc/decisions-archive/0022-the-seams.md), `#65`).
  *
  * It reads the projector's view and decides — which is why it is here and not
  * there. A projection folds; it does not choose what to run next.
@@ -47,7 +47,7 @@ export interface RunnableOptions {
    * spend the money again.
    *
    * **Required, and it comes from `source.backoff`**
-   * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)). It was
+   * ([0028](../../../doc/decisions-archive/0028-the-backoff-is-the-recipes.md)). It was
    * an optional overriding a `DEFAULT_BACKOFF_MS` constant here, which made the
    * hour a fact of Lingtai's source that no recipe stated and no output named —
    * the shape 0027 deleted the lease for. Naming it at each call site is what

@@ -1,7 +1,7 @@
 /**
  * The queue action: **the ticket a pass is about, taken — as a plugin rather
  * than as a step's body**
- * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#269`).
+ * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2, `#269`).
  *
  * `queuePlugin` had been in the closed set since the twelve were named and
  * nothing read it: four fields, an `at` of `{}`, and a `CALLED_DIRECTLY` entry
@@ -65,7 +65,7 @@ export type TakeAnswer =
    * GitHub is no longer offering it, with `considerIssue`'s own reason —
    * `excluded-label`, `blocked-by`, `assigned-elsewhere`. Asked rather than
    * looked up, because nothing was appended when the issue was first seen
-   * ([0012](../../../doc/decisions/0012-one-task-view.md)) and a label edit takes
+   * ([0012](../../../doc/decisions-archive/0012-one-task-view.md)) and a label edit takes
    * effect through this read or through nothing.
    */
   | { readonly passedOver: string }

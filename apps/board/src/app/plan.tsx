@@ -34,7 +34,7 @@ import type { PlanView } from "@/lib/queued";
  * appears when it is doing something is a default nobody can audit.
  *
  * The four that bound a ticket sit together here because they do in the recipe
- * (0039 §3, [0040](../../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5)
+ * (0039 §3, [0040](../../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5)
  * — what this footer says and what the file says are the same block.
  *
  * **Two cells for the two ceilings, and `straight to you` is the second one's**

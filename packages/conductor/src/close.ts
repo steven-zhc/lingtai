@@ -27,7 +27,7 @@
  * intent into every prompt after it. Wanting the work again is a new ticket.
  *
  * **And `end` runs, because `end` is the point that runs on every terminal
- * outcome** ([0044](../../../doc/decisions/0044-a-close-is-a-terminal-outcome.md)).
+ * outcome** ([0044](../../../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)).
  * It did not, at first: this appended `WorkItemClosed` and stopped, so a recipe
  * saying `when: any` did not fire on a close, and `lingtai close` left the
  * GitHub issue open for somebody to close by hand afterwards — the manual step

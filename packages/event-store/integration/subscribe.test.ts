@@ -8,7 +8,7 @@
  *
  * Every test appends from the **pooled** connection and listens on the
  * **direct** one — two connections, which is the only shape that proves
- * anything (doc/decisions/0009-two-connections.md).
+ * anything (doc/decisions-archive/0009-two-connections.md).
  *
  * The waker contract runs here too (#177), against `createPostgresWaker`: what
  * any waker owes a subscriber is asserted of this one, and what only Postgres

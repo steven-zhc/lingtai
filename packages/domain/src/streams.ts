@@ -39,7 +39,7 @@ export const CHAT_STREAM_PREFIX = "chat-";
  * `chat-{id}` — one discussion about one work item, whole.
  *
  * Its own stream rather than the work item's, because
- * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §6 says a
+ * [0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6 says a
  * forty-turn exploration appended to the work item would drown the history the
  * detail page exists to show — permanently, the log being append-only. The work
  * item gets one `DiscussionHeld` pointing here.
@@ -77,7 +77,7 @@ export const SUBSCRIBER_STREAM = "ext-subscribers";
  *
  * The installation's, like `ctl-conductor` and for the same reason: an App
  * belongs to the team and not to a repository, and creation happens once for
- * all of them ([0045](../../../doc/decisions/0045-one-team-one-conductor.md)).
+ * all of them ([0045](../../../doc/decisions-archive/0045-one-team-one-conductor.md)).
  *
  * **Not `ctl-conductor` itself**, which is the tempting place. That stream is
  * the one the daemon appends pauses, shutdowns and run requests to while it

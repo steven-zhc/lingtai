@@ -9,7 +9,7 @@
  *
  * It is a **decision** — state in, label set out, no I/O — which is why it
  * lives here and not in `@lingtai/github`
- * ([0022](../../../doc/decisions/0022-the-seams.md)). The impure half is over
+ * ([0022](../../../doc/decisions-archive/0022-the-seams.md)). The impure half is over
  * there: taking the union with whatever labels somebody else put on the issue
  * needs GitHub's current state, and a decision must not.
  *

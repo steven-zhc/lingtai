@@ -8,7 +8,7 @@
  * **In `integration/`.** The `watch` and `human` actions decide nothing outside
  * the system, but the pipelines below run them beside real `createProcessAction`
  * actions, and a spawned shell is outside it
- * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). The two
+ * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1). The two
  * hand-written 30s bounds that used to sit on those cases are gone with the
  * move: they were chosen against vitest's 5000ms default, and the project this
  * file now runs in already allows a spawn the time one takes (#225).

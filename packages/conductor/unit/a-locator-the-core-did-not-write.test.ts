@@ -1,6 +1,6 @@
 /**
  * **The core must not branch on a locator's shape** —
- * [0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * [0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §4, measured (`#303`).
  *
  * §4 says the locator is a string the core never parses, and until this file

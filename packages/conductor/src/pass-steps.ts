@@ -21,7 +21,7 @@
  *
  * ## What a body is, and why most of them are not empty
  *
- * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §2b
+ * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §2b
  * divides this file from the one beside it in one sentence — *the core is the
  * sequence and the outcome rules; everything that acts is a plugin.* The loop
  * owns the sequence. **A body owns the outcome rules for one step**: it asks for
@@ -35,7 +35,7 @@
  * in them spawns a process, reads GitHub, cuts a worktree or pays an agent —
  * `PassPorts` does, and it is handed in. That is why this file's tests are in
  * `unit/` and the `build` point runs them
- * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).
+ * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1).
  *
  * **Why a port and not a plugin, at the three that are still ports.** 0061 §3
  * puts `queue:` at `claim`, `worktree:` at `admit` and `agent:` at `design` and
@@ -61,7 +61,7 @@
  * hands `ports.judge` is `judgeDeclaredAt(recipe.steps.proposed, when)`. The port
  * did not change shape for it, which was the claim.
  *
- * **Why plain promises rather than [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)'s
+ * **Why plain promises rather than [0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)'s
  * `Effect`.** `ports.ts`'s two are Effect-shaped because `conduct.ts` is, and
  * the conversion is at the boundary the *caller* stands on. `runPass` is plain,
  * its `actionsAt` and `emit` seams are plain, and a second calling convention
@@ -182,7 +182,7 @@ export interface Claimed {
  *
  * One shape rather than a case written twice, because exactly two *bodies* can
  * produce it — `design` and `implement`
- * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3b's
+ * ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3b's
  * second drawing) — and the judge at `proposed` answers both the same way:
  * `waiting` with the question, or that step again with *state your assumption*.
  *
@@ -1001,7 +1001,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * beyond its plugins** (`#269`).
      *
      * It took the item here until `queuePlugin` declared `claim`
-     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2). What
+     * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2). What
      * takes it now is a `queue:` action — the one a recipe declares there, or the
      * one `conduct.ts`'s `defaultsAt` supplies where a recipe declares nothing —
      * and the loop has run it by the time this is called, so a second take written
@@ -1034,7 +1034,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * nothing beyond its plugins** (`#268`).
      *
      * It cut the worktree here until `worktreePlugin` declared `admit`
-     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §4). What
+     * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §4). What
      * cuts it now is a `worktree:` action — the one a recipe declares there, or
      * the one `conduct.ts`'s `defaultsAt` supplies where a recipe declares
      * nothing — and the loop has run it by the time this is called, so a second
@@ -1096,7 +1096,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * plugins** (`#265`).
      *
      * It called `ports.draft` here until `agentPlugin` declared `design`
-     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §4). What
+     * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §4). What
      * writes one now is an `agent:` action — `createDraftAction`, which the
      * recipe declares at this step — and the loop has run it by the time this is
      * called, so a second dispatch written here would be the reimplementation
@@ -1132,7 +1132,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * had work left in it** (`#266`, 0065 §1).
      *
      * It called `ports.dispatch` here until `agentPlugin` declared `implement`
-     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §1). What
+     * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §1). What
      * writes the change now is an `agent:` action — `createWorkAction`, wrapping
      * the dispatch `conduct.ts` hands it — and the loop has run it by the time
      * this is called, so a dispatch written here would be **two agents on one
@@ -1303,7 +1303,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * fifth of the ten whose body is nothing beyond its plugins** (`#270`).
      *
      * It called `ports.land` here until `mergePlugin` declared `merge`
-     * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2). What
+     * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2). What
      * lands now is a `merge:` action — the one a recipe declares there, or the one
      * `conduct.ts`'s `defaultsAt` supplies where a recipe declares nothing — and
      * the loop has run it by the time this is called, so a second `integrate`

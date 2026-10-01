@@ -7,7 +7,7 @@
  * repository itself, and every CI run failed with a 403 that said nothing about
  * scope. Which repositories an App can reach is explicit in its installation,
  * so the same mistake is visible at install time rather than a day later.
- * See doc/decisions/0006-github-app.md.
+ * See doc/decisions-archive/0006-github-app.md.
  *
  * Two credentials, two lifetimes:
  *
@@ -220,7 +220,7 @@ interface CachedToken {
  * a promise has and no others. A semaphore's permit is released when the effect
  * *leaves*, interruption included, and the second check inside the permit is
  * what turns "one at a time" into "one request"
- * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
+ * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
  */
 export function installationToken(
   auth: AppAuth,
@@ -356,7 +356,7 @@ export async function appInstallations(reader: AppReader): Promise<Installation[
  * `GET /user/installations/{id}/repositories` answer *what can this person
  * see*, which is the better question — and both need a **user-to-server
  * token**, which Lingtai does not have: it has no user OAuth, and
- * [0045](../../../doc/decisions/0045-one-team-one-conductor.md) names who is
+ * [0045](../../../doc/decisions-archive/0045-one-team-one-conductor.md) names who is
  * asking as a separate epic. Under one team and one conductor, *what the App
  * can see* is the right answer rather than a compromise. Reach for the `/user/`
  * endpoints and there is no token to call them with.

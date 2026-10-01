@@ -15,7 +15,7 @@
  * that carries it. The lesson 0024 recorded about where a scope *starts* is kept
  * here as a test rather than as an intention.
  *
- * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
+ * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no disk. The fixtures are `test/one-pass.ts`.
  */
 import type { GitHubClient } from "@lingtai/github";

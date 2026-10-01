@@ -28,7 +28,7 @@
  * `REQUIRED_PERMISSIONS` — the same list `permissionGaps` checks an
  * installation against, so what is asked for and what is verified cannot
  * disagree — and `unit/manifest.test.ts` reads it back out of
- * `doc/decisions/0006-github-app.md` rather than from a second copy here.
+ * `doc/decisions-archive/0006-github-app.md` rather than from a second copy here.
  *
  * This module knows nothing about where the credentials are kept. It builds the
  * manifest and performs the conversion; `@lingtai/conductor`'s `create-app.ts`
@@ -74,7 +74,7 @@ export interface ManifestOptions {
    * public address and this runs on a laptop: it is an optimisation, and an
    * optimisation must not be the only path*. Filling in a `localhost` URL would
    * produce an App whose deliveries fail silently from the first minute, which
-   * is [0016 §4](../../../doc/decisions/0016-the-settled-model.md)'s complaint.
+   * is [0016 §4](../../../doc/decisions-archive/0016-the-settled-model.md)'s complaint.
    */
   webhookUrl?: string | null;
   /**
@@ -106,7 +106,7 @@ export interface AppManifest {
  * The App Lingtai asks for.
  *
  * `public: false` because this is one team's own App
- * ([0045](../../../doc/decisions/0045-one-team-one-conductor.md)) — the App is
+ * ([0045](../../../doc/decisions-archive/0045-one-team-one-conductor.md)) — the App is
  * created once per team, not once per person, and nobody outside it should be
  * able to install it.
  *
@@ -151,7 +151,7 @@ const LOCAL_ADDRESS = [
  * for an App with `hook_attributes.active: true` pointed somewhere GitHub
  * cannot resolve — deliveries fail on GitHub's side, where Lingtai cannot see
  * them, and the operator believes discovery is event-driven. That is
- * [0016 §4](../../../doc/decisions/0016-the-settled-model.md)'s complaint, and
+ * [0016 §4](../../../doc/decisions-archive/0016-the-settled-model.md)'s complaint, and
  * it is worse than the inactive hook a blank field declares, because inactive
  * is true.
  *

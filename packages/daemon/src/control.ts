@@ -2,7 +2,7 @@
  * Telling the conductor what to do, and knowing whether it is listening.
  *
  * Two mechanisms, deliberately different, because they are answering different
- * kinds of question ([0013](../../../doc/decisions/0013-daemon-hosts-the-work.md)):
+ * kinds of question ([0013](../../../doc/decisions-archive/0013-daemon-hosts-the-work.md)):
  *
  * **Control goes through the log.** Pausing is a decision somebody made, and
  * `ApprovalGranted` is already that shape — "who stopped the conductor at four
@@ -30,7 +30,7 @@
  * ## What "shutdown" means, precisely
  *
  * Everything a pause means, and then the process exits
- * ([0030](../../../doc/decisions/0030-shutting-down-safely.md)). **The boundary
+ * ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md)). **The boundary
  * is the pass, not the agent**: the gates, the merge lane and the `end` point
  * all run after the agent exits and one pass spans all of it, so the drain
  * waits for the pass and not for the child process.
@@ -46,13 +46,13 @@
  * (0042). Neither is what lets the next daemon start any more: since #159 a
  * request is read only by a daemon that was running when it was appended, and
  * the withdrawal keeps what the board and `lingtai status` call *standing* true
- * ([0048](../../../doc/decisions/0048-a-signal-is-aimed-at-one-daemon.md)).
+ * ([0048](../../../doc/decisions-archive/0048-a-signal-is-aimed-at-one-daemon.md)).
  *
  * ## The one pause nobody has to lift
  *
  * A run that never started is an account-wide condition, so it stops the
  * conductor rather than backing off the item that met it
- * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3). That
+ * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3). That
  * pause is the only one that carries an expiry, and the expiry is folded rather
  * than acted on: `reduceControl` reports the conductor as unpaused once it is
  * past, so the resume needs no timer, no second event, and nobody awake.
@@ -222,7 +222,7 @@ export async function requestShutdownUnlessStanding(
  * A conductor started: who, why, and the commit it froze.
  *
  * **Stopping was an event and starting was state** until
- * [0042](../../../doc/decisions/0042-the-restart-is-a-command.md). The beacon
+ * [0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md). The beacon
  * below is one mutable row, so it says *a daemon is running now* and is
  * overwritten by the next one — it has never been able to answer "who restarted
  * it at 23:06", which on 2026-09-09 was the question that mattered.
@@ -467,7 +467,7 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
  * **And the word survives the ticks**, which the timer it replaces did not: it
  * carried a literal `up`, so the `draining` a drain announced was overwritten
  * five seconds later and stayed overwritten for the minutes-to-hours the drain
- * ran. [0030](../../../doc/decisions/0030-shutting-down-safely.md) gave the row
+ * ran. [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) gave the row
  * that state precisely so the board and `lingtai doctor` could say *stopping,
  * finishing lingtai#94* rather than `up`, and outside the first beat of a drain
  * they went on saying `up`. One writer holding one word is what makes that

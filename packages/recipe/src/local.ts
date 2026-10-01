@@ -1,7 +1,7 @@
 /**
  * The recipe is mine: `~/.lingtai/<project>/recipe.yml`, and the machine's own
  * half beside it in `~/.lingtai/config.yml`
- * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3).
+ * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3).
  *
  * **The repository holds facts about itself; everything else is mine.** So the
  * recipe keeps `repo`, `source`, `env`, `steps` and `subscribers` — what this

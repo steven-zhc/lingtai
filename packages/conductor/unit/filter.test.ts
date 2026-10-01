@@ -287,7 +287,7 @@ describe("what a pass may spend", () => {
 
   /**
    * **The second ceiling multiplies the first**
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5),
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5),
    * and this is the assertion that stops it being a ceiling nobody was told
    * about. A restart buys a whole further pass, so the thing an operator is
    * deciding about is `(restarts + 1) × (rounds + 1) × wall` — and a sentence

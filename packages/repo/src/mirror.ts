@@ -4,7 +4,7 @@
  * The mirror is bare — there is no working tree in it — so the only way to see
  * a file is `git show <ref>:<path>`, and that is a command **Lingtai** runs.
  * That distinction is the whole of
- * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §1: an agent
+ * [0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §1: an agent
  * that only reads needs no worktree, no hook and no gates, and giving it a
  * shell so it could read for itself would not extend that shape, it would make
  * it the run agent under a different name.

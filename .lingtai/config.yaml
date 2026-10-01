@@ -55,7 +55,7 @@ source:
     - epic
 
   # How long a failed attempt keeps its own ticket out of the queue
-  # ([0028](../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+  # ([0028](../doc/decisions-archive/0028-the-backoff-is-the-recipes.md)).
   #
   # Written out rather than left to the default, for the reason `repair` is:
   # this is the repository that has to be able to read its own policy without
@@ -83,7 +83,7 @@ env:
   # LINGTAI_DATABASE_URL: that is this system's own log, the thing it is
   # keeping, and `allow`/`deny` — which this recipe sets neither of — are the
   # filters that would matter if it were ever declared
-  # ([0021](../doc/decisions/0021-the-recipe-decides-the-environment.md), #60).
+  # ([0021](../doc/decisions-archive/0021-the-recipe-decides-the-environment.md), #60).
   required: []
 
   # Host segments a value is refused for, whatever reaches the agent from either
@@ -116,7 +116,7 @@ steps:
     # `env: []` is written out rather than left to the default, for the reason
     # `backoff` and `repair` are: this is the repository that has to be able to
     # read its own policy without opening its own source. A `run:` action is an
-    # extension ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §1),
+    # extension ([0037](../doc/decisions-archive/0037-an-extension-is-a-command.md) §1),
     # and what it declares is every credential its process gets.
     #
     # **Nothing, and the suite still runs.** It refuses to start without
@@ -129,7 +129,7 @@ steps:
       # what this gate now runs and is deliberate rather than incidental: a gate
       # is a claim about the diff, and a test that can go red for something the
       # diff did not create is not that claim
-      # ([0060](../doc/decisions/0060-the-gate-runs-unit-tests.md)). The line is
+      # ([0060](../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)). The line is
       # *does this exercise a dependency outside the system*, not *does this
       # need Postgres* — so a temporary directory and a spawned `node` are on
       # the other side of it too, and 76 of the 166 files are.
@@ -267,7 +267,7 @@ steps:
     # always — whatever the build and the reviewer made of it.
     #
     # There is no policy layer to keep this list out of an agent's reach
-    # ([0016](../doc/decisions/0016-the-settled-model.md) §7), and it does not
+    # ([0016](../doc/decisions-archive/0016-the-settled-model.md) §7), and it does not
     # need one. This file is read from origin/main (0005), so an agent that
     # edits the list changes nothing about the run in flight; and the list
     # watches **this file**, so the edit is itself held. Weakening the watch
@@ -353,7 +353,7 @@ steps:
       close: true
 
     # The other ending, and it is a separate action rather than `when: any`
-    # deliberately ([0044](../doc/decisions/0044-a-close-is-a-terminal-outcome.md)).
+    # deliberately ([0044](../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)).
     # `any` would also fire on `blocked` and `failed`, and closing the issue
     # because a run could not finish is the opposite of what those mean — the
     # ticket is still wanted, and a person is being asked about it.
@@ -367,7 +367,7 @@ steps:
       close: true
 
 # Who is told what happened, and never waited for
-# ([0037](../doc/decisions/0037-an-extension-is-a-command.md) §3).
+# ([0037](../doc/decisions-archive/0037-an-extension-is-a-command.md) §3).
 #
 # **This block is the first thing to cross the extension boundary, and it is
 # deliberately Lingtai's own notification rather than somebody else's.** A
@@ -441,7 +441,7 @@ runtime:
     wall: 1h
 
     # How many times a pass sends the agent back, carrying what refused it
-    # ([0039](../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+    # ([0039](../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
     #
     # Written out rather than left to the default, because this is the
     # repository that has to be able to read its own policy without opening its
@@ -472,7 +472,7 @@ runtime:
     # pattern is readable.
     #
     # Taking that conclusion automatically is `restarts` below
-    # ([0040](../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)),
+    # ([0040](../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)),
     # and this number stays the depth half of the pair.
     #
     # What one pass of this repository costs at most is 4 × 1h. The four
@@ -483,7 +483,7 @@ runtime:
 
     # How many times a spent `rounds` ceiling starts the ticket over from the
     # base instead of asking a person
-    # ([0040](../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+    # ([0040](../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
     #
     # **One, and it is the experiment the line above used to describe.** This
     # was `0` until 2026-09-12, written out so that a ceiling spending a whole
@@ -514,7 +514,7 @@ runtime:
     restarts: 1
 
   # How much an agent is told about the attempts before it
-  # ([0029](../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
+  # ([0029](../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).
   #
   # `limits` above bounds what a run may spend; this bounds what it is given.
   # Written out for the same reason `backoff` and `repair` are: these numbers

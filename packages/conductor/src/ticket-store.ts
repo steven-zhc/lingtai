@@ -1,6 +1,6 @@
 /**
  * `TicketStore` — where tickets come from, and the one door a new one goes in by
- * ([0036](../../../doc/decisions/0036-the-core-takes-a-ticket.md) §2).
+ * ([0036](../../../doc/decisions-archive/0036-the-core-takes-a-ticket.md) §2).
  *
  * **`propose`, and the `withdraw` that undoes it, are the only verbs here yet.**
  * 0036 names `list`, `get` and `save` as the port's shape, and their extraction

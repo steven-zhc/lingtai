@@ -5,7 +5,7 @@ case the cheap check cannot see
 
 ## Question
 
-[0009](../decisions/0009-two-connections.md) closes with a requirement rather
+[0009](../decisions-archive/0009-two-connections.md) closes with a requirement rather
 than a claim: *`lingtai doctor` must assert the direct connection is genuinely
 session mode, by holding a listener open and notifying from a second connection.
 A check that only opens a connection would pass against a transaction pooler and
@@ -54,7 +54,7 @@ which is exactly why the second run exists.
  FAIL  postgres: direct connection is session mode
        a NOTIFY from a second connection never arrived — DIRECT_DATABASE_URL is
        not session mode. LISTEN/NOTIFY and advisory locks will both fail
-       silently through it (doc/decisions/0009).
+       silently through it (doc/decisions-archive/0009).
 ```
 
 Exit code 1. Every schema check still passed, because the schema is fine — the

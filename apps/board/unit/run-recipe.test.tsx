@@ -416,7 +416,7 @@ describe("the recipe an attempt was given", () => {
 
 /**
  * **A `no_log` field never reaches the page** (`#228`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §9).
  *
  * The walk below is the one reading on this page that renders an action's field
  * values whatever they are — everything else asks for a field by name — so it

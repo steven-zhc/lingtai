@@ -23,7 +23,7 @@ import { DocTree } from "../doctree";
 /**
  * One document, at the route its path in `doc/` gives it.
  *
- * `doc/decisions/0022-the-seams.md` is `/docs/decisions/0022-the-seams/`. The
+ * `doc/decisions-archive/0022-the-seams.md` is `/docs/decisions-archive/0022-the-seams/`. The
  * route is derived from the file rather than assigned here, so a new ADR is a
  * new page with no second thing to add.
  */

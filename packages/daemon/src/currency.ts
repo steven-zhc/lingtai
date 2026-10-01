@@ -12,7 +12,7 @@
  * and no answer at all to the question that mattered. The same shape as `#77`,
  * where the board said *current* and could not say *paused*.
  *
- * **[0010](../../../doc/decisions/0010-source-runs-unbuilt.md) is what makes it
+ * **[0010](../../../doc/decisions-archive/0010-source-runs-unbuilt.md) is what makes it
  * easy to miss.** *The source runs unbuilt* removes the build step; it does not
  * remove the restart. A long-lived process is still a deployment of whatever
  * `HEAD` pointed at when it started, and a merge into `main` reaches the CLI,
@@ -24,7 +24,7 @@
  * `lingtai doctor`, a chip on the board, and nothing restarted.
  * `codeIdentity` below looks forward, at the commit a process is *about* to
  * freeze, and `lingtai restart` refuses on its answer
- * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)). The
+ * ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)). The
  * asymmetry is deliberate: a commit already loaded cannot be unloaded by a
  * diagnostic, whereas the moment before a start is the one moment the choice is
  * still open.

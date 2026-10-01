@@ -214,7 +214,7 @@ describe("the evidence", () => {
 
   /**
    * The neighbouring ending, and the same trap
-   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
+   * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md), `#196`).
    *
    * The reviewer started and crashed — and this run also *finished*, exit 0,
    * three turns, forty-two cents. Looking for a refusal first would put attempt

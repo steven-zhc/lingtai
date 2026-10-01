@@ -5,7 +5,7 @@ of the rounds it was given
 
 ## Why
 
-[0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2 built the
+[0039](../decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §2 built the
 inner loop on one sentence:
 
 > The first is cheap because the work is still there.
@@ -112,7 +112,7 @@ with a person at the end of *that*. The evidence above is the argument for it an
 the `n = 1` is the argument for proving it on more than one ticket first.
 
 **It is built, and it is off**
-([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md), 2026-09-12).
+([0040](../decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md), 2026-09-12).
 `runtime.limits.restarts` defaults to `0`, which is the behaviour above arm A:
 a pass whose rounds are spent asks a person. Nothing changes for any project
 until a recipe writes a number down, and what should change the default is runs
@@ -139,7 +139,7 @@ of 2*, and a card says which arm an item is on.
 
 `#145` was written before this and claimed the branch was unreachable by the
 system. **`#145` was right, and this file said otherwise for a day**
-([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §Context
+([0040](../decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §Context
 settles it). The prompt is what made arm B *informed* — it carried the findings
 and the judgement — but the one thing in it that was not true was the fetch. A
 pass that spends its rounds pushes nothing: the only push is after `proposed`

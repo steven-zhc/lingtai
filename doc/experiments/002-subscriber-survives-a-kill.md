@@ -9,7 +9,7 @@ no duplicate · four consecutive runs, no flake
 "reconnects with backoff and resumes from the last seq" and that "nothing is
 missed across a reconnect". Both are easy to write and easy to be wrong about,
 because the failure is invisible: a listener that quietly stops hearing looks
-exactly like a system with nothing to do. [0009](../decisions/0009-two-connections.md)
+exactly like a system with nothing to do. [0009](../decisions-archive/0009-two-connections.md)
 is the record of that already happening once.
 
 So the claim needed a disconnect that actually happens, not one that is
@@ -53,7 +53,7 @@ pg_stat_activity:  17169 "Supavisor" idle
 ```
 
 Supavisor overwrites `application_name` on every connection through it. This
-does not contradict [0009](../decisions/0009-two-connections.md) — session mode
+does not contradict [0009](../decisions-archive/0009-two-connections.md) — session mode
 is what 0009 requires, and cross-connection `NOTIFY` and advisory locks both
 work through it, which is the whole point. But two things follow:
 

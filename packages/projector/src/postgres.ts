@@ -9,7 +9,7 @@
  * It talks to Postgres through `pg` rather than through the ORM, and that is
  * deliberate. Projections are **not** in the Prisma contract — their shape will
  * change, and changing one is a drop and a replay rather than a migration
- * (doc/decisions/0003-postgres-event-store.md). A table the contract does not
+ * (doc/decisions-archive/0003-postgres-event-store.md). A table the contract does not
  * know about has no ORM surface, and a projection needs DDL, `drop` and its own
  * upserts regardless. The same deliberate split as the subscriber.
  */

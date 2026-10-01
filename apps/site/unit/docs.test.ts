@@ -43,11 +43,13 @@ describe("what the site publishes", () => {
     expect(await filesOf(guides!)).toEqual(files);
   });
 
-  it("takes every decision in the directory", async () => {
+  it("takes every decision in the directory, and not the archive", async () => {
     const all = await published();
     expect(all).toContain("tutorial.md");
-    expect(all).toContain("decisions/0022-the-seams.md");
-    expect(all.filter((f) => f.startsWith("decisions/")).length).toBeGreaterThan(30);
+    expect(all).toContain("decisions/0100-one-append-only-log.md");
+    expect(all.filter((f) => f.startsWith("decisions/")).length).toBeGreaterThan(10);
+    // The archive is history the code cites, never what is decided now.
+    expect(all.some((f) => f.startsWith("decisions-archive/"))).toBe(false);
   });
 
   it("names what it does not publish rather than dropping it", async () => {
@@ -117,23 +119,10 @@ describe("what a document says it is", () => {
 
   it("reads each decision's status out of doc/README.md", async () => {
     const status = await statuses();
-    // 0014 was superseded by 0016 and the index is the only place that says so.
-    // A site that showed the two as equals would disagree with the repository
-    // about which decisions are in force.
-    //
-    // 0016's cell is no longer the bare word: 0036 and 0037 each took a section
-    // of it, and the index now names which. What is in force is that it still
-    // *starts* accepted — the shape the 0027 assertion below already uses.
-    expect(status.get("decisions/0014-one-loop-one-log")).toMatch(/superseded/);
-    expect(status.get("decisions/0016-the-settled-model")).toMatch(/^accepted/);
-    // 0057 is built — `StepDidNotFinish` is in `packages/actions/src/action.ts`
-    // and the state is drawn by the task view. Its §4 retry is not, and that is
-    // the index's cell to say (`#234`): built is not the same as *every section
-    // in force*.
-    // The index went on saying *implementation pending* after it landed, and
-    // `statusParts` carries that cell word for word onto the decisions page, so
-    // a reader was told on the site to go and build what was already merged.
-    expect(status.get("decisions/0057-a-gate-that-did-not-finish")).not.toMatch(/pending/);
+    // The index is the one place a decision's status is written, and a decision
+    // that is accepted with a part unbuilt has to say so on its page too.
+    expect(status.get("decisions/0100-one-append-only-log")).toMatch(/^accepted/);
+    expect(status.get("decisions/0103-a-pass-is-ten-fixed-steps")).toMatch(/not yet built/);
   });
 
   it("gives every entry a title that is not just its filename", async () => {
@@ -146,31 +135,31 @@ describe("what a document says it is", () => {
 
 describe("where a link inside a document goes", () => {
   const isPublished = (file: string) =>
-    ["tutorial.md", "decisions/0022-the-seams.md", "decisions/0016-the-settled-model.md"].includes(
+    ["tutorial.md", "decisions-archive/0022-the-seams.md", "decisions-archive/0016-the-settled-model.md"].includes(
       file,
     );
 
   it("sends a link between two projected documents to its route here", () => {
-    expect(resolveHref("decisions/0022-the-seams.md", "0016-the-settled-model.md", isPublished)).toBe(
-      "/docs/decisions/0016-the-settled-model/",
+    expect(resolveHref("decisions-archive/0022-the-seams.md", "0016-the-settled-model.md", isPublished)).toBe(
+      "/docs/decisions-archive/0016-the-settled-model/",
     );
-    expect(resolveHref("tutorial.md", "decisions/0022-the-seams.md", isPublished)).toBe(
-      "/docs/decisions/0022-the-seams/",
+    expect(resolveHref("tutorial.md", "decisions-archive/0022-the-seams.md", isPublished)).toBe(
+      "/docs/decisions-archive/0022-the-seams/",
     );
-    expect(resolveHref("decisions/0022-the-seams.md", "../tutorial.md", isPublished)).toBe(
+    expect(resolveHref("decisions-archive/0022-the-seams.md", "../tutorial.md", isPublished)).toBe(
       "/docs/tutorial/",
     );
   });
 
   it("keeps the anchor", () => {
-    expect(resolveHref("tutorial.md", "decisions/0022-the-seams.md#the-seams", isPublished)).toBe(
-      "/docs/decisions/0022-the-seams/#the-seams",
+    expect(resolveHref("tutorial.md", "decisions-archive/0022-the-seams.md#the-seams", isPublished)).toBe(
+      "/docs/decisions-archive/0022-the-seams/#the-seams",
     );
   });
 
   it("sends a link to source code to the repository, where the code is", () => {
     expect(
-      resolveHref("decisions/0016-the-settled-model.md", "../../packages/domain/src/events.ts", isPublished),
+      resolveHref("decisions-archive/0016-the-settled-model.md", "../../packages/domain/src/events.ts", isPublished),
     ).toBe(`${GITHUB_BLOB}packages/domain/src/events.ts`);
   });
 
@@ -181,7 +170,7 @@ describe("where a link inside a document goes", () => {
   });
 
   it("sends architecture.html to the copy the build made, or to GitHub while docs are private", () => {
-    expect(resolveHref("decisions/0022-the-seams.md", "../architecture.html", isPublished)).toBe(
+    expect(resolveHref("decisions-archive/0022-the-seams.md", "../architecture.html", isPublished)).toBe(
       DOCS_PUBLIC ? "/doc/architecture.html" : `${GITHUB_BLOB}doc/architecture.html`,
     );
   });
@@ -264,15 +253,15 @@ describe("what a decision's page says about it", () => {
 
   it("makes the decision a status names a link to it", async () => {
     const numbers = await decisionsByNumber();
-    expect(numbers.get("0016")).toBe("decisions/0016-the-settled-model");
+    expect(numbers.get("0103")).toBe("decisions/0103-a-pass-is-ten-fixed-steps");
 
-    const parts = statusParts("superseded by 0016", (n) => {
+    const parts = statusParts("see 0103", (n) => {
       const slug = numbers.get(n);
       return slug === undefined ? null : `/docs/${slug}/`;
     });
     expect(parts).toEqual([
-      { text: "superseded by " },
-      { text: "0016", href: "/docs/decisions/0016-the-settled-model/" },
+      { text: "see " },
+      { text: "0103", href: "/docs/decisions/0103-a-pass-is-ten-fixed-steps/" },
     ]);
   });
 
@@ -285,9 +274,7 @@ describe("what a decision's page says about it", () => {
 
   it("carries the repository's sentence and does not restate it", async () => {
     const status = await statuses();
-    // 0027 is in force and *supersedes* something; 0014 was replaced outright.
-    // The difference is the repository's wording, so it has to survive the trip.
-    expect(status.get("decisions/0027-the-lease-is-deleted")).toMatch(/^accepted/);
-    expect(status.get("decisions/0014-one-loop-one-log")).toBe("superseded by 0016");
+    expect(status.get("decisions/0100-one-append-only-log")).toBe("accepted");
+    expect(status.get("decisions/0103-a-pass-is-ten-fixed-steps")).toBe("accepted; part not yet built");
   });
 });

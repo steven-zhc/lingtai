@@ -1,6 +1,6 @@
 /**
  * **Eighty events in ninety-two seconds, answered once** —
- * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3, carried
+ * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3, carried
  * across when `#256` replaced the engine it was written against.
  *
  * Six runs, six claims, six worktrees, six branches and `costUsd` of nothing on
@@ -197,8 +197,8 @@ describe("when a run never starts", () => {
 
 /**
  * **The second agent in a pass, and the two ways it can produce no verdict** —
- * `#133`/[0041](../../../doc/decisions/0041-a-gate-that-never-ran.md) §3 and
- * `#196`/[0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md).
+ * `#133`/[0041](../../../doc/decisions-archive/0041-a-gate-that-never-ran.md) §3 and
+ * `#196`/[0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md).
  *
  * The distinction is the whole point and it is a caller-side one: a `never-ran`
  * measured the **account**, so the conductor stands down and the item goes back

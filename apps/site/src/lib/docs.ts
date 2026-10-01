@@ -10,7 +10,7 @@ import path from "node:path";
  * time. Nothing here forks them, and there is no second copy to fall behind:
  * a file edited on `main` is the page the next build serves.
  *
- * That is the same argument [0022](../../../../doc/decisions/0022-the-seams.md)
+ * That is the same argument [0022](../../../../doc/decisions-archive/0022-the-seams.md)
  * made when it deleted the outbox and the queue cache — two writers to one
  * truth, and the one nobody was watching was the one that went stale.
  * Documentation that drifts from the repository is worse than none, because it
@@ -515,7 +515,7 @@ export function decidedOn(body: string): string | null {
 }
 
 /**
- * Every decision by its number — `0016` → `decisions/0016-the-settled-model`.
+ * Every decision by its number — `0016` → `decisions-archive/0016-the-settled-model`.
  *
  * Built from the directory, so a decision that names a decision in its status
  * links to it without either file being edited.

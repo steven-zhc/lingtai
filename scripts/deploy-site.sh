@@ -6,7 +6,7 @@
 # **No environment is needed.** The site is a static export and nothing in it
 # talks to a server once deployed. The one input it can take is at *build*
 # time: the front page's board is read from the log by `snapshot.ts`
-# (doc/decisions/0035-the-site-is-a-projection.md §1). Without
+# (doc/decisions-archive/0035-the-site-is-a-projection.md §1). Without
 # LINGTAI_DATABASE_URL that step is skipped and the hero says it has no
 # snapshot; with it, the board is frozen into the files:
 #

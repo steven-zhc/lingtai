@@ -1,7 +1,7 @@
 /**
  * `lingtai attach <runId>` — watch a run, or read the one that failed.
  *
- * The reading half of [0034](../../../doc/decisions/0034-the-run-log.md), and
+ * The reading half of [0034](../../../doc/decisions-archive/0034-the-run-log.md), and
  * it is a `tail` and nothing more. Everything that makes it possible was
  * decided by the file: `#108` put a run's trace at
  * `~/.lingtai/runs/<project>/<runId>.log`, `#109` put the agent's own output in

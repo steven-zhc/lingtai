@@ -56,7 +56,7 @@ Migrations and `LISTEN/NOTIFY` **both require the direct one**. No lock is in
 Postgres — every lock is a file under `~/.lingtai/locks` (`@lingtai/env/lock`,
 0052), and none of them touches a connection. Through a transaction pooler a cross-connection `NOTIFY` never
 arrives *and never errors* — the system would look merely slow. Read
-`doc/decisions/0009-two-connections.md` before you touch the store.
+`doc/decisions-archive/0009-two-connections.md` before you touch the store.
 
 A corollary that matters for tests: **a LISTEN/NOTIFY test that uses one
 connection for both proves nothing.** It passes against a transaction pooler. The

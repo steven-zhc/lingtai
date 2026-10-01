@@ -16,7 +16,7 @@
  * either: the runnable set is what GitHub currently says, minus what the log
  * says is claimed, computed at the moment somebody needs it. That inversion is
  * the whole of
- * doc/decisions/0001-event-sourcing.md: #35 carried `agent:blocked` and
+ * doc/decisions-archive/0001-event-sourcing.md: #35 carried `agent:blocked` and
  * `agent:review` at the same time because `--add-label` is set union, not a
  * transition, and nothing could have noticed.
  *
@@ -321,9 +321,9 @@ export interface RunnableNowOptions {
  * **Nothing is appended and nothing is stored.** Which issues exist is
  * GitHub's state, not Lingtai's; mirroring it into an append-only log meant one
  * event per issue per pass to reproduce a fact GitHub answers correctly on
- * request ([0012](../../../doc/decisions/0012-one-task-view.md)), and mirroring
+ * request ([0012](../../../doc/decisions-archive/0012-one-task-view.md)), and mirroring
  * it into a table meant two bugs that were both cache invalidation
- * ([0022](../../../doc/decisions/0022-the-seams.md), #56 and #57). What Lingtai
+ * ([0022](../../../doc/decisions-archive/0022-the-seams.md), #56 and #57). What Lingtai
  * *decides* — which one it claimed — is still an event, and still the whole of
  * the mutual exclusion.
  *

@@ -9,7 +9,7 @@
  * **It decides nothing itself.** `@lingtai/env`'s `chosenStore()` is the one
  * reader of `~/.lingtai/config.yml`; this turns its answer into a `DaemonStore`
  * and hands the refusal on by name
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md) §2).
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) §2).
  * A machine that has written nothing is refused, never defaulted — the beacon
  * of a daemon nobody set up says so rather than beating into an empty file.
  *

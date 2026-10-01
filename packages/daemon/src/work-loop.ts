@@ -42,7 +42,7 @@
  * ## Stopping is waiting for that pass
  *
  * **The boundary is the pass, not the agent**
- * ([0030](../../../doc/decisions/0030-shutting-down-safely.md) §1). A ticket is
+ * ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §1). A ticket is
  * not finished when its agent exits: the gates run, the merge lane runs, the
  * `end` point runs, and one pass spans all of it. So `stop()` waits for the
  * pass, and `pump` retains its promise for it to wait on — which is the only
@@ -60,7 +60,7 @@
  * of current. It did not bite: that notifier caught everything itself. But that
  * is a guarantee held by the callee, and a guarantee held by the callee is one
  * every future subscriber has to re-honour
- * ([0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) puts
+ * ([0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md) puts
  * third-party code in this path on purpose). `discuss`, two lines below it,
  * already had the `.catch`.
  *
@@ -200,7 +200,7 @@ export interface WorkLoopOptions {
    * A list rather than the single `notify` callback it replaced, and the plural
    * is the whole of `#123`: there was one implementation, chosen by name in the
    * daemon's startup, and no way to declare a second
-   * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3). The
+   * ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §3). The
    * daemon now builds whatever the recipes declared and names none of them.
    *
    * **Each carries its own name**, because `PluginFailed` records it and

@@ -6,7 +6,7 @@
  *
  * Everything here uses the DIRECT url. Through a transaction pooler the
  * cross-connection NOTIFY check below fails silently, which is the whole reason
- * that variable exists — see doc/decisions/0009-two-connections.md.
+ * that variable exists — see doc/decisions-archive/0009-two-connections.md.
  */
 import pg from "pg";
 import { dbVar, directUrlIfSet } from "../src/env.ts";

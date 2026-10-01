@@ -9,7 +9,7 @@
  * The shape is the evening of 2026-09-09: a daemon started from `582a0f8`, a
  * commit that had not been pushed, and twenty minutes later a rebase rewrote it
  * out of existence while the process held that code for the rest of its life
- * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)).
+ * ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)).
  */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

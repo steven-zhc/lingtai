@@ -9,8 +9,8 @@
 这是已讨论接受的目标行为与实施计划。本文的配置示例和接口是待实现的契约，
 不是当前版本的操作说明。本次只落成文档，没有实现适配器或迁移实际用户配置。
 
-关键决策见 [0053](../decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)
-和 [0054](../decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)。
+关键决策见 [0053](../decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md)
+和 [0054](../decisions-archive/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)。
 
 ## 1. 当前实现与需要补齐的地方
 
@@ -27,7 +27,7 @@
 
 `RuntimeId` 已包含 `claude-code` 和 `codex`。这次增加的是实际可用的接入及按职责
 选择，不增加插件注册表、manifest 或第六个 gate。现有 `run:` 命令扩展和 subscribers
-保持 [0037](../decisions/0037-an-extension-is-a-command.md) 的边界。
+保持 [0037](../decisions-archive/0037-an-extension-is-a-command.md) 的边界。
 
 ## 2. 配置归属和结构
 

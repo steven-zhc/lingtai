@@ -56,7 +56,7 @@ are finite and each already has its evidence in hand:
 
 | shape | what says it | the remedy |
 |---|---|---|
-| zero turns, zero cost, a message naming a limit | [0031](../decisions/0031-a-run-that-never-started.md) classifies this already | wait — and say until when (#210) |
+| zero turns, zero cost, a message naming a limit | [0031](../decisions-archive/0031-a-run-that-never-started.md) classifies this already | wait — and say until when (#210) |
 | `Session ID … is already in use` | the run log, and `daemon: currency` | restart, **if a fix landed after the daemon started** |
 | a gate exits with no receipt | [#196](https://github.com/steven-zhc/lingtai/issues/196) | the tool broke; this is not a verdict about the diff |
 | the same action fails the same way in N passes **across different items** | nothing today — see §3 | the machine, not the diff |
@@ -107,7 +107,7 @@ The obvious home for *"why did this stop"* is the discussion pane, which is
 already on the page and already reads the log, the ticket and the code. It
 cannot run commands, by decision.
 
-[0033](../decisions/0033-the-third-kind-of-agent.md) §1 draws that line and the
+[0033](../decisions-archive/0033-the-third-kind-of-agent.md) §1 draws that line and the
 argument is structural, not squeamish:
 
 > The line is drawn there because a command is what makes a run a run. The
@@ -156,9 +156,9 @@ This is not a small change and it is not free:
 - **An allowlist, not a sandbox.** *Read-only* is not the property — `node
   --build-sea` writes a file. The property is *nothing it does reaches the
   repository or the log*. The fail-closed hook already refuses tool calls
-  ([0007](../decisions/0007-dual-runtime.md)); what is new is the list of what
+  ([0007](../decisions-archive/0007-dual-runtime.md)); what is new is the list of what
   it may do.
-- **[0054](../decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)
+- **[0054](../decisions-archive/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)
   has to move with it.** It is eight days newer than 0033 and states the
   boundary as a capability the adapter must enforce: *"Discussion's boundary is
   enforced by runtime configuration and capability verification, never by a

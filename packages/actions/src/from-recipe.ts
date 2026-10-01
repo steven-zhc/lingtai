@@ -116,7 +116,7 @@ export interface ActionDeps {
   fileBrief?: FileBriefActionDeps;
   /**
    * The declared names of a `run:` action → the whole environment its process
-   * gets ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+   * gets ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
    *
    * A function rather than a map because only the caller can read 0021's
    * layers, and only it knows to add `runnableEnv`'s `PATH`. It is optional for

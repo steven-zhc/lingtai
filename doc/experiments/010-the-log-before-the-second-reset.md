@@ -1,6 +1,6 @@
 # 010 — The whole log, archived before the second reset
 
-**2026-09-03.** [ADR 0019](../decisions/0019-a-second-reset.md) empties the log
+**2026-09-03.** [ADR 0019](../decisions-archive/0019-a-second-reset.md) empties the log
 a second time. This is everything that was in it — 56 events, `seq` 10 to 65,
 the complete record of the settled model's first three runs against
 `nextloom-ai-admin`.

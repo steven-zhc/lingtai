@@ -1,7 +1,7 @@
 /**
  * What a run that never started costs the conductor, and for how long.
  *
- * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3 and §4.
+ * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3 and §4.
  * Two decisions live here and they are different in kind, which is the whole
  * reason the file exists rather than an `if` beside the append:
  *
@@ -179,7 +179,7 @@ function clockReset(detail: string, now: Date): Date | null {
  *
  * The pause is the same and the sentence is not, which is the whole reason this
  * is a parameter rather than a constant
- * ([0041](../../../doc/decisions/0041-a-gate-that-never-ran.md) §3). A run that
+ * ([0041](../../../doc/decisions-archive/0041-a-gate-that-never-ran.md) §3). A run that
  * never started took no turns and spent nothing, and 0031's sentence says so. A
  * *gate's* agent that never started sits inside a run that **did** start, took
  * turns and was paid for — the implementer produced the diff the reviewer was

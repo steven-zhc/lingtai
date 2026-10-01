@@ -1,6 +1,6 @@
 /**
  * The backlog: minor findings passing gates raised, and what was decided
- * about each ([0038](../../../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * about each ([0038](../../../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §5, `#137`).
  *
  * A read of `finding_backlog`, which is a fold like `task_view` — nothing on

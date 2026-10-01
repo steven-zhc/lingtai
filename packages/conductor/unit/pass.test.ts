@@ -5,8 +5,8 @@
  * it works — which is the arrangement the ticket asked for: *a reviewer reads it
  * against the ADR, which is the one reading a cold reviewer is good at.* So each
  * `describe` below is a sentence from
- * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) or
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md), and each
+ * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) or
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md), and each
  * `it` is the half of it a test can check.
  *
  * Nothing here leaves the system: the two seams `runPass` takes — the ten bodies

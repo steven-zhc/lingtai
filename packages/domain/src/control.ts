@@ -5,7 +5,7 @@
  * `streams.ts` gives about itself: this was in `daemon`, and it is needed by
  * something that must not depend on `daemon`. `conductor` is what discovers
  * that an account cannot start a run at all
- * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3), and
+ * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3), and
  * `daemon` already depends on `conductor`. A second copy of the fold in the
  * package that needed it would be two answers to "is the conductor paused".
  *
@@ -79,7 +79,7 @@ export interface ControlState {
    * the same shape as `requested`, which is satisfied by the item ceasing to be
    * queued. Keeping the decision out of this fold is what stops the control
    * stream growing a second state machine
-   * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §6).
+   * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6).
    */
   discussions: DiscussionRequest[];
 }

@@ -10,7 +10,7 @@
  * **There is no matrix any more, and the cells are still there** (`#261`).
  * `KINDS_AT` was a hand-written table of which of the thirteen plugins each of
  * the ten steps runs; since
- * [0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md)
+ * [0064](../../../doc/decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md)
  * §4 a plugin declares the steps it serves and that declaration is what makes
  * it legal there. The cells are the product of two closed sets rather than a
  * constant, this file walks them exactly as it did, and what it asserts is

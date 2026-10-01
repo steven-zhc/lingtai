@@ -4,7 +4,7 @@
  * Two of these are `#105`'s own bar rather than ordinary fold tests. The meter
  * has to be a number a person can see, or *"the person is the limit"* is a
  * limit that cannot see what it is limiting
- * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §4); and the
+ * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §4); and the
  * sentence about a branch that was not there has to survive an answer that
  * forgot to mention it, which is why it is folded off the **ask** and not off
  * the answer.

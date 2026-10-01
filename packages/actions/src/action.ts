@@ -24,7 +24,7 @@
  * **`worktree` is the one that makes rather than judges**, and it is why
  * `ActionResult` carries a `head`: `admit` is where the tree is cut, so it is
  * where `onSha` gets a value at all
- * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#268`).
+ * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2, `#268`).
  *
  * **`merge` is the one whose *no* is not the pipeline's**, and it is why
  * `ActionResult` carries a `because`: the lane's `conflict` and `verify-failed`
@@ -48,7 +48,7 @@ import type { Step, PayloadOf, RefusedAbout, Severity } from "@lingtai/domain";
  * **`never-ran` is a fourth outcome, and it is not a verdict at all.**
  *
  * An `agent` action whose agent never started — a quota, a signed-out runtime —
- * has judged nothing ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * has judged nothing ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)
  * §1, one layer up). It cannot pass, because a green action for a diff nobody
  * assessed is the thing `agent-action.ts` already refuses to emit; and it must
  * not fail, because a failure is a sentence about *this diff* produced by a
@@ -58,7 +58,7 @@ import type { Step, PayloadOf, RefusedAbout, Severity } from "@lingtai/domain";
  * the item goes back to the queue, exactly as 0031 §3 decided for a run.
  *
  * **`did-not-finish` is a fifth, and it is the neighbour `never-ran` does not
- * cover** ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
+ * cover** ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md)).
  *
  * An `agent` action that *started* and ended with no receipt — a crash, a
  * timeout, a turn budget spent without an answer — judged nothing either, and
@@ -228,7 +228,7 @@ export interface ActionResult {
 
 /**
  * **What `design` made, as the step after it sees it** (`#297`, deciding what
- * [0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * [0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §3 and §9 left open).
  *
  * The answer is **both**. The document travels because 0066 §2's whole thesis
@@ -371,7 +371,7 @@ export interface ActionContext {
    * `agent` action is now the only kind that reads it.
    *
    * A `run:` action does not, since
-   * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1: it is
+   * [0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1: it is
    * the extension point, its code is not trusted, and it gets the names the
    * recipe declared beside it and nothing else. Its environment therefore
    * belongs to the action rather than to the step, and lives on
@@ -382,7 +382,7 @@ export interface ActionContext {
   /**
    * Findings a **previous** version of this diff was refused for, and that an
    * agent has since been asked to make stop happening
-   * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+   * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
    *
    * On the context rather than on a spec, because it is a fact about *this run
    * of the pipeline* exactly as `onSha` is: the same recipe, the same actions, a
@@ -402,7 +402,7 @@ export interface ActionContext {
    */
   round?: number;
   /**
-   * The run's log ([0034](../../../doc/decisions/0034-the-run-log.md), #153).
+   * The run's log ([0034](../../../doc/decisions-archive/0034-the-run-log.md), #153).
    *
    * `runActionPipeline` writes each action's start and end here under
    * `<step>:<action>`, and hands the action this same log **already tagged**,
@@ -510,7 +510,7 @@ export interface PipelineResult {
   neverRanAt: { action: string; detail: string } | null;
   /**
    * The action whose agent started and did not finish
-   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1).
+   * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1).
    *
    * Its own field for the same reason `neverRanAt` is one: this ending buys no
    * fix round (§2) and does not stand the conductor down (§3), and a caller
@@ -633,7 +633,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     /**
      * **One run of the action, and no retry** (`#234`).
      *
-     * [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4 put
+     * [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §4 put
      * one here and it never once ran. The session id is a hash of
      * `<runId>:review:<action>:<sha>` (`agent-action.ts:356`, `sessionIdFor` at
      * `claude-code.ts:93`) and a second attempt moves none of the four, so the
@@ -646,7 +646,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
      * So what a `did-not-finish` costs is 0057 §1–3 and nothing else, and
      * that is the half that works: no round (§2), no stand-down (§3), and the
      * pass reports it to a person. Whether to spend another agent on it is
-     * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+     * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
      * §3c's judge, not a constant in a loop here.
      */
     await emit({ type: "StepStarted", data: base });

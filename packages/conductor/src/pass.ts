@@ -8,8 +8,8 @@
  * surgery on it — it was *write the new pass beside it, and delete it*
  * ([the-pipeline.md](../../../doc/design/the-pipeline.md) §2). So it landed
  * wired to nothing: a reviewer read it against
- * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) and
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) rather than
+ * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) and
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) rather than
  * against a diff, and a mistake here could not touch the conductor that was
  * running. The blast radius was zero until T5 wired it.
  *
@@ -46,7 +46,7 @@
  * ## An empty step is a pass, not a skip
  *
  * A recipe may omit any step and the resolved recipe holds all ten
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5,
+ * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §5,
  * `StepMap` in `@lingtai/recipe`), so the loop meets `[]` at nine steps out of
  * ten today — a plugin declares itself at four of them — and it must keep
  * going. **The one thing it must never do is `continue` past a step that *was*
@@ -55,7 +55,7 @@
  * guard). So every step the pass reaches runs its declared list and lands an
  * entry in `PassResult.steps`, and a configured step whose body does not exist
  * yet **throws** rather than passing quietly — *configured and did not run* must
- * not look like *empty* ([0016](../../../doc/decisions/0016-the-settled-model.md)
+ * not look like *empty* ([0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §4). The loop reports that throw as the step's own ending rather than losing
  * the pass to it, which is the same rule once more: a pass that vanished must
  * not look like one that never started.
@@ -92,7 +92,7 @@ import type { TerminalOutcome } from "./end-step.ts";
 
 /**
  * The four steps the workflow lets refuse, and no others
- * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §2).
+ * ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §2).
  *
  * **Refusal is not an ordinary return value**, which is why it cannot be a
  * plugin's to invent: in this codebase it buys a fix round — ~31 turns, ~$3.40
@@ -276,7 +276,7 @@ export interface StepPassed extends LeftTheTreeAt, WroteTheDesign {
  * declared, recorded, drawn and never emitted — which is the failure this whole
  * file is arranged around. What this ticket fixes is the *shape*: a token
  * beside prose, because `proposed` routes on the first and `waiting` displays
- * the second ([0043](../../../doc/decisions/0043-evidence-is-plain-text.md)).
+ * the second ([0043](../../../doc/decisions-archive/0043-evidence-is-plain-text.md)).
  *
  * **No value of `because` decides where the pass goes**, and since `#296` that
  * is a property of the types rather than a claim in a comment: the one that did
@@ -319,7 +319,7 @@ export interface StepHeld extends LeftTheTreeAt {
  * question in it**.
  *
  * **Kept apart from a refusal from the start, because it costs different
- * money** ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)):
+ * money** ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md)):
  * a refusal buys a fix round and holds the item, and this buys none of it.
  *
  * What ends this way is *an agent that started and left no receipt* — a crash, a
@@ -397,7 +397,7 @@ export { NEEDS_INPUT, NO_DESIGN, type SentBack, type TheDesign };
  * A fifth ending and not a flavour of the fourth: `never-ran` is the wall that
  * is about the *account* rather than about the diff — a quota, a signed-out
  * runtime — and its consequence is that the conductor stands down and the item
- * goes back to the queue ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * goes back to the queue ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)
  * §3). `did-not-finish` is local to one crash and stands only the pass down
  * (0057 §3). A caller that had to read `detail` to tell them apart would be the
  * second reader of a sentence 0031 §1 exists to prevent.
@@ -435,7 +435,7 @@ export type Destination = Step | "waiting";
  *
  * `to` is one of the destinations the workflow offered. `why` is the judge's own
  * words and is what `waiting` displays beside the arriving step's `detail`;
- * [0043](../../../doc/decisions/0043-evidence-is-plain-text.md) already says
+ * [0043](../../../doc/decisions-archive/0043-evidence-is-plain-text.md) already says
  * evidence is plain text and not a structure to be parsed.
  */
 export interface StepRouted extends LeftTheTreeAt {
@@ -778,7 +778,7 @@ export interface Ceilings {
   /**
    * How many times this pass may go back into the spine — a fix round, and what
    * `passCeiling` prices at *up to `rounds + 1` agent runs*
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
    * than a guard: every back edge spends one, and when they are spent `onOffer`
@@ -1225,14 +1225,14 @@ export interface PassResult {
  * - an agent that never started, and **a restart** — `failed`, the two endings
  *   that ask nobody. The wall is about the account rather than the diff, so the
  *   claim is released and the item goes back to the queue
- *   ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3); a
+ *   ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3); a
  *   requeue releases it for the opposite reason, having decided a fresh
  *   approach is worth more than another round (0040). Both are what `failed`
  *   means at `end-step.ts` — *a run that ended without a diff worth merging and
  *   put the item back in the queue.*
  *
  * `closed` is the fourth and no pass produces it: it is a person deciding the
- * ticket is over ([0044](../../../doc/decisions/0044-a-close-is-a-terminal-outcome.md)),
+ * ticket is over ([0044](../../../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)),
  * and `close.ts` resolves `end` for it on its own path.
  */
 export function outcomeOf(pass: Pick<PassResult, "stoppedAt" | "rested">): TerminalOutcome {

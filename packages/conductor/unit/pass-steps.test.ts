@@ -10,7 +10,7 @@
  *
  * Nothing leaves the system. `PassPorts` is a fake — no process, no worktree, no
  * agent, no GitHub, no store — which is what puts this file in `unit/` and has
- * the `build` point run it ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
+ * the `build` point run it ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)
  * §1).
  */
 import type { RunOutcome, Runtime } from "@lingtai/agent";

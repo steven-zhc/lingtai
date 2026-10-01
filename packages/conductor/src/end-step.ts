@@ -14,7 +14,7 @@
  * other route — `lingtai approve`, the board's approve button — integrated,
  * appended `WorkItemLanded`, and stopped. The point was configured, the log
  * said so in `StepsResolved`, and it silently did not run. That is exactly the
- * half of the responsibility [ADR 0016](../../../doc/decisions/0016-the-settled-model.md)
+ * half of the responsibility [ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §4 calls Lingtai's bug, and it went unnoticed for as long as it did because
  * every item that had ever landed had landed inline.
  *
@@ -31,7 +31,7 @@
  * did not run* must not look the same from the log. With no row, an item that
  * landed under a recipe whose only `end` action was `when: blocked` is
  * indistinguishable from one whose `end` point was never reached, and the
- * comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
+ * comparison [ADR 0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
  * promised — `StepsResolved` says `end` had actions, the item landed, nothing
  * resolved — cannot be computed without guessing.
  *
@@ -55,7 +55,7 @@ import type { LogQueries } from "@lingtai/event-store/log";
  *
  * `closed` is a person deciding the ticket is over (`#151`), and it is here
  * rather than left out because leaving it out is a hole
- * ([0044](../../../doc/decisions/0044-a-close-is-a-terminal-outcome.md)). `end`
+ * ([0044](../../../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)). `end`
  * is defined as the point that fires on *every* terminal outcome; a fourth
  * outcome that does not reach it makes that sentence false, and makes it false
  * silently — which is the half of the responsibility 0016 §4 calls Lingtai's
@@ -227,7 +227,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * *for this outcome*. Expect it to name items it was silent about before; they
  * were always there.
  *
- * **The comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
+ * **The comparison [0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
  * promised, computed from the log alone.** `StepsResolved` names all ten steps
  * and the actions planned for each — `.length(10)` in the schema since 0058 §3
  * widened the vocabulary — so "the recipe asked for something at `end`" is a
@@ -235,7 +235,7 @@ export function splitWorkItem(streamId: string): { project: string; issue: numbe
  * `EndActionsResolved` on the item's own stream is the record that the step
  * ran. An item with the first and not the second is a gate that was
  * configured and did not run, which
- * [0016](../../../doc/decisions/0016-the-settled-model.md) §4 calls Lingtai's
+ * [0016](../../../doc/decisions-archive/0016-the-settled-model.md) §4 calls Lingtai's
  * bug rather than the operator's.
  *
  * Read by `lingtai doctor`, which reports it, and by `lingtai end replay`,

@@ -82,7 +82,7 @@ describe("filterEnv — 0021's table, a case per row", () => {
 
 /**
  * The same two files, asked the other way round — 0021's second consumer
- * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ * ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
  *
  * `filterEnv` starts from everything and takes away; this starts from nothing
  * and adds only what was named. The pair of tests below is that sentence: a

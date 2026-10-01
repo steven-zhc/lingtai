@@ -8,7 +8,7 @@
  * audit.
  *
  * **One of the two is gone.** `#143` carries out
- * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+ * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
  * §Consequences: a lane refusal buys nothing, so there is no purchase to bound
  * and `decideRepair` and its fingerprint, its recursion guard and its ceiling
  * are deleted with it. What is left is *whose* failure it is — a question about
@@ -107,7 +107,7 @@ describe("whose failure it is", () => {
   });
 
   /**
-   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §2, and the
+   * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §2, and the
    * clause that had been missing.
    *
    * A quota burned six tickets in ninety-two seconds and bought no agent — by

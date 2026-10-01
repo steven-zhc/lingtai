@@ -2,7 +2,7 @@
  * The run log, as a file on a real disk.
  *
  * Three claims, and each is a thing that is cheap to assert and expensive to be
- * wrong about ([0034](../../../doc/decisions/0034-the-run-log.md) §7):
+ * wrong about ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §7):
  *
  * - **it is `0600`**, because it holds whatever the agent printed — values it
  *   read from its filtered environment, contents of files it opened. That

@@ -20,7 +20,7 @@ import {
  * nowhere. This is where it arrived.
  *
  * **And the board is the only surface that can carry it.**
- * [0046](../../../../../doc/decisions/0046-lingtai-is-personal.md) §3 moved the
+ * [0046](../../../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3 moved the
  * recipe to `~/.lingtai/<project>/recipe.yml` and recorded the cost in its own
  * words: nothing in the repository says Lingtai is in use, and a file under a
  * home directory is not discoverable by cloning. A page is.

@@ -45,7 +45,7 @@ export interface PlannedAction {
  *
  * All ten are present even where nothing is configured, because an empty step
  * is `skipped` and the skip has to be visible (ADR 0016 §4,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5) — a
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §5) — a
  * step that is merely absent from this map is indistinguishable from one that
  * was configured and silently did not run.
  */
@@ -113,8 +113,8 @@ export type ProjectFilter =
        * reads this shape rather than the recipe.
        *
        * **All four together, because the interesting number is not any of
-       * them** ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
-       * [0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+       * them** ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
+       * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
        * What an operator actually needs is
        * `(restarts + 1) × (rounds + 1) × wall`, and this is where the numbers
        * that make it live in one place. `wallMs` is parsed here so no caller
@@ -139,7 +139,7 @@ export type ProjectFilter =
       /**
        * How long a failed attempt keeps its own ticket out of the queue,
        * `source.backoff` in milliseconds
-       * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+       * ([0028](../../../doc/decisions-archive/0028-the-backoff-is-the-recipes.md)).
        *
        * Lifted out for the reason `limits` is, and it is the same kind of
        * thing: a default that spends money — or, here, one that decides when

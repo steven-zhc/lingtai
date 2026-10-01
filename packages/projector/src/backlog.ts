@@ -1,6 +1,6 @@
 /**
  * `finding_backlog` — the minors a passing gate found, and what a person did
- * about each one ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * about each one ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §5, `#137`).
  *
  * A `minor` does not refuse, and that is right. Before this it went from a

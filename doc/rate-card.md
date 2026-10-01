@@ -1,7 +1,7 @@
 # The rate card
 
 What a million tokens costs, per model, per mode, with the date the rate came
-into force. [0073](decisions/0073-tokens-go-on-the-event-and-money-never-does.md)
+into force. [0073](decisions-archive/0073-tokens-go-on-the-event-and-money-never-does.md)
 §5 decided this is a file a person edits rather than a page something scrapes or
 a table compiled into code, and this is that file.
 
@@ -26,7 +26,7 @@ model that is not below is *unpriced*, and that is what a reader is shown.
 ## How the four counts are charged
 
 The five counts on an event
-([0073](decisions/0073-tokens-go-on-the-event-and-money-never-does.md) §3) are
+([0073](decisions-archive/0073-tokens-go-on-the-event-and-money-never-does.md) §3) are
 charged as four things, and this is the mapping money is computed through:
 
 | count | charged at |

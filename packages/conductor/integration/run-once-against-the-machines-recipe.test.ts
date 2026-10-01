@@ -9,7 +9,7 @@
  * `unit/conduct-what-a-claim-leaves.test.ts`'s; this is here because it writes a real
  * `recipe.yml` under a temporary `LINGTAI_HOME` and sets `process.env`, and the
  * filesystem and the real environment are outside the system
- * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).
+ * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1).
  *
  * **Through the default read, not an injected one**, which is exactly why it
  * needs that world: no `recipe` is passed, so a `runOnce` whose default went

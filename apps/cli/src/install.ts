@@ -1,6 +1,6 @@
 /**
  * An installed copy: `lingtai version`, `upgrade`, `rollback` and `uninstall`
- * (#184, [0051](../../../doc/decisions/0051-a-version-is-a-directory.md)).
+ * (#184, [0051](../../../doc/decisions-archive/0051-a-version-is-a-directory.md)).
  *
  *   ~/.lingtai/versions/<v>/
  *     lingtai              the binary (#185, 0050)

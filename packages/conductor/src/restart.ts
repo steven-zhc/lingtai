@@ -1,7 +1,7 @@
 /**
  * Whether a pass whose rounds are spent starts the work over, or asks a person.
  *
- * [0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)
+ * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)
  * is the decision and
  * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)
  * is the evidence. The shape it adds is one line long:

@@ -10,7 +10,7 @@
  *
  * The claim mechanism hid the consequence: while a claim carried a thirty-minute
  * lease, a live lease turned the second claimant away, so the gap only opened on
- * runs longer than half an hour. [0027](../../../doc/decisions/0027-the-lease-is-deleted.md)
+ * runs longer than half an hour. [0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md)
  * deletes the lease and replaces it with a proof — *a process holding this lock
  * knows no other conductor exists, therefore every foreign claim is dead* — and
  * that proof is false for as long as anything can conduct without the lock.

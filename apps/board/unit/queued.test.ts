@@ -111,7 +111,7 @@ describe("the Queued column, grouped", () => {
 
 /**
  * The three states that read identically, rendered
- * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)'s closing
+ * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)'s closing
  * table, `#100`).
  *
  * `run failed: crash` was on the card whether the run would be back at 23:45 or

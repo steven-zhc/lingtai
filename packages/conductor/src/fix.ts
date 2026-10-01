@@ -2,9 +2,9 @@
  * Whether a refusal at `proposed` buys an agent, what that agent is told, and
  * what a person is shown when the rounds are over.
  *
- * [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * [0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * is where this began and
- * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2
+ * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §2
  * is its present shape: **a point refuses, and the agent is sent back to the
  * same worktree with what refused it.**
  *
@@ -15,7 +15,7 @@
  *                   └── refuses → another round, or `restart.ts`
  *
  * **What happens when the rounds are over is no longer only a person**
- * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+ * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
  * `decideRestart` gets the refusal first and may hand the ticket back to the
  * queue for a fresh pass instead; the two diagnoses below are what a person is
  * shown once *that* ceiling is spent too, or immediately, which is every
@@ -318,7 +318,7 @@ export interface FixInput {
  * is gone (`#143`); this is now the only place a refusal buys an agent.
  *
  * The first rule is the one that makes the loop safe to have at all, and
- * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2
+ * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §2
  * is why it is now written in two halves. **The bar is not "has findings", it is
  * "carries a criterion the fixer could not have authored"** — and there are two
  * ways to carry one:
@@ -427,7 +427,7 @@ export function decideFix(input: FixInput): FixDecision {
  * handing it none.
  *
  * **And it says the fixer may decline**
- * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+ * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
  * §5). The mechanism was always there — `conduct.ts`'s `if (!committed)` ends
  * the loop and hands a person the findings — and for a day this prompt pointed
  * the other way: *commit*, *an attempt that ends with advice produces nothing*,
@@ -780,7 +780,7 @@ export function diagnoseDisagreement(input: {
   stop: FixStop;
   /**
    * The approaches already abandoned on this item, **newest first**
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
    * Empty for every project that leaves `restarts` at zero, which is all of
    * them today, and then every sentence below is the one it was before.

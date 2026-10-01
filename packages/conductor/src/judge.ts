@@ -2,7 +2,7 @@
  * **Which step is next when something refuses** — the decision, and the
  * counting that bounds it.
  *
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3 is where
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3 is where
  * this comes from, and it is one sentence:
  *
  * > **`judge:` decides which step is next. The workflow decides which steps it
@@ -167,7 +167,7 @@ export type Declared =
  * The first two are: `implement` is another round in the worktree that is
  * already cut, and `claim` is a requeue — the item is released, the approach is
  * abandoned, and a higher-priority ticket opened in the meantime goes first
- * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+ * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
  *
  * `human` is the pass stopping at `proposed` with the question on the log, and
  * it is in this list because **it is always on offer**. That is what makes the

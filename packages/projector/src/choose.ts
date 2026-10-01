@@ -9,7 +9,7 @@
  * **It decides nothing itself.** `@lingtai/env`'s `chosenStore()` is the one
  * reader of `~/.lingtai/config.yml`; this turns its answer into a
  * `ProjectionStore` and hands the refusal on by name
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md) §2).
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) §2).
  *
  * **The SQLite half arrives through a dynamic import**, which is the whole
  * reason `./sqlite.ts` is published at `@lingtai/projector/sqlite`: a Postgres

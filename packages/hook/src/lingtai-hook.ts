@@ -7,10 +7,10 @@
  * sends one line to a unix socket, reads one line back, and exits. No
  * dependencies, no configuration parsing, no decisions. Deciding and persisting
  * live in the long-running conductor, where they cost nothing per call
- * (doc/decisions/0002-typescript.md).
+ * (doc/decisions-archive/0002-typescript.md).
  *
  * `PreToolUse` was the hot one and is not wired at all any more: Lingtai
- * refuses no tool call, so it had no job left ([ADR 0016 §6](../../../doc/decisions/0016-the-settled-model.md)).
+ * refuses no tool call, so it had no job left ([ADR 0016 §6](../../../doc/decisions-archive/0016-the-settled-model.md)).
  *
  * **It fails closed.** Socket unreachable, timeout, unparseable payload,
  * malformed reply — every one of them exits 2, which both runtimes read as

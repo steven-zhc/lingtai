@@ -50,7 +50,7 @@ export const TICKETS: Ticket[] = [
     what: "A bug, given to an agent twice, and it never merged.",
     story:
       "Both attempts concluded that the runtime had no --max-turns flag, because it is absent from the binary's own --help — and it is present in the binary. Two agents in a row turned a missing line of documentation into a fact. It ended in “waiting on you”, and working out why took a person an hour: the events, then one source file, then one test fixture.",
-    source: "decisions/0033-the-third-kind-of-agent.md",
+    source: "decisions-archive/0033-the-third-kind-of-agent.md",
   },
   {
     ref: 84,
@@ -61,6 +61,6 @@ export const TICKETS: Ticket[] = [
     what: "The repair agent — a failed run buys one attempt to fix itself.",
     story:
       "It landed, and the moment it did, the log of what the agent was thinking was deleted. That is the rule and not an accident: those files exist to explain why something is not done, so a run that landed has nothing left to explain. What survives is the diff and the events.",
-    source: "decisions/0034-the-run-log.md",
+    source: "decisions-archive/0034-the-run-log.md",
   },
 ];

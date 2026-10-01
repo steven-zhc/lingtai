@@ -1,6 +1,6 @@
 /**
  * **The workflow counts; the judge chooses** —
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3, and the
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3, and the
  * two rules that make a replaceable judge safe.
  *
  * Both are about the same asymmetry, so the cases are written against it rather
@@ -325,7 +325,7 @@ describe("the judge chooses, and cannot widen anything", () => {
    * judge is refused by name, listing what the plugin does declare (0061 §9).
    *
    * **A `limits:` since `#314` is not a widening of either**
-   * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
+   * ([0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
    * It bounds *one* call — `turns` and `wall` — and may only narrow
    * `runtime.limits`; `rounds` and `restarts` count calls and are refused
    * inside it by name, which is the same refusal one level down rather than a

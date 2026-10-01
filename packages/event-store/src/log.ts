@@ -26,7 +26,7 @@
  *
  * `log` in `index.ts` is whichever of the two this machine wrote down, opened
  * at first use
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)). This
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)). This
  * file is the Postgres half of that pair, and the reason the answer had one
  * place to land instead of three.
  */

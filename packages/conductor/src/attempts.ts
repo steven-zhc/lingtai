@@ -28,7 +28,7 @@
  * four gate logs into a prompt, because there is no path here that reads four.
  *
  * **The numbers themselves are the recipe's** (`runtime.budget`,
- * [0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
+ * [0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).
  * They were three constants here, and being well commented where they lived was
  * not the same as being a policy anybody could find: nothing in `doc/` named
  * them. They are passed in rather than defaulted here so that the value has
@@ -252,7 +252,7 @@ export function attemptOutcome(
       /**
        * The point was reached, its agent started and ended with no receipt, and
        * it is **not** evidence for the next attempt either
-       * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1).
+       * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1).
        *
        * The paragraph above holds word for word: a crashed reviewer has nothing
        * to say to an agent about the code, and leaving it in `unfinished` would
@@ -502,7 +502,7 @@ function cell(text: string): string {
  * question this answers is *was this attempt told something different*.
  *
  * `human` is the same argument one carrier along
- * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §5):
+ * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md) §5):
  * a `PromptEdited` changes what an attempt was told, so an attempt that carried
  * one and an attempt that did not must not read as the same version. Without
  * it two runs share a `promptVersion` and did not share a prompt, **and the log

@@ -1,6 +1,6 @@
 /**
  * The whole path, on each of the two stores, from the one value a machine wrote
- * down (#179, [0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ * down (#179, [0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)).
  *
  * **Here because this package is the only one that depends on all three.** The
  * log is `@lingtai/event-store`, the board's cards are `@lingtai/projector` and

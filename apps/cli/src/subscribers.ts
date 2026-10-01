@@ -4,7 +4,7 @@
  *
  * The whole of `#123`'s first half. The daemon used to construct its one
  * notifier by name — `macNotifier()` in `lingtai.ts` — which
- * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3 names as
+ * [0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §3 names as
  * the thing to remove: a decent interface with exactly one implementation and
  * no way to declare a second. Now the daemon starts what the recipes declared
  * and names none of it, and Lingtai's own desktop notification is the first
@@ -43,7 +43,7 @@ import { type EventStore, eventStore } from "@lingtai/event-store";
 
 /**
  * The board's address on the one machine this runs on
- * ([0008](../../../doc/decisions/0008-nextjs-board.md)): loopback, no
+ * ([0008](../../../doc/decisions-archive/0008-nextjs-board.md)): loopback, no
  * authentication, and the port `@lingtai/env`'s `boardPort` answers — 17820
  * unless `~/.lingtai/config.yml` says otherwise (#187).
  *

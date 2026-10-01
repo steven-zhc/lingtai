@@ -4,7 +4,7 @@
  * Everything here is a read or a write GitHub is the *display surface* for —
  * never the source of state. `github_mirror` is a projection that writes labels
  * out; nothing reads a label back to decide anything. That inversion is the one
- * the whole design rests on (doc/decisions/0001-event-sourcing.md), so the
+ * the whole design rests on (doc/decisions-archive/0001-event-sourcing.md), so the
  * absence of a "read the agent:* labels" method here is deliberate.
  *
  * The one exception is discovery, which reads issues *once* to learn that a work
@@ -29,7 +29,7 @@ import {
  * unbounded since #76, so an invented hue has to be derived from the name, and
  * a hash eventually lands on the colour a palette has reserved for something
  * else. Reading the repository's choice is the rule
- * [0016 §7](../../../doc/decisions/0016-the-settled-model.md) already states —
+ * [0016 §7](../../../doc/decisions-archive/0016-the-settled-model.md) already states —
  * do not guess on behalf of a repository you cannot see.
  *
  * Nothing here decides that a colour is *usable*. Whether it can be rendered
@@ -55,10 +55,10 @@ export interface Label {
  *
  * A dependency is a fact the *repository* holds, natively and in both
  * directions, and Lingtai does not decide which issues exist
- * ([0012](../../../doc/decisions/0012-one-task-view.md)) — so it is read here
+ * ([0012](../../../doc/decisions-archive/0012-one-task-view.md)) — so it is read here
  * with the rest of the issue and never mirrored into a field of Lingtai's own.
  * That is the same argument #76 used to take `WorkKind` out of the core and
- * [0036](../../../doc/decisions/0036-the-core-takes-a-ticket.md) §4 uses to
+ * [0036](../../../doc/decisions-archive/0036-the-core-takes-a-ticket.md) §4 uses to
  * keep `agent:hold` a label the store never interprets.
  *
  * **Both counts, because they answer different questions.** A chain whose
@@ -97,7 +97,7 @@ export interface Issue {
   /**
    * Who the issue is assigned to, as GitHub logins — empty when nobody is.
    *
-   * **Whose work a ticket is** ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §2,
+   * **Whose work a ticket is** ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2,
    * #181). A person writes it when planning, it never goes stale when a machine
    * dies, and a conflict over it is a reassignment GitHub already renders — so
    * it is read, rather than a claim label of Lingtai's own. On the object the
@@ -123,7 +123,7 @@ export interface GitHubClient {
    * `ref` is a *server-side* ref. That is the whole governance rule in one
    * argument: the recipe a run obeys is read from `origin/<base>`, not from
    * whatever the agent's worktree happens to contain
-   * (doc/decisions/0005-config-in-target-repo.md).
+   * (doc/decisions-archive/0005-config-in-target-repo.md).
    */
   fileAt(path: string, ref: string): Promise<string | null>;
 
@@ -217,7 +217,7 @@ export interface GitHubClient {
    * The second write that changes what a *later run reads*, and the only one:
    * the prompt is filled from the issue body, so this is where an instruction
    * meant to outlive one attempt goes
-   * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
+   * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md)
    * §6). A comment would not reach it — nothing renders comments into a prompt
    * — and a durable override kept inside Lingtai would be a shadow ticket body
    * nobody outside can see.

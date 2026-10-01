@@ -727,7 +727,7 @@ async function daemonCommand(
   // ------------------------------------------------------------ stopping ----
   //
   // Two ways in and one behaviour, from
-  // [0030](../../../doc/decisions/0030-shutting-down-safely.md): `lingtai
+  // [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md): `lingtai
   // shutdown` reaches the loop through the log, a signal reaches this handler,
   // and both drain. **Draining is waiting for the pass**, which spans the
   // agent, the gates, the merge lane and the `end` point — not for the agent's
@@ -1016,7 +1016,7 @@ async function daemonCommand(
  *
  * `shutdown` is the same shape for the same reasons, and for one more that is
  * not an implementation detail: a signal cannot carry it
- * ([0030](../../../doc/decisions/0030-shutting-down-safely.md)). Ctrl+C goes to
+ * ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md)). Ctrl+C goes to
  * the whole foreground group, so before §3 detached the agent, the signal that
  * began the shutdown killed the run it claimed to be waiting for.
  *

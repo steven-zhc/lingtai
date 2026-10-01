@@ -8,7 +8,7 @@
  * the answer to *what is runnable* was a connection error before a line of the
  * command ran. #179's eighth pass named it in review and nothing in the fold's
  * hand-written list of what-needs-Postgres mentioned it, which is the defect
- * [0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md) §1
+ * [0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md) §1
  * is about: a set maintained by memory rather than by a type.
  *
  * **The absence is what is asserted.** Every name this code could read a

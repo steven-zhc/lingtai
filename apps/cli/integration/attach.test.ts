@@ -5,7 +5,7 @@
  * proved in `packages/conductor/integration/run-log.test.ts` and the sentences are
  * the part a person meets. Two of them carry the whole of what makes this
  * command honest: it says the log ended without saying how the *run* went
- * ([0034](../../../doc/decisions/0034-the-run-log.md) §8), and its refusal
+ * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §8), and its refusal
  * names both of the things it cannot tell apart — a run id nobody has heard
  * of, and a run that landed and took its log with it (§4).
  */

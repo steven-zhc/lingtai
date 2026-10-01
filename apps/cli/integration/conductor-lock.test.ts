@@ -8,7 +8,7 @@
  *
  * The claim mechanism used to hide this. A live thirty-minute lease turned the
  * second claimant away, so the gap only opened on runs longer than half an hour
- * — and [0027](../../../doc/decisions/0027-the-lease-is-deleted.md) deletes the
+ * — and [0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md) deletes the
  * lease and puts the proof on this lock instead.
  *
  * Its own key, so the suite does not fight the operator's daemon.

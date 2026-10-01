@@ -15,7 +15,7 @@ import { configDefaults, defineConfig } from "vitest/config";
  * be `pnpm test:db`, and the 21 files that start a process.
  *
  * **The split is by directory, not by tag**, and that was measured rather than
- * assumed ([0060](doc/decisions/0060-the-gate-runs-unit-tests.md)'s last open
+ * assumed ([0060](doc/decisions-archive/0060-the-gate-runs-unit-tests.md)'s last open
  * question): a file whose every test is tagged `@integration`, run under
  * `--tagsFilter '@unit'`, still threw from module scope and still failed the
  * run. A tag filters *tests*; the file is loaded to find them. For a file that

@@ -31,7 +31,7 @@ are read, not carried over from
 **`endedWithoutEndActions()` returns 0.** Every item that reached a terminal
 resolved its `end` actions. That is the one invariant worth checking before a cut,
 because the failure it would report — an item that ended and whose `end` point
-silently did not run — is [0016](../decisions/0016-the-settled-model.md) §4's
+silently did not run — is [0016](../decisions-archive/0016-the-settled-model.md) §4's
 shape and the thing this system is most careful about. It holds across all 184.
 
 ### Where the events are
@@ -114,7 +114,7 @@ copy would have been worse: 13,481 rows in a markdown file is not a thing anybod
 reads, and it would have made this page look like the answer to questions it
 never asked.
 
-[0055](../decisions/0055-two-implementations-chosen-at-init.md) §3 is why the new
+[0055](../decisions-archive/0055-two-implementations-chosen-at-init.md) §3 is why the new
 store starts empty rather than carrying the rows over — choosing a different store
 begins a new log, deliberately. The rename it unblocks is
 [#247](https://github.com/steven-zhc/lingtai/issues/247): the eight `Gate*` event

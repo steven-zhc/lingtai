@@ -4,7 +4,7 @@
  * Here for the reason `fix.test.ts` and `repair.test.ts` are here: all three are
  * about rules that decide whether money is spent, and this one decides the
  * largest amount — a whole further pass, worth `(rounds + 1)` agent runs
- * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+ * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
  *
  * So the properties that matter most are the *refusals*. The mechanism is
  * fifteen lines and the evidence for it is one ticket
@@ -192,7 +192,7 @@ describe("where a claim's commits are published", () => {
 
   /**
    * **The ordinal is the attempt's, and `-restart-` is gone**
-   * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2).
+   * ([0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md) §2).
    *
    * Not a rename. A claim that ran out of turns never restarted, so there is no
    * restart ordinal to name its commits by — `#237` made 36 edits under exactly

@@ -1,7 +1,7 @@
 /**
  * One run's log, as it is written.
  *
- * The reading half of [0034](../../../../../../doc/decisions/0034-the-run-log.md)
+ * The reading half of [0034](../../../../../../doc/decisions-archive/0034-the-run-log.md)
  * on the board's side, and 0034 said what shape it takes: *the board's live
  * view a tail over the SSE it already has — neither needs a new protocol*. This
  * is that protocol, unchanged — `id`/`event`/`data` frames over

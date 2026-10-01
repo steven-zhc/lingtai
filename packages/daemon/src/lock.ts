@@ -12,7 +12,7 @@
  * would present as an expensive mystery rather than an error.
  *
  * That is also why the lock is the liveness proof
- * [0027](../../../doc/decisions/0027-the-lease-is-deleted.md) rests on: a
+ * [0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md) rests on: a
  * process holding this lock knows no other conductor on this machine exists, so
  * every claim this machine made and finds is dead. The proof is only as true as
  * the set of processes that take it, which is why `lingtai run` takes it too.

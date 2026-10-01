@@ -7,7 +7,7 @@
  * off the screen (#132, and the room under the moves since #173). And a turn with no answer
  * yet **follows the chat's own log** rather than saying nothing until the agent
  * exits: that is the defect
- * [0034](../../../doc/decisions/0034-the-run-log.md) opens with, solved for
+ * [0034](../../../doc/decisions-archive/0034-the-run-log.md) opens with, solved for
  * runs and not for discussions, and *a discussion is attended and the person is
  * the loop* (0033 §4). A loop with no feedback is a person asking again and
  * paying twice (#132).

@@ -16,10 +16,10 @@
  * It is also the extension that needs nothing declared. A plugin needs one — a
  * key, its fields, the steps it serves — and today every declaration lives in
  * `PLUGINS`;
- * [0067](../../../doc/decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)
+ * [0067](../../../doc/decisions-archive/0067-a-plugin-is-a-declaration-and-an-implementation.md)
  * is what lets one come from elsewhere, and the code it names is still a
  * subprocess, run the way this file runs one.
- * [0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §4 fixes the
+ * [0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §4 fixes the
  * shape of the conversation with that command, and this file is where it is
  * spoken:
  * **context in on stdin, verdict out by the exit code and optionally a file.**
@@ -122,7 +122,7 @@ const ESCAPES =
 
 /**
  * The output as text, with the terminal's escape sequences taken out
- * ([0043](../../../doc/decisions/0043-evidence-is-plain-text.md), #156).
+ * ([0043](../../../doc/decisions-archive/0043-evidence-is-plain-text.md), #156).
  *
  * An action's stdout is a pipe, and colour arrives anyway: `pnpm` sets
  * `FORCE_COLOR` for what it runs, so `pnpm test` hands vitest's red
@@ -198,7 +198,7 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
  * home of its own.
  *
  * **It is called in the action and never where the event is written**
- * ([0031](../../../doc/decisions/0031-the-adapter-classifies.md) §1): the layer
+ * ([0031](../../../doc/decisions-archive/0031-the-adapter-classifies.md) §1): the layer
  * that knows what the text is is the layer that trims it. `tail` keeping the
  * start *and* the end is what makes that safe — a turn count appended after a
  * document survives, a quota message's reset time is not cut out from under

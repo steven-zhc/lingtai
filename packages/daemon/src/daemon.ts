@@ -3,7 +3,7 @@
  *
  * One daemon holds the projection follower and — from #43 — the conductor. The
  * UI is a separate server that controls it and watches it, and holds nothing
- * ([0013](../../../doc/decisions/0013-daemon-hosts-the-work.md)).
+ * ([0013](../../../doc/decisions-archive/0013-daemon-hosts-the-work.md)).
  *
  * The dividing line is who holds work in flight. A dead UI costs a screen; a
  * dead conductor costs a paid agent run, an orphaned worktree, and a claim

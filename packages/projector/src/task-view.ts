@@ -4,7 +4,7 @@
  * It replaces `board` and `queue`. One row per task Lingtai
  * has touched, holding the latest state and the metadata a card shows, and
  * nothing else: the board's list view is a `select` against this table and no
- * second query ([0012](../../../doc/decisions/0012-one-task-view.md)).
+ * second query ([0012](../../../doc/decisions-archive/0012-one-task-view.md)).
  *
  * ## What is deliberately not here
  *
@@ -499,7 +499,7 @@ export const taskViewProjection: Projection = {
          * **`verifying`, and it was `gates` until `#247`.** The column beside
          * it became `verdicts` and the four counts lost their prefix under
          * `#250`, because each of those names a thing that survives
-         * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md);
+         * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md);
          * this one names a *phase*, and `#249` left it standing because the
          * phase had no word — `proposed` is a step rather than a phase, and
          * `steps` says nothing.
@@ -950,7 +950,7 @@ export interface TaskCard {
    *
    * **No prefix, and that is the whole of `#249`.** A prefix on these names the
    * *population* — which steps recorded a verdict — and
-   * [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3a
+   * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3a
    * changes it: `review` stops giving one at all and raises findings instead, so
    * the 231 refusals it recorded over 14 days
    * ([012](../../../doc/experiments/012-where-the-turns-go.md) §4) will arrive at
@@ -974,7 +974,7 @@ export interface TaskCard {
   lastAttemptAt: Date | null;
   /**
    * How many approaches this ticket has abandoned, and the ceiling
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
    * Both zero on every card today, because `runtime.limits.restarts` defaults
    * to zero. `attempts` is not this number and never was: it counts claims, so

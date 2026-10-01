@@ -3,9 +3,9 @@
 **状态** **提议中（proposed）** · 2026-09-22 · **本仓库第一份不是 `accepted` 的
 ADR**，这是有意的：§2 与它所服务的那个人来回改了三稿，而§尚未决定里那一条仍然
 决定着其余部分能不能建。 ·
-**修正 [0015](../decisions/0015-five-gates-and-two-extensions.md) 的框架表述，不动它的任何规则**
+**修正 [0015](../decisions-archive/0015-five-gates-and-two-extensions.md) 的框架表述，不动它的任何规则**
 
-> 这是 [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) 的中文本。
+> 这是 [0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) 的中文本。
 > **英文本是正本**；两者意见不一致时以英文本为准。
 
 灵台不是一个带五个扩展点的通用工作流引擎。它是一条**顺序固定的开发流水线，而
@@ -31,7 +31,7 @@ merge lane   把 base 并进来、verify、再并出去
 end          关掉并标记一张 **GitHub issue**
 ```
 
-[0015](../decisions/0015-five-gates-and-two-extensions.md) 把这件事表述成
+[0015](../decisions-archive/0015-five-gates-and-two-extensions.md) 把这件事表述成
 *五个 gate 和两种扩展* —— 一个工作流引擎，插件往它的点上挂东西。正是这个表述
 让 `admit` 和 `merge` 读起来像是 `proposed` 的可配置同类，也正是它把
 `worktree`、`implement` 和 merge lane 整个排除在模型之外：它们不是扩展点，
@@ -131,7 +131,7 @@ recipe 得到的就是它。一个项目要改某一步，就在那一步上换�
 
 **这还统一了今天的一个特例。** 六种 gate action —— `run:`、`agent:`、`watch:`、
 `human:`、`close:`、`labels:` —— 就是六个内置插件，而
-[0059](../decisions/0059-a-point-carries-only-the-kinds-it-runs.md) 的规则
+[0059](../decisions-archive/0059-a-point-carries-only-the-kinds-it-runs.md) 的规则
 （*一个点跑不了的 kind，在 recipe 解析时就被拒绝*）从此不是两条规则而是一条：
 **一步拒绝它跑不了的插件。**
 
@@ -158,7 +158,7 @@ recipe 得到的就是它。一个项目要改某一步，就在那一步上换�
 **`review` 不再做裁决，是这里证据最硬的一处改动。** 今天一次 review 的裁决
 *就是*决定 —— 所以一个崩掉的 reviewer 照样买走一轮修复：**14 天里 10% 的
 `review` 拒绝不含任何 finding**，24 次（[012 §4](../experiments/012-where-the-turns-go.md)，
-而 [0057](../decisions/0057-a-gate-that-did-not-finish.md) 是那个窄口的修法）。
+而 [0057](../decisions-archive/0057-a-gate-that-did-not-finish.md) 是那个窄口的修法）。
 把决定放进它自己的一步之后，一次什么都没交回来的 review 就是一次什么都没发现的
 review，而做决定的那一步看得见这件事。
 
@@ -242,9 +242,9 @@ IntegrationRefused { branch, workItemId,
 ```
 
 **机器可读，因为 `proposed` 要按它路由。** 人可读，因为 `waiting` 要显示它。
-[0043](../decisions/0043-evidence-is-plain-text.md) 早已规定证据是纯文本、不是
+[0043](../decisions-archive/0043-evidence-is-plain-text.md) 早已规定证据是纯文本、不是
 一个待解析的结构；它旁边那个分类，才是让一步不必读英文就能决定的东西，也就是
-[0031 §1](../decisions/0031-a-run-that-never-started.md) 的规矩。
+[0031 §1](../decisions-archive/0031-a-run-that-never-started.md) 的规矩。
 
 **而分布告诉我们，图上那个标签其实是少数情况。** 整条日志上，`merge` 一共
 拒绝过 32 次：
@@ -287,7 +287,7 @@ IntegrationRefused { branch, workItemId,
 **这里真正解掉过冲突的，从来不是什么解冲突器。** 循环唯一一次尝试（`wi-lingtai-87`）
 是追加了 `RepairRequested conflict`、释放了这个 item，然后这张票被重新认领 ——
 而新的一趟会从 `origin/<base>` 切出它的工作树
-（[0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md)），于是 rebase
+（[0039](../decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)），于是 rebase
 成了免费的副作用，冲突就没了。两次认领之后它在 `2d771db` 落地。
 
 ### 4. init 配置每一步，人可以覆盖其中任何一条
@@ -298,17 +298,17 @@ runtime、`proposed` 用哪个测试脚本。人可以改动其中任何一项�
 被记进 recipe。
 
 **检测出来的是默认值，不是"不必被告知"的理由** ——
-[0046 §3](../decisions/0046-lingtai-is-personal.md) 的规矩，从只管 `runtime.agent`
+[0046 §3](../decisions-archive/0046-lingtai-is-personal.md) 的规矩，从只管 `runtime.agent`
 推广到每一步。
 
-[0053](../decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)
+[0053](../decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md)
 已经是这条规则的第一个实例：它配置的就是 `implement` 这一站 —— 哪个 agent、
 哪个模型、什么限额 —— 而它已被接受，实现就在一个尚未合并的分支上。
 **它不被本 ADR 取代；它是本 ADR 所推广的那个范式。**
 
 ### 5. 本 ADR 修正什么，又不动什么
 
-**[0015](../decisions/0015-five-gates-and-two-extensions.md) 是被修正，不是被绕开。**
+**[0015](../decisions-archive/0015-five-gates-and-two-extensions.md) 是被修正，不是被绕开。**
 它说*插件只能做两件事*，其中第一件是挂在五个点之一上的 gate action。在 §2b 之下，
 一个插件挂在**十步中的任何一步**上。数字变了，形状没变 —— 插件要么跑在循环里、
 循环等它，要么跑在日志之外、影响不了结果。0015 指定为契约的那个 `Gate` 接口，
@@ -318,7 +318,7 @@ runtime、`proposed` 用哪个测试脚本。人可以改动其中任何一项�
 因为集合永不增长。那个论证正是 §1 靠收窄产品买回来的 —— 流水线是固定的，所以
 这十步封闭得和那五个点一样。
 
-**[0047](../decisions/0047-the-recipe-a-run-got-is-on-the-log.md) 需要 `GatesResolved`
+**[0047](../decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md) 需要 `GatesResolved`
 长大，这是具体的断裂处。** 它记录五个点，并且断言了这一点：
 
 ```ts
@@ -333,13 +333,13 @@ points: z.array(z.object({ gate: GatePoint, actions: z.array(z.string()) })).len
 不动的部分：
 
 - **一个配置了却静默不运行的东西，是灵台自己的 bug**
-  （[0016 §4](../decisions/0016-the-settled-model.md)）。`#61` 量出的那十个静默
-  格子已经补上 —— [0059](../decisions/0059-a-point-carries-only-the-kinds-it-runs.md)
+  （[0016 §4](../decisions-archive/0016-the-settled-model.md)）。`#61` 量出的那十个静默
+  格子已经补上 —— [0059](../decisions-archive/0059-a-point-carries-only-the-kinds-it-runs.md)
   在 2026-09-22 落地。§2b 把它的规则折进那条通用的：**一步拒绝它跑不了的插件。**
-- **recipe 是这台机器的**（[0046 §3](../decisions/0046-lingtai-is-personal.md)），
+- **recipe 是这台机器的**（[0046 §3](../decisions-archive/0046-lingtai-is-personal.md)），
   在 `~/.lingtai/<project>/recipe.yml`。
 - **工作树就是一趟 pass 的全部**
-  （[0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md)）。`admit`
+  （[0039](../decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)）。`admit`
   切出它；它活得比那一步长，并且一直包住到 merge。**一个插件的产物活得比它自己
   那一步长**，这是插件契约必须承认其存在的东西。
 
@@ -354,7 +354,7 @@ points: z.array(z.object({ gate: GatePoint, actions: z.array(z.string()) })).len
 [#223](https://github.com/steven-zhc/lingtai/issues/223) 换了形状 —— 它原本是
 *给 reviewer 的契约加一个字段，说明是行的毛病还是路子的毛病*，现在变成
 *那个判断是 `proposed` 上的一个插件*，这更好，因为 reviewer 只保留一件工作。
-[0057](../decisions/0057-a-gate-that-did-not-finish.md) 的窄口修法依然正确，
+[0057](../decisions-archive/0057-a-gate-that-did-not-finish.md) 的窄口修法依然正确，
 并且不再承重。而那些上限从 `run-once.ts` 里搬出来，成为一个人读得懂的插件。
 
 **recipe 会长出一个它现在没有的形状。** `gates:` 有五个键，而步有十个，其中今天

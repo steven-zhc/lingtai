@@ -9,7 +9,7 @@
  * **In `integration/`, because *against real processes* is the literal claim.**
  * `createProcessAction` reaches `spawn(run, {shell: true})` through
  * `src/process-action.ts` and `src/command.ts`, and an OS process is outside the
- * system ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1).
+ * system ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1).
  * Nothing in this file names `node:child_process`, which is how it was read as
  * unit at first: the spawn is three modules down the barrel, and #225's own
  * note that the split was decided *by running each one, not by reading

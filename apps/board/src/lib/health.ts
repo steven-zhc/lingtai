@@ -11,7 +11,7 @@
  * projection's distance from the head of the log, and it is the answer on its
  * own when it is zero. **The beacon** only matters when lag is not zero, and
  * then it is the whole difference between "catching up" and "nobody is coming":
- * since [0022](../../../../doc/decisions/0022-the-seams.md) a `lingtai run`
+ * since [0022](../../../../doc/decisions-archive/0022-the-seams.md) a `lingtai run`
  * holds a projector of its own, so lag with no daemon is normal during a run
  * and a standing accusation after one.
  */

@@ -189,7 +189,7 @@ describe("lingtai doctor — environment", () => {
 
 /**
  * **A machine that wrote `store: sqlite` is set up, and doctor has to say so**
- * (#179, [0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ * (#179, [0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)).
  *
  * `lingtai init` finishes on a SQLite answer now, and that machine works —
  * `packages/daemon/integration/the-written-choice.test.ts` appends, folds `task_view`,
@@ -457,7 +457,7 @@ describe("lingtai doctor — the runtime's own login", () => {
 
 describe("lingtai doctor — the declared environment", () => {
   /**
-   * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)
+   * The half of [ADR 0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)
    * that costs nothing: the same question a run asks, answered before any money
    * is spent. The recipe is this machine's file since #180, so no App is
    * needed to read it: with none configured the row still runs — one row per
@@ -477,7 +477,7 @@ describe("lingtai doctor — the declared environment", () => {
 
 /**
  * An extension's declared variable, reported **before** a run rather than during
- * one ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ * one ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
  *
  * The row is checked directly rather than through `runDoctor`, because reaching
  * it there needs an App, a registered project and a recipe over the network —

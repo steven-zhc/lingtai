@@ -9,11 +9,11 @@ the question afterwards, the rule for reading them, and two things about turning
 
 ## Why
 
-[0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §2 is a
+[0066](../decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md) §2 is a
 thesis and not a claim: *a design that is real work is what makes the implementing
 agent's job smaller, and a smaller job can be done by a smaller model.* Everything
 built for it — the locator, `file:`, `file-brief:`, the boundary
-([0069](../decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md))
+([0069](../decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md))
 — is untested against real tickets, because **no recipe has ever declared
 `design:`**. `design`'s default is deliberately nothing (0065 §4), so the step has
 never run.
@@ -335,10 +335,10 @@ file will not guess at.
 
 ## Related
 
-- [0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §2 — the
+- [0066](../decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md) §2 — the
   thesis and the baseline table; §6 and §7 for what a misconfiguration costs, as
   corrected.
-- [0069](../decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+- [0069](../decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
   §2 — both the document and the locator cross to `implement`, which is why §1's
   block needs nothing at that step.
 - [plugins/file.md](../plugins/file.md) — the key, its one field, and why the note

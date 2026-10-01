@@ -1,6 +1,6 @@
 /**
  * **A destination fails three ways, and each way costs something different** —
- * [0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * [0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §7's table, row by row — the table as `#299` corrected it there, the two
  * run-time rows having been written before anything could produce either
  * ending.
@@ -365,7 +365,7 @@ describe("a destination fails three ways, and a step has one way to say so", () 
 describe("the ADR the table came from carries what was measured", () => {
   /** One `## N. …` section of an ADR, which is the unit a citation names. */
   async function section(file: string, n: number): Promise<string> {
-    const body = await readFile(`${root}doc/decisions/${file}`, "utf8");
+    const body = await readFile(`${root}doc/decisions-archive/${file}`, "utf8");
     const found = body.split(/^## /m).find((part) => part.startsWith(`${n}. `));
     if (found === undefined) throw new Error(`${file} has no §${n}`);
     return found;

@@ -368,7 +368,7 @@
     <p><b>Conductor is not a process.</b> It is the code for one pass of the loop —
       discover, claim, worktree, agent, gates, integrate. It runs inside whatever process
       calls it.</p>
-    <p><b>Daemon and CLI are processes</b>, and since <a href="decisions/0022-the-seams.md">0022</a>
+    <p><b>Daemon and CLI are processes</b>, and since <a href="decisions-archive/0022-the-seams.md">0022</a>
       they differ by less than they used to. Both call the conductor, and both hold a projector
       for as long as they run. What the daemon adds is a lock, a heartbeat, a repair at startup
       and a loop that keeps taking work.</p>
@@ -484,7 +484,7 @@
     <p><code>@lingtai/env</code> holds the <b>machine's</b> environment: the two connection
       strings, the App key, the state directory. <code>@lingtai/agent-env</code> holds the
       <b>agent's</b>: the layers, the filter, the file that gets planted in a worktree. They lived
-      in one file until <a href="decisions/0024-agent-env-is-its-own-package.md">0024</a>, and that
+      in one file until <a href="decisions-archive/0024-agent-env-is-its-own-package.md">0024</a>, and that
       adjacency is the shape by which a machine credential reaches a subprocess. The names now say
       whose environment each one is, which is the distinction that matters and the one that was
       invisible while they shared a file.</p>
@@ -847,10 +847,10 @@
         <code>proposed</code> gates, the <code>merge</code> gates and the integrator — send the work
         back to the agent in the worktree it is already standing in, with what refused it:
         findings, a command's output, or the conflict left in the tree.
-        <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a> is why the worktree
+        <a href="decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a> is why the worktree
         outlives the merge lane, which is what makes that possible at all.
         <b>Rounds bound depth; <code>restarts</code> bounds breadth.</b>
-        <a href="decisions/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a> adds the lower
+        <a href="decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a> adds the lower
         line: once a refused <i>review</i> has spent the rounds, the ticket is released and the next
         claim starts over from the base carrying the findings — which
         <a href="experiments/011-patching-versus-starting-over.md">experiment 011</a> found was half
@@ -1014,7 +1014,7 @@
     <div class="prop">
       <h3>Named, so that it is a fact rather than a discovery</h3>
       <p><b>Two interfaces are still promises, on purpose.</b>
-        <a href="decisions/0026-the-conversion-past-the-seam.md">0026</a> took
+        <a href="decisions-archive/0026-the-conversion-past-the-seam.md">0026</a> took
         <code>runOnce</code>, the ports and the adapters to Effect: the worktree, the hook socket
         and the agent process are each a <code>Scope</code>, and the catch-all that held “every
         exit appends” is a named defect handler with a test behind it. What it did not convert is
@@ -1041,7 +1041,7 @@
 
   <footer>
     <p>Drawn from the code at <span class="m">aa3733f</span> · 2026-09-03; rewritten at
-      <span class="m">8f43cc3</span> · 2026-09-08, after <a href="decisions/0022-the-seams.md">0022</a>
+      <span class="m">8f43cc3</span> · 2026-09-08, after <a href="decisions-archive/0022-the-seams.md">0022</a>
       was built. Package names, event names and the gate points are as they appear in
       <span class="m">packages/</span>. Red marks findings from real runs, not design; indigo marks
       what is true today and not yet fixed.</p>

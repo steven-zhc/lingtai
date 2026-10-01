@@ -29,18 +29,18 @@ Source: the registry at the bottom of `packages/domain/src/events.ts`.
 |---|---|
 | work item (8) | `WorkItemDiscovered` `WorkItemClaimed` `WorkItemReleased` `WorkItemBlocked` `WorkItemUnblocked` `WorkItemLinked` `WorkItemLanded` `WorkItemClosed` |
 | dispatch (1) | `DispatchRefused` |
-| run (10) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run |
-| step (10) | `StepsResolved` `EndActionsResolved` `StepRequested` `StepStarted` `StepPassed` `StepFailed` `StepNeverRan` `StepDidNotFinish` `StepAsked` `StepWaived` — eight of the `Step…` ones were `Gate…` until `#247`, which renamed them in the commit that reset the log, because 0061 §7 allows no migration for one. **Three** of them are the three ways a step's agent ends without judging the diff: it never started ([0041](decisions/0041-a-gate-that-never-ran.md)), it started and produced no receipt ([0057](decisions/0057-a-gate-that-did-not-finish.md)), or it stopped and asked something ([0068](decisions/0068-a-step-that-asked-is-not-a-step-that-crashed.md)). `StepAsked` is `#296`'s and came with the log's fourth reset ([014](experiments/014-the-log-before-the-fourth-reset.md)) rather than with an upcaster: it was the half of `StepDidNotFinish` the *workflow* branched on, and the token it branched on — `needs-input`, in a `because` — was never on the event, so no stored row could be told which half it was |
+| run (10) | `RunStarted` `RunPrompted` `RunTouchedFile` `RunContextExhausted` `RunAwaitingInput` `RunProducedDiff` `RunRefsPublished` `RunProposedCompletion` `RunFinished` `RunFailed` — `RunRefsPublished` is what a claim left on origin, appended on every outcome of the publish including the ones that are not failures — but on no run that **landed**, where the publish is skipped and the merge's own push writes no row ([0062](decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`): the absence of a push had four meanings and a run log could tell none of them apart, which cost `#250` its whole run |
+| step (10) | `StepsResolved` `EndActionsResolved` `StepRequested` `StepStarted` `StepPassed` `StepFailed` `StepNeverRan` `StepDidNotFinish` `StepAsked` `StepWaived` — eight of the `Step…` ones were `Gate…` until `#247`, which renamed them in the commit that reset the log, because 0061 §7 allows no migration for one. **Three** of them are the three ways a step's agent ends without judging the diff: it never started ([0041](decisions-archive/0041-a-gate-that-never-ran.md)), it started and produced no receipt ([0057](decisions-archive/0057-a-gate-that-did-not-finish.md)), or it stopped and asked something ([0068](decisions-archive/0068-a-step-that-asked-is-not-a-step-that-crashed.md)). `StepAsked` is `#296`'s and came with the log's fourth reset ([014](experiments/014-the-log-before-the-fourth-reset.md)) rather than with an upcaster: it was the half of `StepDidNotFinish` the *workflow* branched on, and the token it branched on — `needs-input`, in a `because` — was never on the event, so no stored row could be told which half it was |
 | approval (3) | `ApprovalRequested` `ApprovalGranted` `ApprovalRevoked` |
 | finding (3) | `FindingAccepted` `FindingProposed` `FindingDeclined` — the minors a passing gate raised, and what a person then did with each one. `finding_backlog` is the projection that folds them (`#137`) |
 | integration (3) | `IntegrationAttempted` `IntegrationRefused` `IntegrationSucceeded` |
-| repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
-| fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
-| route (1) | `PassRouted` — where `proposed` sent a pass and why (`#271`). It carries **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a judge may choose `implement` and the pass still go to `waiting` because `rounds` is spent, and *the decision sent this to a person* and *the decision wanted another round and there was none* are the two sentences a person reads on the card. Written by the pass and not by whatever routed, because the budget is the workflow's ([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3, [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §7). **It was never named `Gate…`** — the allowlist below could only shrink — so for three days the log carried two vocabularies, which is what a log with two eras looks like; `#247` ended that with the reset 0061 §7 spends |
-| restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
+| repair (2) | `RepairRequested` `RepairDeclined` — **retired** (`#143`), `RETIRED` in the same file. A lane refusal buys nothing ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §Consequences), so there is no purchase to record and no decline to keep apart from one |
+| fix (3) | `FixRequested` `FixApplied` `FixDeclined` — a refusal answered inside the pass that was refused ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §2) |
+| route (1) | `PassRouted` — where `proposed` sent a pass and why (`#271`). It carries **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a judge may choose `implement` and the pass still go to `waiting` because `rounds` is spent, and *the decision sent this to a person* and *the decision wanted another round and there was none* are the two sentences a person reads on the card. Written by the pass and not by whatever routed, because the budget is the workflow's ([0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §3, [0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §7). **It was never named `Gate…`** — the allowlist below could only shrink — so for three days the log carried two vocabularies, which is what a log with two eras looks like; `#247` ended that with the reset 0061 §7 spends |
+| restart (1) | `PassRestarted` — a pass whose rounds are spent, starting the ticket over ([0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)) |
 | control (5) | `ConductorStarted` `ConductorPaused` `ConductorResumed` `ConductorShutdownRequested` `ConductorShutdownWithdrawn` |
 | issue (2) | `IssueUpdated` `IssueUpdateFailed` |
-| outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions/0022-the-seams.md)), `RETIRED` in the same file |
+| outbox (2) | `OutboxDelivered` `OutboxFailed` — **retired** ([0022](decisions-archive/0022-the-seams.md)), `RETIRED` in the same file |
 | discussion (4) | `DiscussionRequested` `DiscussionAsked` `DiscussionAnswered` `DiscussionHeld` |
 | prompt (1) | `PromptEdited` |
 | project & queue (7) | `QueueChanged` `RunRequested` `ProjectOnboardingStarted` `ProjectConfigured` `ProjectRefused` `ProjectRecovered` `Reconciled` |
@@ -69,7 +69,7 @@ one on record — same `ref`, same `codeSha`, same message with its digits taken
 out — appends nothing, so N sweeps against one broken recipe are one event. The
 decision is read off the project's own fold (`passTransition`,
 `packages/domain/src/project.ts`) and reads no clock
-([0027](decisions/0027-the-lease-is-deleted.md)). The same message from another
+([0027](decisions-archive/0027-the-lease-is-deleted.md)). The same message from another
 `codeSha` is a new refusal: that commit is what tells *this recipe is broken*
 apart from *this process is too old for a recipe that is fine*. It is not
 `DispatchRefused`, which is about tiers and is appended after a claim that a
@@ -156,7 +156,7 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `ProjectConfigured` | 2 → 3 | `base` — defaulting to the repo's default branch is only right by convention, and admin's default was a feature branch. `null` means "ask GitHub", which is what those runs did. |
 | `Reconciled` | 1 → 2 | each finding gained `action` |
 | `WorkItemClaimed` | 1 → 2 | `title` and `kind`, because the queue left the log |
-| `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
+| `WorkItemClaimed` | 2 → 3 | `leaseUntilMs` **removed** ([0027](decisions-archive/0027-the-lease-is-deleted.md)). The first of the two steps that drop a field rather than add one — `StepDidNotFinish` 1 → 2 below is the other — and the reason it is a step at all: the log holds thousands of these timestamps and none is rewritten, so the reader is what stops believing them |
 | `WorkItemBlocked` | 1 → 2 | `needs` and `diagnosis` (`#83`). A block could say only *what is your question*, so a `human:` gate asking for a decision and a conflict nobody had looked at were the same event with a different string on it. Both null on a v1: the upcaster is handed a payload rather than a stream, and the question's wording is a convention of the three call sites and not a field |
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
@@ -173,7 +173,7 @@ rows — a heading that is arithmetic on a number nobody re-derived is how a
 reader comes to believe four rows are stale and deletable.
 
 **The nine `1 → 2` steps went when the log went**, on 2026-09-27 (`#247`).
-[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 said this history would
+[0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 said this history would
 be spent by **resetting** it rather than migrating it;
 [the-pipeline](design/the-pipeline.md)'s T5b folded the old log into
 [013](experiments/013-the-log-before-the-third-reset.md) and the cut followed.
@@ -195,7 +195,7 @@ is the reason none of this could be done early: every such row goes down
 party.
 
 **The mechanism is untouched, and that is the point**
-([0001](decisions/0001-event-sourcing.md)): it was built before it was needed,
+([0001](decisions-archive/0001-event-sourcing.md)): it was built before it was needed,
 because the first upcaster is written under time pressure against real history,
 and a Lingtai whose log nobody may reset will want it. Ten chains still stand
 here for the types the rename never touched.
@@ -214,7 +214,7 @@ Source: `taskViewProjection` in `packages/projector/src/task-view.ts`, wired in
 | `task_view` | what is the current state of every task the board shows | yes — `create`/`reset` build and drop it, along with `task_view_run` |
 
 There were two. The `outbox` projection is gone with the outbox itself
-([0022](decisions/0022-the-seams.md)), dropped by the
+([0022](decisions-archive/0022-the-seams.md)), dropped by the
 `20260904T2359_drop_outbox` migration; `task_view` is now a fold and nothing
 else, with the queue cache gone the same way. **Nothing writes to it but the
 projection**, and the way to correct it is `lingtai projection rebuild
@@ -243,22 +243,22 @@ completion and an item landing, and it is the one `verify-failed` carries for
 the way that phase ends badly.
 
 `queued` is the only one not driven by an event — it comes from GitHub, because
-Lingtai never decided which issues exist ([ADR 0012](decisions/0012-one-task-view.md)).
+Lingtai never decided which issues exist ([ADR 0012](decisions-archive/0012-one-task-view.md)).
 
 ## policy — every number that decides behaviour
 
 Every other section counts a **kind**: event types, steps, doctor checks,
 tiers. This one lists **limits** — the numbers that decide what a run is told,
 what it may spend and how long a card survives. Nothing here names a thing; each
-row is a rule, and until [0029](decisions/0029-the-prompt-budget-is-the-recipes.md)
+row is a rule, and until [0029](decisions-archive/0029-the-prompt-budget-is-the-recipes.md)
 this file had no shape that could hold one.
 
 That gap is why six of these lived in three source files with **no mention
 anywhere in `doc/`, `README.md` or `CLAUDE.md`** (`#96`). They were well
 commented where they sat — `agent-gate.ts` cited experiment 001's diff size as
 its evidence — and being well commented is not the same as being findable. It is
-the same structural gap that hid the lease ([0027](decisions/0027-the-lease-is-deleted.md))
-and the backoff ([0028](decisions/0028-the-backoff-is-the-recipes.md)).
+the same structural gap that hid the lease ([0027](decisions-archive/0027-the-lease-is-deleted.md))
+and the backoff ([0028](decisions-archive/0028-the-backoff-is-the-recipes.md)).
 
 **A limit is either the recipe's or Lingtai's, and the column says which.** A
 number a repository should be able to choose belongs in the recipe (0016 §7);
@@ -269,7 +269,7 @@ where its value is written down.
 
 Together these are the answer to *what does an agent know about why the last
 attempt failed*, which is the premise of `#82`. It was also `repair`'s
-([0025](decisions/0025-a-failure-buys-one-agent.md)), and a refusal buys no run
+([0025](decisions-archive/0025-a-failure-buys-one-agent.md)), and a refusal buys no run
 to be told anything since `#143` — so what carries a failure forward is the
 attempt history in `{{failure}}`, and the round inside the pass, which is handed
 the refusal verbatim. An agent that cannot see the failure repeats it.
@@ -293,8 +293,8 @@ buys**; `restarts` bounds **how many passes one ticket buys**. They sit in one
 block because the number anybody actually wants is the product,
 `(restarts + 1) × (rounds + 1) × wall`, and it is computed once — `passCeiling`
 — so `lingtai add`, the board's chip and `lingtai shutdown` cannot say different
-things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
-[0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+things about the same recipe ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
+[0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
 
 | Key | Default | What it decides |
 |---|---|---|
@@ -306,7 +306,7 @@ things about the same recipe ([0039](decisions/0039-the-worktree-is-the-whole-of
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
 **And a step may narrow the first two, never widen them** (`#314`,
-[0070](decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
+[0070](decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
 `turns` and `wall` bound one call, so a dispatch may write its own `limits:` —
 `agent:` and a runtime `judge:` both — and `limits: { turns: 50 }` narrows the
 turns and keeps the pass's wall. A figure past the ceiling is refused when the
@@ -327,7 +327,7 @@ exactly what it always printed.
 
 **Why the default is two and not one.** 0025 §3's rule for a spending default is
 the smallest number that makes the feature exist. `rounds` replaces two ceilings
-that were one each, and [0038](decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+that were one each, and [0038](decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
 §4's reason for having two was real: a build going red and a review refusing are
 different failures, and one round shared between them means whichever happens
 first decides whether the other gets an attempt at all. A pass that fixes a red
@@ -342,7 +342,7 @@ ticket**, on which starting over landed for half what patching cost and landed
 nothing — and the failure the ceiling itself exists for, two fresh starts both
 exhausting their rounds, has never been observed. So the mechanism is built and
 off, and what changes the default is more runs in `doc/experiments/`
-([0040](decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §4).
+([0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §4).
 
 **`repair.maxAttempts`, `repair.fix` and `repair.on` are gone**, and a recipe
 still carrying a `repair` block is **refused by name** rather than ignored —
@@ -357,9 +357,9 @@ Not the recipe's, and each row says why.
 | Constant | Value | What it decides | Why it is not a recipe key |
 |---|---|---|---|
 | `EVIDENCE_LINES` / `EVIDENCE_BYTES` (`packages/actions/src/command.ts`) | `60` lines / `8000` bytes | how much evidence **any** action puts on the log: the tail a failed command keeps, and — through `boundedEvidence`, since `#298` — an `agent:` action's answer, which at `design` is the whole document. Up to a quarter as many bytes again of the start, on top of the tail rather than out of it, when it does not all fit, and a clip says so | it is written into `StepFailed.evidence` and its neighbours — **event payloads**. A recipe may decide what a run is told; it may not decide how much a project writes into a log that is never rewritten. `runtime.budget.evidence` then clips that tail again on the way into a prompt, and that is the bound that is about cost |
-| `DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts`) | `2` days | how long a landed task stays on the board — **a query, not a rebuild** | one board across every project, so no single recipe is the place to decide it. [0012](decisions/0012-one-task-view.md) settled the concept — *"Retention must not be in the projection, and this is the part that is easy to get wrong"* — and only the number was unrecorded |
+| `DEFAULT_RETENTION_DAYS` (`packages/projector/src/task-view.ts`) | `2` days | how long a landed task stays on the board — **a query, not a rebuild** | one board across every project, so no single recipe is the place to decide it. [0012](decisions-archive/0012-one-task-view.md) settled the concept — *"Retention must not be in the projection, and this is the part that is easy to get wrong"* — and only the number was unrecorded |
 | `BUFFER_BYTES` (`packages/actions/src/command.ts`) | `2000000` bytes | above this, older output is dropped **while the command is still running** | a runaway process can print faster than anything reads it. This bounds memory, not meaning |
-| `RUN_LOG_MAX_BYTES` (`packages/agent/src/run-log.ts`) | `8000000` bytes | where a run's log file stops, saying so in itself on the line it stops at | it bounds a file on the operator's disk, not what a run is told or may spend. A trace line is about sixty bytes, so this is ~130,000 tool calls — the cap is not for the trace but for `#109`'s agent stream, which can be tens of megabytes for one run. Past this it stops being a file somebody opens to find out why a run failed ([0034](decisions/0034-the-run-log.md) §7) |
+| `RUN_LOG_MAX_BYTES` (`packages/agent/src/run-log.ts`) | `8000000` bytes | where a run's log file stops, saying so in itself on the line it stops at | it bounds a file on the operator's disk, not what a run is told or may spend. A trace line is about sixty bytes, so this is ~130,000 tool calls — the cap is not for the trace but for `#109`'s agent stream, which can be tens of megabytes for one run. Past this it stops being a file somebody opens to find out why a run failed ([0034](decisions-archive/0034-the-run-log.md) §7) |
 | `TRACE_LINE_CHARS` (`packages/agent/src/claude-code.ts`) | `4000` characters | where one line of the agent's own output stops, saying how much more there was | it bounds a line of a file, not what a run is told or may spend. `#109` put the agent's prose in the log and a single message has no bound; this is what keeps one runaway line from spending the whole of `RUN_LOG_MAX_BYTES` at once, and past a long paragraph more of it in the file is not more of it read. Nothing is lost: `sessionIdFor` makes the full transcript computable from a run id forever |
 
 | `RUN_LOG_POLL_MS` (`packages/agent/src/run-log.ts`) | `250` ms | how often `lingtai attach` and the board's run-log stream look for more of the file | it is the cost of *reading* a log, which nothing about a project decides. There is no notification to wait on — 0034 chose a file over a socket precisely so that reading one needs nothing from the process that wrote it, and `tail -f` polls for the same reason. Under the threshold at which a person watching a scrolling log perceives a delay, and a pass that finds nothing costs one `read` returning zero bytes |
@@ -414,7 +414,7 @@ fixed thirty minutes written into every claim and never renewed, against a
 `runtime.limits.wall` of an hour here and two hours by default — so every run
 past the half hour was alive and holding an expired lease, and the next caller
 could take its ticket. It excluded nobody, because two conductors pass a
-timestamp check together. [0027](decisions/0027-the-lease-is-deleted.md) deleted
+timestamp check together. [0027](decisions-archive/0027-the-lease-is-deleted.md) deleted
 it: exclusion is the constraint, liveness is the lock, and neither is a number.
 
 **Recovery is an append and never a recomputation.** A projection is a fold and
@@ -427,8 +427,8 @@ the lease's expiry to be inert, and it is unchanged.
 
 The rule that decides when Lingtai spends money again lived in a constant with
 no decision behind it and no mention here (`#95`), because there was nowhere in
-this file shaped to hold a rule. [0028](decisions/0028-the-backoff-is-the-recipes.md)
-moved it to the recipe; [0029](decisions/0029-the-prompt-budget-is-the-recipes.md)
+this file shaped to hold a rule. [0028](decisions-archive/0028-the-backoff-is-the-recipes.md)
+moved it to the recipe; [0029](decisions-archive/0029-the-prompt-budget-is-the-recipes.md)
 built the section above so the next one has somewhere to land.
 
 **How long a failed attempt keeps its own ticket out of the queue.** Source:
@@ -512,7 +512,7 @@ interpolated raw — `${spec.prompt}` under *Also for this project* at
 has the ticket in the prompt Lingtai builds, so a placeholder there would mostly
 repeat it. `prompts/session-brief.md` has no placeholders and nothing renders it.
 
-[0036](decisions/0036-the-core-takes-a-ticket.md) records that `{{issue}}` should
+[0036](decisions-archive/0036-the-core-takes-a-ticket.md) records that `{{issue}}` should
 become `{{ref}}` — *a number is not a ticket* — so that rename is an edit to the
 first row. `packages/conductor/unit/prompt.test.ts` holds this table against
 `renderPrompt`: a sixth name, or a row that does not expand, is a red test.
@@ -521,7 +521,7 @@ first row. `packages/conductor/unit/prompt.test.ts` holds this table against
 
 A step is a **place in the pass**, not a kind of check. The set may never grow.
 It was five until 2026-09-23, when
-[0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 widened it to the
+[0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 widened it to the
 ten a pass actually goes through: *the board cannot draw what the model does not
 name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 
@@ -541,7 +541,7 @@ name*. Source: `Step` and `STEPS` in `packages/domain/src/events.ts`.
 `claim`, `admit`, `prepared`, `build`, `review` and `proposed` run the recipe's actions;
 `merge` holds when a `human` action asks or when `--no-merge` does; `end` runs
 too, its actions being effects rather than verdicts. The conductor calls GitHub and appends the outcome; what
-did not land, `reconcile` converges ([0022](decisions/0022-the-seams.md)) —
+did not land, `reconcile` converges ([0022](decisions-archive/0022-the-seams.md)) —
 durability is convergence here, not a queue.
 
 **One of the ten is empty here and empty everywhere, and that is what the
@@ -559,13 +559,13 @@ shared `proposed:` because it was the only door open, and each has its own step
 now. `admit` was the fourth until `#268` gave the cut to `worktreePlugin` and
 emptied that body — the first of 0061 §3's five names for the pass's own calls to
 become a key, and the shape the other four move in
-([0065](decisions/0065-the-default-is-a-plugin.md) §4). They are all ten steps regardless — the closed set is about
+([0065](decisions-archive/0065-the-default-is-a-plugin.md) §4). They are all ten steps regardless — the closed set is about
 the places in the pass, not about what is built today — and naming them is what
 lets the log, the recipe and the board say where a pass is. What is left of
 0058's own plan is [the-pipeline](design/the-pipeline.md).
 
 `proposed` was called `diff` until
-[0018](decisions/0018-the-proposed-point.md); stored events are upcast on read.
+[0018](decisions-archive/0018-the-proposed-point.md); stored events are upcast on read.
 
 ## retired name — 4 words, and an allowlist that reached empty
 
@@ -575,7 +575,7 @@ its allowlist is empty — `#247` closed it on 2026-09-27. The pipeline epic
 ([the-pipeline](design/the-pipeline.md)) renames the vocabulary over several
 tickets, and a rename spread over several tickets ends as two vocabularies for
 one thing unless something counts — which is
-[0058](decisions/0058-lingtai-is-a-development-pipeline.md) §Context's own
+[0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §Context's own
 defect. `packages/domain/unit/retired-names.test.ts` reads the tables below out
 of this file and holds the code to them.
 
@@ -588,10 +588,10 @@ of words rather than a regex over `point`.
 
 | retired | current | decided by |
 |---|---|---|
-| `gate` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
-| `gates` | `steps` | [0061](decisions/0061-the-recipe-is-the-pipeline.md) §1 — *`gates:` is gone, not renamed, replaced* |
-| `point` | `step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
-| `points` | `steps` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `gate` | `step` | [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `gates` | `steps` | [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §1 — *`gates:` is gone, not renamed, replaced* |
+| `point` | `step` | [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 |
+| `points` | `steps` | [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 |
 
 And three tokens whose replacement is **not** the word substitution, so a
 renamer reading the four rows above would get them wrong. All three are already
@@ -599,7 +599,7 @@ caught by `gate`; these rows say what to put in their place:
 
 | retired | current | decided by |
 |---|---|---|
-| `GatePoint` | `Step` | [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3, landed as `#227` |
+| `GatePoint` | `Step` | [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3, landed as `#227` |
 | `GateAction` | `StepAction` | `#250` — **not `Plugin`**, which the glossary said until this diff and `#228` has since taken for the plugin *definition*: a key, its fields and its schema. A `GateAction` is one written *use* of one, so the noun stays and only the retired word moves |
 | `Gate` | `Action` | `#248` — in `@lingtai/actions` it names **the runnable thing**, `{ name, kind, run() }`, and so does its whole family: `GateContext`, `GateResult`, `GateEvent`, `GateDeps`, `GateVerdict`, `GateFinding`, `AgentGate*`, `WatchGate*`, `HumanGateSpec`, `ProcessGateSpec`, `createAgentGate` …, `runGatePipeline`, `gatesFromRecipe` |
 
@@ -631,7 +631,7 @@ here for the next one rather than for a file it currently catches.
 **A recipe key is enforced through the schema that declares it**, which is
 `packages/recipe/src/recipe.ts` and is read like any other file; no `.yml` or
 `.yaml` is. The repository's own `.lingtai/config.yaml` is not read and nothing
-is lost by that — nothing reads it either ([0046](decisions/0046-lingtai-is-personal.md)
+is lost by that — nothing reads it either ([0046](decisions-archive/0046-lingtai-is-personal.md)
 §3: the recipe is `~/.lingtai/<project>/recipe.yml`, outside every worktree),
 and a key the schema does not declare is refused by name before it reaches
 anything.
@@ -643,9 +643,9 @@ other extension and everything in a stylesheet that is not a selector.
 
 **The first two are the ticket's.** A comment or a document describing *history*
 keeps the name that history happened under —
-[0018](decisions/0018-the-proposed-point.md) records that the point called
+[0018](decisions-archive/0018-the-proposed-point.md) records that the point called
 `diff` became `proposed`, and
-[0059](decisions/0059-a-point-carries-only-the-kinds-it-runs.md) says *`#58` was
+[0059](decisions-archive/0059-a-point-carries-only-the-kinds-it-runs.md) says *`#58` was
 that bug at `merge`*; both are correct and both must keep their words. Nothing
 mechanical can tell a comment about the past from a comment about the present,
 so the test reads neither. **A comment describing what the code does now takes
@@ -792,7 +792,7 @@ the six that do not. Renaming it would be a payload change on nine event types
 bought for nothing"* — and `#248` wrote the same sentence into `action.ts`.
 
 **What moved was not the argument but the log.**
-[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7 refuses a migration for
+[0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 refuses a migration for
 the recipe file and for the log alike, so the only thing that could spend the
 history was a **reset**: [the-pipeline](design/the-pipeline.md)'s T5b folded the
 old log into [013](experiments/013-the-log-before-the-third-reset.md) on
@@ -915,7 +915,7 @@ What runs at a point. Source: `PLUGINS` and `kindOfAction` in
 `definePlugin` from `plugin.ts`.
 
 **Each one owns its schema and validates its own fields**
-([0061](decisions/0061-the-recipe-is-the-pipeline.md) §9). There is no registry
+([0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §9). There is no registry
 of fields anywhere: what `agent:` accepts is a question only `agent:` answers,
 and the answer is the declaration. So §8's rule has two halves now, and they
 share a sentence — *a step refuses a plugin it cannot run, and a plugin refuses
@@ -942,7 +942,7 @@ needs one gets it from its declaration rather than from a convention —
 reaches the log's body, the hash over it, or the board's reading.
 
 **A stand-in and not a deletion**, because a `configHash` is the identity of a
-document ([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md) §2) and
+document ([0047](decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md) §2) and
 the task page settles *is this the recipe at head* by that hash alone: a field
 dropped before the digest would make a recipe and the same recipe with the
 credential rotated one document, and the page would say so. So the body records
@@ -962,7 +962,7 @@ written as a stand-in.
 | `run:` | a command's exit code | the names its `env:` declares |
 | `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
 | `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **`{{issue}}` in the path becomes the ticket's number when the pass runs** (`#310`), so each pass's note lands at its own path and the locator on an old `StepPassed` still opens the document it named; `{{issue}}` is the only placeholder — any other `{{…}}` is refused at resolve, and the expansion is asked `whyThePathEscapes` again before anything is written. **The note is committed, and there is no field for the other answer**: the worktree is removed when the pass ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
-| `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the pass was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
+| `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the pass was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
 | `human:` | a person, later, on the same stream; the string is the question. **`proposed` only, since `#270`**: 0058 §3b gives `merge` three ways out and the third is *anything else → `proposed`, and only `proposed` may send it to a person* — and the landing is an action in `merge`'s own list now, so a hold beside it would be asked about a merge already made | nothing |
 | `close:` | — it is an effect, not a verdict. `end` only | a GitHub client |
@@ -975,7 +975,7 @@ written as a stand-in.
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
 **`agent:` is the one key that changed meaning rather than arriving** (`#245`,
-[0063](decisions/0063-every-setting-is-the-recipes.md) §2). It carried the
+[0063](decisions-archive/0063-every-setting-is-the-recipes.md) §2). It carried the
 prompt; it carries the runtime, because 0053 has said since 2026-09-17 that
 *which* CLI does a project's work is the recipe's decision and not the
 machine's, and keeping the prompt in one file with its runtime in another splits
@@ -992,7 +992,7 @@ onto `RunRequest.model`, which is `--model` for `claude-code` — so writing a
 cheap model on `review` actually buys a cheap review.
 
 **A second runtime in one pass is dispatched since `#314`**
-([0070](decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+([0070](decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
 §7). The runtime a step's `agent:` names is the one that step runs on —
 `actionsFromRecipe` hands the action `runtimeFor(action.agent)`, and
 `implement`'s dispatch builds the same name — so `review: agent: codex` beside
@@ -1012,7 +1012,7 @@ the silent pick 0046 §3 exists to refuse — a claim taken and a worktree cut f
 pass whose `review` cannot start.
 
 **`worktree:` and `judge:` were two of the five and are the two now wired**
-(`#268`, `#274`, [0065](decisions/0065-the-default-is-a-plugin.md) §4).
+(`#268`, `#274`, [0065](decisions-archive/0065-the-default-is-a-plugin.md) §4).
 `worktreePlugin.at` carries `admit`, so a recipe declares the cut there and
 `admit`'s body is empty; a recipe that declares nothing at `admit` runs the same
 action off `baseOf` and `submodulesOf`, which is 0065 §2's *the default is an
@@ -1058,7 +1058,7 @@ would not, which is why the refusal says so. So a recipe
 cannot yet say either of the two: each declares `at: {}`, so every step refuses
 it. They are declared
 anyway because **a plugin no list carries is a plugin no step refuses**
-([0061](decisions/0061-the-recipe-is-the-pipeline.md) §3,
+([0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §3,
 [`the-v2-recipe.md`](design/the-v2-recipe.md) §3.2): outside the closed set,
 `queue:` written under `end:` is refused as *an action naming no plugin*,
 which is true and about the wrong thing. Inside it, the refusal says where that
@@ -1090,13 +1090,13 @@ only the second half is now a recipe's to write.
 **`assignee:` was the plugin that rule was written about**
 — it had a row in 0061 §3 and appeared in no other list, so it was precisely
 the cell nobody had decided — and
-[0063](decisions/0063-every-setting-is-the-recipes.md) §3 has since made it a
+[0063](decisions-archive/0063-every-setting-is-the-recipes.md) §3 has since made it a
 *field* of `queue:` rather than a plugin beside it, so the closed set went to
 eleven (`#244`) — and back to twelve with `refs:` (`#240`), which is the first
 member 0061 §3 did not name at all, and thirteen with `file:`
 ([#300](https://github.com/steven-zhc/lingtai/issues/300)), which is the second
 and the first *destination*: where a large answer lands is a plugin too
-([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5) — and
+([0066](decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md) §5) — and
 fourteen with `file-brief:`
 ([#301](https://github.com/steven-zhc/lingtai/issues/301)), which is that
 destination's **other end** rather than a new one: `file:` keeps the document at
@@ -1345,7 +1345,7 @@ document carried a tick-by-tick copy of it that
 `packages/conductor/unit/step-matrix.test.ts` checked line by line — because
 the hand-kept copy in `#61`'s own body was wrong about `merge` within three
 weeks of being written.
-[0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4 removes
+[0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §4 removes
 the thing being copied: **a plugin declares the steps it serves, and that
 declaration is what makes it legal there.**
 
@@ -1376,7 +1376,7 @@ each says the part an operator can act on:
 - **A step no plugin implements.** *No plugin implements `<step>`.* That
   sentence was unwritable under the table, because an empty row could not tell
   *not yet* from *not ever*. **None of the steps
-  [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3 named is left**:
+  [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 named is left**:
   `build` and `review` were here until 2026-09-27 and are served now, **`admit`
   was the fifth until `#268`**, **`claim` the fourth until `#269`**, **`design`
   the third until `#265`** and **`implement` the last until `#266`** — `worktree:`
@@ -1472,9 +1472,9 @@ caller that builds actions in code rather than reading a recipe.
 `run:` is the extension point that needs nothing declared — a plugin needs a
 key, its fields and the steps it serves, and today every declaration lives in
 `PLUGINS`
-([0067](decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)). Its
+([0067](decisions-archive/0067-a-plugin-is-a-declaration-and-an-implementation.md)). Its
 code is not trusted
-([0037](decisions/0037-an-extension-is-a-command.md) §1), and `env:` beside it is
+([0037](decisions-archive/0037-an-extension-is-a-command.md) §1), and `env:` beside it is
 **every credential its process gets**.
 Source: `ExtensionEnvNames` in `packages/recipe/src/recipe.ts` — a field of the
 `run:` plugin's schema and of `Subscriber`'s, and of nothing else — and
@@ -1529,7 +1529,7 @@ ten steps and the ordered actions resolved for each — empty arrays included.
 is not all ten steps* in `packages/domain/unit/upcast.test.ts`. It was five
 until 2026-09-23, and it moved the way every field here moved — `schemaVer: 4`
 and a `3 → 4` step which widened a stored five-step plan — until
-[0061](decisions/0061-the-recipe-is-the-pipeline.md) §7's reset
+[0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) §7's reset
 ([the-pipeline](design/the-pipeline.md)'s T5) spent that history on 2026-09-27.
 The type is at `schemaVer: 1` with no step under it now (`#247`): a store with
 no rows holds no five-step plan, so five is one answer here and not two. While
@@ -1540,7 +1540,7 @@ type, stream or seq on it.
 
 Without it the log could not distinguish "nothing was configured here" from
 "this point does not exist", because `ProjectConfigured` carries a config *hash*
-and not the configuration. That distinction is what [ADR 0016](decisions/0016-the-settled-model.md)
+and not the configuration. That distinction is what [ADR 0016](decisions-archive/0016-the-settled-model.md)
 §4 rests on: an unconfigured gate is skipped and that is the user's call; a gate
 that *was* configured and did not run is Lingtai's bug, and comparing this
 event to the verdicts that follow is how the second becomes detectable.
@@ -1556,7 +1556,7 @@ Source: `meetsTier` and `missingForTier` in `packages/agent/src/runtime.ts`.
 | tier | the runtime… | refused as |
 |---|---|---|
 | `open` | runs the agent | — |
-| `guarded` | honours a refusal from the lifecycle hook Lingtai installs on the prompt — `UserPromptSubmit` exiting 2 stops the run (`canFailClosed`) — so a hook that cannot reach the conductor stops the run at its first prompt rather than let it record nothing. A runtime whose `UserPromptSubmit` can only notify does not qualify. Not a guard on the tools: no hook runs before a tool use (`PreToolUse` is not wired, and `PostToolUse` fires after the tool ran), and Lingtai refuses no tool call ([ADR 0016](decisions/0016-the-settled-model.md) §6) | `pre-tool-use-interception`, a name kept from before 0016 |
+| `guarded` | honours a refusal from the lifecycle hook Lingtai installs on the prompt — `UserPromptSubmit` exiting 2 stops the run (`canFailClosed`) — so a hook that cannot reach the conductor stops the run at its first prompt rather than let it record nothing. A runtime whose `UserPromptSubmit` can only notify does not qualify. Not a guard on the tools: no hook runs before a tool use (`PreToolUse` is not wired, and `PostToolUse` fires after the tool ran), and Lingtai refuses no tool call ([ADR 0016](decisions-archive/0016-the-settled-model.md) §6) | `pre-tool-use-interception`, a name kept from before 0016 |
 | `sandboxed` | also enforces a filesystem boundary of its own | `filesystem-sandbox` |
 
 **It is the recipe's** — `runtime.tier`, defaulting to `guarded`. There is no
@@ -1684,7 +1684,7 @@ A label that did not land must not turn a merge that did into a failed run.
 
 **There is no retry behind this, and that is the point.** The outbox — a table, a
 projection, a worker, a backoff and a dead-letter standing behind three calls —
-is gone ([0022](decisions/0022-the-seams.md)); the failure all of it retried had
+is gone ([0022](decisions-archive/0022-the-seams.md)); the failure all of it retried had
 never once been observed. What it bought that was worth keeping is the *record*,
 because the old loop called `gh` inline and a failed call left nothing at all.
 What did not land is converged later by `reconcile`, which compares what the log
@@ -1745,7 +1745,7 @@ is told about nothing, and the daemon says so as it starts rather than being
 silent about a silence.
 
 Source: `subscribers:` in each project's own recipe
-([0037](decisions/0037-an-extension-is-a-command.md) §3, `Subscriber` in
+([0037](decisions-archive/0037-an-extension-is-a-command.md) §3, `Subscriber` in
 `packages/recipe/src/recipe.ts`), built by `buildSubscribers` in
 `apps/cli/src/subscribers.ts`.
 
@@ -1922,12 +1922,14 @@ it is not part of what a run does.
 `agent-env` · `env` · `actions` · `repo` · `conductor` · `daemon` · `hook`, and
 `apps/cli` · `apps/board`.
 
-Five were renamed at [0022](decisions/0022-the-seams.md) and this section still
+Five were renamed at [0022](decisions-archive/0022-the-seams.md) and this section still
 named the old ones: `core` is `domain`, `config` is `recipe`, `store` is
 `event-store`, `runtime` is `agent`, `gates` is `actions`.
 
 ## doc — 29 decisions, 10 experiments
 
-`doc/decisions/` is append-only in spirit: a decision that turns out wrong gets
-a new file that supersedes it, never an edit. `doc/experiments/` holds things
+`doc/decisions/` holds one ADR per topic, numbered from 0100, each stating the
+current decision; a decision that changes is an edit to its topic's ADR.
+`doc/decisions-archive/` keeps the 75 earlier ADRs unchanged, and code comments
+citing `00NN §N` name those. `doc/experiments/` holds things
 actually run, each with its limits.

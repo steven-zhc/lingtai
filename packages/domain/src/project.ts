@@ -8,7 +8,7 @@
  *
  * The recipe itself is not here. It lives in the managed repository and is
  * re-read from `origin/<base>` for every run, because a snapshot of it would be
- * a second source of truth (doc/decisions/0005-config-in-target-repo.md). The
+ * a second source of truth (doc/decisions-archive/0005-config-in-target-repo.md). The
  * hash is kept instead: it says *whether the configuration changed* between two
  * runs, which is what a reader of the log needs, without pretending to be the
  * configuration.

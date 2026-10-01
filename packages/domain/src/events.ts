@@ -39,7 +39,7 @@ import { z } from "zod";
  */
 
 /**
- * What a project asks its runtime to be able to do. See doc/decisions/0007.
+ * What a project asks its runtime to be able to do. See doc/decisions-archive/0007.
  *
  * `guarded`: the runtime stops the run when the `UserPromptSubmit` hook refuses
  * the prompt — so a hook that cannot reach the conductor stops the run at its
@@ -53,8 +53,8 @@ export type Tier = z.infer<typeof Tier>;
 /**
  * The ten steps a pass goes through, in the order it reaches them.
  *
- * **Closed forever** ([ADR 0016](../../../doc/decisions/0016-the-settled-model.md)
- * §3, widened by [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+ * **Closed forever** ([ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md)
+ * §3, widened by [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
  * §3). It was five until 2026-09-23 and every one of those five is still here
  * under its own name; what the five could not say is that a pass also *claims*,
  * *designs*, *implements*, *builds* and *reviews* — five things the loop has
@@ -90,7 +90,7 @@ export type Tier = z.infer<typeof Tier>;
  * two this paragraph used to name.
  *
  * `proposed` was called `diff` until
- * [ADR 0018](../../../doc/decisions/0018-the-proposed-point.md). Stored events
+ * [ADR 0018](../../../doc/decisions-archive/0018-the-proposed-point.md). Stored events
  * still carry the old value and are upcast on read; a reader who finds `diff`
  * in the log or in an old recipe is looking at history, not at a bug. 0061 §7
  * spends that history rather than upcasting it to ten steps — by **resetting**
@@ -175,7 +175,7 @@ export const WorkItemClaimed = z.object({
   runId: z.string(),
   /**
    * Host and pid, and the reason this outlived the lease
-   * ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)): recovery
+   * ([0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md)): recovery
    * asks *whose* claim this is, not *when* it lapses. A conductor holding
    * `lingtai:daemon` knows no other conductor exists, so a claim naming any
    * other worker is a claim nobody is coming back for.
@@ -455,7 +455,7 @@ export const RunProducedDiff = z.object({
 
 /**
  * What a claim left on origin, appended whichever way that went
- * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §1, `#251`).
+ * ([0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md) §1, `#251`).
  *
  * **Because the absence of a ref had four meanings and nothing could tell them
  * apart.** `#250` ran out of turns with two commits in its worktree, pushed
@@ -575,7 +575,7 @@ export const RunFinished = z.object({
  * `repair.ts`'s total record of whose failure each one is — cannot be a bare
  * union written out twice.
  *
- * `never-started` is [0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * `never-started` is [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)
  * §1, and it is **named for what is checkable and not for the cause we
  * inferred**: zero turns, zero cost, `is_error`. A run that spent nothing and
  * took no turns did not fail at its task, it failed to begin — which covers a
@@ -648,7 +648,7 @@ const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.s
  * carries a `configHash`, not the configuration, so a step with nothing
  * configured was indistinguishable from a step that did not exist.
  *
- * That distinction is what the whole model rests on ([ADR 0016](../../../doc/decisions/0016-the-settled-model.md)
+ * That distinction is what the whole model rests on ([ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §4). A step nobody configured is skipped, and that is the user's decision; a
  * step that *was* configured and did not run is Lingtai's bug. Comparing this
  * to the verdicts that follow is how the second is detectable, and rendering it
@@ -658,7 +658,7 @@ const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.s
  * `.length(10)` is the whole of 0047's claim — *what a run was given is on the
  * log* — made checkable: if the recipe configured `claim` by tag and the log
  * recorded five steps, whether it picked by tag or by assignee would be
- * nowhere ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §5).
+ * nowhere ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §5).
  *
  * **It is `schemaVer: 4`, and the step from 3 is the whole of what widening
  * this field cost.** 0061 §7 spends this history by *resetting* it, and that
@@ -675,7 +675,7 @@ const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.s
  * still walk the rows the log holds, and lowering *them* buys nothing.
  *
  * Since v3 it also carries `recipe`, the canonical recipe `configHash` is the
- * hash of ([ADR 0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md)),
+ * hash of ([ADR 0047](../../../doc/decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md)),
  * so a past run is explicable after the file has moved and after the recipe has
  * no commits to read it at. **It is a record, never a source**: nothing in
  * `conductor`, `recipe` or `actions` reads it back to decide anything — the next
@@ -784,7 +784,7 @@ export type Severity = (typeof SEVERITIES)[number];
  * Named and shared because a finding now travels: it is the evidence on a
  * `StepFailed`, it is what a fixing agent is handed verbatim, and it is what the
  * re-review is asked to re-check
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
  * Three copies of the shape would be three places for `failureScenario` to be
  * summarised away, and the whole mechanism is that it is not.
  */
@@ -807,7 +807,7 @@ export type Finding = z.infer<typeof Finding>;
  * gate nobody opens because it passed. `evidence` is what a person reads and
  * `findings` is what a program reads; neither replaces the other. A pass with
  * nothing to say carries an empty array, never an absent field
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
  */
 export const StepPassed = z.object({
   ...stepBase,
@@ -905,7 +905,7 @@ export const StepFailed = z.object({
 
 /**
  * The gate's agent never started, so the point produced no verdict about the
- * diff — [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1,
+ * diff — [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1,
  * one layer up.
  *
  * `RunFailed.kind = "never-started"` says this about a run; this says it about
@@ -939,7 +939,7 @@ export const StepNeverRan = z.object({ ...stepBase, detail: z.string() });
 
 /**
  * The gate's agent **started**, ended without a receipt, and so judged nothing
- * — [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1.
+ * — [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1.
  *
  * The third of the three ways a gate's agent can end, and until this event the
  * log had two. A reviewer that crashed after twenty turns wrote `StepFailed`,
@@ -1018,7 +1018,7 @@ export const ApprovalRevoked = z.object({ ...stepBase, by: z.string(), reason: z
 
 /**
  * A person accepted a minor finding
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §5, `#137`).
  *
  * **This is the decision, not the issue.** *Lingtai proposes; a person decides
@@ -1106,8 +1106,8 @@ export const IntegrationSucceeded = z.object({
  *
  * It recorded that a failure of the managed repository's had bought one agent —
  * a whole new run, told what went wrong, which the next claim became. That was
- * [0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md), and
- * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+ * [0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md), and
+ * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
  * §Consequences takes the purchase away: the worktree lives as long as the
  * pass, so **a refusal is answered where it happened** and a new run stops
  * being the answer to anything except a run that ended. `FixRequested` below
@@ -1123,7 +1123,7 @@ export const IntegrationSucceeded = z.object({
  * run from scratch is 0039's expensive wrong answer stated as a definition.
  * Both now block for a person carrying `diagnoseRefusal`'s reading of them.
  *
- * The rows stay because [0019](../../../doc/decisions/0019-a-second-reset.md)
+ * The rows stay because [0019](../../../doc/decisions-archive/0019-a-second-reset.md)
  * says they must, for the reasons written out on `OutboxDelivered` below: a
  * type the log still holds can be neither deleted nor skipped on read.
  * `priorAttempts` still folds both of these into an earlier attempt's refusal,
@@ -1169,7 +1169,7 @@ export const RepairDeclined = z.object({
 
 /**
  * A review refusal bought an agent, inside the run that was refused
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §1).
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §1).
  *
  * On the **run's** stream and not the work item's, which is the difference
  * between this and `RepairRequested`: a repair is the next run, told what went
@@ -1265,7 +1265,7 @@ const Destination = z.union([Step, z.literal("waiting")]);
  * The decision the whole loop turns on, and until this existed it was written
  * with `runLog.note` and nowhere else: the run log is a trace kept only while
  * something is still owed an explanation
- * ([0034](../../../doc/decisions/0034-the-run-log.md)), so on the ending that
+ * ([0034](../../../doc/decisions-archive/0034-the-run-log.md)), so on the ending that
  * matters most — the one where the change landed — the file is deleted and *why
  * this pass bought a round* was on the log nowhere.
  *
@@ -1320,7 +1320,7 @@ export const PassRouted = z.object({
 /**
  * A pass spent its rounds, and the recipe bought another **approach** rather
  * than a person's attention
- * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+ * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
  *
  * On the **work item's** stream, immediately before the release that puts it
  * back in the queue — the same ordering as `RepairRequested`, and for a
@@ -1366,7 +1366,7 @@ export const PassRestarted = z.object({
    *
    * **This arm's own ref — `agent/<n>-attempt-<k>` — and not `agent/<n>`**
    * (`armBranch`; `k` is the claim's attempt ordinal since
-   * [0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2, because
+   * [0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md) §2, because
    * a restart ordinal is not defined for the endings that now publish too).
    * The working branch is what the next prompt names, so each
    * restart takes it over, force, from a history with no ancestor in common
@@ -1389,7 +1389,7 @@ export const PassRestarted = z.object({
  * In the log because it is a decision somebody made, and `ApprovalGranted` is
  * already exactly that shape — "who stopped the conductor at four o'clock"
  * should not need a different mechanism than "who approved this merge"
- * ([0013](../../../doc/decisions/0013-daemon-hosts-the-work.md)).
+ * ([0013](../../../doc/decisions-archive/0013-daemon-hosts-the-work.md)).
  *
  * It also means a command issued while the daemon is restarting is *waiting*
  * when it comes back, rather than being a race somebody has to handle.
@@ -1405,7 +1405,7 @@ export const ConductorPaused = z.object({
    * When this pause lifts by itself, as an ISO instant — or null, which is
    * every pause a person makes.
    *
-   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §5: a run
+   * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §5: a run
    * that never started is an account-wide condition with a *time* attached, and
    * the alternative to folding that time is what happened — the limit lifted at
    * 23:00 and the queue was still idle at 23:12, waiting out a guess. A
@@ -1424,7 +1424,7 @@ export const ConductorResumed = z.object({ by: z.string() });
  * Stop, once the pass in flight has finished.
  *
  * A command and not a signal, and that is the whole of
- * [0030](../../../doc/decisions/0030-shutting-down-safely.md): Ctrl+C reaches
+ * [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md): Ctrl+C reaches
  * the foreground *group*, so the signal that begins the shutdown kills the
  * agent at the same instant, and `kill <pid>` reaches the daemon alone and
  * orphans it. Neither can mean *finish what you are holding*. An append can,
@@ -1481,7 +1481,7 @@ export const ConductorShutdownRequested = z.object({
  * minutes later rewrote it to `2926f2d` and `582a0f8` stopped existing anywhere
  * but in that process's memory. The beacon is one mutable row, so the next start
  * overwrote what the last one was running; a row in the log cannot be
- * overwritten, and [0042](../../../doc/decisions/0042-the-restart-is-a-command.md)
+ * overwritten, and [0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)
  * is what keeps the commit it names pushed.
  *
  * It does **not** withdraw a standing `ConductorShutdownRequested`. Starting and
@@ -1524,7 +1524,7 @@ export const ConductorStarted = z.object({
    * when a `lingtai restart` handed its start to launchd or systemd (0042 §8).
    * Since #159 a daemon folds only what was appended after it started, so the
    * daemon the supervisor started never read the handoff it was to answer, and
-   * recorded itself as `daemon` with null here. [0048](../../../doc/decisions/0048-a-signal-is-aimed-at-one-daemon.md)
+   * recorded itself as `daemon` with null here. [0048](../../../doc/decisions-archive/0048-a-signal-is-aimed-at-one-daemon.md)
    * deleted the handoff; the restart now compares this event's `sha` with the
    * commit it checked instead.
    */
@@ -1581,7 +1581,7 @@ export const ConductorShutdownWithdrawn = z.object({
  * GitHub does, several times, on any non-2xx — cheap to recognise and drop.
  */
 /**
- * **Retired** ([0022](../../../doc/decisions/0022-the-seams.md)). Readable for
+ * **Retired** ([0022](../../../doc/decisions-archive/0022-the-seams.md)). Readable for
  * ever, appended never: `RETIRED` below, refused by `store.append`.
  *
  * It recorded a delivery the outbox worker made. There is no outbox — three
@@ -1589,7 +1589,7 @@ export const ConductorShutdownWithdrawn = z.object({
  * dead-letter, and the failure all of that retried was never once observed.
  * `IssueUpdated` records the same fact without the queue.
  *
- * The rows stay because [0019](../../../doc/decisions/0019-a-second-reset.md)
+ * The rows stay because [0019](../../../doc/decisions-archive/0019-a-second-reset.md)
  * says they must. Deleting a type the log still holds makes every stream
  * carrying it unreadable from its first row — that is what took
  * `projection rebuild` out and forced the second reset — and skipping rows on
@@ -1620,7 +1620,7 @@ export const OutboxFailed = z.object({
  *
  * The noun is the issue rather than the outbox that used to carry it: a queue
  * is an implementation detail and an event name must not spend the log's
- * vocabulary on one ([0022](../../../doc/decisions/0022-the-seams.md)) — which
+ * vocabulary on one ([0022](../../../doc/decisions-archive/0022-the-seams.md)) — which
  * this pair outlived by two commits, as intended. The kind is a field rather
  * than an event type each, which would have been ten once the failures are
  * counted.
@@ -1634,7 +1634,7 @@ export const OutboxFailed = z.object({
  * *thirteen were deleted* are different rows.
  *
  * `body` is the fourth, and it is
- * [0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §6:
+ * [0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md) §6:
  * an instruction meant to outlive one attempt is edited into the issue body,
  * where it versions as `ticket@NNNN`, everybody can see it, and every
  * subsequent attempt reads it. **Additive to the enum**, so no stored event is
@@ -1692,8 +1692,8 @@ export const RunRequested = z.object({
  *
  * On the control stream, beside `pause` and `now`, because it is the same kind
  * of thing: the UI controls and the daemon holds
- * ([0013](../../../doc/decisions/0013-daemon-hosts-the-work.md),
- * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §3). It spends
+ * ([0013](../../../doc/decisions-archive/0013-daemon-hosts-the-work.md),
+ * [0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §3). It spends
  * money, and everything that spends money in this system starts in one place.
  *
  * **No `consumed` event, for the reason `RunRequested` has none.** A request is
@@ -1803,7 +1803,7 @@ export const DiscussionHeld = z.object({
 /**
  * A sentence added to the next run's prompt, and to that one only.
  *
- * [0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §5.
+ * [0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md) §5.
  * On the **work item** stream and not on an approval: `approve()` binds to
  * `onSha` and a force-push voids it by arithmetic, while an edit is about *what
  * to do* and not about which diff to merge.
@@ -1870,7 +1870,7 @@ export const PromptEdited = z.object({
  * null`. `configHash` arrives with `ProjectConfigured`, which is appended only
  * after a recipe has been read — so *this repository has a recipe* was already
  * the line between registered and not, and pending is the other side of a line
- * that has been there all along ([0022](../../../doc/decisions/0022-the-seams.md)).
+ * that has been there all along ([0022](../../../doc/decisions-archive/0022-the-seams.md)).
  *
  * The wizard ends on this machine: it writes `~/.lingtai/<project>/recipe.yml`
  * and nothing to the repository, so there is no pull request and nothing to
@@ -1886,7 +1886,7 @@ export const PromptEdited = z.object({
  * reads the repository's `base` for a recipe** — the recipe is the machine's.
  *
  * `by` is `human:<id>`, as every decision here is recorded
- * ([0007](../../../doc/decisions/0007-dual-runtime.md)). It is an OS username today and
+ * ([0007](../../../doc/decisions-archive/0007-dual-runtime.md)). It is an OS username today and
  * a verified identity later — recorded now so the line becomes trustworthy
  * without being rewritten.
  */
@@ -2054,7 +2054,7 @@ export const GitHubAppCreated = z.object({
 /**
  * An event subscriber was handed an event and did not come back from it.
  *
- * [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) gave a
+ * [0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md) gave a
  * subscriber's failure one outcome — *logged and dropped* — and dropping is
  * what makes the one failure a subscriber must not have invisible: a notifier
  * that has silently stopped notifying looks exactly like a quiet week. This is

@@ -1,6 +1,6 @@
 # 007 — The whole log, archived before the reset
 
-**2026-09-02.** [ADR 0016](../decisions/0016-the-settled-model.md) §9 resets the
+**2026-09-02.** [ADR 0016](../decisions-archive/0016-the-settled-model.md) §9 resets the
 log: the event catalogue is renamed and reshaped, and with nothing in production
 and no `GuardTripped` events to alias, a reset costs less than a permanent
 special case in the read path.

@@ -187,7 +187,7 @@ describe("resolveRecipe", () => {
    * cost $0.97 and ten turns for; the schema then made it **fail to resolve**,
    * so that a recipe still saying it could not quietly become "declares
    * nothing". `#60` returns it as a *filter over data that already exists*
-   * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+   * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
    *
    * Reintroducing a word with a new meaning is only safe because the old
    * meaning made a recipe **refuse to resolve**: no recipe in service can be
@@ -464,7 +464,7 @@ env:
  *
  * `Recipe` is `z.object` and not `z.strictObject` — a key it does not know is
  * silently discarded. For `repair`, retired by
- * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §4,
+ * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §4,
  * that would leave a repository running on `rounds`' default while its own
  * committed file said `maxAttempts: 3`: a setting present, believed, and
  * connected to nothing. That is this project's most-repeated bug class, and it

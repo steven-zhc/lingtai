@@ -50,7 +50,7 @@
  * a worktree of its own rather than one per base.
  *
  * That worktree is an `Effect.acquireRelease` pair inside a `Scope`
- * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)) — one
+ * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)) — one
  * resource now, where there used to be two. It was a pair of nested `finally`
  * blocks, which is the same guarantee written out by hand: correct here, and
  * correct only because one function happened to own both ends of it.

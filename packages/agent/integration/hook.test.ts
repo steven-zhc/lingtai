@@ -74,7 +74,7 @@ beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "lingtai-hook-"));
   binary = join(root, "lingtai-hook");
   // The real artefact, not the source: a compiled single file with no
-  // dependencies is what doc/decisions/0002 specified and what gets measured.
+  // dependencies is what doc/decisions-archive/0002 specified and what gets measured.
   await exec("bun", ["build", "--compile", "--outfile", binary, hookSource]);
 
   store = createMemoryEventStore();
@@ -224,7 +224,7 @@ describe("lingtai-hook latency", () => {
    * every millisecond of it is Bun's runtime startup: the binary that fails
    * immediately because there is no socket costs the same as the one that does
    * the whole round trip. Asserting 20ms would be a test failing for a reason no
-   * change to this repository can fix. See doc/decisions/0011 and
+   * change to this repository can fix. See doc/decisions-archive/0011 and
    * doc/experiments/004.
    *
    * So this asserts the part Lingtai owns and can regress — the marginal cost

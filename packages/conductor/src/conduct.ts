@@ -8,7 +8,7 @@
  * environment, builds a live `PassPorts` out of `Repo`, `AgentHost`, the GitHub
  * client and the store, hands the pass its `actionsAt` and its `emit`, and
  * **writes down the ending** — which is the one thing the pass deliberately does
- * not do ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+ * not do ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
  * §2b, and `pass-steps.ts`'s *What the pass does not write*).
  *
  * It replaces the engine `#256` deleted, which ran five gate points around the
@@ -84,7 +84,7 @@
  * which is what an agent may not outlive.
  *
  * The log's release decides **keep or delete** — landed → delete, did not land →
- * keep ([0034](../../../doc/decisions/0034-the-run-log.md) §4) — so it is
+ * keep ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §4) — so it is
  * acquired before the worktree and released after it, which is what one scope
  * and reverse order of acquisition give without anybody arranging it.
  *
@@ -111,7 +111,7 @@
  * blocks below are where it is written, once each.
  *
  * **And one ending stops the conductor rather than the item.** A `never-ran` met
- * something account-wide ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)),
+ * something account-wide ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)),
  * so the item is released like any other failure and `ctl-conductor` is told to
  * take nothing at all until the limit lifts — per-item backoff answering an
  * account-wide condition is what eighty events in ninety-two seconds looked like.
@@ -2252,7 +2252,7 @@ export function runOnce(
       /**
        * **What runs at a step the recipe says nothing about** — that step's
        * *default plugin*, and nothing else
-       * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2–3).
+       * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2–3).
        *
        * The default is an entry in the plugin system rather than a code path
        * beside it: the workflow guarantees the ten steps turn and no step has a

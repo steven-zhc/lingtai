@@ -1,7 +1,7 @@
 # Onboarding, as a page
 
 **Status** decided · 2026-09-15 · the design the wizard epic is cut from ·
-**amended by [0046](../decisions/0046-lingtai-is-personal.md)**: the recipe is
+**amended by [0046](../decisions-archive/0046-lingtai-is-personal.md)**: the recipe is
 this machine's, the wizard opens no pull request, and *pending* waits for
 `Recheck` and no longer for a recipe to land (#180, #182). The sections that argued otherwise say so where
 they stand.
@@ -65,12 +65,12 @@ concept, only a first event on the stream.
 
 ## The constraint that decided the shape — superseded
 
-> **Superseded by [0046](../decisions/0046-lingtai-is-personal.md) §3.** The
+> **Superseded by [0046](../decisions-archive/0046-lingtai-is-personal.md) §3.** The
 > recipe is `~/.lingtai/<project>/recipe.yml`, nothing is written to the managed
 > repository, and the pull request below is gone (#182). What follows is kept
 > as the argument that was made, not as what the page does.
 
-ADR [0005](../decisions/0005-config-in-target-repo.md) puts the recipe in the
+ADR [0005](../decisions-archive/0005-config-in-target-repo.md) puts the recipe in the
 managed repository, and `lingtai add` says so in its own first paragraph:
 
 > What it does *not* do is take a configuration file: the recipe belongs to the
@@ -187,7 +187,7 @@ it is the one thing this design can get wrong:
 > A slow one must be something they cannot.
 
 **`limits` is four dials, not three presets** — `turns`, `wall`, `rounds`,
-`restarts` ([0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md):
+`restarts` ([0040](../decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md):
 rounds bound depth, restarts bound breadth). Underneath them, recomputed as they
 move, is **`passCeiling`'s own sentence** — the same function `lingtai status`
 and `lingtai add` print:

@@ -8,10 +8,10 @@ const config: NextConfig = {
   // becomes an instruction nobody wrote. Every agent in this repository
   // commits with `git add -A`, which is how they get in.
   agentRules: false,
-  // Localhost, one user. See doc/decisions/0008-nextjs.md for why there is no
+  // Localhost, one user. See doc/decisions-archive/0008-nextjs.md for why there is no
   // auth here and what has to change before that stops being true.
   // Every workspace package the board reaches. They ship as TypeScript source
-  // with no build step (doc/decisions/0010), so Turbopack compiles them here.
+  // with no build step (doc/decisions-archive/0010), so Turbopack compiles them here.
   transpilePackages: [
     "@lingtai/conductor",
     "@lingtai/recipe",

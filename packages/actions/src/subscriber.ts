@@ -2,7 +2,7 @@
  * A subscriber: a command that is told what happened and is never waited for.
  *
  * It lives beside `createProcessAction` because it is the same primitive, and
- * that is [0037](../../../doc/decisions/0037-an-extension-is-a-command.md)'s
+ * that is [0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md)'s
  * whole claim — **the taxonomy is a command, and whether the core waits for
  * it.** An action's exit code is a verdict, so `runActionPipeline` holds for
  * it; this one's is not, so nothing does. There is no registry, no manifest and

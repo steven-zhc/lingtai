@@ -187,7 +187,7 @@ export type Governing =
  *   there, and take that;
  * - it declares another and a person named `from.ref` — refuse. Two people have
  *   now stated the base, and only one of them owns that decision under
- *   [0005](../../../doc/decisions/0005-config-in-target-repo.md); this command
+ *   [0005](../../../doc/decisions-archive/0005-config-in-target-repo.md); this command
  *   is not entitled to overrule either of them silently.
  *
  * The first read throws (`RecipeMissingError`, `RecipeInvalidError`) so the
@@ -315,10 +315,10 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // Printed here for the reason the empty points above are: a policy that is
   // only visible when it fires is one nobody can audit, and this one spends an
   // agent's worth of money on a failure without being asked again
-  // ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) §2).
+  // ([0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md) §2).
   //
   // **The product, not the numbers that make it**
-  // ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+  // ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
   // There were two ceilings here and they were printed side by side, which told
   // a reader everything except the thing being decided: what one pass of this
   // project can cost. One sentence, from `passCeiling`, so this line and the

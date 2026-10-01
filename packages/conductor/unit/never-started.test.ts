@@ -1,6 +1,6 @@
 /**
  * Reading a reset time out of prose — the one place
- * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) allows the
+ * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) allows the
  * message to be read at all.
  *
  * The tests are shaped by §4's asymmetry rather than by coverage: **a parse

@@ -6,7 +6,7 @@
  * append at an expected version either lands or violates the constraint, and
  * the loser re-reads and retries. The old loop used a `.runtime/loop.lock.d`
  * directory that leaked after every hard kill and needed a manual `rm -rf`; see
- * doc/decisions/0003-postgres-event-store.md.
+ * doc/decisions-archive/0003-postgres-event-store.md.
  *
  * So the interesting behaviour here is not the happy path. It is that a losing
  * writer gets a `ConcurrencyError` and not a Prisma error, and that a batch is
@@ -105,7 +105,7 @@ export class RetiredEventTypeError extends Error {
   readonly type: string;
 
   constructor(type: string) {
-    super(`"${type}" is retired: readable, never appended (doc/decisions/0022-the-seams.md)`);
+    super(`"${type}" is retired: readable, never appended (doc/decisions-archive/0022-the-seams.md)`);
     this.type = type;
   }
 }

@@ -1,12 +1,12 @@
 /**
  * `lingtai restart [why]` — the drain, the wait, and the start, as one command.
  *
- * [0030](../../../doc/decisions/0030-shutting-down-safely.md) made stopping
+ * [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) made stopping
  * safe: `lingtai shutdown` appends, returns, and the daemon finishes the pass in
  * flight before it exits. **Starting again was still something you typed from
  * memory, at a moment nothing told you had arrived** — and the start is where a
  * process's code identity is decided, for the whole of its life, with nothing
- * checking it ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)).
+ * checking it ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)).
  *
  * On 2026-09-09 a daemon was restarted at 23:06 from `582a0f8`, a commit that
  * had not been pushed. A `git pull --rebase` twenty minutes later rewrote it to

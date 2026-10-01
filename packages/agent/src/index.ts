@@ -2,7 +2,7 @@
  * Start it, and hear it.
  *
  * One package for the two halves of running an agent, which were three before
- * [0022](../../../doc/decisions/0022-the-seams.md): `@lingtai/runtime` started
+ * [0022](../../../doc/decisions-archive/0022-the-seams.md): `@lingtai/runtime` started
  * the process, and `conductor` owned both the hook wiring planted in the
  * worktree and the socket that catches what comes back. Starting a subprocess
  * and listening to it are one concern; the orchestrator's job is to decide that

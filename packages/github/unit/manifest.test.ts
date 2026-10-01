@@ -4,7 +4,7 @@
  * The same trick `packages/actions/unit/tamper-watch.test.ts` uses for its
  * watch list, and for the same reason: a fixture written out here would be a
  * second copy of the table, free to agree with a decision that has moved on.
- * `doc/decisions/0006-github-app.md` is the canonical list — an ADR is a
+ * `doc/decisions/0114-a-github-app-not-a-token.md` is the canonical list — an ADR is a
  * decision and not a note — so it is parsed, and a manifest that asks for
  * something the ADR does not name fails here.
  *
@@ -37,7 +37,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
  * events are read against `webhook.ts` instead (below).
  */
 async function documented(): Promise<{ permissions: Record<string, string> }> {
-  const md = await readFile(`${root}doc/decisions/0006-github-app.md`, "utf8");
+  const md = await readFile(`${root}doc/decisions/0114-a-github-app-not-a-token.md`, "utf8");
   const rows = [...md.matchAll(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/gm)]
     .map((m) => ({ name: m[1]!.trim(), level: m[2]!.trim() }))
     .filter((r) => r.name !== "Permission" && !/^-+$/.test(r.name));

@@ -5,7 +5,7 @@
  * gate.** The old engine's fakes test said this itself and named the way:
  * it was *mostly unit and reached out once* — one `describe` writing a
  * `recipe.yml` into a temporary `LINGTAI_HOME`, which is the filesystem and so
- * is integration ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
+ * is integration ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)
  * §1) — and #225 moved the whole file for that one `describe`. Nineteen
  * assertions about a pass therefore sat in the half nobody runs while doing a
  * ticket, which `#251` is: every claim it makes about the wall would have been
@@ -39,7 +39,7 @@ import { resolveRecipe } from "@lingtai/recipe";
  * The two tags, from the plain shape.
  *
  * `runOnce` asks for `Repo` and `AgentHost` rather than taking a `RunPorts`
- * parameter ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)),
+ * parameter ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)),
  * so a test provides them the way a host does. `RunPorts` survives as exactly
  * this: the shape a `Layer` is built from.
  */
@@ -157,7 +157,7 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
  * The same, with a cold reviewer at `proposed` and no round to patch with.
  *
  * `rounds: 0` and a non-zero `restarts` is the configuration
- * [0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)
+ * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)
  * makes legible — *never patch, start over twice* — and it is also the shortest
  * path to the branch under test: one review, refused, and the depth ceiling
  * spent by the recipe rather than by three agent runs.
@@ -493,7 +493,7 @@ export const refusingRuntime: Runtime = {
  * yes, but the cause is a session id this binary has already been given
  * (`#195`), a settings path that does not exist, a binary that is not there.
  * The adapter says `crash`; nothing downstream re-reads the message to disagree
- * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
+ * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md)).
  *
  * `tried.n` counts the reviewer's attempts, and the assertion on it is that
  * there is exactly one: the pipeline runs the action once (`#234`). It took
@@ -537,7 +537,7 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
  * The six runs of ninety-two seconds, as one runtime.
  *
  * Zero turns, zero cost, an error — the three facts
- * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1 names, and
+ * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1 names, and
  * the prose it refuses to classify on, kept whole as the detail.
  */
 export const quotaRuntime: Runtime = {
@@ -786,7 +786,7 @@ export function fakePorts(
        *
        * Nothing is opened: the point of the fake is that the *fate* is
        * assertable — landed → delete, did not land → keep
-       * ([0034](../../../doc/decisions/0034-the-run-log.md) §4) — and a real
+       * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §4) — and a real
        * file would put that decision behind a `stat` in a test whose whole
        * claim is that it needs no world to run in.
        */

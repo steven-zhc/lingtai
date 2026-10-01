@@ -1,7 +1,7 @@
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
  * `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
- * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180).
+ * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  * `local.ts` reads it; this file is its schema.
  *
  * **It is not in the managed repository any more.** A `.lingtai/config.yaml`
@@ -34,7 +34,7 @@ import { parseDuration } from "./duration.ts";
 
 /**
  * The names an **extension** may read, declared beside the extension itself
- * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ * ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
  *
  * `run:` is the extension point that needs nothing declared — a plugin needs a
  * key, its fields and the steps it serves, and today every declaration lives in
@@ -151,8 +151,8 @@ export const runPlugin = definePlugin("run", {
 /**
  * **A number that bounds the pass and not one call**, declared inside a
  * dispatch's `limits:` in order to be **refused by name** there
- * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md),
- * [0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
+ * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md),
+ * [0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
  *
  * Left undeclared, `z.strictObject` answers *Unrecognized key: "rounds"*, which
  * says the key is not allowed and not why — and *why* is the whole of what is
@@ -252,10 +252,10 @@ const DISPATCH = {
 /**
  * A cold reviewer, given the diff: **which runtime runs it**, optionally which
  * model, and the prompt it is handed
- * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §2).
+ * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §2).
  *
  * `agent:` carried the prompt until `#245`. It is the runtime now, because
- * [0053](../../../doc/decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)
+ * [0053](../../../doc/decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md)
  * has said since 2026-09-17 that *which* CLI does a project's work is the
  * recipe's decision and not the machine's — and a prompt kept in one file with
  * its runtime in another splits one decision across two sources. `model:` and
@@ -362,7 +362,7 @@ export const agentPlugin = definePlugin("agent", {
 /**
  * **Why a path is not inside the worktree, or `null` when it is** — the whole of
  * what `file:` refuses about its own field
- * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §6).
+ * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md) §6).
  *
  * A string and not `node:path`, because the answer has to be the same wherever
  * the recipe is read: `lingtai add` resolves on the operator's machine and the
@@ -399,7 +399,7 @@ export function whyThePathEscapes(written: string): string | null {
 
 /**
  * **The one placeholder a `file:` path takes**, and the whole of the vocabulary
- * this field borrows ([0036](../../../doc/decisions/0036-the-core-takes-a-ticket.md),
+ * this field borrows ([0036](../../../doc/decisions-archive/0036-the-core-takes-a-ticket.md),
  * `#310`).
  *
  * `{{title}}` is deliberately not here: a title in a filename is a slug problem —
@@ -463,7 +463,7 @@ function whyNotThatPlaceholder(each: string): string {
  *
  * ## Why this runs when the action runs, and not when the recipe resolves
  *
- * [0071](../../../doc/decisions/0071-a-templated-field-is-judged-twice.md) is
+ * [0071](../../../doc/decisions-archive/0071-a-templated-field-is-judged-twice.md) is
  * the decision, and it is the one that narrows 0061 §9's *a recipe has no
  * templating* to the string a person wrote. The argument, in full:
  *
@@ -503,12 +503,12 @@ export function thePathForThisTicket(written: string, ref: string): ThePathForTh
  * survive the pass that bought it.
  *
  * A design was *bought, used once and could not be kept*
- * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §1): the document lived on `WroteTheDesign.design` until the pass ended, in
  * `implement`'s prompt for one dispatch, and on `StepPassed.evidence` uncapped.
  * This writes it to a path and returns that path as the **locator** — a string,
  * and nothing above this plugin reads it (§4,
- * [0069](../../../doc/decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+ * [0069](../../../doc/decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
  * §3). `createFileAction` in `packages/actions/src/file-action.ts` is the work.
  *
  * ## The file is committed, and there is no field for the other answer
@@ -631,7 +631,7 @@ export const filePlugin = definePlugin("file", {
  * **Reads the design back from the path a `file:` kept it at, and briefs the
  * implementing agent with what it read** — the other end of the same
  * destination, and the first thing anywhere that reads a locator (0066 §4,
- * [0069](../../../doc/decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+ * [0069](../../../doc/decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
  * §4, `#301`).
  *
  * `createFileBriefAction` in `packages/actions/src/file-brief-action.ts` is the
@@ -758,7 +758,7 @@ export const labelsPlugin = definePlugin("labels", {
 /**
  * **Deletes the history refs a landed ticket left on `origin`** — the
  * `agent/<n>-attempt-<k>` siblings `armBranch` pushes
- * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2), one
+ * ([0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md) §2), one
  * per approach the item tried.
  *
  * Nothing else deletes a branch, so the count is monotone in how many issues a
@@ -807,7 +807,7 @@ export const refsPlugin = definePlugin("refs", {
 /**
  * **The branch a pass owns, cut** — a name for `provisionWorktree` in
  * `packages/repo/src/worktree.ts`, which is what has always done this
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
  *
  * A map rather than a scalar, which is 0061 §2's rule — *a scalar where one
  * reads well and a map where it does not* — applied to a plugin that carries
@@ -843,7 +843,7 @@ export const worktreePlugin = definePlugin("worktree", {
   },
   /**
    * **`admit`, and it is the first of 0061 §3's five names to become a key**
-   * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §4, `#268`).
+   * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §4, `#268`).
    *
    * What runs is `createWorktreeAction` in `@lingtai/actions`, over the cut
    * `conduct.ts` hands it — and a recipe that declares nothing at `admit` runs
@@ -880,7 +880,7 @@ export const mergePlugin = definePlugin("merge", {
   },
   /**
    * **`merge`, and it is the second of 0061 §3's five names to become a key**
-   * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#270`).
+   * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2, `#270`).
    *
    * What runs is `createMergeAction` in `@lingtai/actions`, over the lane
    * `conduct.ts` hands it — and a recipe that declares nothing at `merge` runs
@@ -929,7 +929,7 @@ export const mergePlugin = definePlugin("merge", {
  * and `SOURCE_FIELDS` adds them; `QUEUE_FIELDS` takes them bare.
  *
  * **`assignee` is not here, and that is the same rule kept rather than broken**
- * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3). It
+ * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3). It
  * is a field of `queue:`, and its v1 spelling is `runtime.assignee` on the
  * machine's own file — not `source.assignee`, which no file has ever held.
  * Putting it in `source:` too would invent a third spelling that nothing reads,
@@ -981,7 +981,7 @@ const EXCLUDE = z.array(z.string());
 
 /**
  * How long a failed attempt keeps its own ticket out of the queue
- * ([0028](../../../doc/decisions/0028-the-backoff-is-the-recipes.md)).
+ * ([0028](../../../doc/decisions-archive/0028-the-backoff-is-the-recipes.md)).
  *
  * A failed run releases its task, a release is a completion event, and a
  * completion event is what tells the conductor to look again — so without
@@ -1054,7 +1054,7 @@ export type AssigneeRule = z.infer<typeof AssigneeRule>;
 
 /**
  * **`queue:`'s four fields**: `source:`'s three, and `assignee` beside them
- * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3).
+ * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3).
  *
  * `assignee` used to be a plugin of its own, and 0061 §§2–3 used the pair as
  * the worked example of *a step's plugins run in the order written*. 0063 §3
@@ -1107,8 +1107,8 @@ export type QueueSettings = z.infer<typeof QueueSettings>;
  * **Which ticket is taken, and whether this machine may take it** — a name for
  * `runnableNow`, `considerIssue` and `assigneeSkip` in
  * `packages/conductor/src/discover.ts`, which is what has always decided this
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3,
- * [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3), and
+ * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3,
+ * [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3), and
  * for what `claimWorkItem` in `packages/conductor/src/claim.ts` then does with
  * the one that survives.
  *
@@ -1139,7 +1139,7 @@ export const queuePlugin = definePlugin("queue", {
   fields: { queue: QueueSettings },
   /**
    * **`claim`, and it is the last of 0061 §3's five names to become a key**
-   * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#269`).
+   * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2, `#269`).
    *
    * What runs is `createQueueAction` in `@lingtai/actions`, over the four values
    * the action carries — and a recipe that declares nothing at `claim` runs the
@@ -1176,10 +1176,10 @@ export const queuePlugin = definePlugin("queue", {
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
  * entry's `when:` names — and there is **one entry per reason**
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
  *
  * **`when:` is one key and its legal values are the step's**, which is
- * [0059](../../../doc/decisions/0059-a-point-carries-only-the-kinds-it-runs.md)'s
+ * [0059](../../../doc/decisions-archive/0059-a-point-carries-only-the-kinds-it-runs.md)'s
  * rule a third time: `close:` and `labels:` read the work item's *outcome* at
  * `end` (`WHEN` above — `landed`, `blocked`, `failed`, `closed`, `any`),
  * `refs:` reads the one value of that vocabulary it is safe to delete on, and a
@@ -1353,10 +1353,10 @@ export type BacklogBar = z.infer<typeof BacklogBar>;
  * **Where a severity stops being an opinion and becomes an outcome** — a name
  * for `decideBacklog` and for `acceptFinding` / `declineFinding` in
  * `packages/conductor/src/backlog.ts` (`#137`,
- * [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
+ * [0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §5).
  *
  * A reviewer returns findings with a severity and **no verdict**
- * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3).
+ * ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3).
  * Something downstream has to say what a severity costs, and today that is two
  * somethings nobody can name, configure or replace: `verdictFor`
  * (`packages/actions/src/agent-action.ts`), which says what refuses, and a
@@ -1465,7 +1465,7 @@ export const PLUGINS = [
  *
  * The shape is GitHub Actions' — a `name`, exactly one key saying *which plugin
  * this is*, and that plugin's fields beside it. Copied rather than invented
- * because [ADR 0005](../../../doc/decisions/0005-config-in-target-repo.md)
+ * because [ADR 0005](../../../doc/decisions-archive/0005-config-in-target-repo.md)
  * already frames a recipe as a workflow file, and a second dialect for the same
  * idea is a second thing to learn for no gain.
  *
@@ -1709,7 +1709,7 @@ const ONLY_CLAIM_TAKES =
  * The clause worth the sentence is the one that is not about placement: **a
  * destination keeps what a step made, so it can only be written where something
  * is made.** `design` is the one step that produces a document
- * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §3), and every other step's answer is a verdict, which is a sentence on the
  * log already and has nowhere to be kept.
  */
@@ -1927,7 +1927,7 @@ export function whyNoKindAt(
   if (calledDirectly !== undefined) {
     return (
       `no step reads a \`${kind}:\` action from the recipe yet — the plugin is the name ` +
-      "[0061](doc/decisions/0061-the-recipe-is-the-pipeline.md) §3 gives code the pass already runs, and " +
+      "[0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3 gives code the pass already runs, and " +
       `it is wired to the recipe by the ticket that makes the file \`steps:\`. Today ${calledDirectly}. ` +
       "Refused rather than accepted here because an action nothing reads would be resolved, recorded on " +
       "the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
@@ -1945,7 +1945,7 @@ export function whyNoKindAt(
     // its own.
     return (
       `no plugin implements \`${step}\` — the step is named by ` +
-      "[0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
+      "[0058](doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
       "have a word for it, and no plugin's `at` carries that key yet. " +
       "Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded " +
       "in `StepsResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
@@ -2496,7 +2496,7 @@ function actionsAt(step: Step) {
  * one line: **an unconfigured step is skipped, and the skip is visible.** A
  * missing key here is not "undefined", it is "nothing runs, and the board says
  * so" (ADR 0016 §4). That is also
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5 — *the
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §5 — *the
  * file may omit a step; the resolved recipe may not* — and this object is the
  * mechanism that ADR names.
  *
@@ -2510,7 +2510,7 @@ function actionsAt(step: Step) {
  * board that says `skipped` because it was told nothing was configured. That is
  * exactly the "configured and did not run" failure the model calls Lingtai's
  * bug (ADR 0016 §4). It is also what a recipe still saying `diff:` would hit
- * after [0018](../../../doc/decisions/0018-the-proposed-point.md): it fails to
+ * after [0018](../../../doc/decisions-archive/0018-the-proposed-point.md): it fails to
  * resolve, loudly, naming the key.
  *
  * **Strict about the kind at a step, too, and for the same reason** (`#61`).
@@ -2529,7 +2529,7 @@ export const StepMap = z.strictObject({
   implement: actionsAt("implement"),
   build: actionsAt("build"),
   review: actionsAt("review"),
-  /** Was `diff` until [0018](../../../doc/decisions/0018-the-proposed-point.md). */
+  /** Was `diff` until [0018](../../../doc/decisions-archive/0018-the-proposed-point.md). */
   proposed: actionsAt("proposed"),
   merge: actionsAt("merge"),
   end: actionsAt("end"),
@@ -2573,7 +2573,7 @@ const SubscribedEvent = z.string().superRefine((name, ctx) => {
 
 /**
  * Something told about events, which the loop does not wait for
- * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3).
+ * ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §3).
  *
  * The same `run:` a gate action has, and the whole of the difference is that
  * nothing reads the exit code: a gate action's verdict is about a commit, and
@@ -2616,7 +2616,7 @@ export type Subscriber = z.infer<typeof Subscriber>;
  * The version this schema is, named in a refusal rather than written twice.
  *
  * **There is no migration, and that is the decision rather than the backlog**
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7). A
+ * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §7). A
  * recipe is one file on one machine, written by the person who owns it, so the
  * cost of rewriting it is minutes — and a migration would have to keep the v1
  * shape readable for ever to save them.
@@ -2674,7 +2674,7 @@ export type DiscussAgent = z.infer<typeof DiscussAgent>;
 
 /**
  * **`discuss:`, a top-level node beside `steps:` and `subscribers:`, not a
- * plugin** ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md)
+ * plugin** ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md)
  * §6, `#243`).
  *
  * A discussion is not a step: it is started by a person, runs while nothing
@@ -2816,10 +2816,10 @@ export const Recipe = z.object({
    * meaning "plant these if they happen to exist" — and that meaning cost $0.97
    * and ten turns against a database the agent could not reach, with one log
    * line as the only sign. A repository naming a variable is a repository saying
-   * it needs one ([0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)).
+   * it needs one ([0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)).
    * A recipe still saying `allow:` must therefore fail to resolve and name the
    * key, rather than resolve to an empty list and refuse nothing — the same
-   * silent half-move [0018](../../../doc/decisions/0018-the-proposed-point.md)
+   * silent half-move [0018](../../../doc/decisions-archive/0018-the-proposed-point.md)
    * made zod's default drop.
    */
   env: z.strictObject({
@@ -2839,7 +2839,7 @@ export const Recipe = z.object({
      * Variable NAMES only. Values resolve at runtime from somewhere the agent
      * cannot see, so this file is safe to commit.
      *
-     * **A check, not a filter** ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+     * **A check, not a filter** ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
      * It is evaluated against the merged data, before `allow`/`deny` apply, so a
      * name that is both `required` and `deny`ed is legal and says two true
      * things: this machine must be configured with it, and this run does not
@@ -2948,13 +2948,13 @@ export const Recipe = z.object({
      * Defaulted rather than optional: nothing sits underneath it to fall back
      * to, so an absent tier meaning "unspecified" would be a run whose
      * containment nothing states. `guarded` is what every
-     * run has actually used ([ADR 0007](../../../doc/decisions/0007-dual-runtime.md)).
+     * run has actually used ([ADR 0007](../../../doc/decisions-archive/0007-dual-runtime.md)).
      */
     tier: Tier.default("guarded"),
     prompt: z.string().optional(),
     /**
      * What one pass may spend, as one block
-     * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+     * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
      *
      * `turns` and `wall` bound **one agent run**; `rounds` bounds **how many of
      * them a pass may buy**; `restarts` bounds **how many passes one ticket may
@@ -3018,7 +3018,7 @@ export const Recipe = z.object({
          * of asking a person — a fresh pass, from a worktree cut off the base.
          *
          * **The breadth half of the pair `rounds` is the depth half of**
-         * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+         * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
          * A round buys another attempt at *this* approach; a restart buys
          * another approach. When the approach is the defect, no value of
          * `rounds` reaches the fix — which is what
@@ -3052,10 +3052,10 @@ export const Recipe = z.object({
       .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
     /**
      * Which issues this machine takes, by their assignee
-     * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §2, #181).
+     * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2, #181).
      *
      * **This is `queue:`'s `assignee` field under its v1 name**
-     * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3),
+     * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3),
      * and `assigneeOf` in `settings.ts` is what every reader asks. 0063 §3
      * settles that it is one of the four settings that decide which ticket is
      * taken rather than a plugin beside them; §4 is what moves where a person
@@ -3073,7 +3073,7 @@ export const Recipe = z.object({
     assignee: AssigneeRule.optional(),
     /**
      * How much an agent is told, in characters and rows
-     * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)).
+     * ([0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).
      *
      * `limits` bounds what a run may *spend*; this bounds what it is *given*,
      * and the two are the same kind of decision — which is why they sit

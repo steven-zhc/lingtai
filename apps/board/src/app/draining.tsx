@@ -12,7 +12,7 @@
  * It names the ticket because *stopping* and *stopping, finishing lingtai#94*
  * are different pieces of news — the first invites a second Ctrl+C, and the
  * second is the reason not to
- * ([0030](../../../../doc/decisions/0030-shutting-down-safely.md) §1: the
+ * ([0030](../../../../doc/decisions-archive/0030-shutting-down-safely.md) §1: the
  * boundary is the pass, not the agent).
  *
  * **Absent when there is nothing to say**, which is what makes a chip

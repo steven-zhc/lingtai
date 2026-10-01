@@ -1,8 +1,8 @@
 /**
  * The file-brief action: **the other end of the file destination**, and the
  * first thing anywhere that reads a locator
- * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
- * §4, [0069](../../../doc/decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+ * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * §4, [0069](../../../doc/decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
  * §4, `#301`).
  *
  * `createFileAction` keeps a document at a path and answers with that path.

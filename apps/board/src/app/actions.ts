@@ -353,7 +353,7 @@ export async function resumeWork(): Promise<ActionResult> {
  *
  * An append to `ctl-conductor` and nothing else — the same stream `pause` and
  * `now` use, and for the reason [0013] gives: **the UI controls, the daemon
- * holds** ([0033](../../../../doc/decisions/0033-the-third-kind-of-agent.md)
+ * holds** ([0033](../../../../doc/decisions-archive/0033-the-third-kind-of-agent.md)
  * §3). The board does not start an agent. It is arguable the other way, since
  * two of 0013's three reasons do not apply to something with no worktree and no
  * claim; what decides it is the third, that this spends money, and everything
@@ -610,7 +610,7 @@ export async function sendAttempt(input: {
  * rather than failing here.
  *
  * **It jumps the backoff, and that is the whole of the move**
- * ([0028](../../../../doc/decisions/0028-the-backoff-is-the-recipes.md) §3). The
+ * ([0028](../../../../doc/decisions-archive/0028-the-backoff-is-the-recipes.md) §3). The
  * guard exists to stop *blind* retries — the same ticket at the top of the
  * queue, failing the same way, at agent prices — and a person naming an issue is
  * not blind. `conduct.ts` matches a request with `backoffMs: 0` for exactly that

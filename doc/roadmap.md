@@ -116,8 +116,8 @@ bottleneck was never tooling — which is worth knowing.
 
 **Re-planned 2026-09-01, after Phase 1 landed.** Four gate kinds and the board's
 approve / reject / waive were built and are done. What replaced them in this
-phase is a change of shape, recorded in [0012](decisions/0012-one-task-view.md)
-and [0013](decisions/0013-daemon-hosts-the-work.md): one `TaskView` instead of
+phase is a change of shape, recorded in [0012](decisions-archive/0012-one-task-view.md)
+and [0013](decisions-archive/0013-daemon-hosts-the-work.md): one `TaskView` instead of
 three projections, the queue read from GitHub instead of mirrored into the log,
 and a daemon that holds the conductor and the projection follower while the UI
 controls it and watches it.
@@ -147,7 +147,7 @@ running the issue it named, and the outbox deleting every label it did not put
 there.
 
 Two items filed under 2d turned out to need nothing. **Queue caching** was how
-`syncQueued` worked — and it is gone: [0022](decisions/0022-the-seams.md)
+`syncQueued` worked — and it is gone: [0022](decisions-archive/0022-the-seams.md)
 deleted the cache, so the board does ask GitHub on render, and #56 and #57 died
 with it. If a rate limit ever bites, a cache comes back with a reason and with
 somebody watching it. **Retention** is already a parameter on `readTasks`,
@@ -193,7 +193,7 @@ Uptime is still worth measuring. It belongs to the cutover, next to retiring
 
 ## Phase 3 — The settled model
 
-[ADR 0016](decisions/0016-the-settled-model.md) is the specification. This is
+[ADR 0016](decisions-archive/0016-the-settled-model.md) is the specification. This is
 mostly **deletion**: the policy concept goes, the eight tool rules leave the
 core for a preset, and four gate *kinds* become five gate *points* whose actions
 come from presets or plugins. The load-bearing machinery — event store,
@@ -215,7 +215,7 @@ data backfill for any of it. That licence is not available again.
 
 **3e is the one that matters.** If a skipped gate is omitted rather than shown,
 the whole design degrades into the plugin free-for-all
-[0014](decisions/0014-one-loop-one-log.md) rejected, and it degrades silently.
+[0014](decisions-archive/0014-one-loop-one-log.md) rejected, and it degrades silently.
 
 ## Phase 4 — Self-hosting
 
@@ -274,7 +274,7 @@ their shape depends on what Phases 1–4 teach, and pre-writing tickets that
 will be rewritten is exactly the noise this system exists to remove.
 
 **Phase 3 has no tickets.** The settled model was worked as 3a–3f against
-[0016](decisions/0016-the-settled-model.md) directly, in this repository, without
+[0016](decisions-archive/0016-the-settled-model.md) directly, in this repository, without
 issues — which is why the numbering below skips from Phase 2 to Phase 4.
 
 Milestones on GitHub match the phases here.

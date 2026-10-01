@@ -160,7 +160,7 @@ describe("the review prompt", () => {
 
 /**
  * The re-review, which is the acceptance contract of the fix loop
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
  *
  * **The reviewer and the fixer are both agents**, so a fix that makes a
  * finding's *text* go away — the line deleted, the symbol renamed, a suppression
@@ -537,7 +537,7 @@ describe("the action", () => {
 
   /**
    * **`model:` reaches the spawn, or it is a price nobody is charged** (`#245`,
-   * [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §1's
+   * [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §1's
    * *written, believed, and connected to nothing*).
    *
    * An operator writes `model: claude-haiku-4-5` on `review` to make cold
@@ -818,7 +818,7 @@ describe("the action", () => {
 
   /**
    * **A reviewer that started and did not finish is not a refusal either**
-   * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1, `#196`).
+   * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1, `#196`).
    *
    * This test asserted `failed` for two years, and the verdict it asserted is
    * the one a reviewer that read the diff and refused it returns. So

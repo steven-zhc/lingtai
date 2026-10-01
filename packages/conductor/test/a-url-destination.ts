@@ -2,7 +2,7 @@
  * **A second destination, whose locator is a URL** — the scaffolding, and no
  * test in it (`#303`).
  *
- * [0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * [0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §4 says the locator is a string the core never parses, and until this file
  * nothing checked it. One destination shipped, `file:`, whose locator is a
  * repository path — so **every path-shaped assumption anywhere in the pipeline
@@ -56,7 +56,7 @@
  *
  * Two halves of a real cloud destination are **not** simulated here, because
  * simulating them would assert a fixture rather than the system: credentials
- * refused when the recipe resolves ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)'s
+ * refused when the recipe resolves ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)'s
  * layers on their hardest case) and a real network failure, which is the first
  * data on the line 0066 §5 left to measurement — *unreachable* versus *needs a
  * person*. Both belong to the first real cloud destination somebody actually

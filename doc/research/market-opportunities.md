@@ -41,7 +41,7 @@ Lingtai 最有价值的不是“让 agent 写代码”，而是已经长出来�
 
 ### 已成立的产品骨架
 
-- 核心闭环是“拿一张 ticket，调用 agent，在固定点运行 action，然后合并到 base”；这在 [ADR 0016](../decisions/0016-the-settled-model.md) 中被明确限定，不是通用工作流引擎。
+- 核心闭环是“拿一张 ticket，调用 agent，在固定点运行 action，然后合并到 base”；这在 [ADR 0016](../decisions-archive/0016-the-settled-model.md) 中被明确限定，不是通用工作流引擎。
 - append-only Postgres event log 是唯一真相，board、CLI、projection 与 subscriber 都围绕同一记录工作；目前 reference 列出 38 种 event、五类 stream、两个 projection、五个 gate point。
 - `GatesResolved` 在执行前记录五个点的完整计划，空点也显式记录；所有 verdict 绑定 `onSha`。这是“计划过但没执行”和“本来就没配置”可被区分的关键，也是 Lingtai 最不寻常的资产。
 - conductor 自己管理 mirror、一次性 worktree、claim lease 与按 base branch 串行化的 merge lane；operator 的 checkout 不在信任路径中。
@@ -305,9 +305,9 @@ ADR 0016 的“无 policy、repo 自己决定 workflow”对 owner-operated 工�
 ### 仓库内
 
 - [README](../../README.md)；[design](../design.md)；[roadmap](../roadmap.md)；[reference](../reference.md)
-- [ADR 0013 — daemon hosts the work](../decisions/0013-daemon-hosts-the-work.md)
-- [ADR 0016 — settled model](../decisions/0016-the-settled-model.md)
-- [ADR 0018 — proposed point](../decisions/0018-the-proposed-point.md)
+- [ADR 0013 — daemon hosts the work](../decisions-archive/0013-daemon-hosts-the-work.md)
+- [ADR 0016 — settled model](../decisions-archive/0016-the-settled-model.md)
+- [ADR 0018 — proposed point](../decisions-archive/0018-the-proposed-point.md)
 - [Claude Code runtime](../../packages/runtime/src/claude-code.ts)；[Codex stub](../../packages/runtime/src/codex.ts)；[integrator](../../packages/conductor/src/integrate.ts)；[recipe schema](../../packages/config/src/recipe.ts)
 
 ### 外部一手来源
