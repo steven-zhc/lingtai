@@ -6,7 +6,7 @@
 | **Write it at** | `proposed` — and nowhere else. |
 | **Needs** | `watch`: a non-empty list of globs. `then` defaults to `request-approval`; `fail` is the other value. |
 | **Refuses** | An empty list, any other `then`, any step but `proposed`. |
-| **Watch out** | On a repository whose every ticket edits its own machinery — Lingtai's — nearly every diff matches, and it holds everything. |
+| **Watch out** | On a repository whose every ticket edits its own machinery, nearly every diff matches, and it holds everything. |
 
 Holds a change for a person when it touches something a person should see,
 so the agent cannot edit the thing that judges its work and then pass that
@@ -24,21 +24,19 @@ that silently matches nothing) and matches them against the diff's paths.
 - **`then: fail`** — *this should not have happened*, for a path nothing
   legitimate touches.
 
-**Who it is for.** A managed repository that is not Lingtai should almost
-certainly have it on: a watched path is rare there, and a hold means something.
-It was on here for one night (`#31`) and held six consecutive items with
-`build=passed review=passed`; it is off because every ticket in this queue is
-about Lingtai's own machinery, not because it failed. Since `#180` the recipe is
-outside every worktree, so the file it mostly guarded is out of an agent's reach
-([tamper-watch.md](../tamper-watch.md)).
+**Who it is for.** A repository whose watched paths are rare: there a hold means
+something. A repository whose every ticket is about its own machinery will match
+most diffs and hold most passes, so name only paths a person must always see. The
+recipe lives outside every worktree, so an agent cannot edit it
+([tamper-watch.md](../tamper-watch.md) lists the paths worth watching).
 
 ## Where it may be declared
 
 `watchPlugin.at` is `{ proposed }`. A glob over the file list is a question about
-a change already built, which is `proposed`'s. Not `merge` since `#270`: a
-`then: request-approval` is a way of reaching a person, and *only `proposed` may
-send a pass to a person* (0058 §3b) — a hold written at `merge` would be asked
-about a merge the same list had already made.
+a change already built, which is `proposed`'s. Not `merge`: a `then:
+request-approval` is a way of reaching a person, and only `proposed` may send a
+pass to a person — a hold written at `merge` would be asked about a merge the
+same list had already made.
 
 ## Parameters
 
@@ -84,7 +82,7 @@ merge:
 ```
 
 > `watch:` does not implement `merge` — it serves `proposed`: `merge` may not
-> reach a person, and that is the third of its three ways out (0058 §3b) …
+> reach a person …
 
 An empty list is refused by the field (`Too small: expected array to have >=1
 items`), and `then: hold` by `Invalid option: expected one of
@@ -93,13 +91,9 @@ worktree, before an agent, before any money.
 
 ## Related
 
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3b — only
-  `proposed` may send a pass to a person.
-- [0046](../decisions/0046-lingtai-is-personal.md) §4 — the recipe left the
-  repository, which is where this watch lost its subject.
-- `#31` built it; `#270` moved it off `merge`.
-- [tamper-watch.md](../tamper-watch.md) — the list, the test that keeps it
-  correct, and how to turn it on.
-- [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
+- [tamper-watch.md](../tamper-watch.md) — the list of paths worth watching, and
+  how to turn it on.
+- [`plugins/index.md`](index.md) — all the plugins, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.
+- [reference.md](../reference.md) — every recipe key.

@@ -8,30 +8,29 @@
 | **Refuses** | `..`, an absolute or `~` path, any placeholder but `{{issue}}`, any step but `design`, `file:` written before the drafter. |
 | **Watch out** | A fixed path keeps one document, the newest: the next ticket overwrites it and the first ticket's locator points at the wrong note. Use `{{issue}}`. |
 
-Without it a design is **bought, used once and cannot be kept**
-([0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §1): it lives
-in memory until the pass ends, and in one prompt.
+Without it a design is **bought, used once and cannot be kept**: it lives in
+memory until the pass ends, and in one prompt.
 
 ## What it does
 
 `createFileAction` in `packages/actions/src/file-action.ts` writes
 `ActionContext.design.document` to the path, **commits it to the branch**, and
-returns the path as the **locator**, a string only this plugin reads (0066 §4).
+returns the path as the **locator**, a string only this plugin reads.
 
 - **It makes nothing**, so it goes *after* the drafter; if none was needed there
   is no file and no locator.
-- **It writes and does not decide** (0058 §3): a failed write is
-  `did-not-finish`, the pass stops for a person, no fix round.
+- **It writes and does not decide**: a failed write is `did-not-finish`, the pass
+  stops for a person, no fix round.
 - **The design stays on the log**, clipped to 60 lines / 8,000 bytes, in the
   drafter's `StepPassed`; this key adds the locator and a copy.
 - **The commit is always, with no flag** (the worktree is removed on every
-  ending; only commits get out): a `commit:` field is refused (0061 §9).
+  ending; only commits get out): a `commit:` field is refused.
 
 ## Where it may be declared
 
-`filePlugin.at` is `{ design }`: *the one step that makes something large
-(0066 §3) … Every other step answers with a verdict — a sentence the log already
-holds — so there is nothing at one for a destination to keep.*
+`filePlugin.at` is `{ design }`: *the one step that makes something large … Every
+other step answers with a verdict — a sentence the log already holds — so there
+is nothing at one for a destination to keep.*
 
 ## Parameters
 
@@ -57,7 +56,7 @@ design:
 ```
 
 ```yaml
-# packages/recipe/unit/plugin.test.ts — two destinations; the last locator reaches implement (0069 §5)
+# packages/recipe/unit/plugin.test.ts — two destinations; the last locator reaches implement
 design:
   - {name: shape it, agent: claude-code, prompt: write down the shape}
   - name: the note in the repository
@@ -67,7 +66,7 @@ design:
 ```
 
 ```yaml
-# #310 — a path per ticket, so each pass's note lands at its own file
+# a path per ticket, so each pass's note lands at its own file
 design:
   - {name: shape it, agent: claude-code, prompt: write down the shape}
   - name: keep it
@@ -104,12 +103,7 @@ A `file:` first in its list is refused too (*it is the first action there, and a
 
 ## Related
 
-- [0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) — decided
-  that a large answer is a locator on the log (§3), **where it lands is a plugin
-  rather than a field** (§5), and a bad path is refused at resolve (§6).
-- [0069](../decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
-  — decided that **both** document and locator reach `implement`.
-- `#265` gave `design` an `agent:` that drafts; `#310` added `{{issue}}`.
-- [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
+- [file-brief.md](file-brief.md) — the other end: reads the kept design back at `implement`.
+- [`plugins/index.md`](index.md) — every plugin, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.

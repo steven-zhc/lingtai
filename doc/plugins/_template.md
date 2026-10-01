@@ -28,7 +28,10 @@
 >
 > What is never cut: the real examples, the refusal quoted in the schema's own
 > words, and the trap a reader would otherwise walk into. Prose about *why the
-> design is good* is what goes — that lives in the ADR the page links to.
+> design is good* is what goes.
+>
+> **No ADR numbers, no ticket numbers, no history ('since', 'used to', 'no
+> longer'): the page says what is true now and what to write.**
 
 > **TL;DR — a four-to-six-row table, directly under the title and before the
 > lede.** It is the page for a reader who will read nothing else, so every row is
@@ -64,12 +67,12 @@
 > **The steps from the plugin's own `at`, and why those and not others.** Do not
 > retype the list: read it off `<key>Plugin.at` in
 > `packages/recipe/src/recipe.ts`, which is the whole of what makes the plugin
-> legal at a step ([0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4).
+> legal at a step.
 >
-> The *why* has a source too, and it is not your own reasoning:
-> `whyThatPair` in the same file carries a sentence per step, and it is the
-> sentence the refusal actually prints. Quote it, so that a person who hit the
-> refusal and a person reading this page ahead of time are told the same thing.
+> The *why* has a source in the code: `whyThatPair` in the same file carries a
+> sentence per step, and it is the sentence the refusal actually prints. Say the
+> same thing, so that a person who hit the refusal and a person reading this page
+> ahead of time are told the same.
 >
 > A plugin whose `at` is `{}` writes this section as *nowhere yet*, and says
 > where the code it names is called instead — `CALLED_DIRECTLY` in `recipe.ts`
@@ -128,10 +131,9 @@ step:
 
 ## Related
 
-> The **ADR that decided it** and the **ticket that built it**, each with what it
-> decided rather than just its number — the house rule for a `## Related`
-> anywhere in this repository. A `seq` is not a citation here; an issue number
-> is ([design/1.0.md](../design/1.0.md)).
+> Links to related pages only — sibling plugin pages, the index, the guides —
+> each with a few words on why a reader would follow it. NEVER ADR numbers,
+> ticket numbers or history.
 
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than

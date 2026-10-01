@@ -9,20 +9,19 @@
 | **Watch out** | Only for a ticket that **landed**: for one that did not, those refs are the only account of what was tried. Leave it out to keep every branch. |
 
 Stops the remote from collecting one ref per approach a repository has ever tried.
-Nothing else deletes a branch, so the count only grows — this repository carried
-**150 `agent/*` refs**, thirteen of them abandoned arms, and every clone and fetch
-paid for all of them.
+Nothing else deletes a branch, so the count only grows, and every clone and fetch
+pays for all of them.
 
 ## What it does
 
 An effect at `end`, like `close:` and `labels:`, so it cannot refuse. It removes
-the siblings `armBranch` pushes ([0062](../decisions/0062-what-a-claim-leaves-behind.md) §2).
+the per-attempt sibling refs pushed when a ticket is claimed.
 **`agent/<n>` itself stays** unless `branch: true`: after a merge its commits are
 reachable from `main`, but it is the ref a person follows from the merge commit, so
 the default keeps what somebody might read.
 
-**It is declinable by not being declared**, which is why it is a plugin (0061 §2).
-A team that keeps every branch for audit leaves it out.
+**Leaving it out keeps every branch.** A team that keeps every branch for audit
+does not declare it.
 
 ## Where it may be declared
 
@@ -37,10 +36,9 @@ A team that keeps every branch for audit leaves it out.
 | `branch` | boolean | no, `false` | Also delete `agent/<n>`, on top of its arms. |
 | `when` | `landed` | no, `landed` | Only `landed`, written out so the file says which ending. |
 
-**`when` is a literal and not an enum, and that is the safety argument.** `#239`
-creates these refs precisely so a later attempt can fetch what an earlier one
-tried, and a cleanup on any other ending destroys that. A value nobody can write is
-a mistake nobody can make.
+**`when` accepts the one value `landed`.** The per-attempt refs exist so a later
+attempt can fetch what an earlier one tried, and a cleanup on any other ending
+destroys that.
 
 ## Examples
 
@@ -89,11 +87,6 @@ agent, before any money.
 
 ## Related
 
-- [0062](../decisions/0062-what-a-claim-leaves-behind.md) §2 — what a claim leaves
-  on `origin`, and why the arms exist.
-- [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §2 — declinable by not
-  being declared.
-- `#240` built it; `#239` is why a non-landed ticket keeps its refs.
 - [`close.md`](close.md), [`labels.md`](labels.md) — the other two effects at `end`.
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
