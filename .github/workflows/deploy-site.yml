@@ -1,0 +1,55 @@
+# The website, published on every push to main (#331).
+#
+# Built WITHOUT the board snapshot: `snapshot.ts` reads this machine's own log,
+# and a GitHub runner must never be handed `LINGTAI_DATABASE_URL`. With no URL
+# the hero says it has no snapshot, which is true. A build with the board is
+# still `scripts/deploy-site.sh`, run by hand beside the log.
+#
+# Needs two repository secrets: CLOUDFLARE_API_TOKEN (Cloudflare Pages: Edit)
+# and CLOUDFLARE_ACCOUNT_ID. The Pages project is `lingtai`, created once.
+name: deploy-site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/site/**"
+      - "doc/**"
+      - "packages/projector/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push replaces a deploy still queued.
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: build the site
+        run: pnpm --filter @lingtai/site build
+
+      - name: upload to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: >
+          pnpm dlx --allow-build=esbuild --allow-build=workerd wrangler@4 pages deploy apps/site/out
+          --project-name lingtai
+          --branch main
+          --commit-hash "${{ github.sha }}"
+          --commit-message "$(git log -1 --format=%s | head -c 300)"
