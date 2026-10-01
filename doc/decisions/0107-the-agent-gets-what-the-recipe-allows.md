@@ -61,7 +61,7 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
    inside the worktree (mode `0600`, `renderEnvFile`, by
    `packages/repo/src/worktree.ts`), because frameworks read `.env.local` from
    an app directory. The runtime's hook wiring is added for the agent process
-   itself (see 0106).
+   itself (see [0106](0106-a-role-keeps-its-powers-across-runtimes.md)).
 
 5. **An extension gets exactly the names it declares.** A `run:` plugin's
    `env:` list and a subscriber's `env:` list are read from the merged data

@@ -49,7 +49,7 @@ in the source.
    waivers and the board address it by. The closed set is `PLUGINS` in
    `packages/recipe/src/recipe.ts`. A step's plugins run in the order written,
    and what the step does with their results belongs to the step. Which plugins
-   exist and which steps each one serves is a separate decision (0105).
+   exist and which steps each one serves is a separate decision ([0105](0105-a-plugin-is-a-declaration-and-an-implementation.md)).
 
 4. **A step may be omitted from the file; the resolved recipe has all ten.** An
    absent step resolves to `[]`, and the board, `lingtai doctor` and
@@ -85,7 +85,7 @@ in the source.
    any pass.
 
 7. **The machine file, `~/.lingtai/config.yml`, holds the machine's facts.**
-   `database.store` and `database.url` (which log; see 0100) and `board.port`
+   `database.store` and `database.url` (which log; see [0100](0100-one-append-only-log.md)) and `board.port`
    are read by `packages/env`. `packages/recipe/src/local.ts` reads
    `runtime.agent`, `runtime.limits` and `runtime.assignee`, either machine-wide
    or under `projects.<name>.runtime`, and merges them into the resolved recipe.

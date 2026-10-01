@@ -15,15 +15,12 @@ holds the item for a person. Lingtai's own failures never reach an agent at all.
 
 A pass can end badly in four unlike ways: a judgement about the diff, a check
 that went red, an account that will not run an agent, and an agent that died
-mid-run. They cost different money and need different answers. A retry that is
-not told what refused it pays again for the same result, and a loop that re-buys
-agents without a bound spends money without ever producing an error. An
-account-wide quota answered item by item walks the whole queue into the same
-wall in seconds. And a crash recorded as a refusal sends a fixing agent to answer
-a question nobody asked. This ADR fixes what each ending costs. *Where* a refusal
-goes next — the router at `proposed`, `judge:`, the offered set — is the
-pipeline's (ADR 0103); this one fixes the bounds and the endings that router works
-inside.
+mid-run. They cost different money. A loop that re-buys agents without a bound
+never errors, it only spends; an account-wide quota answered item by item walks
+the whole queue into the same wall; a crash recorded as a refusal pays a fixer
+to answer a question nobody asked. *Where* a refusal goes next (the router at
+`proposed`, `judge:`, the offered set) is the pipeline's, ADR [0103](0103-a-pass-is-ten-fixed-steps.md); this ADR
+fixes the bounds and the endings that router works inside.
 
 ## Decision
 
@@ -49,8 +46,7 @@ inside.
    `review` and `proposed` again. The evidence is one argument with three shapes:
    the reviewer's findings, a command's output (both ends, clipped to
    `runtime.budget.evidence`), or the paths the lane could not merge. The round
-   is logged as `FixRequested` then `FixApplied` on the run's stream, and runs on
-   the same runtime as the implementer.
+   is logged as `FixRequested` then `FixApplied`, on the implementer's runtime.
 
 4. **Only a refusal with a criterion buys an agent.** A finding counts only if it
    carries a `failureScenario`; a command's refusal only if it printed something.
@@ -60,21 +56,17 @@ inside.
    any agent has run (`prepared`) cannot offer `implement` however many rounds
    are left.
 
-5. **The fixer gets the findings and the diff, not the reasoning.** Each
-   `failureScenario` is passed verbatim, with the diff `base...HEAD` clipped at
-   `runtime.budget.diff`, and no plan, transcript or session of the implementer.
-   It is told to change nothing beyond the refusal. The re-review is handed the
-   findings the round was bought on (`ActionContext.recheck`) and asked whether
-   those sequences still produce those outcomes, so deleting a line or renaming a
-   symbol does not pass.
+5. **The fixer gets the findings and the diff, not the reasoning, and may
+   decline.** Each `failureScenario` is passed verbatim with the diff (clipped at
+   `runtime.budget.diff`) and no plan, transcript or session of the
+   implementer's. The re-review is handed the same findings
+   (`ActionContext.recheck`) and asked whether those sequences still happen, so
+   silencing a finding does not pass. `fixBrief` tells the fixer that if the
+   refusal is wrong or not this diff's, it changes nothing and commits nothing;
+   a round with no new commit stops the pass and holds the item for a person
+   with the fixer's final message.
 
-6. **The fixer may decline, and declining is committing nothing.** `fixBrief`
-   says so in as many words: if the refusal is wrong or is not this diff's,
-   change nothing and commit nothing. A round with no new commit stops the pass
-   and holds the item for a person with the fixer's final message. No approval is
-   offered on that card, because nothing judged a diff.
-
-7. **What buys a round by default is mechanical; a judgement needs a declared
+6. **What buys a round by default is mechanical; a judgement needs a declared
    judge.** A red check (`red`) and a re-verify that went red on a moved base
    (`verify-failed`) are answered by the built-in `same-worktree` judge: back to
    `implement` while a round is left, else a person. `findings`, `conflict` and
@@ -84,10 +76,10 @@ inside.
    `judge: claude-code` at `findings`. A judge chooses only from the set the
    workflow offers and never sees the ceilings.
 
-8. **A restart starts the ticket over from the base, and only a judgement earns
-   one.** It is the `claim` destination: offered only for `findings`, only while
-   `restarts` are left, and never while something else on the pass is asking a
-   person (a `human:` or `watch:` action). A red check or a conflict never
+7. **A restart starts the ticket over from the base, and only a judgement earns
+   one.** It is the `claim` destination: offered only for `findings` and only
+   while `restarts` are left. A pass held by a declared `human:` or `watch:`
+   action stops for that person and never reaches the router. A red check or a conflict never
    restarts, whatever a recipe or a judge says, because their work is still
    there. The approach being abandoned is pushed to its arm
    `agent/<n>-attempt-<k>` first; then `PassRestarted` (arm, head sha, rounds
@@ -95,7 +87,7 @@ inside.
    released. If the arm is not on origin, no restart is spent and the pass ends
    as `failed`. A restarted item waits out `source.backoff` like any release.
 
-9. **The limits are one block.** `runtime.limits` holds `turns` (300) and `wall`
+8. **The limits are one block.** `runtime.limits` holds `turns` (300) and `wall`
    (`2h`), which bound one agent run, and `rounds` (2) and `restarts` (0), which
    count runs a pass and passes a ticket may buy. `rounds: 0` sends every refusal
    to a person; `restarts: 0` sends a spent pass to a person. `rounds` and
@@ -105,7 +97,7 @@ inside.
    says it, wherever a project's limits are shown (onboarding, the project
    listing, `lingtai doctor`).
 
-10. **A minor finding does not refuse; it is filed.** `verdictFor`
+9. **A minor finding does not refuse; it is filed.** `verdictFor`
     (`packages/actions/src/agent-action.ts`) refuses on a `blocker` or `major` and
     passes on `minor`. A passing step's findings ride on `StepPassed.findings` and
     collect in the `finding_backlog` projection. A person decides one entry at a
@@ -114,32 +106,30 @@ inside.
     `TicketStore` opens the issue (`FindingProposed`); declining appends
     `FindingDeclined` (`packages/conductor/src/backlog.ts`).
 
-11. **"Never started" is three facts, never the message.** A receipt is
+10. **"Never started" is three facts, never the message.** A receipt is
     `never-started` when it is an error, took at most one turn and cost nothing
-    (`neverStarted`, `packages/agent/src/runtime.ts`). For Codex it is a
-    `turn.failed` with no completed turn and no agent message. The runtime's prose
-    is kept whole as `detail` and never read to classify. The outcome is named for
-    what is checkable, not for a cause such as a quota.
+    (`neverStarted`, `packages/agent/src/runtime.ts`; for Codex, a `turn.failed`
+    with no agent message). The runtime's prose is kept whole as `detail` and is
+    never read to classify, and the name is not a guessed cause such as a quota.
 
-12. **An agent that never started stops the conductor, not the item.** Wherever
+11. **An agent that never started stops the conductor, not the item.** Wherever
     it happens — the implementer, a design agent, a reviewer, a fixer, an agent
     judge — the step ends `never-ran` (`StepNeverRan`) and the pass stops: no
     round, no judge, no question for a person. The conductor appends
     `ConductorPaused` on `ctl-conductor` with an `until`; `standDown`
     (`packages/conductor/src/never-started.ts`) reads a reset time out of the
     message (an ISO instant, a dated clock, or a wall clock, at most a week out)
-    and falls back to `source.backoff`. A pause already holding is left alone, so
-    a person's pause is never overwritten. The pause lifts by itself. The item is
-    released (`failed`), keeps its place, and any commits are published first.
-    The pause sentence names which agent met the wall and whether anything had
-    already been paid for.
+    and falls back to `source.backoff`. A pause already holding (a person's has no
+    `until`) is left alone. The pause lifts by itself and names which agent met
+    the wall. The item is released (`failed`) and keeps its place; any commits
+    are published first.
 
-13. **An agent that started and did not finish judged nothing, and stops only
+12. **An agent that started and did not finish judged nothing, and stops only
     the pass.** A crash, a spent turn budget, a missing receipt, or a fixer that
     committed nothing ends the step `did-not-finish` (`StepDidNotFinish`). It buys
     no round, reaches no judge, is not retried, and does not pause the conductor,
     because a crash is local. The item is blocked for a person; the card offers no
-    approval, since no step judged the diff, and the move left is requeue. A step
+    approval, because no step judged the diff, and the move left is requeue. A step
     that stopped to ask a question is a different ending (`StepAsked`) and goes
     to the router.
 
@@ -147,18 +137,13 @@ inside.
 
 - Every refusal is one flow with one ceiling. Only the evidence differs between a
   build, a review and a lane refusal.
-- A pass never buys a second implementation of work it still has on disk. A
-  fresh pass costs one backoff and one claim, and only a declared judge that
-  says *the approach* can buy one.
+- A pass never re-implements work it still has on disk; only a judge that says
+  *the approach* can buy a fresh pass.
 - The release reason carries the step, the ending and the runtime's own words
   (`WorkItemReleased.reason`). The next attempt's brief quotes it, so changing
   that wording changes what the next agent reads.
-- A wrongly read reset time only costs a wasted pass. Resuming early meets the
-  wall again and pauses again; a reset this build could not parse is said as a
-  parser fault.
-- A judge that answers outside the offered set is refused by name and the pass
-  goes to a person. An agent judge that answers nothing also goes to a person,
-  never round again.
+- A misread reset time costs a wasted pass, never a wrong decision: resuming
+  early meets the wall and pauses again.
 - A crash at `implement` costs a person's attention, not an agent. Whether the
   implementer deserves a retry of its own is unmeasured and not offered.
 
