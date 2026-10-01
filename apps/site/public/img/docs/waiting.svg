@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 790 230" role="img" aria-label="When a card waits on you, read which hold or check stopped it, then choose: approve, requeue with a note, or attach to the run log.">
+<style>
+:root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
+@media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
+text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
+.s{font-size:11.5px;fill:var(--mute)}.h{font-weight:600}.lab{font-size:11.5px;fill:var(--mute)}
+.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}
+.acc{fill:var(--accf);stroke:var(--acc);stroke-width:1.6}
+.warn{fill:var(--warnf);stroke:var(--warn);stroke-width:1.6}
+.zone{fill:none;stroke:var(--line);stroke-width:1.2;stroke-dasharray:5 4}
+.ln{fill:none;stroke:var(--line);stroke-width:1.4}.lnw{fill:none;stroke:var(--warn);stroke-width:1.4}.lna{fill:none;stroke:var(--acc);stroke-width:1.6}
+.dash{stroke-dasharray:4 3}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<rect class="warn" x="20" y="76" width="150" height="64" rx="6"/>
+<text class="h" x="95.0" y="105.0" text-anchor="middle">Waiting on you</text>
+<text class="s" x="95.0" y="121.0" text-anchor="middle">open the card</text>
+<rect class="box" x="230" y="24" width="230" height="48" rx="6"/>
+<text class="h" x="345.0" y="52.5" text-anchor="middle">Only your approval is left</text>
+<rect class="acc" x="510" y="24" width="260" height="48" rx="6"/>
+<text class="h" x="640.0" y="52.5" text-anchor="middle">lingtai approve --issue N</text>
+<path class="ln" d="M460 48 L510 48" marker-end="url(#a)"/>
+<path class="ln" d="M170 108 L200 108 L200 48 L230 48" marker-end="url(#a)"/>
+<rect class="box" x="230" y="84" width="230" height="48" rx="6"/>
+<text class="h" x="345.0" y="112.5" text-anchor="middle">The approach is wrong</text>
+<rect class="acc" x="510" y="84" width="260" height="48" rx="6"/>
+<text class="h" x="640.0" y="112.5" text-anchor="middle">lingtai requeue --note "…"</text>
+<path class="ln" d="M460 108 L510 108" marker-end="url(#a)"/>
+<path class="ln" d="M170 108 L200 108 L200 108 L230 108" marker-end="url(#a)"/>
+<rect class="box" x="230" y="144" width="230" height="48" rx="6"/>
+<text class="h" x="345.0" y="172.5" text-anchor="middle">You need the trace</text>
+<rect class="acc" x="510" y="144" width="260" height="48" rx="6"/>
+<text class="h" x="640.0" y="172.5" text-anchor="middle">lingtai attach &lt;runId&gt;</text>
+<path class="ln" d="M460 168 L510 168" marker-end="url(#a)"/>
+<path class="ln" d="M170 108 L200 108 L200 168 L230 168" marker-end="url(#a)"/>
+</svg>

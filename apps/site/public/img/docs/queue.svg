@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 230" role="img" aria-label="The queue passes each open issue through three filters: a kind label, no hold label, no open blocker. What fails a filter is named in the status output.">
+<style>
+:root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
+@media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
+text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
+.s{font-size:11.5px;fill:var(--mute)}.h{font-weight:600}.lab{font-size:11.5px;fill:var(--mute)}
+.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}
+.acc{fill:var(--accf);stroke:var(--acc);stroke-width:1.6}
+.warn{fill:var(--warnf);stroke:var(--warn);stroke-width:1.6}
+.zone{fill:none;stroke:var(--line);stroke-width:1.2;stroke-dasharray:5 4}
+.ln{fill:none;stroke:var(--line);stroke-width:1.4}.lnw{fill:none;stroke:var(--warn);stroke-width:1.4}.lna{fill:none;stroke:var(--acc);stroke-width:1.6}
+.dash{stroke-dasharray:4 3}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<rect class="box" x="20" y="30" width="100" height="60" rx="6"/>
+<text class="h" x="70.0" y="57.0" text-anchor="middle">Open issues</text>
+<text class="s" x="70.0" y="73.0" text-anchor="middle">in the repo</text>
+<rect class="box" x="150" y="30" width="140" height="60" rx="6"/>
+<text class="h" x="220.0" y="57.0" text-anchor="middle">Has a kind?</text>
+<text class="s" x="220.0" y="73.0" text-anchor="middle">e.g. bug, feature</text>
+<rect class="box" x="320" y="30" width="140" height="60" rx="6"/>
+<text class="h" x="390.0" y="57.0" text-anchor="middle">No hold label?</text>
+<text class="s" x="390.0" y="73.0" text-anchor="middle">e.g. agent:hold</text>
+<rect class="box" x="490" y="30" width="140" height="60" rx="6"/>
+<text class="h" x="560.0" y="57.0" text-anchor="middle">No open blocker?</text>
+<text class="s" x="560.0" y="73.0" text-anchor="middle">GitHub blocked-by</text>
+<rect class="acc" x="660" y="30" width="120" height="60" rx="6"/>
+<text class="h" x="720.0" y="57.0" text-anchor="middle">runnable</text>
+<text class="s" x="720.0" y="73.0" text-anchor="middle">by kind, then #</text>
+<path class="ln" d="M120 60.0 L150 60.0" marker-end="url(#a)"/>
+<path class="ln" d="M290 60.0 L320 60.0" marker-end="url(#a)"/>
+<path class="ln" d="M460 60.0 L490 60.0" marker-end="url(#a)"/>
+<path class="ln" d="M630 60.0 L660 60.0" marker-end="url(#a)"/>
+<path class="lnw" d="M220 90 L220 140" marker-end="url(#a)"/>
+<text class="lab" x="228" y="126" text-anchor="start">no</text>
+<rect class="warn" x="158" y="144" width="124" height="34" rx="6"/>
+<text class="h" x="220.0" y="165.5" text-anchor="middle">no-kind</text>
+<path class="lnw" d="M390 90 L390 140" marker-end="url(#a)"/>
+<text class="lab" x="398" y="126" text-anchor="start">no</text>
+<rect class="warn" x="328" y="144" width="124" height="34" rx="6"/>
+<text class="h" x="390.0" y="165.5" text-anchor="middle">excluded-label</text>
+<path class="lnw" d="M560 90 L560 140" marker-end="url(#a)"/>
+<text class="lab" x="568" y="126" text-anchor="start">no</text>
+<rect class="warn" x="498" y="144" width="124" height="34" rx="6"/>
+<text class="h" x="560.0" y="165.5" text-anchor="middle">blocked-by</text>
+<text class="s" x="400" y="212" text-anchor="middle">lingtai status &lt;project&gt; prints every passed-over issue with the reason it failed.</text>
+</svg>
