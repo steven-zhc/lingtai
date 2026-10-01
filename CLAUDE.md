@@ -12,8 +12,8 @@ changing anything that crosses a process boundary.
 what a person writes in the recipe, and where a ticket goes when a step will
 not let it past. **It is written for somebody about to point Lingtai at a
 repository**, so it carries no ADR history and no before-and-after; it
-describes [0058](doc/decisions/0058-lingtai-is-a-development-pipeline.md) and
-[0061](doc/decisions/0061-the-recipe-is-the-pipeline.md), which are accepted
+describes [0058](doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) and
+[0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md), which are accepted
 and are built: **the conductor runs the ten steps since #256** —
 `conduct.ts` resolves the recipe, the environment and the tier and hands the
 rest to `runPass`, and `run-once.ts`'s five gate points are deleted. What is
@@ -21,8 +21,12 @@ still [the plan](doc/design/the-pipeline.md) is the rest of that document's
 list, not the engine. Both drawings come from `scripts/the-pass.py`; the HTML
 is generated.
 
-[doc/README.md](doc/README.md) indexes the ADRs, which are append-only in
-spirit: a decision that turns out wrong gets a superseding file, not an edit.
+[doc/README.md](doc/README.md) indexes the ADRs: **one ADR per topic, in
+`doc/decisions/` from 0100, each stating the current decision and nothing about
+how it got there.** A decision that changes is an edit to its topic's ADR, not a
+new file beside it. The 75 ADRs written before 2026-10-01 are kept unchanged in
+`doc/decisions-archive/`, and the `0061 §4`-style citations in code comments
+name those archived files.
 
 ## The log settles it
 
@@ -33,7 +37,7 @@ GitHub issue number, never a seq ([1.0](doc/design/1.0.md)) — because the log 
 a file somebody may reset. This one has been reset twice already
 ([007](doc/experiments/007-the-log-before-the-reset.md),
 [010](doc/experiments/010-the-log-before-the-second-reset.md)), and
-[0055](doc/decisions/0055-two-implementations-chosen-at-init.md) §3 makes
+[0055](doc/decisions-archive/0055-two-implementations-chosen-at-init.md) §3 makes
 choosing the other store start an empty one rather than carry the history over.
 So: quote the seq where you are proving what happened, and cite the issue where
 somebody has to follow you there later.
@@ -335,7 +339,7 @@ is a `Done when` an agent cannot reach. Ask for `pnpm test` and `pnpm typecheck`
 and commit as the work stands.
 
 **It is not given up, it moves.** The integration half runs on a separate system
-after the merge — [0060](doc/decisions/0060-the-gate-runs-unit-tests.md)'s other
+after the merge — [0060](doc/decisions-archive/0060-the-gate-runs-unit-tests.md)'s other
 half, and `the-pipeline.md`'s **T11**. What a ticket must not do is wait for it.
 
 So one check is out of reach while a change is being made rather than absent:
@@ -345,7 +349,7 @@ That one is caught after the merge instead of before it, and `#230` is what it
 looks like when it is caught late.
 
 `pnpm test` is what the `build` gate runs, so **a red there is a claim about the
-diff** ([0060](doc/decisions/0060-the-gate-runs-unit-tests.md)). It is one
+diff** ([0060](doc/decisions-archive/0060-the-gate-runs-unit-tests.md)). It is one
 vitest run rather than `pnpm -r`, which stopped at the first failing package and
 hid every package after it (#222). `HOME=/nonexistent pnpm test` is green, and
 that is the claim rather than a habit — run it that way when you have touched

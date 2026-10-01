@@ -30,7 +30,7 @@
  * Six kinds now rather than four: `crash` used to absorb every ending that was
  * not a clean result, so a quota, a segfault and a bad flag were one word and
  * six tickets burned in ninety-two seconds looked like six crashes
- * ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)). What told
+ * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)). What told
  * them apart was never the message — it is `neverStarted`'s three facts. `#89`
  * took one more off the same word: a run the runtime stopped at the recipe's
  * `turns` is `out-of-turns`, which is a finding about the ticket.
@@ -215,7 +215,7 @@ function argsFor(
  * hook only hides the first.
  *
  * `default` is the third kind of agent
- * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §1), which has
+ * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §1), which has
  * no worktree, no hook and no gates and must therefore have no tools either.
  * Under `-p` there is nothing to grant a permission with — the paragraph above
  * measured that: every Write, Edit and most Bash calls come back as *"you
@@ -267,11 +267,11 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           cwd: request.cwd,
           // Filtered, not inherited. The agent gets what the recipe allows plus
           // the hook's wiring, and nothing else — one of the three real
-          // boundaries (doc/decisions/0007).
+          // boundaries (doc/decisions-archive/0007).
           env: request.env as NodeJS.ProcessEnv,
           stdio: ["ignore", "pipe", "pipe"],
           // Its own process group
-          // ([0030](../../../doc/decisions/0030-shutting-down-safely.md) §3).
+          // ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §3).
           //
           // Ctrl+C is delivered to the whole foreground group, so without this
           // the signal that begins a shutdown killed the agent in the same

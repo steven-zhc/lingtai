@@ -271,9 +271,9 @@ describe("reduceWorkItem", () => {
    * This fold used to carry `repairs`, `pendingRepair` and `repairRun`: the
    * event was appended just before the release, so between the two the item
    * carried a pending repair and the next claim *became* it
-   * ([0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md)). A lane
+   * ([0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md)). A lane
    * refusal buys nothing since
-   * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+   * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
    * §Consequences, so the type is retired — readable for ever, appended never —
    * and the three fields are gone with the purchase.
    *
@@ -350,7 +350,7 @@ describe("reduceWorkItem", () => {
 
   /**
    * The second ceiling, counted off the log rather than remembered
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §2).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §2).
    *
    * The property that matters is what it does *not* have: no pending record, and
    * nothing a claim consumes. A repair needed one because the next claim had to
@@ -420,7 +420,7 @@ describe("reduceWorkItem", () => {
 
   /**
    * The one-shot edit
-   * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
+   * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md)
    * §5). It applies to the next run and to no other, which is what makes a
    * stale instruction impossible rather than merely guarded against. It is the
    * only thing a claim consumes now that `pendingRepair` is gone (`#143`).

@@ -140,7 +140,7 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime());
 /**
  * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,
  * with `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
- * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180).
+ * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  *
  * Read from the file every time rather than from anything stored: a snapshot
  * in Lingtai's database would be a second source of truth. No request is made

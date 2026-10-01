@@ -1,7 +1,7 @@
 /**
  * The merge action: **the branch a pass owns, landed — as a plugin rather than
  * as a step's body**
- * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §2, `#270`).
+ * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §2, `#270`).
  *
  * `mergePlugin` had been in the closed set since the twelve were named and
  * nothing read it: a `strategy` field whose enum has one legal value *because

@@ -4,7 +4,7 @@
 [#226](https://github.com/steven-zhc/lingtai/issues/226) · T0b of
 [the-pipeline.md](the-pipeline.md) · **no code, no schema, no parser**
 
-[0061](../decisions/0061-the-recipe-is-the-pipeline.md) decides that the recipe
+[0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) decides that the recipe
 becomes the pipeline — ten step names in order, each a list of plugins, read
 top to bottom. Five tickets aim at that. **This is the file they are aiming
 at**, written out for this repository with the values in use today, followed by
@@ -339,7 +339,7 @@ finding** — §3 takes them one at a time.
 | `runtime.limits.wall` | `implement:` → `agent.wall` |
 | `runtime.limits.rounds` | `implement:` → universal `rounds:` |
 | `runtime.limits.restarts` | `claim:` → universal `restarts:` |
-| `runtime.assignee.login` · `.take` | `claim:` → `queue.assignee` — §3.2, and [0063](../decisions/0063-every-setting-is-the-recipes.md) §3 |
+| `runtime.assignee.login` · `.take` | `claim:` → `queue.assignee` — §3.2, and [0063](../decisions-archive/0063-every-setting-is-the-recipes.md) §3 |
 | `runtime.budget.evidence` | **none named.** §3.3 — it belongs on `implement`'s `agent:`, and this file puts it there |
 | `runtime.budget.attempts` | **none named.** §3.3 — the same |
 | `runtime.budget.findings` | `review:` → `agent.findings`, and §3.5 is the disagreement about that |
@@ -386,7 +386,7 @@ one option that produces a silent drop.
 > home after all, and it is `proposed`. What this section got right is the rule it
 > ends on: the pair was a cell nobody had decided, and it was decided by a ticket
 > rather than by narrowing to what this repository happened to write. See
-> [0065](../decisions/0065-the-default-is-a-plugin.md) §8, which also settles the
+> [0065](../decisions-archive/0065-the-default-is-a-plugin.md) §8, which also settles the
 > lane's position: it is the last action at `merge`.
 
 Two lists of the plugins exist — [the-pipeline.md](the-pipeline.md)'s T2, and
@@ -405,7 +405,7 @@ make impossible. **T2's list is corrected to twelve in the same change as this
 document.**
 
 > **Superseded 2026-09-24, and the finding is why**
-> ([0063](../decisions/0063-every-setting-is-the-recipes.md) §3, `#244`). Being
+> ([0063](../decisions-archive/0063-every-setting-is-the-recipes.md) §3, `#244`). Being
 > made to decide the cell is what showed there was no plugin there to decide
 > about: `kinds` orders the listing, `exclude` filters it and `assignee`
 > filters it, all in one pass over one GitHub response, so **`assignee` is a
@@ -509,7 +509,7 @@ rather than inherit it.
 This is the finding, and it is the reason the rows above are short.
 
 Since [#180](https://github.com/steven-zhc/lingtai/issues/180) and
-[0046](../decisions/0046-lingtai-is-personal.md) §3 a pass is configured by two
+[0046](../decisions-archive/0046-lingtai-is-personal.md) §3 a pass is configured by two
 files, and **the recipe refuses three keys by name**:
 
 ```ts
@@ -739,11 +739,11 @@ ADR, and it is why this document exists before any code.
 
 ## 6. Related
 
-- [0061](../decisions/0061-the-recipe-is-the-pipeline.md) — the decision this
+- [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) — the decision this
   draws. §2 is the shape, §4 the mapping, §5 the omitted step, §9 the schema.
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) — the ten
+- [0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) — the ten
   steps, and §3's *visible to nobody* about the two ceilings.
-- [0046](../decisions/0046-lingtai-is-personal.md) §3 — the recipe is the
+- [0046](../decisions-archive/0046-lingtai-is-personal.md) §3 — the recipe is the
   machine's, and the two files. §3.6 is where it meets 0061 §4.
 - [the-pipeline.md](the-pipeline.md) — this is T0b. T3 is the ticket that
   implements what is written here, and §3 is its input.

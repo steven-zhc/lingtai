@@ -56,7 +56,7 @@ to clean up after a `kill -9`.
 ## What
 `subscribe(onSeq)` on a dedicated `pg` connection listening to the `lingtai`
 channel. Prisma has no LISTEN/NOTIFY, so this sits alongside it — see
-[ADR 0004](../blob/main/doc/decisions/0004-prisma.md).
+[ADR 0004](../blob/main/doc/decisions-archive/0004-prisma.md).
 
 The payload is the seq only, so a listener reads the row it is told about.
 
@@ -164,7 +164,7 @@ triggers or rules.
 
 ## What
 A GitHub App client (installation tokens, not a PAT — see
-[ADR 0006](../blob/main/doc/decisions/0006-github-app.md)) and `lingtai add <owner>/<repo>`,
+[ADR 0006](../blob/main/doc/decisions-archive/0006-github-app.md)) and `lingtai add <owner>/<repo>`,
 which reads `.lingtai/config.yaml` from the base branch, applies a default policy,
 and registers the project.
 
@@ -198,7 +198,7 @@ policy, and hash the result into `RunStarted`.
 
 ## Notes
 Borrowed from GitHub Actions: definition may live in the repo, enforcement may not.
-[ADR 0005](../blob/main/doc/decisions/0005-config-in-target-repo.md).
+[ADR 0005](../blob/main/doc/decisions-archive/0005-config-in-target-repo.md).
 
 Depends on {{gh-app}}.
 """),
@@ -282,7 +282,7 @@ and append `GuardTripped` on a denial with the command redacted.
 ## Notes
 This is policy enforcement and observation, **not a security boundary** — a model can
 write a script to step around a pattern. The real boundaries are the filtered env, the
-worktree, and a sandbox. [ADR 0007](../blob/main/doc/decisions/0007-dual-runtime.md).
+worktree, and a sandbox. [ADR 0007](../blob/main/doc/decisions-archive/0007-dual-runtime.md).
 
 Depends on {{hook-bin}}.
 """),

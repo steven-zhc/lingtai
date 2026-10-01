@@ -5,7 +5,7 @@ What the credential is, how it reaches `git`, and what the agent is not given.
 
 ## One App, and it is not a person
 
-[0006](decisions/0006-github-app.md) chose a GitHub App over a personal access
+[0006](decisions-archive/0006-github-app.md) chose a GitHub App over a personal access
 token, and the reason was a day:
 
 > On 2026-08-30 the admin repository's CI failed on every run with a 403. The
@@ -118,7 +118,7 @@ env["GIT_TERMINAL_PROMPT"] = "0";
 
 ## The agent is given nothing
 
-[0020](decisions/0020-the-agent-environment-in-layers.md): **"A name that is not
+[0020](decisions-archive/0020-the-agent-environment-in-layers.md): **"A name that is not
 declared never reaches the agent from `process.env`."** It names
 `LINGTAI_DATABASE_URL` and the App's private key path as the two it must never
 carry.
@@ -189,14 +189,14 @@ This is a gap, not a decision. It is small and it is not ticketed.
 | **list repositories** | only `/repos/{owner}/{repo}/installation` — *is it installed here*. There is no call to `/installation/repositories`, so nothing can offer a picker. [#168](https://github.com/steven-zhc/lingtai/issues/168) |
 | **link to the page that fixes a scope** | the installation object carries `html_url`; `app.ts:37` does not capture it. `permissionGaps` already computes which scope is missing and nothing renders it. [#168](https://github.com/steven-zhc/lingtai/issues/168) |
 | **create the App** | today a person follows [`operating.md`](operating.md) by hand. GitHub's manifest flow makes it one click, and pre-fills the permission table above so it cannot be filled in wrong. [creating-the-app.md](design/creating-the-app.md) |
-| **know who is asking** | `actor()` is `human:${process.env.USER}` — whatever the OS says, unverifiable, meaningless across machines. [0045](decisions/0045-one-team-one-conductor.md) names this as a separate epic |
+| **know who is asking** | `actor()` is `human:${process.env.USER}` — whatever the OS says, unverifiable, meaningless across machines. [0045](decisions-archive/0045-one-team-one-conductor.md) names this as a separate epic |
 
 ## Related
 
-- [0006](decisions/0006-github-app.md) — chose the App, and priced it.
-- [0020](decisions/0020-the-agent-environment-in-layers.md) — the filtered
+- [0006](decisions-archive/0006-github-app.md) — chose the App, and priced it.
+- [0020](decisions-archive/0020-the-agent-environment-in-layers.md) — the filtered
   environment, which is why the agent has no credential.
-- [0045](decisions/0045-one-team-one-conductor.md) — one team, one conductor;
+- [0045](decisions-archive/0045-one-team-one-conductor.md) — one team, one conductor;
   where authority is named as unfinished.
 - [`operating.md`](operating.md) — what to type.
 - [`design/creating-the-app.md`](design/creating-the-app.md) — making the App

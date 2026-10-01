@@ -1,7 +1,7 @@
 /**
  * The fold, and the checkpoint that records how far it has got.
  *
- * Split out of `event-store` by [0022](../../../doc/decisions/0022-the-seams.md),
+ * Split out of `event-store` by [0022](../../../doc/decisions-archive/0022-the-seams.md),
  * and the seam is not taxonomy. **The checkpoint advances inside the same
  * transaction as the fold's writes** — that is the whole of the correctness
  * argument — so leaving it in the store would mean handing a transaction across

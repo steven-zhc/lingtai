@@ -9,7 +9,7 @@
  *
  * What is rendered is the five hooks both runtimes have plus Claude Code's extra
  * four, all pointing at the same binary. The adapter contract is the
- * intersection (doc/decisions/0007-dual-runtime.md); the extras are bonus signal
+ * intersection (doc/decisions-archive/0007-dual-runtime.md); the extras are bonus signal
  * and the system works without them.
  */
 import { Data, Effect } from "effect";
@@ -25,7 +25,7 @@ import { stateDir } from "@lingtai/env";
  * `PreToolUse` was here and is not any more. Lingtai refuses no tool call
  * (ADR 0016 §6), so it had no job left — and it was the only hook on the hot
  * path, one round trip per tool call against a 20ms budget of which process
- * startup alone was 17ms ([ADR 0011](../../../doc/decisions/0011-hook-latency-is-runtime-startup.md)).
+ * startup alone was 17ms ([ADR 0011](../../../doc/decisions-archive/0011-hook-latency-is-runtime-startup.md)).
  * Dropping it removes the hot path rather than optimising it.
  */
 export const INTERSECTION_HOOKS = [
@@ -142,7 +142,7 @@ export function renderSettings(options: RenderOptions): unknown {
  * stream nobody reads.
  *
  * The object is empty on purpose. It is not a place to restrict tools — the
- * guard is deleted ([0016](../../../doc/decisions/0016-the-settled-model.md) §6)
+ * guard is deleted ([0016](../../../doc/decisions-archive/0016-the-settled-model.md) §6)
  * and the managed repository's own `.claude/settings.json` is the level that
  * decides what a run may do. This file exists to say *no hook*, and nothing else.
  */
@@ -186,7 +186,7 @@ export async function writeHookWiring(options: RenderOptions): Promise<HookWirin
 /**
  * Proves the hook fails closed when the conductor is not there.
  *
- * [ADR 0016](../../../doc/decisions/0016-the-settled-model.md) §6 listed this
+ * [ADR 0016](../../../doc/decisions-archive/0016-the-settled-model.md) §6 listed this
  * for deletion along with the guard. That was wrong, and the correction is
  * recorded rather than made quietly: the guard is gone, but the hook still
  * carries every lifecycle event a run produces, and the failure this catches
@@ -231,7 +231,7 @@ export async function smokeTestFailClosed(
  * Anything the host could not do for a run, in a channel a caller can see.
  *
  * The mirror of `@lingtai/repo`'s `RepoFailed`, and for the same reason
- * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)): the
+ * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)): the
  * conversion is worth something because the type says a call can fail, not
  * because it returns an `Effect`.
  */

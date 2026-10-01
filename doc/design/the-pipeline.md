@@ -4,10 +4,10 @@
 **#224, #225 and #226 have landed** — the suite is split, the `build` gate runs
 `unit`, and the v2 recipe is drawn in
 [`the-v2-recipe.md`](the-v2-recipe.md) ·
-**Decisions** [0058](../decisions/0058-lingtai-is-a-development-pipeline.md)
+**Decisions** [0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md)
 (ten steps, everything that acts is a plugin) ·
-[0060](../decisions/0060-the-gate-runs-unit-tests.md) (the gate runs unit
-tests) · [0061](../decisions/0061-the-recipe-is-the-pipeline.md) (the recipe is
+[0060](../decisions-archive/0060-the-gate-runs-unit-tests.md) (the gate runs unit
+tests) · [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) (the recipe is
 the pipeline)
 
 Those three say what is true when this is done. **This file says how to get
@@ -43,7 +43,7 @@ Lingtai dispatched, one unheld ticket at a time.
 
 **It is a rewrite of the core flow from the decisions, not a migration to
 them.** No compatibility is owed — not by the recipe file
-([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §7), not by the log,
+([0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §7), not by the log,
 not by the code. What that removes is real and most of it is invisible work:
 
 ```
@@ -80,7 +80,7 @@ That is *run this step's plugins* and it does not change.
 ## 3. The order, and why it is this order
 
 **The recipe comes before the pass.** A step's behaviour *is* its plugins
-([0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §2b), so the
+([0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §2b), so the
 pass reads `recipe.steps[name]` and runs what it finds. Writing the pass before
 the schema means writing it twice.
 
@@ -148,7 +148,7 @@ What is left is `prepared`'s `pnpm install` against `build`'s `pnpm typecheck`:
 two free-text commands, where catching *npm in one and pnpm in the other* needs
 a system that understands commands. **A plugin offers a capability; a person who
 configures it wrongly gets an error.** What survives is one sentence, now in
-[0061](../decisions/0061-the-recipe-is-the-pipeline.md) §4: *a setting has
+[0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §4: *a setting has
 exactly one home, and a step that needs another step's setting receives the
 value rather than declaring it again.*
 
@@ -156,11 +156,11 @@ value rather than declaring it again.*
 |---|---|
 | **T0b** | The v2 recipe, written out · **landed 2026-09-23 as [#226](https://github.com/steven-zhc/lingtai/issues/226)** → [`the-v2-recipe.md`](the-v2-recipe.md) |
 | kind | `documentation` |
-| what | The complete v2 file for this repository, every setting under its step per [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §4. Not an implementation — the target T3 is checked against. |
+| what | The complete v2 file for this repository, every setting under its step per [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §4. Not an implementation — the target T3 is checked against. |
 | watch out | It is 0061's own test: **if the v2 file is not plainly easier to read than the v1 it replaces, the ADR was wrong** and this is where that shows, before any code is written. |
 | result | **It passes on shape** — 67 structural lines across two files become 79 in one, of which 17 are things neither v1 file can say at all (`proposed`'s five judges, `discuss`'s three numbers, the merge lane itself); take those out and it says the same in 62. **And it produced six v1 keys with no home named in 0061**, five of them small — `extends:`, `watch:`, `human:`, `tier`, `budget.evidence`/`attempts`, and `runtime.prompt`, which nothing reads and should be deleted rather than moved. |
-| **and one for T2** | **The plugin set is twelve, not eleven.** T2's list below omits `assignee:`, which 0061 §3's table places at `claim` and which `runtime.assignee` maps onto — so the matrix is 120 cells, and a plugin no list carries is a plugin no step refuses ([`the-v2-recipe.md`](the-v2-recipe.md) §3.2). **Superseded 2026-09-24 by [0063](../decisions/0063-every-setting-is-the-recipes.md) §3** (`#244`): `assignee` is a *field* of `queue:` rather than a plugin beside it, because the two answer one question and `discover.ts` applies them in one pass — so the set is eleven and the matrix is 110. The finding itself stands, and is what put the cell on somebody's desk to decide. |
-| **the finding T3 needs** | **`runtime:` is the block the recipe/machine split is enforced on, and a v2 file does not have one.** `local.ts:394` refuses `agent`, `limits` and `assignee` by reading `raw["runtime"]`; under `steps:` that loop matches nothing and the split is silently gone, which is exactly 0016 §4's rule. `local.ts:403` writes the machine's values *into* `raw["runtime"]`, and under v2 they have to land in six places — five inside `steps:`, including `merge`'s and `design`'s agents, which this repository's own file writes neither of, and `discuss[0]` beside it — where they will read as though the file said them. 0061 §4 does not mention [0046](../decisions/0046-lingtai-is-personal.md) §3. [`the-v2-recipe.md`](the-v2-recipe.md) §3.6 sets out the three ways out and which one happens if nobody chooses. |
+| **and one for T2** | **The plugin set is twelve, not eleven.** T2's list below omits `assignee:`, which 0061 §3's table places at `claim` and which `runtime.assignee` maps onto — so the matrix is 120 cells, and a plugin no list carries is a plugin no step refuses ([`the-v2-recipe.md`](the-v2-recipe.md) §3.2). **Superseded 2026-09-24 by [0063](../decisions-archive/0063-every-setting-is-the-recipes.md) §3** (`#244`): `assignee` is a *field* of `queue:` rather than a plugin beside it, because the two answer one question and `discover.ts` applies them in one pass — so the set is eleven and the matrix is 110. The finding itself stands, and is what put the cell on somebody's desk to decide. |
+| **the finding T3 needs** | **`runtime:` is the block the recipe/machine split is enforced on, and a v2 file does not have one.** `local.ts:394` refuses `agent`, `limits` and `assignee` by reading `raw["runtime"]`; under `steps:` that loop matches nothing and the split is silently gone, which is exactly 0016 §4's rule. `local.ts:403` writes the machine's values *into* `raw["runtime"]`, and under v2 they have to land in six places — five inside `steps:`, including `merge`'s and `design`'s agents, which this repository's own file writes neither of, and `discuss[0]` beside it — where they will read as though the file said them. 0061 §4 does not mention [0046](../decisions-archive/0046-lingtai-is-personal.md) §3. [`the-v2-recipe.md`](the-v2-recipe.md) §3.6 sets out the three ways out and which one happens if nobody chooses. |
 
 ### Phase 1 — the vocabulary
 
@@ -171,23 +171,23 @@ value rather than declaring it again.*
 | blocked by | — |
 | what | One enum of ten (`events.ts:74`), and the five-name one is **deleted**, not kept beside it. `GatesResolved`'s `points: …length(5)` (`:514`) becomes ten. This row said **no schema version bump and no upcaster**, on the grounds that the log is reset at T5; that turned out to be a thing only the reset can buy, and the reset has not run — see *what it also did*. |
 | watch out | `gatePointRenamed` in [`upcast.ts`](../../packages/domain/src/upcast.ts) (`diff` → `proposed`, ADR 0018) dies with the reset and can go. **The upcast mechanism stays**: 0001 built it before it was needed because *the first upcaster is written under time pressure against real history*, and a Lingtai somebody else runs has a log nobody may reset. Deleting one upcaster is not deleting the machinery. |
-| what it also did | **Three things followed from the enum and could not be deferred**, and each is noted where it landed rather than left for a reader to find. **(a) The recipe's `gates:` has ten keys**, six of them accepting nothing (`KINDS_AT`, `whyNoKindAt`), because `GatesResolved` records ten and its source is `recipe.gates[step]` — which is also [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §5's *the resolved recipe may not omit a step*, at `recipe.ts:583`, the line that ADR names as the mechanism. The matrix went from thirty cells to sixty, in `doc/reference.md` and in `gate-matrix.test.ts`, which is T2's hundred and twenty arriving in two stages rather than one. **(b) The board's bar draws ten**, because `foldProgress` folds over the enum — so half of T6 below is done, and the half that is not is named there. **(c) Nothing moved in `schemaVer`, and `gatePointRenamed` stayed — the one line of the ticket that is not satisfiable as written.** `#227` asks for it gone with *the mechanism, its tests and its other upcasters untouched*, and those two clauses contradict each other at one type. `GatePassed` is at `schemaVer: 3`: `1 → 2` is the rename, `2 → 3` is `findings` (#135), and `upcast.test.ts`'s *has an unbroken chain of steps for every type past version 1* — the invariant that file opens by naming — requires a step at every version below the current one. So deleting the `1 → 2` step leaves `GatePassed` at 3 with a hole at 1; the only exits are to lower its version (which deletes `findings`, one of the *other upcasters*), or to edit that invariant (one of *its tests*), or to leave a do-nothing step behind claiming a version moved. The seven pure ones could go alone, and would leave one vocabulary spread across two rules. The weaker half of the same argument, which expires where this one does not: §4's reset is T5b and T5 below, neither landed, so the store still holds `schemaVer: 1` rows of all nine. **T5 is where this line gets closed** — a reset log has no row of any version, and the nine versions and every step under them come down together in one commit. **(d) `GatesResolved` is at `schemaVer: 4` with a `3 → 4` step, which this row said it would not need.** Widening `points` to `.length(10)` refuses every plan the store holds — all of them name five — and *the reset will spend that history* is a promise about T5, not a property of the build that ships before it. The refusal has no quiet form: `decodeRow` rethrows the `ZodError` bare, so `task_view` and `finding_backlog` stop at the first such seq and never advance past it, `projection rebuild` included, while `lingtai run` goes on appending. The step widens a stored plan and gives the five steps the vocabulary did not have the `[]` those runs were in fact given — a reading, not a guess. It dies at T5 with the nine above it, in the same commit, for the same reason: a reset log has no row to walk. |
+| what it also did | **Three things followed from the enum and could not be deferred**, and each is noted where it landed rather than left for a reader to find. **(a) The recipe's `gates:` has ten keys**, six of them accepting nothing (`KINDS_AT`, `whyNoKindAt`), because `GatesResolved` records ten and its source is `recipe.gates[step]` — which is also [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §5's *the resolved recipe may not omit a step*, at `recipe.ts:583`, the line that ADR names as the mechanism. The matrix went from thirty cells to sixty, in `doc/reference.md` and in `gate-matrix.test.ts`, which is T2's hundred and twenty arriving in two stages rather than one. **(b) The board's bar draws ten**, because `foldProgress` folds over the enum — so half of T6 below is done, and the half that is not is named there. **(c) Nothing moved in `schemaVer`, and `gatePointRenamed` stayed — the one line of the ticket that is not satisfiable as written.** `#227` asks for it gone with *the mechanism, its tests and its other upcasters untouched*, and those two clauses contradict each other at one type. `GatePassed` is at `schemaVer: 3`: `1 → 2` is the rename, `2 → 3` is `findings` (#135), and `upcast.test.ts`'s *has an unbroken chain of steps for every type past version 1* — the invariant that file opens by naming — requires a step at every version below the current one. So deleting the `1 → 2` step leaves `GatePassed` at 3 with a hole at 1; the only exits are to lower its version (which deletes `findings`, one of the *other upcasters*), or to edit that invariant (one of *its tests*), or to leave a do-nothing step behind claiming a version moved. The seven pure ones could go alone, and would leave one vocabulary spread across two rules. The weaker half of the same argument, which expires where this one does not: §4's reset is T5b and T5 below, neither landed, so the store still holds `schemaVer: 1` rows of all nine. **T5 is where this line gets closed** — a reset log has no row of any version, and the nine versions and every step under them come down together in one commit. **(d) `GatesResolved` is at `schemaVer: 4` with a `3 → 4` step, which this row said it would not need.** Widening `points` to `.length(10)` refuses every plan the store holds — all of them name five — and *the reset will spend that history* is a promise about T5, not a property of the build that ships before it. The refusal has no quiet form: `decodeRow` rethrows the `ZodError` bare, so `task_view` and `finding_backlog` stop at the first such seq and never advance past it, `projection rebuild` included, while `lingtai run` goes on appending. The step widens a stored plan and gives the five steps the vocabulary did not have the `[]` those runs were in fact given — a reading, not a guess. It dies at T5 with the nine above it, in the same commit, for the same reason: a reset log has no row to walk. |
 
 | | |
 |---|---|
 | **T2** | The twelve plugins, as one interface |
 | kind | `tech-debt` |
 | blocked by | T1 |
-| what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `backlog:` `merge:` behind one contract — **eleven since [0063](../decisions/0063-every-setting-is-the-recipes.md) §3 (`#244`) made `assignee` a field of `queue:` rather than the twelfth plugin; it was the one this list used to omit** ([`the-v2-recipe.md`](the-v2-recipe.md) §3.2) — with the universal keys the workflow enforces on any of them (`timeout`, and `rounds`/`restarts` at `proposed`), with the step × plugin matrix and its refusal ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
-| also | **The matrix goes from thirty cells to a hundred and ten, and two things carry it.** [0059](../decisions/0059-a-point-carries-only-the-kinds-it-runs.md) §5 put the table in `doc/reference.md` and made `packages/conductor/unit/gate-matrix.test.ts` walk all thirty cells, comparing the document to `KINDS_AT` cell for cell. Ten steps against eleven plugins is a hundred and ten, and **both the document and that test grow with this ticket** — 0059's rule was that the document cannot drift from the code without a red test, and this is where that rule is either kept or quietly dropped. |
-| watch out | **Each plugin owns its own schema and its own validation, and the core calls it at resolve time** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9) — one source of truth, no second documentation block, `env:` a field in the plugin's schema rather than a universal key, `no_log` on any secret field, and **every problem reported in one answer** rather than the first one found. Five of the eleven are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim` including `runtime.assignee`'s take, `judge:` is `buyRound`'s decision with `passCeiling`'s counting left to the workflow, and `backlog:` is `acceptFinding` (#137), `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. **`worktree:` is the first of those five wired** (#268, [0065](../decisions/0065-the-default-is-a-plugin.md) §4): it serves `admit`, so the step's body is empty and an unconfigured `admit` runs the same action off `baseOf`/`submodulesOf`. |
+| what | `run:` `agent:` `watch:` `human:` `close:` `labels:` `worktree:` `queue:` `judge:` `backlog:` `merge:` behind one contract — **eleven since [0063](../decisions-archive/0063-every-setting-is-the-recipes.md) §3 (`#244`) made `assignee` a field of `queue:` rather than the twelfth plugin; it was the one this list used to omit** ([`the-v2-recipe.md`](the-v2-recipe.md) §3.2) — with the universal keys the workflow enforces on any of them (`timeout`, and `rounds`/`restarts` at `proposed`), with the step × plugin matrix and its refusal ([0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §8: **a step refuses a plugin it cannot run**, at resolve time, by name). |
+| also | **The matrix goes from thirty cells to a hundred and ten, and two things carry it.** [0059](../decisions-archive/0059-a-point-carries-only-the-kinds-it-runs.md) §5 put the table in `doc/reference.md` and made `packages/conductor/unit/gate-matrix.test.ts` walk all thirty cells, comparing the document to `KINDS_AT` cell for cell. Ten steps against eleven plugins is a hundred and ten, and **both the document and that test grow with this ticket** — 0059's rule was that the document cannot drift from the code without a red test, and this is where that rule is either kept or quietly dropped. |
+| watch out | **Each plugin owns its own schema and its own validation, and the core calls it at resolve time** ([0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §9) — one source of truth, no second documentation block, `env:` a field in the plugin's schema rather than a universal key, `no_log` on any secret field, and **every problem reported in one answer** rather than the first one found. Five of the eleven are new and each is a *name for code that already exists* — `worktree:` is `repo`'s worktree, `queue:` is `discover`/`claim` including `runtime.assignee`'s take, `judge:` is `buyRound`'s decision with `passCeiling`'s counting left to the workflow, and `backlog:` is `acceptFinding` (#137), `merge:` is the merge lane. **A plugin here should wrap, not reimplement**; where wrapping is awkward, that is a finding about the seam and belongs in the ticket, not in a rewrite. **`worktree:` is the first of those five wired** (#268, [0065](../decisions-archive/0065-the-default-is-a-plugin.md) §4): it serves `admit`, so the step's body is empty and an unconfigured `admit` runs the same action off `baseOf`/`submodulesOf`. |
 
 | | |
 |---|---|
 | **T3** | The recipe is `steps:` |
 | kind | `tech-debt` |
 | blocked by | T0b *(landed)*, T2 |
-| what | [0061](../decisions/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `discuss:` and `subscribers:` beside it; `turns`/`wall`/`base`/`kinds` move to the step that owns them and `rounds`/`restarts` to the step each one bounds; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. **The file to write is [`the-v2-recipe.md`](the-v2-recipe.md) §1**, and §2 is the key-by-key mapping it has to satisfy. |
+| what | [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md), whole: `steps:` with ten names, each a list of plugins, Ansible's module-as-key; `discuss:` and `subscribers:` beside it; `turns`/`wall`/`base`/`kinds` move to the step that owns them and `rounds`/`restarts` to the step each one bounds; `version: 2` and a v1 file refused by name; a step omitted from the file resolves to `[]`. **The file to write is [`the-v2-recipe.md`](the-v2-recipe.md) §1**, and §2 is the key-by-key mapping it has to satisfy. |
 | watch out | **Six v1 keys have no home in 0061 and this ticket cannot inherit that silence** ([`the-v2-recipe.md`](the-v2-recipe.md) §3). One of them decides the shape: `runtime:` is where the recipe/machine split is enforced (`local.ts:394`) and where the machine's values are written back in (`local.ts:403`), and **v2 has no `runtime:` block**, so both stop working without erroring. §3.6 names the three ways out; the third — keeping `runtime:` beside `steps:` — is what happens by default and is the one that kills 0061 §1. |
 | watch out | **`configHash` needs nothing** — `hashRecipe` is already `sha256(canonical(recipe))` over the whole resolved recipe (`resolve.ts:102`), so everything that moves is inside the hash by construction. Checked rather than assumed; do not add a second hashing path. |
 
@@ -199,7 +199,7 @@ value rather than declaring it again.*
 | kind | `tech-debt` |
 | blocked by | T3 |
 | what | The ten steps as data, driven by the recipe, **in a new file beside `run-once.ts`, wired to nothing.** This ticket does `claim`, `admit`, `prepared`, `design`, `implement`, `end`. |
-| watch out | **`design` may return an empty document and that is not a failure** — `implement` is handed the issue's own text and the design, and works from the issue when the design is empty, which is what every pass does today ([0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3). No conditional step, no skip. And **`prepared` refuses** — a failed install is the cheapest refusal in the pass, and it reports to `proposed` like the rest. |
+| watch out | **`design` may return an empty document and that is not a failure** — `implement` is handed the issue's own text and the design, and works from the issue when the design is empty, which is what every pass does today ([0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3). No conditional step, no skip. And **`prepared` refuses** — a failed install is the cheapest refusal in the pass, and it reports to `proposed` like the rest. |
 | watch out | Nothing calls it yet, so it lands on its own tests. That is deliberate: **a reviewer reads it against the ADR rather than against a diff**, which is the one reading a cold reviewer is good at. |
 
 | | |
@@ -207,7 +207,7 @@ value rather than declaring it again.*
 | **T4b** | `pass.ts` — `build`, `review`, `proposed`, `merge` · **landed 2026-09-25 as [#254](https://github.com/steven-zhc/lingtai/issues/254)** |
 | kind | `tech-debt` |
 | blocked by | T4a |
-| what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: **one `judge:` per `when:`**, each choosing from the set the workflow offers it — only the `findings` direction is a judgement worth an agent, the mechanical ones are built in; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
+| what | The four steps that carry the behaviour changes, all of which are now just *what the new code does*: `build` is its own step and a red one skips `review`; `review` returns findings and judges nothing; `proposed` is the only step that routes: **one `judge:` per `when:`**, each choosing from the set the workflow offers it — only the `findings` direction is a judgement worth an agent, the mechanical ones are built in; `merge` reports a `reason` and a `detail` and decides nothing. **Every step that does not simply pass reports a `reason`, `implement`'s `needs-input` included** — an agent that stopped to ask did not finish, which is [0057](../decisions-archive/0057-a-gate-that-did-not-finish.md)'s class rather than a refusal, and whether it is worth interrupting a person over is the judge's call. |
 | evidence | `build` first **not because it is quick** — median 313s against review's 149s — but because it spends no tokens where a review spends an agent. `review` stops judging because **10% of its refusals in 14 days carried no findings at all**, 24 of them ([012 §4](../experiments/012-where-the-turns-go.md)). `merge` reports rather than decides because over the whole log it has refused 32 times: **26 `gate-failed`, 6 `conflict`** — the common failure is that somebody else's work landed and the diff stopped being true. |
 | watch out | **The set of steps the workflow offers the judge depends on how far the pass got, not only on what is left to spend** — `prepared`'s refusal happens before any agent has run, so `implement` is not on offer there and a judge that knows nothing about `prepared` still cannot choose wrongly. A judge answers *which of these*, never *what is legal*. And the edge back to `claim` is a **requeue**: the item is released and a higher-priority ticket opened in the meantime goes first. |
 | watch out | **Every path into `end` must have been through `build` and `review`**, which is what the edge from `merge` back to `build` buys: an agent that resolves a conflict writes code *after* the review passed. And the intent conflict is the row an agent must not take — two changes that edited the same decision differently produce text an agent can merge and an intent it cannot know. |
@@ -221,7 +221,7 @@ value rather than declaring it again.*
 | kind | `documentation` |
 | blocked by | T4b |
 | what | Fold this log into a file before T5 resets it. [007](../experiments/007-the-log-before-the-reset.md) and [010](../experiments/010-the-log-before-the-second-reset.md) are the precedent and the format. |
-| watch out | **A reset spends the measurements and nothing else** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §7). [012](../experiments/012-where-the-turns-go.md) is a fold over this log — $0.104 a turn, the fix loop at 49% of everything, 231 review refusals against 74 accepts — and **none of it can be recomputed afterwards.** This ticket is what makes the reset cost nothing that was worth keeping. |
+| watch out | **A reset spends the measurements and nothing else** ([0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §7). [012](../experiments/012-where-the-turns-go.md) is a fold over this log — $0.104 a turn, the fix loop at 49% of everything, 231 review refusals against 74 accepts — and **none of it can be recomputed afterwards.** This ticket is what makes the reset cost nothing that was worth keeping. |
 
 | | |
 |---|---|
@@ -289,7 +289,7 @@ value rather than declaring it again.*
 | kind | `feature` |
 | blocked by | T3 |
 | what | The repository is read and each step gets a proposed set — the package manager for `prepared`, the default branch for `admit`, the signed-in runtime for `implement`, the test script for `build`. [#161](https://github.com/steven-zhc/lingtai/issues/161) already does this for the five gate points. |
-| watch out | **Detected is a default, not a replacement for being told** ([0046](../decisions/0046-lingtai-is-personal.md) §3), generalised from `runtime.agent` to every step. |
+| watch out | **Detected is a default, not a replacement for being told** ([0046](../decisions-archive/0046-lingtai-is-personal.md) §3), generalised from `runtime.agent` to every step. |
 
 | | |
 |---|---|
@@ -307,10 +307,10 @@ value rather than declaring it again.*
 | blocked by | T5 |
 | what | The only one of the ten with no trace on the log today. |
 | why last | Five tickets have landed in one pass each after a design was written down; #179 without one took eleven. That is an anecdote, not a measurement — **it should be built when there is something to compare it against**, which is after the rest of this is running. |
-| result | It arrived as one of [0065](../decisions/0065-the-default-is-a-plugin.md) §4's two *new* keys rather than as a port's body: `agentPlugin.at` carries `design`, `createDraftAction` is what an `agent:` builds there — the cold reviewer would have returned `passed` on the empty diff `design` always has — and the body is `async () => ({ ending: "passed" })`. `ports.draft` is gone. |
+| result | It arrived as one of [0065](../decisions-archive/0065-the-default-is-a-plugin.md) §4's two *new* keys rather than as a port's body: `agentPlugin.at` carries `design`, `createDraftAction` is what an `agent:` builds there — the cold reviewer would have returned `passed` on the empty diff `design` always has — and the body is `async () => ({ ending: "passed" })`. `ports.draft` is gone. |
 | result | **And the measurement this row asked for is still not bought, which is the point of the shape it landed in.** `defaultsAt` has no row for `design`: an unconfigured step runs nothing and `implement` is briefed with `""`, exactly as every pass before it. So the capability is declarable and costs nothing until somebody writes a block, and *with a design* and *without one* are two recipes on the same machine rather than two versions of the code. |
 
-### Independent — the gate's contents ([0060](../decisions/0060-the-gate-runs-unit-tests.md))
+### Independent — the gate's contents ([0060](../decisions-archive/0060-the-gate-runs-unit-tests.md))
 
 Neither of these blocks or is blocked by anything above, and the first is done.
 They were worth doing first for a reason the rest of this plan depends on:
@@ -400,15 +400,15 @@ bail has nothing left to bail from.
 
 ## 6. Related
 
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) — the ten
+- [0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) — the ten
   steps, and the drawing.
-- [0060](../decisions/0060-the-gate-runs-unit-tests.md) — what the `build` step
+- [0060](../decisions-archive/0060-the-gate-runs-unit-tests.md) — what the `build` step
   runs, and why a test that leaves the system cannot be at a gate.
-- [0061](../decisions/0061-the-recipe-is-the-pipeline.md) — the file shape, and
+- [0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) — the file shape, and
   §7 for why nothing here is owed a migration.
 - [012](../experiments/012-where-the-turns-go.md) — where the turns go. Most of
   the numbers quoted above come from here, and T5b is what preserves them.
 - [`agent-runtimes-plan.md`](agent-runtimes-plan.md) — the other open epic
   (#198). It configures `implement`, so
-  [0053](../decisions/0053-the-recipe-chooses-the-agent-for-each-role.md) is the
+  [0053](../decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md) is the
   pattern T3 generalises rather than something it replaces.

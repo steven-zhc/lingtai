@@ -3,7 +3,7 @@
  *
  * Every event carries `schemaVer` from the first row on purpose — the cost of
  * adding it later comes due exactly when there is a year of history worth
- * replaying (doc/decisions/0001-event-sourcing.md). This is the other half:
+ * replaying (doc/decisions-archive/0001-event-sourcing.md). This is the other half:
  * the thing that reads it.
  *
  * The rule the catalogue states is *bump `SCHEMA_VER` for a type and add an
@@ -94,7 +94,7 @@ export const UPCASTERS: UpcastRegistry = {
     1: (data) => ({ ...(data as object), title: null, kind: null }),
     /**
      * 2 → 3: `leaseUntilMs` is dropped
-     * ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)). The first
+     * ([0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md)). The first
      * of the two steps here that remove a field rather than add one — the other
      * is `StepDidNotFinish` 1 → 2 below (`#234`) — and the direction is why it
      * is an upcaster at all: the log holds thousands of these timestamps and

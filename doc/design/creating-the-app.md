@@ -8,7 +8,7 @@ and `packages/conductor/src/create-app.ts` · precedes
 
 ## The cost this removes, in the words of the decision that accepted it
 
-[0006](../decisions/0006-github-app.md) chose a GitHub App over a personal
+[0006](../decisions-archive/0006-github-app.md) chose a GitHub App over a personal
 access token, and listed the price in its own Consequences:
 
 > Setup is heavier than pasting a token: **an App must be created, given a
@@ -71,7 +71,7 @@ This is the shape 0010 named for code — *a process holds what it started with*
 reaching config. It has two honest answers and the ticket must pick one:
 
 - **Write both and say a restart is needed.** Truthful, and `lingtai restart`
-  ([0042](../decisions/0042-restart-is-a-command.md)) already exists to do it
+  ([0042](../decisions-archive/0042-restart-is-a-command.md)) already exists to do it
   safely. The page ends on *"created — run `pnpm lingtai restart` to use it"*.
 - **Mutate `process.env.LINGTAI_GITHUB_APP_ID` in the receiving process as well
   as writing the file.** The next `githubApp()` then works with no restart —
@@ -222,7 +222,7 @@ Two honest options, and not a third:
 
 What must not happen is filling in a `localhost` URL, which produces an App
 whose webhook deliveries fail silently from the first minute — a configured
-thing that does not work, which is [0016 §4](../decisions/0016-the-settled-model.md)'s
+thing that does not work, which is [0016 §4](../decisions-archive/0016-the-settled-model.md)'s
 whole complaint.
 
 ## The secret, once it arrives
@@ -235,7 +235,7 @@ The conversion returns six values in one response. They are not equal:
 | `pem` | write to `LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH`, `0600`, and **print the path, never the key** |
 | `webhook_secret` | write — the receiver verifies signatures with it |
 | `slug` | useful for the install link (`https://github.com/apps/<slug>/installations/new`) |
-| `client_id`, `client_secret` | **discard.** Lingtai has no OAuth flow ([0045](../decisions/0045-one-team-one-conductor.md) names user identity as a separate epic). A secret kept for a use that does not exist is a secret with no owner |
+| `client_id`, `client_secret` | **discard.** Lingtai has no OAuth flow ([0045](../decisions-archive/0045-one-team-one-conductor.md) names user identity as a separate epic). A secret kept for a use that does not exist is a secret with no owner |
 
 Three rules, and the third is the one this codebase is most at risk of breaking:
 

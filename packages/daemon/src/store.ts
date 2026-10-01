@@ -5,7 +5,7 @@
  * a `pg.Client` of their own — three of them in `control.ts`, for the beacon
  * alone — and on a machine with no Postgres nothing could say whether a daemon
  * was up. That is
- * [0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
+ * [0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md)
  * §1's defect in one sentence: **a direct `pg.Client` outside a Postgres
  * implementation is a place the init-time choice does not reach.**
  *
@@ -46,7 +46,7 @@
  * `readStatus`, `beat`, `createStatusTable`, the work loop and `reconcile` each
  * ask `choose.ts` for a store, which reads the one value
  * `~/.lingtai/config.yml` holds
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)). This
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)). This
  * interface is what made that a single edit rather than five.
  */
 import type { EventStore } from "@lingtai/event-store/store";

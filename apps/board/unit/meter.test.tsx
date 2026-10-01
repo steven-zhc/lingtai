@@ -1,7 +1,7 @@
 /**
  * The discussion has a meter, and the ledger has a total.
  *
- * Two numbers, one argument. [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md)
+ * Two numbers, one argument. [0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md)
  * §4 gives the discussion assistant no spend limit **because the person is the
  * control loop** — and a person can only be the limit if the person can see the
  * number. The box carried the boundary (*it cannot run anything*) and no cost at

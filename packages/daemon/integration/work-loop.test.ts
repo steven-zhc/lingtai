@@ -232,7 +232,7 @@ describe("the work loop", () => {
 
   /**
    * The other half of
-   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §3 and §5:
+   * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3 and §5:
    * `conduct.ts` appends the pause, and this is what makes it mean something.
    *
    * A pause is asked before every pass and never cached, so a quota pause lands

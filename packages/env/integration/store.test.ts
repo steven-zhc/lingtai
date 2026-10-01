@@ -1,6 +1,6 @@
 /**
  * Which store this machine runs, read from the one place it is written
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md), #215).
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md), #215).
  *
  * Every case here hands in an environment with a `LINGTAI_HOME` of its own, so
  * the file being read is the test's and never the operator's — and the four

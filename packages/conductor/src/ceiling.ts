@@ -10,8 +10,8 @@ import { formatDuration } from "@lingtai/recipe/duration";
 
 /**
  * What one pass may spend, as one sentence, out of the numbers that decide it
- * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
- * [0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+ * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
+ * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
  *
  * **The product is the fact, and nothing was computing it.** `wall` bounds one
  * agent run; a pass buys up to `rounds + 1` of them; a ticket buys up to
@@ -34,7 +34,7 @@ import { formatDuration } from "@lingtai/recipe/duration";
  * across runs the way time does.
  *
  * **`steps` is the per-step half, and it is a list rather than a longer sum**
- * (`#314`, [0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+ * (`#314`, [0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
  * §9). Since a dispatch may narrow the ceiling, the one figure this sentence
  * names stopped being true of every step — so the steps that disagree with it
  * are named, and the arithmetic is untouched. `turns`, `wall` and `wallMs` stay

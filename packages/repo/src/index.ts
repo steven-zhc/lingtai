@@ -2,7 +2,7 @@
  * Everything Lingtai does to a git repository.
  *
  * Extracted from `conductor` by
- * [0022](../../../doc/decisions/0022-the-seams.md), and the cost that made it
+ * [0022](../../../doc/decisions-archive/0022-the-seams.md), and the cost that made it
  * worth doing was not aesthetic: `apps/board/src/app/actions.ts` imported `git`
  * and `stateDir` from `@lingtai/conductor/worktree`, because that was the only
  * place a git helper lived. A page reached into the orchestrator to run a shell

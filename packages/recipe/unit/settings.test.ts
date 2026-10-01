@@ -4,8 +4,8 @@
  * The first half is ordinary — they return what the recipe holds. **The second
  * half is the one that earns the file**: it walks every `src/` in the workspace
  * and fails on a reader that still reaches into one of the seven settings
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4 and
- * [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3 move.
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §4 and
+ * [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3 move.
  *
  * **It was three, and three is what `#231` found wrong with it.** The guard
  * named `runtime.limits`, `repo.base` and `source.kinds`, which are the three
@@ -31,7 +31,7 @@
  * past, so this is a guard against the mistake rather than a proof.
  *
  * Without it the accessors are a suggestion. With it,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4's move —
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §4's move —
  * every setting onto the step that owns it — is a change to `settings.ts` and
  * to nothing else, which is the whole reason they exist. A reader added later
  * that skips them would put the sixty-file diff back without anybody deciding
@@ -397,7 +397,7 @@ async function sources(dir: URL): Promise<URL[]> {
  * the list it walks is the list of accessors that exist.
  *
  * **`runtime.assignee` is the seventh, and it arrived from a different ADR**
- * (`#244`, [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md)
+ * (`#244`, [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md)
  * §3): `assignee` is a field of `queue:` rather than a plugin beside it, which
  * makes it a setting that moves onto a step exactly as the other six do. It
  * was read by hand in three files — `discover.ts`, the filter's reading and the

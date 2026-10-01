@@ -2,7 +2,7 @@
  * `lingtai env` — put a value where a project can find it, and say what is there.
  *
  * `~/.lingtai/env/<project>.env` is where a project's values live
- * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)),
+ * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)),
  * and `doctor` has always named the file. Naming it left four things to get
  * right for one key and one value — the directory exists, the filename, dotenv
  * syntax, `chmod 600` — and the failure of each was the same: a project that

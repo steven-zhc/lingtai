@@ -1,5 +1,5 @@
 /**
- * The two halves of [0030](../../../doc/decisions/0030-shutting-down-safely.md)
+ * The two halves of [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md)
  * that are not the loop: what the control stream says, and what recovery does
  * about a process.
  *

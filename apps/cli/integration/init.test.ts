@@ -396,7 +396,7 @@ describe("lingtai init (#186)", () => {
 });
 
 /**
- * #215, [0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md).
+ * #215, [0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md).
  * The store is a value this command writes; every assertion here reads it back
  * with `storeChoice`, which is the function a later command asks — a test that
  * only read the YAML would pass on exactly the file that made this ticket.

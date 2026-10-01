@@ -5,7 +5,7 @@
  * decision's (`conductor/approve.ts`) and the board's (`apps/cli/src/board.ts`).
  * None of them needs a database, so a SQLite install is locked exactly as a
  * Postgres one is. **Each answers *not twice on this machine*** — the claim
- * moved to the GitHub assignee in [0046 §2](../../../doc/decisions/0046-lingtai-is-personal.md),
+ * moved to the GitHub assignee in [0046 §2](../../../doc/decisions-archive/0046-lingtai-is-personal.md),
  * and that is precisely a file lock's scope.
  *
  * **The merge lane was the fourth and is not one any more** (#194). 0052 lists
@@ -18,7 +18,7 @@
  *
  * ## What it is built on, and what it is not
  *
- * The decision is [0052](../../../doc/decisions/0052-the-lock-is-sqlite-on-a-file.md).
+ * The decision is [0052](../../../doc/decisions-archive/0052-the-lock-is-sqlite-on-a-file.md).
  *
  * - **Chosen: SQLite's own locks, on the default `unix` VFS.** `BEGIN IMMEDIATE`
  *   on `<key>.lock` is the lock; `SQLITE_BUSY` is the refusal. SQLite takes it

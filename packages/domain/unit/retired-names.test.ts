@@ -3,7 +3,7 @@
  *
  * The pipeline epic renames the vocabulary over several tickets, and a rename
  * spread over several tickets ends as two vocabularies for one thing — which is
- * the defect [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+ * the defect [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
  * §Context was written about. Before this file nothing could tell whether a
  * name in `src/` was current or left over.
  *

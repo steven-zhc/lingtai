@@ -5,11 +5,11 @@
  * recipe *requires*, merged from layers with different owners, and a name with
  * no value in any of them refuses the project rather than being logged. This is
  * one of the three real boundaries
- * ([0007](../../../doc/decisions/0007-dual-runtime.md), reshaped by
- * [0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md));
+ * ([0007](../../../doc/decisions-archive/0007-dual-runtime.md), reshaped by
+ * [0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md));
  * the hook is not one.
  *
- * Its own package since [0022](../../../doc/decisions/0022-the-seams.md), and
+ * Its own package since [0022](../../../doc/decisions-archive/0022-the-seams.md), and
  * the reason is the one thing it must never be confused with: `@lingtai/env`
  * holds **the machine's** credentials, which the agent must never see. This
  * holds **the agent's**. They were adjacent in one file, which is exactly how a
@@ -218,7 +218,7 @@ export interface ExtensionEnv {
 
 /**
  * The environment of one **extension** — 0021's layers, read by a second
- * consumer ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1).
+ * consumer ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
  *
  * The whole of the difference from `filterEnv` is which way round the question
  * is asked. An agent gets *everything the two files hold*, minus what the
@@ -411,7 +411,7 @@ export interface AgentEnv {
  * then do `allow` and `deny` decide what actually reaches the agent. The order
  * is what makes a name that is both required and denied legal: the machine must
  * have it, and this run does not see it
- * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+ * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
  *
  * The machine's **file**, not `process.env`: the operator's shell carries
  * `AWS_*`, npm tokens and whatever else is exported in the terminal a command
@@ -466,7 +466,7 @@ export async function resolveAgentEnv(options: {
  * env list` asks. Splitting it out is what stops the listing command growing a
  * second, subtly different idea of which layer answered for a name — the thing
  * the operator is being asked to be responsible for
- * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+ * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
  */
 async function readEnvLayers(options: {
   project: string;
@@ -675,7 +675,7 @@ export function unsetEnvLine(text: string, name: string): { text: string; remove
 function header(project: string): string {
   return (
     `# ${project} — the values Lingtai merges over the machine's own file when it\n` +
-    `# prepares a run (doc/decisions/0021). One NAME=value per line.\n` +
+    `# prepares a run (doc/decisions-archive/0021). One NAME=value per line.\n` +
     `# Written by \`lingtai env set ${project}\`; edit it by hand if you prefer.\n`
   );
 }

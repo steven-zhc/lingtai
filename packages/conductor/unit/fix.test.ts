@@ -4,7 +4,7 @@
  *
  * Here for the reason `repair.test.ts` is here: both files are about rules that
  * decide whether money is spent, and
- * [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * [0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §4 adds a *second* purse — so the property that matters most is the one a
  * single ceiling could not have: **spending one does not spend the other.**
  *

@@ -17,7 +17,7 @@
  *
  * Deferring it moves *when* a machine with nothing written is refused, and must
  * not move *whether*
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md) §2).
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) §2).
  * The refusal is `chosenStore()`'s, thrown by name at the first append, read or
  * question — never swallowed, and never a default to SQLite, which is the
  * blocker that refused this ticket's ninth pass.

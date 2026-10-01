@@ -5,7 +5,7 @@
  *
  * 1. the projection is caught up — the checkpoint against the log's head
  * 2. worktrees are cleaned — the original job, and since
- *    [0034](../../../doc/decisions/0034-the-run-log.md) the run logs beside
+ *    [0034](../../../doc/decisions-archive/0034-the-run-log.md) the run logs beside
  *    them, which are the same shape on purpose
  * 3. foreign claims are returned — held by a conductor that no longer exists
  * 4. GitHub says what the log says — see `converge.ts`
@@ -295,7 +295,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * about it, and it is deliberately the worktree's shape —
  * `runs/<project>/<runId>.log` beside `worktrees/<project>/<runId>/` — so this
  * is the same walk in the same pass rather than a second mechanism
- * ([0034](../../../doc/decisions/0034-the-run-log.md) §1).
+ * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §1).
  *
  * **The rule is not the worktree's rule, and it must not be.** A worktree
  * belonging to a run that is over is *always* wrong: it holds a branch checked
@@ -486,7 +486,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
 /**
  * Kills the process a dead claim names, or says why it did not.
  *
- * The half [0027](../../../doc/decisions/0027-the-lease-is-deleted.md) did not
+ * The half [0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md) did not
  * need. 0027 proved the *claim* dead — this conductor holds the lock, so no
  * other conductor is alive — and that was enough while every agent died with
  * the conductor that spawned it. Since 0030 §3 the agent is detached, so it

@@ -1,7 +1,7 @@
 /**
  * Deciding a backlog entry: accept one and the store opens an issue, decline
  * one and that is recorded (`#137`,
- * [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * [0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §5).
  *
  * **Both hosts call these, and nothing else does.** `lingtai backlog` and the
@@ -54,7 +54,7 @@ import type { ProposedRef, ProposedTicket, TicketStore } from "./ticket-store.ts
  * **Where a severity stops being an opinion and becomes an outcome** (`#237`).
  *
  * A reviewer returns findings with a severity and **no verdict**
- * ([0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md) §3),
+ * ([0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3),
  * so something after it has to say what each severity costs. This is that
  * something, and it is one comparison: at or below the bar a finding is
  * **filed**, above it a finding **refuses**.

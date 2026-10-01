@@ -4,7 +4,7 @@
  * `@lingtai/conductor/wizard-page`; this is where the page gets its first state.
  *
  * **Step one reads this machine, not the repository.** The recipe is
- * `~/.lingtai/<project>/recipe.yml` ([0046](../../../../../../doc/decisions/0046-lingtai-is-personal.md)
+ * `~/.lingtai/<project>/recipe.yml` ([0046](../../../../../../doc/decisions-archive/0046-lingtai-is-personal.md)
  * §3, #180), so if that file is there the page is an update flow — the same two
  * speeds, the fast lane filled from it with the machine's agent and limits, and
  * an edit made with `editRecipe` so the file's comments survive it. A

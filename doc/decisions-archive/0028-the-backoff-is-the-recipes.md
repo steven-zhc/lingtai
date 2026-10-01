@@ -26,7 +26,7 @@ One hour. Searching every document for it:
 | where | what it says |
 |---|---|
 | `doc/roadmap.md:135` | `\| **2c** \| Robustness: attempt backoff, … · **done** \|` — a ticked box in a phase table |
-| `doc/decisions/0022-the-seams.md:66` | the **outbox's** backoff, in a list of things deleted |
+| `doc/decisions-archive/0022-the-seams.md:66` | the **outbox's** backoff, in a list of things deleted |
 | `doc/architecture.html:781` | the same deleted outbox |
 | `doc/reference.md` | nothing |
 

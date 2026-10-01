@@ -17,7 +17,7 @@
  * or that the merge lane was never reached under `--no-merge`. Those are one
  * caller's, and this is it.
  *
- * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
+ * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
 import type { Runtime } from "@lingtai/agent";
@@ -560,7 +560,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
 
   /**
    * **The cut is a plugin's, and the three shapes a recipe can be in cut the same
-   * tree** (`#268`, [0065](../../../doc/decisions/0065-the-default-is-a-plugin.md)
+   * tree** (`#268`, [0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md)
    * §2–4).
    *
    * This is the wiring `pass-steps.test.ts` cannot see: `defaultsAt` is
@@ -668,7 +668,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
 
   /**
    * **The lane is a plugin's, and the three shapes a recipe can be in land the same
-   * branch** (`#270`, [0065](../../../doc/decisions/0065-the-default-is-a-plugin.md)
+   * branch** (`#270`, [0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md)
    * §2–3, §6).
    *
    * `cuts from origin/main with $what`'s sibling one step from the end, and the more
@@ -1261,7 +1261,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
   /**
    * **Two runtimes in one pass** — the claim `#314` exists to be testable by,
    * and the one thing a single working runtime could not show
-   * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+   * ([0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
    * §7).
    *
    * `runtime.agent: claude-code` writes the change; `review`'s own `agent: codex`

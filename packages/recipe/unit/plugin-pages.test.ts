@@ -238,7 +238,7 @@ function blocksOf(body: string): string[] {
  */
 async function supersededSections(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  const decisions = `${root}doc/decisions/`;
+  const decisions = `${root}doc/decisions-archive/`;
   for (const name of (await readdir(decisions)).filter((n) => n.endsWith(".md"))) {
     const body = await readFile(decisions + name, "utf8");
     const status = /\*\*Status\*\*([\s\S]*?)\n\n/.exec(body)?.[1];

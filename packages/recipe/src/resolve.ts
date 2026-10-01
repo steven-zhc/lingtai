@@ -4,7 +4,7 @@
  * **Where the text comes from is not this file's any more.** A run is governed
  * by `~/.lingtai/<project>/recipe.yml`, read by `resolveLocalRecipe` in
  * `local.ts` through `resolveSource` below
- * ([0046](../../../doc/decisions/0046-lingtai-is-personal.md) §3, #180). Nothing
+ * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180). Nothing
  * reads `.lingtai/config.yaml` from a managed repository to run anything, so
  * editing or merging that file changes no run, and `tamper` has nothing there
  * to catch.
@@ -92,12 +92,12 @@ function canonical(value: unknown): string {
 }
 
 /**
- * The five steps [0058](../../../doc/decisions/0058-lingtai-is-a-development-pipeline.md)
+ * The five steps [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
  * §3 added on 2026-09-23, left out of the canonical form while they are empty.
  *
  * **A hash cannot be upcast, which is the whole of why this is here.** A
  * `configHash` is the identity of a document
- * ([0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md) §2:
+ * ([0047](../../../doc/decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md) §2:
  * *two documents with one hash are one document*), and the log is full of
  * hashes taken when `gates` had five keys. Widening `StepMap` to ten put five
  * more always-empty keys inside `canonical`, so the identical `recipe.yml`
@@ -114,7 +114,7 @@ function canonical(value: unknown): string {
  * 0058's plan builds one and a recipe configures it, the list is non-empty, it
  * is in the hash, and the hash changes because the configuration did.
  *
- * It dies where the nine upcasters die: [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md)
+ * It dies where the nine upcasters die: [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md)
  * §7's reset ([the-pipeline](../../../doc/design/the-pipeline.md)'s T5) leaves
  * no stored hash to keep faith with, and this list comes down with them.
  */
@@ -139,7 +139,7 @@ const NOT_YET_IN_THE_HASH = ["claim", "design", "implement", "build", "review"] 
 function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unknown> {
   // **Every `no_log` value comes out here**, so the body on the event and the
   // digest beside it are both of a document with no secret in it
-  // ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
+  // ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §9).
   // The *field* stays, carrying `withheld`'s digest of what was there, because
   // the digest beside the body is the document's identity (0047 §2) and a
   // deleted field would make a recipe and the same recipe with the credential
@@ -314,7 +314,7 @@ function unknownKeys(raw: unknown): string[] {
  * recipe the run obeyed and carries that recipe's hash, so plan and execution
  * agree perfectly; it is the plan's *origin* that is wrong. Only this comparison,
  * made before anything is claimed, catches it — see
- * doc/decisions/0005-config-in-target-repo.md, which assumed one base.
+ * doc/decisions-archive/0005-config-in-target-repo.md, which assumed one base.
  *
  * Returns the refusal rather than throwing, and never repairs: every caller says
  * it in its own vocabulary — a refused run stage, a failed onboarding, a red

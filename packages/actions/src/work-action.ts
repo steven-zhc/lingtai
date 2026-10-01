@@ -1,7 +1,7 @@
 /**
  * The work action: **the one agent that writes the change, as a plugin rather
  * than as a step's body**
- * ([0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §1, `#266`).
+ * ([0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §1, `#266`).
  *
  * It closes the asymmetry 0065 §1 names. The cold reviewer has been an `agent:`
  * a person can read and edit since the recipe existed; the agent that writes the
@@ -72,7 +72,7 @@ export type WorkedAnswer =
 /**
  * **What the recipe asked this call to be** — the dispatch group, as `#314`
  * made it one shape
- * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §3).
+ * ([0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §3).
  *
  * Named and exported rather than written out at the two seams that pass it,
  * because a written-out pair is how `agent:` and `judge:` came to declare two

@@ -287,7 +287,7 @@ function settings(installation: Installation, label: string): Fix | null {
  * documentation: *"Bad actors can hit this URL with a spoofed
  * `installation_id`"*. Its remedy is a user access token proving the
  * installation belongs to the person, and Lingtai has none — no user OAuth,
- * which [0045](../../../doc/decisions/0045-one-team-one-conductor.md) names as
+ * which [0045](../../../doc/decisions-archive/0045-one-team-one-conductor.md) names as
  * a separate epic. So it is checked against what the App itself reports:
  * `GET /app/installations/{id}` with the App's JWT answers 404 for any id that
  * is not one of this App's installations. Under one team and one conductor,

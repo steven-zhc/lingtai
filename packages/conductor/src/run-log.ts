@@ -7,7 +7,7 @@
  * page and the route behind it — and a viewer importing `conduct.ts` would
  * have dragged `spawn`, the ports and the whole of a pass in behind one
  * `join`. So the layout is its own module, and the reading half of
- * [0034](../../../doc/decisions/0034-the-run-log.md) is re-exported through it:
+ * [0034](../../../doc/decisions-archive/0034-the-run-log.md) is re-exported through it:
  * a caller wanting to watch a run asks one import for both halves of the
  * question, *which file* and *what is in it*.
  *
@@ -42,7 +42,7 @@ export {
  * ```
  *
  * `reconcile` already walks `join(home, "worktrees")` as `<project>/<runId>`
- * ([0034](../../../doc/decisions/0034-the-run-log.md) §1), so reaping the
+ * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §1), so reaping the
  * second is the same code in the same pass rather than a second mechanism. It
  * shares `runs/` with `settingsPathFor`'s `runs/<runId>/settings.json`, which
  * is a directory named for a run and never a `.log` — the two do not collide

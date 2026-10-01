@@ -4,7 +4,7 @@
  * Nothing here is maintained in a table. A detail view is read rarely, by one
  * person, about one task — folding a few dozen events on the spot is
  * imperceptible, and it means what this shows can change without a migration or
- * a rebuild ([0012](../../../../doc/decisions/0012-one-task-view.md)).
+ * a rebuild ([0012](../../../../doc/decisions-archive/0012-one-task-view.md)).
  *
  * **The unit is the attempt.** The log keeps one stream per run and this used to
  * flatten what the log divided: a single `runId` — the most recent — and one
@@ -527,7 +527,7 @@ function refusalOn(run: RunView): Deciding | null {
 
   /**
    * And the neighbouring ending, for the same reason and with the same argument
-   * ([0057](../../../../doc/decisions/0057-a-gate-that-did-not-finish.md), `#196`).
+   * ([0057](../../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md), `#196`).
    *
    * The run finished — exit 0, turns taken, money spent — so without this line
    * the page falls through to an earlier round's genuine refusal and puts a red

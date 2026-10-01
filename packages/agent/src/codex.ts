@@ -4,7 +4,7 @@
  * `codex exec --json` in the worktree, with the hook wiring the conductor
  * rendered outside it translated into Codex's own `-c` overrides, so the
  * receipt is parsed rather than scraped. It is the second implementation ADR
- * [0007](../../../doc/decisions/0007-dual-runtime.md) designed the port for, and
+ * [0007](../../../doc/decisions-archive/0007-dual-runtime.md) designed the port for, and
  * until `#313` it was a stub whose `run()` rejected.
  *
  * **Every flag below was measured against `codex-cli 0.155.1` on 2026-09-29**,
@@ -126,7 +126,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
 /**
  * Which filesystem boundary the run gets.
  *
- * The Codex half of [0054](../../../doc/decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md):
+ * The Codex half of [0054](../../../doc/decisions-archive/0054-a-role-keeps-its-permissions-when-its-agent-changes.md):
  * a caller says what the agent is *for* — act, or read and answer — and each
  * adapter turns that into its own vocabulary. Claude Code's is
  * `--permission-mode`; this is `-s`.
@@ -245,7 +245,7 @@ export interface CodexReceipt {
    * so null means *this runtime does not say*, a different fact wearing the same
    * value: routing through it would make the cost leg vacuous and classify every
    * failed Codex run with at most one message as `never-started`, which is
-   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md)'s bug
+   * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)'s bug
    * reproduced in the second adapter.
    *
    * Tokens are strictly better evidence than dollars anyway, being what dollars

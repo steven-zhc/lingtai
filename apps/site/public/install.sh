@@ -1,5 +1,5 @@
 #!/bin/sh
-# Lingtai's installer (#184, doc/decisions/0051-a-version-is-a-directory.md).
+# Lingtai's installer (#184, doc/decisions-archive/0051-a-version-is-a-directory.md).
 #
 #   curl -fsSL https://lingtai.hczhang.com/install.sh | sh
 #

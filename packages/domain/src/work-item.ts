@@ -133,7 +133,7 @@ export interface WorkItemState {
 
   /**
    * Every approach this item has abandoned, oldest first
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **The ceiling is counted here rather than remembered anywhere**, which is
    * the shape `repairs` had before `#143` deleted it: a length against a number
@@ -154,7 +154,7 @@ export interface WorkItemState {
    * A sentence somebody added for the next run, and not yet consumed.
    *
    * The whole of how a `PromptEdited` reaches an agent
-   * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md)
+   * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md)
    * §5). It applies to the **next run only**, whoever starts it — the next
    * `WorkItemClaimed` clears it.
    *

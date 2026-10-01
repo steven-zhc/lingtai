@@ -4,7 +4,7 @@
  * No server: each assertion gets a database in a directory of its own and
  * throws it away. In `integration/` all the same, because a directory of its
  * own is still the filesystem
- * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1) — *does
+ * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1) — *does
  * this need Postgres* was the old line and is not the one a gate asks (#225).
  *
  * The contract is the same file `integration/projection.test.ts` runs against

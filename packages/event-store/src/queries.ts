@@ -7,7 +7,7 @@
  * asked those by opening a `pg.Client` of their own and writing SQL:
  * `listProjectStreams`, `endedWithoutEndActions` and the step audit that used to
  * sit beside it in `packages/conductor/src/`, and `wake.ts` next door. That is
- * [0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
+ * [0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md)
  * §1's defect in one sentence — **a direct `pg.Client` outside a Postgres
  * implementation is a place the init-time choice does not reach** — and it is
  * why `lingtai status`, the first command anybody types, died on a machine with
@@ -39,7 +39,7 @@
  *
  * A caller reaches these through `log.queries`, and which implementation is
  * behind them is whichever of the two this machine wrote down
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)).
  *
  * `lingtai doctor` is the one caller that still *names* this one, and only on a
  * machine that runs Postgres: its audit rows ask the **direct** connection,
@@ -98,7 +98,7 @@ export interface LogQueries {
 
   /**
    * Every item that ended whose `end` point was configured and did not run —
-   * the comparison [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
+   * the comparison [0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
    * promised, computed from the log alone.
    *
    * `StepsResolved` on the run says the recipe asked for something at `end`;
@@ -125,7 +125,7 @@ export interface LogQueries {
    * holding a copy. What only the store can do is group a log that may hold
    * millions of rows into a few dozen names without reading one payload.
    *
-   * It is `lingtai doctor`'s [ADR 0019](../../../doc/decisions/0019-a-second-reset.md)
+   * It is `lingtai doctor`'s [ADR 0019](../../../doc/decisions-archive/0019-a-second-reset.md)
    * row, which asked it as Postgres SQL and so asked it of no other store
    * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
    */

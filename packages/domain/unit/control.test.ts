@@ -2,7 +2,7 @@
  * The control fold, and the one thing in it that ends by itself.
  *
  * `ConductorPaused` carrying an `until` is
- * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §5 — the
+ * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §5 — the
  * first control state that lifts without anybody acting. The number it exists
  * to remove is twelve minutes: the limit lifted at 23:00 and the queue was
  * still idle at 23:12, waiting out a flat hour while the reset time sat in the
@@ -120,7 +120,7 @@ describe("a pause that ends by itself", () => {
 
 /**
  * A question is a control instruction, so it lands where `pause` and `now` do
- * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §3).
+ * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §3).
  */
 describe("the discussions somebody asked for", () => {
   it("keeps every request, in order, answered or not", () => {

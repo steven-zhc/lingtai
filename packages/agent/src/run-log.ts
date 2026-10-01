@@ -1,7 +1,7 @@
 /**
  * A run's log file: what the agent is doing, while it is doing it.
  *
- * [0034](../../../doc/decisions/0034-the-run-log.md). Before this the only
+ * [0034](../../../doc/decisions-archive/0034-the-run-log.md). Before this the only
  * observable of a running agent was `ps` — `#105` ran for four minutes and the
  * whole of what could be known about it was a pid and a truncated command line.
  * The live picture already existed: the hook socket sees every tool call and

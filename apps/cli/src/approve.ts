@@ -24,7 +24,7 @@ export async function approveCommand(
   log = console.log,
 ): Promise<number> {
   if (!hasGitHubApp()) {
-    log("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
+    log("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
     return 1;
   }
 

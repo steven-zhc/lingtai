@@ -4,7 +4,7 @@ Everything you actually type, moved out of the README on 2026-09-08 so that the
 README could be the shortest true description of what this is. Nothing here was
 deleted; the sequence is unchanged. What *was* changed is the handful of places
 this text had gone stale against
-[0022](decisions/0022-the-seams.md) and
+[0022](decisions-archive/0022-the-seams.md) and
 [#60](https://github.com/steven-zhc/lingtai/issues/60) — the package names, the
 `RESERVED` denylist, the outbox, and the third environment layer. Each of those
 is marked where it appears.
@@ -40,15 +40,15 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 
 | | Lifetime | Why there |
 |---|---|---|
-| `config.yml` | Persistent | **This machine's half of the recipe** — `runtime.agent`, `runtime.limits`, `runtime.assignee`, `database.store` and `database.url`, `board.port`. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). |
-| `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
+| `config.yml` | Persistent | **This machine's half of the recipe** — `runtime.agent`, `runtime.limits`, `runtime.assignee`, `database.store` and `database.url`, `board.port`. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). |
+| `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions-archive/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
 | `worktrees/<project>/<runId>` | One run | Cheap. Cut from the mirror, removed when the run ends — and removed *before* the integrator runs, because a worktree holding `agent/<n>` checked out stops git updating that ref. |
 | `runs/<runId>/settings.json` | One run | **Outside the worktree, deliberately.** An agent that can edit its own hook configuration has no hook configuration. |
-| `runs/<project>/<runId>.log` | While it is owed | What `lingtai attach` and the task page's *run log* tail. **A trace, never a record**: it asks the daemon and the database nothing, so it answers on a stopped system — and a run that landed has no log, because [0034](decisions/0034-the-run-log.md) keeps only the ones still owed an explanation. |
-| `locks/` | While held | One file per lock — the conductor's, the board's, a merge lane's, a decision's. **Not anything in Postgres** ([0052](decisions/0052-the-lock-is-sqlite-on-a-file.md)): each person runs their own Lingtai against their own log, so a lock scoped to one database would have answered `ok` while the real competitor was on somebody else's laptop. |
-| `$TMPDIR/lingtai/*.sock` | One run | The hook's socket. In `$TMPDIR` rather than under `LINGTAI_HOME` because a unix socket path has a hard 104-byte limit and a home directory plus a run id exceeds it — see [ADR 0011](decisions/0011-hook-latency-is-runtime-startup.md). |
+| `runs/<project>/<runId>.log` | While it is owed | What `lingtai attach` and the task page's *run log* tail. **A trace, never a record**: it asks the daemon and the database nothing, so it answers on a stopped system — and a run that landed has no log, because [0034](decisions-archive/0034-the-run-log.md) keeps only the ones still owed an explanation. |
+| `locks/` | While held | One file per lock — the conductor's, the board's, a merge lane's, a decision's. **Not anything in Postgres** ([0052](decisions-archive/0052-the-lock-is-sqlite-on-a-file.md)): each person runs their own Lingtai against their own log, so a lock scoped to one database would have answered `ok` while the real competitor was on somebody else's laptop. |
+| `$TMPDIR/lingtai/*.sock` | One run | The hook's socket. In `$TMPDIR` rather than under `LINGTAI_HOME` because a unix socket path has a hard 104-byte limit and a home directory plus a run id exceeds it — see [ADR 0011](decisions-archive/0011-hook-latency-is-runtime-startup.md). |
 
 Two things in this repository are also not committed: `.env.local`, and
 `packages/hook/bin/lingtai-hook` — a 55 MB compiled binary that `pnpm --filter
@@ -85,7 +85,7 @@ variable beats it, which is what makes CI and launchd work with no file at all.
 wins. It is needed only when the first goes through a transaction pooler —
 Supabase's, PgBouncer — which breaks both, and breaks them without
 erroring; `lingtai doctor` refuses a pooled URL standing in. See
-[ADR 0009](decisions/0009-two-connections.md).
+[ADR 0009](decisions-archive/0009-two-connections.md).
 
 The event store must be **its own database**, not one belonging to a managed
 project — Lingtai has to keep running while a managed project is the thing
@@ -149,7 +149,7 @@ It refuses twice over if you point it at anything else: the flag has to be set,
 ### Which store this machine runs
 
 **It is a value in `~/.lingtai/config.yml`, and nothing infers it**
-([0056](decisions/0056-the-store-is-a-written-choice.md)). *Unset* is not a fact
+([0056](decisions-archive/0056-the-store-is-a-written-choice.md)). *Unset* is not a fact
 a process can establish: the URL used to be looked for in a `.env.local` found
 by walking up from `packages/env/src`, so `pnpm lingtai` from the checkout and a
 launchd job started from `~` could reach opposite answers and neither could say
@@ -234,7 +234,7 @@ admin repository's *submodule* but not the repository itself, and every CI run
 failed with a 403 that said nothing about scope. An App's reach is explicit in
 its installation, so `lingtai add` can ask and answer that question at onboarding
 time instead of a day later. See
-[ADR 0006](decisions/0006-github-app.md).
+[ADR 0006](decisions-archive/0006-github-app.md).
 
 **One click does steps 1, 2 and 4 of this section** (`#169`). Open the board
 with nothing configured and it links to `/setup/github-app`, which posts an App
@@ -360,7 +360,7 @@ actually grants those four permissions is a per-repository question, and
 ```
 
 **Nothing is committed to the repository being managed.** The recipe is yours
-([0046](decisions/0046-lingtai-is-personal.md) §3,
+([0046](decisions-archive/0046-lingtai-is-personal.md) §3,
 [#180](https://github.com/steven-zhc/lingtai/issues/180)), and the board's
 wizard writes a first one for you by reading the repository — its scripts, its
 labels, its default branch.
@@ -368,7 +368,7 @@ labels, its default branch.
 > **This replaced `<repo>/.lingtai/config.yaml`, and the reason is worth
 > keeping.** That file was read **from the base branch**, never from the branch
 > an agent was working on, so an agent that edited it changed nothing about the
-> run in flight — [ADR 0005](decisions/0005-config-in-target-repo.md), borrowed
+> run in flight — [ADR 0005](decisions-archive/0005-config-in-target-repo.md), borrowed
 > from GitHub Actions. The guarantee is now held by *location* instead: an
 > agent's blast radius is its worktree, and `~/.lingtai/` is not in it. A
 > `.lingtai/config.yaml` still sitting in a managed repository is an ordinary
@@ -410,7 +410,7 @@ env:
   plantAt: apps/web/.env.local
 
 # Five keyed points, not an array. This example predated
-# [0016](decisions/0016-the-settled-model.md) and said `- kind: process`, which
+# [0016](decisions-archive/0016-the-settled-model.md) and said `- kind: process`, which
 # the schema now rejects.
 steps:
   admit: []
@@ -431,7 +431,7 @@ steps:
 **There is no `runtime:` block here, and writing one is refused rather than
 ignored.** `runtime.agent`, `runtime.limits` and `runtime.assignee` are facts
 about *this machine*, not about this repository, so they live in
-`~/.lingtai/config.yml` ([0046](decisions/0046-lingtai-is-personal.md) §3):
+`~/.lingtai/config.yml` ([0046](decisions-archive/0046-lingtai-is-personal.md) §3):
 
 ```yaml
 runtime:
@@ -449,11 +449,11 @@ Left in the recipe, each is named back at you —
 ~/.lingtai/config.yml … Nothing here was applied` — and `steps:` written in the
 machine file is refused the same way. **Both files refuse what belongs in the
 other**, because a key silently dropped and a key that does not exist are
-different facts to whoever wrote it ([0016](decisions/0016-the-settled-model.md)
+different facts to whoever wrote it ([0016](decisions-archive/0016-the-settled-model.md)
 §4), and a gate that reads as declared while holding nothing is a way to weaken
 a gate quietly.
 
-> [0053](decisions/0053-the-recipe-chooses-the-agent-for-each-role.md) moves the
+> [0053](decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md) moves the
 > agent and the limits back into the recipe, per *role* — development,
 > discussion, and each agent gate. It is accepted and **not implemented**: the
 > refusal above is what `main` does today.
@@ -541,7 +541,7 @@ protects.
 **A declared name with no value refuses the whole project for that pass**, before
 the issue is claimed: no worktree, no agent, no money. This used to be a log
 line, and one run spent $0.97 over ten turns against a database it could not
-reach. See [0021](decisions/0021-the-recipe-decides-the-environment.md), which
+reach. See [0021](decisions-archive/0021-the-recipe-decides-the-environment.md), which
 supersedes 0020.
 
 ```bash
@@ -688,12 +688,12 @@ one to run there, on the same port.
 
 The board is a reader. It renders `task_view` and issues control events; it
 never holds a run, which is why restarting it or closing the tab costs nothing
-— see [ADR 0013](decisions/0013-daemon-hosts-the-work.md).
+— see [ADR 0013](decisions-archive/0013-daemon-hosts-the-work.md).
 
 A run without the hook binary does not start. The binary is not committed, so
 building it is a real step.
 
-> **Changed by [0016](decisions/0016-the-settled-model.md).** This section used
+> **Changed by [0016](decisions-archive/0016-the-settled-model.md).** This section used
 > to describe a **guard** — a policy list Lingtai kept and enforced on every tool
 > call — and a `--no-guard` flag for turning it off. Both are gone. Lingtai
 > restricts no tool call and keeps no such list; `--no-guard` is not a flag, and
@@ -703,7 +703,7 @@ The hook remains, and it is a *channel*, not a sandbox: the agent reaches the
 log through it, and it fails closed when it cannot reach the socket. It is not
 a security boundary and never was. **The two boundaries that actually hold are
 the filtered environment and the disposable worktree** — neither was ever the
-guard's, and both still hold ([0007](decisions/0007-dual-runtime.md)).
+guard's, and both still hold ([0007](decisions-archive/0007-dual-runtime.md)).
 
 Tool limits belong to the agent runtime's own configuration —
 `permissions.deny` in `~/.claude/settings.json` or in the managed repository's
@@ -761,7 +761,7 @@ it does, and the next one to start releases the claim it left. Said plainly
 because a Stop button that means Pause is worse than no Stop button.
 
 **Shutdown is a pause the process does not come back from**
-([0030](decisions/0030-shutting-down-safely.md)). It appends and returns; the
+([0030](decisions-archive/0030-shutting-down-safely.md)). It appends and returns; the
 daemon reads it before its next pass, finishes the one in flight and exits. The
 boundary is the *pass* and not the agent — the gates, the merge lane and the
 `end` point all run after the agent exits — so a drain can take as long as the
@@ -775,7 +775,7 @@ that the request would stop every daemon started after it.
 
 **Starting again is `lingtai restart`**, which is the drain above and then one
 daemon — in that terminal, or by the supervisor that keeps it
-([0042](decisions/0042-the-restart-is-a-command.md)):
+([0042](decisions-archive/0042-the-restart-is-a-command.md)):
 
 ```bash
 pnpm lingtai restart "picking up #88"
@@ -1222,7 +1222,7 @@ shell finds on `PATH`, so install from that user's own shell.
 environment it was given.
 
 **A running daemon holds the code it started with. Merging is not deploying —
-restarting is.** [0010](decisions/0010-source-runs-unbuilt.md) says the source
+restarting is.** [0010](decisions-archive/0010-source-runs-unbuilt.md) says the source
 runs unbuilt, and that is easy to read as *there is no deploy step*. It removes
 the build, not the restart: Node caches a module the first time it is imported,
 so a long-lived process goes on running whatever `HEAD` pointed at when it
@@ -1443,7 +1443,7 @@ Every refusal names itself. The common ones:
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |
 | `stopped at recipe: …` | The recipe did not parse, or names an action this build does not have. The message is the validation failure. |
 | `stopped at env: … declared in env.required and not set in any layer` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. Or declare it in the repository's own `.env.local`. A `LINGTAI_` name never crosses from the machine file at all. |
-| `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
+| `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions-archive/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
 | `stopped at discover: excluded-label` | That issue carries a label the recipe's `source.exclude` names. Every reason an issue is passed over is the recipe's — there is no built-in list. |
 | `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next pass asks GitHub again (#131). |
 | `stopped at prepare: the install action refused` | An action at the `prepared` point refused — usually dependencies that did not install in a fresh worktree. Nothing expensive ran; that is the point of failing here. |

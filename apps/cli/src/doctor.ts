@@ -439,7 +439,7 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
             ? "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and " +
               "LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL. "
             : "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. ") +
-          "LISTEN/NOTIFY will fail silently through it (doc/decisions/0009).",
+          "LISTEN/NOTIFY will fail silently through it (doc/decisions-archive/0009).",
       };
     }
 
@@ -757,7 +757,7 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       status: "skip",
       detail:
         "LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
-        "See doc/decisions/0006-github-app.md.",
+        "See doc/decisions-archive/0006-github-app.md.",
     };
   }
   try {
@@ -940,7 +940,7 @@ export async function daemonLiveness(
  * written by the old code and lost for good. Node caches a module at import, so
  * the running process could not produce the new event at all.
  *
- * **[0010](../../../doc/decisions/0010-source-runs-unbuilt.md) reads as "there
+ * **[0010](../../../doc/decisions-archive/0010-source-runs-unbuilt.md) reads as "there
  * is no deploy step", and that is half true.** *The source runs unbuilt*
  * removes the build; the restart is still the deploy. Everything else in the
  * system is a fresh process per invocation — the CLI, the gates — or hot
@@ -955,7 +955,7 @@ export async function daemonLiveness(
  * It reports and stops there, but this report is no longer read only by a
  * person: `lingtai restart` runs the same doctor and refuses on every failure
  * not marked `restartAnswers`
- * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)). Turning
+ * ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)). Turning
  * this `warn` into a plain `fail` would refuse every restart that is behind —
  * which is every restart that has something to pick up — and marking it would
  * make `lingtai doctor` exit 1 on something the restart lets through. Whether a daemon should restart
@@ -1177,7 +1177,7 @@ async function orphans(): Promise<CheckResult> {
 /**
  * Whether the log holds an event type this build cannot read.
  *
- * The check that would have caught the defect [ADR 0019](../../../doc/decisions/0019-a-second-reset.md)
+ * The check that would have caught the defect [ADR 0019](../../../doc/decisions-archive/0019-a-second-reset.md)
  * is about. 3c′ deleted three event types while the log held six rows of two of
  * them, and `toEnvelope` throws on a type the catalogue does not know — so every
  * run stream in the log was unreadable from its first row and
@@ -1246,13 +1246,13 @@ function say(titles: TitleBook, ref: string, what: string): string {
 /**
  * Items that landed with an `end` point that was configured and did not run.
  *
- * The comparison [ADR 0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md)
+ * The comparison [ADR 0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
  * promised, and the one that would have found #55 the day it happened.
  * `StepsResolved` names all ten steps and the actions resolved for each, so
  * "the recipe asked for something at `end`" is in the log; `EndActionsResolved`
  * is the record that the step ran. An item that landed, whose run planned
  * actions at `end`, and whose stream holds no resolution, is a gate that was
- * configured and did not run — which [0016](../../../doc/decisions/0016-the-settled-model.md)
+ * configured and did not run — which [0016](../../../doc/decisions-archive/0016-the-settled-model.md)
  * §4 calls Lingtai's bug rather than the operator's.
  *
  * **A failure, not a note.** Nothing on the issue shows that Lingtai touched
@@ -1648,7 +1648,7 @@ export function limitsRow(
 /**
  * Per project: every name its recipe requires, and **which layer answered**.
  *
- * The half of [ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)
+ * The half of [ADR 0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)
  * that costs nothing. The other half — refusing the project — happens in
  * `runOnce`, after a pass has already been started and a recipe fetched; this
  * answers the same question before anyone spends anything, which is what makes
@@ -1666,7 +1666,7 @@ export function limitsRow(
  */
 /**
  * Where an extension runs, which is the whole of what
- * [0015](../../../doc/decisions/0015-five-gates-and-two-extensions.md) lets an
+ * [0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md) lets an
  * extension be: **in the loop, where the loop waits for it, or off the log,
  * where it cannot change an outcome.** Nothing else about the two differs, and
  * every question worth asking about a broken one turns on it.
@@ -1685,7 +1685,7 @@ export interface DeclaredExtension {
  * and every subscriber: that is everything which extends Lingtai without
  * declaring anything. A plugin declares a key, its fields and the steps it
  * serves, and today every declaration lives in `PLUGINS`; what
- * [0067](../../../doc/decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)
+ * [0067](../../../doc/decisions-archive/0067-a-plugin-is-a-declaration-and-an-implementation.md)
  * lets come from elsewhere is that declaration, and the code under it is still a
  * subprocess with an env of its own to collect. *Four of the ten* is 0067 §2's
  * whole argument for opening the registry, so it is the number to read off `at`
@@ -1714,7 +1714,7 @@ export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
 /**
  * Per project: what each extension asked for, and whether this machine holds it.
  *
- * The half of [0037](../../../doc/decisions/0037-an-extension-is-a-command.md)
+ * The half of [0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md)
  * §1 that costs nothing, for the reason `declaredEnvironment` above it exists:
  * an extension's declaration is the *whole* of what its process gets, so a name
  * this machine does not hold is a Telegram bot that starts, finds no token and
@@ -1736,7 +1736,7 @@ export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
  * nobody can clear it: this machine declares `telegram` and holds neither of
  * its names, so `lingtai doctor` has been red for weeks over a notification
  * nobody asked for yet — and `lingtai restart` is gated on doctor
- * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)), so
+ * ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)), so
  * `--despite-doctor` became the ordinary way to restart. **A red that is always
  * on is not a check, it is a habit.** `subscribers: failures` had already
  * reached this conclusion about the same subscriber — *a check that is always
@@ -2036,7 +2036,7 @@ export async function runDoctor(
     // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
     // command imports. A `.js` specifier in a barrel or a constructor parameter
     // property would have stopped it, and neither `tsc` nor a board build
-    // notices either. See doc/decisions/0010.
+    // notices either. See doc/decisions-archive/0010.
     detail: "every package this command imports loaded under Node's type stripping",
   });
 
@@ -2190,7 +2190,7 @@ export async function runDoctor(
  * about environment loading true even in the command that inspects it — and
  * this is a function rather than four lines at a call site because there are two
  * call sites now: `lingtai doctor`, and the `lingtai restart` it gates
- * ([0042](../../../doc/decisions/0042-the-restart-is-a-command.md)). A gate that
+ * ([0042](../../../doc/decisions-archive/0042-the-restart-is-a-command.md)). A gate that
  * ran a *slightly* different doctor than the one you type would be the worst of
  * both.
  */

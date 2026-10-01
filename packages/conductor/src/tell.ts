@@ -1,7 +1,7 @@
 /**
  * Telling GitHub what the log now says about one issue.
  *
- * This is what replaced the outbox ([0022](../../../doc/decisions/0022-the-seams.md)).
+ * This is what replaced the outbox ([0022](../../../doc/decisions-archive/0022-the-seams.md)).
  * The outbox was a table, a projection, a worker, a backoff and a dead-letter
  * standing behind three calls — a comment, the label set, and closing — and the
  * failure all of that retried had never once been observed. What it bought that
@@ -87,7 +87,7 @@ export interface RefChannel {
  * moment of deleting rather than carried from a resolution minutes earlier.
  *
  * `body` is the one that changes what a *later run* reads
- * ([0032](../../../doc/decisions/0032-the-page-is-organised-by-attempt.md) §6):
+ * ([0032](../../../doc/decisions-archive/0032-the-page-is-organised-by-attempt.md) §6):
  * the prompt is filled from the issue body, so an instruction meant to outlive
  * one attempt goes there and nowhere else. It carries the whole new body,
  * because that is what GitHub takes — composing it is the caller's job, and
@@ -198,7 +198,7 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
  * deleted** (`#240`).
  *
  * `agent/<n>-attempt-<k>` is published by every claim that produced commits
- * ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md) §2), one
+ * ([0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md) §2), one
  * per approach the item tried, and nothing has ever deleted one — so the count
  * of `agent/*` on a remote is monotone in how many issues the repository has
  * had, and every clone, `ls-remote` and fetch pays for all of them. After a

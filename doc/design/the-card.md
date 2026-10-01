@@ -3,7 +3,7 @@
 **Status** built · 2026-09-16 · `#170` · a picture at
 `claude.ai/code/artifact/aa70a184-eaea-4594-932e-e1a01df4240d` · **the bar
 became ten segments on 2026-09-23** (`#227`), when the vocabulary widened from
-five names to ten ([0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3).
+five names to ten ([0058](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3).
 Everything below is unchanged except the count and what the count costs, which
 is [its own section](#what-ten-cost-and-what-it-did-not).
 
@@ -104,8 +104,8 @@ imports `rail.tsx` and reads `foldProgress`; it does not grow a list.
 > **All ten, always.** A step that is merely omitted is indistinguishable from
 > one that was configured and silently did not run, and **only the second of
 > those is Lingtai's bug**.
-> — `rail.tsx`, on the ten steps ([0016 §4](../decisions/0016-the-settled-model.md),
-> [0061 §5](../decisions/0061-the-recipe-is-the-pipeline.md))
+> — `rail.tsx`, on the ten steps ([0016 §4](../decisions-archive/0016-the-settled-model.md),
+> [0061 §5](../decisions-archive/0061-the-recipe-is-the-pipeline.md))
 
 It read *all five* until `#227`, and the sentence is the one thing that did not
 change: the rule never counted, it quantified. `Segs` iterates `foldProgress`'s
@@ -123,8 +123,8 @@ carries the distinction the sentence above demands:
 | `pending` | flat `--rule`. Quiet, because nothing is wrong |
 | `skipped` | dashed outline, no fill. Nothing configured (`merge: []`, or a `design:` nobody declared, which has no default to fall back on); it keeps its place without claiming anything happened in it |
 | `never-ran` | hatched, `--fail`. The one segment that breaks the bar's rhythm, and the only place the fail colour appears with no verdict behind it |
-| `did-not-finish` | the same hatch. The agent *started* here and produced no receipt ([0057](../decisions/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
-| `asked` | the same hatch in `--held`. The agent started and **stopped to ask something** ([0068](../decisions/0068-a-step-that-asked-is-not-a-step-that-crashed.md), `#296`): the same fact again — nothing judged this diff here — and the one where nothing has gone wrong, so the colour is `waived`'s and never the fail one |
+| `did-not-finish` | the same hatch. The agent *started* here and produced no receipt ([0057](../decisions-archive/0057-a-gate-that-did-not-finish.md)) — the same fact to a reader of a bar, and the segment's title and the card say which |
+| `asked` | the same hatch in `--held`. The agent started and **stopped to ask something** ([0068](../decisions-archive/0068-a-step-that-asked-is-not-a-step-that-crashed.md), `#296`): the same fact again — nothing judged this diff here — and the one where nothing has gone wrong, so the colour is `waived`'s and never the fail one |
 
 **The two fail-hatched states share a tone and not a sentence.** `never-ran` says
 the account is walled and the conductor has stood down; `did-not-finish` says this
@@ -333,11 +333,11 @@ is the one this design already got wrong once.
 - [`task-detail-page.md`](task-detail-page.md) — the other place a run is
   described. Its ranks are `#132`'s and `#152`'s; `#189` put the rail inside
   rank 2 of a running item, above the log, and added no rank.
-- [0016 §4](../decisions/0016-the-settled-model.md) — a configured step that
+- [0016 §4](../decisions-archive/0016-the-settled-model.md) — a configured step that
   silently does not run is Lingtai's bug.
-- [0058 §3](../decisions/0058-lingtai-is-a-development-pipeline.md) — the ten
+- [0058 §3](../decisions-archive/0058-lingtai-is-a-development-pipeline.md) — the ten
   steps, and why five could not draw the pass.
-- [0061 §5](../decisions/0061-the-recipe-is-the-pipeline.md) — the file may omit
+- [0061 §5](../decisions-archive/0061-the-recipe-is-the-pipeline.md) — the file may omit
   a step; the resolved recipe may not, and the board draws all ten.
-- [0040](../decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) — rounds
+- [0040](../decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) — rounds
   bound depth, restarts bound breadth. The second sequence.

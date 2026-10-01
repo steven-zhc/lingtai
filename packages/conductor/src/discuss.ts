@@ -1,7 +1,7 @@
 /**
  * The discussion assistant: a third kind of agent, which reads and cannot run.
  *
- * [0033](../../../doc/decisions/0033-the-third-kind-of-agent.md). Lingtai
+ * [0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md). Lingtai
  * dispatches two shapes today and both are containers — a run agent with a
  * disposable worktree, a filtered environment, a fail-closed hook and the
  * pass's gates; and a gate agent given a diff and asked for a verdict. There was no
@@ -56,7 +56,7 @@
  * turn may ask for, and how many times it may ask before it has to answer. A
  * loop that could ask forever is not a person being the limit, it is a person
  * watching. They are constants rather than recipe fields — unlike the prompt
- * budget of [0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)
+ * budget of [0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)
  * — because nothing repository-specific decides them yet, and a knob with no
  * measurement behind it is a knob nobody can set.
  */

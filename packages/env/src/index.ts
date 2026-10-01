@@ -43,7 +43,7 @@ const root = resolve(here, typeof LINGTAI_BUNDLED === "undefined" ? "../../.." :
  * variable a checkout's `.env.local` supplied, and after `config()` has run
  * `process.env` cannot be asked: dotenv sets a name it did not find and leaves
  * one it did, so the merged environment holds no record of which happened.
- * [0056 §4](../../../doc/decisions/0056-the-store-is-a-written-choice.md) is
+ * [0056 §4](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) is
  * why that distinction exists — the file is found by walking up from this
  * source file, so whether it exists depends on the directory a process started
  * in, and a fact four processes must agree about cannot come from there.
@@ -62,7 +62,7 @@ const loaded = config({
  * What the machine's own env **file** holds — not the whole process environment.
  *
  * The distinction is the whole of `#60`'s default. An agent's environment is
- * "the two files merged" ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)):
+ * "the two files merged" ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)):
  * this one and the project's. It is deliberately **not** `process.env`, because
  * that also carries the operator's shell — `AWS_*`, npm tokens, whatever is
  * exported in the terminal a command was typed into — and none of that is
@@ -139,7 +139,7 @@ export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL", from: NodeJS
  * missing line becomes an ordinary absent one, which `required` catches loudly
  * before anything is claimed.
  *
- * [0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)
+ * [0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)
  * decided to remove `RESERVED` — the denylist that stopped a recipe naming
  * Lingtai's own credentials — on the grounds that exposure is the operator's to
  * manage. That removal is `#60` and has not landed yet; this makes it safe to
@@ -375,7 +375,7 @@ export const SQLITE_LOG = "lingtai.db";
  * store, which printed this in amber and returned 1 without serving a board,
  * and a `doctor` row, which rendered the machine `warn`. A store opens from a
  * written `sqlite` now
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)) —
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)) —
  * `packages/daemon/integration/the-written-choice.test.ts` appends, folds
  * `task_view`, renders the board's cards and beats the beacon on one, in a
  * process where opening a socket throws — so `init` goes on to the board and
@@ -494,7 +494,7 @@ function notSetUp(name: string, path: string | null, url?: string): StoreRefused
 /**
  * **Which store this machine runs is a value somebody wrote down**, and this is
  * the one function that reads it
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)).
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)).
  *
  * Nothing infers it from a variable being unset. *Unset* is not a fact a
  * process can establish: the URL `postgresUrl()` reads has three sources, one
@@ -659,7 +659,7 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
  *
  * **It throws where nothing was written, and never defaults.** A machine that
  * has not been set up is not a machine that chose SQLite
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md) §2),
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) §2),
  * and the refusal it throws names `lingtai init`. That is the whole of the
  * blocker that refused #179's ninth pass: under a rule that read *absence* as
  * *SQLite*, a process that could not see the checkout's `.env.local` opened a
@@ -891,7 +891,7 @@ export function postgresUrl(from: NodeJS.ProcessEnv = process.env): string {
  * transaction pooler each of those fails **silently** — a cross-connection
  * NOTIFY simply never arrives, which would leave the system looking merely slow
  * rather than broken. Measured against Supabase's pooler on 2026-08-31; see
- * doc/decisions/0009-two-connections.md.
+ * doc/decisions-archive/0009-two-connections.md.
  *
  * On a plain Postgres this may be the same string as `postgresUrl()`, and then
  * it need not be written at all: see `directUrlIfSet`. Neither set still
@@ -955,7 +955,7 @@ export function optional(name: string, from: NodeJS.ProcessEnv = process.env): s
  * wrong in a way nothing reports: on 2026-08-30 one covered the admin
  * repository's submodule but not the repository itself, and every CI run failed
  * with a 403 that said nothing about scope. An installation makes reachability
- * explicit. See doc/decisions/0006-github-app.md.
+ * explicit. See doc/decisions-archive/0006-github-app.md.
  *
  * The private key is a real secret. It is read from a file by default so it
  * never has to be pasted into a shell, and it never appears in any log — a
@@ -1133,7 +1133,7 @@ export function githubApp(
   }
   throw new Error(
     `Neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ${PREFIX}GITHUB_APP_PRIVATE_KEY is set. ` +
-      "See doc/decisions/0006-github-app.md for creating the App.",
+      "See doc/decisions-archive/0006-github-app.md for creating the App.",
   );
 }
 

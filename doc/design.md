@@ -248,7 +248,7 @@ agent tool call ─▶ lingtai-hook ─▶ unix socket ─▶ conductor ─▶ p
 
 `UserPromptSubmit` can return added context. When the agent is about to work on
 a file the `regressions` projection knows about, the conductor injects that fact.
-See [decisions/0007](decisions/0007-dual-runtime.md) for what a hook is *not* —
+See [decisions-archive/0007](decisions-archive/0007-dual-runtime.md) for what a hook is *not* —
 it is not a security boundary.
 
 ---
@@ -259,12 +259,12 @@ Recipe in `~/.lingtai/<project>/recipe.yml` — **this machine's, not the manage
 repository's** — with `runtime.agent` and `runtime.limits` beside it in
 `~/.lingtai/config.yml`. Nothing sits above it, and both files refuse by name
 what belongs in the other. Full reasoning:
-[decisions/0046](decisions/0046-lingtai-is-personal.md) §3, which superseded
-[0005](decisions/0005-config-in-target-repo.md)'s placement — reading a
+[decisions-archive/0046](decisions-archive/0046-lingtai-is-personal.md) §3, which superseded
+[0005](decisions-archive/0005-config-in-target-repo.md)'s placement — reading a
 committed file from `origin/<base>` kept an agent from editing the rules of its
 own run, and keeping the file outside every worktree does the same thing more
 completely. What a run was actually given is on the log
-([0047](decisions/0047-the-recipe-a-run-got-is-on-the-log.md)).
+([0047](decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md)).
 The schema is [`packages/recipe/src/recipe.ts`](../packages/recipe/src/recipe.ts).
 
 Onboarding is `lingtai add <owner>/<repo>`, and `lingtai doctor <project>` is the old

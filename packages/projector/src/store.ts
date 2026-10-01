@@ -4,7 +4,7 @@
  * Until #219 there was no interface here at all: six places under `src/` built
  * a `pg.Client` or a `pg.Pool` of their own, each opening its own connection
  * from `databaseUrl()`. Nothing could be swapped, which is
- * [0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md) §1's
+ * [0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md) §1's
  * defect in one sentence — **a direct `pg.Client` outside a Postgres
  * implementation is a place the init-time choice does not reach** — and on a
  * machine with no Postgres there was no board.
@@ -26,7 +26,7 @@
  * `readTasks`, `readBacklog`, `projectionLag`, `projectionShape` and
  * `createProjectionRunner` each ask `choose.ts` for a store, which reads the
  * one value `~/.lingtai/config.yml` holds
- * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)). This
+ * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)). This
  * interface is what made that a single edit rather than six.
  */
 import type { Envelope } from "@lingtai/domain";

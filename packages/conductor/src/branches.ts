@@ -31,7 +31,7 @@
  * all of them and not only the last.
  *
  * **`n` is the claim's attempt ordinal (`attempts.ts`), not its restart
- * ordinal** ([0062](../../../doc/decisions/0062-what-a-claim-leaves-behind.md)
+ * ordinal** ([0062](../../../doc/decisions-archive/0062-what-a-claim-leaves-behind.md)
  * §2). The name was `-restart-<k>`, and the problem was never collision — it is
  * that the number does not always exist. A claim that ran out of turns never
  * restarted, so there is no restart ordinal to name its commits by, and #237's

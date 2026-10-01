@@ -2,7 +2,7 @@
 
 Root epic：[#198](https://github.com/steven-zhc/lingtai/issues/198)。所有实施 ticket 均为 `agent:hold`，review 后由项目负责人逐张放开。
 
-依据：[开发文档](agent-runtimes.md)、[ADR 0053](../decisions/0053-the-recipe-chooses-the-agent-for-each-role.md)、[ADR 0054](../decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)。
+依据：[开发文档](agent-runtimes.md)、[ADR 0053](../decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md)、[ADR 0054](../decisions-archive/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)。
 
 GitHub 的 native sub-issues 表达归属，native blocked-by 表达依赖。以下表格是便于阅读的镜像；排程以 GitHub 关系为准。
 

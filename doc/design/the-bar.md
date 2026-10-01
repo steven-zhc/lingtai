@@ -97,7 +97,7 @@ ticket could have gone wrong was to make the `+` fit by redefining the set.
 ## What #141 and #142 changed under this
 
 Two of the chips were renamed when
-[0039](../decisions/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and the
+[0039](../decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) landed, and the
 quotes above say the new names: `$N repair` became `$N answering` — the column
 behind it is still `repair_costs` and holds every round a pass buys — and
 `<project>: repairs ×1` became `<project>: rounds ×2`, with `passCeiling`'s

@@ -139,7 +139,7 @@ export async function provisionWorktree(options: ProvisionOptions): Promise<Work
   }).catch(() => null);
   /**
    * **Detached, and that is what lets the worktree outlive the merge lane**
-   * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §1).
+   * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §1).
    *
    * This used to be `-B <branch>`, which checks `agent/<n>` out here — and git
    * refuses to update a ref that some worktree has checked out, *including when
@@ -206,7 +206,7 @@ export async function removeWorktree(options: {
  * They are a pair on purpose. `runOnce` acquires the worktree and releases it
  * with `Effect.acquireRelease`, so the removal that used to be a `finally` two
  * frames up now happens because the scope closed, whichever way control left it
- * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
+ * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
  *
  * The removal swallows its own failure, as the `.catch(() => {})` it replaces
  * did: a cleanup must not replace the failure it is cleaning up after.

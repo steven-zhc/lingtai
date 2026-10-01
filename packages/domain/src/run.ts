@@ -20,13 +20,13 @@ import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from 
 
 /**
  * `never-ran` is not a verdict about the diff, and is here because the absence
- * of one has to be readable ([0031](../../../doc/decisions/0031-a-run-that-never-started.md)
+ * of one has to be readable ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)
  * §1, one layer up). The gate's agent never started — a quota, a signed-out
  * runtime — so nothing was judged. Folding it into `failed` is what `#133` is
  * about; folding it into `passed` would be worse.
  *
  * `did-not-finish` is the neighbouring absence
- * ([0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1): the
+ * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1): the
  * agent *started* and ended with no receipt. Nothing was judged there either,
  * and it is its own value rather than `never-ran`'s because the two cost
  * opposite things — one stands the conductor down for an account-wide wall,

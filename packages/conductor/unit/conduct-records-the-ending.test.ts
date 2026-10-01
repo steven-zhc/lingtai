@@ -26,7 +26,7 @@
  * The same window on a hold recorded a `when: blocked` action as carried out for
  * a block that was never recorded.
  *
- * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1: no
+ * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
 import type { Envelope, ToAppend } from "@lingtai/domain";

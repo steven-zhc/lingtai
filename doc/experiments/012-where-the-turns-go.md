@@ -118,7 +118,7 @@ judgement, and judgement is what three rounds of re-reading produces more of.
 reviewer that crashed, recorded as a refusal of the diff, buying a fix round to
 answer a question nobody asked. **24 of them in 14 days** — call it 750 turns
 and $75 spent on nothing, which is what
-[0057](../decisions/0057-a-gate-that-did-not-finish.md) was written to stop.
+[0057](../decisions-archive/0057-a-gate-that-did-not-finish.md) was written to stop.
 
 ## 5. The loop converges, but it keeps opening new ground
 
@@ -197,7 +197,7 @@ waived gates.
 **The generalisation is the thing to keep**: a gate can go red for a reason the
 diff cannot cause, and when it does, every mechanism downstream treats it as
 evidence about the diff. `review`'s version is a crashed reviewer
-([0057](../decisions/0057-a-gate-that-did-not-finish.md), 10% of refusals);
+([0057](../decisions-archive/0057-a-gate-that-did-not-finish.md), 10% of refusals);
 `build`'s version is a test whose bound is a clock on a shared machine rather
 than a claim about the code. Neither is rare, and neither is visible as
 anything but a refusal.
@@ -277,9 +277,9 @@ measurable and not yet decided:
 
 ## Related
 
-- [0057](../decisions/0057-a-gate-that-did-not-finish.md) — a gate's agent that
+- [0057](../decisions-archive/0057-a-gate-that-did-not-finish.md) — a gate's agent that
   crashed is not a refusal, and buys no round. §4's 10% is what it costs today.
-- [0025](../decisions/0025-a-failure-buys-one-agent.md) — a failure buys one
+- [0025](../decisions-archive/0025-a-failure-buys-one-agent.md) — a failure buys one
   agent. §6 is the first measurement of whether that purchase pays.
 - [001](001-cold-review-issue-58.md) — why the `review` gate exists: four
   defects that had already survived self-review, CI and a human read. §4 is its

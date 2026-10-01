@@ -1,7 +1,7 @@
 /**
  * **The `file:` destination's port into the filesystem**, lifted out of
  * `conduct.ts` so that a test can hold it
- * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §4, `#303`).
  *
  * ## Why this is its own module

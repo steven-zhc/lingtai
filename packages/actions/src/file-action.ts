@@ -1,7 +1,7 @@
 /**
  * The file action: **where a design lands, as a plugin rather than as a place
  * the core knows about**
- * ([0066](../../../doc/decisions/0066-a-large-answer-is-a-locator-on-the-log.md)
+ * ([0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
  * §5, `#300`).
  *
  * It is the first *destination*. Every other action judges something already
@@ -40,7 +40,7 @@
  * A repository path, relative to the worktree. Nothing in `@lingtai/actions`
  * above this file and nothing in `@lingtai/conductor` parses it, matches on it or
  * checks it against the plugin at the next step (0066 §4,
- * [0069](../../../doc/decisions/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
+ * [0069](../../../doc/decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md)
  * §3) — which is the whole of what lets a `confluence:` join beside this without
  * the core learning a second kind of locator.
  *

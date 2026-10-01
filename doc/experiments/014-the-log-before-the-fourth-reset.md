@@ -1,9 +1,9 @@
 # 014 — The log before the fourth reset, and the one written by an agent that could not read it
 
 **2026-09-29.** The log starts empty for the fourth time, because
-[0068](../decisions/0068-a-step-that-asked-is-not-a-step-that-crashed.md) splits
+[0068](../decisions-archive/0068-a-step-that-asked-is-not-a-step-that-crashed.md) splits
 `StepDidNotFinish` into two event types and
-[0061](../decisions/0061-the-recipe-is-the-pipeline.md) §7 allows no migration for
+[0061](../decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 allows no migration for
 one. The three earlier cuts each have a page written before them
 ([007](007-the-log-before-the-reset.md),
 [010](010-the-log-before-the-second-reset.md),
@@ -18,7 +18,7 @@ and the one planted in a worked ticket's environment is
 resets. So the fold 013 computed cannot be computed from here. Writing plausible
 totals would have been worse than leaving the table out: a page of invented counts
 in the shape of one that was measured is the failure
-[0043](../decisions/0043-evidence-is-plain-text.md) and this whole directory exist
+[0043](../decisions-archive/0043-evidence-is-plain-text.md) and this whole directory exist
 to prevent.
 
 What is here instead is what can be said without the rows, and the exact queries
@@ -51,7 +51,7 @@ paste rather than a reconstruction:
 - **`endedWithoutEndActions()`**, which must return 0. It is the one invariant 013
   checked before a cut, for the reason it gave: *an item that ended and whose `end`
   point silently did not run* is
-  [0016](../decisions/0016-the-settled-model.md) §4's shape and the thing this
+  [0016](../decisions-archive/0016-the-settled-model.md) §4's shape and the thing this
   system is most careful about.
 - **`StepDidNotFinish` rows, split by hand into the two halves the reset is for.**
   This is the one query that only matters at *this* cut. `because` was the pass's
@@ -81,7 +81,7 @@ For 013's reason and one more. The previous databases are kept and are queryable
 so nothing is lost by not copying rows here; and two days of one epic's passes is
 not a thing anybody reads.
 
-[0055](../decisions/0055-two-implementations-chosen-at-init.md) §3 is why a new
+[0055](../decisions-archive/0055-two-implementations-chosen-at-init.md) §3 is why a new
 store starts empty rather than carrying rows over, and 0061 §7 is why a shape
 change spends the log rather than upcasting it. **0068 §5 is where that stops being
 free**: after 1.0 a split of this kind needs the discriminant on the event before

@@ -76,7 +76,7 @@ export const RUN_UNDER_A_PAUSE =
 /**
  * A refusal, in the error channel rather than as a `return 1` and a log line.
  *
- * [0023](../../../doc/decisions/0023-effect-at-the-boundary.md). There are five
+ * [0023](../../../doc/decisions-archive/0023-effect-at-the-boundary.md). There are five
  * of these and each used to be `log(…); return 1` — which works, and which the
  * type system cannot see. As a `Data.TaggedError` the compiler knows this
  * function can refuse and knows the ways, and `Effect.catchTag` below turns
@@ -165,7 +165,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
     yield* ConductorLock;
 
     if (!hasGitHubApp()) {
-      return yield* refuse("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
+      return yield* refuse("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
     }
 
     const project = yield* Effect.tryPromise({
@@ -212,7 +212,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
      *
      * There is no conversion left inside it. `runQueue` and `runOnce` are
      * `Effect`s that ask for `Repo` and `AgentHost` themselves
-     * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md));
+     * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md));
      * this used to be eleven lines of description wrapped around one
      * `Effect.promise` call that turned "provided" straight back into
      * "passed", so the guarantee below stopped one frame in.

@@ -8,7 +8,7 @@
  * not a thing you read.
  *
  * **The meter, and why it is here rather than in a limit.**
- * [0033](../../../../doc/decisions/0033-the-third-kind-of-agent.md) §4: a run
+ * [0033](../../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §4: a run
  * is unattended and needs a hard bound; a discussion is attended and the person
  * is the control loop. That is only true if the person can see the number, so
  * the running total sits on the box's own rule and updates as the conversation
@@ -31,7 +31,7 @@
  * exists so that does not happen again.
  *
  * **The answer arrives as it is produced, not when the agent exits.** That is
- * the defect [0034](../../../../doc/decisions/0034-the-run-log.md) opens with,
+ * the defect [0034](../../../../doc/decisions-archive/0034-the-run-log.md) opens with,
  * and it was solved for runs and not here — where the silence costs most,
  * because *a discussion is attended and the person is the loop* (0033 §4) and a
  * loop with no feedback is a person asking again and paying twice. `Thinking`
@@ -289,7 +289,7 @@ export function Trace({
 /**
  * The answer, while it is being produced.
  *
- * **The defect [0034](../../../../doc/decisions/0034-the-run-log.md) opens with,
+ * **The defect [0034](../../../../doc/decisions-archive/0034-the-run-log.md) opens with,
  * solved for runs and not for discussions** — *the agent produces nothing until
  * it exits* — and a discussion is where the silence costs most: a run is
  * unattended and needs a hard bound, *a discussion is attended and the person is

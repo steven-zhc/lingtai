@@ -107,7 +107,7 @@ export type StoppedBecause =
   | "exhausted"
   /**
    * A name the recipe requires has no value, so nothing in this project can
-   * run ([ADR 0020](../../../doc/decisions/0020-the-agent-environment-in-layers.md)).
+   * run ([ADR 0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)).
    *
    * The whole pass rather than the item, because the environment is a fact
    * about the *project*: the same refusal applies to every ticket in the queue,
@@ -128,7 +128,7 @@ export interface ScheduleResult {
  *
  * It takes the same world `runOnce` does and for the same reason: this is a
  * loop over that function, so it needs whatever that function needs and adds
- * nothing of its own ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)).
+ * nothing of its own ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
  * A host provides `Repo` and `AgentHost` once, around the pass.
  */
 export function runQueue(

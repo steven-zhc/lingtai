@@ -63,7 +63,7 @@ you** for four days holding this and nothing else:
 ```
 
 A git message with a colon in it. No diagnosis, no proposal, no button
-([0025](decisions/0025-a-failure-buys-one-agent.md)). That is what the far end
+([0025](decisions-archive/0025-a-failure-buys-one-agent.md)). That is what the far end
 of the loop looks like when the near end was not written for a reader.
 
 ### Where a durable instruction goes
@@ -74,7 +74,7 @@ subsequent attempt. The board's editable prompt (`PromptEdited`) applies to the
 *next run only*. The two have one job each:
 `PromptEdited` says *this attempt needs an extra sentence*; the ticket says
 *the instruction itself is wrong*
-([0032](decisions/0032-the-page-is-organised-by-attempt.md) §6). A permanent
+([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md) §6). A permanent
 override living only inside Lingtai would be a shadow ticket body — a long-lived
 instruction nobody outside can see.
 
@@ -97,7 +97,7 @@ Four items this project has receipts for:
 |---|---|---|---|
 | `nextloom-ai-admin#157` | the `end` point closes its own issue | 8 turns, $0.63 | landed, closed with its label intact |
 | `nextloom-ai-admin#156` | six new `layout.tsx` files, no existing file touched | 15 turns, $0.83 | landed; `git diff --stat` was exactly the ticket |
-| `#84` | the repair feature — and [0025](decisions/0025-a-failure-buys-one-agent.md)'s four decisions with it | one run, $26.53 | landed, and what it was thinking is gone ([0034](decisions/0034-the-run-log.md) §4) |
+| `#84` | the repair feature — and [0025](decisions-archive/0025-a-failure-buys-one-agent.md)'s four decisions with it | one run, $26.53 | landed, and what it was thinking is gone ([0034](decisions-archive/0034-the-run-log.md) §4) |
 | `#89` | a change that turned on whether the runtime binary accepts `--max-turns` | two attempts, $13.04 | failed |
 
 The spread is forty-to-one and none of it is luck.
@@ -111,7 +111,7 @@ research wearing a ticket's clothes, and a run is the most expensive way to do
 research.
 
 **`#84` was four decisions in one item.** It landed, so the cost bought
-something — but it is also the item [0034](decisions/0034-the-run-log.md) §4
+something — but it is also the item [0034](decisions-archive/0034-the-run-log.md) §4
 names when it accepts that a landed run's log is deleted: *"`#84` cost $26.53
 and, once landed, what it was thinking is gone."* A large item that succeeds
 leaves you less able to explain it than a small one that succeeds, because the
@@ -156,7 +156,7 @@ this section works through the points in the order the loop runs them.
 
 **A gate runs once per attempt, not once per item.** This is the arithmetic
 nobody does. `wi-lingtai-87` was claimed three times and `wi-lingtai-89` twice
-([0032](decisions/0032-the-page-is-organised-by-attempt.md)); every one of those
+([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)); every one of those
 attempts paid for `install` and for `pnpm typecheck && pnpm test` again. A
 gate's cost is its runtime multiplied by how often your items fail, and the
 second number is the one you did not estimate.
@@ -281,7 +281,7 @@ editing the issue body to carry a decision to the agent (`#147`).
 **When you want one thing now, say so.** `lingtai now <project> --issue <n>`
 passes `backoffMs: 0` and jumps the backoff, because *"the person who types it
 has read the ticket and is the input the failing attempt lacked"*
-([0028](decisions/0028-the-backoff-is-the-recipes.md) §3). Everything else still
+([0028](decisions-archive/0028-the-backoff-is-the-recipes.md) §3). Everything else still
 applies — a request for something claimed, blocked or landed still matches
 nothing, because those are facts about the log and not about the clock.
 
@@ -290,7 +290,7 @@ nothing, because those are facts about the log and not about the clock.
 On 2026-09-08 the question *"why is this not moving?"* was asked of `#80`,
 `#87`, `#89` and `#94` in a single day and **answered wrongly four times** —
 including once where the item was not stuck at all and would have returned by
-itself ([0032](decisions/0032-the-page-is-organised-by-attempt.md)). Diagnosing
+itself ([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)). Diagnosing
 `#89` took an hour, most of it spent rebuilding by hand a division the log had
 already made.
 
@@ -305,7 +305,7 @@ diff is a different illness from one attempt and 150 turns.
 **2. The outcome word on the failing row.** In particular, `never-started` is
 not a failure at the task — zero turns, zero cost, `is_error`. It is Lingtai's
 own failure, it buys no repair agent, and it stops the conductor rather than
-backing the item off ([0031](decisions/0031-a-run-that-never-started.md)). It
+backing the item off ([0031](decisions-archive/0031-a-run-that-never-started.md)). It
 looks exactly like a run of broken tickets if you do not know the shape:
 
 ```
@@ -332,7 +332,7 @@ or the run log inside that attempt's row. Both tail
 late you arrive; neither asks the daemon or the database anything, so they
 answer on a stopped system. **A run that landed has no log** — the file is kept
 only while something is still owed an explanation
-([0034](decisions/0034-the-run-log.md) §4). It is a trace and never a record.
+([0034](decisions-archive/0034-the-run-log.md) §4). It is a trace and never a record.
 
 **5. The events.** *"Behavioural claims are settled by reading `events`, not by
 reasoning about the code. A finding that cites a seq number is worth more than
@@ -352,7 +352,7 @@ reading of evidence and a reading that hides what it was made from is worse than
 the output.
 
 **A fixer that committed nothing** may have declined. That is a move it is told
-it has ([0039](decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §5): when
+it has ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §5): when
 a finding is wrong — the sequence it describes cannot happen, or the failure was
 not this diff's — the fixer is asked to change nothing, commit nothing, and say
 why, because that is what stops the loop and puts the findings in front of you.
@@ -386,7 +386,7 @@ to yourself:
    `worktree.ts:139` resets an attempt's branch with `-B` on every run, so an
    attempt that committed nothing never had one. Reading `main` and believing it
    is that attempt's work is precisely what killed the repair
-   ([0033](decisions/0033-the-third-kind-of-agent.md) §5).
+   ([0033](decisions-archive/0033-the-third-kind-of-agent.md) §5).
 
 ## The limits, and what each one is protecting you from
 
@@ -406,9 +406,9 @@ telling you nothing.
 is how long a shutdown waits: `pnpm lingtai shutdown "why"` appends, returns,
 and the daemon finishes the pass in flight — the pass, not the agent, so the
 gates and the merge lane run too. That wait is `runtime.limits.wall`, and the
-command says so rather than looking hung ([0030](decisions/0030-shutting-down-safely.md)).
+command says so rather than looking hung ([0030](decisions-archive/0030-shutting-down-safely.md)).
 `pnpm lingtai restart "why"` waits out the same limit and then starts one
-([0042](decisions/0042-the-restart-is-a-command.md)).
+([0042](decisions-archive/0042-the-restart-is-a-command.md)).
 
 **`gates.<point>[].timeout`** — default `15m`, **per process action, not per
 point**. Multiply by attempts, per the arithmetic above.
@@ -422,7 +422,7 @@ rather than aspirational: one analysis per **distinct** failure, a ceiling in
 the recipe, and an analysis that fails does not trigger an analysis of the
 analysis. Drop any one and a single bad ticket spawns an agent per lap. **This
 is the only part of the design where the failure mode is unbounded spend rather
-than a wrong answer** ([0025](decisions/0025-a-failure-buys-one-agent.md) §3).
+than a wrong answer** ([0025](decisions-archive/0025-a-failure-buys-one-agent.md) §3).
 
 The reason for the ceiling changed on 2026-09-08, and the recipe records the
 change rather than the conclusion: it used to bound only spend, because every
@@ -478,7 +478,7 @@ question at different scales.
 backoff, a ticket that fails every time costs about twenty-four agent runs a
 day, indefinitely. `repair.maxAttempts` caps repairs; `runQueue`'s in-memory
 `attempted` set caps one pass; neither caps the sequence, and
-[0028](decisions/0028-the-backoff-is-the-recipes.md) leaves it undecided on
+[0028](decisions-archive/0028-the-backoff-is-the-recipes.md) leaves it undecided on
 purpose — a doubling backoff still spends forever, just on a longer timetable,
 and the right instrument for that failure is a count rather than a curve.
 
@@ -496,12 +496,12 @@ twenty-four more times today unless somebody changes what it is told.
   the recipe's or Lingtai's.
 - [`doc/decisions/`](decisions/) — the arguments behind all of it. Where this
   guide gives advice, a decision gives the reasoning and the reversal condition;
-  [0025](decisions/0025-a-failure-buys-one-agent.md),
-  [0028](decisions/0028-the-backoff-is-the-recipes.md),
-  [0031](decisions/0031-a-run-that-never-started.md),
-  [0032](decisions/0032-the-page-is-organised-by-attempt.md),
-  [0033](decisions/0033-the-third-kind-of-agent.md) and
-  [0034](decisions/0034-the-run-log.md) are the six it draws on most.
+  [0025](decisions-archive/0025-a-failure-buys-one-agent.md),
+  [0028](decisions-archive/0028-the-backoff-is-the-recipes.md),
+  [0031](decisions-archive/0031-a-run-that-never-started.md),
+  [0032](decisions-archive/0032-the-page-is-organised-by-attempt.md),
+  [0033](decisions-archive/0033-the-third-kind-of-agent.md) and
+  [0034](decisions-archive/0034-the-run-log.md) are the six it draws on most.
 - [`doc/experiments/`](experiments/) — things actually run against real data,
   with their results, including the ones that did not work.
   [001](experiments/001-cold-review-issue-58.md) and

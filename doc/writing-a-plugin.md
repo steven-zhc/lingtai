@@ -3,7 +3,7 @@
 A pass is ten steps, and **a step's behaviour is the plugins the recipe declares
 there**. This page is for somebody who wants to write one.
 
-> **This describes [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md),
+> **This describes [0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md),
 > which is accepted and half built.** `at` exists and **its keys are what make
 > you legal** — `definePlugin` takes it, the resolve reads it, and the refusals
 > below are the ones you get (`#261`). What is not built is the **values**: a
@@ -149,7 +149,7 @@ name in a vocabulary and not a branch.
 ### A plugin that keeps something somewhere fails three ways
 
 A **destination** — a plugin that writes the design into the tree, or files it on
-a wiki ([0066](decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5) —
+a wiki ([0066](decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md) §5) —
 can fail in a way the three endings above do not obviously sort, so the table is
 written down — it is 0066 §7's, with the two run-time rows corrected there by
 measurement (`#299`) — and
@@ -196,7 +196,7 @@ answers it with something only they knew — a space, a path, a credential —
 rather than by running it again, and say in the ticket which one moved and why.
 
 **A round is bought at the router and not by refusing**, so *`design` may not
-refuse* ([0058](decisions/0058-lingtai-is-a-development-pipeline.md) §3) settles
+refuse* ([0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3) settles
 nothing about what these cost, and the answer differs by row. Rows one and two
 buy nothing: one never reaches a pass at all, and a `did-not-finish` never
 reaches the router, so there is no offer and nothing to spend. The third does
@@ -409,11 +409,11 @@ ceiling is spent — and the pass says which of the two happened.
 
 ## Related
 
-- [0064](decisions/0064-a-plugin-declares-the-steps-it-implements.md) — the
+- [0064](decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) — the
   decision this page describes, and why the legality table went.
-- [0058](decisions/0058-lingtai-is-a-development-pipeline.md) §2b — *a step's
+- [0058](decisions-archive/0058-lingtai-is-a-development-pipeline.md) §2b — *a step's
   behaviour is its plugins*, which is the sentence 0064 makes true.
-- [0061](decisions/0061-the-recipe-is-the-pipeline.md) — `steps:`, the universal
+- [0061](decisions-archive/0061-the-recipe-is-the-pipeline.md) — `steps:`, the universal
   keys, and module-as-key.
 - [the-pass.html](the-pass.html) — the ten steps, what each word on them means,
   and what a person writes in a recipe.

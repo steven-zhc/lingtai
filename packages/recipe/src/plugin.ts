@@ -1,7 +1,7 @@
 /**
  * **The plugin contract**: one shape every plugin implements, and the core
  * calls it once — when the recipe resolves, before a work item is claimed
- * ([0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
+ * ([0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §9).
  *
  * This file knows *what a plugin is*. It does not know which plugins exist:
  * the closed set is `PLUGINS` in `recipe.ts`, beside the fourteen declarations, and
@@ -25,7 +25,7 @@
  *
  * A plugin is two halves — *what a recipe may write*, as a schema, and *what
  * runs*, as one entry per step it can serve
- * ([0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md)).
+ * ([0064](../../../doc/decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md)).
  * `at`'s keys are the steps, `"*"` is every step, and **the keys are what make
  * the plugin legal there**: a recipe declaring it at a step its `at` is silent
  * about is refused when the recipe resolves, by name.
@@ -48,7 +48,7 @@
  * *Which credentials do I need* is the one question only the plugin can answer,
  * and a universal key is by definition something the workflow imposes without
  * asking. So `env:` is declared by the plugins that spawn a process
- * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §1: *an
+ * ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1: *an
  * extension's declaration is the whole of what its process gets*), and a recipe
  * that writes one under a plugin that spawns nothing is **refused by name**
  * rather than having the field silently accepted and ignored. That refusal is
@@ -82,7 +82,7 @@
  * declaration.
  *
  * **A stand-in and not a deletion**, because `configHash` is the identity of a
- * document ([0047](../../../doc/decisions/0047-the-recipe-a-run-got-is-on-the-log.md)
+ * document ([0047](../../../doc/decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md)
  * §2: *two documents with one hash are one document*). A field deleted before
  * the digest is taken would make two recipes that differ in a credential hash
  * the same, and the task page settles *is this the recipe at head* by that hash
@@ -115,7 +115,7 @@
  * *written in the file* is on the screen whatever any schema says — which is
  * why the standing rule is that the file holds names and the values resolve
  * from somewhere the agent cannot see
- * ([0021](../../../doc/decisions/0021-the-recipe-decides-the-environment.md)).
+ * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
  * The second is the plugin's own output: a command that echoes its own
  * credential puts it in the evidence, and no declaration upstream of the spawn
  * can reach that. The third is `withheld`'s own idempotence, below: a value
@@ -146,7 +146,7 @@ export type PluginFields = Readonly<Record<string, z.ZodType>>;
 
 /**
  * **The key that says *every step***: one body, wherever a recipe puts it
- * ([0064](../../../doc/decisions/0064-a-plugin-declares-the-steps-it-implements.md) §3).
+ * ([0064](../../../doc/decisions-archive/0064-a-plugin-declares-the-steps-it-implements.md) §3).
  *
  * Not a loophole and not a widening of what a plugin may do — a second true
  * thing. A `run:` at `build` and a `run:` at `proposed` are the same work with

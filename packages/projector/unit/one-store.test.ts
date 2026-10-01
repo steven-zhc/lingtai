@@ -2,7 +2,7 @@
  * The rule #219 exists to establish, asserted rather than remembered.
  *
  * **A direct `pg` client outside the Postgres implementation is a place the
- * init-time choice does not reach** ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
+ * init-time choice does not reach** ([0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md)
  * §1). There were six of them under `src/`, each opening its own connection
  * from `databaseUrl()`, and that is why there was nothing to swap and why #179
  * spent eight passes having its reviewer name one at a time.
@@ -75,7 +75,7 @@ describe("one store, and one place that knows which", () => {
     // **No other file is exempt**, least of all `index.ts` and `store.ts` — a
     // barrel re-exporting both, or a store module picking one from an env var,
     // is precisely the second decision
-    // [0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)
+    // [0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)
     // exists to remove.
     const both = sources
       .filter((s) => {

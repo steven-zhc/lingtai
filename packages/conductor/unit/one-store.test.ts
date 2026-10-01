@@ -3,7 +3,7 @@
  *
  * **A direct `pg` client outside a Postgres implementation is a place the
  * init-time choice does not reach**
- * ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
+ * ([0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md)
  * §1). There were three of them under `src/` — `listProjectStreams` in
  * `projects.ts`, `endedWithoutEndActions` in `end-step.ts` and
  * `landedWithoutSteps` in `step-audit.ts`, which `#257` has since deleted whole

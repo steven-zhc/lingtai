@@ -22,7 +22,7 @@
  *
  * Kept verbatim, and as a module rather than a file on disk: a test that read it
  * with `readFileSync` would be integration under
- * [0060](../../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1, and the
+ * [0060](../../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1, and the
  * one thing this has to stay is cheap to run beside the parser it is about.
  *
  * **Do not tidy it.** Closing the brace makes it parse, and then it asserts

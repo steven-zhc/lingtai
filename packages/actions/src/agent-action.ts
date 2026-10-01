@@ -43,7 +43,7 @@
  * an agent call. Add it when false positives actually appear.
  *
  * **And the same action is what checks a fix**
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)).
  * A refusal buys an agent that is handed the findings, and then this runs again
  * on the head that agent produced — with `ActionContext.recheck` carrying the
  * findings it was given. Not a second kind of action: the rubric, the checklist
@@ -95,7 +95,7 @@ export interface AgentActionDeps {
    * What the reviewer may spend, and what it is given.
    *
    * `diffBytes` is the recipe's `runtime.budget.diff`
-   * ([0029](../../../doc/decisions/0029-the-prompt-budget-is-the-recipes.md)),
+   * ([0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)),
    * and it was a constant here. Above it the diff is truncated rather than sent
    * whole: [experiment 001](../../../doc/experiments/001-cold-review-issue-58.md)'s
    * diff was 1391 lines across 6 files and fitted comfortably, and a diff far
@@ -174,7 +174,7 @@ export interface ReviewIssue {
 
 /**
  * The block that makes a re-review a re-review
- * ([0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
+ * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
  *
  * **The reviewer and the fixer are both agents, and a fix that silences a
  * finding is not a fix.** Deleting the line, renaming the symbol or adding a
@@ -466,7 +466,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * A reviewer that never started has not reviewed anything, and saying
          * so is not the same as refusing the diff.
          *
-         * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1
+         * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1
          * was written for runs, because when it landed the only agent in a pass
          * was the implementer — the `agent` action existed and had never once run
          * (`d4fbd1a`). The second agent in a pass became reachable and met a
@@ -495,7 +495,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         }
         /**
          * **And a reviewer that *started* and did not finish has not reviewed
-         * anything either** — [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §1.
+         * anything either** — [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1.
          *
          * The sentence below has said `the reviewer did not finish` since this
          * branch was written, and the verdict beside it said `failed` — which
@@ -816,7 +816,7 @@ export function parseDraft(text: string | null): Drafted {
  * pass — nothing has been committed there — so a `design:` block built out of it
  * would resolve, be printed by `lingtai add`, be drawn on the board and never
  * dispatch anything. That is `#61` with a new spelling, and it is the case
- * [0065](../../../doc/decisions/0065-the-default-is-a-plugin.md) §5 says this
+ * [0065](../../../doc/decisions-archive/0065-the-default-is-a-plugin.md) §5 says this
  * decision removes rather than one it may add. `actionsFromRecipe` is where the
  * step picks between them.
  *

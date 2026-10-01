@@ -1,7 +1,7 @@
 /**
  * `lingtai backlog` — the minor findings passing gates raised, and the two
  * decisions a person makes about each (`#137`,
- * [0038](../../../doc/decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+ * [0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
  * §5).
  *
  * The board has the same page. This exists because **#129** and **#130** are
@@ -186,7 +186,7 @@ export async function backlogCommand(args: string[], log = console.log): Promise
     // needed when it is already accepted: the log says what the issue carries.
     const kind = flags["kind"];
     if (!hasGitHubApp()) {
-      log("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
+      log("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
       return 1;
     }
     const state = await loadProject(project);

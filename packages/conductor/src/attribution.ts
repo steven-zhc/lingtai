@@ -8,12 +8,12 @@
  * `awaiting-approval`, so the item could never be approved again. Two of
  * Lingtai's own items reached the identical state within an hour of each other.
  *
- * [0025](../../../doc/decisions/0025-a-failure-buys-one-agent.md) answered that
+ * [0025](../../../doc/decisions-archive/0025-a-failure-buys-one-agent.md) answered that
  * by making a failure *buy an agent*: a whole new run, told what went wrong,
  * which the next claim became. This file was where that purchase was decided.
  *
  * **It decides nothing about money now.**
- * [0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md)
+ * [0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md)
  * moves the worktree's scope out around the merge lane, so every refusal is
  * answered *where it happened* by a round in the run that was refused, and
  * "a new run" stops being the answer to anything except a run that ended. Its
@@ -81,7 +81,7 @@ export type FailureOwner = "repository" | "lingtai" | "person";
  * out as `verify-failed`, so the gates arrive here already in this vocabulary.
  *
  * A **run** failure was deliberately not modelled, and that was the gap
- * [0031](../../../doc/decisions/0031-a-run-that-never-started.md) closed. The
+ * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) closed. The
  * reasoning was about spending — a run that timed out or crashed is released
  * and retried under the queue's backoff, and calling that a repair would make
  * it a re-run wearing a better name. Nothing spends now, and the source stays

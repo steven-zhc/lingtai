@@ -60,7 +60,7 @@ its central path was `.lingtai/config.yaml` — the recipe, inside the repositor
 the agent was editing. 0005 made that sound by reading the recipe from
 `origin/<base>`, so the deletion showed up in the diff and was itself held.
 
-**Since [0046](decisions/0046-lingtai-is-personal.md) §4 and #180 the recipe is
+**Since [0046](decisions-archive/0046-lingtai-is-personal.md) §4 and #180 the recipe is
 not in the repository.** It is `~/.lingtai/<project>/recipe.yml`, with the
 agent and the limits in `~/.lingtai/config.yml`, and nothing reads a recipe
 from the repository at all. An agent's blast radius is its worktree, and

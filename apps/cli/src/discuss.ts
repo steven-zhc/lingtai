@@ -10,7 +10,7 @@
  * ## The containment, and what it rests on
  *
  * The assistant has no worktree, no hook and no gates
- * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §1), so it
+ * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §1), so it
  * must have no tools either. Three things stand behind that, and none of them
  * is a flag read off `--help`:
  *
@@ -320,7 +320,7 @@ export async function answerDiscussion(
   /**
    * The conversation's trace, as it is produced.
    *
-   * [0034](../../../doc/decisions/0034-the-run-log.md) opens on *"the agent
+   * [0034](../../../doc/decisions-archive/0034-the-run-log.md) opens on *"the agent
    * produces nothing until it exits"*, and it solved that for runs and not for
    * discussions — so the box where **the person is the control loop** (0033 §4)
    * was the one place with no feedback in it, and an assistant thinking for

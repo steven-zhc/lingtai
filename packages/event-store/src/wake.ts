@@ -86,7 +86,7 @@ export interface PostgresWaker extends Waker {
  * **The connection is `DIRECT_DATABASE_URL`.** Through a transaction pooler the
  * listener's backend is handed to someone else between statements and the
  * registration goes with it. Nothing errors; the notification simply never
- * comes. See doc/decisions/0009-two-connections.md — that is the failure this
+ * comes. See doc/decisions-archive/0009-two-connections.md — that is the failure this
  * whole file is shaped around.
  */
 export function createPostgresWaker(options: PostgresWakerOptions = {}): PostgresWaker {

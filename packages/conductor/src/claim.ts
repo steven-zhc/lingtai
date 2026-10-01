@@ -10,7 +10,7 @@
  *     version)` decides the race. The loser gets a `ConcurrencyError`, re-reads,
  *     and finds the item already held. No lock table, no lock file.
  *   - **Nothing here expires.** A claim carried a `leaseUntilMs` for a while and
- *     [0027](../../../doc/decisions/0027-the-lease-is-deleted.md) deleted it: a
+ *     [0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md) deleted it: a
  *     fixed thirty minutes, never renewed, on runs the recipe lets live for one
  *     to two hours. It excluded nobody — two conductors pass a timestamp check
  *     together — and past the half hour it did the opposite of its job, handing

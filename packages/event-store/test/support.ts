@@ -4,7 +4,7 @@
  * They hit it on purpose: `UNIQUE (stream_id, version)` and `LISTEN/NOTIFY` are
  * the two things this store is built on, and neither can be demonstrated by a
  * mock — nor by a single connection, which is the mistake
- * doc/decisions/0009-two-connections.md exists to record.
+ * doc/decisions-archive/0009-two-connections.md exists to record.
  */
 import pg from "pg";
 import { directPostgresUrl } from "../src/env.ts";

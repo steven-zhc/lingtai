@@ -198,7 +198,7 @@ describe("parseStoredPayload", () => {
  * rename was affordable.
  *
  * **What is asserted here now is that all nine are gone** (`#247`).
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 spends
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 spends
  * that history by *resetting* the log rather than upcasting it;
  * `the-pipeline.md`'s T5b folded it into
  * [013](../../../doc/experiments/013-the-log-before-the-third-reset.md) and T5
@@ -364,7 +364,7 @@ describe("a pass with findings", () => {
 });
 
 /**
- * The first step that removes a field ([0027](../../../doc/decisions/0027-the-lease-is-deleted.md)).
+ * The first step that removes a field ([0027](../../../doc/decisions-archive/0027-the-lease-is-deleted.md)).
  *
  * Most chains add one and say `null` where history is silent. Two go the other
  * way — this one and `StepDidNotFinish` 1 → 2 below (`#234`) — and the reason
@@ -419,7 +419,7 @@ describe("the lease, dropped on read", () => {
 
 /**
  * The second step that removes a field, and the log it has to keep readable
- * (`#234`, [0057](../../../doc/decisions/0057-a-gate-that-did-not-finish.md) §4).
+ * (`#234`, [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §4).
  *
  * `attempt` and `retrying` described a retry that never once ran: it recomputed
  * the crashed attempt's session id, so `claude` refused it in zero seconds
@@ -465,7 +465,7 @@ describe("the retry's two fields, dropped on read", () => {
    * field, so no stored row can be told which half it was, and an upcaster that
    * guessed would be worse than none.
    *
-   * So [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §7 is
+   * So [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §7 is
    * spent again and the log is reset, exactly as `#247` did for the eight `Gate*`
    * renames. **After 1.0 this stops being free and the answer becomes an
    * upcaster** — with a `because` on the event to upcast *from*.

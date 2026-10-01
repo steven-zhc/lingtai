@@ -17,7 +17,7 @@
  * `disagreement` for precisely this reason and wrote the collision out in a
  * comment at the append; the name is what survived the engine swap badly.
  *
- * Unit by [0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1:
+ * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1:
  * no process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
 import { describe, expect, it } from "vitest";

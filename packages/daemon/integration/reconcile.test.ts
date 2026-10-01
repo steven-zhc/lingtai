@@ -156,7 +156,7 @@ describe("reconciliation", () => {
    * A worktree belonging to a run that is over is always wrong — it holds a
    * branch checked out. A log belonging to a run that is over is the ordinary
    * case and the whole point: it exists to explain why an item is *not* done
-   * ([0034](../../../doc/decisions/0034-the-run-log.md) §5). So the three
+   * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §5). So the three
    * fixtures here are the three answers, side by side, and the assertion is
    * about the set.
    */

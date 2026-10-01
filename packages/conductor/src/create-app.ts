@@ -2,7 +2,7 @@
  * The wizard's first screen: mint the GitHub App from a manifest (`#169`,
  * [the design](../../../doc/design/creating-the-app.md)).
  *
- * [0006](../../../doc/decisions/0006-github-app.md) priced the App in its own
+ * [0006](../../../doc/decisions-archive/0006-github-app.md) priced the App in its own
  * Consequences — *an App must be created, given a private key, and installed* —
  * and this pays the first two. `@lingtai/github`'s `manifest.ts` describes the
  * App and performs the conversion; what is here is everything that happens on

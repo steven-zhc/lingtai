@@ -7,11 +7,11 @@
  * not about the log. It used to be cached in `task_view` by a writer that was
  * not the projection, which is how a queue change reached nobody (#56) and how
  * two entry points came to disagree about refreshing it (#57);
- * [0022](../../../../doc/decisions/0022-the-seams.md) deleted the cache, so the
+ * [0022](../../../../doc/decisions-archive/0022-the-seams.md) deleted the cache, so the
  * question is asked here instead, once per render.
  *
  * `task_view` holds what a card shows and nothing else
- * ([0012](../../../../doc/decisions/0012-one-task-view.md)). Gate evidence,
+ * ([0012](../../../../doc/decisions-archive/0012-one-task-view.md)). Gate evidence,
  * review findings and the diff are **not** here — they are read
  * from the event stream when somebody opens a task, because a list view and a
  * detail view have opposite economics and the list is what has to be cheap.
@@ -125,7 +125,7 @@ export interface BoardCard {
   /**
    * *restart 1 of 2*, or null on a ticket that has only ever had one approach
    * — which is every ticket until a recipe sets `runtime.limits.restarts`
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
    * **The sentence and not the numbers**, because `lingtai status` shows the
    * same fact and the two must not word it differently (#100). It is
@@ -229,7 +229,7 @@ export interface BoardCard {
  * permission that let it (#84).
  *
  * **`summary` is `passCeiling`'s sentence and not the board's own**
- * ([0039](../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+ * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
  * Three places say what a pass costs — here, `lingtai add` and the drain — and
  * the last time two of them were written separately one of them was wrong for a
  * day without anybody being able to see it.
@@ -241,7 +241,7 @@ export interface PassLimitsView {
   /**
    * `runtime.limits.restarts`. Zero means a pass whose rounds are spent asks a
    * person, which is every project today
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
    *
    * **Beside `rounds` because the chip is about what a ticket costs**, and the
    * two ceilings multiply: `rounds: 0, restarts: 2` buys three agent runs on a

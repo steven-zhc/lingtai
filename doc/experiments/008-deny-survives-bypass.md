@@ -5,7 +5,7 @@ alternative was guessing.
 
 ## The question
 
-[ADR 0016](../decisions/0016-the-settled-model.md) was about to rename the guard
+[ADR 0016](../decisions-archive/0016-the-settled-model.md) was about to rename the guard
 to `tools` and keep Lingtai's own tool-rule engine. The proposal on the table
 was to delete it instead and let the agent runtime's own configuration do the
 job — Claude Code and Codex already have a user level and a project level, and a

@@ -1,6 +1,6 @@
 /**
  * **The plugin contract, and the six plugins behind it** (`#228`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §9).
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §9).
  *
  * Three properties, and each is a thing a convention used to hold:
  *
@@ -432,7 +432,7 @@ describe("the six behind the contract", () => {
 
 /**
  * **The branch a pass owns, cut and landed** (`#235`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
  *
  * Both are names for code that already runs — `provisionWorktree` and the
  * integrator — and neither is read from the recipe yet. So what these cases
@@ -671,8 +671,8 @@ describe("the two the pass stopped calling itself", () => {
 
 /**
  * **Which ticket is taken, and whether this machine may take it** (`#236`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §2 and §3;
- * `#244`, [0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3).
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §2 and §3;
+ * `#244`, [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3).
  *
  * **It was two plugins and it is one.** 0063 §3 makes `assignee` a *field* of
  * `queue:` rather than a plugin beside it, because the two answer one question
@@ -846,7 +846,7 @@ describe("the one `claim` holds", () => {
 
 /**
  * **The one `proposed` holds** (`#238`, `#274`,
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
  *
  * `judge:` was one of the five names for code the pass called itself, and is the
  * first of them a step reads: `judgePlugin.at` carries `proposed` since `#274`,
@@ -860,7 +860,7 @@ describe("the one `claim` holds", () => {
 describe("the one `proposed` will hold", () => {
   /**
    * **And the one `proposed` holds** (`#238`, `#274`,
-   * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §3).
+   * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
    *
    * Two rules make a replaceable judge safe, and both are in the schema rather
    * than in prose.
@@ -1406,7 +1406,7 @@ describe("plugin.ts's own count of who carries a universal key", () => {
 
 /**
  * **One dispatch shape, embedded rather than re-declared**
- * ([0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md),
+ * ([0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md),
  * `#314`).
  *
  * The evidence 0070 was written from is that two plugins buying a model had two

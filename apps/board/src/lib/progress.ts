@@ -102,7 +102,7 @@ export type StepState =
   | "never-ran"
   /**
    * **Nothing judged this diff here either, and for a reason that is ours and
-   * not the account's** ([0057](../../../../doc/decisions/0057-a-gate-that-did-not-finish.md)).
+   * not the account's** ([0057](../../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md)).
    *
    * The point was reached, its agent started, and it ended with no receipt —
    * a crash, a timeout, a turn budget spent. The pass stopped there and the item

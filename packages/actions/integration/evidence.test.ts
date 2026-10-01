@@ -11,7 +11,7 @@
  * `createProcessAction`, so the stripping is pinned at the `StepFailed` event and
  * not at `tail` — which is the whole of what 0043 claims. That spawns a shell,
  * and an OS process is outside the system
- * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). Nothing
+ * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1). Nothing
  * here names `node:child_process`; the spawn is three modules down the barrel,
  * which is how the file was read as unit at first (#225).
  */

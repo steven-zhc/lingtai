@@ -1,7 +1,7 @@
 /**
  * What the conductor needs from outside itself, named as interfaces.
  *
- * [0022](../../../doc/decisions/0022-the-seams.md) step 5. The conductor
+ * [0022](../../../doc/decisions-archive/0022-the-seams.md) step 5. The conductor
  * decides; `repo` and `agent` touch the world. Before this, the conductor
  * imported `provisionWorktree`, `git`, `integrate`, `createHookServer` and
  * `resolveAgentEnv` directly, so **the only way to test a decision was to
@@ -19,7 +19,7 @@
  * What must not be imported is the *implementation*, and none is.
  *
  * **Every method returns an `Effect`**
- * ([0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md)). Two
+ * ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)). Two
  * things follow from that and neither is available from a `Promise`: the
  * failure is in a channel the caller's type can see — `RepoFailed`,
  * `AgentHostFailed` — and `serve` can ask for a `Scope`, which is how the
@@ -95,7 +95,7 @@ export interface AgentHostPort {
    * Here for the reason `wire` is: it writes a file under `~/.lingtai`, so a
    * conductor that called `writeUnhookedSettings` directly would be deciding
    * and performing in one breath, and every test of a decision that reaches
-   * `review` would touch a disk ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md)
+   * `review` would touch a disk ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)
    * §1 — *a temporary directory is still the filesystem*). It is the pair of
    * `wire`, one step down: the wiring is a run's, this is a step's.
    */
@@ -107,7 +107,7 @@ export interface AgentHostPort {
   }): Effect.Effect<string, AgentHostFailed>;
   /**
    * The run's log file, open for writing
-   * ([0034](../../../doc/decisions/0034-the-run-log.md)).
+   * ([0034](../../../doc/decisions-archive/0034-the-run-log.md)).
    *
    * **The path comes in.** The conductor knows where `~/.lingtai` is and the
    * agent package does not; this port carries the decision across rather than
@@ -149,7 +149,7 @@ export interface RunPorts {
 /**
  * The same two ports, as things a host **provides** rather than passes.
  *
- * [0023](../../../doc/decisions/0023-effect-at-the-boundary.md): `Context.Tag`
+ * [0023](../../../doc/decisions-archive/0023-effect-at-the-boundary.md): `Context.Tag`
  * names a port, `Layer` provides one. The interfaces above are unchanged and
  * are still what a fake implements — a tag is a *name for a slot*, not a second
  * definition of the shape.
@@ -158,7 +158,7 @@ export interface RunPorts {
  * threaded through every caller between the host that knows the implementation
  * and the code that needs it, and `runOnce` is not the only thing that will
  * need `repo`. A tag is asked for where it is used — which since
- * [0026](../../../doc/decisions/0026-the-conversion-past-the-seam.md) is what
+ * [0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md) is what
  * `runOnce` actually does, rather than taking a `RunPorts` parameter a host
  * had to unpack from these same two tags.
  */

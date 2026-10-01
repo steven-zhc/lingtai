@@ -1,6 +1,6 @@
 /**
  * Reading a run's log — `#110`, the other half of
- * [0034](../../../doc/decisions/0034-the-run-log.md).
+ * [0034](../../../doc/decisions-archive/0034-the-run-log.md).
  *
  * **Nothing here opens a connection, and that is the claim**: following a run
  * needs neither the daemon nor Postgres, which is `Done when`'s *it works while
@@ -9,7 +9,7 @@
  * It is in `integration/` because it writes those files — the log, the run
  * directory, the settings beside it — into a temporary `LINGTAI_HOME`, and the
  * filesystem is outside the system
- * ([0060](../../../doc/decisions/0060-the-gate-runs-unit-tests.md) §1). Being
+ * ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1). Being
  * database-free and being unit are different facts, and #225 is where the
  * second stopped being read off the first.
  *

@@ -46,7 +46,7 @@ export function closeCommand(options: CloseCommandOptions, log = console.log): P
       return 1;
     }
     if (!hasGitHubApp()) {
-      log("no GitHub App configured — see doc/decisions/0006-github-app.md and .env.example");
+      log("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
       return 1;
     }
 

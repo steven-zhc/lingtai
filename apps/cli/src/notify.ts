@@ -6,7 +6,7 @@
  *
  * It was a `NotifyChannel` built by name in the daemon's startup — a decent
  * interface with exactly one implementation and no way to declare a second
- * ([0037](../../../doc/decisions/0037-an-extension-is-a-command.md) §3). Now it
+ * ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §3). Now it
  * reads one event as JSON on stdin and displays it, and *which* events reach it
  * is four lines in `.lingtai/config.yaml` like anybody else's subscriber.
  *

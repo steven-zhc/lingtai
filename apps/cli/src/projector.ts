@@ -2,7 +2,7 @@
  * The projector a command holds while it appends.
  *
  * **One rule, both hosts: every process that appends holds a projector for as
- * long as it runs** ([0022](../../../doc/decisions/0022-the-seams.md)). The
+ * long as it runs** ([0022](../../../doc/decisions-archive/0022-the-seams.md)). The
  * daemon always did. A command used to do something else — append, return, and
  * then catch the projections up on its way out — which is two mechanisms for
  * one job, and `run` had the worse one. The board was frozen for the whole of a
@@ -114,7 +114,7 @@ export async function withProjector<T>(
  * The same thing, as a resource with a lifetime.
  *
  * **This is where `Scope` earns what
- * [0023](../../../doc/decisions/0023-effect-at-the-boundary.md) is for.** The
+ * [0023](../../../doc/decisions-archive/0023-effect-at-the-boundary.md) is for.** The
  * `finally` above works, and it works because one function owns both the
  * acquire and the release. `run()` does not have that shape: it refuses on four
  * paths before the work begins, and each of those is a `return` that has to

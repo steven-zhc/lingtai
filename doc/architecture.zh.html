@@ -379,7 +379,7 @@
   <div class="thesis">
     <p><b>conductor 不是一个进程。</b>它是回路跑一趟的代码 —— 发现、认领、工作树、代理、闸口、并入。
       它在哪个进程里被调用，就在哪个进程里跑。</p>
-    <p><b>daemon 和 CLI 才是进程</b>，而自 <a href="decisions/0022-the-seams.md">0022</a> 起，
+    <p><b>daemon 和 CLI 才是进程</b>，而自 <a href="decisions-archive/0022-the-seams.md">0022</a> 起，
       两者的差别比从前小了：都调用 conductor，也都在运行期间持有一个 projector。
       daemon 多出来的是一把锁、一次心跳、启动时的一次修复，以及一个不断取活干的循环。</p>
   </div>
@@ -487,7 +487,7 @@
     <h3 class="sub-h">两个最容易混的名字，是被刻意分开的</h3>
     <p><code>@lingtai/env</code> 装的是<b>机器的</b>环境：两个连接串、App 私钥、状态目录。
       <code>@lingtai/agent-env</code> 装的是<b>代理的</b>：分层、过滤、要落进工作树的那个文件。
-      在 <a href="decisions/0024-agent-env-is-its-own-package.md">0024</a> 之前，它们同住一个文件 ——
+      在 <a href="decisions-archive/0024-agent-env-is-its-own-package.md">0024</a> 之前，它们同住一个文件 ——
       而这种「挨着」正是机器凭据流进子进程的那条路径的形状。现在名字直接说清了各自是谁的环境；
       这才是要紧的区分，也正是它们共处一文件时看不见的那一个。</p>
   </section>
@@ -826,10 +826,10 @@
         <code>proposed</code> 的闸口、<code>merge</code> 的闸口，以及 integrator ——
         都把活送回 agent 那里，回到它本来就站着的那个工作树，并带上拒绝它的东西：findings、
         某个命令的输出，或者留在树里的冲突本身。
-        <a href="decisions/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a>
+        <a href="decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md">0039</a>
         是工作树能活过合并道的原因，而那正是这一切成立的前提。
         <b><code>rounds</code> 管深度，<code>restarts</code> 管广度。</b>
-        <a href="decisions/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a>
+        <a href="decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md">0040</a>
         加上了下面那条线：一次被 <i>review</i> 拒绝的活把轮次用尽之后，工单被放回去，
         下一次认领从基线重开，并带上那些 findings —— 而
         <a href="experiments/011-patching-versus-starting-over.md">实验 011</a>
@@ -981,7 +981,7 @@
     <div class="prop">
       <h3>把它写成事实，而不是留给以后被发现</h3>
       <p><b>还有两个接口是 promise，而且是有意的。</b>
-        <a href="decisions/0026-the-conversion-past-the-seam.md">0026</a> 把 <code>runOnce</code>、
+        <a href="decisions-archive/0026-the-conversion-past-the-seam.md">0026</a> 把 <code>runOnce</code>、
         端口和适配器都带进了 Effect：工作树、hook socket 和 agent 进程各自是一个
         <code>Scope</code>，从前兜着「每条出口都会追加」的那个 catch-all，现在是一个具名的
         defect handler，背后有测试。没有转过去的是 <code>Runtime</code> —— 因为
@@ -1005,7 +1005,7 @@
 
   <footer>
     <p>2026-09-03 依 <span class="m">aa3733f</span> 的代码绘制；2026-09-08 于
-      <span class="m">8f43cc3</span> 在 <a href="decisions/0022-the-seams.md">0022</a> 落地之后重写。
+      <span class="m">8f43cc3</span> 在 <a href="decisions-archive/0022-the-seams.md">0022</a> 落地之后重写。
       包名、事件名与闸口点均与 <span class="m">packages/</span> 中一致。
       红色标的是来自真实运行的发现，不是设计；靛蓝标的是今天为真、且尚未修的东西。</p>
     <a class="footer-home" href="/">回到灵台 ↑</a>

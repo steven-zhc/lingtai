@@ -5,7 +5,7 @@
  * `converge.ts` a moment ago: this is a move, not a rewrite. What it changes is
  * where a `pg.Client` may be constructed — here, inside the Postgres
  * implementation, and nowhere else under `src/`
- * ([0055](../../../doc/decisions/0055-two-implementations-chosen-at-init.md)
+ * ([0055](../../../doc/decisions-archive/0055-two-implementations-chosen-at-init.md)
  * §1).
  *
  * **`streams` is the one that is not a copy**, because it was two: `reconcile`

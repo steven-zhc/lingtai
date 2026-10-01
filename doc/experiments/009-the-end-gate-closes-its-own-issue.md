@@ -1,6 +1,6 @@
 # 009 — The end gate closes its own issue
 
-**2026-09-02.** Stage 3f. The first run on the model [ADR 0016](../decisions/0016-the-settled-model.md)
+**2026-09-02.** Stage 3f. The first run on the model [ADR 0016](../decisions-archive/0016-the-settled-model.md)
 describes: five gate points, no policy, no guard, and an `end` point whose
 actions are effects rather than verdicts.
 

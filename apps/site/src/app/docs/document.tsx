@@ -14,7 +14,7 @@ import { headingsOf, resolveHref } from "@/lib/docs";
  * improving a document that claim is gone.
  *
  * **Links are resolved.** A doc file's links are written for somebody reading
- * the repository: `decisions/0022-the-seams.md`, `../../packages/domain/src/events.ts`.
+ * the repository: `decisions-archive/0022-the-seams.md`, `../../packages/domain/src/events.ts`.
  * Rendered as they stand they 404 here. The alternative — editing the files to
  * suit the site — is the fork this exists to refuse, so the links are rewritten
  * at render instead and the files stay written for the repository. See

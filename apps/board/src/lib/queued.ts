@@ -3,7 +3,7 @@
  *
  * **`queued` is the one state no event carries.** An issue nobody has run has
  * no stream, so there is nothing to fold — being queued is a fact about GitHub
- * and not about the log ([0012](../../../../doc/decisions/0012-one-task-view.md),
+ * and not about the log ([0012](../../../../doc/decisions-archive/0012-one-task-view.md),
  * `board.ts`). The board's Queued column has asked GitHub since 0022 deleted
  * the cache; this asks the same question about one item, because the detail
  * page had no way to ask it at all and answered every card in that column with
@@ -72,7 +72,7 @@ export interface PlanView {
   tier: string;
   /**
    * How many times a pass sends the agent back, `runtime.limits.rounds`
-   * ([0039](../../../../doc/decisions/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+   * ([0039](../../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
    *
    * Rendered whether it buys anything or not, like a skipped point: a default
    * that spends money and only appears when it is doing something is a default
@@ -82,7 +82,7 @@ export interface PlanView {
   rounds: number;
   /**
    * How many passes one ticket may buy, `runtime.limits.restarts`
-   * ([0040](../../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+   * ([0040](../../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
    *
    * **Beside `rounds` because the two multiply**, and a footer built from the
    * depth ceiling alone advertises the wrong number: `rounds: 0, restarts: 2`

@@ -362,7 +362,7 @@ function toEntry(row: ProjectionRow): BacklogEntry {
  * connection never waits on the thread: `transact` retries on a timer instead,
  * which is exactly what `createPollingWaker` does and for the same reason.
  * A store therefore wants a connection of its own, not the log's
- * (doc/decisions/0009-two-connections.md).
+ * (doc/decisions-archive/0009-two-connections.md).
  */
 export function openSqliteProjections(path: string): DatabaseSync {
   const db = new (sqlite().DatabaseSync)(path);

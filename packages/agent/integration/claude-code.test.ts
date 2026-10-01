@@ -401,7 +401,7 @@ describe("run", () => {
 
   /**
    * The six runs of
-   * [0031](../../../doc/decisions/0031-a-run-that-never-started.md), as one.
+   * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md), as one.
    *
    * Every field the adapter is given here is the shape a quota actually
    * produced: an error, no turns, no cost, and a sentence assembled from a

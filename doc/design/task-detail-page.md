@@ -142,11 +142,11 @@ an addition to the ticket. It introduces no third carrier.
   attempt's branch). **No command execution.** Commands would make it a run,
   and runs have worktrees, hooks and gates for reasons.
 - **Hosted by the daemon**, requested over `ctl-conductor` like `pause` and
-  `now`. [0013](../decisions/0013-daemon-hosts-the-work.md)'s line does not
+  `now`. [0013](../decisions-archive/0013-daemon-hosts-the-work.md)'s line does not
   move.
 - **The answer arrives as it is produced** (`#132`). The daemon writes the
   chat's trace to a log named for its `chatId` and the box follows it over the
-  route the ledger's run logs already use — [0034](../decisions/0034-the-run-log.md)'s
+  route the ledger's run logs already use — [0034](../decisions-archive/0034-the-run-log.md)'s
   mechanism, unchanged, applied to the one agent that had none. It is a trace
   and never the answer: `DiscussionAnswered` is the record, and when it lands
   the trace is deleted, exactly as a landed run's is (0034 §4). **One file, one
@@ -237,9 +237,9 @@ files nobody asked to see* — is right and survives.
 
 **The discussion answers as it writes.** `discussion.tsx` awaits one value
 behind a `busy` flag, so the whole reply appears when the agent exits. That is
-the defect [0034](../decisions/0034-the-run-log.md) opens with, solved for runs
+the defect [0034](../decisions-archive/0034-the-run-log.md) opens with, solved for runs
 and not for discussions — and a discussion is where silence costs most, because
-[0033](../decisions/0033-the-third-kind-of-agent.md) §4 makes *the person the
+[0033](../decisions-archive/0033-the-third-kind-of-agent.md) §4 makes *the person the
 loop*. A loop with no feedback is one where sixty seconds of thinking is
 indistinguishable from death, and the answer is to ask again and pay twice.
 
@@ -273,7 +273,7 @@ A recipe at a commit is kept per `(repo, sha)` in `lib/recipe.ts`, because a
 base commit never moves: a proved attempt costs no round trip on the renders
 #172's subscription causes.
 
-**After [0046 §3](../decisions/0046-lingtai-is-personal.md).** The recipe leaves
+**After [0046 §3](../decisions-archive/0046-lingtai-is-personal.md).** The recipe leaves
 the repository for `~/.lingtai/<project>/recipe.yml`, and there is no commit to
 read a past recipe at. The read at `baseSha` goes; the hash stays. "Head" becomes
 the file on disk, and the page still proves or refuses it by `configHash` — so a

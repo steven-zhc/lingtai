@@ -321,7 +321,7 @@ describe("conducting", () => {
    * `@lingtai/event-store`, whose process-wide client called `postgresUrl()`
    * *at import* — so the gate this replaced was, in the end, about the import
    * and never about the lock. The store is a written choice now
-   * ([0056](../../../doc/decisions/0056-the-store-is-a-written-choice.md)), and
+   * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)), and
    * a choice is read when a store is opened rather than when a module is
    * loaded.
    *

@@ -98,7 +98,7 @@ function segTitle(p: StepProgress): string {
  * those is Lingtai's bug (0016 §4). It was all *five*, always, until the
  * vocabulary widened (0058 §3); the rule did not change and the number it
  * ranges over did — which is what
- * [0061](../../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §5 says
+ * [0061](../../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §5 says
  * in as many words: *the resolved recipe may not omit a step, and the board
  * draws all ten.*
  *

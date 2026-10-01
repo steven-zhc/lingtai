@@ -6,7 +6,7 @@ p95 target is not met.
 
 ## Question
 
-[0002](../decisions/0002-typescript.md) made the hook the one exception to
+[0002](../decisions-archive/0002-typescript.md) made the hook the one exception to
 "TypeScript everywhere": a Bun-compiled single file with no dependencies,
 because `PreToolUse` runs in front of every tool call — tens of thousands across
 a run. [#11](https://github.com/steven-zhc/lingtai/issues/11) put a number on
@@ -62,7 +62,7 @@ prevents a future rewrite of the hook in Go or Rust; it is a few hundred lines
 behind a stdin/stdout contract."* This is the measurement that would justify it,
 and it identifies the target precisely — **startup time, not the protocol**.
 
-Recorded as [0011](../decisions/0011-hook-latency-is-runtime-startup.md).
+Recorded as [0011](../decisions-archive/0011-hook-latency-is-runtime-startup.md).
 
 ## What the test asserts now
 

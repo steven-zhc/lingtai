@@ -3,7 +3,7 @@
  * change to this file and not to sixty.
  *
  * **These accessors read today's shape and exist for tomorrow's.**
- * [0061](../../../doc/decisions/0061-the-recipe-is-the-pipeline.md) §4 puts
+ * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §4 puts
  * every setting on the step that owns it: what a pass may spend belongs to
  * `implement`, the branch belongs to `worktree:`, which kinds are taken belongs
  * to `queue:`. What has moved is *who asks* — a caller says
@@ -14,7 +14,7 @@
  * **`limitsFor`'s `step` argument was the bet, and `#314` collected it.** It read
  * `void step;` for eight tickets, on the argument that a function which took no
  * step would have to grow one later — the sixty-file change this file exists to
- * avoid. [0070](../../../doc/decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
+ * avoid. [0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
  * §5 put a `limits:` on a dispatch, the argument started being read, and the
  * eleven callers that were already passing the step they were *at* needed no
  * edit. What did need one is the four that meant **the ceiling** rather than the
@@ -292,7 +292,7 @@ export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
 /**
  * Whose tickets this machine takes — **`queue:`'s fourth field**, and the one
  * whose v1 name is not `source:`'s
- * ([0063](../../../doc/decisions/0063-every-setting-is-the-recipes.md) §3).
+ * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3).
  *
  * The other three are written under `source:` and this is written under
  * `runtime:`, by the machine file rather than by the recipe (0046 §3), and

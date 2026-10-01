@@ -1,6 +1,6 @@
 /**
  * **Which of a ticket's arms are on `origin`**, asked of GitHub rather than
- * assumed (#315, [0072](../../../doc/decisions/0072-an-earlier-attempt-is-a-locator-the-next-one-is-handed.md) §4).
+ * assumed (#315, [0072](../../../doc/decisions-archive/0072-an-earlier-attempt-is-a-locator-the-next-one-is-handed.md) §4).
  *
  * An arm's name is derivable from an attempt's ordinal (`armBranch`), and being
  * derivable does not make it exist: an attempt that died before it committed

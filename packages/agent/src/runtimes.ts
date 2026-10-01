@@ -27,7 +27,7 @@ import type { Runtime } from "./runtime.ts";
  * every other row translate a vocabulary it does not share, and the third runtime
  * would inherit the problem. So the caller says what the agent is *for* and the
  * adapter says how: this is
- * [0054](../../../doc/decisions/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)
+ * [0054](../../../doc/decisions-archive/0054-a-role-keeps-its-permissions-when-its-agent-changes.md)
  * — *a role keeps its permissions when its agent changes* — one ticket early.
  */
 export interface RuntimeOptions {
@@ -37,7 +37,7 @@ export interface RuntimeOptions {
    * Whether this agent may act, or only read and answer.
    *
    * `full` by default. `none` is the third kind of agent
-   * ([0033](../../../doc/decisions/0033-the-third-kind-of-agent.md) §1) — no
+   * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §1) — no
    * worktree, no hook, no gates, and therefore **no tools at all**. Claude Code's
    * row turns it into `--permission-mode default` beside a settings file that
    * denies every tool by name; **Codex's row refuses it**, because Codex has no
@@ -61,7 +61,7 @@ export class ToolsCannotBeDenied extends Error {
   /**
    * Assigned in the body rather than declared as a constructor parameter
    * property, which is the one TypeScript feature this repository cannot use:
-   * [0010](../../../doc/decisions/0010-source-runs-unbuilt.md) runs the source
+   * [0010](../../../doc/decisions-archive/0010-source-runs-unbuilt.md) runs the source
    * through Node's **strip-only** type removal, and a parameter property needs
    * a transform rather than an erasure — `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`,
    * at import, before any of this file runs.

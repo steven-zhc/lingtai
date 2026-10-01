@@ -17,7 +17,7 @@
  * must not depend on which agent happens to be running today. A runtime may
  * *provide* containment; the scheduler matches capabilities before dispatching
  * and records `DispatchRefused` when the combination cannot meet the tier — it
- * never silently downgrades. See doc/decisions/0007-dual-runtime.md.
+ * never silently downgrades. See doc/decisions-archive/0007-dual-runtime.md.
  */
 import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
 import type { RunTrace } from "./run-log.ts";
@@ -80,7 +80,7 @@ export interface RunRequest {
    *
    * Beside `cwd`, `env` and `settingsPath` because it is the same kind of
    * thing: something the conductor decided and the adapter is handed
-   * ([0034](../../../doc/decisions/0034-the-run-log.md) §1). `packages/agent`
+   * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §1). `packages/agent`
    * must not learn where `~/.lingtai` is — a runtime adapter that computed the
    * path would have crossed the seam 0022 drew, and this one is not even told
    * it.
@@ -172,7 +172,7 @@ export interface RunOutcome {
 
 /**
  * Whether a receipt describes a run that failed to **begin** rather than to
- * finish ([0031](../../../doc/decisions/0031-a-run-that-never-started.md) §1).
+ * finish ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §1).
  *
  * Three facts and nothing else: **at most one turn, zero cost, an error**. Not one
  * word of the message is read, and that is the decision rather than an
@@ -193,7 +193,7 @@ export interface RunOutcome {
  * so a caller has to have actually seen the runtime say so.
  *
  * **One turn, not zero, because that is what the wall actually reports**
- * ([0041](../../../doc/decisions/0041-a-gate-that-never-ran.md)). 0031's
+ * ([0041](../../../doc/decisions-archive/0041-a-gate-that-never-ran.md)). 0031's
  * fixture said `num_turns: 0`; the receipt Claude Code printed at the session
  * limit on 2026-09-10 — after this function existed — was
  * `success · 1 turns · $0.00 · exit 1`, recorded in the run log, and every one

@@ -411,7 +411,7 @@ async function seed(): Promise<void> {
   ]);
 
   // 14 — the rounds were spent and the ticket started over
-  //      ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+  //      ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
   //      Released rather than blocked, which is the whole of the change, and
   //      carrying which arm it is now on — the thing `attempts` cannot say.
   await store.append(wi(14), 0, [discovered(14, "started over once"), claimed(14)]);
@@ -580,7 +580,7 @@ describe("task_view", () => {
 
   /**
    * **Which arm, beside how many attempts**
-   * ([0040](../../../doc/decisions/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
    * `attempts` counts claims, so a claim after a crash, after a backoff and
    * after an approach was thrown away all read as the same number — which is

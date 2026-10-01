@@ -1,7 +1,7 @@
 # Installing, for somebody who has never run it
 
 **Status** analysis · 2026-09-16 · reads
-[0046](../decisions/0046-lingtai-is-personal.md) as settled
+[0046](../decisions-archive/0046-lingtai-is-personal.md) as settled
 
 Lingtai is a personal tool now, so the person installing it is one developer on
 one laptop who wants an agent to work one ticket. This is what stands between
@@ -37,7 +37,7 @@ covers it.
 | | |
 |---|---|
 | **A GitHub App** | [#169](https://github.com/steven-zhc/lingtai/issues/169) — GitHub's manifest flow makes it one click, and pre-fills 0006's permission table so it cannot be filled in wrong |
-| **A recipe in the repository** | [0046](../decisions/0046-lingtai-is-personal.md) — nothing is written to the managed repository at all, so there is no commit, no pull request, and no team to persuade |
+| **A recipe in the repository** | [0046](../decisions-archive/0046-lingtai-is-personal.md) — nothing is written to the managed repository at all, so there is no commit, no pull request, and no team to persuade |
 | **Node and pnpm** | an installer's job. Hermes installs Python, Node, ripgrep and ffmpeg from one `curl` line and the whole thing takes under five minutes on a fresh VPS |
 
 **What is left is the database**, and it is the only one that is infrastructure
@@ -83,7 +83,7 @@ That cost five passes and about $100 before it was separated out.
 ### The Postgres lane is one URL, not two
 
 `directPostgresUrl()` was `required()` and threw when unset, so a person had
-to supply both. [0009](../decisions/0009-two-connections.md) already licensed
+to supply both. [0009](../decisions-archive/0009-two-connections.md) already licensed
 the fix in its own text:
 
 > On Supabase the second is the same host and credentials on port 5432 with the
@@ -104,7 +104,7 @@ Verified against the code rather than assumed:
 | `append` / `read` / `readAll` | the whole `EventStore` interface — **three methods** | ordinary |
 | `UNIQUE (stream_id, version)` | optimistic concurrency, which is the safety of the model | ordinary |
 | the two projections | folds into tables, with **no `queryRaw` or `executeRaw` anywhere in production code** | nothing hand-written to port |
-| `pg_try_advisory_lock` | `lock.ts` | a file lock for Postgres too ([0046 §1](../decisions/0046-lingtai-is-personal.md)) — SQLite's, not `flock(2)`, which Node cannot call ([0052](../decisions/0052-the-lock-is-sqlite-on-a-file.md)) |
+| `pg_try_advisory_lock` | `lock.ts` | a file lock for Postgres too ([0046 §1](../decisions-archive/0046-lingtai-is-personal.md)) — SQLite's, not `flock(2)`, which Node cannot call ([0052](../decisions-archive/0052-the-lock-is-sqlite-on-a-file.md)) |
 | **`LISTEN`/`NOTIFY`** | `subscribe.ts` | **the only missing primitive** |
 
 And the missing one has a contract weak enough to be almost no contract at all.
@@ -162,7 +162,7 @@ integration files never asserted anything Postgres-specific — `createDb()` and
 a cleanup block, nothing a fake or a file could not equally well stand in for
 — so absence now chooses SQLite for the suite as a whole, and the guard above
 moved to the small, named set that still needs the real thing
-([0074](../decisions/0074-the-test-side-defaults-to-a-file-of-its-own.md)).
+([0074](../decisions-archive/0074-the-test-side-defaults-to-a-file-of-its-own.md)).
 Those files still refuse to be quietly answered by SQLite; they skip instead,
 visibly, which is the same defect avoided by a narrower door.
 
@@ -228,7 +228,7 @@ Every resolved setting needs that treatment, and the store needs it most:
 ## Three things now decided
 
 **Distribution is a `curl` installer.** One line, a shell script, and it handles
-the platform. [0010](../decisions/0010-source-runs-unbuilt.md) shapes it: the
+the platform. [0010](../decisions-archive/0010-source-runs-unbuilt.md) shapes it: the
 source runs unbuilt, so there is no binary to ship and the installer's job is to
 put a runtime and the source in place rather than to unpack a build. What it has
 to guarantee:
@@ -254,7 +254,7 @@ new tickets and leaves the old log where it is. Nothing is converted and no tool
 is built.
 
 **With one exception, and it is this repository.**
-[0019](../decisions/0019-a-second-reset.md) allows a reset only while
+[0019](../decisions-archive/0019-a-second-reset.md) allows a reset only while
 
 > the log contains no run that anybody outside this repository depends on
 
@@ -355,7 +355,7 @@ MongoDB's, `26257` CockroachDB's, `19999` Netdata's.
 `board.port` in `~/.lingtai/config.yml` overrides the first and need not exist.
 The port used to be `apps/board/package.json`'s `next dev -p 3200`, which is
 the wrong place: somebody who installed Lingtai does not edit its
-`package.json`. ([0008](../decisions/0008-nextjs-board.md) named 3200 when the
+`package.json`. ([0008](../decisions-archive/0008-nextjs-board.md) named 3200 when the
 board was only ever `pnpm dev`.)
 
 ### The daemon binds nothing, and that is the design
@@ -403,11 +403,11 @@ Moving the receiver to the daemon is what `17821` would be for. Not now.
 
 ## Related
 
-- [0046](../decisions/0046-lingtai-is-personal.md) — one person, one Lingtai, one
+- [0046](../decisions-archive/0046-lingtai-is-personal.md) — one person, one Lingtai, one
   log. Why SQLite is the default rather than a concession.
-- [0009](../decisions/0009-two-connections.md) — two connection strings, and the
+- [0009](../decisions-archive/0009-two-connections.md) — two connection strings, and the
   sentence that says one is enough on a plain Postgres.
-- [0003](../decisions/0003-postgres-event-store.md) — chose Postgres, and is not
+- [0003](../decisions-archive/0003-postgres-event-store.md) — chose Postgres, and is not
   superseded: it is still the right answer for anyone who wants a server.
 - [`creating-the-app.md`](creating-the-app.md) — the other prerequisite, and
   [#169](https://github.com/steven-zhc/lingtai/issues/169).

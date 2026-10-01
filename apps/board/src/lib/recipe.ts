@@ -255,7 +255,7 @@ async function recipeAtSha(
  * recipe at `baseSha` and, failing that, against head's — the same document
  * does not stop being the same because it was read from a later commit.
  *
- * **Since [0046 §3](../../../../doc/decisions/0046-lingtai-is-personal.md)
+ * **Since [0046 §3](../../../../doc/decisions-archive/0046-lingtai-is-personal.md)
  * (#180)** `atHead` is this machine's file, and a run is given that file — not
  * anything in the repository. `recipeAtSha` still reads `.lingtai/config.yaml`
  * at the run's base commit, and that is only ever a *candidate*: for a run
@@ -339,7 +339,7 @@ export async function recipeOfRun(
  * (#218).
  *
  * **The board is the surface that carries this back.**
- * [0046](../../../../doc/decisions/0046-lingtai-is-personal.md) §3 moved the
+ * [0046](../../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3 moved the
  * recipe to `~/.lingtai/<project>/recipe.yml` and wrote down what that cost:
  * nothing in the repository says Lingtai is in use, and a file under a home
  * directory is not discoverable by looking at a clone. Two files decide one
