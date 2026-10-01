@@ -50,7 +50,9 @@ is nothing at one for a destination to keep.*
 ```yaml
 # packages/conductor/unit/step-matrix.test.ts — `ACTION.file`: drafter, then destination
 design:
-  - {name: shape it, agent: claude-code, prompt: read the ticket and write down the shape}
+  - name: shape it
+    agent: claude-code
+    prompt: read the ticket and write down the shape
   - name: keep the design
     file: doc/design/x.md
 ```
@@ -58,7 +60,9 @@ design:
 ```yaml
 # packages/recipe/unit/plugin.test.ts — two destinations; the last locator reaches implement
 design:
-  - {name: shape it, agent: claude-code, prompt: write down the shape}
+  - name: shape it
+    agent: claude-code
+    prompt: write down the shape
   - name: the note in the repository
     file: doc/design/notes.md
   - name: and one beside the ticket
@@ -68,7 +72,9 @@ design:
 ```yaml
 # a path per ticket, so each pass's note lands at its own file
 design:
-  - {name: shape it, agent: claude-code, prompt: write down the shape}
+  - name: shape it
+    agent: claude-code
+    prompt: write down the shape
   - name: keep it
     file: doc/design/{{issue}}.md
 ```
@@ -78,7 +84,9 @@ design:
 All when the recipe resolves, before a worktree or any money.
 ```yaml
 design:
-  - {name: keep it, file: ../../notes/x.md}   # absolute and ~ paths: same refusal, own clause
+  - name: keep it
+    file: ../../notes/x.md
+    # absolute and ~ paths: same refusal, own clause
 ```
 
 > its "file" field is not what "file" accepts: "../../notes/x.md" is not a path
@@ -89,7 +97,9 @@ design:
 
 ```yaml
 design:
-  - {name: keep it, file: "doc/design/{{title}}.md"}   # `{{ref}}`, `{{ issue }}`: own clause each
+  - name: keep it
+    file: "doc/design/{{title}}.md"
+    # `{{ref}}`, `{{ issue }}`: own clause each
 ```
 
 > "doc/design/{{title}}.md" names `{{title}}`, which a `file:` path does not

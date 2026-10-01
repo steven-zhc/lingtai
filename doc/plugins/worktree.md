@@ -48,21 +48,27 @@ is still in the queue.
 # this repository's own settings, from .lingtai/config.yaml (`repo:` — the v1 spelling)
 admit:
   - name: cut
-    worktree: { base: main, submodules: false }
+    worktree:
+      base: main
+      submodules: false
 ```
 
 ```yaml
 # a repository with a vendored submodule that its tests import
 admit:
   - name: cut
-    worktree: { base: main, submodules: true }
+    worktree:
+      base: main
+      submodules: true
 ```
 
 ```yaml
 # a repository that lands on a long-lived branch rather than main
 admit:
   - name: cut the branch
-    worktree: { base: develop, submodules: false }
+    worktree:
+      base: develop
+      submodules: false
 ```
 
 The first is the resolved shape of `repo: { base: main, submodules: false }`; the
@@ -73,7 +79,8 @@ others differ in what they decide — what is on disk, and what `origin/…` mea
 ```yaml
 admit:
   - name: cut
-    worktree: { base: main }
+    worktree:
+      base: main
 ```
 
 > `steps.admit.0.worktree.submodules`: … its "worktree" field is not what

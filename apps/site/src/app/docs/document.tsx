@@ -3,6 +3,19 @@ import type { ComponentPropsWithoutRef } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
+import rehypeHighlight from "rehype-highlight";
+import bash from "highlight.js/lib/languages/bash";
+import typescript from "highlight.js/lib/languages/typescript";
+import yaml from "highlight.js/lib/languages/yaml";
+
+/**
+ * Syntax colour for the three languages `doc/` fences, and no others: a recipe
+ * is YAML, a command is bash, a signature is TypeScript. Registered by name so
+ * nothing guesses a language — a fence that says `text` stays plain text.
+ * Highlighting runs after sanitising, so the only markup it adds is its own
+ * `hljs-*` spans, which the site's stylesheet colours from the palette.
+ */
+const HIGHLIGHT = { languages: { bash, typescript, ts: typescript, yaml }, detect: false };
 import { headingsOf, resolveHref } from "@/lib/docs";
 
 /**
@@ -127,7 +140,7 @@ export function Document({
 
   return (
     <div className={slug === "tutorial" ? "prose tutorial-prose" : "prose"}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize, [rehypeHighlight, HIGHLIGHT]]} components={components}>
         {body}
       </ReactMarkdown>
     </div>

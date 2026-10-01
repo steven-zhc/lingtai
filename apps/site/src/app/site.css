@@ -519,3 +519,15 @@ footer.foot a { color: var(--ink-2); }
 .doctree summary { color: var(--accent-ink); }
 .doctree a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
 .kicker a, .kicker a:visited { color: var(--accent-ink); }
+
+/* Code in a document: the whole width of the column, like the quote beside it,
+   and coloured from the palette — teal for a key, green for a value, purple for
+   a literal, amber for the list marker, muted for a comment. */
+.doc-layout .prose pre { max-width: none; font-size: 13px; line-height: 1.6; }
+.prose .hljs-attr, .prose .hljs-keyword, .prose .hljs-title { color: var(--accent-ink); }
+.prose .hljs-string { color: var(--pass); }
+.prose .hljs-number, .prose .hljs-literal { color: var(--held); }
+.prose .hljs-bullet, .prose .hljs-meta, .prose .hljs-variable, .prose .hljs-template-variable { color: var(--signal); }
+.prose .hljs-built_in, .prose .hljs-type { color: var(--accent); }
+.prose .hljs-comment { color: var(--muted); font-style: italic; }
+.prose .hljs-punctuation, .prose .hljs-operator { color: var(--ink-2); }

@@ -55,10 +55,11 @@ hold list with `[]` and claim an `agent:hold` ticket. `source:` defaults them
 claim:
   - name: pick
     queue:
-      kinds: [bug, tech-debt, feature]
-      exclude: [blocked, in-progress, agent:hold, agent:blocked, epic]
+      kinds: [ bug, tech-debt, feature ]
+      exclude: [ blocked, in-progress, agent:hold, agent:blocked, epic ]
       backoff: 1h
-      assignee: { take: both }
+      assignee:
+        take: both
 ```
 
 ```yaml
@@ -66,10 +67,12 @@ claim:
 claim:
   - name: pick
     queue:
-      kinds: [bug, feature]
-      exclude: [agent:hold]
+      kinds: [ bug, feature ]
+      exclude: [ agent:hold ]
       backoff: 30m
-      assignee: { login: steven-zhc, take: mine }
+      assignee:
+        login: steven-zhc
+        take: mine
 ```
 
 ```yaml
@@ -77,10 +80,11 @@ claim:
 claim:
   - name: pick
     queue:
-      kinds: [bug]
+      kinds: [ bug ]
       exclude: []
       backoff: 2h
-      assignee: { take: unassigned }
+      assignee:
+        take: unassigned
 ```
 
 The first is the repository's own file; the other two differ in *who* may be
@@ -91,7 +95,8 @@ handed a ticket and how soon a failure returns.
 ```yaml
 claim:
   - name: pick
-    queue: { kinds: [bug] }
+    queue:
+      kinds: [ bug ]
 ```
 
 > `steps.claim.0.queue.exclude`: … Invalid input: expected array, received
