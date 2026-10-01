@@ -49,14 +49,16 @@ cannot disagree.
 # packages/recipe/unit/edit-mechanism.test.ts — the landing written out
 merge:
   - name: land the branch
-    merge: { strategy: merge-commit }
+    merge:
+      strategy: merge-commit
 ```
 
 ```yaml
 # the default spelled out: `strategy` may be left off
 merge:
   - name: land
-    merge: {}
+    merge:
+      {}
 ```
 
 ```yaml
@@ -66,7 +68,8 @@ proposed:
     human: "Land this change on main?"
 merge:
   - name: land
-    merge: {}
+    merge:
+      {}
 ```
 
 The first two differ in nothing but spelling, on purpose — leaving the key out is
@@ -77,7 +80,8 @@ the third spelling. The last is the one that decides something.
 ```yaml
 merge:
   - name: land
-    merge: { strategy: squash }
+    merge:
+      strategy: squash
 ```
 
 > `steps.merge.0.merge.strategy`: … its "merge" field is not what "merge"

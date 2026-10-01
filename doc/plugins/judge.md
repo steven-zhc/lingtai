@@ -63,7 +63,8 @@ proposed:
   - name: the lines or the approach
     judge: claude-code
     model: haiku
-    limits: { turns: 5 }
+    limits:
+      turns: 5
     when: findings
 ```
 

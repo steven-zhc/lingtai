@@ -42,47 +42,63 @@ replaces the default, so declare the agent beside it.
 | field | type | required | what it means |
 |---|---|---|---|
 | `name` | string | yes | How every verdict, waiver and reading addresses this action. |
-| `file-brief` | `true` | yes | `true` and nothing else. |
-
-**No path, on purpose:** a path here would be a second answer to the locator's,
-and whichever disagreed would win silently.
+| `file-brief` | `true` | yes | `true` and nothing else. **No path, on purpose:** a path here would be a second answer to the locator's, and whichever disagreed would win silently. |
 
 ## Examples
 
 ```yaml
 # packages/actions/unit/file-brief-action.test.ts — the pair, end to end
 design:
-  - {name: shape it, agent: claude-code, prompt: write down the shape}
-  - {name: keep the design, file: doc/design/x.md}
+  - name: shape it
+    agent: claude-code
+    prompt: write down the shape
+  - name: keep the design
+    file: doc/design/x.md
 implement:
-  - {name: read the design back, file-brief: true}
-  - {name: write the change, agent: claude-code, prompt: ""}
+  - name: read the design back
+    file-brief: true
+  - name: write the change
+    agent: claude-code
+    prompt: ""
 ```
 
 ```yaml
 # packages/conductor/unit/step-matrix.test.ts — no `design:` block: legal and inert
 implement:
-  - {name: read the design back, file-brief: true}
-  - {name: write the change, agent: claude-code, prompt: ""}
+  - name: read the design back
+    file-brief: true
+  - name: write the change
+    agent: claude-code
+    prompt: ""
 ```
 
 ```yaml
 # packages/actions/unit/file-brief-action.test.ts — two keeps; the last locator is read
 design:
-  - {name: shape it, agent: claude-code, prompt: write down the shape}
-  - {name: the note in the repository, file: doc/design/notes.md}
-  - {name: and one beside the ticket, file: doc/design/301.md}
+  - name: shape it
+    agent: claude-code
+    prompt: write down the shape
+  - name: the note in the repository
+    file: doc/design/notes.md
+  - name: and one beside the ticket
+    file: doc/design/301.md
 implement:
-  - {name: read the design back, file-brief: true}
-  - {name: write the change, agent: claude-code, prompt: ""}
+  - name: read the design back
+    file-brief: true
+  - name: write the change
+    agent: claude-code
+    prompt: ""
 ```
 
 ## What it refuses
 
 ```yaml
 implement:
-  - {name: write the change, agent: claude-code, prompt: ""}
-  - {name: read the design back, file-brief: true}
+  - name: write the change
+    agent: claude-code
+    prompt: ""
+  - name: read the design back
+    file-brief: true
 ```
 
 > it is the last action there, and a `file-brief:` reads the design back *for*
@@ -100,5 +116,4 @@ else is read by that destination's own plugin*.
 
 - [file.md](file.md) — the other end: keeps the document, answers with the path.
 - [`plugins/index.md`](index.md) — every plugin, and which step each serves.
-- [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
-  declaring one.
+- [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, not declaring one.

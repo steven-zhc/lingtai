@@ -54,20 +54,27 @@ A check the diff can satisfy belongs at `build`; the other six steps are refused
 ```yaml
 # ~/.lingtai/lingtai/recipe.yml — the install: `git worktree add` copies no node_modules
 prepared:
-  - { name: install, run: pnpm install --frozen-lockfile, timeout: 10m }
+  - name: install
+    run: pnpm install --frozen-lockfile
+    timeout: 10m
 ```
 
 ```yaml
 # ~/.lingtai/lingtai/recipe.yml — the build; the `pnpm-workspace` preset puts the same at `proposed`, where a red one costs a person
 build:
-  - { name: build, run: pnpm typecheck && pnpm test, timeout: 20m }
+  - name: build
+    run: pnpm typecheck && pnpm test
+    timeout: 20m
 ```
 
 ```yaml
 # packages/conductor/unit/pass.test.ts — a check that gates the merge goes above the lane
 merge:
-  - { name: verify, run: pnpm typecheck }
-  - { name: land it, merge: { strategy: merge-commit } }
+  - name: verify
+    run: pnpm typecheck
+  - name: land it
+    merge:
+      strategy: merge-commit
 ```
 
 ## What it refuses
@@ -75,21 +82,27 @@ merge:
 All when the recipe resolves, before a worktree or any money.
 
 ```yaml
-review:                      # 1. a step it does not serve
-  - { name: build, run: pnpm test, env: [] }
+# 1. a step it does not serve
+review:
+  - name: build
+    run: pnpm test
 ---
-build:                       # 2. a field it does not declare
-  - { name: build, run: pnpm test, model: opus, env: [] }
+# 2. a field it does not declare
+build:
+  - name: build
+    run: pnpm test
+    model: opus
 ---
-build:                       # 3. one of Lingtai's own names
-  - { name: build, run: pnpm test, env: [LINGTAI_DATABASE_URL] }
+# 3. one of Lingtai's own names
+build:
+  - name: build
+    run: pnpm test
+    env: [LINGTAI_DATABASE_URL]
 ```
 
 1. > the "build" action is a "run" at the "review" step, and `run:` does not
-   > implement `review` — it serves `prepared`, `build`, `proposed`, `merge`:
-   > `review` returns findings and judges nothing — … A command that
-   > decides whether the diff stands is a `run:` at `build`; a glob over it or a
-   > hold on it is `proposed`'s.
+   > implement `review` — it serves `prepared`, `build`, `proposed`, `merge`: …
+   > A command that decides whether the diff stands is a `run:` at `build`.
 2. > … "run" declares no "model" field — what it declares is "name", "run",
    > "timeout", "env". A plugin refuses a field it does not understand.
 3. > … "LINGTAI_DATABASE_URL" is one of Lingtai's own names and cannot be declared
