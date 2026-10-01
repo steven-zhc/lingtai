@@ -1,7 +1,7 @@
 # Plugins
 
 A pass is ten steps, and **a step's behaviour is the plugins the recipe declares
-there** ([0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9). This page
+there**. This page
 is the list of them, for somebody writing a recipe rather than somebody writing
 a plugin: which key does what, and which steps it may be written at.
 
@@ -11,9 +11,9 @@ two halves, what each step hands you.
 [reference.md](../reference.md) is the glossary: the event types, the stream
 prefixes, `runtime.limits`. The recipe on your own machine,
 `~/.lingtai/<project>/recipe.yml`, is one example of each with nothing saying
-what the keys mean. What was missing is the operator's question — *I want a
-check at `build`; what do I write, and what does it take* — and that is what
-the fourteen pages under this one answer.
+what the keys mean. The operator's question — *I want a check at `build`; what
+do I write, and what does it take* — is what the fourteen pages under this one
+answer.
 
 ## The fourteen
 
@@ -38,20 +38,17 @@ plugin is a red test rather than something somebody has to remember.
 | [`close`](close.md) | `end` | Closes the issue the pass was about. |
 | [`labels`](labels.md) | `end` | Sets the issue's labels, replacing Lingtai's own and keeping everybody else's. |
 | [`refs`](refs.md) | `end` | Deletes the history refs a landed ticket left on `origin`. |
-| [`backlog`](backlog.md) | nothing yet | The bar at or below which a finding is filed instead of buying a round. |
+| [`backlog`](backlog.md) | no step | The bar at or below which a finding is filed instead of buying a round. |
 
 `backlog` is the row worth reading twice. It is in the closed set and it has a
 field, and its `at` is `{}` — *no step reads it; the bar is a literal in two
 folds* — so a recipe that writes it anywhere is refused, by a sentence naming
-where that code is called instead
-([0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4).
-Naming a thing is not wiring it, and a list that quietly left it out would be
-hiding the one row that says so.
+where that code is called instead. Naming a thing is not wiring it.
 
 ## What "may be declared at" means
 
-**It is the plugin's own `at`, and it is the whole of what makes it legal**
-(0064 §4). There is no table of step × kind anywhere: `runPlugin.at` carries
+**It is the plugin's own `at`, and it is the whole of what makes it legal.**
+There is no table of step × kind anywhere: `runPlugin.at` carries
 four keys, so a `run:` at `review` is refused when the recipe resolves — before
 a worktree, before an agent, before any money — and the refusal says which
 steps `run:` does serve and why this pair would mean nothing
@@ -64,10 +61,9 @@ Two consequences an operator feels:
   restarted onto a bad recipe takes nothing at all. `lingtai add` and
   `lingtai doctor` both resolve without running anything, so you see it before
   a run rather than during one.
-- **A key opens in one diff or not at all** (0065 §7). A plugin arriving at a
-  step brings its `at` key, its default, its body and its refusal sentence
-  together — which is why these fourteen rows can be read off the code instead of
-  being a promise about it.
+- **A plugin's `at` key, default, body and refusal sentence live together**, which
+  is why these fourteen rows can be read off the code instead of being a promise
+  about it.
 
 ## The shape a page under here follows
 
@@ -80,16 +76,11 @@ It opens with a **TL;DR** table — *does · write it at · needs · refuses · 
 out* — for the reader who stops there. Then its six sections, in order: **what it does** · **where it may be declared**, and
 why those steps and not others · **parameters**, as a table · **examples**, at
 least three and every one of them real · **what it refuses**, in the schema's
-own words · **related**, the ADR that decided it and the ticket that built it.
+own words · **related**, links to the pages a reader would follow next.
 
 ## Related
 
 - [writing-a-plugin.md](../writing-a-plugin.md) — the other half: authoring one.
-- [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9 — a plugin owns its
-  schema, and refuses a field it does not understand.
-- [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4 —
-  legality lives in each plugin's own `at`, which is why this table is derived.
-- [0065](../decisions/0065-the-default-is-a-plugin.md) — the default is a
-  plugin, so every one of the fourteen is something a recipe can declare.
-- [0066](../decisions/0066-a-large-answer-is-a-locator-on-the-log.md) §5 —
-  where a large answer *lands* is a plugin too, which is what `file:` is.
+- [reference.md](../reference.md) — the glossary: event types, stream prefixes,
+  `runtime.limits`.
+- [tamper-watch.md](../tamper-watch.md) — the paths `watch:` is pointed at.

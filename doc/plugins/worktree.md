@@ -18,13 +18,13 @@ from what was merged and not from somebody's half-finished state.
 `provisionWorktree` (`packages/repo/src/worktree.ts`): a branch `agent/<n>` and a
 git worktree cut from `origin/<base>`. It does nothing else — no install, no
 claim. **Declaring nothing at `admit` runs the same action** off the recipe's
-base and submodules (0065 §2), so this key is for changing those values, not for
-turning the cut on.
+base and submodules, so this key is for changing those values, not for turning
+the cut on.
 
 `repo.base` and `repo.submodules` are the same two settings in their v1 spelling,
-and a recipe may still write them. `baseOf` and `submodulesOf` in `settings.ts`
-are the one place that knows which spelling a file used; the merge lane, `lingtai
-doctor`, `lingtai add` and the board all ask that, so the two are not two homes.
+and a recipe may write either. `baseOf` and `submodulesOf` in `settings.ts` are
+the one place that knows which spelling a file used; the merge lane, `lingtai
+doctor`, `lingtai add` and the board all ask that.
 
 ## Where it may be declared
 
@@ -86,11 +86,7 @@ before an agent, before any money.
 
 ## Related
 
-- [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §3–§4 — `worktree:` is
-  a name for code that already ran, and `base` is written here once.
-- [0065](../decisions/0065-the-default-is-a-plugin.md) §2 — the default is an
-  entry in the plugin system, which is why declaring nothing runs the same cut.
-- `#268` opened the key at `admit`.
-- [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
+- [`plugins/index.md`](index.md) — all the plugins, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.
+- [reference.md](../reference.md) — every recipe key, including `repo:`.

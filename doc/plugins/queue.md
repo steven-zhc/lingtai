@@ -16,17 +16,16 @@ label is invisible to it, which is the most common reason a ticket is never take
 
 `createQueueAction` in `packages/actions/src/queue-action.ts` re-reads the offer
 for the issue the pass was pointed at and confirms the claim. **Declaring nothing
-at `claim` runs the same action** off the recipe's `source:` (0065 §2), so this key
-is for moving those four settings to the step that owns them.
+at `claim` runs the same action** off the recipe's `source:`, so this key is for
+moving those four settings to the step that owns them.
 
 - **Kinds are vocabulary, filter and priority at once.** A label outside `kinds`
   is not a kind; earlier wins.
 - **Open blockers pass an issue over**, always, and no recipe turns it off.
   `blockedBy` counts blockers still *open*; a GitHub that says nothing about
-  dependencies degrades to the old behaviour rather than passing everything over.
-- **It cannot refuse** (0058 §2). A claim that took nothing is holding nothing, so
-  it ends `did-not-finish` with `passed-over`, `not-claimed` or
-  `claim-unconfirmed`.
+  dependencies passes nothing over on that account.
+- **It cannot refuse.** A claim that took nothing is holding nothing, so it ends
+  `did-not-finish` with `passed-over`, `not-claimed` or `claim-unconfirmed`.
 - **`source:` is the v1 spelling.** `settings.ts` reads whichever the file wrote.
 
 ## Where it may be declared
@@ -42,7 +41,7 @@ down would have a pass working one ticket while holding another.
 | `name` | string | yes | How the claim's outcome is addressed. |
 | `queue.kinds` | list of labels (≥ 1) | yes | Labels that mark work, **most wanted first**. |
 | `queue.exclude` | list of labels | yes | Labels that keep the agent off a ticket. `[]` is none. |
-| `queue.backoff` | duration | yes | How long a failed attempt keeps its own ticket out, like `1h` ([0028](../decisions/0028-the-backoff-is-the-recipes.md)). |
+| `queue.backoff` | duration | yes | How long a failed attempt keeps its own ticket out, like `1h`. |
 | `queue.assignee` | `{ login?, take }` | yes | `take`: `mine` \| `unassigned` \| `both` (default `both`). `mine` needs `login`. |
 
 **No field is defaulted on purpose**: a block naming only `kinds` would replace the
@@ -105,13 +104,7 @@ worktree, before an agent, before any money.
 
 ## Related
 
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §2–§3 — `claim`
-  picks and cannot refuse.
-- [0063](../decisions/0063-every-setting-is-the-recipes.md) §3 — `assignee` is a
-  field of `queue:`, not a plugin beside it.
-- [0028](../decisions/0028-the-backoff-is-the-recipes.md) — the backoff is the
-  recipe's.
-- `#269` opened the key; `#131` is why a chain goes in *blocked by*.
-- [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
+- [`plugins/index.md`](index.md) — all the plugins, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.
+- [reference.md](../reference.md) — every recipe key, including `source:`.

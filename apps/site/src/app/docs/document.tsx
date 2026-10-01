@@ -75,7 +75,32 @@ export function Document({
       );
     };
 
+  /**
+   * A TL;DR row says what kind of row it is, so the stylesheet can colour the
+   * two that carry a warning — *refuses* and *watch out* — differently from the
+   * three that describe. The label is the document's own word; this reads it and
+   * adds a data attribute, and rewrites nothing.
+   */
+  const rowKind = (node: unknown): string | undefined => {
+    const cell = (node as { children?: unknown[] } | undefined)?.children?.find(
+      (child) => (child as { type?: string }).type === "element",
+    );
+    const text = (n: unknown): string =>
+      typeof n === "object" && n !== null && "value" in n
+        ? String((n as { value: unknown }).value)
+        : ((n as { children?: unknown[] } | null)?.children ?? []).map(text).join("");
+    const label = text(cell).trim().toLowerCase();
+    return { does: "does", "write it at": "where", needs: "needs", refuses: "refuses", "watch out": "watch" }[label];
+  };
+
   const components: Components = {
+    tr({ node, children, ...rest }) {
+      return (
+        <tr data-row={rowKind(node)} {...rest}>
+          {children}
+        </tr>
+      );
+    },
     h2: heading("h2"),
     h3: heading("h3"),
     h4: heading("h4"),
