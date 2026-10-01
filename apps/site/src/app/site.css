@@ -456,3 +456,62 @@ footer.foot a { color: var(--ink-2); }
 @media (max-width: 700px) {
   .foot-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
 }
+
+
+/* Colour for a document, from the palette's own tokens and nothing new.
+   `.prose` was one ink on one ground; a reader skimming a reference page needs
+   something to land on. The rules are the product's: teal says *what this is*,
+   amber says *mind this*, red says *this is refused*. Coral stays what the
+   rules at the top of this file say it is. */
+
+/* A heading starts with a short teal rule, so the sections read as a sequence. */
+.prose h2 { position: relative; }
+.prose h2::before {
+  content: ""; position: absolute; top: -1px; left: 0;
+  width: 44px; height: 3px; background: var(--accent); border-radius: 2px;
+}
+
+/* Code in prose, tinted rather than boxed. */
+.prose :not(pre) > code {
+  background: var(--accent-soft); color: var(--accent-ink);
+  border-color: transparent;
+}
+
+/* Bold is the sentence's point, so it is highlighted the way a pen would. */
+.prose p strong, .prose li strong {
+  background: linear-gradient(transparent 58%, var(--signal-soft) 58%);
+  color: var(--ink); padding: 0 1px;
+}
+
+/* A quotation is a refusal or a rule's own words: an amber edge says so. */
+.prose blockquote {
+  border-left: 3px solid var(--signal); background: var(--signal-soft);
+  padding: 8px 14px; border-radius: 0 4px 4px 0; color: var(--ink);
+}
+.prose blockquote p { margin: 4px 0; }
+.prose blockquote code { background: rgba(255, 255, 255, .5); }
+@media (prefers-color-scheme: dark) { .prose blockquote code { background: rgba(0, 0, 0, .25); } }
+
+/* A parameters table: a teal head and quiet stripes. */
+.prose th { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--rule-2); }
+.prose tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+
+/* The TL;DR table: teal for what it is, red for what it refuses, amber for the trap. */
+.prose table:not(:has(thead th:not(:empty))) {
+  border: 1px solid var(--rule-2); border-top: 3px solid var(--accent);
+  border-radius: 4px; overflow: hidden;
+}
+.prose table:not(:has(thead th:not(:empty))) td:first-child {
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.prose table:not(:has(thead th:not(:empty))) tr[data-row="refuses"] td:first-child { background: var(--fail-soft); color: var(--fail); box-shadow: inset 3px 0 0 var(--fail); }
+.prose table:not(:has(thead th:not(:empty))) tr[data-row="watch"] td { background: var(--signal-soft); }
+.prose table:not(:has(thead th:not(:empty))) tr[data-row="watch"] td:first-child { background: var(--signal-soft); color: var(--signal); box-shadow: inset 3px 0 0 var(--signal); }
+
+/* Code blocks carry the tutorial's teal edge on every page. */
+.prose pre { border-left: 3px solid var(--accent); }
+
+/* The tree and the way back. */
+.doctree summary { color: var(--accent-ink); }
+.doctree a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
+.kicker a, .kicker a:visited { color: var(--accent-ink); }
