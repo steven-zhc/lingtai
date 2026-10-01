@@ -114,7 +114,7 @@ export function Document({
     img({ src, alt, ...rest }) {
       const written = typeof src === "string" ? src : "";
       // `doc/img/` is the one directory of images the build carries
-      // (`scripts/doc-assets.ts` copies it to `public/img/docs/`), so a diagram
+      // (served at `/img/docs/` by `src/app/img/docs/[name]/route.ts`), so a diagram
       // in a document is the same file on GitHub and on the site. Any other image
       // is pointed at the repository, where it is.
       const under = path.posix.normalize(path.posix.join(path.posix.dirname(source), written));

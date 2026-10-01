@@ -295,8 +295,12 @@ p { max-width: var(--measure); }
 .doc-wrap { max-width: 84rem; }
 .doc-layout {
   display: grid; gap: 36px; align-items: start; justify-content: center;
-  grid-template-columns: 14rem minmax(0, 46rem) 13rem;
+  grid-template-columns: 14rem minmax(0, 48rem) 13rem;
 }
+/* The document fills its column. A measure of about 80 characters at 16px is
+   what long-form reading tolerates best; the column is that measure, so the
+   text and the contents beside it sit together rather than across a gutter. */
+.doc-layout .prose { max-width: none; font-size: 16px; line-height: 1.72; }
 
 /* The tree, on the left: sticky like the contents, and the same rule on the
    same side as everything else in the page. */
