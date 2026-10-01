@@ -18,18 +18,16 @@ carrying its own reason rather than a half-merged `main`.
 (`packages/repo/src/integrate.ts`): merge the base into the branch, re-verify
 against what landed in the meantime, merge out with `git merge --no-edit`, then
 push — a fast-forward where it can be one. **Declaring nothing at `merge` runs the
-same action** off the same base (0065 §2).
+same action** off the same base.
 
 A refusal carries the lane's own `reason` (`conflict`, `verify-failed`, …) and
-`detail` to `proposed`. `strategy` has one value because `integrate.ts` offers
-one; a second would be a behaviour this repository does not have, declared as
-though it did.
+`detail` to `proposed`. `strategy` has one value, `merge-commit`.
 
 ## Where it may be declared
 
 `mergePlugin.at` is `{ merge }`: it is the last step before `end` and the only one
 that changes the base, so the lane is read there and a pass lands once. **It is
-the last action in that list** — anything written after it is refused (0065 §8),
+the last action in that list** — anything written after it is refused,
 because a check that fails there fails about a change already on `main`. A
 person-asking action at `merge` is refused too: hold at `proposed`, or run with
 `--no-merge`.
@@ -41,7 +39,7 @@ person-asking action at `merge` is refused too: hold at `proposed`, or run with
 | `name` | string | yes | How every verdict addresses this action. |
 | `merge.strategy` | `merge-commit` | no, `merge-commit` | How the branch goes in. The enum is the code's: it grows when the code does. |
 
-**There is no `base:`, deliberately** (0061 §4). `base` is written on `worktree:`
+**There is no `base:`.** `base` is written on `worktree:`
 (or `repo.base`) and handed to the lane, so what a pass cut and what it lands
 cannot disagree.
 
@@ -93,11 +91,7 @@ worktree, before an agent, before any money.
 
 ## Related
 
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3b–§3c — the
-  three ways out of `merge`, and that the lane reports rather than decides.
-- [0065](../decisions/0065-the-default-is-a-plugin.md) §2, §8 — the landing is
-  an action in the step's own list, and the last one.
-- `#270` opened the key; `#58` is why a hold cannot come after it.
+- [`human.md`](human.md) — the hold that goes at `proposed`, before the lane.
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
   declaring one.

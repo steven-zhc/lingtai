@@ -19,8 +19,7 @@ like every effect at `end`. `when` picks the outcomes it runs on, so *label it
 configuration.
 
 **Lingtai's own labels are the ones beginning `lingtai:`** (`labels.ts`). Those
-are set as a whole computed set — never a union, which is how `#35` carried
-`agent:blocked` and `agent:review` at once — and every label without that prefix
+are set as a whole computed set — never a union — and every label without that prefix
 is somebody else's and is left alone.
 
 ## Where it may be declared
@@ -80,10 +79,6 @@ recipe resolves — before a worktree, before an agent, before any money.
 
 ## Related
 
-- [0044](../decisions/0044-a-close-is-a-terminal-outcome.md) — the five endings
-  `when` names.
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §2 — `end` cannot
-  refuse.
 - [`close.md`](close.md), [`refs.md`](refs.md) — the other two effects at `end`.
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than

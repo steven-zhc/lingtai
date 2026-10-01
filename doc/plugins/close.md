@@ -16,9 +16,7 @@ finished. It runs for effect — `end` is the point that cannot refuse.
 `end-step.ts` resolves the effects for an outcome (`resolveEndActions`) and
 `tell.ts` carries them out. `when` filters on the outcome: *close it when it
 lands, label it when it is blocked* is one configuration. `closed` is the fourth
-outcome and `any` includes it (0044): a ticket a person ended is one whose issue
-this is the right way to close, which is what removed the manual `gh issue close`
-after `lingtai close`.
+outcome and `any` includes it: a ticket a person ended is closed on GitHub too.
 
 ## Where it may be declared
 
@@ -82,10 +80,6 @@ when the recipe resolves — before a worktree, before an agent, before any mone
 
 ## Related
 
-- [0044](../decisions/0044-a-close-is-a-terminal-outcome.md) — a close is a
-  terminal outcome, and `closed` is one of the five `when` values.
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §2 — `end` cannot
-  refuse.
 - [`labels.md`](labels.md), [`refs.md`](refs.md) — the other two effects at `end`.
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than
