@@ -555,3 +555,35 @@ export function statusParts(
   }
   return out;
 }
+
+export interface TreeGroup {
+  id: string;
+  label: string;
+  entries: { slug: string; title: string }[];
+}
+
+/**
+ * The navigation tree beside a document: every page the site serves, grouped
+ * as the docs index groups them.
+ *
+ * **Derived, as everything here is.** It is `SECTIONS` filtered by `servable()`,
+ * so a page that is published is in the tree and a page that is not cannot be —
+ * there is no second list of what the sidebar shows. A directory's `index.md` is
+ * first in its group, because it is the page that lists the others.
+ */
+export async function treeOf(): Promise<TreeGroup[]> {
+  const served = new Set((await servable()).map((file) => slugOf(file)));
+  const groups: TreeGroup[] = [];
+  for (const section of SECTIONS) {
+    const entries = (await entriesOf(section)).filter((entry) => served.has(entry.slug));
+    if (entries.length === 0) continue;
+    const index = Array.isArray(section.files) ? null : section.files.dir;
+    entries.sort((a, b) => Number(b.slug === index) - Number(a.slug === index));
+    groups.push({
+      id: section.id,
+      label: section.label,
+      entries: entries.map((entry) => ({ slug: entry.slug, title: entry.title.replace(/`/g, "") })),
+    });
+  }
+  return groups;
+}
