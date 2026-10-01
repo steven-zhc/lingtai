@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { DOCS_PUBLIC, docRoot, HTML_DOCS } from "../src/lib/docs.ts";
 
@@ -34,3 +34,19 @@ if (DOCS_PUBLIC) {
 } else {
   console.log("doc-assets: hidden until DOCS_PUBLIC is enabled");
 }
+
+/**
+ * The diagrams, which are public whether or not the rest of `doc/` is: the
+ * tutorial embeds them. `doc/img/` is the only directory of images the site
+ * carries, so a document names one the way GitHub does — `img/pass.svg` — and
+ * `Document` points it at this copy. Not committed, for the reason the drawings
+ * above are not.
+ */
+const images = path.resolve(process.cwd(), "public/img/docs");
+await rm(images, { recursive: true, force: true });
+await mkdir(images, { recursive: true });
+const from = path.join(docRoot, "img");
+for (const name of await readdir(from)) {
+  if (name.endsWith(".svg")) await copyFile(path.join(from, name), path.join(images, name));
+}
+console.log("doc-assets: doc/img/*.svg → public/img/docs/");

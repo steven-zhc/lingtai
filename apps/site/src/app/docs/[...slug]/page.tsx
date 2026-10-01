@@ -9,6 +9,7 @@ import {
   ledeOf,
   readDoc,
   servable,
+  treeOf,
   slugOf,
   statuses,
   statusParts,
@@ -17,6 +18,7 @@ import {
 import { Bar, Foot } from "../../chrome";
 import { Contents, Status } from "../contents";
 import { Document } from "../document";
+import { DocTree } from "../doctree";
 
 /**
  * One document, at the route its path in `doc/` gives it.
@@ -86,13 +88,14 @@ export default async function DocPage({ params }: Params) {
 
   const headings = headingsOf(doc.body);
   const parts = await decisionStatus(slug);
+  const tree = await treeOf();
   const decided = slug.startsWith("decisions/") ? decidedOn(doc.body) : null;
 
   return (
     <>
       <Bar />
       <main className={slug === "tutorial" ? "tutorial-page" : undefined}>
-        <div className="wrap">
+        <div className="wrap doc-wrap">
           <section style={{ paddingTop: 32 }}>
             <p className="kicker">
               <Link href="/docs/">Documentation</Link>
@@ -102,6 +105,7 @@ export default async function DocPage({ params }: Params) {
                 the scroll, and a reader with the page read to them gets the
                 document before the list of ways into it. */}
             <div className="doc-layout">
+              <DocTree groups={tree} current={slug} />
               <article>
                 <Status decided={decided} parts={parts} />
                 <Document slug={doc.slug} source={doc.source} body={doc.body} published={files} />

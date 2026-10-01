@@ -53,19 +53,26 @@ export const GITHUB_BLOB = "https://github.com/steven-zhc/lingtai/blob/main/";
 export const DOCS_PUBLIC = false;
 
 /**
- * The one page that is public while `DOCS_PUBLIC` is off: the tutorial is the
- * way in for somebody about to install Lingtai, and nothing else in `doc/` has
- * been through that edit yet. Slugs, as `slugOf` gives them.
+ * What is public while `DOCS_PUBLIC` is off: the tutorial, which is the way in for
+ * somebody about to install Lingtai, and `plugins` — the parent page and the
+ * fourteen under it, which are the recipe's vocabulary and were written for a
+ * reader who has never seen the source. Nothing else in `doc/` has been through
+ * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
+ * directory, everything beneath it.
  *
  * Everything that would otherwise 404 on the site — a link from the tutorial to
  * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
  */
-export const PUBLIC_SLUGS = ["tutorial"];
+export const PUBLIC_SLUGS = ["tutorial", "plugins"];
+
+export function isPublicSlug(slug: string): boolean {
+  return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`));
+}
 
 /** The files the site serves right now, relative to `doc/`. */
 export async function servable(): Promise<string[]> {
   const all = await published();
-  return DOCS_PUBLIC ? all : all.filter((f) => PUBLIC_SLUGS.includes(slugOf(f)));
+  return DOCS_PUBLIC ? all : all.filter((f) => isPublicSlug(slugOf(f)));
 }
 
 export interface Section {
@@ -547,4 +554,36 @@ export function statusParts(
     out.push(href === null ? { text: piece } : { text: piece, href });
   }
   return out;
+}
+
+export interface TreeGroup {
+  id: string;
+  label: string;
+  entries: { slug: string; title: string }[];
+}
+
+/**
+ * The navigation tree beside a document: every page the site serves, grouped
+ * as the docs index groups them.
+ *
+ * **Derived, as everything here is.** It is `SECTIONS` filtered by `servable()`,
+ * so a page that is published is in the tree and a page that is not cannot be —
+ * there is no second list of what the sidebar shows. A directory's `index.md` is
+ * first in its group, because it is the page that lists the others.
+ */
+export async function treeOf(): Promise<TreeGroup[]> {
+  const served = new Set((await servable()).map((file) => slugOf(file)));
+  const groups: TreeGroup[] = [];
+  for (const section of SECTIONS) {
+    const entries = (await entriesOf(section)).filter((entry) => served.has(entry.slug));
+    if (entries.length === 0) continue;
+    const index = Array.isArray(section.files) ? null : section.files.dir;
+    entries.sort((a, b) => Number(b.slug === index) - Number(a.slug === index));
+    groups.push({
+      id: section.id,
+      label: section.label,
+      entries: entries.map((entry) => ({ slug: entry.slug, title: entry.title.replace(/`/g, "") })),
+    });
+  }
+  return groups;
 }

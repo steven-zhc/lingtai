@@ -11,6 +11,8 @@ import { DOCS_PUBLIC, PUBLIC_SLUGS } from "../src/lib/docs.ts";
  */
 if (!DOCS_PUBLIC) {
   const out = path.resolve(process.cwd(), "out");
+  // A directory entry is `tutorial`, `plugins`, or a sibling the exporter wrote
+  // beside one (`tutorial.txt`); the route tree of `plugins/` is kept whole.
   const keep = (name: string) => PUBLIC_SLUGS.some((s) => name === s || name.startsWith(`${s}.`));
   const docs = path.join(out, "docs");
   const names = await readdir(docs).catch(() => [] as string[]);

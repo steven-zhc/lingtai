@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { ComponentPropsWithoutRef } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -86,9 +87,16 @@ export function Document({
       );
     },
     img({ src, alt, ...rest }) {
-      // Images in `doc/` are files in `doc/`, and the export does not carry
-      // them. Pointed at the repository, where they are.
-      return <img src={resolveHref(source, typeof src === "string" ? src : "", isPublished)} alt={alt ?? ""} {...rest} />;
+      const written = typeof src === "string" ? src : "";
+      // `doc/img/` is the one directory of images the build carries
+      // (`scripts/doc-assets.ts` copies it to `public/img/docs/`), so a diagram
+      // in a document is the same file on GitHub and on the site. Any other image
+      // is pointed at the repository, where it is.
+      const under = path.posix.normalize(path.posix.join(path.posix.dirname(source), written));
+      if (!/^[a-z]+:/i.test(written) && under.startsWith("img/")) {
+        return <img src={`/img/docs/${under.slice("img/".length)}`} alt={alt ?? ""} {...rest} />;
+      }
+      return <img src={resolveHref(source, written, isPublished)} alt={alt ?? ""} {...rest} />;
     },
   };
 

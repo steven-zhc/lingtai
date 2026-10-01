@@ -34,4 +34,5 @@ logs/
 # read out of the log at build time — both are generated, and a copy of either
 # in git is a second file to keep in step.
 apps/site/public/doc/
+apps/site/public/img/docs/
 apps/site/snapshot.json

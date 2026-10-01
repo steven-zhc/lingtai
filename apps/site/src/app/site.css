@@ -278,6 +278,10 @@ p { max-width: var(--measure); }
 .prose table { border-collapse: collapse; margin: 18px 0; font-size: 14px; width: 100%; }
 .prose th, .prose td { border: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
 .prose th { background: var(--surface-2); font-weight: 600; }
+/* A TL;DR table is written \`| | |\` so it is a table on GitHub; its header row
+   is empty by construction, and drawn it is a grey bar over nothing. */
+.prose thead:not(:has(th:not(:empty))) { display: none; }
+.prose table:not(:has(thead th:not(:empty))) td:first-child { width: 8.5rem; white-space: nowrap; font-weight: 600; background: var(--surface-2); }
 .prose hr { border: none; border-top: 1px solid var(--rule); margin: 28px 0; }
 .prose img { max-width: 100%; }
 
@@ -288,9 +292,37 @@ p { max-width: var(--measure); }
    It stacks at 1080px, the same breakpoint the hero uses, and there the
    contents goes *above* the document: on a phone the whole problem is the
    scroll, so a list of sections after the scroll would be furniture. */
+.doc-wrap { max-width: 84rem; }
 .doc-layout {
-  display: grid; gap: 40px; align-items: start;
-  grid-template-columns: minmax(0, 1fr) 15rem;
+  display: grid; gap: 36px; align-items: start; justify-content: center;
+  grid-template-columns: 14rem minmax(0, 46rem) 13rem;
+}
+
+/* The tree, on the left: sticky like the contents, and the same rule on the
+   same side as everything else in the page. */
+.doctree {
+  position: sticky; top: 20px;
+  max-height: calc(100vh - 40px); overflow-y: auto;
+  font-size: 13px; line-height: 1.4;
+}
+.doctree details { margin: 0 0 14px; }
+.doctree summary {
+  cursor: pointer; font: 600 11px/1.2 var(--mono, ui-monospace, monospace);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  padding: 4px 0; list-style: none;
+}
+.doctree summary::-webkit-details-marker { display: none; }
+.doctree summary::before { content: "▸"; display: inline-block; width: 1em; }
+.doctree details[open] > summary::before { content: "▾"; }
+.doctree ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 1px; }
+.doctree a {
+  display: block; padding: 4px 8px; border-left: 2px solid transparent;
+  color: var(--ink-2); text-decoration: none; border-radius: 0 3px 3px 0;
+}
+.doctree a:hover { color: var(--accent-ink); background: var(--surface); }
+.doctree a[aria-current="page"] {
+  color: var(--ink); font-weight: 600; border-left-color: var(--accent);
+  background: var(--surface);
 }
 .doc-layout > article { min-width: 0; }
 
@@ -307,6 +339,10 @@ p { max-width: var(--measure); }
 
 @media (max-width: 1080px) {
   .doc-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .doctree {
+    position: static; max-height: 9.5rem; order: -2;
+    border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px; background: var(--surface);
+  }
   .contents {
     order: -1; position: static; max-height: none;
     border-left: none; border: 1px solid var(--rule); border-radius: 3px;
@@ -355,10 +391,6 @@ p { max-width: var(--measure); }
 /* The tutorial is a path, not a reference page. Its source is still the same
    Markdown file the repository reads; this only makes the steps scan like the
    sequence they describe. */
-.tutorial-page .doc-layout {
-  grid-template-columns: minmax(0, 46rem) 16rem;
-  gap: clamp(42px, 7vw, 90px);
-}
 .tutorial-prose { max-width: 46rem; font-size: 16px; line-height: 1.72; }
 .tutorial-prose h1 {
   max-width: 14ch; margin-bottom: 20px;
@@ -381,6 +413,11 @@ p { max-width: var(--measure); }
 }
 .tutorial-prose h2[id^="step-"] { border-top-color: var(--accent); }
 .tutorial-prose h3 { margin-top: 32px; font-size: 18px; }
+.tutorial-prose img {
+  display: block; width: 100%; height: auto; margin: 22px 0 26px;
+  padding: 14px 10px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--surface);
+}
 .tutorial-prose pre {
   margin: 18px 0; border-left: 3px solid var(--accent);
   box-shadow: 0 3px 10px rgba(15, 24, 28, .035);
@@ -399,7 +436,6 @@ p { max-width: var(--measure); }
 .tutorial-page .contents li:not(.sub) a:hover::before { background: var(--accent); }
 
 @media (max-width: 1080px) {
-  .tutorial-page .doc-layout { grid-template-columns: minmax(0, 1fr); }
   /* On a narrow screen the tutorial is read in order. Repeating its full path
      before step one is navigation furniture, not help. */
   .tutorial-page .contents { display: none; }
