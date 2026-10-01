@@ -27,7 +27,7 @@ and `merge` build `createAgentAction` (leaves findings, not a verdict).
 - **At `design` its tree writes are not the document.** Only the prompt asks it
   not to edit or commit, and a design commit stays and lands with the change.
   Guard with a `watch:` at `proposed`.
-- **An unparseable answer is `unreadable` (`#279`)** and buys no round.
+- **An unparseable answer is `unreadable`** and buys no round.
 
 ## Where it may be declared
 
@@ -51,7 +51,7 @@ Not `build` (*"an agent asked to would be paid to read, and a cold read of the d
 | `agent` | `claude-code` \| `codex` | yes | The runtime (an enum: prose fails at resolve, not at spawn). |
 | `model` | string | no, the runtime's default | Passed through; **not validated**. |
 | `prompt` | string | yes | Appended to the fixed brief. **Interpolated raw**: `{{issue}}` is not expanded ([`reference.md`](../reference.md#prompt-placeholder--5)). |
-| `limits` | `{ turns?, wall? }` | no, `runtime.limits` | This call's spend, field by field; **may only narrow** (0070 §5). |
+| `limits` | `{ turns?, wall? }` | no, `runtime.limits` | This call's spend, field by field; **may only narrow**. |
 
 A runtime this machine is not signed in to is a legal name, refused before the claim (*"nothing on this machine is signed in to codex"*).
 
@@ -85,7 +85,7 @@ proposed:
     prompt: look for races
 ```
 
-`implement` needs none: unconfigured it runs `createWorkAction` (0065 §2).
+`implement` needs none: unconfigured it runs `createWorkAction`.
 
 ## What it refuses
 
@@ -101,15 +101,13 @@ build:
 
 Refused at resolve, before any money; also by name: `timeout: 20m` (*"agent" declares no "timeout" field*); `agent:
 gpt-5` (*expected one of "claude-code"|"codex"*); `limits: { turns: 300 }` over a
-ceiling of 150 (*a step may only narrow it (0070 §5)*); `limits: { rounds: 2 }`
-(*`rounds` bounds the pass and not one call (0040) … Write it at `runtime.limits`*).
+ceiling of 150 (*a step may only narrow it*); `limits: { rounds: 2 }`
+(*`rounds` bounds the pass and not one call … Write it at `runtime.limits`*).
 
 ## Related
 
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §3, §3b — the ten steps; `failed` at `review` is findings. [0057](../decisions/0057-a-gate-that-did-not-finish.md) §2 — `implement`'s receipt is a commit.
-- [0038](../decisions/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2 — a finding buys an agent first; unreadable buys none.
-- [0063](../decisions/0063-every-setting-is-the-recipes.md) §2 — the recipe picks the runtime, so `agent:` is an enum. [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md) §4 — legality is `agentPlugin.at`.
-- [0070](../decisions/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) — one dispatch shape; §5 narrowing. [0065](../decisions/0065-the-default-is-a-plugin.md) §2, §5 — `implement` and `design` became writable keys.
-- `#265` opened `design`, `#266` `implement`; `#279` gave unreadable a word.
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
+- [`judge.md`](judge.md) — answering a `findings` refusal at `proposed` with an agent.
+- [`human.md`](human.md) — holding at `proposed` for a person instead.
+- [`reference.md`](../reference.md) — the recipe's fields, `runtime.limits` and the prompt placeholders.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, rather than declaring one.

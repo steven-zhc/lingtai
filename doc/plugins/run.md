@@ -17,26 +17,24 @@ ticket and breaks the build from landing because nothing ever compiled it.
 `createProcessAction` in `packages/actions/src/process-action.ts` runs the command
 through a shell in the pass's worktree, with only the environment the action
 declared plus `PATH`, `HOME`, `TMPDIR`, `LANG`, `USER`, `LOGNAME`. Evidence is the
-exit code, duration and log ([0043](../decisions/0043-evidence-is-plain-text.md)),
-the last 60 lines within 8 000 bytes (`#171`). A timeout is `failed`. **It reports
-and finds nothing** (`findings: []`). `pnpm test` is the unit half only
-([0060](../decisions/0060-the-gate-runs-unit-tests.md)).
+exit code, duration and log,
+the last 60 lines within 8 000 bytes. A timeout is `failed`. **It reports
+and finds nothing** (`findings: []`). `pnpm test` runs the unit half only.
 
-**`env` is names, never values; absent means nothing, not everything**
-([0037](../decisions/0037-an-extension-is-a-command.md) §1). Names resolve from
-[0021](../decisions/0021-the-recipe-decides-the-environment.md)'s files, before
-`env.allow`/`env.deny` (the *agent's*).
+**`env` is names, never values; absent means nothing, not everything.** Names
+resolve from the recipe's environment files, before `env.allow`/`env.deny` (the
+*agent's*).
 
 ## Where it may be declared
 
 `runPlugin.at` is `{ prepared, build, proposed, merge }` (not `"*"`: `end` runs no
-pipeline). At `merge` a check goes **before** the lane (`#270`). **What a red
+pipeline). At `merge` a check goes **before** the lane. **What a red
 `run:` costs** — only `build` buys a round:
 
 | a red `run:` at | what the pass does |
 |---|---|
 | `prepared` | `blocked`: no agent has run, so `implement` is not on offer. **No round bought.** |
-| `build` | Back to the agent with the error. **A fix round** (`#256`). |
+| `build` | Back to the agent with the error. **A fix round.** |
 | `proposed` | `blocked`: the router has nowhere above it to appeal to. **No round bought.** |
 | `merge` | `action-refused` is no direction a `judge:` answers: held for a person. **No round bought.** |
 
@@ -89,27 +87,20 @@ build:                       # 3. one of Lingtai's own names
 
 1. > the "build" action is a "run" at the "review" step, and `run:` does not
    > implement `review` — it serves `prepared`, `build`, `proposed`, `merge`:
-   > `review` returns findings and judges nothing (0058 §3b) — … A command that
+   > `review` returns findings and judges nothing — … A command that
    > decides whether the diff stands is a `run:` at `build`; a glob over it or a
    > hold on it is `proposed`'s.
 2. > … "run" declares no "model" field — what it declares is "name", "run",
-   > "timeout", "env". A plugin refuses a field it does not understand (0061 §9).
+   > "timeout", "env". A plugin refuses a field it does not understand.
 3. > … "LINGTAI_DATABASE_URL" is one of Lingtai's own names and cannot be declared
-   > for an extension — every name Lingtai reads for itself begins "LINGTAI_" (#63).
+   > for an extension — every name Lingtai reads for itself begins "LINGTAI_".
 
 A `run:` after the lane at `merge` is refused: *… Write it before the lane.*
+
 ## Related
 
-- [0037](../decisions/0037-an-extension-is-a-command.md) §1 — an extension's
-  code is not trusted, so this is the one key with an `env:`. **§2's *there is no plugin system* is superseded by
-  [0067](../decisions/0067-a-plugin-is-a-declaration-and-an-implementation.md)**:
-  a plugin is a declaration, and `PLUGINS` is where every one of them lives.
-- [0058](../decisions/0058-lingtai-is-a-development-pipeline.md) §2, §3b — a
-  refusal goes to `proposed`.
-- [0061](../decisions/0061-the-recipe-is-the-pipeline.md) §9 — a plugin refuses a
-  field it does not understand; [0064](../decisions/0064-a-plugin-declares-the-steps-it-implements.md)
-  §4 — legality is `runPlugin.at`.
-- [0065](../decisions/0065-the-default-is-a-plugin.md) §8 — the lane is last at
-  `merge:` (`#270`). `#256` — `build:` opened (`a417908`) to buy the round.
 - [`plugins/index.md`](index.md) — the fourteen, and which step each serves.
+- [`watch.md`](watch.md) — a hold on a glob over the diff at `proposed`, where a `run:` cannot.
+- [`human.md`](human.md) — asking a person at `proposed`.
+- [`reference.md`](../reference.md) — `env` and the recipe's environment files.
 - [writing-a-plugin.md](../writing-a-plugin.md) — authoring one, not declaring one.
