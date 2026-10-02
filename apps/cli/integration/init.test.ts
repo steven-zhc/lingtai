@@ -506,3 +506,182 @@ describe("the store is written down, and the screen is a reading of it (#215)", 
     expect(config(home)).toContain("store: sqlite");
   });
 });
+
+/**
+ * #345. `--store` answers the store question with nobody at a terminal, by the
+ * same lines the empty answer takes — and refuses by name, writing nothing,
+ * wherever the machine would not obey it. Every "no terminal" here is a world
+ * whose `ask` has no answers, so it returns null exactly as `liveInitWorld`'s
+ * does without a TTY; `seen.asked` says the question was not reached at all.
+ */
+describe("--store answers the store question without a terminal (#345)", () => {
+  function written(home: string): { text: string | null; mtime: number | null } {
+    const path = configPath({ LINGTAI_HOME: home });
+    return { text: config(home), mtime: existsSync(path) ? statSync(path).mtimeMs : null };
+  }
+
+  it("without it, nobody at a terminal is still a refusal that names --store sqlite", async () => {
+    const home = freshHome();
+    const { world: w, seen } = world(home, {});
+    expect(await initCommand([], w)).toBe(1);
+    expect(seen.lines.at(-1)).toContain("--store sqlite");
+    expect(config(home)).toBeNull();
+  });
+
+  it("--store sqlite writes database.store: sqlite, leaves no database.url, and finishes setup", async () => {
+    const home = freshHome();
+    const { world: w, seen } = world(home, {});
+    expect(await initCommand(["--store", "sqlite"], w)).toBe(0);
+    expect(seen.asked).toEqual([]);
+    expect(seen.connected).toEqual([]);
+    expect(config(home)).toBe("database:\n  store: sqlite\nruntime:\n  agent: claude-code\n");
+    expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600);
+    expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: "sqlite", path: join(home, "lingtai.db") });
+    expect(seen.lines.join("\n")).toContain(SQLITE_MACHINE);
+    expect(seen.boards).toBe(1);
+  });
+
+  it("writes the same file the empty answer does", async () => {
+    const flagged = freshHome();
+    const answered = freshHome();
+    expect(await initCommand(["--store", "sqlite"], world(flagged, {}).world)).toBe(0);
+    expect(await initCommand([], world(answered, { answers: [""] }).world)).toBe(0);
+    expect(config(flagged)).toBe(config(answered));
+  });
+
+  it("over a machine already on SQLite, reports it and writes nothing", async () => {
+    const home = freshHome();
+    expect(await initCommand(["--store", "sqlite"], world(home, {}).world)).toBe(0);
+    const before = written(home);
+    const again = world(home, {});
+    expect(await initCommand(["--store", "sqlite"], again.world)).toBe(0);
+    expect(written(home)).toEqual(before);
+    expect(again.seen.asked).toEqual([]);
+  });
+
+  it("completes the switch the documented edit leaves — store: sqlite beside the old url", async () => {
+    const home = freshHome();
+    mkdirSync(home, { recursive: true });
+    writeFileSync(configPath({ LINGTAI_HOME: home }), `# mine\ndatabase:\n  store: sqlite\n  url: ${URL_}\n`);
+    const { world: w, seen } = world(home, {});
+    expect(await initCommand(["--store", "sqlite"], w)).toBe(0);
+    expect(seen.lines.join("\n")).toContain("two keys disagreeing");
+    expect(config(home)).toContain("# mine");
+    expect(config(home)).not.toContain("url:");
+    expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: "sqlite" });
+  });
+
+  describe("refuses by name, and writes nothing, where the machine would not obey it", () => {
+    it("beside --database-url", async () => {
+      const home = freshHome();
+      const { world: w, seen } = world(home, {});
+      expect(await initCommand(["--store", "sqlite", "--database-url", URL_], w)).toBe(2);
+      expect(seen.lines.at(-1)).toContain("name two different stores");
+      expect(seen.connected).toEqual([]);
+      expect(config(home)).toBeNull();
+    });
+
+    it("beside an exported LINGTAI_DATABASE_URL, which wins over the file", async () => {
+      const home = freshHome();
+      const { world: w, seen } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } });
+      expect(await initCommand(["--store", "sqlite"], w)).toBe(1);
+      const said = seen.lines.at(-1)!;
+      expect(said).toContain("LINGTAI_DATABASE_URL, exported into this process");
+      expect(said).toContain("say SQLite and run Postgres");
+      expect(said).not.toContain("secret");
+      expect(seen.connected).toEqual([]);
+      expect(config(home)).toBeNull();
+    });
+
+    it("over a machine that already wrote postgres", async () => {
+      const home = freshHome();
+      expect(await initCommand([], world(home, { answers: [URL_] }).world)).toBe(0);
+      const before = written(home);
+      const { world: w, seen } = world(home, {});
+      expect(await initCommand(["--store", "sqlite"], w)).toBe(1);
+      expect(seen.lines.at(-1)).toContain("already says database.store: postgres");
+      expect(seen.lines.at(-1)).toContain("new, empty log");
+      expect(written(home)).toEqual(before);
+      expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: "postgres", url: URL_ });
+    });
+
+    it("over postgres written with no url, and over a url written before the store was (#186)", async () => {
+      for (const [text, quoted] of [
+        ["database:\n  store: postgres\n", "already says database.store: postgres"],
+        [`database:\n  url: ${URL_}\n`, "names database.url: postgresql://me:***@db.example:5432/lingtai"],
+        [`database:\n  store: postgress\n  url: ${URL_}\n`, "no valid database.store beside it"],
+      ] as const) {
+        const home = freshHome();
+        mkdirSync(home, { recursive: true });
+        writeFileSync(configPath({ LINGTAI_HOME: home }), text);
+        const before = written(home);
+        const { world: w, seen } = world(home, {});
+        expect(await initCommand(["--store", "sqlite"], w)).toBe(1);
+        expect(seen.lines.at(-1)).toContain(quoted);
+        expect(seen.lines.at(-1)).toContain("lingtai init --store sqlite again");
+        expect(seen.lines.join("\n")).not.toContain("secret");
+        expect(seen.connected).toEqual([]);
+        expect(written(home)).toEqual(before);
+      }
+    });
+  });
+
+  describe("--store postgres", () => {
+    it("with --database-url, is --database-url", async () => {
+      const home = freshHome();
+      const { world: w, seen } = world(home, {});
+      expect(await initCommand(["--store", "postgres", "--database-url", URL_], w)).toBe(0);
+      expect(seen.asked).toEqual([]);
+      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\nruntime:\n  agent: claude-code\n`);
+    });
+
+    it("with an exported LINGTAI_DATABASE_URL instead, uses it and writes nothing for it", async () => {
+      const home = freshHome();
+      const { world: w } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } });
+      expect(await initCommand(["--store", "postgres"], w)).toBe(0);
+      expect(config(home)).toBe("runtime:\n  agent: claude-code\n");
+
+      // Naming the same database is that same run; naming another is refused, never ignored.
+      const same = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } });
+      expect(await initCommand(["--store", "postgres", "--database-url", URL_], same.world)).toBe(0);
+      const other = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } });
+      const elsewhere = "postgresql://me:hunter2@elsewhere.example/lingtai";
+      expect(await initCommand(["--store", "postgres", "--database-url", elsewhere], other.world)).toBe(1);
+      expect(other.seen.connected).toEqual([]);
+      expect(other.seen.lines.at(-1)).toContain("exported URL wins");
+      expect(other.seen.lines.join("\n")).not.toMatch(/secret|hunter2/);
+      expect(config(home)).toBe("runtime:\n  agent: claude-code\n");
+    });
+
+    it("with no URL, or an empty one, is a usage refusal — never the empty answer's SQLite", async () => {
+      for (const argv of [["--store", "postgres"], ["--store", "postgres", "--database-url", ""]]) {
+        const home = freshHome();
+        const { world: w, seen } = world(home, { answers: [""] });
+        expect(await initCommand(argv, w)).toBe(2);
+        expect(seen.asked).toEqual([]);
+        expect(config(home)).toBeNull();
+      }
+    });
+
+    it("whose URL does not answer refuses, rather than going on with the SQLite the file already says", async () => {
+      const home = freshHome();
+      expect(await initCommand(["--store", "sqlite"], world(home, {}).world)).toBe(0);
+      const before = written(home);
+      const gone = "postgresql://me@gone.example/lingtai";
+      const { world: w, seen } = world(home, { answers: [""] });
+      expect(await initCommand(["--store", "postgres", "--database-url", gone], w)).toBe(1);
+      expect(seen.connected).toEqual([gone]);
+      expect(seen.asked).toEqual([]);
+      expect(seen.boards).toBe(0);
+      expect(written(home)).toEqual(before);
+    });
+  });
+
+  it("--store takes sqlite or postgres and nothing else", async () => {
+    const home = freshHome();
+    const { world: w } = world(home, {});
+    expect(await initCommand(["--store", "mysql"], w)).toBe(2);
+    expect(await initCommand(["--store"], w)).toBe(2);
+    expect(config(home)).toBeNull();
+  });
+});
