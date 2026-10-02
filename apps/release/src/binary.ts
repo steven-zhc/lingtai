@@ -18,8 +18,10 @@
  * the kernel kills an unsigned binary at `exec` — status 137, no dialog, no
  * message. `codesign -s -` is an ad-hoc signature, which is all `exec` asks
  * for; a Developer ID and notarisation are for browser downloads.
- * `integration/build.test.ts` builds one unsigned and asserts it is killed, so this
- * step cannot be dropped and stay green.
+ * `integration/build.test.ts` asserts the signature with `codesign --verify`,
+ * and that one built with `sign: false` has none, so this step cannot be
+ * dropped and stay green. It asserts the signature rather than the kill because
+ * GitHub's macOS runners exec an unsigned binary that a stock Mac would not.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

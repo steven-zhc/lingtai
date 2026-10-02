@@ -1,5 +1,5 @@
 import { readSnapshot, stamp } from "@/lib/snapshot";
-import { Bar, Foot, INSTALL_FALLBACK, INSTALL_URL, REPO } from "./chrome";
+import { Bar, Foot, INSTALL_FALLBACK, INSTALL_URL } from "./chrome";
 import { CopyCommand } from "./copy-command";
 import { NoSnapshot, SnapshotBoard } from "./snapshot-board";
 
@@ -114,7 +114,7 @@ export default async function Home() {
                 <div>
                   <h3>One command, from a bare machine</h3>
                   <div className="command"><span>$</span> lingtai init</div>
-                  <p>It asks for a Postgres URL, creates the tables, detects your agent runtime, and creates the GitHub App from a manifest in one click. It ends on the board, ready for a repository.</p>
+                  <p>It asks where to keep its data — empty for SQLite, one file on this machine, or a Postgres URL if you want one — detects your agent runtime, and creates the GitHub App from a manifest in one click. It ends on the board, ready for a repository.</p>
                 </div>
               </li>
               <li>
@@ -156,7 +156,6 @@ export default async function Home() {
               <p>Self-hosted software you can inspect, pause, and improve—not a promise that every edge is solved.</p>
             </div>
             <ul className="limit-list">
-              <li><b>Postgres is required.</b> A database of its own — not one belonging to a project you manage. Running entirely on SQLite is decided and three-quarters built: it becomes a choice you make at setup, not a default you fall into. <a className="link" href={`${REPO}/issues/179`}>Track #179</a></li>
               <li><b>Not a container sandbox.</b> Guarded runs use a worktree, a filtered environment, and a recording hook; <code>sandboxed</code> is a tier the schema names and nothing enforces yet.</li>
               <li><b>A running daemon holds the code it started with.</b> Merging does not reach the process that is conducting, so picking up new code is <code>lingtai restart</code> — which refuses first, on a commit the remote has not got, a dirty tree, or a red doctor.</li>
               <li><b>0.9.0 is the first release.</b> It exists to prove this path end to end: four binaries, a board, checksums, and an installer.</li>

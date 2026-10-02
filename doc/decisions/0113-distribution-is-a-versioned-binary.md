@@ -53,8 +53,10 @@ on Apple Silicon an unsigned binary is killed at `exec` with no message.
    board and serve a page), builds the artifact, runs `dist/lingtai version` and
    checks it names its platform and, on a tag, the tag's version. No Windows.
 6. **macOS binaries are always signed ad hoc** with `codesign --sign -` and
-   verified. The test builds one unsigned and asserts it is killed, so the step
-   cannot be dropped quietly. No Developer ID or notarisation: `curl | sh` is not
+   verified. The test asserts the signature with `codesign --verify`, and that a
+   build without the step has none, so the step cannot be dropped quietly — the
+   signature rather than the kill at exec, because GitHub's macOS runners run an
+   unsigned binary that a stock Apple Silicon Mac kills. No Developer ID or notarisation: `curl | sh` is not
    a browser download.
 7. **`lingtai version` names the artifact** —
    `lingtai <version> <platform> (binary|script, node <v>)`. The version is the

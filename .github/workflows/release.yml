@@ -3,8 +3,8 @@
 # SEA copies the Node that builds it, so each artifact is built on the platform
 # it is for and never cross-compiled — and each is *run* there, because a binary
 # nobody executed is not a binary that works. `apps/release`'s test builds the
-# bundle and the binary, starts the board from each, and on Apple Silicon proves
-# an unsigned build is killed at exec.
+# bundle and the binary, starts the board from each, and on macOS proves the
+# binary is signed and that it is `buildBinary`'s signing step that signs it.
 #
 # A tag `v*` publishes: the four binaries, the one board (pure JavaScript, the
 # same everywhere), and SHA256SUMS over all of them.
