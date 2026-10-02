@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 330" role="img" aria-label="Lingtai runs on your machine: it reads your labelled GitHub issues, records events in Postgres, and merges back through the GitHub App.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 330" role="img" aria-label="Lingtai runs on your machine: it reads your labelled GitHub issues, records events in its own log, and merges back through the GitHub App.">
 <style>
 :root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a4540a;--warnf:rgba(164,84,10,.12)}
 @media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8a25c;--warnf:rgba(232,162,92,.14)}}
@@ -35,8 +35,8 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 <text class="h" x="630.0" y="75.0" text-anchor="middle">Agent runtime</text>
 <text class="s" x="630.0" y="91.0" text-anchor="middle">Claude Code or Codex</text>
 <rect class="box" x="550" y="130" width="160" height="56" rx="6"/>
-<text class="h" x="630.0" y="155.0" text-anchor="middle">Postgres</text>
-<text class="s" x="630.0" y="171.0" text-anchor="middle">Lingtai's own log</text>
+<text class="h" x="630.0" y="155.0" text-anchor="middle">Event log</text>
+<text class="s" x="630.0" y="171.0" text-anchor="middle">SQLite or Postgres</text>
 <rect class="box" x="550" y="210" width="160" height="56" rx="6"/>
 <text class="h" x="630.0" y="235.0" text-anchor="middle">Board</text>
 <text class="s" x="630.0" y="251.0" text-anchor="middle">127.0.0.1:17820</text>

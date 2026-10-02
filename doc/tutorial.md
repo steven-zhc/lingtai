@@ -14,9 +14,11 @@ Lingtai — then label one issue. Everything else happens on the board.
 Have these ready:
 
 - **Git**
-- **A Postgres URL** for Lingtai's own data
 - **Claude Code or Codex**, installed and signed in
 - **Permission to install a GitHub App** on the repository you want to use
+
+There is no database to provision. Lingtai's own log is a SQLite file under
+`~/.lingtai` unless you give `init` a Postgres URL instead.
 
 Choose a small first issue. A focused bug with an obvious test is better than a
 large feature: your goal is to see the whole loop once, not test the limits of
@@ -49,12 +51,13 @@ lingtai init
 
 `init` checks what is already present before it asks anything. It will:
 
-1. connect to Postgres and create Lingtai's tables;
+1. ask where Lingtai's log lives — press Enter for a SQLite file under
+   `~/.lingtai`, or paste a Postgres URL if you want one;
 2. select a signed-in agent runtime;
 3. open the local board;
 4. guide you through creating or verifying a GitHub App.
 
-![Lingtai runs on your machine: GitHub holds the issues and the code; the daemon, the agent, Postgres and the board are all yours.](img/machine.svg)
+![Lingtai runs on your machine: GitHub holds the issues and the code; the daemon, the agent, the log and the board are all yours.](img/machine.svg)
 
 It writes machine settings to `~/.lingtai/config.yml`. If setup is interrupted,
 run `lingtai init` again; verified answers are kept and setup resumes at the
