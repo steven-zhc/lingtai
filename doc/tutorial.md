@@ -59,6 +59,10 @@ lingtai init
 
 ![Lingtai runs on your machine: GitHub holds the issues and the code; the daemon, the agent, the log and the board are all yours.](img/machine.svg)
 
+With no terminal to answer — a script, an installer, a container — give the
+store as a flag instead: `lingtai init --store sqlite`, or
+`lingtai init --store postgres --database-url <url>`.
+
 It writes machine settings to `~/.lingtai/config.yml`. If setup is interrupted,
 run `lingtai init` again; verified answers are kept and setup resumes at the
 first unfinished choice.

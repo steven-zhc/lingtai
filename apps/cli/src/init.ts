@@ -49,6 +49,14 @@
  * still the thing to know before doing it: the other store is a new log, not
  * the same one somewhere else.
  *
+ * **`--store` answers the store question without a terminal** (#345), and it
+ * answers it by the same lines the person would: `--store sqlite` is the empty
+ * answer given in advance — the same write, the same `database.url` removed —
+ * and `--store postgres --database-url` is `--database-url`, except that a URL
+ * that fails is a refusal rather than a question. Where the machine would not
+ * obey `--store sqlite`, it is refused by name and nothing is written: see
+ * `sqliteRefused`.
+ *
  * **Subscriptions are not Lingtai's business.** Whether a runtime can run is
  * asked of the runtime; whether it is paid for is not asked at all.
  *
@@ -138,7 +146,11 @@ export interface InitWorld {
   open: (url: string) => Promise<boolean>;
 }
 
-const USAGE = "lingtai init [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]";
+const USAGE =
+  "lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]";
+
+/** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
+type StoreFlag = "postgres" | "sqlite";
 
 // ---------------------------------------------------------- config.yml --
 
@@ -185,7 +197,7 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!;
-    if (!["--database-url", "--agent", "--port"].includes(name)) return { refused: `${USAGE} — no ${name}` };
+    if (!["--store", "--database-url", "--agent", "--port"].includes(name)) return { refused: `${USAGE} — no ${name}` };
     const value = argv[i + 1];
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` };
     flags[name.slice(2)] = value;
@@ -205,6 +217,12 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const { flags } = parsed;
   const asked = flags["port"] === undefined ? null : Number(flags["port"]);
   if (asked !== null && (!Number.isInteger(asked) || asked <= 0)) return refuse(world, `${USAGE} — --port takes a port number`, 2);
+  const named = flags["store"] ?? null;
+  if (named !== null && named !== "sqlite" && named !== "postgres") return refuse(world, `${USAGE} — --store takes sqlite or postgres`, 2);
+  // Two stores named in one command: neither is guessed at, and nothing is written (#345).
+  if (named === "sqlite" && flags["database-url"] !== undefined) {
+    return refuse(world, `${USAGE} — --store sqlite and --database-url name two different stores. Nothing was written`, 2);
+  }
 
   const home = stateDir(world.env);
   const path = configPath(world.env);
@@ -227,7 +245,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   if ("refused" in config) return refuse(world, config.refused);
 
   // ---- the store ------------------------------------------------------------
-  const store = await chooseStore(world, config, path, home, flags["database-url"] ?? null);
+  const store = await chooseStore(world, config, path, home, flags["database-url"] ?? null, named);
   if (store !== null) return store;
 
   // ---- the agent ------------------------------------------------------------
@@ -317,12 +335,30 @@ async function chooseStore(
   path: string,
   home: string,
   flag: string | null,
+  named: StoreFlag | null,
 ): Promise<number | null> {
+  // `--store sqlite` is refused, before anything else is looked at, wherever
+  // the machine would not obey it — writing it there would be #215 again.
+  if (named === "sqlite") {
+    const refused = sqliteRefused(world, config, path);
+    if (refused !== null) return refuse(world, refused);
+  }
+
   // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
   // and nothing is written for it: it is the process's answer, not the file's,
   // and this command does not own the process a daemon will be started in.
   const preset = storeChoice(world.env);
   if (!("refused" in preset) && preset.where === "environment" && preset.store === "postgres") {
+    // `--store postgres` naming a database the exported URL does not is a
+    // choice this process would not obey: refused, rather than connecting to
+    // the other one and reporting it as though it were what was asked.
+    if (named === "postgres" && flag !== null && flag.trim() !== preset.url) {
+      return refuse(
+        world,
+        `--store postgres --database-url ${redactUrl(flag)}, but ${preset.from} names ${redactUrl(preset.url)}, and ` +
+          "an exported URL wins over the file (0056 §3). Unset it, or leave out --database-url. Nothing was written",
+      );
+    }
     const check = await world.database(preset.url);
     if (!check.ok) {
       return refuse(
@@ -333,6 +369,13 @@ async function chooseStore(
     }
     world.log(paint.pass(`store        ${describeStore(preset)} · ${describeSchema(check.schema)}`));
     return null;
+  }
+
+  // `--store postgres` names the store and the URL comes from `--database-url`.
+  // Without one there is nothing to connect to, and the question it would fall
+  // back on is not a Postgres question: its empty answer is SQLite.
+  if (named === "postgres" && (flag === null || flag.trim() === "")) {
+    return refuse(world, `${USAGE} — --store postgres takes --database-url <postgres url>, or an exported LINGTAI_DATABASE_URL. Nothing was written`, 2);
   }
 
   let candidate = flag;
@@ -372,7 +415,9 @@ async function chooseStore(
       }
     }
     if (candidate === null) {
-      const answer = await world.ask(paint.signal("a Postgres URL for the log — empty for SQLite: "));
+      // `--store sqlite` is the empty answer, given in advance: the same write,
+      // by the same lines below, and no terminal needed to give it (#345).
+      const answer = named === "sqlite" ? "" : await world.ask(paint.signal("a Postgres URL for the log — empty for SQLite: "));
       if (answer === null) {
         return refuse(world, `nobody is at a terminal to say which store — ${USAGE}. Nothing was written`);
       }
@@ -403,8 +448,56 @@ async function chooseStore(
       }
       world.log(paint.fail(`${redactUrl(candidate)} does not answer — ${check.why}. Nothing was written`));
     }
+    // `--store postgres` whose URL failed stops here. Going round again would
+    // reach whatever the file already says — SQLite, on a machine that chose
+    // it — or a question whose empty answer is the store it did not name.
+    if (named === "postgres") return refuse(world, "--store postgres, and its --database-url was not taken — see above");
     candidate = null;
   }
+}
+
+/**
+ * Why `--store sqlite` cannot be obeyed here, or null when it can (#345).
+ *
+ * **A choice the machine will not obey is refused by name, never written.**
+ * Three ways it would not be:
+ *
+ * - an exported `LINGTAI_DATABASE_URL`, which `storeChoice()` reads before the
+ *   file (0056 §3) — writing `sqlite` under it shows SQLite and runs Postgres,
+ *   which is #215;
+ * - a file that already says `postgres`, with its URL or without one — taking
+ *   the other store is a new, empty log rather than this one moved (0055 §3),
+ *   and changing a store is an edit, not a re-run (this file's header);
+ * - a `database.url` with no store written beside it, which is a Postgres log
+ *   set up before the store was a written value (#186): the question adopts
+ *   that URL, and a flag must not silently drop it instead.
+ *
+ * `store: sqlite` beside a `url` is **not** refused: that is the half-state the
+ * documented switch leaves, and the empty answer completes it in the same way.
+ */
+function sqliteRefused(world: Pick<InitWorld, "env">, config: Document, path: string): string | null {
+  const read = storeChoice(world.env);
+  // The way through, and it works with no terminal: the edit leaves the
+  // two-keys half-state, which `--store sqlite` completes.
+  const edit =
+    "another store is a new, empty log rather than this one moved (0055 §3), so changing it is an edit and not a " +
+    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`;
+  if (!("refused" in read) && read.where === "environment" && read.store === "postgres") {
+    return (
+      `--store sqlite, but ${read.from}, and an exported URL wins over the file (0056 §3) — this machine would ` +
+      "say SQLite and run Postgres. Unset it, or leave out --store sqlite. Nothing was written"
+    );
+  }
+  if (("refused" in read && read.because === "no url") || (!("refused" in read) && read.store === "postgres")) {
+    return `--store sqlite, but ${path} already says database.store: postgres — ${edit}`;
+  }
+  // A `url` with no store this command can read beside it — none, or a value
+  // that is neither name — is what the question would adopt as Postgres (#186).
+  const older = config.getIn(["database", "url"]);
+  if ("refused" in read && read.because === "nothing chosen" && typeof older === "string" && older !== "") {
+    return `--store sqlite, but ${path} names database.url: ${redactUrl(older)} and no valid database.store beside it — ${edit}`;
+  }
+  return null;
 }
 
 /**
