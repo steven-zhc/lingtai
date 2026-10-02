@@ -89,19 +89,25 @@ describe(`pnpm binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"
     await servesAPage(join(first, "lingtai"), []);
   });
 
-  // The kernel's refusal, not Gatekeeper's: an unsigned arm64 Mach-O is killed
-  // at exec with SIGKILL and nothing on stderr. If the signing step in
-  // `buildBinary` were dropped, the tests above would fail on a Mac the same way;
-  // this one says that it is the signature, so nobody "fixes" it elsewhere.
-  it.runIf(sea && process.platform === "darwin" && process.arch === "arm64")(
-    "is killed at exec on Apple Silicon when it is not signed",
-    () => {
-      const unsigned = buildBinary({ dist: first, output: join(work, "unsigned"), sign: false });
-      const run = spawnSync(unsigned, ["version"], { cwd: work, env: childEnv(), encoding: "utf8" });
-      expect(run.signal).toBe("SIGKILL");
-      expect(run.stdout).toBe("");
-    },
-  );
+  // The signature is ours, not `--build-sea`'s: Node's builder removes the one
+  // the copied Node shipped with and writes none (`src/node_sea_bin.cc`), and a
+  // stock Apple Silicon kernel kills that file at exec — SIGKILL, nothing on
+  // stderr. Asserted as the signature and not as the kill, because the kill is
+  // the machine's policy rather than the file's: GitHub's macOS runners exec the
+  // unsigned file, and while this test asserted the SIGKILL it failed there on
+  // every run. Drop the signing step in `buildBinary` and the first assertion
+  // fails on any Mac; the second says it is that step, so nobody "fixes" it
+  // elsewhere.
+  it.runIf(sea && process.platform === "darwin")("is signed, and only because buildBinary signs it", () => {
+    const signed = join(first, "lingtai");
+    if (!existsSync(signed)) buildBinary({ dist: first });
+    const verified = codesignVerify(signed);
+    expect(verified.status, verified.stderr).toBe(0);
+
+    const unsigned = codesignVerify(buildBinary({ dist: first, output: join(work, "unsigned"), sign: false }));
+    expect(unsigned.status).not.toBe(0);
+    expect(unsigned.stderr).toMatch(/not signed at all/);
+  });
 });
 
 describe(`install.sh over the binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"}`, () => {
@@ -200,6 +206,11 @@ async function servesAPage(command: string, args: string[], env: NodeJS.ProcessE
   } finally {
     board.kill();
   }
+}
+
+function codesignVerify(file: string): { status: number | null; stderr: string } {
+  const result = spawnSync("codesign", ["--verify", "--strict", file], { encoding: "utf8" });
+  return { status: result.status, stderr: result.stderr };
 }
 
 function childEnv(): NodeJS.ProcessEnv {
