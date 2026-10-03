@@ -178,7 +178,16 @@ export function readTolerantJson(text: string): TolerantParseResult {
       if (i >= len) return fail(i, null, "key's value");
       const value = parseValue();
       if (!value.ok) return value;
-      obj[key.value as string] = value.value;
+      // `CreateDataProperty`, not `obj[key] =`: a key literally named `__proto__`
+      // must land as an own property the same way `JSON.parse` puts it, rather
+      // than going through `Object.prototype`'s setter and changing `obj`'s
+      // prototype instead of its contents.
+      Object.defineProperty(obj, key.value as string, {
+        value: value.value,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
       skipWhitespace();
       if (i >= len) return { ok: true, value: obj }; // Ran out after a complete member: close.
       const sep = text[i]!;

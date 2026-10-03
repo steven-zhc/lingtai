@@ -494,6 +494,76 @@ describe("reading the reviewer's answer", () => {
   });
 
   /**
+   * **A repaired reading that was read fine and then rejected must say so**
+   * (`#318` finding 1). Before this, `unreadableAt` was only ever set from a
+   * candidate the tolerant reader failed *syntactically* on — so a repair that
+   * parsed in full and was then refused by the dropped-entry or minors-only
+   * guard left `furthest` untouched, and the sentence either claimed no JSON
+   * was found at all or pointed at an unrelated syntax failure elsewhere in
+   * the text (a quoted brace, or prose ahead of the real object).
+   */
+  it("says a repaired reading was rejected, not that nothing was found, when a dropped entry caused the refusal", () => {
+    // One finding earlier than `#269`'s own truncation: the second entry stops
+    // right after `severity`, so it closes complete but with no `claim` or
+    // `failureScenario` at all — dropped by the rule, and the object it sits in
+    // read fine.
+    const text =
+      '{"findings":[{"file":"a.ts","line":1,"severity":"blocker","claim":"c1","failureScenario":"s1"},' +
+      '{"file":"b.ts","line":2,"severity":"major"';
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(unreadableAt).toMatchObject({ char: null, reason: "a finding in it had no claim or no failure scenario" });
+  });
+
+  it("says a repaired reading was rejected rather than naming the first letter of a prose preamble", () => {
+    // Prefixing the same truncation with prose used to make `furthest` the
+    // whole-text candidate's syntax failure at offset 0 — the one place
+    // nothing went wrong, because the object candidate behind it parsed fine
+    // and was correctly refused for its dropped entry.
+    const text =
+      "Here is what I found.\n\n" +
+      '{"findings":[{"file":"a.ts","line":1,"severity":"blocker","claim":"c1","failureScenario":"s1"},' +
+      '{"file":"b.ts","line":2,"severity":"major"';
+
+    const { unreadableAt } = parseFindings(text);
+
+    expect(unreadableAt).toMatchObject({ reason: "a finding in it had no claim or no failure scenario" });
+  });
+
+  it("says a repaired reading of only minors was rejected, not that nothing parsed", () => {
+    // A full-width colon repaired fine, and the only finding in it is a minor
+    // — refused by the bar in `verdictFor`, not because reading it failed.
+    const text = '{"findings":[{"file":"a.ts","line":1,"severity":"minor","claim":"c1","failureScenario"："s1"}]}';
+
+    const { unreadableAt } = parseFindings(text);
+
+    expect(unreadableAt).toMatchObject({ char: null, reason: "every finding in it was a minor" });
+  });
+
+  /**
+   * **A truncation landing between `failureScenario` and `severity` must not
+   * invent a severity** (`#318` finding 3). The dropped-entry guard only counts
+   * entries, so an entry complete enough to keep its `claim` and
+   * `failureScenario` but cut off before `severity` used to pass that guard
+   * unchanged, and `findingsFromList` filled in `SEVERITIES[0]` — `blocker` —
+   * for a finding the reviewer never classified at all.
+   */
+  it("refuses a repaired reading rather than invent a severity for a finding truncated before it", () => {
+    const text =
+      '{"findings":[{"claim":"c1","failureScenario":"s1","severity":"minor"},' +
+      '{"claim":"c2","failureScenario":"the real second scenario"';
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(unreadableAt).toMatchObject({ char: null, reason: "a finding in it had no severity" });
+  });
+
+  /**
    * **The reviewer's own classification of its refusal, taken as it was said**
    * (`#293`, for `#223`).
    *
@@ -707,6 +777,11 @@ describe("the action", () => {
     // system exists to remove.
     expect(result.verdict).toBe("failed");
     expect(result.evidence).toContain("not readable");
+    // `describeUnreadable`'s own sentence (`#318`), not just the word before
+    // it: this is the whole of the ticket's step 3, and was asserted nowhere
+    // before this — a future edit to the `U+XXXX` format or the offset would
+    // have broken nothing.
+    expect(result.evidence).toContain("unexpected `l` (U+006C) at offset 0");
     // And in a word as well as in the sentence (`#279`): `carriesACriterion` one
     // layer up reads fields, not prose, and for four days the only difference
     // between this and a clean review lived in the string above.

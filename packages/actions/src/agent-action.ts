@@ -341,7 +341,12 @@ function aboutIn(value: unknown): RefusedAbout | undefined {
   return isRefusedAbout(about) ? about : undefined;
 }
 
-type Where = { offset: number; char: string | null; context?: string };
+/**
+ * Where a reading stopped, or — when `reason` is set — where a reading that
+ * parsed in full was refused and why. The two are mutually exclusive: `reason`
+ * is only ever set from a candidate `readTolerantJson` read successfully.
+ */
+type Where = { offset: number; char: string | null; context?: string; reason?: string };
 
 /**
  * The findings, from whatever the reviewer actually said.
@@ -386,11 +391,15 @@ export function parseFindings(text: string | null): {
    */
   about?: RefusedAbout;
   /**
-   * **Where even the tolerant reader gave up, set only when `parsed` is
-   * `false`** (`#318`). The furthest a candidate was read into `text` before
-   * failing — the reading closest to being right, and the one a person wants
-   * pointed at — carrying the exact character or, at the end of input, what
-   * kind of value was left open.
+   * **Why nothing was returned, set only when `parsed` is `false`** (`#318`).
+   * Usually the furthest a candidate was read into `text` before the tolerant
+   * reader itself gave up — the reading closest to being right, carrying the
+   * exact character or, at the end of input, what kind of value was left open.
+   * Where a candidate instead read as a complete object and was refused by one
+   * of the guards below (a dropped finding, an invented severity, an all-minor
+   * verdict), `reason` carries that refusal instead — reading fine is further
+   * into the text than any syntax failure can reach, so it always wins the
+   * position over one.
    */
   unreadableAt?: Where;
 } {
@@ -414,21 +423,52 @@ export function parseFindings(text: string | null): {
   }
 
   let furthest: Where | undefined;
+  const noteFurthest = (where: Where): void => {
+    if (!furthest || where.offset > furthest.offset) furthest = where;
+  };
+
   for (const { text: candidate, start } of candidates) {
     const repaired = readTolerantJson(candidate);
     if (!repaired.ok) {
-      const offset = start + repaired.offset;
-      if (!furthest || offset > furthest.offset) {
-        furthest = { offset, char: repaired.char, ...(repaired.context === undefined ? {} : { context: repaired.context }) };
-      }
+      noteFurthest({
+        offset: start + repaired.offset,
+        char: repaired.char,
+        ...(repaired.context === undefined ? {} : { context: repaired.context }),
+      });
       continue;
     }
+
+    // It read as an object, in full — further into the text than any syntax
+    // failure can be, since those stop partway through. A reading rejected
+    // below is still the most informative one found, so it must win the
+    // "furthest" position rather than leave a syntax failure elsewhere to
+    // describe a refusal that was actually about a reading that parsed fine
+    // (`#318` finding 1).
+    const end = start + candidate.length;
 
     const list = listIn(repaired.value);
     if (!list) continue;
     const findings = findingsFromList(list);
-    if (findings.length !== list.length) continue; // A dropped entry means repair guessed wrong, not that the rule applied.
-    if (verdictFor(findings) !== "failed") continue; // Repair buys a round, never a pass.
+    if (findings.length !== list.length) {
+      // A dropped entry means repair guessed wrong, not that the rule applied.
+      noteFurthest({ offset: end, char: null, reason: "a finding in it had no claim or no failure scenario" });
+      continue;
+    }
+    if (list.some((raw) => !isSeverity((raw as Partial<ActionFinding>)?.severity))) {
+      // The same truncation this guard exists for can land just as easily after
+      // `failureScenario` and before `severity` — complete enough that no entry
+      // is dropped, but with nothing in it to classify. Inventing the worst
+      // severity for a finding cut off mid-write is the same mistake `findingsFromList`
+      // refuses to make for `about` (`#318` finding 3): refuse the whole reading
+      // instead, the same as a dropped entry.
+      noteFurthest({ offset: end, char: null, reason: "a finding in it had no severity" });
+      continue;
+    }
+    if (verdictFor(findings) !== "failed") {
+      // Repair buys a round, never a pass.
+      noteFurthest({ offset: end, char: null, reason: "every finding in it was a minor" });
+      continue;
+    }
 
     const about = aboutIn(repaired.value);
     return { findings, parsed: true, ...(about !== undefined ? { about } : {}) };
@@ -440,6 +480,7 @@ export function parseFindings(text: string | null): {
 /** The sentence a person reads for `unreadableAt`, naming the byte rather than leaving it invisible in a terminal. */
 function describeUnreadable(where: Where | undefined): string {
   if (!where) return "no JSON object was found in it";
+  if (where.reason !== undefined) return `it read as an object ending at offset ${where.offset}, but ${where.reason}`;
   if (where.char === null) return `it ended at offset ${where.offset} inside a ${where.context ?? "value"}`;
   // `charCodeAt`, not the astral-aware reading: `where.char` is always a
   // single UTF-16 unit off `text[i]`, and every byte this reader repairs

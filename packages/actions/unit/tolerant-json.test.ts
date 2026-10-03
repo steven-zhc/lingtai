@@ -32,6 +32,19 @@ describe("what it repairs", () => {
     const read = readTolerantJson('{"findings":[{"a":1},{"b":2}');
     expect(read).toEqual({ ok: true, value: { findings: [{ a: 1 }, { b: 2 }] } });
   });
+
+  it("writes a `__proto__` key as its own property, the same as `JSON.parse`, rather than through the setter", () => {
+    const read = readTolerantJson('{"__proto__":{"findings":["polluted"]}}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+
+    // `JSON.parse`'s own behaviour is the contract: an own `__proto__` property,
+    // not a changed prototype — `Object.keys` sees it and `instanceof Object`
+    // still holds.
+    expect(Object.keys(read.value as object)).toEqual(["__proto__"]);
+    expect(Object.getPrototypeOf(read.value)).toBe(Object.prototype);
+    expect((read.value as { findings?: unknown }).findings).toBeUndefined();
+  });
 });
 
 describe("what it refuses, and where", () => {
