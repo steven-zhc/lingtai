@@ -126,6 +126,21 @@ describe("parseResetAt", () => {
     );
   });
 
+  /**
+   * The call production actually makes (`conduct.ts:1048`): no `zone` at all,
+   * so the reading falls to `hostZone()` — whatever that is on the machine
+   * running this test. `13:00Z` is chosen so that `Sep 30 02:00` has already
+   * passed in *every* real civil zone, −12:00 included (at −11:00 the reading
+   * equals `now`, and `within` refuses `<=`), so `hostZone()`'s own guess can
+   * never answer this one — only the latest-instant reading can, and it is
+   * pinned to a specific instant rather than to "whatever this host's zone
+   * answers" so the test is not itself host-dependent.
+   */
+  it("reads Codex's unzoned date at its latest possible instant once this host's own guess has passed", () => {
+    const now = new Date("2026-09-30T13:00:00Z");
+    expect(parseResetAt(CODEX_USAGE, now)?.toISOString()).toBe("2026-09-30T14:00:00.000Z");
+  });
+
   it("reads a date across the turn of a year, and a year when one is written", () => {
     const now = new Date("2026-12-30T12:00:00Z");
     expect(parseResetAt("resets Jan 2 at 9am (UTC)", now)?.toISOString()).toBe("2027-01-02T09:00:00.000Z");
@@ -138,8 +153,12 @@ describe("parseResetAt", () => {
 
   /**
    * Every one of these is a fall-back to the recipe's backoff, and that is the
-   * *designed* outcome rather than a gap. A quota message this build has never
-   * seen must cost a longer wait and never a wrong decision.
+   * *designed* outcome rather than a gap: a message this build cannot read
+   * falls back rather than guessing at a verdict, which is never a wrong
+   * decision — but it is not always a *longer* wait. #210 and #317 are both
+   * cases where this fallback resumed earlier than the wall actually lifted,
+   * which the file header's asymmetry (`:31–38`) says is the cost it can
+   * incur; what it never does is answer with a wrong instant.
    */
   it("says nothing rather than something, when there is nothing to read", () => {
     const now = new Date("2026-09-09T08:44:14Z");
@@ -246,8 +265,8 @@ describe("standDown", () => {
    * here, the same as `parseResetAt`'s own test above, so this asserts the
    * sentence, the reason, *and* the zone-guess reading together rather than
    * leaving the reading to whichever zone the test runner's host happens to
-   * be in. Production passes no `zone` and falls back to `hostZone()`; that
-   * path is not exercised by either test.
+   * be in. Production passes no `zone` and falls back to `hostZone()`; the
+   * test below exercises that path.
    */
   it("waits for Codex's named reset time rather than the recipe's backoff", () => {
     const { until, reason } = standDown({
@@ -265,6 +284,44 @@ describe("standDown", () => {
   });
 
   /**
+   * `conduct.ts:1048`'s own call shape — no `zone` — at the instant
+   * `parseResetAt`'s matching test above pins: `hostZone()`'s guess has
+   * passed in every real zone, so only the latest-instant reading answers.
+   * `until` is that instant, not `now + backoffMs`, and the reason says it
+   * guessed rather than claiming a plain read or a miss.
+   */
+  it("waits at the latest instant an unzoned date could mean, when this host's own guess has passed", () => {
+    const now = new Date("2026-09-30T13:00:00Z");
+    const { until, reason } = standDown({
+      detail: CODEX_USAGE,
+      backoffMs: 3_600_000,
+      what: { of: "step", step: "review:review" },
+      now,
+    });
+
+    expect(until.toISOString()).toBe("2026-09-30T14:00:00.000Z");
+    expect(reason).toContain("the latest instant its unzoned date could mean");
+    expect(reason).not.toContain("it named no reset time");
+    expect(reason).not.toContain("could not read");
+  });
+
+  /**
+   * The incident itself, replayed off-host: `zone` stands in for whichever
+   * zone the conducting host happens to be in, and a host east of Chicago —
+   * Tokyo, or UTC itself — has already seen `Sep 30 02:00` go by at the
+   * moment Codex said it, same as #313's review reproduced. Chicago's own
+   * reading is unaffected and still exact.
+   */
+  it("still answers from the latest instant when the host's own zone is nowhere near the one Codex rendered in", () => {
+    for (const zone of ["Asia/Tokyo", "UTC"]) {
+      expect(parseResetAt(CODEX_USAGE, CODEX_MET, zone)?.toISOString(), zone).toBe("2026-09-30T14:00:00.000Z");
+    }
+    expect(parseResetAt(CODEX_USAGE, CODEX_MET, "America/Chicago")?.toISOString()).toBe(
+      "2026-09-30T07:00:00.000Z",
+    );
+  });
+
+  /**
    * **A reset that was named and not read is said as such** (#210). The chip
    * used to say *it named no reset time* in the same sentence that quoted the
    * time it named, which sent a reader away from the one string that answered
@@ -275,8 +332,9 @@ describe("standDown", () => {
       [WEEKLY, new Date("2026-09-19T15:00:00Z")],
       // Codex's date already gone by, same as WEEKLY above — named, refused,
       // never read as nothing. No zone is passed here (production passes
-      // none either), so the instant is a day past the named date in every
-      // zone `hostZone()` could name, not just the one the incident was in.
+      // none either); this `now` is past even the latest instant the unzoned
+      // date could still mean (`2026-09-30T14:00:00Z`, ten hours earlier), so
+      // this is the one case where that second reading also gives up.
       [CODEX_USAGE, new Date("2026-10-01T00:00:00Z")],
       ["resets 25pm", now],
       ["resets 11:74pm", now],

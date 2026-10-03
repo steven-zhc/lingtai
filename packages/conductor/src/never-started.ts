@@ -72,19 +72,29 @@
  * touching `process.env.TZ`, which is process-global; production calls this
  * with nothing in that slot, so a production read depends on the conducting
  * host's own zone matching whichever zone the runtime rendered its message
- * in — undocumented anywhere but here, and untested, because there is nothing
- * to pin it against without inventing a second, configured source of truth
- * for the host's zone (#317 leaves that undecided).
+ * in.
  *
  * **A dated match (a month and a day given) does not degrade the way a bare
  * time does when the guess is wrong.** A bare time rolls forward to the next
  * occurrence regardless of which zone was guessed, so a wrong guess only
  * shifts the answer by hours. A date with its year already written is tried
- * once, in the guessed zone, and refused outright if that reading is already
- * behind `now` — which a wrong guess can make true of a date that has not, in
- * the runtime's own zone, arrived yet. The refusal is safe (`standDown` falls
- * back to the recipe's backoff, never to a wrong instant), but it forfeits the
- * saving #317 exists for on any host whose zone the guess gets wrong.
+ * once, in the guessed zone — and when the sentence named no zone of its own,
+ * a second time at the latest instant that date and time could mean in any
+ * civil zone (`now + 12h` on the naive reading, −12:00 being the westernmost
+ * offset there is). **Null is the shortest possible wait** (`standDown` falls
+ * back to `source.backoff`), so a date whose guessed zone has already gone by
+ * is read at the latest instant it could still mean rather than given up on —
+ * the second reading is off by at most about a day, where the backoff is
+ * whatever the recipe says and is usually shorter than the wall that is
+ * actually left. Only once *that* has passed too does this return null, which
+ * is right at that point: the wall has lifted in every zone there is.
+ *
+ * A sentence that names its own zone (`(America/Chicago)`, which `QUOTA` and
+ * `WEEKLY` both carry) never reaches the second reading — there is nothing
+ * left to guess. What the second reading does not close: a wrong zone guess
+ * whose reading is *still ahead of `now`* is still taken as the answer, and if
+ * that guess was itself wrong the pause still resumes early. That costs one
+ * pass, same as any other wrong guess here.
  *
  * Anything further out than a week is refused. A `seven_day` limit is the
  * longest thing this can legitimately be describing — the dated form is that
@@ -102,8 +112,14 @@ export function parseResetAt(detail: string, now: Date = new Date(), zone?: stri
 
 /** What a message said about when the wall lifts. */
 type Reset =
-  /** A time was read. */
-  | { readonly at: Date }
+  /**
+   * A time was read. `guessedLatest` is set only for a dated match whose
+   * guessed zone had already passed `now`: `at` is then the latest instant
+   * the unzoned date and time could still mean, not the one read in the
+   * guessed zone — `standDown`'s `reason` says so rather than claiming this
+   * was read plainly.
+   */
+  | { readonly at: Date; readonly guessedLatest?: boolean }
   /** A reset was named and nothing usable came out of it — the fragment, clipped. */
   | { readonly named: string }
   /** Nothing in the message was about a reset. */
@@ -138,8 +154,10 @@ function readReset(detail: string, now: Date, zone: string | undefined): Reset {
   const iso = /\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/.exec(
     detail,
   );
-  const at = iso ? within(new Date(iso[1]!.replace(" ", "T")), now) : clockReset(detail, now, zone);
-  if (at) return { at };
+  const clock = iso
+    ? toReset(within(new Date(iso[1]!.replace(" ", "T")), now))
+    : clockReset(detail, now, zone);
+  if (clock) return clock;
 
   const marker = RESET_MARKER.exec(detail);
   if (!marker) return null;
@@ -150,7 +168,16 @@ function readReset(detail: string, now: Date, zone: string | undefined): Reset {
   return { named };
 }
 
-function clockReset(detail: string, now: Date, zone: string | undefined): Date | null {
+/** `at` wrapped as a `Reset`, or `null` when `at` is — so a caller can `return toReset(...)` directly. */
+function toReset(at: Date | null, guessedLatest = false): { at: Date; guessedLatest?: boolean } | null {
+  return at ? (guessedLatest ? { at, guessedLatest } : { at }) : null;
+}
+
+function clockReset(
+  detail: string,
+  now: Date,
+  zone: string | undefined,
+): { at: Date; guessedLatest?: boolean } | null {
   // `resets` or Codex's `try again at`, optionally a month and a day (and a
   // year), optionally `at`, then a time; then a parenthesised zone if the
   // sentence carries one. Deliberately narrow — a looser pattern would start
@@ -183,11 +210,12 @@ function clockReset(detail: string, now: Date, zone: string | undefined): Date |
   const inferredZone = zoned?.[1] ?? zone ?? hostZone();
   if (!knownZone(inferredZone)) return null;
 
-  if (clock[1] === undefined) return within(nextWallClock(now, inferredZone, hour, minute), now);
+  if (clock[1] === undefined) return toReset(within(nextWallClock(now, inferredZone, hour, minute), now));
 
   // A date names *that* day. It is never rolled forward to the next one, which
-  // is right for a bare time and wrong for a date: a date already gone by is a
-  // message this cannot account for, and says so.
+  // is right for a bare time and wrong for a date: a date already gone by in
+  // the guessed zone is read at the latest instant it could still mean (below)
+  // before this gives up on it.
   const month = MONTHS.indexOf(clock[1].slice(0, 3).toLowerCase() as (typeof MONTHS)[number]) + 1;
   const day = Number(clock[2]);
   const thisYear = partsIn(now, inferredZone)["year"]!;
@@ -200,7 +228,18 @@ function clockReset(detail: string, now: Date, zone: string | undefined): Date |
     // The next year only for a date with no year that has gone by this one —
     // `resets Jan 2` read on the 30th of December. The week ceiling is what
     // refuses every other reading of it.
-    if (at.getTime() > now.getTime()) return within(at, now);
+    if (at.getTime() > now.getTime()) return toReset(within(at, now));
+
+    // The guessed zone's reading has already passed. When the sentence named
+    // no zone of its own, that guess might simply be wrong rather than the
+    // wall actually having lifted, so try once more at the latest instant
+    // this date and time could mean in *any* civil zone, before giving up.
+    // −12:00 is the westernmost offset in use, so that latest instant is the
+    // naive UTC reading plus twelve hours.
+    if (zoned === null) {
+      const latest = new Date(Date.UTC(year, month - 1, day, hour, minute) + WESTERNMOST_LAG_MS);
+      if (latest.getTime() > now.getTime()) return toReset(within(latest, now), true);
+    }
   }
   return null;
 }
@@ -315,7 +354,10 @@ export function standDown(input: {
     reset === null
       ? "it named no reset time, so this is the recipe's backoff"
       : "at" in reset
-        ? "read from the message itself"
+        ? reset.guessedLatest
+          ? "read from the message, at the latest instant its unzoned date could mean, because " +
+            "this host's reading of it had already passed"
+          : "read from the message itself"
         : `it named a reset time (\`${reset.named}\`) this build could not read, so this is the ` +
           `recipe's backoff — that is a bug in parseResetAt, not the account`;
   const { opening, whose } = subject(input.what);
@@ -332,6 +374,15 @@ export function standDown(input: {
 
 /** A week out is the longest a reset can honestly be. See `parseResetAt`. */
 const A_WEEK_MS = 7 * 24 * 3_600_000;
+
+/**
+ * How much later than a naive UTC reading of a wall clock the same reading can
+ * mean in the westernmost civil zone, `Etc/GMT+12` (−12:00). Added, never
+ * applied through `wallClockOn`: that function's zone is a POSIX `Etc/GMT+N`
+ * name, where the sign is inverted from the offset it names, which is a
+ * mistake waiting for the next reader of this file.
+ */
+const WESTERNMOST_LAG_MS = 12 * 3_600_000;
 
 function within(at: Date, now: Date): Date | null {
   const ms = at.getTime();
