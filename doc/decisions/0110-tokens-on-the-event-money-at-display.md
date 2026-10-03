@@ -65,6 +65,16 @@ run log is gone by the time anyone asks what the work cost.
    correctly at the output rate either way. claude-code's four counts need no
    such subtraction: its own `modelUsage` already reports them disjoint.
 
+   **Only the cached/reasoning pair is measured; `cache_write_input_tokens`
+   is not.** No rollout and no fixture this project has seen carries that
+   field, so whether it too sits inside `input_tokens` — the way
+   `cached_input_tokens` demonstrably does — is open. The adapter stores it
+   whole rather than subtracting it out of fresh, which is correct if it is
+   its own quantity and double-counts it if it is not. Whoever first sees a
+   real `cache_write_input_tokens` settles this from that rollout the way the
+   cached/reasoning pair was settled here, and corrects this paragraph rather
+   than adding a third counting rule beside it.
+
    **One entry per model, keyed by `(model, mode)`.** claude-code's `modelUsage`
    is itself keyed by model id, and a call can bill more than one — `model` on
    each entry is that key, verbatim, never the model the recipe asked for.

@@ -25,6 +25,7 @@ import {
   codexHookArgs,
   codexOutcome,
   codexTrace,
+  codexUsage,
 } from "../src/codex.ts";
 import { renderSettings } from "../src/hook-config.ts";
 import { meetsTier, missingForTier, RUN_LIMITS } from "../src/runtime.ts";
@@ -229,7 +230,37 @@ describe("the receipt, as a fold over the stream", () => {
     const said = codexOutcome(jsonl({ type: "turn.completed", usage: { cached_input_tokens: 500 } }));
     expect(said.tokens).toEqual({ cacheRead: 500 });
   });
+});
 
+describe("codexUsage, the run's tokens turned into one Usage entry", () => {
+  /**
+   * **Absent, never a zeroed-out entry, when nothing was ever reported** — the
+   * shape the measured quota-wall run takes (0031): `turn.failed` and no
+   * `turn.completed` at all, so `tokens` stays `{}`. A recipe that set
+   * `request.model` must not turn that into a present, all-zero-priced bill
+   * for a call that reached a model — the exact inversion the docblock above
+   * `codexUsage` promises never happens.
+   */
+  it("is undefined when no tokens were ever reported, even with a model set", () => {
+    expect(codexUsage({}, "gpt-5.6-sol")).toBeUndefined();
+  });
+
+  it("is undefined when neither tokens nor a model were reported", () => {
+    expect(codexUsage({}, undefined)).toBeUndefined();
+  });
+
+  it("carries the model alongside real tokens", () => {
+    expect(codexUsage({ fresh: 10, output: 2 }, "gpt-5.6-sol")).toEqual([
+      { model: "gpt-5.6-sol", tokens: { fresh: 10, output: 2 } },
+    ]);
+  });
+
+  it("carries real tokens with no model when the recipe set none", () => {
+    expect(codexUsage({ fresh: 10, output: 2 }, undefined)).toEqual([{ tokens: { fresh: 10, output: 2 } }]);
+  });
+});
+
+describe("the receipt's failed turn", () => {
   /**
    * `turn.failed` is the runtime saying why its own turn ended, and it is the
    * only place that sentence appears: the exit code says nothing, and the `error`

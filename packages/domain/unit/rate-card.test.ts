@@ -33,7 +33,7 @@ describe("doc/rate-card.md", () => {
     expect(parsed).toContainEqual({
       from: "2026-10-03",
       model: "claude-sonnet-5",
-      mode: "",
+      mode: "cache-1h",
       input: 2.0,
       output: 10.0,
       cacheRead: 0.2,
@@ -48,36 +48,61 @@ describe("doc/rate-card.md", () => {
    * a confident wrong number.
    *
    * Captured 2026-10-03 with `claude -p "reply ok" --model claude-sonnet-5
-   * --output-format json` (claude-code 2.1.285), run twice. The second call
-   * reused the first's cache almost entirely (`cacheCreationInputTokens: 0`),
-   * which is what let the two receipts pin cache-read and cache-write
-   * separately: the pure cache-read turn prices exactly against the
-   * 2026-06-24 row's cache-read rate, and only cache-write disagrees — see
-   * `doc/rate-card.md`'s note on the 2026-10-03 row for the arithmetic.
+   * --output-format json` (claude-code 2.1.285), run twice. The first receipt
+   * wrote to the cache and billed at the one-hour-TTL rate; the second reused
+   * that cache (`cacheCreationInputTokens: 0`) and is a pure cache-read turn,
+   * which carries no cache-write tokens and so calibrates only the ordinary
+   * input/output/cache-read columns — see `doc/rate-card.md`'s note on the
+   * 2026-10-03 row for the arithmetic that tells the two regimes apart.
    */
   const CAPTURED_AT = new Date("2026-10-03T00:00:00.000Z");
-  const RECEIPTS = [
-    {
-      // The call that first created the cache.
-      tokens: { fresh: 2, output: 19, cacheRead: 24352, cacheWrite: 39338 },
-      costUsd: 0.1624164,
-    },
-    {
-      // The call right after it: a pure cache-read turn.
-      tokens: { fresh: 2, output: 13, cacheRead: 63690, cacheWrite: 0 },
-      costUsd: 0.012872,
-    },
-  ];
+  const CACHE_WRITE_RECEIPT = {
+    // The call that first created the cache — billed at the one-hour rate.
+    tokens: { fresh: 2, output: 19, cacheRead: 24352, cacheWrite: 39338 },
+    costUsd: 0.1624164,
+  };
+  const CACHE_READ_RECEIPT = {
+    // The call right after it: a pure cache-read turn, on the ordinary cache.
+    tokens: { fresh: 2, output: 13, cacheRead: 63690, cacheWrite: 0 },
+    costUsd: 0.012872,
+  };
 
-  it("prices a real claude-sonnet-5 receipt within 1% of its own reported cost", async () => {
+  it("prices the cache-read receipt within 1% against the ordinary mode", async () => {
     const row = rateFor(await rows(), "claude-sonnet-5", "", CAPTURED_AT);
     expect(row).toBeDefined();
 
-    for (const receipt of RECEIPTS) {
-      const priced = priceTokens(receipt.tokens, row!);
-      expect(priced).toBeCloseTo(receipt.costUsd, 2);
-      expect(Math.abs(priced - receipt.costUsd) / receipt.costUsd).toBeLessThan(0.01);
-    }
+    const priced = priceTokens(CACHE_READ_RECEIPT.tokens, row!);
+    expect(priced).toBeCloseTo(CACHE_READ_RECEIPT.costUsd, 2);
+    expect(Math.abs(priced - CACHE_READ_RECEIPT.costUsd) / CACHE_READ_RECEIPT.costUsd).toBeLessThan(0.01);
+  });
+
+  it("prices the cache-write receipt within 1% against the cache-1h mode, not the ordinary one", async () => {
+    const theRows = await rows();
+    const hourly = rateFor(theRows, "claude-sonnet-5", "cache-1h", CAPTURED_AT);
+    expect(hourly).toBeDefined();
+
+    const priced = priceTokens(CACHE_WRITE_RECEIPT.tokens, hourly!);
+    expect(priced).toBeCloseTo(CACHE_WRITE_RECEIPT.costUsd, 2);
+    expect(Math.abs(priced - CACHE_WRITE_RECEIPT.costUsd) / CACHE_WRITE_RECEIPT.costUsd).toBeLessThan(0.01);
+  });
+
+  /**
+   * **The blocker this file almost became: the discovery must not shadow the
+   * ordinary rate.** `rateFor(rows, "claude-sonnet-5", "", at)` for any `at`
+   * on or after 2026-10-03 must still answer the 2026-06-24 row — the
+   * `cache-1h` row has its own mode and is never the latest match for an
+   * ordinary, empty-mode lookup. An ordinary call shaped like the cache-write
+   * receipt above is really billed $0.1034094 (2.50/MTok cache write), and
+   * that is what an ordinary lookup must still price it at, not the
+   * $0.1624164 the one-hour regime actually paid.
+   */
+  it("never lets the cache-1h discovery answer an ordinary lookup", async () => {
+    const theRows = await rows();
+    const ordinary = rateFor(theRows, "claude-sonnet-5", "", CAPTURED_AT);
+    expect(ordinary).toEqual(theRows.find((r) => r.model === "claude-sonnet-5" && r.from === "2026-06-24"));
+
+    const ordinaryPriced = priceTokens(CACHE_WRITE_RECEIPT.tokens, ordinary!);
+    expect(ordinaryPriced).toBeCloseTo(0.1034094, 6);
   });
 
   /**
@@ -90,8 +115,8 @@ describe("doc/rate-card.md", () => {
    */
   it("would have failed against the stale 2026-06-24 row", async () => {
     const stale = (await rows()).find((r) => r.model === "claude-sonnet-5" && r.from === "2026-06-24")!;
-    const priced = priceTokens(RECEIPTS[0]!.tokens, stale);
-    expect(Math.abs(priced - RECEIPTS[0]!.costUsd) / RECEIPTS[0]!.costUsd).toBeGreaterThan(0.3);
+    const priced = priceTokens(CACHE_WRITE_RECEIPT.tokens, stale);
+    expect(Math.abs(priced - CACHE_WRITE_RECEIPT.costUsd) / CACHE_WRITE_RECEIPT.costUsd).toBeGreaterThan(0.3);
   });
 
   /**

@@ -268,6 +268,12 @@ export interface CodexReceipt {
    * full input rate here, once at the cache-read rate were it also stored
    * under `cacheRead`. So `fresh` is the subtraction, and `cacheRead` is
    * `cached_input_tokens` taken whole — see `codexTokenCounts`.
+   *
+   * **`cache_write_input_tokens` is not measured the same way.** No real
+   * rollout this project has seen carries that field, so whether it too sits
+   * inside `input_tokens` is open rather than settled; `codexTokenCounts`
+   * stores it whole, which double-counts it if it turns out to overlap the
+   * way `cached_input_tokens` does.
    */
   tokens: TokenCounts;
   /**
@@ -362,9 +368,9 @@ function codexTokenCounts(usage: NonNullable<CodexEvent["usage"]>): TokenCounts 
  * Codex's stream never names its own model, and an absent model is what
  * `doc/rate-card.md` reads as *unpriced* rather than a guess.
  */
-function codexUsage(tokens: TokenCounts, model: string | undefined): Usage | undefined {
+export function codexUsage(tokens: TokenCounts, model: string | undefined): Usage | undefined {
   const hasTokens = Object.values(tokens).some((value) => value !== undefined);
-  if (!hasTokens && model === undefined) return undefined;
+  if (!hasTokens) return undefined;
   return [{ ...(model === undefined ? {} : { model }), tokens }];
 }
 
