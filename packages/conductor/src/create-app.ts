@@ -41,10 +41,10 @@
  *
  * **And the guard reads the file too.** *Is an App already configured* decides
  * whether the button is drawn and whether a returning code is applied, and its
- * answer lives in `.env.local` — the file this writes — where `process.env`
- * only holds what was in it at start. `configuration()` is
- * that question, asked of the file, of the environment and of the log, each for
- * the one thing it knows.
+ * answer lives in `.env.local` — the file this writes — or in `~/.lingtai/config.yml`
+ * (#308/#320), where `process.env` only holds what was in it at start.
+ * `configuration()` is that question, asked of the environment, of the two
+ * files and of the log, each for the one thing it knows.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
@@ -53,7 +53,7 @@ import { userInfo } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { ENV_FILE_MODE, parseEnvFile, setEnvLine } from "@lingtai/agent-env";
 import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
-import { PREFIX, githubAppSource, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
+import { PREFIX, githubAppSource, githubConfigUnreadable, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import {
   type AppManifest,
@@ -568,9 +568,10 @@ async function convertAndWrite(
   // is on the log *before* the key file and the env file are, so reading it as
   // *the credentials are there, this process is merely stale* would report a
   // creation whose key write failed as an App a restart will pick up. What is
-  // configured is what `.env.local` and the environment say — `configuration()`
-  // asks them and does not ask this — and this says an App of Lingtai's is out
-  // there on GitHub, which is the fact that makes minting a second one wrong.
+  // configured is what the environment, `.env.local` or `~/.lingtai/config.yml`
+  // say (#308/#320) — `configuration()` asks them and does not ask this — and
+  // this says an App of Lingtai's is out there on GitHub, which is the fact
+  // that makes minting a second one wrong.
   let notRecorded: string | null = null;
   try {
     const store = options.store ?? eventStore;
@@ -920,18 +921,33 @@ async function configuration(options: {
   const inEnvironment = envAppId !== null && hasGitHubApp(options.env, []);
 
   // **A third source, `config.yml` (#308/#320), asked only once the other two
-  // have had their turn.** `hasGitHubApp`/`githubAppSource` elect one source
-  // for the id — the environment first, then an env file, then `config.yml` —
-  // so with `files: []` the only two still in the running here are the
-  // environment and the machine file, and a true answer once `envAppId` is
-  // null can only be `config.yml`'s. An installed binary with no checkout has
-  // neither a `process.env` set by hand nor a `.env.local` to read, and would
-  // otherwise answer *not configured* and offer a second App beside the one it
-  // already has.
-  const inMachine =
-    envAppId === null && inFiles === null && hasGitHubApp(options.env, [])
-      ? githubAppSource(options.env, [])
-      : null;
+  // have had their turn.** `githubAppSource` elects one source for the id —
+  // the environment first, then an env file, then `config.yml` — so with
+  // `files: []` the only two still in the running here are the environment and
+  // the machine file, and a true answer once `envAppId` is null can only be
+  // `config.yml`'s. An installed binary with no checkout has neither a
+  // `process.env` set by hand nor a `.env.local` to read, and would otherwise
+  // answer *not configured* and offer a second App beside the one it already
+  // has.
+  //
+  // **A named id is enough here, where `hasGitHubApp` needs the key too** —
+  // `namedIn`'s own rule, two lines below, for the same reason: an operator
+  // who has written `app_id` by hand and not yet fetched the key still has a
+  // half-finished configuration, not an absent one, and gating this on
+  // `hasGitHubApp` answered *not configured* for exactly that half-written
+  // state while an env file naming the same lone id was already excluded by
+  // it.
+  const inMachine = envAppId === null && inFiles === null ? githubAppSource(options.env, []) : null;
+
+  // **A `config.yml` that cannot be parsed is not a `config.yml` that names no
+  // App.** `hasGitHubApp` answers `false` for both, so without this a broken
+  // file reads the same as an empty machine and the page offers to mint a
+  // second App beside whatever the file names underneath the YAML error —
+  // irreversibly, since creation hands over a private key GitHub gives out
+  // exactly once. Asked only once the environment and the env files have had
+  // their turn, the same precedence `inMachine` itself is gated on above.
+  const configUnreadable = envAppId === null && inFiles === null ? githubConfigUnreadable(options.env, []) : null;
+  if (unanswered === null && configUnreadable !== null) unanswered = configUnreadable;
 
   const appId = inEnvironment ? envAppId : inFiles !== null ? inFiles.value : (inMachine?.appId ?? null);
   // **The id is the configuration's and the slug is the log's**, so the slug

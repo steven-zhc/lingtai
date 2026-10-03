@@ -13,12 +13,19 @@
  * become a plain fallback chain that lets the id come from one App and the
  * secret from another.
  *
- * `orderGithubSources` is `appValues`'s precedence, pulled out the same way:
- * the election tests below build their input through it rather than ordering
- * an array by hand, so a change to that one call site inside `appValues` —
- * putting `config.yml` ahead of an env file — turns them red instead of
- * leaving the bug to the integration suite that runs after a merge (#320's
- * third cold-review finding).
+ * `orderGithubSources` is `appValues`'s precedence, pulled out the same way.
+ * **What this file can and cannot pin**: the tests below build their input
+ * through `orderGithubSources` itself, so they catch a change to what that
+ * function does with the arguments it is handed — environment first, then
+ * the files, then the machine source. They cannot catch a change at the one
+ * place `appValues` calls it, because building that call's real arguments
+ * means reading the environment, the env files and `config.yml` off disk,
+ * which is integration rather than unit (0060 §1) — that call site is pinned
+ * by `packages/env/integration/env.test.ts`'s "config.yml" tests instead,
+ * which run after a merge, not before it (#320's fourth cold-review finding).
+ * `orderGithubSources` takes its three sources as one named object rather
+ * than three positions for the same reason: a swap at the call site now has
+ * to swap the keys themselves, which a diff shows as wrong on its face.
  */
 import { describe, expect, it } from "vitest";
 import { PREFIX, electGithubSource, githubRecordFromSection, orderGithubSources } from "../src/index.ts";
@@ -36,7 +43,7 @@ describe("electGithubSource", () => {
     const machine = { label: "/home/config.yml", values: { [ID]: "222", [KEY_PATH]: "/machine/key.pem" } };
     const environment = { label: "environment", values: { [KEY_PATH]: "/stale/key.pem" } };
 
-    const elected = electGithubSource(orderGithubSources(environment, [], [machine]));
+    const elected = electGithubSource(orderGithubSources({ environment, files: [], machine: [machine] }));
     expect(elected.source).toBe("/home/config.yml");
     // Never the stale exported path: the source that named the id supplies
     // the key path too, even though the environment is asked first in the
@@ -45,10 +52,9 @@ describe("electGithubSource", () => {
   });
 
   it("lets an env file that names the id win over the machine file for every name", () => {
-    // Through `orderGithubSources`, which is production's own precedence
-    // (environment, then the env files, then the machine file last) rather
-    // than an order this test chose — a reordering at that one call site
-    // would turn this red (#320's third cold-review finding).
+    // Through `orderGithubSources`'s own precedence (environment, then the
+    // env files, then the machine file last) rather than an order this test
+    // chose by hand.
     const environment = { label: "environment", values: {} };
     const machine = {
       label: "/home/config.yml",
@@ -56,7 +62,7 @@ describe("electGithubSource", () => {
     };
     const envFile = { label: "/repo/.env.local", values: { [ID]: "222", [KEY_PATH]: "/repo/key.pem" } };
 
-    const elected = electGithubSource(orderGithubSources(environment, [envFile], [machine]));
+    const elected = electGithubSource(orderGithubSources({ environment, files: [envFile], machine: [machine] }));
     expect(elected.source).toBe("/repo/.env.local");
     expect(elected.get(ID)).toBe("222");
     expect(elected.get(KEY_PATH)).toBe("/repo/key.pem");
@@ -74,7 +80,7 @@ describe("electGithubSource", () => {
     const machine = { label: "/home/config.yml", values: { [ID]: "111", [WEBHOOK]: "machine-secret" } };
     const envFile = { label: "/repo/.env.local", values: { [ID]: "222" } };
 
-    const elected = electGithubSource(orderGithubSources(environment, [envFile], [machine]));
+    const elected = electGithubSource(orderGithubSources({ environment, files: [envFile], machine: [machine] }));
     expect(elected.source).toBe("/repo/.env.local");
     expect(elected.get(WEBHOOK)).toBeUndefined();
   });
@@ -95,20 +101,22 @@ describe("electGithubSource", () => {
 
 describe("orderGithubSources", () => {
   /**
-   * #320's third cold-review finding: the other tests in this file construct
-   * their own `[source, source]` arrays, which pass under any precedence
-   * `appValues` might hand to `electGithubSource` — so a change at that one
-   * call site (`index.ts`, inside `appValues`) that put `config.yml` ahead of
-   * an env file would stay green. This pins the order itself: environment
-   * first, then every env file in the order it was given, then the machine
-   * file last.
+   * Pins what the function itself does with the arguments it is handed:
+   * environment first, then every env file in the order it was given, then
+   * the machine file last. **This is not what runs at `appValues`'s one real
+   * call site** — that call is built from disk reads and is covered by
+   * `packages/env/integration/env.test.ts` instead, after a merge rather than
+   * before it (#320's fourth cold-review finding). What a named-object
+   * parameter buys here is narrower: a swap at that call site now has to
+   * read `files: machineSource, machine: fileSources`, rather than a silent
+   * positional reorder.
    */
   it("puts the environment first, the env files next, and config.yml last", () => {
     const environment = { label: "environment", values: {} };
     const envFile = { label: "/repo/.env.local", values: {} };
     const machine = { label: "/home/config.yml", values: {} };
 
-    expect(orderGithubSources(environment, [envFile], [machine]).map((s) => s.label)).toEqual([
+    expect(orderGithubSources({ environment, files: [envFile], machine: [machine] }).map((s) => s.label)).toEqual([
       "environment",
       "/repo/.env.local",
       "/home/config.yml",

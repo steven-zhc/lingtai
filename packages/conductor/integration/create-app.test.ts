@@ -950,6 +950,58 @@ describe("what the screen offers", () => {
     });
   });
 
+  /**
+   * #320's cold review: `githubAppSource` only needs the id, same as
+   * `namedIn` two tests up reads an env file — but gating `inMachine` on
+   * `hasGitHubApp` demanded the key too, so a `config.yml` naming `app_id`
+   * ahead of fetching `private_key_path` (`githubApp`'s own remedy: write the
+   * id first) answered *not configured* and offered to mint a second App
+   * beside the one already half-written.
+   */
+  it("reads config.yml's id alone, before its key is beside it", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), `github:\n  app_id: "1850235"\n`);
+
+    const offer = await offerCreation({
+      env: { LINGTAI_HOME: home },
+      envFile: await blank(),
+      store: store(),
+      session: createCreationSession(),
+    });
+
+    expect(offer.offered).toBe(false);
+    expect(offer.configured).toEqual({
+      appId: "1850235",
+      slug: null,
+      where: "file",
+      file: join(home, "config.yml"),
+    });
+  });
+
+  /**
+   * #320's cold review: `hasGitHubApp`/`githubAppSource` answer `false`/`null`
+   * for a broken `config.yml` exactly as they do for an empty machine, so
+   * without asking `githubConfigUnreadable` too, a parse error reads as *no
+   * App at all* and the page offers to mint a second one beside whatever the
+   * file names underneath the broken line — irreversibly, since creation
+   * hands over a private key GitHub gives out exactly once.
+   */
+  it("withholds the offer when config.yml cannot be parsed, rather than reading it as empty", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "github: [unclosed\n");
+
+    const offer = await offerCreation({
+      env: { LINGTAI_HOME: home },
+      envFile: await blank(),
+      store: store(),
+      session: createCreationSession(),
+    });
+
+    expect(offer.offered).toBe(false);
+    expect(offer.configured).toBeNull();
+    expect(offer.unanswered).toContain(join(home, "config.yml"));
+  });
+
   /** A copied `.env.example` names it and has no App: that is not a configuration. */
   it("reads an empty line as no App, so a copied template still gets the screen", async () => {
     const { envFile } = await workspace();

@@ -179,6 +179,48 @@ describe("the App is read from the env file as it is now", () => {
     expect(hasGitHubApp({})).toBe(false);
     expect(envFiles().map((f) => f.split("/").pop())).toEqual([".env.local", ".env"]);
   });
+
+  /**
+   * #320's cold review: dotenv merges a file into `process.env` once, at
+   * import, so the id and key path an operator wrote before the board started
+   * are in `process.env` by the time anything asks — but a name added to that
+   * same file afterwards (the webhook, created on GitHub once the board was
+   * already running) never is. `exported` is this module's own pre-dotenv
+   * snapshot, captured when it first loaded, long before this test runs — so
+   * setting the two names directly on `process.env` here reproduces exactly
+   * that: an id `process.env` carries but `exported` does not, which is what
+   * `appValues` uses to tell "really exported" from "the file's, merged in".
+   */
+  it("still reads a name a file gains after the id it already named was merged into process.env", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "lingtai-env-"));
+    const envLocal = join(dir, ".env.local");
+    const key = join(dir, "app.pem");
+    await writeFile(key, "the App's key");
+    await writeFile(envLocal, `LINGTAI_GITHUB_APP_ID=222\nLINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=${key}\n`);
+
+    const before = {
+      id: process.env["LINGTAI_GITHUB_APP_ID"],
+      key: process.env["LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH"],
+    };
+    process.env["LINGTAI_GITHUB_APP_ID"] = "222";
+    process.env["LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH"] = key;
+    try {
+      expect(githubWebhookSecret(process.env, [envLocal])).toBeUndefined();
+
+      // The operator creates the webhook on GitHub after the board started,
+      // and appends the secret to the same file the id came from.
+      await writeFile(
+        envLocal,
+        `LINGTAI_GITHUB_APP_ID=222\nLINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=${key}\nLINGTAI_GITHUB_WEBHOOK_SECRET=from-hand\n`,
+      );
+      expect(githubWebhookSecret(process.env, [envLocal])).toBe("from-hand");
+    } finally {
+      if (before.id === undefined) delete process.env["LINGTAI_GITHUB_APP_ID"];
+      else process.env["LINGTAI_GITHUB_APP_ID"] = before.id;
+      if (before.key === undefined) delete process.env["LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH"];
+      else process.env["LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH"] = before.key;
+    }
+  });
 });
 
 /**

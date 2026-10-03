@@ -1194,13 +1194,23 @@ export function electGithubSource(
  * env files and `config.yml` off disk, which is what makes that call
  * integration rather than unit (0060 §1) — and the gate only runs the unit
  * half before a merge.
+ *
+ * **Named, not positional** (#320's fourth cold-review finding): `files` and
+ * `machine` were two bare `readonly AppSource[]` parameters, indistinguishable
+ * to the type checker, so swapping them at the one real call site inside
+ * `appValues` still typechecked and still passed every unit test — the unit
+ * test below pins what this function does with the arguments it is handed,
+ * never which argument `appValues` hands it the machine file as. A swap at
+ * the call site now has to swap the keys themselves (`files: machineSource,
+ * machine: fileSources`), which reads as wrong rather than as a reordering a
+ * diff hides.
  */
-export function orderGithubSources(
-  environment: AppSource,
-  fileSources: readonly AppSource[],
-  machineSource: readonly AppSource[],
-): AppSource[] {
-  return [environment, ...fileSources, ...machineSource];
+export function orderGithubSources(sources: {
+  environment: AppSource;
+  files: readonly AppSource[];
+  machine: readonly AppSource[];
+}): AppSource[] {
+  return [sources.environment, ...sources.files, ...sources.machine];
 }
 
 interface AppValues {
@@ -1247,19 +1257,31 @@ function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): AppValues
   const machineSource: AppSource[] =
     machine.values !== undefined && machinePath !== null ? [{ label: machinePath, values: machine.values }] : [];
 
-  const elected = electGithubSource(orderGithubSources(environment, fileSources, machineSource));
+  const elected = electGithubSource(orderGithubSources({ environment, files: fileSources, machine: machineSource }));
 
   // **`from === process.env` already carries every env file's values**, merged
   // into it by dotenv at import (`config({...})`, above) — so "environment"
   // alone cannot tell a variable that was really exported from one that only
   // ever lived in a file. Ask the pre-dotenv snapshot, as `storeChoice` does.
+  //
+  // **That merge happened once, at import** — a name the operator adds to the
+  // same file afterwards (the webhook secret, written once the App is created
+  // on GitHub) never reaches `process.env`. So where the id turns out to be
+  // the file's rather than really exported, `get` has to read that file too —
+  // the one dotenv's merge actually came from — rather than the frozen
+  // `environment` values, or a name added to the file after start answers
+  // `undefined` forever.
   let source = elected.source;
+  let get = elected.get;
   if (source === "environment" && from === process.env && optional(idName, realEnvironment(from)) === undefined) {
     const fromFile = fileSources.find((s) => s.values[idName]);
-    if (fromFile !== undefined) source = fromFile.label;
+    if (fromFile !== undefined) {
+      source = fromFile.label;
+      get = (name) => fromFile.values[name];
+    }
   }
 
-  return { get: elected.get, source, unreadable: machine.unreadable ?? null };
+  return { get, source, unreadable: machine.unreadable ?? null };
 }
 
 /**
@@ -1338,8 +1360,8 @@ export function githubApp(
     };
   }
   throw new Error(
-    `Neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ${PREFIX}GITHUB_APP_PRIVATE_KEY is set. ` +
-      "See doc/decisions-archive/0006-github-app.md for creating the App.",
+    `App ${appId}, from ${value.source}: neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ` +
+      `${PREFIX}GITHUB_APP_PRIVATE_KEY is set. See doc/decisions-archive/0006-github-app.md for creating the App.`,
   );
 }
 
