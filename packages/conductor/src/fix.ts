@@ -60,6 +60,7 @@
 import type { ActionFinding } from "@lingtai/actions";
 import { SEVERITIES, type Severity } from "@lingtai/domain";
 import type { BlockDiagnosis, RunFailureKind } from "@lingtai/domain";
+import { checksBrief } from "./prompt.ts";
 
 /**
  * What a refusal handed the fixer, and which of the two shapes it is.
@@ -457,6 +458,13 @@ export function fixBrief(input: {
   diff: string;
   /** `runtime.budget.diff`. The same ceiling the review runs under. */
   diffBytes: number;
+  /**
+   * `buildCommands(recipe.steps.build)` — the same bar `renderPrompt` names for
+   * the implementer, so a fixer is held to the one thing the gate actually runs
+   * and told, in the same words, not to wait on anything slower than this turn
+   * (`#319`).
+   */
+  checks: readonly string[];
 }): string {
   const clipped =
     input.diff.length > input.diffBytes
@@ -497,6 +505,8 @@ ${criterion}
 **Commit what you fix.** What the steps judge, and what a person may be asked to
 approve, is a commit — an attempt that ends with advice about the code produces
 nothing anyone can act on.
+
+${checksBrief(input.checks)}
 
 ## If this is not yours to fix, change nothing and commit nothing
 

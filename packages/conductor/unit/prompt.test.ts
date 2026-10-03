@@ -78,7 +78,7 @@ describe("the next attempt's prompt", () => {
    * edit renders byte-identically to the template. `{{failure}}` filled with an
    * empty string is a prompt this feature never touched.
    */
-  it("is the template alone on a first attempt nobody has edited", () => {
+  it("is the template alone on a first attempt nobody has edited, except the checks block that always renders", () => {
     const e = stream("wi-lingtai-104");
     const next = nextPrompt({
       base: "ticket@1924",
@@ -90,7 +90,17 @@ describe("the next attempt's prompt", () => {
     expect(next.attempt).toBe(1);
     expect(next.failure).toBe("");
     expect(next.version).toBe("ticket@1924");
-    expect(renderPrompt(TEMPLATE, TICKET, next.failure)).toBe("#104 — The control is the prompt\n\nthe body\n\n");
+    // **This is no longer byte-identical to the template** (`#319`): unlike
+    // `{{failure}}` and `{{design}}`, `{{checks}}` never renders blank — even a
+    // first attempt nobody has edited is told the bar and told not to wait on
+    // anything slower than this turn, because that silence is what `#249` and
+    // `#308` were lost to. What this still asserts is the part of `#82`'s
+    // criterion that survives: nothing about the ticket or the history is added
+    // beyond that one block.
+    const text = renderPrompt(TEMPLATE, TICKET, [], next.failure);
+    expect(text.startsWith("#104 — The control is the prompt\n\nthe body\n\n")).toBe(true);
+    expect(text).toContain("## What `build` checks, and what it does not");
+    expect(text).toMatch(/commit it before you verify/i);
   });
 
   it("carries an answer given before any run into every attempt, without the issue body", () => {
@@ -110,7 +120,7 @@ describe("the next attempt's prompt", () => {
       item: [e("WorkItemDiscovered", discovered), asked, answered],
       lastRun: null,
     });
-    const text = renderPrompt(TEMPLATE, TICKET, first.failure);
+    const text = renderPrompt(TEMPLATE, TICKET, [], first.failure);
     expect(text).toContain("## Decided before any run");
     expect(text).toContain("**Asked:** Which of the three designs for the production-credential tripwire?");
     expect(text).toContain("**Answered by human:steven:** the second: refuse at the hook");
@@ -181,7 +191,7 @@ describe("the next attempt's prompt", () => {
       text: "`claude --help` does not list it. Read the bundle.",
       by: "human:steven",
     });
-    const text = renderPrompt(TEMPLATE, TICKET, next.failure);
+    const text = renderPrompt(TEMPLATE, TICKET, [], next.failure);
     expect(text).toContain("## Added for this attempt by human:steven");
     expect(text).toContain("`claude --help` does not list it. Read the bundle.");
     expect(text).toContain("It applies to this attempt only.");
@@ -297,31 +307,72 @@ describe("the next attempt's prompt", () => {
   it("hands the design to the implementer, in its slot or appended", () => {
     const design = "Put it in `packages/recipe`, beside `whyNoKindAt`.";
 
-    const appended = renderPrompt(TEMPLATE, TICKET, "", design);
+    const appended = renderPrompt(TEMPLATE, TICKET, [], "", design);
     expect(appended).toContain("## The design, written for this run before any code");
     expect(appended).toContain(design);
     // What it is *not*: an instruction that outranks the ticket.
     expect(appended).toContain("the ticket is what was asked for");
 
     // In the slot where a template has one, and then not appended a second time.
-    const slotted = renderPrompt(`${TEMPLATE}\n{{design}}`, TICKET, "", design);
+    const slotted = renderPrompt(`${TEMPLATE}\n{{design}}`, TICKET, [], "", design);
     expect(slotted.match(/## The design, written for this run/g)).toHaveLength(1);
 
     // And the two blocks compose in reading order: the design is about the change,
     // the history is about the attempts at it.
-    const both = renderPrompt("#{{issue}}", TICKET, "## What the last attempt did", design);
+    const both = renderPrompt("#{{issue}}", TICKET, [], "## What the last attempt did", design);
     expect(both.indexOf("## The design")).toBeLessThan(both.indexOf("## What the last attempt did"));
 
     /**
      * **And an empty design changes nothing**, which is every pass today: no recipe
      * declares a `design:` and `defaultsAt` has no row for the step, so an
-     * unconfigured one runs nothing and this renders what it always rendered. The
-     * first case in this file asserts that byte for byte; this asserts the two
-     * arities agree, so the parameter cannot drift into meaning something absent.
+     * unconfigured one runs nothing and this renders what it always rendered. This
+     * asserts the two arities agree, so the parameter cannot drift into meaning
+     * something absent.
      */
     for (const blank of ["", "   \n\n  "]) {
-      expect(renderPrompt(TEMPLATE, TICKET, "", blank)).toBe(renderPrompt(TEMPLATE, TICKET, ""));
-      expect(renderPrompt(TEMPLATE, TICKET, "", blank)).not.toContain("## The design");
+      expect(renderPrompt(TEMPLATE, TICKET, [], "", blank)).toBe(renderPrompt(TEMPLATE, TICKET, [], ""));
+      expect(renderPrompt(TEMPLATE, TICKET, [], "", blank)).not.toContain("## The design");
     }
+  });
+
+  /**
+   * **`#319`.** `#249` ran the integration suite as part of doing a ticket and
+   * was killed at its timeout with no commit at all. `#308` finished the work,
+   * verified the real gate was green, started a suite the gate does not run,
+   * scheduled a wakeup to check on it, and was terminated under that wakeup —
+   * $13.17 and eight fixed findings, gone with the worktree. The rule that would
+   * have stopped both lived in `CLAUDE.md`, which an agent may or may not read;
+   * `{{checks}}` is how it reaches the brief every agent is actually handed.
+   */
+  describe("the checks block renderPrompt always adds", () => {
+    it("names the build step's own commands as the whole of the bar", () => {
+      const text = renderPrompt(TEMPLATE, TICKET, ["pnpm typecheck && pnpm test"], "");
+      expect(text).toContain("pnpm typecheck && pnpm test");
+      expect(text).toContain("the whole of what this pass is checked against");
+      expect(text).toContain("There is no later turn");
+      expect(text).toMatch(/commit it before you verify/i);
+    });
+
+    it("is appended once when the template carries no {{checks}} slot", () => {
+      const text = renderPrompt("#{{issue}}", TICKET, ["pnpm test"]);
+      expect(text.match(/## What `build` checks, and what it does not/g)).toHaveLength(1);
+    });
+
+    it("renders in the slot, and not a second time, when the template has one", () => {
+      const text = renderPrompt("#{{issue}}\n{{checks}}", TICKET, ["pnpm test"]);
+      expect(text.match(/## What `build` checks/g)).toHaveLength(1);
+    });
+
+    /**
+     * **Never blank**, unlike `{{failure}}` and `{{design}}`. A project whose
+     * recipe declares no command at `build:` still has to be told not to wait on
+     * anything slower than this turn — that silence is what `#249` and `#308`
+     * were lost to, and it is not conditional on the recipe having a bar to name.
+     */
+    it("still tells the agent not to wait, even when the recipe names no command", () => {
+      const text = renderPrompt(TEMPLATE, TICKET, []);
+      expect(text).toContain("declares no command at `build:`");
+      expect(text).toMatch(/commit it before you verify/i);
+    });
   });
 });

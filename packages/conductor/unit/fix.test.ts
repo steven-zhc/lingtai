@@ -200,6 +200,7 @@ describe("what the fixer is told", () => {
     action: "review",
     diff: DIFF,
     diffBytes: 400_000,
+    checks: ["pnpm typecheck && pnpm test"],
   });
 
   it("carries the failure scenario verbatim, line for line", () => {
@@ -243,6 +244,29 @@ describe("what the fixer is told", () => {
   });
 
   /**
+   * `#319`. `#249` ran the integration suite as part of doing a ticket and was
+   * killed with no commit; `#308` finished the work, verified the real gate was
+   * green, started a suite the gate does not run, and was lost to the wait —
+   * $13.17 and eight fixed findings gone with the worktree. A fixing round is
+   * exactly as exposed to that as the implementer is, so it gets the same bar
+   * and the same rule against waiting.
+   *
+   * **Conditional, and not a bare "commit first."** `fixBrief` also tells the
+   * fixer it may decline by changing nothing and committing nothing (0039 §5),
+   * and an unqualified "commit" would contradict that escape hatch. So this
+   * pins the "once you have changed anything" qualifier on its own, separately
+   * from the decline test below — a later edit that drops the qualifier to
+   * shorten the sentence should fail here rather than quietly reopening the
+   * contradiction.
+   */
+  it("names the same bar the implementer is held to, and tells the fixer not to wait on anything slower", () => {
+    expect(brief).toContain("pnpm typecheck && pnpm test");
+    expect(brief).toContain("the whole of what this pass is checked against");
+    expect(brief).toContain("There is no later turn");
+    expect(brief).toMatch(/once you have changed anything, commit it before you verify/i);
+  });
+
+  /**
    * 0039 §5, and the reason it needed deciding at all.
    *
    * `conduct.ts`'s `if (!committed)` has always ended the loop and put the
@@ -282,6 +306,7 @@ describe("what the fixer is told", () => {
       action: "review",
       diff: "x".repeat(5_000),
       diffBytes: 1_000,
+      checks: ["pnpm typecheck && pnpm test"],
     });
     expect(huge).toContain("[diff truncated at 1000 bytes]");
   });
@@ -297,6 +322,7 @@ describe("what the fixer is told", () => {
       action: "review",
       diff: "d",
       diffBytes: 400_000,
+      checks: ["pnpm typecheck && pnpm test"],
     });
 
     expect(two).toContain("### 1. blocker");
@@ -1455,6 +1481,7 @@ describe("what a conflict tells the fixer", () => {
     action: "merge",
     diff: "diff --git a/src/queue.ts b/src/queue.ts",
     diffBytes: 400_000,
+    checks: ["pnpm typecheck && pnpm test"],
   });
 
   it("says the agent is mid-merge, because a description is not resolvable", () => {

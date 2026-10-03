@@ -172,7 +172,7 @@ import { signedInHere } from "./projects.ts";
 import { priorAttempts } from "./attempts.ts";
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
-import { nextPrompt, renderPrompt } from "./prompt.ts";
+import { buildCommands, nextPrompt, renderPrompt } from "./prompt.ts";
 import {
   CONTROL_STREAM,
   type RuntimeId,
@@ -2601,6 +2601,7 @@ export function runOnce(
                       renderPrompt(
                         options.prompt,
                         { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
+                        buildCommands(recipe.steps.build),
                         next.failure,
                         // **What `design` produced, and this is the one reader of
                         // it** (`#265`). `Brief.design` has been on this object since
@@ -2794,6 +2795,7 @@ export function runOnce(
                         action: from,
                         diff: underReview,
                         diffBytes: recipe.runtime.budget.diff,
+                        checks: buildCommands(recipe.steps.build),
                       }),
                       spec.prompt,
                     ),

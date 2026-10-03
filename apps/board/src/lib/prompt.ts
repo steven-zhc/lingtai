@@ -22,7 +22,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { repoRoot } from "@lingtai/env";
-import { nextPrompt, renderPrompt } from "@lingtai/conductor/prompt";
+import { buildCommands, nextPrompt, renderPrompt } from "@lingtai/conductor/prompt";
 import { githubClientFor, projectFilter } from "@lingtai/conductor/filter";
 import { armsOnOrigin } from "@lingtai/conductor/arms";
 import { agentBranch } from "@lingtai/conductor/branches";
@@ -172,8 +172,9 @@ export async function outgoingFor(input: {
     arms,
   });
 
+  const checks = buildCommands(filter.recipe.steps.build);
   const filled = { number: Number(ticket.ref), title: ticket.title ?? "", body: ticket.body };
-  const text = renderPrompt(template, filled, next.failure);
+  const text = renderPrompt(template, filled, checks, next.failure);
 
   return {
     text,
@@ -184,7 +185,7 @@ export async function outgoingFor(input: {
     delta:
       next.edit === null
         ? { added: 0, removed: 0 }
-        : lineDelta(renderPrompt(template, filled, next.composed.failure), text),
+        : lineDelta(renderPrompt(template, filled, checks, next.composed.failure), text),
     problem: null,
   };
 }

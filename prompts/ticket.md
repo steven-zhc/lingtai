@@ -33,7 +33,7 @@ Make the change and commit it on the branch you are already on.
 
 1. Read the code the ticket points at.
 2. Make the smallest change that closes the issue as written.
-3. Run the project's own checks before you finish.
+3. {{checks}}
 4. **Commit as the work stands, not when it is finished.** A run that ends with
    uncommitted work in the worktree produces nothing — the worktree is deleted
    when the run ends, and an uncommitted change goes with it. You do not get a

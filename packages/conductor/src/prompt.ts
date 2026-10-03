@@ -24,6 +24,7 @@
  * writes its own version of either.
  */
 import { reduceWorkItem, retiredRepairPending, type Envelope } from "@lingtai/domain";
+import type { StepAction } from "@lingtai/recipe";
 import {
   attemptBrief,
   answersBrief,
@@ -247,30 +248,113 @@ function join(blocks: readonly string[]): string {
  * it opens *you are not given the implementer's reasoning*, and a design is another
  * agent's reasoning, so the round bought to answer a refusal is held to the
  * criterion and the code in front of it.
+ *
+ * **`checks` is the third substitution, and it is never blank** (`#319`).
+ * `{{design}}` and `{{failure}}` render nothing when there is nothing to say,
+ * and a template with no slot for either loses nothing because `join` drops the
+ * blank. `checksBrief` has no blank form — even a project whose recipe declares
+ * no command at `build:` is told so, and every project is told not to wait on a
+ * background task before it has committed, because that is the sentence `#249`
+ * and `#308` were lost without and it has to reach every run rather than only
+ * the ones a template remembered to ask for.
  */
 export function renderPrompt(
   template: string,
   ticket: { number: number; title: string; body: string },
+  checks: readonly string[],
   failure = "",
   design = "",
 ): string {
   const drafted = design.trim() === "" ? "" : designBrief(design);
+  const checked = checksBrief(checks);
   const filled = template
     .replaceAll("{{issue}}", String(ticket.number))
     .replaceAll("{{title}}", ticket.title)
     .replaceAll("{{body}}", ticket.body)
     .replaceAll("{{design}}", drafted)
+    .replaceAll("{{checks}}", checked)
     .replaceAll("{{failure}}", failure);
-  // The design first and the history second: the design is about the change and
-  // the history is about the attempts at it. `join` drops whichever said nothing,
+  // The design first, the checks second and the history third: the design is
+  // about the change, the checks are about the bar it is held to, and the
+  // history is about the attempts at it. `join` drops whichever said nothing,
   // so a template that carries a slot appends nothing for it — which keeps the
   // rule above one rule rather than two.
   const appended = join([
     drafted !== "" && !template.includes("{{design}}") ? drafted : "",
+    !template.includes("{{checks}}") ? checked : "",
     failure !== "" && !template.includes("{{failure}}") ? failure : "",
   ]);
   if (appended === "") return filled;
   return `${filled}\n\n${appended}\n`;
+}
+
+/**
+ * The commands `build:` runs, in declared order — what `checksBrief` names as
+ * the whole of the bar.
+ *
+ * Only a `run:` action carries one. `file:`, `watch:` and everything else a
+ * project may legally declare at `build` say nothing a fixer could run again by
+ * hand, so they are passed over rather than stringified into something that
+ * reads like a command and is not one.
+ */
+export function buildCommands(build: readonly StepAction[]): string[] {
+  return build.filter((action): action is StepAction & { run: string } => "run" in action).map((a) => a.run);
+}
+
+/**
+ * **The two sentences `#319` exists to put in front of every agent**: what the
+ * bar is, and that waiting for anything slower loses the work.
+ *
+ * `#249` ran the integration suite as part of doing a ticket and was killed at
+ * its timeout with no commit at all. `#308` finished the work, verified it was
+ * green, started a suite the gate does not run, scheduled a wakeup to check on
+ * it, and was terminated under that wakeup — $13.17 and eight fixed findings,
+ * gone with the worktree. Both are the same shape: a check this pass does not
+ * owe, waited for anyway, and the one place `CLAUDE.md`'s rule did not reach is
+ * the brief every agent is actually handed.
+ *
+ * **The bar is named from the recipe and not written in here.** `pnpm
+ * typecheck && pnpm test` is this project's `build:` and not a fact about
+ * every project `#319` is for — both briefs this renders into go to every
+ * managed project, so the commands come from `buildCommands(recipe.steps.build)`
+ * at the call site and this function only says what they mean.
+ *
+ * **Never empty**, unlike `designBrief` and the history: a project that
+ * declares no command at `build:` still has to be told not to wait on a
+ * background task before it has committed, so the second paragraph renders
+ * whatever the first says.
+ */
+export function checksBrief(commands: readonly string[]): string {
+  const bar =
+    commands.length === 0
+      ? "This project's recipe declares no command at `build:`. That names no single " +
+        "bar here — it is not license to skip verification, so run what the project " +
+        "ordinarily runs before you finish."
+      : [
+          "What the `build` step runs is:",
+          "",
+          "```",
+          commands.join("\n"),
+          "```",
+          "",
+          "and that is the whole of what this pass is checked against. Anything slower or " +
+            'wider — another app\'s build, a suite this project calls "integration," anything ' +
+            "that reaches a network, a database or another process — is not this pass's to " +
+            "run, and its result is not something this pass owes.",
+        ].join("\n");
+
+  return [
+    "## What `build` checks, and what it does not",
+    "",
+    bar,
+    "",
+    "**Once you have changed anything, commit it before you verify something this turn " +
+      "cannot finish.** There is no later turn: the run ends with your final message, and " +
+      "nothing you start in the background or schedule wakes you up to see how it went. The " +
+      "worktree is released with whatever is uncommitted in it — a commit is cheap and can be " +
+      "amended, and an uncommitted change is gone with the worktree. Never wait on a " +
+      "background task before there is a commit.",
+  ].join("\n");
 }
 
 /**

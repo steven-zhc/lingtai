@@ -485,11 +485,11 @@ process startup alone was 17ms.
 **Four tools count as mutations** (`hook-socket.ts`), and only these produce
 `RunTouchedFile`: `Write` · `Edit` · `MultiEdit` · `NotebookEdit`.
 
-## prompt placeholder — 5
+## prompt placeholder — 6
 
 | | |
 |---|---|
-| **Does** | `renderPrompt` (`packages/conductor/src/prompt.ts`) fills five `{{…}}` names in the **ticket template**. |
+| **Does** | `renderPrompt` (`packages/conductor/src/prompt.ts`) fills six `{{…}}` names in the **ticket template**. |
 | **Where they work** | `prompts/ticket.md`, and only there. |
 | **Where they do not** | A recipe's `prompt:` — `{{issue}}` written there reaches the model as five literal characters, and nothing refuses or warns. |
 | **Watch out** | Copying the idiom from the template into a recipe is the mistake this page exists for. |
@@ -499,11 +499,16 @@ process startup alone was 17ms.
 | `{{issue}}` | the ticket's number | yes |
 | `{{title}}` | the ticket's title | yes |
 | `{{body}}` | the ticket's body | yes |
+| `{{checks}}` | what `build:` runs and the rule against waiting on anything slower (`#319`), never `""` | yes |
 | `{{failure}}` | what refused the last attempt, `""` on the first | yes |
 | `{{design}}` | the design note `design` produced, under a heading, `""` when none ran | **supported and unused** |
 
-A template with no slot for `{{failure}}` or `{{design}}` has that text
-**appended** instead, so neither is dropped: one rule, not two.
+A template with no slot for `{{checks}}`, `{{failure}}` or `{{design}}` has that
+text **appended** instead, so none of the three is dropped: one rule, not three.
+`{{checks}}` is the one of the three that never renders blank — `checksBrief`
+always has something to say, even about a project whose recipe declares no
+command at `build:` — so the only question for it is *in the slot or appended*,
+never *at all*.
 
 **Templates are substituted; a recipe's `prompt:` is not.** `prompts/ticket.md` is
 read from the repository root and run through `renderPrompt`. A step's `prompt:` is
@@ -515,7 +520,7 @@ repeat it. `prompts/session-brief.md` has no placeholders and nothing renders it
 [0036](decisions-archive/0036-the-core-takes-a-ticket.md) records that `{{issue}}` should
 become `{{ref}}` — *a number is not a ticket* — so that rename is an edit to the
 first row. `packages/conductor/unit/prompt.test.ts` holds this table against
-`renderPrompt`: a sixth name, or a row that does not expand, is a red test.
+`renderPrompt`: a seventh name, or a row that does not expand, is a red test.
 
 ## step — 10, closed forever
 

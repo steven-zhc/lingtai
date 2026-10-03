@@ -50,7 +50,7 @@ Not `build` (*"an agent asked to would be paid to read, and a cold read of the d
 | `name` | string | yes | How every verdict, waiver and reading addresses this action. |
 | `agent` | `claude-code` \| `codex` | yes | The runtime (an enum: prose fails at resolve, not at spawn). |
 | `model` | string | no, the runtime's default | Passed through; **not validated**. |
-| `prompt` | string | yes | Appended to the fixed brief. **Interpolated raw**: `{{issue}}` is not expanded ([`reference.md`](../reference.md#prompt-placeholder--5)). |
+| `prompt` | string | yes | Appended to the fixed brief. **Interpolated raw**: `{{issue}}` is not expanded ([`reference.md`](../reference.md#prompt-placeholder--6)). |
 | `limits` | `{ turns?, wall? }` | no, `runtime.limits` | This call's spend, field by field; **may only narrow**. |
 
 A runtime this machine is not signed in to is a legal name, refused before the claim (*"nothing on this machine is signed in to codex"*).

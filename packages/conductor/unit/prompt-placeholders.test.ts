@@ -29,7 +29,13 @@ describe("the prompt placeholders", () => {
     expect(names.sort()).toEqual(substituted.sort());
 
     for (const name of names) {
-      const out = renderPrompt(name, { number: 7, title: "a title", body: "a body" }, "a failure", "a design");
+      const out = renderPrompt(
+        name,
+        { number: 7, title: "a title", body: "a body" },
+        ["a check"],
+        "a failure",
+        "a design",
+      );
       expect(out, `${name} reaches the model unexpanded`).not.toContain(name);
     }
   });
