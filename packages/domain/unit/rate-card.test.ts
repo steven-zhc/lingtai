@@ -20,6 +20,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseRateCard, priceTokens, rateFor, type RateRow } from "../test/rate-card.ts";
 
+/** A synthetic `RateRow` with everything but the given overrides zeroed. */
+function syntheticRow(overrides: Partial<RateRow>): RateRow {
+  return { from: "2026-01-01", model: "m", mode: "", input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...overrides };
+}
+
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 async function rows(): Promise<RateRow[]> {
@@ -33,7 +38,7 @@ describe("doc/rate-card.md", () => {
     expect(parsed).toContainEqual({
       from: "2026-10-03",
       model: "claude-sonnet-5",
-      mode: "cache-1h",
+      mode: "",
       input: 2.0,
       output: 10.0,
       cacheRead: 0.2,
@@ -49,20 +54,21 @@ describe("doc/rate-card.md", () => {
    *
    * Captured 2026-10-03 with `claude -p "reply ok" --model claude-sonnet-5
    * --output-format json` (claude-code 2.1.285), run twice. The first receipt
-   * wrote to the cache and billed at the one-hour-TTL rate; the second reused
-   * that cache (`cacheCreationInputTokens: 0`) and is a pure cache-read turn,
-   * which carries no cache-write tokens and so calibrates only the ordinary
-   * input/output/cache-read columns — see `doc/rate-card.md`'s note on the
-   * 2026-10-03 row for the arithmetic that tells the two regimes apart.
+   * wrote to the cache; the second reused it (`cacheCreationInputTokens: 0`)
+   * and is a pure cache-read turn, which carries no cache-write tokens and so
+   * calibrates only the input/output/cache-read columns — see
+   * `doc/rate-card.md`'s note on the 2026-10-03 row for why the first
+   * receipt's cache-write rate is recorded as the ordinary rate having moved,
+   * and not as a one-hour-cache premium.
    */
   const CAPTURED_AT = new Date("2026-10-03T00:00:00.000Z");
   const CACHE_WRITE_RECEIPT = {
-    // The call that first created the cache — billed at the one-hour rate.
+    // The call that created the cache.
     tokens: { fresh: 2, output: 19, cacheRead: 24352, cacheWrite: 39338 },
     costUsd: 0.1624164,
   };
   const CACHE_READ_RECEIPT = {
-    // The call right after it: a pure cache-read turn, on the ordinary cache.
+    // The call right after it: a pure cache-read turn.
     tokens: { fresh: 2, output: 13, cacheRead: 63690, cacheWrite: 0 },
     costUsd: 0.012872,
   };
@@ -76,33 +82,32 @@ describe("doc/rate-card.md", () => {
     expect(Math.abs(priced - CACHE_READ_RECEIPT.costUsd) / CACHE_READ_RECEIPT.costUsd).toBeLessThan(0.01);
   });
 
-  it("prices the cache-write receipt within 1% against the cache-1h mode, not the ordinary one", async () => {
+  it("prices the cache-write receipt within 1% against the ordinary mode", async () => {
     const theRows = await rows();
-    const hourly = rateFor(theRows, "claude-sonnet-5", "cache-1h", CAPTURED_AT);
-    expect(hourly).toBeDefined();
+    const row = rateFor(theRows, "claude-sonnet-5", "", CAPTURED_AT);
+    expect(row).toBeDefined();
 
-    const priced = priceTokens(CACHE_WRITE_RECEIPT.tokens, hourly!);
+    const priced = priceTokens(CACHE_WRITE_RECEIPT.tokens, row!);
     expect(priced).toBeCloseTo(CACHE_WRITE_RECEIPT.costUsd, 2);
     expect(Math.abs(priced - CACHE_WRITE_RECEIPT.costUsd) / CACHE_WRITE_RECEIPT.costUsd).toBeLessThan(0.01);
   });
 
   /**
-   * **The blocker this file almost became: the discovery must not shadow the
-   * ordinary rate.** `rateFor(rows, "claude-sonnet-5", "", at)` for any `at`
-   * on or after 2026-10-03 must still answer the 2026-06-24 row — the
-   * `cache-1h` row has its own mode and is never the latest match for an
-   * ordinary, empty-mode lookup. An ordinary call shaped like the cache-write
-   * receipt above is really billed $0.1034094 (2.50/MTok cache write), and
-   * that is what an ordinary lookup must still price it at, not the
-   * $0.1624164 the one-hour regime actually paid.
+   * **`rateFor` must isolate by mode, not just by date** — a row for a
+   * premium mode must never answer a lookup for the empty (ordinary) mode,
+   * however recent it is. Built from synthetic rows rather than
+   * `doc/rate-card.md`'s own content: pinning this to the file's real rows
+   * breaks the moment somebody legitimately appends a new ordinary row,
+   * which this test must not call a mode-shadowing bug.
    */
-  it("never lets the cache-1h discovery answer an ordinary lookup", async () => {
-    const theRows = await rows();
-    const ordinary = rateFor(theRows, "claude-sonnet-5", "", CAPTURED_AT);
-    expect(ordinary).toEqual(theRows.find((r) => r.model === "claude-sonnet-5" && r.from === "2026-06-24"));
-
-    const ordinaryPriced = priceTokens(CACHE_WRITE_RECEIPT.tokens, ordinary!);
-    expect(ordinaryPriced).toBeCloseTo(0.1034094, 6);
+  it("never lets a moded row answer an empty-mode lookup", () => {
+    const synthetic = [
+      syntheticRow({ from: "2026-01-01", mode: "", input: 1, cacheWrite: 1 }),
+      syntheticRow({ from: "2026-06-01", mode: "premium", input: 9, cacheWrite: 9 }),
+    ];
+    const ordinary = rateFor(synthetic, "m", "", new Date("2026-12-01"));
+    expect(ordinary?.mode).toBe("");
+    expect(ordinary?.from).toBe("2026-01-01");
   });
 
   /**

@@ -51,39 +51,36 @@ than the model alone.
 | 2026-06-24 | `claude-sonnet-5` | | 2.00 | 10.00 | 0.20 | 2.50 |
 | 2026-06-24 | `claude-haiku-4-5` | | 1.00 | 5.00 | 0.10 | 1.25 |
 | 2026-06-24 | `claude-fable-5-1` | | 10.00 | 50.00 | 0.25 | 12.50 |
-| 2026-10-03 | `claude-sonnet-5` | cache-1h | 2.00 | 10.00 | 0.20 | 4.00 |
+| 2026-10-03 | `claude-sonnet-5` | | 2.00 | 10.00 | 0.20 | 4.00 |
 
-**The 2026-10-03 row is this file noticing itself go stale, and noticing it
-was missing a dimension.** `packages/domain/unit/rate-card.test.ts` captured
-two real receipts — `claude -p "reply ok" --model claude-sonnet-5
---output-format json`, run twice — and compared `modelUsage.claude-sonnet-5`
-against the 2026-06-24 row. The first receipt (`inputTokens:2, outputTokens:19,
-cacheReadInputTokens:24352, cacheCreationInputTokens:39338,
-costUSD:0.1624164`) priced at $0.1034094 against that row — 36% short of what
-was actually billed, all of it the cache-write column. The second (a pure
-cache-read turn, `cacheReadInputTokens:63690, cacheCreationInputTokens:0,
-costUSD:0.012872`) priced exactly against that row's cache-read rate — it
-carries no cache-write tokens at all, so it says nothing about that column
-either way; it only confirms input, output and cache read are untouched.
+**The 2026-10-03 row is this file noticing itself go stale.**
+`packages/domain/unit/rate-card.test.ts` captured two real receipts — `claude
+-p "reply ok" --model claude-sonnet-5 --output-format json`, run twice — and
+compared `modelUsage.claude-sonnet-5` against the 2026-06-24 row. The first
+receipt (`inputTokens:2, outputTokens:19, cacheReadInputTokens:24352,
+cacheCreationInputTokens:39338, costUSD:0.1624164`) priced at $0.1034094
+against that row — 36% short of what was actually billed, all of it the
+cache-write column. The second (a pure cache-read turn,
+`cacheReadInputTokens:63690, cacheCreationInputTokens:0, costUSD:0.012872`)
+priced exactly against that row's cache-read rate — it carries no cache-write
+tokens at all, so it says nothing about that column either way; it only
+confirms input, output and cache read are untouched.
 
-**$4.00 is exactly 2× the $2.00 input rate, and 2× is the published multiplier
-for a write to a one-hour cache — not the 1.25× this file derived for the
-ordinary five-minute cache, which the 2026-06-24 row's $2.50 already is.** So
-the first receipt was not evidence that claude-sonnet-5's general cache-write
-rate had moved; it was evidence that *that one call* wrote to a one-hour
-cache. Recording $4.00 under the ordinary (empty) mode would have made every
-sonnet event from 2026-10-03 onward price at the one-hour rate, including the
-five-minute default most calls use — a call shaped like the first receipt but
-on the ordinary cache is really billed $0.1034094, not $0.1624164.
+**$4.00 is exactly 2× the $2.00 input rate, which is also the published
+multiplier for a write to a one-hour cache — so that was checked rather than
+assumed.** A one-hour cache write is opt-in: the installed `claude` binary
+(2.1.285) documents its own `promptCacheTtl` setting as "unset = automatic
+(5 minutes unless `ENABLE_PROMPT_CACHING_1H=1`)", and that variable is unset
+in the shell the receipt was captured from, in every shell init file on this
+machine, and in `~/.claude/settings.json` — nothing here ever asks for the
+one-hour tier. So the 2× is not evidence that this one call reached a premium
+cache; it is evidence that claude-sonnet-5's ordinary cache-write rate itself
+moved from the 1.25× this file had derived to 2×, and the row above records
+that as the ordinary (empty-mode) rate rather than parking it under a mode
+nothing here would ever reach.
 
-So the row above is keyed to the `cache-1h` mode rather than the empty one,
-and the 2026-06-24 row still answers every ordinary lookup —
-`rateFor(rows, "claude-sonnet-5", "", at)` returns the $2.50 row for any `at`,
-2026-10-03 included. Nothing in this codebase tags an event with which cache
-TTL it wrote to, so the `cache-1h` row is unreachable until that lands, which
-is the correct state for now: unpriced is the honest answer for a regime
-nothing can yet name, not a guess. The old row is left standing, as every row
-here is.
+The old row is left standing, as every row here is, so an event from before
+2026-10-03 still prices at $2.50.
 
 **The cache columns above are derived, not quoted, except one.** The published
 figures are the input and output rates plus the multipliers — cache reads at

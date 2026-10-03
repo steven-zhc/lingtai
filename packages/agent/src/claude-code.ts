@@ -155,19 +155,23 @@ interface ClaudeModelUsage {
  * reported separately" for this runtime, and the whole of `outputTokens` is
  * already billed correctly at the output rate.
  *
- * `undefined` where the receipt carried no `modelUsage` at all, which must
- * read as *this runtime did not say* rather than an empty bill.
+ * `undefined` where the receipt carried no `modelUsage` at all, or where every
+ * entry it did carry recognised none of the four fields — which must read as
+ * *this runtime did not say* rather than an empty bill, the same inversion
+ * `codexUsage`'s `hasTokens` guard exists to refuse.
  */
 export function usageFromModelUsage(modelUsage: Record<string, ClaudeModelUsage> | undefined): Usage | undefined {
   if (!modelUsage) return undefined;
-  const entries = Object.entries(modelUsage).map(([model, u]) => {
-    const tokens: TokenCounts = {};
-    if (u.inputTokens !== undefined) tokens.fresh = u.inputTokens;
-    if (u.cacheReadInputTokens !== undefined) tokens.cacheRead = u.cacheReadInputTokens;
-    if (u.cacheCreationInputTokens !== undefined) tokens.cacheWrite = u.cacheCreationInputTokens;
-    if (u.outputTokens !== undefined) tokens.output = u.outputTokens;
-    return { model, tokens };
-  });
+  const entries = Object.entries(modelUsage)
+    .map(([model, u]) => {
+      const tokens: TokenCounts = {};
+      if (u.inputTokens !== undefined) tokens.fresh = u.inputTokens;
+      if (u.cacheReadInputTokens !== undefined) tokens.cacheRead = u.cacheReadInputTokens;
+      if (u.cacheCreationInputTokens !== undefined) tokens.cacheWrite = u.cacheCreationInputTokens;
+      if (u.outputTokens !== undefined) tokens.output = u.outputTokens;
+      return { model, tokens };
+    })
+    .filter((entry) => Object.values(entry.tokens).some((value) => value !== undefined));
   return entries.length > 0 ? entries : undefined;
 }
 

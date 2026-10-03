@@ -59,4 +59,24 @@ describe("usageFromModelUsage", () => {
     const usage = usageFromModelUsage({ "claude-sonnet-5": { inputTokens: 2 } });
     expect(usage).toEqual([{ model: "claude-sonnet-5", tokens: { fresh: 2 } }]);
   });
+
+  /**
+   * **A model key whose entry carries none of the four recognised fields is
+   * dropped, not recorded as a present, all-zero bill.** `ClaudeModelUsage`'s
+   * fields are all optional and hand-written, so a renamed or re-nested
+   * receipt shape must not silently turn into `{model, tokens: {}}` — the
+   * exact inversion `codexUsage`'s `hasTokens` guard refuses on the other
+   * adapter.
+   */
+  it("drops a model entry whose tokens recognised none of the four fields", () => {
+    expect(usageFromModelUsage({ "claude-sonnet-5": {} })).toBeUndefined();
+  });
+
+  it("keeps a recognised entry and drops an unrecognised one from the same receipt", () => {
+    const usage = usageFromModelUsage({
+      "claude-sonnet-5": { inputTokens: 2 },
+      "claude-haiku-4-5": {},
+    });
+    expect(usage).toEqual([{ model: "claude-sonnet-5", tokens: { fresh: 2 } }]);
+  });
 });
