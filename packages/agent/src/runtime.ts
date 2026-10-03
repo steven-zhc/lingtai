@@ -19,7 +19,7 @@
  * and records `DispatchRefused` when the combination cannot meet the tier — it
  * never silently downgrades. See doc/decisions-archive/0007-dual-runtime.md.
  */
-import type { RunFailureKind, RuntimeId, Tier } from "@lingtai/domain";
+import type { RunFailureKind, RuntimeId, Tier, Usage } from "@lingtai/domain";
 import type { RunTrace } from "./run-log.ts";
 
 /**
@@ -168,6 +168,11 @@ export interface RunOutcome {
   text: string | null;
   /** The runtime's own session identifier, for finding its transcript. */
   sessionId: string;
+  /**
+   * What the run billed, by the runtime's own counts (0110 §3). Absent where
+   * the runtime reported nothing to accumulate — never zero.
+   */
+  usage?: Usage;
 }
 
 /**

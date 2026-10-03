@@ -40,20 +40,39 @@ run log is gone by the time anyone asks what the work cost.
    interpolated into `evidence` prose.
 
 3. **Tokens are recorded as five counts, accumulated across turns, never
-   summed.** One optional nested group holds the counts:
+   summed, and disjoint.** `usage` is `Usage` (`packages/domain/src/spend.ts`):
+   an array of entries, one per model a call billed, each holding its own
+   `tokens`:
 
    | count | claude-code | codex |
    |---|---|---|
-   | fresh input | `input_tokens` | `input_tokens` |
+   | fresh input | `input_tokens` | `input_tokens − cached_input_tokens` |
    | served from cache | `cache_read_input_tokens` | `cached_input_tokens` |
    | written to cache | `cache_creation_input_tokens` | `cache_write_input_tokens` |
-   | output | `output_tokens` | `output_tokens` |
+   | output | `output_tokens` | `output_tokens − reasoning_output_tokens` |
    | reasoning output | not reported separately | `reasoning_output_tokens` |
 
-   A second optional group holds what pricing needs: the model as the recipe
-   asked for it, and the mode where one model id has more than one speed. Events
-   take one key per group rather than loose fields, because nobody writes events
-   by hand.
+   **Codex's own counts overlap, and the event's must not.** `cached_input_tokens`
+   is part of `input_tokens`, and `reasoning_output_tokens` is part of
+   `output_tokens` — measured against a real rollout, where `total_tokens` equals
+   `input_tokens + output_tokens` exactly. Storing `input_tokens` as fresh input
+   whole would charge the cached portion twice once it was also primed as
+   cache-read. So the Codex adapter subtracts, and only when both operands were
+   reported: an absent `cached_input_tokens` leaves fresh input absent too,
+   never `input_tokens` taken whole, which is the inversion decision 4 forbids.
+   Where `reasoning_output_tokens` is absent, the whole of `output_tokens` is
+   kept — there is no overlap to protect against, and it is still billed
+   correctly at the output rate either way. claude-code's four counts need no
+   such subtraction: its own `modelUsage` already reports them disjoint.
+
+   **One entry per model, keyed by `(model, mode)`.** claude-code's `modelUsage`
+   is itself keyed by model id, and a call can bill more than one — `model` on
+   each entry is that key, verbatim, never the model the recipe asked for.
+   Entries merge by `(model, mode)` when tokens from two turns or two rounds are
+   added together (`addUsage`); a differently-keyed entry is a second line in
+   the bill, not a second count of the same one. `mode` names a premium speed at
+   the same model id, where a runtime has one. Events take one array rather than
+   loose fields, because nobody writes events by hand.
 
 4. **Every field is optional, and none defaults to zero.** A `.default(0)`
    anywhere in these groups would report unknown cost as free. Optional also
@@ -95,17 +114,13 @@ run log is gone by the time anyone asks what the work cost.
 
 ## Not built yet
 
-- **The token and pricing groups are not on any event.** No event in
-  `events.ts` carries token counts, model or mode for spend. The Codex adapter
-  keeps only `billedTokens`, which sums input and output from the last
-  `turn.completed` (`packages/agent/src/codex.ts`) and reaches only the run log.
 - **Reviewer and judge spend is not on an event.** `ActionResult` has no spend
   field. The cold reviewer's turns and dollars appear only inside `evidence`
   prose (`packages/actions/src/agent-action.ts`), and a judge's spend appears
-  only in the run log. The step events carry no spend.
+  only in the run log. The step events carry no spend. (#324)
 - **Nothing reads the rate card.** No code prices tokens, so a Codex step
   shows no cost. `ledger` adds a null `costUsd` as 0 in its totals, and does not
-  show it as unknown.
+  show it as unknown. (#208)
 
 ---
 *Replaces archived 0073, 0075 in [decisions-archive](../decisions-archive/).*

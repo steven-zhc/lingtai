@@ -171,6 +171,66 @@ describe("the receipt, as a fold over the stream", () => {
   });
 
   /**
+   * The five counts (#316, 0110 §3) are **disjoint**, never Codex's own
+   * overlapping pair: `cached_input_tokens` is part of `input_tokens`, and
+   * there is no `reasoning_output_tokens` on this fixture to double-count, so
+   * `output` is kept whole. `fresh` is the subtraction — `17018 - 7680` — and
+   * `billedTokens` above is untouched, carrying on as the sum it always was.
+   */
+  it("keeps the five counts disjoint rather than Codex's own overlapping pair", () => {
+    const { tokens } = codexOutcome(clean());
+    expect(tokens).toEqual({ fresh: 9338, cacheRead: 7680, output: 5 });
+  });
+
+  /**
+   * **Accumulated across turns, never assigned** — the defect `billedTokens`
+   * has and `tokens` must not. Synthetic: Lingtai never runs `exec resume`
+   * (`codex.ts`'s module header), so no stream this reads carries two turns
+   * today, and the measured real streams all have exactly one `turn.completed`.
+   */
+  it("accumulates tokens across more than one turn.completed", () => {
+    const two = [
+      ...clean(),
+      JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "and this" } }),
+      JSON.stringify({
+        type: "turn.completed",
+        usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 8, reasoning_output_tokens: 3 },
+      }),
+    ];
+    const { tokens } = codexOutcome(two);
+    // First turn: fresh 9338, cacheRead 7680, output 5. Second turn: fresh
+    // 60, cacheRead 40, output 5, reasoning 3 (8 - 3).
+    expect(tokens).toEqual({ fresh: 9398, cacheRead: 7720, output: 10, reasoning: 3 });
+  });
+
+  /**
+   * **A difference below zero is the runtime saying something incoherent, and
+   * both buckets of that pair are left absent** — never a negative, and never
+   * `input_tokens` taken whole, which is the exact inversion "never 0" at the
+   * top of this file forbids. Measured against nothing, because this never
+   * happens on a real stream; it is the defensive edge 0110 §3 names.
+   */
+  it("leaves a pair absent rather than negative when the runtime's own counts disagree", () => {
+    const said = codexOutcome(
+      jsonl({
+        type: "turn.completed",
+        usage: { input_tokens: 5, cached_input_tokens: 10, output_tokens: 2, reasoning_output_tokens: 9 },
+      }),
+    );
+    expect(said.tokens).toEqual({});
+  });
+
+  /**
+   * `cached_input_tokens` reported with no `input_tokens` beside it: `fresh`
+   * cannot be computed, but the cache figure itself is still real and is kept
+   * rather than discarded along with it.
+   */
+  it("keeps cacheRead on its own when input_tokens is the one missing", () => {
+    const said = codexOutcome(jsonl({ type: "turn.completed", usage: { cached_input_tokens: 500 } }));
+    expect(said.tokens).toEqual({ cacheRead: 500 });
+  });
+
+  /**
    * `turn.failed` is the runtime saying why its own turn ended, and it is the
    * only place that sentence appears: the exit code says nothing, and the `error`
    * items are notices about the invocation.

@@ -38,6 +38,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
+import type { TokenCounts, Usage } from "@lingtai/domain";
 import type {
   AuthStatus,
   Invocable,
@@ -124,6 +125,50 @@ interface ClaudeResult {
   session_id?: string;
   subtype?: string;
   result?: string;
+  /**
+   * Per-model spend, keyed by the runtime's own model id — measured on a real
+   * receipt (`claude -p "reply ok" --output-format json`, 2.1.285):
+   * `{"claude-sonnet-5":{"inputTokens":2,"outputTokens":19,
+   * "cacheReadInputTokens":24352,"cacheCreationInputTokens":39338,
+   * "costUSD":0.1624164,…}}`. A call can bill more than one model, and each
+   * entry's tokens can only be priced at that model's own rate — folding every
+   * key under the model the recipe asked for would price a smaller model's
+   * tokens at a larger one's rates.
+   */
+  modelUsage?: Record<string, ClaudeModelUsage>;
+}
+
+/** One model's line in `modelUsage`. Extra fields the receipt carries are not read. */
+interface ClaudeModelUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+}
+
+/**
+ * `modelUsage`, read into the shared shape (0110 §3) — one `Usage` entry per
+ * model the call billed, `model` filled from the receipt's own key.
+ *
+ * Claude Code does not report reasoning tokens separately from output, so
+ * `reasoning` is never set here: the table in 0110 §3 lists it as "not
+ * reported separately" for this runtime, and the whole of `outputTokens` is
+ * already billed correctly at the output rate.
+ *
+ * `undefined` where the receipt carried no `modelUsage` at all, which must
+ * read as *this runtime did not say* rather than an empty bill.
+ */
+export function usageFromModelUsage(modelUsage: Record<string, ClaudeModelUsage> | undefined): Usage | undefined {
+  if (!modelUsage) return undefined;
+  const entries = Object.entries(modelUsage).map(([model, u]) => {
+    const tokens: TokenCounts = {};
+    if (u.inputTokens !== undefined) tokens.fresh = u.inputTokens;
+    if (u.cacheReadInputTokens !== undefined) tokens.cacheRead = u.cacheReadInputTokens;
+    if (u.cacheCreationInputTokens !== undefined) tokens.cacheWrite = u.cacheCreationInputTokens;
+    if (u.outputTokens !== undefined) tokens.output = u.outputTokens;
+    return { model, tokens };
+  });
+  return entries.length > 0 ? entries : undefined;
 }
 
 /**
@@ -381,6 +426,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           const durationMs = parsed?.duration_ms ?? Date.now() - started;
           const turns = parsed?.num_turns ?? 0;
           const costUsd = parsed?.total_cost_usd ?? null;
+          const usage = usageFromModelUsage(parsed?.modelUsage);
 
           // The last line of the log is how it ended, in the runtime's own
           // words — `subtype` included, which only `error_max_turns` is read
@@ -415,6 +461,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
                   (costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`),
               },
               sessionId,
+              usage,
             });
             return;
           }
@@ -428,6 +475,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
               text: parsed.result ?? null,
               failure: null,
               sessionId,
+              usage,
             });
             return;
           }
@@ -472,6 +520,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
                 ((stderr.trim() || stdout.trim()).slice(-500) || `exited ${code}`),
             },
             sessionId,
+            usage,
           });
         });
       });

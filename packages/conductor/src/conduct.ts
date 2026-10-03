@@ -1831,6 +1831,7 @@ export function runOnce(
                     failure: { kind: "crash" as const, detail: (err as Error).message },
                     text: null,
                     sessionId: "",
+                    usage: undefined,
                   })),
               );
             }),
@@ -2658,6 +2659,7 @@ export function runOnce(
                       turns: outcome.turns,
                       durationMs: outcome.durationMs,
                       costUsd: outcome.costUsd,
+                      ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
                     }),
                   },
                 ]
@@ -2691,6 +2693,7 @@ export function runOnce(
               turns: outcome.turns,
               durationMs: outcome.durationMs,
               costUsd: outcome.costUsd,
+              ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
             }),
           },
         ]);
@@ -2815,6 +2818,7 @@ export function runOnce(
                     failure: { kind: "crash" as const, detail: (err as Error).message },
                     text: null,
                     sessionId: "",
+                    usage: undefined,
                   })),
               );
             }),
@@ -2835,6 +2839,7 @@ export function runOnce(
               turns: fixed.turns,
               costUsd: fixed.costUsd,
               failure: fixed.failure ? `${fixed.failure.kind}: ${fixed.failure.detail}` : null,
+              ...(fixed.usage === undefined ? {} : { usage: fixed.usage }),
             }),
           },
         ]);

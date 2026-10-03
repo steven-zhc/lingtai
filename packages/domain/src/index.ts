@@ -8,3 +8,4 @@ export * from "./project.ts";
 export * from "./streams.ts";
 export * from "./control.ts";
 export * from "./backlog.ts";
+export * from "./spend.ts";

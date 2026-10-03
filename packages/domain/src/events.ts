@@ -16,6 +16,7 @@
  * payload in place.
  */
 import { z } from "zod";
+import { Usage } from "./spend.ts";
 
 // ---------------------------------------------------------------- shared ----
 
@@ -565,6 +566,8 @@ export const RunFinished = z.object({
   turns: z.number().int(),
   durationMs: z.number().int(),
   costUsd: z.number().nullable(),
+  /** What the run billed, by the runtime's own counts (0110 §3). Absent, never zero. */
+  usage: Usage.optional(),
 });
 
 /**
@@ -1225,6 +1228,8 @@ export const FixApplied = z.object({
   costUsd: z.number().nullable(),
   /** The runtime's own ending, when it did not finish. Null when it did. */
   failure: z.string().nullable(),
+  /** What the fix round billed, by the runtime's own counts (0110 §3). */
+  usage: Usage.optional(),
 });
 
 /**
@@ -1777,6 +1782,8 @@ export const DiscussionAnswered = z.object({
   costUsd: z.number().nullable(),
   /** Set when the assistant did not finish. Null on an ordinary answer. */
   failure: z.string().nullable(),
+  /** What this turn billed, by the runtime's own counts (0110 §3). */
+  usage: Usage.optional(),
 });
 
 /**
@@ -1798,6 +1805,8 @@ export const DiscussionHeld = z.object({
   costUsd: z.number().nullable(),
   outcome: z.enum(["prompt", "ticket", "none"]),
   by: z.string(),
+  /** The whole conversation's tokens, by the runtime's own counts (0110 §3). */
+  usage: Usage.optional(),
 });
 
 /**

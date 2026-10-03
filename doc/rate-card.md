@@ -51,6 +51,22 @@ than the model alone.
 | 2026-06-24 | `claude-sonnet-5` | | 2.00 | 10.00 | 0.20 | 2.50 |
 | 2026-06-24 | `claude-haiku-4-5` | | 1.00 | 5.00 | 0.10 | 1.25 |
 | 2026-06-24 | `claude-fable-5-1` | | 10.00 | 50.00 | 0.25 | 12.50 |
+| 2026-10-03 | `claude-sonnet-5` | | 2.00 | 10.00 | 0.20 | 4.00 |
+
+**The 2026-10-03 row is this file noticing itself go stale, exactly once.**
+`packages/domain/unit/rate-card.test.ts` captured two real receipts —
+`claude -p "reply ok" --model claude-sonnet-5 --output-format json`, run twice —
+and compared `modelUsage.claude-sonnet-5` against the row above it. The first
+receipt (`inputTokens:2, outputTokens:19, cacheReadInputTokens:24352,
+cacheCreationInputTokens:39338, costUSD:0.1624164`) priced at $0.1034094
+against the 2026-06-24 row — 36% short of what was actually billed — while the
+second (a pure cache-read turn, `cacheReadInputTokens:63690,
+cacheCreationInputTokens:0, costUSD:0.012872`) priced exactly against that
+row's cache-read rate, which is what pinned the shortfall to **cache write
+alone**: solving both receipts together gives cache write at $4.00 per MTok,
+not the $2.50 this file derived from the 1.25× multiplier in 2026-06-24. Input,
+output and cache read are untouched because both receipts priced exactly
+against them. The old row is left standing, as every row here is.
 
 **The cache columns above are derived, not quoted, except one.** The published
 figures are the input and output rates plus the multipliers — cache reads at

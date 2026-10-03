@@ -21,6 +21,7 @@ import {
   readingFor,
   spendOf,
   turnsOf,
+  usageOf,
   type Answered,
   type DiscussionEvidence,
 } from "../src/discuss.ts";
@@ -247,6 +248,69 @@ describe("holding one question", () => {
     expect((store.appended[1]?.data as { read: string[] }).read).toEqual(["main:a.ts"]);
   });
 
+  /**
+   * `usage`, accumulated across rounds the same way `turns` and `durationMs`
+   * already were — through `addUsage`, never a hand-written `+`. Two rounds,
+   * same model: the second round's tokens add to the first's rather than
+   * replacing them.
+   */
+  it("accumulates usage across rounds onto the one DiscussionAnswered event", async () => {
+    const store = fakeStore();
+    let round = 0;
+
+    await holdDiscussion(
+      {
+        store: store.store,
+        serve: async () => "x",
+        ask: async (): Promise<Answered> => {
+          round += 1;
+          return round === 1
+            ? {
+                turns: 1,
+                durationMs: 1,
+                costUsd: 0.1,
+                text: '{"read":["main:a.ts"]}',
+                failure: null,
+                usage: [{ model: "claude-sonnet-5", tokens: { fresh: 10, output: 2 } }],
+              }
+            : {
+                turns: 1,
+                durationMs: 1,
+                costUsd: 0.2,
+                text: '{"answer":"it is a.ts","cannot":[],"proposal":null}',
+                failure: null,
+                usage: [{ model: "claude-sonnet-5", tokens: { fresh: 5, output: 1 } }],
+              };
+        },
+      },
+      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven", call: CALL },
+    );
+
+    const answer = store.appended[1]?.data as { usage?: unknown };
+    expect(answer.usage).toEqual([{ model: "claude-sonnet-5", tokens: { fresh: 15, output: 3 } }]);
+  });
+
+  it("leaves usage off the event when nothing reported any", async () => {
+    const store = fakeStore();
+    await holdDiscussion(
+      {
+        store: store.store,
+        serve: async () => null,
+        ask: async (): Promise<Answered> => ({
+          turns: 1,
+          durationMs: 1,
+          costUsd: 0.1,
+          text: '{"answer":"ok","cannot":[],"proposal":null}',
+          failure: null,
+        }),
+      },
+      { chatId: "chat-1", evidence: EVIDENCE, question: "why?", by: "human:steven", call: CALL },
+    );
+
+    const answer = store.appended[1]?.data as { usage?: unknown };
+    expect(answer.usage).toBeUndefined();
+  });
+
   it("stops asking for files once the rounds run out, and says that is why", async () => {
     const store = fakeStore();
     await holdDiscussion(
@@ -287,6 +351,26 @@ describe("the conversation, read back", () => {
   /** Null and zero are different answers. A turn that reported no cost was not free. */
   it("reports no spend rather than zero when nothing said what it cost", () => {
     expect(spendOf([envelope("DiscussionAnswered", { text: "x", costUsd: null })])).toBeNull();
+  });
+
+  it("totals usage across every answer on the conversation", () => {
+    const events = [
+      envelope("DiscussionAnswered", {
+        text: "because",
+        costUsd: 0.5,
+        usage: [{ model: "claude-sonnet-5", tokens: { fresh: 10 } }],
+      }),
+      envelope("DiscussionAnswered", {
+        text: "and because of that",
+        costUsd: 0.2,
+        usage: [{ model: "claude-sonnet-5", tokens: { fresh: 5, output: 1 } }],
+      }),
+    ];
+    expect(usageOf(events)).toEqual([{ model: "claude-sonnet-5", tokens: { fresh: 15, output: 1 } }]);
+  });
+
+  it("is undefined rather than [] when no answer carried usage", () => {
+    expect(usageOf([envelope("DiscussionAnswered", { text: "x", costUsd: null })])).toBeUndefined();
   });
 });
 

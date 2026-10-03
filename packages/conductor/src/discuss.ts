@@ -60,7 +60,7 @@
  * — because nothing repository-specific decides them yet, and a knob with no
  * measurement behind it is a knob nobody can set.
  */
-import { chatStream, parsePayload, type Envelope, type ToAppend } from "@lingtai/domain";
+import { addUsage, chatStream, parsePayload, Usage, type Envelope, type ToAppend } from "@lingtai/domain";
 import type { EventStore } from "@lingtai/event-store";
 import { editHash } from "./attempts.ts";
 import { tellGitHub, type IssueChannel } from "./tell.ts";
@@ -86,6 +86,8 @@ export interface Answered {
   text: string | null;
   /** Set when the turn did not complete. Never null and silent. */
   failure: { kind: string; detail: string } | null;
+  /** What this turn billed, by the runtime's own counts (0110 §3). */
+  usage?: Usage;
 }
 
 /** Files one turn may ask for. Enough to follow a call site into its callee. */
@@ -509,11 +511,13 @@ export async function holdDiscussion(
   let turns = 0;
   let durationMs = 0;
   let cost: number | null = null;
+  let usage: Usage | undefined;
 
   const spend = (outcome: Answered) => {
     turns += outcome.turns;
     durationMs += outcome.durationMs;
     if (outcome.costUsd !== null) cost = (cost ?? 0) + outcome.costUsd;
+    if (outcome.usage !== undefined) usage = addUsage(usage ?? [], outcome.usage);
   };
 
   const answer = (data: {
@@ -531,6 +535,7 @@ export async function holdDiscussion(
       durationMs,
       costUsd: cost,
       failure: data.failure,
+      ...(usage === undefined ? {} : { usage }),
     });
 
   for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
@@ -617,6 +622,23 @@ export function spendOf(events: readonly Envelope[]): number | null {
     if (e.type !== "DiscussionAnswered") continue;
     const cost = (e.data as { costUsd?: unknown } | null)?.costUsd;
     if (typeof cost === "number") total = (total ?? 0) + cost;
+  }
+  return total;
+}
+
+/**
+ * What a whole conversation billed, from its own stream.
+ *
+ * `undefined` where no turn reported any — not the same as an empty bill, and
+ * why this is optional rather than `[]`. `DiscussionHeld.usage` is optional for
+ * the same reason `RunFinished.usage` is.
+ */
+export function usageOf(events: readonly Envelope[]): Usage | undefined {
+  let total: Usage | undefined;
+  for (const e of events) {
+    if (e.type !== "DiscussionAnswered") continue;
+    const parsed = Usage.safeParse((e.data as { usage?: unknown } | null)?.usage);
+    if (parsed.success) total = addUsage(total ?? [], parsed.data);
   }
   return total;
 }
@@ -711,7 +733,9 @@ export async function concludeDiscussion(
     detail = ok ? "the ticket carries it" : "GitHub refused the edit; the log says why";
   }
 
-  const spend = spendOf(await store.read(chatStream(chatId)));
+  const chatEvents = await store.read(chatStream(chatId));
+  const spend = spendOf(chatEvents);
+  const usage = usageOf(chatEvents);
   const at = (await store.read(workItemId)).length;
   await store.append(workItemId, at, [
     {
@@ -722,6 +746,7 @@ export async function concludeDiscussion(
         costUsd: spend,
         outcome: options.outcome,
         by,
+        ...(usage === undefined ? {} : { usage }),
       }),
     },
   ]);

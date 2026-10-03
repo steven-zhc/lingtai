@@ -54,6 +54,8 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import type { TokenCounts, Usage } from "@lingtai/domain";
+import { mergeTokenCounts } from "@lingtai/domain";
 import { codexAuth } from "./auth.ts";
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from "./claude-code.ts";
 import { NO_RUN_LOG } from "./run-log.ts";
@@ -254,6 +256,21 @@ export interface CodexReceipt {
    */
   billedTokens: number;
   /**
+   * The five counts (0110 §3), accumulated across every `turn.completed` and
+   * kept disjoint — never Codex's own overlapping pair.
+   *
+   * **Codex's `input_tokens` already includes `cached_input_tokens`, and its
+   * `output_tokens` already includes `reasoning_output_tokens`.** Measured
+   * against a real rollout (`~/.codex/sessions/.../rollout-...jsonl`):
+   * `input_tokens: 9046919, cached_input_tokens: 8614656` and
+   * `total_tokens` equal to `input_tokens + output_tokens` exactly. Storing
+   * `input_tokens` as `fresh` would charge the cached 8.6M twice: once at the
+   * full input rate here, once at the cache-read rate were it also stored
+   * under `cacheRead`. So `fresh` is the subtraction, and `cacheRead` is
+   * `cached_input_tokens` taken whole — see `codexTokenCounts`.
+   */
+  tokens: TokenCounts;
+  /**
    * `error` **items**, in order — which are notices and not the failure.
    *
    * `--dangerously-bypass-hook-trust` emits two on every hooked run (*"Enabled
@@ -275,11 +292,80 @@ interface Tally {
   completed: boolean;
   failed: string | null;
   billedTokens: number;
+  tokens: TokenCounts;
   errors: string[];
 }
 
 function emptyTally(): Tally {
-  return { sessionId: "", turns: 0, text: null, completed: false, failed: null, billedTokens: 0, errors: [] };
+  return {
+    sessionId: "",
+    turns: 0,
+    text: null,
+    completed: false,
+    failed: null,
+    billedTokens: 0,
+    tokens: {},
+    errors: [],
+  };
+}
+
+/**
+ * One `turn.completed`'s usage, split into the five disjoint buckets (0110 §3).
+ *
+ * **A subtraction happens only when both operands were reported** — never
+ * `input_tokens` taken whole, because that reads an absent cache count as
+ * zero, which is the exact inversion of "never 0" at the top of this file. If
+ * the subtraction comes out negative, the runtime said something incoherent
+ * and both buckets of that pair are left absent rather than recorded as a
+ * negative or a zero.
+ *
+ * `output` has no such trap: when `reasoning_output_tokens` is absent, the
+ * whole of `output_tokens` is still correctly billed at the output rate, so it
+ * is kept rather than discarded — only `reasoning` stays absent.
+ */
+function codexTokenCounts(usage: NonNullable<CodexEvent["usage"]>): TokenCounts {
+  const out: TokenCounts = {};
+
+  if (usage.input_tokens !== undefined && usage.cached_input_tokens !== undefined) {
+    const fresh = usage.input_tokens - usage.cached_input_tokens;
+    if (fresh >= 0) {
+      out.fresh = fresh;
+      out.cacheRead = usage.cached_input_tokens;
+    }
+  } else if (usage.cached_input_tokens !== undefined) {
+    out.cacheRead = usage.cached_input_tokens;
+  }
+
+  if (usage.cache_write_input_tokens !== undefined) out.cacheWrite = usage.cache_write_input_tokens;
+
+  if (usage.output_tokens !== undefined && usage.reasoning_output_tokens !== undefined) {
+    const output = usage.output_tokens - usage.reasoning_output_tokens;
+    if (output >= 0) {
+      out.output = output;
+      out.reasoning = usage.reasoning_output_tokens;
+    }
+  } else if (usage.output_tokens !== undefined) {
+    out.output = usage.output_tokens;
+  } else if (usage.reasoning_output_tokens !== undefined) {
+    out.reasoning = usage.reasoning_output_tokens;
+  }
+
+  return out;
+}
+
+/**
+ * The run's accumulated tokens, as one `Usage` entry — or `undefined` where
+ * nothing was ever reported, which must read as *not said* and never as a
+ * zeroed-out entry.
+ *
+ * `model` is `request.model` where the recipe set one, and absent otherwise:
+ * Codex's stream never names its own model, and an absent model is what
+ * `doc/rate-card.md` reads as *unpriced* rather than a guess.
+ */
+function codexUsage(tokens: TokenCounts, model: string | undefined): Usage | undefined {
+  const hasTokens = Object.values(tokens).some((value) => value !== undefined);
+  if (!hasTokens && model === undefined) return undefined;
+  return [{ ...(model === undefined ? {} : { model }), tokens }];
 }
 
 /** One line, folded in. Everything the receipt knows is decided here. */
@@ -298,6 +384,12 @@ function foldLine(receipt: Tally, line: string): void {
   if (event.type === "turn.completed") {
     receipt.completed = true;
     receipt.billedTokens = (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0);
+    // **Accumulated, not assigned** — unlike `billedTokens` above, which stays
+    // exactly as it was (0110 §3's `Tally` carries both: a spend leg beside a
+    // reach-a-model leg, never repurposing one for the other). Lingtai never
+    // runs `exec resume`, so no stream this reads carries two turns today; a
+    // multi-turn fixture proves the accumulation ahead of the day one does.
+    if (event.usage) receipt.tokens = mergeTokenCounts(receipt.tokens, codexTokenCounts(event.usage));
   }
 
   // **The turn ending in failure, which `turn.completed` never says.** The
@@ -1017,6 +1109,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             text: null,
             failure: { kind, detail },
             sessionId: account.receipt.sessionId,
+            usage: codexUsage(account.receipt.tokens, request.model),
           });
         };
 
@@ -1076,6 +1169,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             text: receipt.text,
             failure,
             sessionId: receipt.sessionId,
+            usage: codexUsage(receipt.tokens, request.model),
           });
         });
       });

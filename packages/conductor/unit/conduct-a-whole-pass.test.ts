@@ -213,6 +213,75 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
   });
 
   /**
+   * **`RunFinished` carries what the runtime reported it billed** (#316, 0110
+   * §3) — the conditional spread in `conduct.ts` forwarding `RunOutcome.usage`
+   * rather than dropping it on the floor between the adapter and the log.
+   */
+  it("carries a run's own usage onto RunFinished", async () => {
+    const store = memoryStore();
+    const metered: Runtime = {
+      ...runtime,
+      run: async () => ({
+        exitCode: 0,
+        turns: 3,
+        durationMs: 1234,
+        costUsd: 0.42,
+        failure: null,
+        text: "done",
+        sessionId: "sess-1",
+        usage: [{ model: "claude-sonnet-5", tokens: { fresh: 100, output: 20 } }],
+      }),
+    };
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([]),
+        runtime: metered,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts([], store),
+    );
+
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    const run = await store.read(result.runId);
+    const finished = run.find((e) => e.type === "RunFinished")!;
+    expect((finished.data as { usage?: unknown }).usage).toEqual([
+      { model: "claude-sonnet-5", tokens: { fresh: 100, output: 20 } },
+    ]);
+  });
+
+  /** The ordinary stub reports no usage, and the field is absent rather than `[]` or `0`. */
+  it("leaves usage off RunFinished when the runtime reported none", async () => {
+    const store = memoryStore();
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([]),
+        runtime,
+        issue: 7,
+        hookBinary: "/tmp/fake/lingtai-hook",
+        prompt: "fix {{issue}}",
+        merge: false,
+        home: "/tmp/fake-home",
+        store,
+      },
+      fakePorts([], store),
+    );
+
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    const run = await store.read(result.runId);
+    const finished = run.find((e) => e.type === "RunFinished")!;
+    expect((finished.data as { usage?: unknown }).usage).toBeUndefined();
+  });
+
+  /**
    * **A person the recipe declared holds the merge, with no `--no-merge`
    * anywhere** — `#58`, and the claim `CLAUDE.md` rests on when it says this
    * repository merges its own work unattended *by configuration rather than by a
