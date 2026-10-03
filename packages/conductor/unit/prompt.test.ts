@@ -103,7 +103,7 @@ describe("the next attempt's prompt", () => {
     // beyond that one block.
     const text = renderPrompt(TEMPLATE, TICKET, [], next.failure);
     expect(text.startsWith("#104 — The control is the prompt\n\nthe body\n\n")).toBe(true);
-    expect(text).toContain("## What `build` checks, and what it does not");
+    expect(text).toContain("## What this pass checks, and what it does not");
     expect(text).toMatch(/commit it before you verify/i);
   });
 
@@ -349,7 +349,7 @@ describe("the next attempt's prompt", () => {
    * `{{checks}}` is how it reaches the brief every agent is actually handed.
    */
   describe("the checks block renderPrompt always adds", () => {
-    it("names the build step's own commands as the whole of the bar", () => {
+    it("names the commands as the whole of the bar", () => {
       const text = renderPrompt(TEMPLATE, TICKET, ["pnpm typecheck && pnpm test"], "");
       expect(text).toContain("Run this before you finish");
       expect(text).toContain("pnpm typecheck && pnpm test");
@@ -360,23 +360,24 @@ describe("the next attempt's prompt", () => {
 
     it("is appended once when the template carries no {{checks}} slot", () => {
       const text = renderPrompt("#{{issue}}", TICKET, ["pnpm test"]);
-      expect(text.match(/## What `build` checks, and what it does not/g)).toHaveLength(1);
+      expect(text.match(/## What this pass checks, and what it does not/g)).toHaveLength(1);
     });
 
     it("renders in the slot, and not a second time, when the template has one", () => {
       const text = renderPrompt("#{{issue}}\n{{checks}}", TICKET, ["pnpm test"]);
-      expect(text.match(/## What `build` checks/g)).toHaveLength(1);
+      expect(text.match(/## What this pass checks/g)).toHaveLength(1);
     });
 
     /**
      * **Never blank**, unlike `{{failure}}` and `{{design}}`. A project whose
-     * recipe declares no command at `build:` still has to be told not to wait on
-     * anything slower than this turn — that silence is what `#249` and `#308`
-     * were lost to, and it is not conditional on the recipe having a bar to name.
+     * recipe declares no command at `build:`, `proposed:` or `merge:` still has
+     * to be told not to wait on anything slower than this turn — that silence
+     * is what `#249` and `#308` were lost to, and it is not conditional on the
+     * recipe having a bar to name.
      */
     it("still tells the agent not to wait, even when the recipe names no command", () => {
       const text = renderPrompt(TEMPLATE, TICKET, []);
-      expect(text).toContain("declares no command at `build:`");
+      expect(text).toContain("declares no command at `build:`, `proposed:` or `merge:`");
       expect(text).toMatch(/commit it before you verify/i);
     });
 
@@ -389,11 +390,14 @@ describe("the next attempt's prompt", () => {
      * paragraph, so it is swallowed into the checks text instead of staying its
      * own step. `prompts/ticket.md` puts a blank line on both sides of
      * `{{checks}}` for exactly this reason; this reads the real file rather than
-     * a fixture so a future edit that removes either blank line fails here.
+     * a fixture so a future edit that removes either blank line fails here —
+     * both the one before the block, pinned against step 3's own sentence, and
+     * the one after, pinned against step 4.
      */
     it("keeps step 4 its own numbered item in the real ticket template", async () => {
       const template = await readFile(`${repoRoot}prompts/ticket.md`, "utf8");
       const text = renderPrompt(template, TICKET, ["pnpm typecheck && pnpm test"]);
+      expect(text).toMatch(/against the bar below:\n\n## What this pass checks, and what it does not/);
       expect(text).toMatch(/\n\n4\. \*\*Commit as the work stands/);
     });
   });

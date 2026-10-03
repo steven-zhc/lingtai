@@ -2601,7 +2601,7 @@ export function runOnce(
                       renderPrompt(
                         options.prompt,
                         { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
-                        buildCommands(recipe.steps.build),
+                        buildCommands(recipe.steps),
                         next.failure,
                         // **What `design` produced, and this is the one reader of
                         // it** (`#265`). `Brief.design` has been on this object since
@@ -2795,7 +2795,7 @@ export function runOnce(
                         action: from,
                         diff: underReview,
                         diffBytes: recipe.runtime.budget.diff,
-                        checks: buildCommands(recipe.steps.build),
+                        checks: buildCommands(recipe.steps),
                       }),
                       spec.prompt,
                     ),

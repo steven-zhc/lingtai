@@ -459,10 +459,10 @@ export function fixBrief(input: {
   /** `runtime.budget.diff`. The same ceiling the review runs under. */
   diffBytes: number;
   /**
-   * `buildCommands(recipe.steps.build)` — the same bar `renderPrompt` names for
-   * the implementer, so a fixer is held to the one thing the gate actually runs
-   * and told, in the same words, not to wait on anything slower than this turn
-   * (`#319`).
+   * `buildCommands(recipe.steps)` — the same bar `renderPrompt` names for
+   * the implementer, so a fixer is held to the same commands the pass actually
+   * runs and refuses on, and told, in the same words, not to wait on anything
+   * slower than this turn (`#319`).
    */
   checks: readonly string[];
 }): string {

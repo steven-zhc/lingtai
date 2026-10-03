@@ -2,7 +2,7 @@
  * `doc/reference.md`'s *prompt placeholder* table, held against `renderPrompt`.
  *
  * The same shape as `packages/recipe/unit/plugin-pages.test.ts`: the document is
- * what the code is judged against. A sixth `replaceAll` in `renderPrompt` with no
+ * what the code is judged against. A seventh `replaceAll` in `renderPrompt` with no
  * row, or a row that names a placeholder nothing expands, is a red test rather
  * than a page that is confidently wrong.
  */

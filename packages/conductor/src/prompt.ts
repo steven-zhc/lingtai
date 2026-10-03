@@ -253,10 +253,11 @@ function join(blocks: readonly string[]): string {
  * `{{design}}` and `{{failure}}` render nothing when there is nothing to say,
  * and a template with no slot for either loses nothing because `join` drops the
  * blank. `checksBrief` has no blank form — even a project whose recipe declares
- * no command at `build:` is told so, and every project is told not to wait on a
- * background task before it has committed, because that is the sentence `#249`
- * and `#308` were lost without and it has to reach every run rather than only
- * the ones a template remembered to ask for.
+ * no command at `build:`, `proposed:` or `merge:` is told so, and every
+ * project is told not to wait on a background task before it has committed,
+ * because that is the sentence `#249` and `#308` were lost without and it has
+ * to reach every run rather than only the ones a template remembered to ask
+ * for.
  */
 export function renderPrompt(
   template: string,
@@ -289,16 +290,32 @@ export function renderPrompt(
 }
 
 /**
- * The commands `build:` runs, in declared order — what `checksBrief` names as
- * the whole of the bar.
+ * The commands this pass runs as commands, in declared order — `build:`,
+ * `proposed:` and `merge:` together — what `checksBrief` names as the whole
+ * of the bar.
+ *
+ * All three, and not `build:` alone, because `runPlugin.at` carries all three
+ * legally (`recipe.ts:143-148`): a project whose recipe declares a `run:` at
+ * `proposed` or `merge` has a command the pass runs and refuses on just as
+ * much as one at `build`, and naming only `build:`'s would tell the agent a
+ * command declared at either of the other two "is not this pass's to run"
+ * when it plainly is (`#319`). `review` carries none — it returns findings and
+ * judges nothing (0058 §3b) — and `prepared` runs before the implementer sees
+ * the ticket, so there is nothing for either to add here.
  *
  * Only a `run:` action carries one. `file:`, `watch:` and everything else a
- * project may legally declare at `build` say nothing a fixer could run again by
- * hand, so they are passed over rather than stringified into something that
- * reads like a command and is not one.
+ * project may legally declare at these steps say nothing a fixer could run
+ * again by hand, so they are passed over rather than stringified into
+ * something that reads like a command and is not one.
  */
-export function buildCommands(build: readonly StepAction[]): string[] {
-  return build.filter((action): action is StepAction & { run: string } => "run" in action).map((a) => a.run);
+export function buildCommands(steps: {
+  build: readonly StepAction[];
+  proposed: readonly StepAction[];
+  merge: readonly StepAction[];
+}): string[] {
+  const commandsAt = (actions: readonly StepAction[]) =>
+    actions.filter((action): action is StepAction & { run: string } => "run" in action).map((a) => a.run);
+  return [...commandsAt(steps.build), ...commandsAt(steps.proposed), ...commandsAt(steps.merge)];
 }
 
 /**
@@ -316,20 +333,20 @@ export function buildCommands(build: readonly StepAction[]): string[] {
  * **The bar is named from the recipe and not written in here.** `pnpm
  * typecheck && pnpm test` is this project's `build:` and not a fact about
  * every project `#319` is for — both briefs this renders into go to every
- * managed project, so the commands come from `buildCommands(recipe.steps.build)`
+ * managed project, so the commands come from `buildCommands(recipe.steps)`
  * at the call site and this function only says what they mean.
  *
  * **Never empty**, unlike `designBrief` and the history: a project that
- * declares no command at `build:` still has to be told not to wait on a
- * background task before it has committed, so the second paragraph renders
- * whatever the first says.
+ * declares no command at `build:`, `proposed:` or `merge:` still has to be
+ * told not to wait on a background task before it has committed, so the
+ * second paragraph renders whatever the first says.
  */
 export function checksBrief(commands: readonly string[]): string {
   const bar =
     commands.length === 0
-      ? "This project's recipe declares no command at `build:`. That names no single " +
-        "bar here — it is not license to skip verification, so run what the project " +
-        "ordinarily runs before you finish."
+      ? "This project's recipe declares no command at `build:`, `proposed:` or `merge:`. " +
+        "That names no single bar here — it is not license to skip verification, so run " +
+        "what the project ordinarily runs before you finish."
       : [
           "Run this before you finish:",
           "",
@@ -337,8 +354,9 @@ export function checksBrief(commands: readonly string[]): string {
           commands.join("\n"),
           "```",
           "",
-          "That is what the `build` step runs, and it is the whole of what this pass asks " +
-            "you to run. A cold review and a judge check the result too, but neither is a " +
+          "Those are every command this pass runs against your change — at `build`, " +
+            "`proposed` and `merge` — and it is the whole of what this pass asks you to " +
+            "run. A cold review and a judge check the result too, but neither is a " +
             "command you run — anything slower or wider you might run yourself, another " +
             'app\'s build, a suite this project calls "integration," anything that reaches a ' +
             "network, a database or another process, is not this pass's to run, and its " +
@@ -346,7 +364,7 @@ export function checksBrief(commands: readonly string[]): string {
         ].join("\n");
 
   return [
-    "## What `build` checks, and what it does not",
+    "## What this pass checks, and what it does not",
     "",
     bar,
     "",

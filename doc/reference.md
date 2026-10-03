@@ -499,7 +499,7 @@ process startup alone was 17ms.
 | `{{issue}}` | the ticket's number | yes |
 | `{{title}}` | the ticket's title | yes |
 | `{{body}}` | the ticket's body | yes |
-| `{{checks}}` | what `build:` runs and the rule against waiting on anything slower (`#319`), never `""` | yes |
+| `{{checks}}` | what `build:`, `proposed:` and `merge:` run and the rule against waiting on anything slower (`#319`), never `""` | yes |
 | `{{failure}}` | what refused the last attempt, `""` on the first | yes |
 | `{{design}}` | the design note `design` produced, under a heading, `""` when none ran | **supported and unused** |
 
@@ -507,8 +507,8 @@ A template with no slot for `{{checks}}`, `{{failure}}` or `{{design}}` has that
 text **appended** instead, so none of the three is dropped: one rule, not three.
 `{{checks}}` is the one of the three that never renders blank — `checksBrief`
 always has something to say, even about a project whose recipe declares no
-command at `build:` — so the only question for it is *in the slot or appended*,
-never *at all*.
+command at `build:`, `proposed:` or `merge:` — so the only question for it is
+*in the slot or appended*, never *at all*.
 
 **Templates are substituted; a recipe's `prompt:` is not.** `prompts/ticket.md` is
 read from the repository root and run through `renderPrompt`. A step's `prompt:` is

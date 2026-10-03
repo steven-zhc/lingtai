@@ -146,8 +146,9 @@ export async function outgoingFor(input: {
   const state = await loadProject(ticket.project).catch(() => null);
   if (!state) return refused(`${ticket.project} is not a registered project`);
   // Never throws, and its `problem` is already one line. The recipe is here for
-  // `runtime.budget` alone — how much of the earlier attempts this prompt
-  // quotes (0029) — and guessing at it would misstate the document's length.
+  // two things, not one: `runtime.budget` — how much of the earlier attempts
+  // this prompt quotes (0029) — and `steps`, to name the commands `{{checks}}`
+  // renders (`#319`). Guessing at either would misstate the document.
   const filter = await projectFilter(state);
   if (!filter.ok) return refused(`the recipe could not be read: ${filter.problem}`);
 
@@ -172,7 +173,7 @@ export async function outgoingFor(input: {
     arms,
   });
 
-  const checks = buildCommands(filter.recipe.steps.build);
+  const checks = buildCommands(filter.recipe.steps);
   const filled = { number: Number(ticket.ref), title: ticket.title ?? "", body: ticket.body };
   const text = renderPrompt(template, filled, checks, next.failure);
 
