@@ -121,20 +121,23 @@ const REVIEW_REFUSED: ActionResult = {
 };
 
 /**
- * **An answer that really does defeat `parseFindings`** (`#279`) — a `major` with a
- * failure scenario in it, and no closing brace.
+ * **An answer that really does defeat `parseFindings`** (`#279`) — cut off
+ * mid-string, inside `failureScenario`, with no closing quote at all.
  *
- * `#269` attempt 3's shape, shortened: that answer was 4,629 characters of four
- * findings and ended `}]`, with `stop_reason: end_turn`, so nothing truncated it —
- * the model believed it had finished. The whole of it is a fixture in the package
- * the parser lives in (`packages/actions/test/fixtures/review-269-attempt-3.ts`);
- * what is needed here is only that the real parser refuses it, so that the route
- * below is reached through `createAgentAction` and not through a flag set by hand.
+ * `#269` attempt 3's shape, shortened, used to be only a missing final `}` —
+ * but `#318` taught `parseFindings` to close exactly that kind of gap, so a
+ * shape this test needs to still be unreadable has to break somewhere the
+ * tolerant reader refuses to guess the end of: inside an open string. The whole
+ * of `#269`'s real answer is a fixture in the package the parser lives in
+ * (`packages/actions/test/fixtures/review-269-attempt-3.ts`), where it is now a
+ * *recovered* fixture rather than a refused one; what is needed here is only
+ * that the real parser still refuses *this* shape, so that the route below is
+ * reached through `createAgentAction` and not through a flag set by hand.
  */
 const AN_ANSWER_NOBODY_CAN_READ =
   '{"findings":[{"file":"packages/recipe/src/recipe.ts","line":1413,"severity":"major",' +
   '"claim":"`whyThatPair` gained no `claim` branch","failureScenario":"an operator writes a ' +
-  '`run:` at `claim` and is told to move it to `prepared`, which is false where it is printed"}]';
+  "`run:` at `claim` and is told to move it to `prepared`, which is false where it is printed";
 
 /**
  * **A real cold reviewer over a fake runtime**, for `createMergeAction`'s reason:
