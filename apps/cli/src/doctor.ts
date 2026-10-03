@@ -70,6 +70,7 @@ import {
   hasGitHubApp,
   machineDatabaseUrl,
   postgresUrlIfSet,
+  stateDir,
   storeChoice,
 } from "@lingtai/env";
 import { paint } from "@lingtai/env/colour";
@@ -749,6 +750,16 @@ async function runtimeAuth(): Promise<CheckResult> {
   };
 }
 
+/**
+ * `env` here is `doctorEnvironment()`'s copy, never `process.env` itself — so
+ * `app.source` is coarser than `githubApp()`'s own answer on this same
+ * machine. The copy is handed to `appValues`'s `realEnvironment(from)` check
+ * as itself, and it already carries `.env.local`'s merged values — there is
+ * no pre-dotenv snapshot behind a copy — so an App whose id lives only in
+ * `.env.local` reports here as `from environment` while the daemon's own
+ * `githubApp()` says `.env.local`. The pairing is still right; only the label
+ * is coarse.
+ */
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = "github: app credentials";
   if (!hasGitHubApp(env)) {
@@ -757,7 +768,8 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       status: "skip",
       detail:
         "LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
-        "See doc/decisions-archive/0006-github-app.md.",
+        "The board's setup page or lingtai init writes a github: section in ~/.lingtai/config.yml; " +
+        "see doc/decisions-archive/0006-github-app.md.",
     };
   }
   try {
@@ -769,7 +781,7 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       name,
       status: "ok",
       detail:
-        `app ${app.appId}, key from ${app.keySource} · ` +
+        `app ${app.appId} from ${app.source}, key from ${app.keySource} · ` +
         `requires ${REQUIRED_PERMISSIONS.map((p) => `${p.name}:${p.level}`).join(", ")} ` +
         "(verified per repository by lingtai add)",
     };
@@ -2213,9 +2225,24 @@ export async function doctorReport(): Promise<DoctorReport> {
  * that let the same question hide in `entry.ts` for five passes.
  * `postgresUrlIfSet` and `directUrlIfSet` are those same two reads with the
  * refusal left off, so every value here is the one that was here before.
+ *
+ * **`LINGTAI_HOME` is written in, for #308.** `githubCredentials` calls
+ * `githubApp(env)` with this copy, and `@lingtai/env`'s `machineChoiceFile`
+ * only reads `~/.lingtai/config.yml` for a handed-in environment when that
+ * environment names its own `LINGTAI_HOME` — the rule that lets a test point
+ * it at a temporary home. Left unset, doctor would report the App as absent
+ * on an operator's own machine while `conduct` authenticates from that same
+ * file, because its own `process.env` is never equal to the operator's. A
+ * copy that already names `LINGTAI_HOME` (a test's) is left alone, and this
+ * never runs for a test (`VITEST`/`LINGTAI_TEST`) or for a non-`process.env`
+ * environment handed in — the suite's environment must never reach the
+ * operator's own file.
  */
 export function doctorEnvironment(from: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...from };
+  if (from === process.env && !from["VITEST"] && !from["LINGTAI_TEST"]) {
+    env["LINGTAI_HOME"] ??= stateDir(from);
+  }
   const pooled = postgresUrlIfSet(from);
   const direct = directUrlIfSet(from);
   if (pooled) env["DATABASE_URL"] = pooled;
