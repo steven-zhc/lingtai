@@ -67,6 +67,7 @@ import {
   type StoreChoice,
   directUrlIfSet,
   githubApp,
+  githubConfigUnreadable,
   hasGitHubApp,
   machineDatabaseUrl,
   postgresUrlIfSet,
@@ -762,13 +763,16 @@ async function runtimeAuth(): Promise<CheckResult> {
  */
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = "github: app credentials";
-  if (!hasGitHubApp(env)) {
+  // `hasGitHubApp` alone cannot tell *nothing configured* from *config.yml is
+  // broken* — both answer false — so a broken file would otherwise render as
+  // the ordinary unconfigured skip. Only skip where the file, if any, parsed.
+  if (!hasGitHubApp(env) && githubConfigUnreadable(env) === null) {
     return {
       name,
       status: "skip",
       detail:
         "LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
-        "The board's setup page or lingtai init writes a github: section in ~/.lingtai/config.yml; " +
+        "Add a github: section (app_id, private_key_path) to ~/.lingtai/config.yml by hand, or use .env.local; " +
         "see doc/decisions-archive/0006-github-app.md.",
     };
   }

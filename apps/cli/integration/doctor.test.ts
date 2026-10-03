@@ -715,6 +715,27 @@ describe("lingtai doctor — the recipes", () => {
   });
 });
 
+describe("lingtai doctor — github app credentials", () => {
+  /**
+   * #320's cold review: `hasGitHubApp` answers false for both *nothing
+   * configured* and *config.yml is broken*, so a check that only asks that
+   * boolean reports a broken file as the ordinary unconfigured skip — and the
+   * one sentence naming the file and the YAML error never gets read. This
+   * asserts the row is `fail` and names the file, not `skip`.
+   */
+  it("fails and names the file when config.yml cannot be parsed, rather than skipping as unconfigured", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "github: [unclosed\n");
+
+    const report = await runDoctor(env({ LINGTAI_HOME: home }), () => undefined, notSetUp);
+    const row = find(report.results, "github: app credentials");
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain(join(home, "config.yml"));
+    expect(row.detail).toContain("could not be parsed as YAML");
+  });
+});
+
 describe("lingtai doctor — reporting", () => {
   it("lists the checks that cannot run yet, rather than omitting them", async () => {
     // With no LINGTAI_GITHUB_APP_ID in this environment, the credentials check is itself

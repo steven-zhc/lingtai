@@ -26,12 +26,14 @@ import { parse as parseYaml } from "yaml";
  * environment nor an env file names one — see `machineDatabaseUrl` — so a
  * command that connects with no variable and no env file is reading that file.
  *
- * **The GitHub App has the same third source, since #308**: a `github:`
- * section in the same file, beside `database:`, in the same position — behind
- * the environment and behind the env files. `githubApp()` and
- * `githubWebhookSecret()` fall back to it, so an installed binary or a daemon
- * started from `~`, neither of which finds a checkout's `.env.local`, can
- * still authenticate. See `appValues` for the reader and the election.
+ * **The GitHub App has a third source too, since #308**: a `github:` section
+ * in the same file, beside `database:`, read only where neither the
+ * environment nor an env file names the App ID — so an installed binary or a
+ * daemon started from `~`, neither of which finds a checkout's `.env.local`,
+ * can still authenticate. Unlike `database.url`, this is never a per-name
+ * fallback: whichever source names the App ID answers for every other name,
+ * `config.yml` included, and a name that source does not carry is `undefined`
+ * rather than filled in from a different source. See `electGithubSource`.
  */
 const here = dirname(fileURLToPath(import.meta.url));
 /**
@@ -1081,8 +1083,12 @@ export function githubRecordFromSection(
   if (section === undefined) return out;
   for (const [key, envName] of Object.entries(GITHUB_CONFIG_KEYS)) {
     const value = section[key];
-    if (typeof value !== "string" || value === "") continue;
-    out[envName] = envName === `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH` ? resolveAgainst(value, home) : value;
+    // YAML parses an unquoted app_id as a number — the natural way to write
+    // one — so a string check alone drops it silently.
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    const text = String(value);
+    if (text === "") continue;
+    out[envName] = envName === `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH` ? resolveAgainst(text, home) : text;
   }
   return out;
 }
@@ -1254,6 +1260,22 @@ export function githubWebhookSecret(
 }
 
 /**
+ * Why `config.yml` could not even be read as YAML, or null where it parsed
+ * fine (or does not exist, or is not this machine's choice file at all).
+ *
+ * `hasGitHubApp` answers `false` for both *nothing is configured* and
+ * *config.yml is broken*, and a caller that only checks that boolean — as
+ * `lingtai doctor`'s skip branch did before this existed — cannot tell the
+ * two apart and reports a broken file as the ordinary unconfigured state.
+ */
+export function githubConfigUnreadable(
+  from: NodeJS.ProcessEnv = process.env,
+  files: readonly string[] = from === process.env ? envFiles() : [],
+): string | null {
+  return appValues(from, files).unreadable;
+}
+
+/**
  * `from` exists so that a caller which was *handed* an environment reports on
  * that one. `lingtai doctor` takes an environment as an argument and is supposed to
  * be a function of it; reading past it to `process.env` made its report partly
@@ -1278,8 +1300,8 @@ export function githubApp(
         (value.unreadable ? `${value.unreadable} ` : "") +
         (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
           ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
-          : "Copy .env.example to .env.local at the repo root and fill it in, or lingtai init writes a " +
-            "github: section in ~/.lingtai/config.yml once an App answers."),
+          : "Copy .env.example to .env.local at the repo root and fill it in, or add a github: section " +
+            "(app_id, private_key_path) to ~/.lingtai/config.yml by hand."),
     );
   }
   const path = value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`);

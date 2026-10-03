@@ -103,4 +103,9 @@ describe("githubRecordFromSection", () => {
   it("ignores an empty string, the same as every other value here", () => {
     expect(githubRecordFromSection({ app_id: "" }, "/home")).toEqual({});
   });
+
+  it("reads app_id written unquoted, which YAML parses as a number", () => {
+    const record = githubRecordFromSection({ app_id: 1850235 }, "/home");
+    expect(record[ID]).toBe("1850235");
+  });
 });
