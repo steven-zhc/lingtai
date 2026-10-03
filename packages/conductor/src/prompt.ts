@@ -331,16 +331,18 @@ export function checksBrief(commands: readonly string[]): string {
         "bar here — it is not license to skip verification, so run what the project " +
         "ordinarily runs before you finish."
       : [
-          "What the `build` step runs is:",
+          "Run this before you finish:",
           "",
           "```",
           commands.join("\n"),
           "```",
           "",
-          "and that is the whole of what this pass is checked against. Anything slower or " +
-            'wider — another app\'s build, a suite this project calls "integration," anything ' +
-            "that reaches a network, a database or another process — is not this pass's to " +
-            "run, and its result is not something this pass owes.",
+          "That is what the `build` step runs, and it is the whole of what this pass asks " +
+            "you to run. A cold review and a judge check the result too, but neither is a " +
+            "command you run — anything slower or wider you might run yourself, another " +
+            'app\'s build, a suite this project calls "integration," anything that reaches a ' +
+            "network, a database or another process, is not this pass's to run, and its " +
+            "result is not something this pass owes.",
         ].join("\n");
 
   return [

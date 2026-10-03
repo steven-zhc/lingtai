@@ -11,6 +11,8 @@
  * string joins, and a composition that needed a database would be the wrong
  * shape.
  */
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   type Envelope,
@@ -21,6 +23,8 @@ import {
 } from "@lingtai/domain";
 import type { PromptBudget } from "../src/attempts.ts";
 import { editHash, nextPrompt, renderPrompt } from "../src/prompt.ts";
+
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 /** The recipe's defaults (0029), spelled out for the reason `attempts.test.ts` gives. */
 const BUDGET: PromptBudget = { evidence: 2_000, attempts: 5, findings: 5 };
@@ -347,8 +351,9 @@ describe("the next attempt's prompt", () => {
   describe("the checks block renderPrompt always adds", () => {
     it("names the build step's own commands as the whole of the bar", () => {
       const text = renderPrompt(TEMPLATE, TICKET, ["pnpm typecheck && pnpm test"], "");
+      expect(text).toContain("Run this before you finish");
       expect(text).toContain("pnpm typecheck && pnpm test");
-      expect(text).toContain("the whole of what this pass is checked against");
+      expect(text).toContain("the whole of what this pass asks you to run");
       expect(text).toContain("There is no later turn");
       expect(text).toMatch(/commit it before you verify/i);
     });
@@ -373,6 +378,23 @@ describe("the next attempt's prompt", () => {
       const text = renderPrompt(TEMPLATE, TICKET, []);
       expect(text).toContain("declares no command at `build:`");
       expect(text).toMatch(/commit it before you verify/i);
+    });
+
+    /**
+     * **`#319`, step 4 of the real template.** `{{checks}}` substitutes a block
+     * that opens with an `##` heading. Put inline after a bare `3. ` marker with
+     * no blank line around it, that heading renders as inline list text and the
+     * `4. **Commit as the work stands…` item that follows has no blank line
+     * ahead of it either — an ordered item that isn't `1.` cannot interrupt a
+     * paragraph, so it is swallowed into the checks text instead of staying its
+     * own step. `prompts/ticket.md` puts a blank line on both sides of
+     * `{{checks}}` for exactly this reason; this reads the real file rather than
+     * a fixture so a future edit that removes either blank line fails here.
+     */
+    it("keeps step 4 its own numbered item in the real ticket template", async () => {
+      const template = await readFile(`${repoRoot}prompts/ticket.md`, "utf8");
+      const text = renderPrompt(template, TICKET, ["pnpm typecheck && pnpm test"]);
+      expect(text).toMatch(/\n\n4\. \*\*Commit as the work stands/);
     });
   });
 });

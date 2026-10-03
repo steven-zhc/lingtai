@@ -261,7 +261,7 @@ describe("what the fixer is told", () => {
    */
   it("names the same bar the implementer is held to, and tells the fixer not to wait on anything slower", () => {
     expect(brief).toContain("pnpm typecheck && pnpm test");
-    expect(brief).toContain("the whole of what this pass is checked against");
+    expect(brief).toContain("the whole of what this pass asks you to run");
     expect(brief).toContain("There is no later turn");
     expect(brief).toMatch(/once you have changed anything, commit it before you verify/i);
   });
