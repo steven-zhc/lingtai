@@ -67,6 +67,7 @@ import {
   type StoreChoice,
   directUrlIfSet,
   githubApp,
+  githubAppSource,
   githubConfigUnreadable,
   hasGitHubApp,
   machineDatabaseUrl,
@@ -763,10 +764,13 @@ async function runtimeAuth(): Promise<CheckResult> {
  */
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = "github: app credentials";
-  // `hasGitHubApp` alone cannot tell *nothing configured* from *config.yml is
-  // broken* — both answer false — so a broken file would otherwise render as
-  // the ordinary unconfigured skip. Only skip where the file, if any, parsed.
-  if (!hasGitHubApp(env) && githubConfigUnreadable(env) === null) {
+  // `hasGitHubApp` alone cannot tell *nothing configured* apart from two other
+  // false answers: *config.yml is broken* and *a source names the id with no
+  // key behind it yet* (`app_id` written ahead of `private_key_path`, exactly
+  // the order the skip row's own remedy asks for). Only skip where no source
+  // names anything at all; the other two fall through to the `githubApp` call
+  // below, which throws the specific reason and is reported as `fail`.
+  if (!hasGitHubApp(env) && githubConfigUnreadable(env) === null && githubAppSource(env) === null) {
     return {
       name,
       status: "skip",

@@ -1185,6 +1185,24 @@ export function electGithubSource(
   };
 }
 
+/**
+ * The precedence `appValues` hands to `electGithubSource` — environment
+ * first, then the env files in their own read order, then `config.yml` last
+ * (#308/#320). Pulled out so a unit test can pin this order on plain
+ * `AppSource` objects: `appValues` itself cannot be driven by one, since
+ * building its three arguments for real means reading the environment, the
+ * env files and `config.yml` off disk, which is what makes that call
+ * integration rather than unit (0060 §1) — and the gate only runs the unit
+ * half before a merge.
+ */
+export function orderGithubSources(
+  environment: AppSource,
+  fileSources: readonly AppSource[],
+  machineSource: readonly AppSource[],
+): AppSource[] {
+  return [environment, ...fileSources, ...machineSource];
+}
+
 interface AppValues {
   get: (name: string) => string | undefined;
   /** Where the App ID came from — `"environment"`, an env file's path, or `config.yml`'s path. */
@@ -1229,7 +1247,7 @@ function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): AppValues
   const machineSource: AppSource[] =
     machine.values !== undefined && machinePath !== null ? [{ label: machinePath, values: machine.values }] : [];
 
-  const elected = electGithubSource([environment, ...fileSources, ...machineSource]);
+  const elected = electGithubSource(orderGithubSources(environment, fileSources, machineSource));
 
   // **`from === process.env` already carries every env file's values**, merged
   // into it by dotenv at import (`config({...})`, above) — so "environment"
@@ -1338,4 +1356,24 @@ export function hasGitHubApp(
     value.get(`${PREFIX}GITHUB_APP_ID`) &&
       (value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value.get(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
   );
+}
+
+/**
+ * The App ID and where it came from, without reading the private key —
+ * `githubApp`'s `readFileSync` is a key file's bytes, which a caller that only
+ * wants to know *which App, from where* (`lingtai add`'s `configuration()`)
+ * has no reason to force, and every reason not to: a key path that is set but
+ * unreadable would otherwise fail this question too, not only the one that
+ * actually needs the key.
+ *
+ * Null for exactly what `hasGitHubApp` answers false for — nothing names an
+ * id, or `config.yml` named one but could not be parsed.
+ */
+export function githubAppSource(
+  from: NodeJS.ProcessEnv = process.env,
+  files: readonly string[] = from === process.env ? envFiles() : [],
+): { appId: string; source: string } | null {
+  const value = appValues(from, files);
+  const appId = value.get(`${PREFIX}GITHUB_APP_ID`);
+  return appId ? { appId, source: value.source } : null;
 }

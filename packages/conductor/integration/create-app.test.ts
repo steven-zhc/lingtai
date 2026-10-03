@@ -919,6 +919,37 @@ describe("what the screen offers", () => {
     });
   });
 
+  /**
+   * #320's cold review: an installed binary with no checkout has neither a
+   * `process.env` set by hand nor a `.env.local` to read, and
+   * `~/.lingtai/config.yml` — `doctor.ts`'s and the setup page's own remedy —
+   * is its only way to carry the App. `configuration()` used to ask only the
+   * environment and the two env files, so a full App named there alone
+   * answered *not configured* and this screen offered to mint a second one
+   * beside the one already installed.
+   */
+  it("reads config.yml, the installed binary's only source with no checkout at all", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    const keyPath = join(home, "app.pem");
+    await writeFile(keyPath, "the App's key");
+    await writeFile(join(home, "config.yml"), `github:\n  app_id: "1850235"\n  private_key_path: ${keyPath}\n`);
+
+    const offer = await offerCreation({
+      env: { LINGTAI_HOME: home },
+      envFile: await blank(),
+      store: store(),
+      session: createCreationSession(),
+    });
+
+    expect(offer.offered).toBe(false);
+    expect(offer.configured).toEqual({
+      appId: "1850235",
+      slug: null,
+      where: "file",
+      file: join(home, "config.yml"),
+    });
+  });
+
   /** A copied `.env.example` names it and has no App: that is not a configuration. */
   it("reads an empty line as no App, so a copied template still gets the screen", async () => {
     const { envFile } = await workspace();

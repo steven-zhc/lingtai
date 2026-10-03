@@ -2044,11 +2044,12 @@ export const Reconciled = z.object({
  * appended the moment the conversion returns — before the key file and the env
  * file — so that a write which fails still leaves a record of the App it failed
  * for. Folded into *configured*, it would report exactly those failures as
- * finished Apps. What is configured is what the environment and the env files
- * say, and `hasGitHubApp()` reads those files per call, so nothing needs a
- * restart to see a written App. This event names an App of ours on GitHub whose
- * key may never have landed; the setup page names it and **keeps offering
- * creation beside it**, and only a form posted before it was minted is refused.
+ * finished Apps. What is configured is what the environment, the env files
+ * and `config.yml` say (#308), and `hasGitHubApp()` reads all three per call,
+ * so nothing needs a restart to see a written App. This event names an App of
+ * ours on GitHub whose key may never have landed; the setup page names it and
+ * **keeps offering creation beside it**, and only a form posted before it was
+ * minted is refused.
  */
 export const GitHubAppCreated = z.object({
   /** The App ID, as `LINGTAI_GITHUB_APP_ID` now carries it. */

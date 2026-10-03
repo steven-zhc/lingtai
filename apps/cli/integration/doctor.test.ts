@@ -734,6 +734,27 @@ describe("lingtai doctor — github app credentials", () => {
     expect(row.detail).toContain(join(home, "config.yml"));
     expect(row.detail).toContain("could not be parsed as YAML");
   });
+
+  /**
+   * #320's second cold-review finding: `config.yml` naming `app_id` but no
+   * key is a different false than *nothing configured* too, and the old skip
+   * row answered it with "LINGTAI_GITHUB_APP_ID … not set" plus a remedy
+   * telling the operator to add the section they had just written. This
+   * follows `githubApp`'s own remedy — write `app_id` first, fetch the key
+   * after — and asserts the row says the id is there and the key is missing,
+   * rather than denying the section exists.
+   */
+  it("fails and names the id when config.yml names app_id but no key, rather than skipping as unconfigured", async () => {
+    const home = await mkdtemp(join(tmpdir(), "lingtai-home-"));
+    await writeFile(join(home, "config.yml"), "github:\n  app_id: 1850235\n");
+
+    const report = await runDoctor(env({ LINGTAI_HOME: home }), () => undefined, notSetUp);
+    const row = find(report.results, "github: app credentials");
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).not.toContain("not set — no repository can be onboarded yet");
+    expect(row.detail).toContain("PRIVATE_KEY_PATH");
+  });
 });
 
 describe("lingtai doctor — reporting", () => {

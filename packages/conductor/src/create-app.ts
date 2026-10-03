@@ -53,7 +53,7 @@ import { userInfo } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { ENV_FILE_MODE, parseEnvFile, setEnvLine } from "@lingtai/agent-env";
 import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
-import { PREFIX, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
+import { PREFIX, githubAppSource, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
 import { type EventStore, eventStore } from "@lingtai/event-store";
 import {
   type AppManifest,
@@ -845,11 +845,13 @@ export interface Configured {
   /** The App's name on GitHub, when the log agrees this is that App. */
   slug: string | null;
   /**
-   * Which source named it: the process environment, or an env file on disk.
-   * Both are read per call by `githubApp()`, so either is usable as it stands.
+   * Which source named it: the process environment, or a file on disk — an
+   * env file, or `~/.lingtai/config.yml` (#308/#320). All three are read per
+   * call by `githubApp()`/`hasGitHubApp()`, so any of them is usable as it
+   * stands.
    */
   where: "environment" | "file";
-  /** The env file, when that is what says so — the page names it. */
+  /** The file, when that is what says so — the page names it. */
   file: string | null;
 }
 
@@ -857,9 +859,9 @@ export interface Configured {
  * Three separate questions with one answer each, and the separation is the
  * point.
  *
- * - **`configured`** — are the credentials here? Asked of `process.env` and of
- *   the env files, which are where `githubApp()` can read them from, and of
- *   nothing else.
+ * - **`configured`** — are the credentials here? Asked of `process.env`, of
+ *   the env files, and of `config.yml` — every source `githubAppSource()` and
+ *   `hasGitHubApp()` can read them from, and of nothing else.
  * - **`minted`** — is there an App of Lingtai's on GitHub? Asked of the log,
  *   which is the only durable record of one.
  * - **`unanswered`** — the log would not say, so `minted` is unknown rather
@@ -917,7 +919,21 @@ async function configuration(options: {
   // id was null — and the id, the slug and the install link all went with it.
   const inEnvironment = envAppId !== null && hasGitHubApp(options.env, []);
 
-  const appId = inEnvironment ? envAppId : (inFiles?.value ?? null);
+  // **A third source, `config.yml` (#308/#320), asked only once the other two
+  // have had their turn.** `hasGitHubApp`/`githubAppSource` elect one source
+  // for the id — the environment first, then an env file, then `config.yml` —
+  // so with `files: []` the only two still in the running here are the
+  // environment and the machine file, and a true answer once `envAppId` is
+  // null can only be `config.yml`'s. An installed binary with no checkout has
+  // neither a `process.env` set by hand nor a `.env.local` to read, and would
+  // otherwise answer *not configured* and offer a second App beside the one it
+  // already has.
+  const inMachine =
+    envAppId === null && inFiles === null && hasGitHubApp(options.env, [])
+      ? githubAppSource(options.env, [])
+      : null;
+
+  const appId = inEnvironment ? envAppId : inFiles !== null ? inFiles.value : (inMachine?.appId ?? null);
   // **The id is the configuration's and the slug is the log's**, so the slug
   // describes this App only when the log is about this App. An operator who
   // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
@@ -932,7 +948,9 @@ async function configuration(options: {
       ? { appId: envAppId, slug, where: "environment", file: null }
       : inFiles !== null
         ? { appId: inFiles.value, slug, where: "file", file: inFiles.file }
-        : null;
+        : inMachine !== null
+          ? { appId: inMachine.appId, slug, where: "file", file: inMachine.source }
+          : null;
   return { configured, minted, unanswered };
 }
 
