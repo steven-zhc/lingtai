@@ -5,10 +5,14 @@
  *
  * Three things, and each is a defect this ticket exists to make impossible:
  *
- * 1. **The card calibrates against a real bill.** Claude Code reports its own
- *    `costUsd`, so `tokens × rate` that disagrees with it is the rate card
- *    gone stale, caught by arithmetic rather than by somebody remembering
- *    (0073 §6, 0110 §6).
+ * 1. **The card is checked against a real bill, once, as of the date it was
+ *    captured.** Claude Code reports its own `costUsd`, so `tokens × rate`
+ *    that disagrees with it is the rate card wrong on arrival. **What this
+ *    cannot do is notice a price change after today**: both sides of the
+ *    comparison are pinned to `CAPTURED_AT`, so a row appended for a later
+ *    date is simply not the row this test selects, and nothing here goes red
+ *    when it should have been updated. Catching that is a query over real
+ *    `RunFinished` events, which this test is not (0073 §6, 0110 §6).
  * 2. **An unpriced model is not silently skipped.** A `modelUsage` key with no
  *    row must fail by name, never fall through as zero.
  * 3. **Nothing in the projector reads this file.** 0110 §5: a reducer that
@@ -153,6 +157,12 @@ describe("doc/rate-card.md", () => {
       const text = await readFile(`${dir}/${file}`, "utf8");
       expect(text, file).not.toMatch(/rate-card/);
       expect(text, file).not.toMatch(/from\s+["'][^"']*\/test\//);
+      // Catches the route #208 promises: `priceTokens`/`rateFor` reaching a
+      // reducer through `@lingtai/domain`'s own `src`, once promoted there —
+      // a path the two checks above, both keyed to today's `test/` location,
+      // cannot see.
+      expect(text, file).not.toMatch(/\bpriceTokens\b/);
+      expect(text, file).not.toMatch(/\brateFor\b/);
     }
   });
 });

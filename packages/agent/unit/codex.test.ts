@@ -230,6 +230,20 @@ describe("the receipt, as a fold over the stream", () => {
     const said = codexOutcome(jsonl({ type: "turn.completed", usage: { cached_input_tokens: 500 } }));
     expect(said.tokens).toEqual({ cacheRead: 500 });
   });
+
+  /**
+   * **`input_tokens` with no `cached_input_tokens` beside it must keep the
+   * whole figure as `fresh`, not drop it.** There is no cache count to
+   * subtract, so this is the mirror of the `output` branch when
+   * `reasoning_output_tokens` is absent — not the mirror of the prior test,
+   * where the figure that is missing is the one being asked for. A runtime
+   * that only ever reports `input_tokens` and `output_tokens` must still have
+   * its input tokens land in a bucket, or they are charged nowhere at all.
+   */
+  it("keeps fresh whole when cached_input_tokens is the one missing", () => {
+    const said = codexOutcome(jsonl({ type: "turn.completed", usage: { input_tokens: 10000, output_tokens: 500 } }));
+    expect(said.tokens).toEqual({ fresh: 10000, output: 500 });
+  });
 });
 
 describe("codexUsage, the run's tokens turned into one Usage entry", () => {

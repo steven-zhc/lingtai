@@ -318,14 +318,17 @@ function emptyTally(): Tally {
 /**
  * One `turn.completed`'s usage, split into the five disjoint buckets (0110 §3).
  *
- * **A subtraction happens only when both operands were reported** — never
- * `input_tokens` taken whole, because that reads an absent cache count as
- * zero, which is the exact inversion of "never 0" at the top of this file. If
- * the subtraction comes out negative, the runtime said something incoherent
- * and both buckets of that pair are left absent rather than recorded as a
- * negative or a zero.
+ * **The subtraction happens only when both operands were reported.** When
+ * `cached_input_tokens` is absent, there is no cache figure to subtract out,
+ * so the whole of `input_tokens` is kept as `fresh` — the same choice the
+ * `output` branch below makes when `reasoning_output_tokens` is absent, and
+ * the opposite of dropping it: an absent cache count must never read as
+ * *zero input was billed*, which is the exact inversion of "never 0" at the
+ * top of this file. If the subtraction comes out negative, the runtime said
+ * something incoherent and both buckets of that pair are left absent rather
+ * than recorded as a negative or a zero.
  *
- * `output` has no such trap: when `reasoning_output_tokens` is absent, the
+ * `output` has the same shape: when `reasoning_output_tokens` is absent, the
  * whole of `output_tokens` is still correctly billed at the output rate, so it
  * is kept rather than discarded — only `reasoning` stays absent.
  */
@@ -338,6 +341,8 @@ function codexTokenCounts(usage: NonNullable<CodexEvent["usage"]>): TokenCounts 
       out.fresh = fresh;
       out.cacheRead = usage.cached_input_tokens;
     }
+  } else if (usage.input_tokens !== undefined) {
+    out.fresh = usage.input_tokens;
   } else if (usage.cached_input_tokens !== undefined) {
     out.cacheRead = usage.cached_input_tokens;
   }

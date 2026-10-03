@@ -58,12 +58,14 @@ run log is gone by the time anyone asks what the work cost.
    `input_tokens + output_tokens` exactly. Storing `input_tokens` as fresh input
    whole would charge the cached portion twice once it was also primed as
    cache-read. So the Codex adapter subtracts, and only when both operands were
-   reported: an absent `cached_input_tokens` leaves fresh input absent too,
-   never `input_tokens` taken whole, which is the inversion decision 4 forbids.
-   Where `reasoning_output_tokens` is absent, the whole of `output_tokens` is
-   kept — there is no overlap to protect against, and it is still billed
-   correctly at the output rate either way. claude-code's four counts need no
-   such subtraction: its own `modelUsage` already reports them disjoint.
+   reported. An absent `cached_input_tokens` leaves nothing to subtract, so
+   `input_tokens` is kept whole as fresh — dropping it instead would be the
+   inversion decision 4 forbids, reporting tokens the runtime did say as tokens
+   nobody billed. Where `reasoning_output_tokens` is absent, the whole of
+   `output_tokens` is kept the same way — there is no overlap to protect
+   against, and it is still billed correctly at the output rate either way.
+   claude-code's four counts need no such subtraction: its own `modelUsage`
+   already reports them disjoint.
 
    **Only the cached/reasoning pair is measured; `cache_write_input_tokens`
    is not.** No rollout and no fixture this project has seen carries that
@@ -76,13 +78,20 @@ run log is gone by the time anyone asks what the work cost.
    than adding a third counting rule beside it.
 
    **One entry per model, keyed by `(model, mode)`.** claude-code's `modelUsage`
-   is itself keyed by model id, and a call can bill more than one — `model` on
-   each entry is that key, verbatim, never the model the recipe asked for.
-   Entries merge by `(model, mode)` when tokens from two turns or two rounds are
-   added together (`addUsage`); a differently-keyed entry is a second line in
-   the bill, not a second count of the same one. `mode` names a premium speed at
-   the same model id, where a runtime has one. Events take one array rather than
-   loose fields, because nobody writes events by hand.
+   is itself keyed by model id, and a call can bill more than one — for
+   claude-code, `model` on each entry is that key, verbatim, never the model
+   the recipe asked for. **Codex is the opposite, and deliberately so: its
+   stream never names the model that served the call, so `model` on its one
+   entry is `request.model`, the recipe's ask — which says nothing about what
+   actually served it, whether through a provider substitution or because
+   `request.model` was absent and the run fell through to `~/.codex/config.toml`'s
+   default.** A reader pricing or asserting on `usage[].model` as a runtime-reported
+   fact is only safe doing so for claude-code; for Codex it is the request
+   echoed back. Entries merge by `(model, mode)` when tokens from two turns or
+   two rounds are added together (`addUsage`); a differently-keyed entry is a
+   second line in the bill, not a second count of the same one. `mode` names a
+   premium speed at the same model id, where a runtime has one. Events take
+   one array rather than loose fields, because nobody writes events by hand.
 
 4. **Every field is optional, and none defaults to zero.** A `.default(0)`
    anywhere in these groups would report unknown cost as free. Optional also

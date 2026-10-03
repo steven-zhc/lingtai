@@ -82,19 +82,29 @@ nothing here would ever reach.
 The old row is left standing, as every row here is, so an event from before
 2026-10-03 still prices at $2.50.
 
-**The cache columns above are derived, not quoted, except one.** The published
-figures are the input and output rates plus the multipliers — cache reads at
-about 0.1× input and cache writes at about 1.25× — so `cache read` and
-`cache write` here are that arithmetic, and they are the numbers to replace first
-when somebody checks this file against the published page. The exception is
-`claude-fable-5-1`, whose cache read is quoted directly at 0.25 and is therefore
-**not** 0.1× its input rate; a row that assumed the multiplier would be 4× wrong.
+**The cache columns on the 2026-06-24 rows are derived, not quoted, except
+one.** The published figures are the input and output rates plus the
+multipliers — cache reads at about 0.1× input and cache writes at about
+1.25× — so `cache read` and `cache write` on those rows are that arithmetic,
+and they are the numbers to replace first when somebody checks this file
+against the published page. The exception among them is `claude-fable-5-1`,
+whose cache read is quoted directly at 0.25 and is therefore **not** 0.1× its
+input rate; a row that assumed the multiplier would be 4× wrong. **The
+2026-10-03 `claude-sonnet-5` row is a second exception, and a different kind:**
+its cache write is *measured*, against the two real receipts above, not
+derived from a multiplier — 2×, not 1.25×, and that is the value to keep, not
+to replace.
 
-**`from` is 2026-06-24 for every row because that is the date of the reference
-these came from, not a date anybody verified.** This file was written
-2026-09-29, so the rows are three months old on arrival and are the first thing
-to check. They are recorded with the date they are true of rather than the date
-they were typed, which is what makes that checkable at all.
+**`from` is 2026-06-24 for every row above it, because that is the date of the
+reference those rows came from, not a date anybody verified; the 2026-10-03
+`claude-sonnet-5` row is dated for a different reason — it is the day the two
+receipts above were captured.** This file was written 2026-09-29, so the
+2026-06-24 rows were three months old on arrival and were the first thing to
+check. They are recorded with the date they are true of rather than the date
+they were typed, which is what makes that checkable at all. Recomputing the
+2026-10-03 row's cache columns from the published multipliers, the way the
+2026-06-24 rows should be checked, would undo the measurement above and is
+not what "the first thing to check" means for that row.
 
 ## Codex — `codex`
 
