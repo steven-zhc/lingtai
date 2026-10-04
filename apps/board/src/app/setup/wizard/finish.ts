@@ -32,7 +32,18 @@ import {
 import { startOnboarding } from "@lingtai/conductor/wizard";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, editRecipe, hashRecipe, hasLegacyProjectLimits, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
+import {
+  Recipe,
+  ceilingOf,
+  editRecipe,
+  hashRecipe,
+  hasLegacyProjectLimits,
+  machineFiles,
+  machinePath,
+  recipePath,
+  resolveRecipe,
+  unnarrowedCeiling,
+} from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
@@ -122,13 +133,27 @@ export async function editExisting(
   const ref = state.draft.base;
   const { recipe } = await resolveRecipe(async () => existing, ref);
   const drafted = Recipe.parse(applyDraft(at.current, state));
+
+  // Every dial was seeded from `at.current` — the machine-narrowed resolve —
+  // so a key nobody touched on the page still carries that narrow. Undo it
+  // before it reaches the file: an untouched key is written as the file's own
+  // stated number, this project's legacy fallback, or the schema default,
+  // never the machine-wide cap; a key the operator did move keeps the
+  // explicit value the page sent (`#371`'s window).
+  const unnarrowed = unnarrowedCeiling(existing, recipe, at.machine, at.project);
+  const seeded = ceilingOf(at.current);
+  const dialKeys = Object.keys(state.draft.limits) as (keyof typeof state.draft.limits)[];
+  const limits = Object.fromEntries(
+    dialKeys.map((key) => [key, state.draft.limits[key] === seeded[key] ? unnarrowed[key] : state.draft.limits[key]]),
+  ) as Recipe["runtime"]["limits"];
+
   // The file's half: everything the page changed, including the ceiling —
   // `runtime.limits` is the recipe's own since `#371`. `agent` stays pinned to
   // what the file's own bytes already say (the machine's, until a save moves
   // it), so it is never offered as a change to the file.
   const after = Recipe.parse({
     ...drafted,
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
+    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: { ...ceilingOf(drafted), ...limits } },
   });
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);

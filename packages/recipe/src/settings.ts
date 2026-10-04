@@ -105,10 +105,10 @@ function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | n
  * an undeclared one may spend the ceiling, because the undeclared one may.
  *
  * **A caller that writes `runtime.limits` wants `ceilingOf` and not this.** The
- * wizard and `resolveLocalRecipe` save the machine file's ceiling, and narrowing
- * that to whatever `implement` asked for would lower it permanently on the next
- * save. `pnpm typecheck` cannot tell the two apart — both return the same type —
- * so the question is in the name.
+ * wizard writes the recipe's own ceiling (`#371`), and narrowing that to
+ * whatever `implement` asked for would lower it permanently on the next save.
+ * `pnpm typecheck` cannot tell the two apart — both return the same type — so
+ * the question is in the name.
  *
  * **The ceiling object itself comes back where nothing narrows**, by identity, so
  * *a recipe nobody edited resolves to the same values* is cheap to assert
@@ -141,10 +141,11 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits
  * **`runtime.limits` itself — the ceiling, said once** (`#314`, 0070 §5).
  *
  * `limitsFor`'s opposite and the reason it can be a maximum: what a step may
- * spend is a reduction from this, and this is what a machine file stores and a
- * dial edits. Every reader that means *the bound the recipe states at the top*
- * asks for it by that name, so the two questions are told apart by the call and
- * not by a comment beside it.
+ * spend is a reduction from this, and this is what the recipe states and a
+ * dial edits (`#371`) — a machine-wide cap only narrows it at resolve time,
+ * and never writes it back. Every reader that means *the bound the recipe
+ * states at the top* asks for it by that name, so the two questions are told
+ * apart by the call and not by a comment beside it.
  *
  * An accessor rather than an inlined `recipe.runtime.limits`, for the reason
  * every accessor in this file is one: `unit/settings.test.ts`'s *nothing reaches

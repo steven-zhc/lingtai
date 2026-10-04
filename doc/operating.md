@@ -451,12 +451,13 @@ projects:
       agent: codex             # this one repository, over the machine's own
 ```
 
-A `limits:` written here, machine-wide or under a project, is read as a
-*ceiling on this machine* — `min(the recipe's number, this one)`, per key — and
-never as a way to raise what a recipe already states. A project whose recipe
-still says nothing about limits falls back to `projects.<name>.runtime.limits`
-where that is the only place the number has ever lived; the first wizard save
-moves it into the recipe and deletes it from here.
+A machine-wide `limits:` is read as a *ceiling on this machine* —
+`min(the recipe's number, this one)`, per key — and never as a way to raise
+what a recipe already states. `projects.<name>.runtime.limits` is a different
+thing and is not narrowed in: it is this project's old home for the ceiling,
+read only where the recipe says nothing about a key, and overridden outright
+the moment the recipe states one — never a floor alongside it. The first
+wizard save moves the numbers into the recipe and deletes this block.
 
 Left in the recipe, `runtime.agent` is named back at you —
 `runtime.agent: moved to this machine (0046 §3) — write it in

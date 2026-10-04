@@ -254,7 +254,6 @@ describe("an edit to a recipe that extends a preset", () => {
    * migrate the stale block out from under it.
    */
   it("migrates the machine's old per-project ceiling on the first save, in either direction", async () => {
-    const { recipe: fileAlone } = await resolveRecipe(async () => FILE, "main");
     const machineBefore =
       "projects:\n  shop:\n    runtime:\n      agent: claude-code\n      limits: { turns: 150, wall: 1h, rounds: 3, restarts: 0 }\n";
     const seeded = await resolveLocalRecipe("shop", {
@@ -269,11 +268,16 @@ describe("an edit to a recipe that extends a preset", () => {
       ["rounds", 2] as const,
       ["rounds", 4] as const,
     ]) {
+      // `current` is the same resolve that seeded `state` — as `at.current`
+      // is in production, both from one `currentRecipe()` call at page load.
       const state = wizardReducer(updateState({ slug: "acme/shop", recipe: seeded.recipe }), { type: "limit", key, value });
-      const finished = await editExisting(FILE, state, { project: "shop", current: fileAlone, machine: machineBefore, home: HOME });
+      const finished = await editExisting(FILE, state, { project: "shop", current: seeded.recipe, machine: machineBefore, home: HOME });
       if (!finished.ok) throw new Error(`${key}=${value}: ${finished.refusals.join("; ")}`);
       expect(finished.file).toContain(`${key}: ${value}`);
-      if (finished.machine !== null) expect(finished.machine).not.toContain("limits");
+      // The legacy block is present every iteration, so the migration must
+      // run every iteration — never left to chance by a vacuous guard (#371).
+      expect(finished.machine).not.toBeNull();
+      expect(finished.machine).not.toContain("limits");
 
       const resolved = await resolveLocalRecipe("shop", {
         home: HOME,
@@ -283,6 +287,72 @@ describe("an edit to a recipe that extends a preset", () => {
       });
       expect(resolved.recipe.runtime.limits[key]).toBe(value);
     }
+  });
+
+  /**
+   * **finish.ts:110-115's other claim, which the loop above never exercises:
+   * a save nobody touched a dial on still migrates the legacy block.** Every
+   * iteration above moves one, so this is the only test where none does.
+   */
+  it("migrates the legacy block on a save that moves no dial", async () => {
+    const machineBefore =
+      "projects:\n  shop:\n    runtime:\n      agent: claude-code\n      limits: { turns: 150, wall: 1h, rounds: 3, restarts: 0 }\n";
+    const seeded = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? FILE : path === machinePath(HOME) ? machineBefore : null),
+    });
+    const state = updateState({ slug: "acme/shop", recipe: seeded.recipe });
+
+    const finished = await editExisting(FILE, state, { project: "shop", current: seeded.recipe, machine: machineBefore, home: HOME });
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.machine).not.toBeNull();
+    expect(finished.machine).not.toContain("limits");
+    expect(finished.file).toContain("turns: 150");
+
+    const resolved = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) =>
+        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? (finished.machine ?? machineBefore) : null,
+    });
+    expect(resolved.recipe.runtime.limits).toEqual({ turns: 150, wall: "1h", rounds: 3, restarts: 0 });
+  });
+
+  /**
+   * **A machine-wide narrowing cap must never become the recipe's own stated
+   * ceiling.** The dials are seeded from the narrowed resolve, so a save that
+   * touches no limit dial — only the kinds row here — must not write the
+   * narrowed numbers back as what the recipe states: raising the cap
+   * afterwards would then have nothing to raise.
+   */
+  it("does not bake a machine-wide narrowing cap into the recipe on an untouched dial", async () => {
+    const machineBefore = "runtime:\n  agent: claude-code\n  limits:\n    turns: 100\n    rounds: 1\n";
+    const seeded = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? FILE : path === machinePath(HOME) ? machineBefore : null),
+    });
+    expect(seeded.recipe.runtime.limits).toEqual({ turns: 100, wall: "2h", rounds: 1, restarts: 0 });
+
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: seeded.recipe }), {
+      type: "kind",
+      label: "feature",
+      add: true,
+    });
+
+    const finished = await editExisting(FILE, state, { project: "shop", current: seeded.recipe, machine: machineBefore, home: HOME });
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.changed).not.toContain("runtime.limits");
+    expect(finished.file).not.toContain("turns: 100");
+
+    const raised = "runtime:\n  agent: claude-code\n  limits:\n    turns: 500\n    rounds: 1\n";
+    const resolved = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? raised : null),
+    });
+    expect(resolved.recipe.runtime.limits.turns).toBe(300);
   });
 });
 

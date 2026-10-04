@@ -45,7 +45,7 @@ import { parseDuration } from "./duration.ts";
 import { PRESETS } from "./presets.ts";
 import { LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { assigneeOf, backoffOf, baseOf, excludeOf, kindsOf } from "./settings.ts";
+import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -682,4 +682,39 @@ export function hasLegacyProjectLimits(machineText: string | null, project: stri
   const doc = parseDocument(machineText);
   if (doc.errors.length > 0) return false;
   return doc.hasIn(["projects", project, "runtime", "limits"]);
+}
+
+/**
+ * `fileAlone`'s ceiling, with a key the file leaves silent read from this
+ * project's legacy per-project fallback where the machine states one —
+ * `ceilingOf(fileAlone)` otherwise. **Never a machine-wide narrowing cap**:
+ * that scope only ever narrows at resolve time (this file's header), so a
+ * writer must not read it back as a number to persist.
+ *
+ * **For `editExisting`'s write path** (`#371`): the page's dials are seeded
+ * from `resolveLocalRecipe`'s narrowed resolve, so a key nobody touched on
+ * the page still carries that narrow. Writing it back as the recipe's own
+ * stated ceiling would make the narrow permanent — a cap raised later could
+ * never raise it again, because `min()` cannot give back a number the recipe
+ * itself now states. `hasLegacyProjectLimits` only asks whether the legacy
+ * block exists; this reads the numbers out of it.
+ */
+export function unnarrowedCeiling(
+  fileText: string,
+  fileAlone: Recipe,
+  machineText: string | null,
+  project: string,
+): Recipe["runtime"]["limits"] {
+  const doc = parseDocument(fileText);
+  const machine = machineText === null ? null : parseDocument(machineText);
+  const filled: Record<string, unknown> = {};
+  for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
+    if (doc.errors.length === 0 && doc.hasIn(["runtime", "limits", key])) continue;
+    const legacy =
+      machine !== null && machine.errors.length === 0
+        ? machine.getIn(["projects", project, "runtime", "limits", key])
+        : undefined;
+    if (legacy !== undefined) filled[key] = legacy;
+  }
+  return { ...ceilingOf(fileAlone), ...filled } as Recipe["runtime"]["limits"];
 }
