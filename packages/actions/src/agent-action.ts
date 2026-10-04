@@ -609,15 +609,25 @@ export function parseFindings(text: string | null): ReadAnswer {
       // is exactly this, and neither names a byte worth reporting. Every
       // per-brace and fenced candidate, by contrast, starts with `{` by
       // construction (`candidatesIn` cuts one at *every* brace in the text),
-      // so a failure there lands at offset 1 at the earliest, and is only
-      // informative when the character there looks like an attempt at a
-      // quote and missed. Prose that quotes a bare object literal —
-      // `` `{ending:"passed"}` `` on the way to describing the code, never
-      // written as an attempt at JSON — fails at offset 1 on a character that
-      // opens an identifier, which is never what a mangled quote looks like,
-      // such as the full-width quote `#318` finding 3 is about.
+      // so a failure there is only informative when the character it landed
+      // on looks like an attempt at a quote and missed. Prose that quotes a
+      // bare object literal — `` `{ending:"passed"}` `` or `` `{ ok: false,
+      // offset, char }` `` on the way to describing the code, never written
+      // as an attempt at JSON — fails on a character that opens an
+      // identifier, which is never what a mangled quote looks like, such as
+      // the full-width quote `#318` finding 3 is about. **Whitespace between
+      // the brace and that character does not make it any more of an
+      // attempt**: `{ ok: …` is read exactly like `{ok: …` is, so the gap is
+      // skipped rather than requiring the identifier to sit at local offset 1
+      // (round-two major, against `cb6f78b`).
       if (repaired.offset === 0) continue;
-      if (repaired.offset === 1 && repaired.char !== null && /^[A-Za-z_$]/.test(repaired.char)) continue;
+      if (
+        repaired.char !== null &&
+        /^[A-Za-z_$]/.test(repaired.char) &&
+        candidate.text.slice(1, repaired.offset).trim() === ""
+      ) {
+        continue;
+      }
       noteFurthest(
         {
           offset: globalOffset(candidate, repaired.offset),

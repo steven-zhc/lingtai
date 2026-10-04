@@ -808,6 +808,25 @@ describe("reading the reviewer's answer", () => {
   });
 
   /**
+   * **The round-two major, against `cb6f78b`: whitespace after the quoted
+   * brace must not make an identifier look like an attempt at JSON** (`#318`).
+   * The gate this replaced only suppressed a failure sitting at local offset
+   * 1 — the character immediately after `{` — so a space before the
+   * identifier, as a reviewer writing out a real object literal in prose
+   * naturally would, moved the failure to offset 2 and the gate missed it.
+   */
+  it("reports no JSON object was found, even with a space after the quoted brace", () => {
+    const answer =
+      "**Refusal is about `lines`**\n\n" +
+      "- `readTolerantJson` returns `{ ok: false, offset, char }` and nothing checks it.\n";
+
+    const { unreadableAt, parsed } = parseFindings(answer);
+
+    expect(parsed).toBe(false);
+    expect(unreadableAt).toBeUndefined();
+  });
+
+  /**
    * **A fenced candidate's own offsets must name the byte they claim to**
    * (`#318` round-two finding 4). `start` is the stripped interior's position,
    * but the interior's own trailing newline — proven to be nothing but
