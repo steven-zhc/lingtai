@@ -69,6 +69,7 @@ import {
   type SentBack,
 } from "./action.ts";
 import { boundedEvidence } from "./command.ts";
+import { readTolerantJson } from "./tolerant-json.ts";
 
 export interface AgentActionSpec {
   name: string;
@@ -284,6 +285,30 @@ interface ReadAnswer {
    * counted as the default.
    */
   about?: RefusedAbout;
+  /**
+   * **Why nothing was returned, set only when `parsed` is `false`** (`#318`).
+   * Usually the furthest a candidate was read into the text before every
+   * reading gave up — the reading closest to being right, carrying the exact
+   * character or, at the end of input, what kind of value was left open.
+   * Where a candidate instead read as a complete value and was refused for
+   * what it contained (no `findings` array, an incomplete finding, or nothing
+   * past the bar), `reason` carries that refusal instead — reading fine is
+   * further into the text than any syntax failure can reach, so it always
+   * wins the position over one. Never set by `normaliseAnswer`: a
+   * schema-constrained answer is read exactly as `#369` left it, with none of
+   * this diagnostic (`#318`'s design note).
+   */
+  unreadableAt?: Where;
+}
+
+/** Where a reading stopped, or — when `reason` is set — where a reading that
+ *  parsed in full was refused and why. The two are mutually exclusive: `reason`
+ *  is only ever set from a candidate that read as a complete value. */
+interface Where {
+  offset: number;
+  char: string | null;
+  context?: string;
+  reason?: string;
 }
 
 /**
@@ -328,6 +353,99 @@ function normaliseAnswer(value: unknown): ReadAnswer {
   return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
 }
 
+/** A JSON candidate and where it sits in the text it was cut from. */
+interface Candidate {
+  text: string;
+  start: number;
+}
+
+/**
+ * Every place the answer could start, tried last first.
+ *
+ * **Where the answer starts is not the first brace in it** (`#272`). It used to
+ * be `indexOf("{")`, which is the *prose's* brace whenever the reviewer quoted
+ * the code — and the more precisely it quoted, the likelier that was. `#262`'s
+ * reviewer verified every citation in the diff, wrote
+ * `` `StepPassed` = `{ending:"passed"}` `` on the way, answered `{"findings":[]}`
+ * and had a clean review read as unreadable; a person waived it. So every brace
+ * is a candidate, tried last first, because the object is what the answer *ends*
+ * in.
+ */
+function candidatesIn(text: string): Candidate[] {
+  const candidates: Candidate[] = [];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
+  for (const block of fenced) {
+    const stripped = block.replace(/```(?:json)?/g, "").replace(/```/g, "");
+    const start = text.indexOf(stripped);
+    candidates.push({ text: stripped, start: start === -1 ? 0 : start });
+  }
+  // Last brace first: the outer object's own `{` is reached after the braces
+  // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
+  for (let i = text.length - 1; i >= 0; i--) if (text[i] === "{") candidates.push({ text: text.slice(i), start: i });
+  candidates.push({ text, start: 0 });
+  return candidates;
+}
+
+/**
+ * Which key of `Finding` (`packages/domain/src/events.ts`) a repaired entry is
+ * missing or got wrong, or `null` where every entry in the list is complete.
+ *
+ * **A repaired reading is a guess about where the writer stopped, so it may
+ * never fill in a default for a key truncation cut away** (`#318` finding 3).
+ * `normaliseAnswer`'s `String(f.file ?? "(unknown)")` and its severity default
+ * are correct for the strict and schema-constrained paths — there, the model
+ * answered in full and an absent key is the model's own omission — but here an
+ * absent key is as likely to be the tolerant reader's closing brace standing in
+ * for words the reviewer never got to write. `ActionFinding`'s five keys, with
+ * their exact types, are the only safe reading of "this entry is really there".
+ */
+function findingProblem(
+  list: readonly unknown[],
+): { index: number; total: number; sentence: string } | null {
+  for (let index = 0; index < list.length; index++) {
+    const f = list[index] as Partial<ActionFinding> | null | undefined;
+    const at = `finding ${index + 1} of ${list.length}`;
+    if (typeof f?.file !== "string") return { index, total: list.length, sentence: `${at} has no \`file\`` };
+    if (!(f.line === null || typeof f.line === "number")) {
+      return { index, total: list.length, sentence: `${at} has no \`line\`` };
+    }
+    if (typeof f.claim !== "string") return { index, total: list.length, sentence: `${at} has no \`claim\`` };
+    if (typeof f.failureScenario !== "string") {
+      return { index, total: list.length, sentence: `${at} has no \`failureScenario\`` };
+    }
+    if (f.severity === undefined) return { index, total: list.length, sentence: `${at} has no \`severity\`` };
+    if (!isSeverity(f.severity)) {
+      return {
+        index,
+        total: list.length,
+        sentence: `${at}'s \`severity\` is \`${String(f.severity)}\`, not one of ${SEVERITIES.join(", ")}`,
+      };
+    }
+  }
+  return null;
+}
+
+/** Every entry in `list` already passed `findingProblem`, so every key is present and correctly typed. */
+function findingsFromCompleteList(list: readonly unknown[]): ActionFinding[] {
+  return list.map((raw) => {
+    const f = raw as ActionFinding;
+    return { file: f.file, line: f.line, claim: f.claim, failureScenario: f.failureScenario, severity: f.severity };
+  });
+}
+
+/** The sentence a person reads for `unreadableAt`, naming the byte rather than leaving it invisible in a terminal. */
+function describeUnreadable(where: Where | undefined): string {
+  if (!where) return "no JSON object was found in it";
+  if (where.reason !== undefined) return `it read as an object ending at offset ${where.offset}, but ${where.reason}`;
+  if (where.char === null) return `it ended at offset ${where.offset} inside a ${where.context ?? "value"}`;
+  // `charCodeAt`, not the astral-aware reading: `where.char` is always a
+  // single UTF-16 unit off `text[i]`, and every byte this reader repairs
+  // around sits in the basic plane.
+  const unit = where.char.charCodeAt(0);
+  const hex = Number.isNaN(unit) ? "????" : unit.toString(16).toUpperCase().padStart(4, "0");
+  return `unexpected \`${where.char}\` (U+${hex}) at offset ${where.offset}`;
+}
+
 /**
  * The findings, from whatever the reviewer actually said in prose.
  *
@@ -343,28 +461,53 @@ function normaliseAnswer(value: unknown): ReadAnswer {
  * asked for JSON usually gives JSON, and the run where it does not must not
  * become a crash with no verdict.
  *
- * **Where the answer starts is not the first brace in it** (`#272`). It used to
- * be `indexOf("{")`, which is the *prose's* brace whenever the reviewer quoted
- * the code — and the more precisely it quoted, the likelier that was. `#262`'s
- * reviewer verified every citation in the diff, wrote
- * `` `StepPassed` = `{ending:"passed"}` `` on the way, answered `{"findings":[]}`
- * and had a clean review read as unreadable; a person waived it. So every brace
- * is a candidate, tried last first, because the object is what the answer *ends*
- * in. A truncated answer still parses at no position and is still refused: that
- * difference is the only thing the refusal below is for.
+ * **Two readings, strict then tolerant, never mixed** (`#318`). Every candidate
+ * is tried against `JSON.parse` first — a well-formed answer is read exactly as
+ * it always was, through `normaliseAnswer`, the same rule a schema-constrained
+ * answer is read by. Only when every candidate fails that way does the same
+ * list, in the same order, go through `readTolerantJson`, which closes a
+ * truncated object and accepts a full-width colon or comma standing where a
+ * structural one belongs — `#269` stopped one closing brace short of valid
+ * JSON, and `#243` emitted one full-width colon in a key separator, and both
+ * cost a review outright.
+ *
+ * **A repaired reading only ever buys a round, never a pass.** It counts only
+ * when every entry in its `findings` has all five of `Finding`'s own keys,
+ * correctly typed (`findingProblem`) — a dropped or truncated entry out of a
+ * repaired reading is evidence of truncation, not of a reviewer breaking the
+ * rule — and only when the result is a `failed` verdict: repair is a guess
+ * about where the writer stopped, and the safe use of a guess is to buy a round
+ * on findings that are really there, never to let a clean-looking diff through
+ * on a reading nobody can be sure of.
+ *
+ * **A reading must use up its whole candidate, exactly as `JSON.parse` does**
+ * (`#318`, the round-one finding). `readTolerantJson` fails if anything but
+ * whitespace follows the value it read, so a findings-shaped example quoted in
+ * the reviewer's prose, with real prose or a real broken answer following it,
+ * is never mistaken for the answer itself.
+ *
+ * A truncated answer that even the tolerant reader cannot close — one cut off
+ * inside a string, a number, a literal, or after a key with no value — still
+ * parses at no position and is still refused, and that position is recorded in
+ * `unreadableAt` for a person to read. So is a reading that parsed in full and
+ * was refused for what it contained: that is further into the text than any
+ * syntax failure can be, so it always wins the position over one.
  */
 export function parseFindings(text: string | null): ReadAnswer {
   if (!text) return { findings: [], parsed: false };
 
-  const candidates: string[] = [];
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
-  for (const block of fenced) candidates.push(block.replace(/```(?:json)?/g, "").replace(/```/g, ""));
-  // Last brace first: the outer object's own `{` is reached after the braces
-  // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
-  for (let i = text.length - 1; i >= 0; i--) if (text[i] === "{") candidates.push(text.slice(i));
-  candidates.push(text);
+  const candidates = candidatesIn(text);
 
-  for (const candidate of candidates) {
+  let furthest: Where | undefined;
+  let furthestStart = -1;
+  const noteFurthest = (where: Where, start: number): void => {
+    if (!furthest || where.offset > furthest.offset || (where.offset === furthest.offset && start < furthestStart)) {
+      furthest = where;
+      furthestStart = start;
+    }
+  };
+
+  for (const { text: candidate, start } of candidates) {
     let value: unknown;
     try {
       value = JSON.parse(candidate.trim());
@@ -373,9 +516,61 @@ export function parseFindings(text: string | null): ReadAnswer {
     }
     const result = normaliseAnswer(value);
     if (result.parsed) return result;
+    // It parsed, just not into findings: a readable object whose top-level key
+    // is not `findings` is described by what was wrong with it, rather than by
+    // whatever syntax failure happens to sit elsewhere in the text (`#318`
+    // finding, scenario 1).
+    noteFurthest({ offset: start + candidate.trim().length, char: null, reason: "it had no `findings` array" }, start);
   }
 
-  return { findings: [], parsed: false };
+  for (const { text: candidate, start } of candidates) {
+    const repaired = readTolerantJson(candidate);
+    if (!repaired.ok) {
+      // A syntax failure on text that does not even look like JSON is not
+      // informative — every prose answer with nothing to recover would
+      // otherwise report the first letter of its first sentence as an
+      // "unexpected character", which is prose being misread as a one-byte
+      // repair rather than refused outright.
+      if (candidate.trim().startsWith("{")) {
+        noteFurthest(
+          { offset: start + repaired.offset, char: repaired.char, ...(repaired.context === undefined ? {} : { context: repaired.context }) },
+          start,
+        );
+      }
+      continue;
+    }
+
+    // Further into the text than any syntax failure can be, since those stop
+    // partway through and this reading used up the whole candidate.
+    const end = start + candidate.length;
+
+    const list = (repaired.value as { findings?: unknown })?.findings;
+    if (!Array.isArray(list)) {
+      noteFurthest({ offset: end, char: null, reason: "it had no `findings` array" }, start);
+      continue;
+    }
+
+    const problem = findingProblem(list);
+    if (problem) {
+      noteFurthest({ offset: end, char: null, reason: problem.sentence }, start);
+      continue;
+    }
+
+    const findings = findingsFromCompleteList(list);
+    if (verdictFor(findings) !== "failed") {
+      // Repair buys a round, never a pass.
+      noteFurthest(
+        { offset: end, char: null, reason: "nothing in it was a blocker or a major, and a repaired reading may not pass" },
+        start,
+      );
+      continue;
+    }
+
+    const about = (repaired.value as { about?: unknown })?.about;
+    return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
+  }
+
+  return { findings: [], parsed: false, ...(furthest ? { unreadableAt: furthest } : {}) };
 }
 
 /**
@@ -578,7 +773,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // second reading of it to fall back to on the way to `unreadable`
       // (`#369`). `parseFindings` runs only where the runtime answered in
       // prose instead.
-      const { findings, parsed, about } =
+      const { findings, parsed, about, unreadableAt } =
         outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text);
       if (!parsed) {
         /**
@@ -591,16 +786,25 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * as the same shape, and `carriesACriterion` answered the only thing it
          * could: *nothing an agent could be held to*. `#269`'s third review said
          * four things, one of them a `major` with a failure scenario, and stopped
-         * one closing brace short of valid JSON; the pass parked as though the
-         * reviewer had held an opinion, and 61 turns and $8.97 went with it.
+         * one closing brace short of valid JSON; 61 turns and $8.97 went with it
+         * before `parseFindings` grew a tolerant second reading for exactly that
+         * shape (`#318`) — what reaches here now is what neither reading could
+         * close: a byte `readTolerantJson` does not know how to repair, an
+         * answer truncated somewhere that reading refuses to guess the end of,
+         * or prose with no JSON in it at all.
          *
          * It is still a `failed`, and it still buys nothing: an answer nobody can
          * read is not a criterion (0038 §2). What the flag changes is which
-         * sentence a person is handed and what the log can be asked.
+         * sentence a person is handed and what the log can be asked —
+         * `describeUnreadable` names the offending character and its offset
+         * where there is one, rather than leaving a person to guess whether one
+         * byte was wrong or the reviewer wrote an essay.
          */
         return {
           verdict: "failed",
-          evidence: boundedEvidence(`the reviewer's answer was not readable as findings:\n${outcome.text ?? ""}`),
+          evidence: boundedEvidence(
+            `the reviewer's answer was not readable as findings: ${describeUnreadable(unreadableAt)}:\n${outcome.text ?? ""}`,
+          ),
           findings: [],
           unreadable: true,
         };
