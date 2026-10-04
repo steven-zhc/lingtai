@@ -329,7 +329,51 @@ describe("an edit to a recipe that extends a preset", () => {
     const finished = await editExisting(FILE, state, on(current, machineBefore));
     expect(finished.ok).toBe(false);
     if (finished.ok) throw new Error("expected a refusal");
-    expect(finished.refusals.join("; ")).toMatch(/runtime\.limits\.turns.*280.*150/);
+    const said = finished.refusals.join("; ");
+    expect(said).toMatch(/runtime\.limits\.turns.*280.*150/);
+    // The provenance for a project-scoped narrowing carries its own
+    // `, narrowing <recipe>'s 280` clause (`local.ts`'s doctor-row format);
+    // splicing the whole thing in here would read as the recipe's own 280
+    // narrowing something, inside a sentence that is itself about narrowing
+    // 280 down to 150 (#371 fix-round).
+    expect(said).not.toContain("narrowing");
+  });
+
+  /**
+   * **A dial moved to the value that happens to equal the schema's own
+   * default must still land in the file text, and be checked the same way any
+   * other value would be.** The machine-wide `rounds: 3` is where the dial
+   * starts (`at.current`, seeded the way the page seeds it), and the operator
+   * lowers it to `2` — which also happens to be `recipe.runtime.limits.rounds`
+   * (the unedited file, silent about limits, resolves to the schema default
+   * `2`). `changesFrom(recipe, after)` would then see no difference between
+   * the unedited file and the edit and write nothing, so the read-back would
+   * believe the recipe states no ceiling on `rounds` at all, letting the
+   * machine's blanket `3` apply unchecked and skip the refusal this move
+   * should have hit. Before this fix the page said `ok`, or (through
+   * `touchedLimits`'s own after-the-fact check) refused with "but …3 still
+   * narrows it to 2" — backwards, since 3 does not narrow 2, it exceeds it
+   * (`#371` fix-round).
+   */
+  it("writes a dial moved to the schema's own default, and refuses it the same way as any other value", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const machineBefore = "runtime:\n  limits:\n    rounds: 3\n";
+    const current = Recipe.parse({
+      ...recipe,
+      runtime: { ...recipe.runtime, limits: { ...recipe.runtime.limits, rounds: 3 } },
+    });
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+      type: "limit",
+      key: "rounds",
+      value: 2,
+    });
+
+    const finished = await editExisting(FILE, state, on(current, machineBefore));
+    expect(finished.ok).toBe(false);
+    if (finished.ok) throw new Error("expected a refusal");
+    const said = finished.refusals.join("; ");
+    expect(said).toMatch(/runtime\.limits\.rounds is 3.*above.*2/);
+    expect(said).not.toContain("narrows it to");
   });
 });
 

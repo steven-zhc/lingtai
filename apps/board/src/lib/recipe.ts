@@ -706,6 +706,12 @@ export interface Reading {
  * source printed there would be a sentence that is true of a number it is not
  * made of — the failure the-bar.md records for `rounds ×N`. Null when nothing
  * is known, which is what an attempt's recorded recipe always answers.
+ *
+ * **Joined with `; `, not `, `** (`#371`): a narrowing's own `where` already
+ * carries a comma and a clause of its own (`underHome`'s own comment), and
+ * joining distinct sources with the same punctuation a single source uses
+ * internally would read as one list of sources where one of them is a
+ * fragment carrying a number.
  */
 export function sourceOf(row: Reading, provenance?: Readonly<Record<string, string>>): string | null {
   if (provenance === undefined) return null;
@@ -714,7 +720,7 @@ export function sourceOf(row: Reading, provenance?: Readonly<Record<string, stri
     const where = provenanceSource(provenance[key]);
     if (where !== null && !wheres.includes(underHome(where))) wheres.push(underHome(where));
   }
-  return wheres.length === 0 ? null : wheres.join(", ");
+  return wheres.length === 0 ? null : wheres.join("; ");
 }
 
 /**

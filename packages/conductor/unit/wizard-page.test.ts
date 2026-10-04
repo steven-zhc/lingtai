@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { Recipe, baseOf, editRecipe, excludeOf, kindsOf, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
+import { Recipe, baseOf, editRecipe, emitRecipe, excludeOf, kindsOf, resolveRecipe, runPlugin, servesStep } from "@lingtai/recipe";
 import { passCeiling } from "../src/filter.ts";
 import {
   type WizardState,
@@ -682,6 +682,20 @@ describe("the last screen, written", () => {
   it("says nothing about limits when the file written has none", () => {
     const noLimits = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml", "steps:\n  proposed: []\n");
     expect(noLimits).not.toContain("limits");
+  });
+
+  /**
+   * **`discuss:` carries its own `limits:` too** (`discuss.ts`'s turn budget),
+   * and `emitRecipe` always writes it — every `Recipe.parse` defaults
+   * `discuss`, with it, whether a dial was ever moved. A whole-file regex
+   * would read that as the recipe stating its own pass ceiling.
+   */
+  it("says nothing about limits when only discuss.limits is in the file, on a real emitRecipe output", () => {
+    const text = emitRecipe(scanned());
+    expect(text).toMatch(/^discuss:\n\s+agent:[\s\S]*\s+limits:/m);
+    expect(text).not.toMatch(/^runtime:\n(?:[ \t].*\n?)*\s+limits:/m);
+    const noLimits = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml", text);
+    expect(noLimits).not.toContain("with its own limits in it");
   });
 });
 

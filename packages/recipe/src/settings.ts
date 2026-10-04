@@ -64,7 +64,7 @@
 import { STEPS, type Step } from "@lingtai/domain";
 import { parseDuration } from "./duration.ts";
 import { isBuiltInJudge } from "./judges.ts";
-import { LIMIT_DEFAULTS, type QueueSettings, type Recipe, type StepAction } from "./recipe.ts";
+import type { QueueSettings, Recipe, StepAction } from "./recipe.ts";
 
 /**
  * What one call this step makes may spend, **as a dispatch's own `limits:`**, or
@@ -155,15 +155,6 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits
 export function ceilingOf(recipe: Recipe): Recipe["runtime"]["limits"] {
   return recipe.runtime.limits;
 }
-
-/**
- * Re-exported so a caller that only needs the schema's own defaults — a
- * ceiling nobody stated — has a subpath to ask rather than the barrel
- * (`@lingtai/recipe/duration`, `@lingtai/recipe/settings` are the two
- * `wizard-page.ts` may use; the barrel re-exports `local.ts`, which reads
- * files, and a client component reaches this module).
- */
-export { LIMIT_DEFAULTS };
 
 /** A step that dispatches, and what it may spend — `boundsBesides`' rows. */
 export interface StepBound {

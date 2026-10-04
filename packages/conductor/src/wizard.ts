@@ -45,7 +45,26 @@ import type { GitHubClient } from "@lingtai/github";
 import { stateDir } from "@lingtai/env";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Recipe, backoffOf, baseOf, emitRecipe, excludeOf, kindsOf, queueOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
+import { isDeepStrictEqual } from "node:util";
+import {
+  Recipe,
+  backoffOf,
+  baseOf,
+  ceilingOf,
+  emitRecipe,
+  excludeOf,
+  kindsOf,
+  queueOf,
+  LIMIT_DEFAULTS,
+  machineFiles,
+  machinePath,
+  parseDuration,
+  provenanceSource,
+  recipePath,
+  resolveLocalRecipe,
+  resolveRecipe,
+  type Said,
+} from "@lingtai/recipe";
 import { passedOver, runnableNow } from "./discover.ts";
 import { type Runnable, selectRunnable } from "./queue.ts";
 import { CHECKING_STEPS, nothingChecks } from "./wizard-page.ts";
@@ -366,13 +385,41 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   // in the machine file now, so nothing is asked what is signed in.
   const planned = files;
   try {
-    await resolveLocalRecipe(client.repo, {
+    const resolved = await resolveLocalRecipe(client.repo, {
       home,
       base,
       signedIn: async () => [],
       read: async (p) =>
         p === path ? planned.recipe : p === machineFile ? (planned.machine ?? readIfThere(p)) : readIfThere(p),
     });
+    // Not throwing is not enough: a limit the page raised above a narrower
+    // machine value does not throw (it is a legal narrowing from the
+    // machine's side), but it also does not take effect (`#371`, the same gap
+    // `editExisting` closed in `finish.ts`). Checked only for a key the page
+    // actually moved off the schema default — `emitRecipe`'s own rule for
+    // what it wrote — so a project onboarded while the machine still carries
+    // its old blanket ceiling on an untouched key resolves it unchecked, same
+    // as any other recipe silent about that key.
+    const appliedCeiling = ceilingOf(resolved.recipe);
+    const chosenCeiling = ceilingOf(recipe);
+    for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
+      const chosen = chosenCeiling[key];
+      if (isDeepStrictEqual(chosen, LIMIT_DEFAULTS[key])) continue;
+      const applied = appliedCeiling[key];
+      if (!isDeepStrictEqual(applied, chosen)) {
+        // Just the file the narrower value came from — see `finish.ts`'s
+        // identical split for why the whole provenance string is not used.
+        const where = provenanceSource(resolved.provenance?.[`runtime.limits.${key}`]) ?? "the machine file";
+        const from = where.split(", narrowing ")[0]!;
+        return {
+          ok: false,
+          refusal:
+            `runtime.limits.${key}: this page would write ${String(chosen)}, but ${from} still narrows it ` +
+            `to ${String(applied)} — raise or remove that machine value first, or this change would be ` +
+            "applied nowhere",
+        };
+      }
+    }
   } catch (err) {
     return { ok: false, refusal: (err as Error).message };
   }

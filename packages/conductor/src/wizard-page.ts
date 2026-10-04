@@ -38,7 +38,16 @@ import { RuntimeId } from "@lingtai/domain";
 import type { StepAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
-import { baseOf, ceilingOf, excludeOf, kindsOf, LIMIT_DEFAULTS, submodulesOf } from "@lingtai/recipe/settings";
+import { baseOf, ceilingOf, excludeOf, kindsOf, submodulesOf } from "@lingtai/recipe/settings";
+
+/**
+ * `Recipe.runtime.limits`'s own schema defaults (`recipe.ts`'s `LIMIT_DEFAULTS`),
+ * repeated here rather than imported as a value: `@lingtai/recipe/settings`
+ * value-importing `LIMIT_DEFAULTS` pulls `recipe.ts` — and through it
+ * `@lingtai/env`'s `node:fs` — into this file's `"use client"` graph, and the
+ * whole board build fails. This file stays type-only on `@lingtai/recipe`.
+ */
+const SCHEMA_LIMIT_DEFAULTS: Recipe["runtime"]["limits"] = { turns: 300, wall: "2h", rounds: 2, restarts: 0 };
 
 /** A new repository read back from a scan, or a recipe that is already there. */
 export type WizardMode = "onboard" | "update";
@@ -286,7 +295,12 @@ export function nothingChecks(base: string): string {
  */
 export function onboardingWritten(slug: string, path: string, file: string): string {
   const project = slug.slice(slug.lastIndexOf("/") + 1);
-  const limits = /^\s*limits:/m.test(file) ? ", with its own limits in it" : "";
+  // Scoped to the `runtime:` block and not the whole file: `discuss:` carries
+  // its own `limits:` (the discussion's turn budget, `discuss.ts`), and
+  // testing the whole text would claim `file` states a pass ceiling on a
+  // recipe that only ever discussed one (#371 fix-round).
+  const runtimeBlock = file.match(/^runtime:\n((?:[ \t].*\n?)*)/m)?.[1] ?? "";
+  const limits = /^\s*limits:/m.test(runtimeBlock) ? ", with its own limits in it" : "";
   return (
     `Written on this machine: the recipe is ${path}${limits}, and the agent is ` +
     `projects.${project}.runtime in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
@@ -844,7 +858,7 @@ export function saidFor(state: WizardState): Record<string, string> {
   // Equal to the schema's own defaults is not a ceiling anybody chose
   // (`emitRecipe`'s own rule, `#371`), and `emitRecipe` leaves the block out
   // of the file entirely then — a sentence about it would have nowhere to go.
-  if (!isDeepStrictEqual(state.draft.limits, LIMIT_DEFAULTS)) {
+  if (!isDeepStrictEqual(state.draft.limits, SCHEMA_LIMIT_DEFAULTS)) {
     const limits = limitsSentence(state.draft.limits);
     if (limits.ok) said["runtime.limits"] = `A pass: ${limits.sentence}.`;
   }

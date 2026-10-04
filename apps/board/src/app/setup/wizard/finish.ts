@@ -154,6 +154,16 @@ export async function editExisting(
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
 
   let changes = changesFrom(recipe, after);
+  // A touched dial must land in the file text even where the value chosen
+  // happens to equal what the untouched file already resolves to (silent,
+  // schema default) — `changesFrom` sees no difference and would otherwise
+  // leave the key unwritten, and the read-back below treats a key `editRecipe`
+  // never wrote as the recipe stating nothing about it at all, letting a
+  // stale machine-wide value keep governing it unchecked rather than being
+  // compared against what the operator actually chose (`#371`).
+  for (const change of touchedLimits) {
+    if (!changes.some((c) => c.path.join(".") === change.path.join("."))) changes.push(change);
+  }
   let file = editRecipe(existing, changes);
   if (!(await describes(file))) {
     changes = wholeSteps(changes, after);
@@ -210,7 +220,13 @@ export async function editExisting(
       const key = change.path[2] as string;
       const applied = (appliedCeiling as Record<string, unknown>)[key];
       if (!isDeepStrictEqual(applied, change.value)) {
-        const from = provenanceSource(resolved.provenance?.[`runtime.limits.${key}`]) ?? "the machine file";
+        // Just the file the narrower value came from — `provenanceSource` can
+        // carry a trailing `, narrowing <recipe>'s <n>` clause of its own
+        // (`local.ts`'s doctor-row format), and splicing that whole clause in
+        // here would name a number as if it were a source and read as a
+        // second, nested narrowing rather than the one this sentence reports.
+        const where = provenanceSource(resolved.provenance?.[`runtime.limits.${key}`]) ?? "the machine file";
+        const from = where.split(", narrowing ")[0]!;
         return {
           ok: false,
           refusals: [
