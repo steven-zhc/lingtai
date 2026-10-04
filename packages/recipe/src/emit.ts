@@ -42,7 +42,7 @@ import {
   type YAMLSeq,
 } from "yaml";
 import { isDeepStrictEqual } from "node:util";
-import { Recipe } from "./recipe.ts";
+import { LIMIT_DEFAULTS, Recipe } from "./recipe.ts";
 
 /**
  * The sentences the wizard showed, by the dotted path of the block each one is
@@ -85,9 +85,21 @@ export class CommentWouldBeLostError extends Error {
 const RENDER = { lineWidth: 0, flowCollectionPadding: false } as const;
 const COMMENT_WIDTH = 78;
 
-/** A new recipe file, with a comment above every block in `said`. */
+/**
+ * A new recipe file, with a comment above every block in `said`.
+ *
+ * **A ceiling equal to the schema's own defaults is not written** (`#371`):
+ * nobody chose it, so writing it down would turn every onboarded recipe into
+ * a stated ceiling that refuses a wider machine value for no reason — the
+ * same *equal is not stating it* rule `local.ts` and `recipe.ts` already use
+ * one level down. `said["runtime.limits"]` must be left out too when this
+ * applies, or the comment has nowhere to land.
+ */
 export function emitRecipe(recipe: Recipe, said: Said = {}): string {
-  const doc = new Document(Recipe.parse(recipe));
+  const parsed = Recipe.parse(recipe);
+  const { limits, ...runtime } = parsed.runtime;
+  const value: unknown = isDeepStrictEqual(limits, LIMIT_DEFAULTS) ? { ...parsed, runtime } : parsed;
+  const doc = new Document(value);
   const root = doc.contents as YAMLMap;
   root.items.forEach((pair, i) => {
     if (i > 0) (pair.key as Node).spaceBefore = true;

@@ -30,14 +30,24 @@ import {
 import { startOnboarding } from "@lingtai/conductor/wizard";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
+import {
+  Recipe,
+  ceilingOf,
+  editRecipe,
+  hashRecipe,
+  machineFiles,
+  machinePath,
+  recipePath,
+  resolveLocalRecipe,
+  resolveRecipe,
+} from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
 export type Finished =
   | {
       ok: true;
-      /** `path`'s text — never with `runtime.agent` or `runtime.limits` in it. */
+      /** `path`'s text — never with `runtime.agent` in it; `runtime.limits` is the recipe's own since `#371`. */
       file: string;
       path: string;
       /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
@@ -106,6 +116,15 @@ export async function finishWizard(input: {
  * opposite since `#371`: it is written into the file**, because the recipe
  * states its own ceiling now, and only an edit to `agent` (or `assignee`,
  * which this page does not show) still reaches the machine file.
+ *
+ * **Only the keys the operator actually moved a dial on.** `drafted`'s
+ * `runtime.limits` carries all four, `at.current`'s resolved value included,
+ * because the dials have to show *something* for a key nobody touched — so
+ * diffing it against the file's own text would bake the machine's narrowing
+ * of an untouched key into the recipe as a ceiling nobody stated, and
+ * deleting the machine's copy afterwards would not restore the default. A key
+ * counts as touched by comparing against `at.current`, the same resolved
+ * value the dial was seeded from, exactly as `agent`'s change is found below.
  */
 export async function editExisting(
   existing: string,
@@ -115,10 +134,18 @@ export async function editExisting(
   const ref = state.draft.base;
   const { recipe } = await resolveRecipe(async () => existing, ref);
   const drafted = Recipe.parse(applyDraft(at.current, state));
-  // The file's half: everything the page changed but the machine's own agent.
+
+  const touchedLimits = changesFrom(at.current, drafted).filter(
+    (c) => c.path[0] === "runtime" && c.path[1] === "limits",
+  );
+  const limits: Record<string, unknown> = { ...ceilingOf(recipe) };
+  for (const change of touchedLimits) limits[change.path[2] as string] = change.value;
+
+  // The file's half: everything the page changed but the machine's own agent,
+  // and a limit only where the page actually touched it.
   const after = Recipe.parse({
     ...drafted,
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
+    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits },
   });
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
@@ -156,6 +183,24 @@ export async function editExisting(
     if (!split.ok) return { ok: false, refusals: [split.refusal] };
     machine = split.machine;
   }
+
+  // Read back the way a run reads it, machine file and all — a limit lowered
+  // on the page below what the machine file still narrows to is refused here
+  // rather than offered as `ok` and refused on every run after this one
+  // (`#371`). `signedIn` answers with the agent this edit is about to apply —
+  // this check is about the limits, and is not the place to ask whether that
+  // agent is actually signed in on this machine.
+  try {
+    await resolveLocalRecipe(at.project, {
+      home: at.home,
+      signedIn: async () => [drafted.runtime.agent],
+      read: async (p) =>
+        p === recipePath(at.project, at.home) ? file : p === machinePath(at.home) ? (machine ?? at.machine) : null,
+    });
+  } catch (err) {
+    return { ok: false, refusals: [(err as Error).message] };
+  }
+
   return {
     ok: true,
     file,

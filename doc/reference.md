@@ -101,9 +101,10 @@ What appends that first event is `startOnboarding`
 wizard makes of its own accord** — and since `#180` it writes nothing to the
 repository: the recipe is parsed before anything is written, so a file that
 would fail `lingtai add` names its bad field instead; then
-`~/.lingtai/<project>/recipe.yml`, with the page's agent and limits under
-`projects.<project>.runtime` in `~/.lingtai/config.yml`, read back the way `add`
-reads them; then the event. A recipe already at that path that is not this one,
+`~/.lingtai/<project>/recipe.yml`, with the page's limits written into it
+(`#371`) and its agent under `projects.<project>.runtime` in
+`~/.lingtai/config.yml`, read back the way `add` reads them; then the event. A
+recipe already at that path that is not this one,
 or a machine file that already names another runtime for the project, is refused
 before anything is written. Abandon the page before it and the wizard has left
 nothing of its own accord to clean up. If the append fails over a written file it

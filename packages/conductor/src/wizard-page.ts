@@ -33,11 +33,12 @@
  * something a person can get wrong and fix in a minute; a slow one is something
  * they cannot.
  */
+import { isDeepStrictEqual } from "node:util";
 import { RuntimeId } from "@lingtai/domain";
 import type { StepAction, Recipe, RecipeChange } from "@lingtai/recipe";
 import { parseDuration } from "@lingtai/recipe/duration";
 import { passCeiling } from "./ceiling.ts";
-import { baseOf, ceilingOf, excludeOf, kindsOf, submodulesOf } from "@lingtai/recipe/settings";
+import { baseOf, ceilingOf, excludeOf, kindsOf, LIMIT_DEFAULTS, submodulesOf } from "@lingtai/recipe/settings";
 
 /** A new repository read back from a scan, or a recipe that is already there. */
 export type WizardMode = "onboard" | "update";
@@ -269,10 +270,10 @@ export function nothingChecks(base: string): string {
  * The last screen's sentence once the button has written (#182): what was
  * written, where, and what is still to happen.
  *
- * **Where is this machine, and never the repository** (0046 §3). The recipe is
- * the file the button wrote; the agent and limits live beside every other
- * project's in the machine file; and the repository is named only to say that
- * nothing went to it.
+ * **Where is this machine, and never the repository** (0046 §3). The recipe
+ * is the file the button wrote, with its own limits in it since `#371`; the
+ * agent lives beside every other project's in the machine file; and the
+ * repository is named only to say that nothing went to it.
  *
  * **What is left is `Recheck`, and never "install the App".** The button only
  * gets here through a client built on the App's installation on that
@@ -284,7 +285,7 @@ export function nothingChecks(base: string): string {
 export function onboardingWritten(slug: string, path: string): string {
   const project = slug.slice(slug.lastIndexOf("/") + 1);
   return (
-    `Written on this machine: the recipe is ${path}, and the agent and limits are ` +
+    `Written on this machine: the recipe is ${path}, with its own limits in it, and the agent is ` +
     `projects.${project}.runtime in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
     "Onboarding is recorded — press Recheck on the board's pending card to register it: it " +
     `checks the GitHub App's permissions on ${slug} and reads that recipe.`
@@ -837,8 +838,13 @@ export function saidFor(state: WizardState): Record<string, string> {
     "source.kinds": "The labels that make an issue work, in priority order.",
     "steps.merge": `${DECISIONS[0]!.question} ${mergeConsequence(state.draft)}`,
   };
-  const limits = limitsSentence(state.draft.limits);
-  if (limits.ok) said["runtime.limits"] = `A pass: ${limits.sentence}.`;
+  // Equal to the schema's own defaults is not a ceiling anybody chose
+  // (`emitRecipe`'s own rule, `#371`), and `emitRecipe` leaves the block out
+  // of the file entirely then — a sentence about it would have nowhere to go.
+  if (!isDeepStrictEqual(state.draft.limits, LIMIT_DEFAULTS)) {
+    const limits = limitsSentence(state.draft.limits);
+    if (limits.ok) said["runtime.limits"] = `A pass: ${limits.sentence}.`;
+  }
   return said;
 }
 

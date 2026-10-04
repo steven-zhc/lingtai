@@ -241,6 +241,70 @@ describe("an edit to a recipe that extends a preset", () => {
     expect(resolved.recipe.runtime.limits.turns).toBe(7);
     expect(resolved.recipe.steps).toEqual(recipe.steps);
   });
+
+  /**
+   * **A dial nobody moved must not become a stated ceiling.** `at.current` —
+   * what the page shows — is already machine-narrowed, so diffing the whole
+   * drafted `runtime.limits` against it would write every dial's current
+   * value into the recipe, `wall` included, the moment any one of them is
+   * touched: deleting the machine's own narrowing afterwards would then not
+   * restore the default (#371).
+   */
+  it("writes only the dial the page touched, not one the machine file narrows", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const machineBefore = "runtime:\n  limits:\n    wall: 1h\n";
+    const current = Recipe.parse({
+      ...recipe,
+      runtime: { ...recipe.runtime, limits: { ...recipe.runtime.limits, wall: "1h" } },
+    });
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+      type: "limit",
+      key: "turns",
+      value: 90,
+    });
+
+    const finished = await editExisting(FILE, state, on(current, machineBefore));
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.file).toMatch(/runtime:\n\s+limits:\n\s+turns: 90/);
+    expect(finished.file).not.toContain("wall");
+    expect(finished.machine).toBeNull();
+
+    const resolved = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => ["claude-code"],
+      read: async (path) =>
+        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? machineBefore : null,
+    });
+    expect(resolved.recipe.runtime.limits.turns).toBe(90);
+    // The machine's own narrowing of the untouched dial still applies.
+    expect(resolved.recipe.runtime.limits.wall).toBe("1h");
+  });
+
+  /**
+   * **A save that the next resolve would refuse is refused here instead**
+   * (#371): `describes` only reads the file text, never the machine file, so
+   * without this check the page would say `ok` and every run after it would
+   * be the one to discover that the machine's narrowing is now wider than the
+   * ceiling the operator just set.
+   */
+  it("refuses a lowered limit the machine file still narrows above", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const machineBefore = "runtime:\n  limits:\n    turns: 150\n";
+    const current = Recipe.parse({
+      ...recipe,
+      runtime: { ...recipe.runtime, limits: { ...recipe.runtime.limits, turns: 150 } },
+    });
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+      type: "limit",
+      key: "turns",
+      value: 90,
+    });
+
+    const finished = await editExisting(FILE, state, on(current, machineBefore));
+    expect(finished.ok).toBe(false);
+    if (finished.ok) throw new Error("expected a refusal");
+    expect(finished.refusals.join("; ")).toMatch(/runtime\.limits\.turns is 150.*above.*90/);
+  });
 });
 
 describe("the end", () => {

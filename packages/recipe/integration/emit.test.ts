@@ -421,6 +421,25 @@ describe("emitRecipe", () => {
     expect(Recipe.parse(parse(emitRecipe(recipe)))).toEqual(recipe);
   });
 
+  /**
+   * **A ceiling equal to the schema's own defaults is not written** (`#371`):
+   * nobody chose it, so onboarding a project while a machine's own
+   * `runtime.limits` is wider than those defaults — a legal narrowing today —
+   * must not refuse over a stated ceiling the operator never asked for.
+   */
+  it("leaves out a runtime.limits that is nothing but the schema's own defaults", () => {
+    const untouched = Recipe.parse({ ...recipe, runtime: { ...recipe.runtime, limits: undefined } });
+    const text = emitRecipe(untouched);
+    expect(parseDocument(text).hasIn(["runtime", "limits"])).toBe(false);
+    expect(Recipe.parse(parse(text))).toEqual(untouched);
+  });
+
+  it("still writes one that differs from the defaults, even by a single key", () => {
+    const text = emitRecipe(Recipe.parse({ ...recipe, runtime: { ...recipe.runtime, limits: { restarts: 1 } } }));
+    expect(text).toContain("limits:");
+    expect(text).toContain("restarts: 1");
+  });
+
   it("carries the wizard's own sentence above every block it asked about", () => {
     const text = emitRecipe(recipe, said);
     const doc = parseDocument(text);
