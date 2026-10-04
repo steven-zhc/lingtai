@@ -58,9 +58,9 @@ describe("usd through actionsFromRecipe's review dispatch", () => {
       },
     });
 
-    await action.run(context);
+    await action!.run(context);
 
-    expect(runtime.seen[0].limits.usd).toBe(12);
+    expect(runtime.seen[0]!.limits.usd).toBe(12);
   });
 
   it("is absent where the ceiling declared none", async () => {
@@ -75,8 +75,8 @@ describe("usd through actionsFromRecipe's review dispatch", () => {
       },
     });
 
-    await action.run(context);
+    await action!.run(context);
 
-    expect(runtime.seen[0].limits.usd).toBeUndefined();
+    expect(runtime.seen[0]!.limits.usd).toBeUndefined();
   });
 });
