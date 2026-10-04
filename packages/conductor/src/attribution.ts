@@ -169,6 +169,10 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   // look for a fault that is not there. The owner buys nothing either way
   // (`#143`); it is only what the card says.
   "out-of-turns": "repository",
+  // The dollar twin of the argument above, word for word (`#370`): a recipe
+  // that set `runtime.limits.usd` and a run that spent it is a ticket too
+  // expensive for the ceiling, not Lingtai misbehaving.
+  "out-of-usd": "repository",
 };
 
 /**

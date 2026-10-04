@@ -78,10 +78,11 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // and the filtered environment. It is what carried the old loop's 73 runs.
   providesTier: "guarded",
   /**
-   * Both. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns` in
-   * `argsFor`, which the binary applies itself and answers with a receipt.
+   * All three. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns`
+   * and `usd` is `--max-budget-usd`, both in `argsFor`, both applied by the
+   * binary itself and answered with a receipt (`#370`).
    */
-  enforces: ["turns", "wall"],
+  enforces: ["turns", "wall", "usd"],
 };
 
 /**
@@ -109,11 +110,12 @@ export function sessionIdFor(runId: string): string {
  * printed alone. `subtype` is one of `success`, `error_during_execution`,
  * `error_max_turns`, `error_max_budget_usd`,
  * `error_max_structured_output_retries` — read out of the shipped bundle on
- * 2026-09-08 (0031 §2). **One member is branched on**, `error_max_turns`, and
- * nothing else: the rest is classified by `neverStarted`'s three checkable
- * facts, and the prose is kept whole as evidence. 0031 refused to classify on
- * English prose; this is a member of a closed set the runtime prints, and it is
- * the runtime's answer to the `--max-turns` this adapter passed it (`#89`).
+ * 2026-09-08 (0031 §2). **Two members are branched on**, `error_max_turns` and
+ * `error_max_budget_usd` (`#370`), and nothing else: the rest is classified by
+ * `neverStarted`'s three checkable facts, and the prose is kept whole as
+ * evidence. 0031 refused to classify on English prose; these are members of a
+ * closed set the runtime prints, and each is the runtime's answer to a flag
+ * this adapter passed it (`#89`, `#370`).
  */
 interface ClaudeResult {
   /** Absent on the single object `--output-format json` prints; `"result"` in a stream. */
@@ -251,6 +253,11 @@ function argsFor(
     // overspent as costing nothing.
     "--max-turns",
     String(request.limits.turns),
+    // The dollar twin of `--max-turns`, applied the same way: the binary
+    // stops the session itself and still prints a receipt, this time with
+    // `subtype: "error_max_budget_usd"` (`#370`). Absent unless the recipe
+    // declared `runtime.limits.usd` — there is no default to fall back to.
+    ...(request.limits.usd === undefined ? [] : ["--max-budget-usd", String(request.limits.usd)]),
     ...(request.model ? ["--model", request.model] : []),
     ...extraArgs,
   ];
@@ -463,6 +470,30 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
                 detail:
                   `${turns} turns, and the recipe allows ${request.limits.turns} · ` +
                   (costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`),
+              },
+              sessionId,
+              usage,
+            });
+            return;
+          }
+
+          // The dollar twin of the branch above, same reason: before the
+          // clean-exit branch so no combination of exit code and `is_error`
+          // reads a budget stop as a finish, and `--max-budget-usd` reaching
+          // its ceiling is a bound applied, not the runtime falling over
+          // (`#370` — `error_max_budget_usd` was pinned to `crash` before this).
+          if (parsed?.subtype === "error_max_budget_usd") {
+            finish({
+              exitCode: code,
+              turns,
+              durationMs,
+              costUsd,
+              text: parsed.result ?? null,
+              failure: {
+                kind: "out-of-usd",
+                detail:
+                  `${costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`}, and the recipe allows ` +
+                  `$${request.limits.usd} · ${turns} turns`,
               },
               sessionId,
               usage,

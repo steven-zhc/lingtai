@@ -529,12 +529,13 @@ describe("the stream, and the accounting that must not move", () => {
   /**
    * The five `subtype`s of the shipped bundle, 2026-09-08 (0031 §2).
    *
-   * One `subtype` is branched on — `error_max_turns`, the runtime's answer to
-   * `--max-turns` (`#89`) — and the rest are classified by `neverStarted`'s
-   * three checkable facts, so what survives here is that each lands where it
-   * should with its turns and its cost intact. `error_max_turns` moved: it was
-   * a `crash`, beside a segfault, and it is emphatically not a run that never
-   * started.
+   * Two `subtype`s are branched on — `error_max_turns`, the runtime's answer
+   * to `--max-turns` (`#89`), and `error_max_budget_usd`, its answer to
+   * `--max-budget-usd` (`#370`) — and the rest are classified by
+   * `neverStarted`'s three checkable facts, so what survives here is that each
+   * lands where it should with its turns and its cost intact. Both moved: they
+   * were a `crash`, beside a segfault, and are emphatically not a run that
+   * never started.
    */
   const subtypes: readonly [
     string,
@@ -545,7 +546,7 @@ describe("the stream, and the accounting that must not move", () => {
     ["success", { is_error: false, num_turns: 63, total_cost_usd: 5.42 }, 0, null],
     ["error_during_execution", { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, "crash"],
     ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "out-of-turns"],
-    ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "crash"],
+    ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "out-of-usd"],
     ["error_max_structured_output_retries", { is_error: true, num_turns: 3, total_cost_usd: 0.08 }, 1, "crash"],
     // Not a subtype: the shape 0031 measured, which carries no word of its own.
     ["error_during_execution", { is_error: true, num_turns: 0, total_cost_usd: 0 }, 1, "never-started"],

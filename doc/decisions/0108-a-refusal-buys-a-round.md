@@ -95,7 +95,11 @@ fixes the bounds and the endings that router works inside.
    What a ticket may cost is `(restarts + 1) × (rounds + 1) × wall`, and
    `passCeiling` (`packages/conductor/src/ceiling.ts`) is the one function that
    says it, wherever a project's limits are shown (onboarding, the project
-   listing, `lingtai doctor`).
+   listing, `lingtai doctor`). Since `#370`, the same block may hold `usd` — a
+   dollar ceiling on one run, with no default — and where it is declared the
+   formula gains the dollar product: `(restarts + 1) × (rounds + 1) × usd`,
+   printed beside the time figure rather than in place of it. Absent, the
+   sentence is unchanged, character for character.
 
 9. **A minor finding does not refuse; it is filed.** `verdictFor`
     (`packages/actions/src/agent-action.ts`) refuses on a `blocker` or `major` and

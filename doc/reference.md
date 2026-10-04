@@ -302,6 +302,7 @@ things about the same recipe ([0039](decisions-archive/0039-the-worktree-is-the-
 | `runtime.limits.wall` | `2h` | wall clock before the same, **per run** |
 | `runtime.limits.rounds` | `2` | how many times a pass sends the agent back **into the same worktree**, carrying what refused it — findings, a build's output, or the conflict left standing there. `0` means nothing patches a diff in place |
 | `runtime.limits.restarts` | `0` | how many times a pass whose `rounds` are spent **starts the ticket over** from the base, carrying the findings, instead of asking a person. Only a refused *review* is answered this way; a red build and a conflict stay in the worktree, because for those the work is still there. `0` is what it did before the key existed |
+| `runtime.limits.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike the other three bounds above — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
@@ -318,9 +319,11 @@ recipe resolves, by name:
 The ceiling is said **once**, here, and every other number is a reduction from
 it — otherwise what a pass may spend would only be knowable after reading every
 action in every step, and `passCeiling`'s sentence would stop being an upper
-bound. `rounds` and `restarts` may not move at all: they count *how many* calls,
-which is not a thing one action can have an opinion about, and writing either
-inside a dispatch's `limits:` is refused by name too. Where a step does narrow,
+bound. `rounds`, `restarts` and `usd` may not move at all: `rounds` and
+`restarts` count *how many* calls, which is not a thing one action can have an
+opinion about, and `usd` bounds the pass's spend across all of them rather than
+one call — writing any of the three inside a dispatch's `limits:` is refused by
+name. Where a step does narrow,
 `passCeiling` names it on the same line — *1h and 150 turns each at implement
 (review 30m/50 turns), so at most 3h* — and a recipe that narrows nothing prints
 exactly what it always printed.
@@ -1892,6 +1895,14 @@ for one round, on the grounds that a permanent red is a red nobody reads — but
 added could no longer stop the daemon starting on the exact state it was built to
 catch. A run stopped at `turns` ends as `RunFailed` with kind `out-of-turns`,
 distinct from the wall's `timeout`.
+
+**`usd` is in the same row and reads differently, because it has no default**
+(`#370`). Where `runtime.limits.usd` is not declared the row says
+`usd — none declared` and that line is never red, on any runtime — there is
+nothing for a runtime to fail at holding. Declare one against a runtime whose
+`enforces` omits it (Codex, today) and it is `fail`, the same shape `turns`
+already is. Claude Code enforces it (`--max-budget-usd`), and a run it stops
+there ends as `RunFailed` with kind `out-of-usd`.
 
 `runtime: <project> signed in` is the other half of that field: whether the
 runtime this project will dispatch can actually be started on this machine. The

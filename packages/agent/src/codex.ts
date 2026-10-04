@@ -121,6 +121,23 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * counts them, for the receipt and for the never-started question, and `run()`
    * does not SIGTERM at the bound — `claude-code.ts` says why: *"A SIGTERM from
    * here would record exactly the runs that overspent as costing nothing."*
+   *
+   * **`usd` has the same answer, checked the same way and not from `--help`**
+   * (`#370`). `strings` over the shipped 0.155.1 binary for
+   * `budget|usd|cost|spend`, done 2026-10-03, turns up no flag-shaped match at
+   * all (`^--?[a-z-]*(budget|cost|spend|usd)[a-z-]*$` against every string in
+   * the binary: zero hits) — only read-only reporting that cannot stop a run:
+   * `codex.turn.cost_microusd` and `ApiKeyTurnCost` (OTEL/backend telemetry),
+   * the status line's *"Estimated current-thread cost (Enterprise workspaces
+   * only; omitted when unavailable)"*, and `SpendControlLimitSnapshot`'s
+   * `remaining_percent`, which reads against the account's five-hour/weekly
+   * ChatGPT plan limit rather than a dollar figure this adapter could pass in.
+   * None of these take a number from here and none of them end a run. If a
+   * future Codex ships one, this is wrong and `enforces` must grow a third
+   * name the same way `claude-code.ts` did — but today there is nothing to
+   * wire, so `enforces` stays `["wall"]` and a recipe naming `runtime.limits.usd`
+   * on this runtime is answered by `limitsRow` as `usd` carried and unapplied,
+   * the same shape `turns` already is.
    */
   enforces: ["wall"],
 };

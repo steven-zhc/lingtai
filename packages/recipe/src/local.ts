@@ -63,6 +63,7 @@ const MachineLimits = z.strictObject({
     .optional(),
   rounds: z.number().int().nonnegative().optional(),
   restarts: z.number().int().nonnegative().optional(),
+  usd: z.number().positive().optional(),
 });
 
 /**
@@ -364,6 +365,14 @@ export async function resolveLocalRecipe(
     limits[key] = value ?? LIMIT_DEFAULTS[key];
     provenance[`runtime.limits.${key}`] = `${limits[key]}${PROVENANCE_ARROW}${from}`;
   }
+  // `usd` has no entry in `LIMIT_DEFAULTS` — it has no default to fall back to
+  // (recipe.ts), so the loop above never sees it as a key. Read explicitly, and
+  // absent reads as "(none)", never as a vanished key.
+  const usd = scoped?.limits?.usd ?? shared?.limits?.usd;
+  const usdFrom =
+    scoped?.limits?.usd !== undefined ? scopedAt : shared?.limits?.usd !== undefined ? machineFile : "default";
+  if (usd !== undefined) limits.usd = usd;
+  provenance["runtime.limits.usd"] = `${usd ?? "(none)"}${PROVENANCE_ARROW}${usd === undefined ? "default" : usdFrom}`;
 
   // Absent unless the machine said something, so a machine that has not heard
   // of assignees resolves the recipe — and its hash — exactly as before.

@@ -3048,6 +3048,19 @@ export const Recipe = z.object({
          * (0039 §2). See `decideRestart`.
          */
         restarts: z.number().int().nonnegative().default(0),
+        /**
+         * A dollar ceiling on one agent run, passed to a runtime that can hold
+         * one (`--max-budget-usd` on Claude Code) and reported absent otherwise
+         * (`#370`).
+         *
+         * **No default, unlike the other four.** `turns`'s schema default of
+         * `300` is why Codex reads red forever on that limit
+         * (`apps/cli/src/doctor.ts`'s `limitsRow`) — a default present on every
+         * recipe, whether anyone wrote it or not. `usd` must not do the same
+         * thing on a second axis: absent means "no dollar ceiling", said out
+         * loud, never assumed.
+         */
+        usd: z.number().positive().optional(),
       })
       .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
     /**

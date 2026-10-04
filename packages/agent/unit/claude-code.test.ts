@@ -7,7 +7,7 @@
  * receipt already carries and turns it into the shared shape (0110 §3).
  */
 import { describe, expect, it } from "vitest";
-import { usageFromModelUsage } from "../src/claude-code.ts";
+import { createClaudeCodeRuntime, usageFromModelUsage } from "../src/claude-code.ts";
 
 describe("usageFromModelUsage", () => {
   it("is absent where the receipt carried no modelUsage at all", () => {
@@ -78,5 +78,33 @@ describe("usageFromModelUsage", () => {
       "claude-haiku-4-5": {},
     });
     expect(usage).toEqual([{ model: "claude-sonnet-5", tokens: { fresh: 2 } }]);
+  });
+});
+
+/**
+ * `--max-budget-usd`, through `invocation()` — the argv `run` would spawn,
+ * without spawning it (`#370`). Mirrors `--max-turns`, which is always there.
+ */
+describe("argsFor's --max-budget-usd", () => {
+  const invocable = {
+    runId: "run-1",
+    cwd: "/tmp/tree",
+    settingsPath: "/state/runs/run-1/settings.json",
+    env: {},
+    limits: { turns: 150, wallMs: 3_600_000 },
+  };
+
+  it("is absent where the recipe declared no dollar ceiling", () => {
+    const { args } = createClaudeCodeRuntime().invocation!(invocable);
+    expect(args).not.toContain("--max-budget-usd");
+    expect(args).toContain("--max-turns");
+  });
+
+  it("carries the figure where the recipe declared one", () => {
+    const { args } = createClaudeCodeRuntime().invocation!({
+      ...invocable,
+      limits: { ...invocable.limits, usd: 12 },
+    });
+    expect(args[args.indexOf("--max-budget-usd") + 1]).toBe("12");
   });
 });

@@ -361,6 +361,44 @@ describe("what a pass may spend", () => {
   });
 });
 
+/**
+ * `usd`, the dollar ceiling (`#370`). Follows `wallMs`, not `turns` — it
+ * multiplies across runs the same way the wall does.
+ */
+describe("what a pass may spend in dollars", () => {
+  const limits = (rounds: number, restarts = 0) => ({
+    rounds,
+    restarts,
+    turns: 150,
+    wall: "1h",
+    wallMs: 3_600_000,
+  });
+
+  /** Absent is today's string, character for character — 0070 §8's rule, carried. */
+  it("is byte-identical to the pre-#370 sentence when usd is absent", () => {
+    expect(passCeiling(limits(2))).toBe(
+      "up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused " +
+        "it. 1h and 150 turns each, so at most 3h. A pass whose rounds are spent goes to you " +
+        "(runtime.limits.restarts: 0)",
+    );
+  });
+
+  it("multiplies usd by the runs a pass can buy, beside the wall", () => {
+    const said = passCeiling({ ...limits(2), usd: 12 });
+    expect(said).toContain("1h, 150 turns and $12 each");
+    expect(said).toContain("at most 3h and $36");
+  });
+
+  it("names one run's figure rather than 'each' where rounds is zero", () => {
+    expect(passCeiling({ ...limits(0), usd: 12 })).toContain("1h, 150 turns and $12");
+  });
+
+  it("multiplies again for the passes a restart can buy", () => {
+    const said = passCeiling({ ...limits(2, 1), usd: 12 });
+    expect(said).toContain("at most 2 passes, 6 agent runs and 6h and $72");
+  });
+});
+
 /** The login is printed, because a wrong one is the mistake this setting can have (#181). */
 describe("describeAssignee", () => {
   it("names the login it matches, under each setting", () => {

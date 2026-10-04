@@ -20,8 +20,13 @@ import { passCeiling } from "@lingtai/conductor/ceiling";
 import { describeAssignee } from "@lingtai/conductor/filter";
 import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, boundsBesides, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
 
-/** The limits `a pass` is made of, from the recipe rather than listed again here. */
-const LIMIT_KEYS = Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[];
+/**
+ * The limits `a pass` is made of, from the recipe rather than listed again here.
+ *
+ * `usd` is appended rather than read off `LIMIT_DEFAULTS`: it has no default
+ * (recipe.ts), so `Object.keys(LIMIT_DEFAULTS)` never contains it.
+ */
+const LIMIT_KEYS = [...Object.keys(LIMIT_DEFAULTS), "usd"] as (keyof Recipe["runtime"]["limits"])[];
 
 /**
  * `ResolvedRecipe`, named off the function that returns one.
