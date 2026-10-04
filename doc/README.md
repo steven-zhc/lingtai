@@ -99,6 +99,7 @@ replaces.
 | [0114](decisions/0114-a-github-app-not-a-token.md) | **The GitHub App** — Lingtai reaches GitHub as an App created from a manifest, never through a personal access token | accepted |
 | [0115](decisions/0115-unit-gates-integration-follows.md) | **Tests** — unit tests gate the diff, integration tests run apart, and the test side gets a store of its own | accepted; part not yet built |
 | [0116](decisions/0116-the-project-is-lingtai.md) | **The name** — the project, its commands and every name it owns are Lingtai | accepted |
+| [0117](decisions/0117-a-seer-holds-a-standing-goal.md) | **Seers** — a seer holds a standing goal over the repository, wakes on the log or the clock, and only ever proposes | proposed; not built |
 
 ## Experiments
 
