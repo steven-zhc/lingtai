@@ -92,29 +92,43 @@ export function emitRecipe(recipe: Recipe, said: Said = {}): string {
   root.items.forEach((pair, i) => {
     if (i > 0) (pair.key as Node).spaceBefore = true;
   });
-  for (const [dotted, sentence] of Object.entries(said)) {
-    const path = dotted.split(".");
-    const parent = path.length === 1 ? root : doc.getIn(path.slice(0, -1), true);
-    const pair = isMap(parent) ? findPair(parent, path[path.length - 1]!) : undefined;
-    // A sentence with nowhere to go is a reason the file silently lost.
-    if (!pair) throw new Error(`said names "${dotted}", which the recipe does not have`);
-    const indent = 2 * (path.length - 1);
-    (pair.key as Node).commentBefore = wrap(sentence, COMMENT_WIDTH - indent - 2)
-      .map((line) => (line === "" ? "" : ` ${line}`))
-      .join("\n");
-  }
+  for (const [dotted, sentence] of Object.entries(said)) setComment(doc, dotted, sentence);
   return doc.toString(RENDER);
 }
 
 /**
+ * The comment above the key at `dotted`, replaced with `sentence` — the same
+ * placement `emitRecipe` uses for a brand-new file, reused by `editRecipe` so
+ * a block rewritten whole (`wholeLimits`) carries a sentence about the numbers
+ * it now holds rather than the ones a past save left behind.
+ */
+function setComment(doc: Document, dotted: string, sentence: string): void {
+  const path = dotted.split(".");
+  const parent = path.length === 1 ? (doc.contents as YAMLMap) : doc.getIn(path.slice(0, -1), true);
+  const pair = isMap(parent) ? findPair(parent, path[path.length - 1]!) : undefined;
+  // A sentence with nowhere to go is a reason the file silently lost.
+  if (!pair) throw new Error(`said names "${dotted}", which the recipe does not have`);
+  const indent = 2 * (path.length - 1);
+  (pair.key as Node).commentBefore = wrap(sentence, COMMENT_WIDTH - indent - 2)
+    .map((line) => (line === "" ? "" : ` ${line}`))
+    .join("\n");
+}
+
+/**
  * The same file with `changes` made, and every other byte as it was.
+ *
+ * `said` replaces the comment above a path that already carried a node before
+ * `changes` — never one `changes` creates from nothing — so a block rewritten
+ * whole (`wholeLimits`) carries a sentence about the numbers it now holds
+ * rather than the ones a past save left behind, and a block written for the
+ * first time is left exactly as plain as any other new field.
  *
  * Throws if the file does not parse, if the edited recipe does not pass
  * `Recipe.parse`, if a change would drop a comment it did not name
  * ({@link CommentWouldBeLostError}), or if the changed lines cannot be carried
  * onto the file exactly.
  */
-export function editRecipe(existing: string, changes: readonly RecipeChange[]): string {
+export function editRecipe(existing: string, changes: readonly RecipeChange[], said: Said = {}): string {
   const doc = read(existing);
   if (doc.errors.length > 0) throw new Error(`the recipe does not parse: ${doc.errors[0]!.message}`);
   if (!isMap(doc.contents)) throw new Error("the recipe is not a mapping");
@@ -122,6 +136,9 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
   const before = doc.toString(RENDER);
   const firsts = firstLines(doc);
   const commented = commentedItems(doc);
+  // Asked before `changes` land: a path `changes` is about to create for the
+  // first time has no stale comment to refresh, so `said` must not plant one.
+  const hadPath = new Map(Object.keys(said).map((dotted) => [dotted, doc.hasIn(dotted.split("."))]));
   for (const { path, value } of changes) {
     if (value === undefined) doc.deleteIn(path);
     else if (doc.hasIn(path)) replace(doc, path, value);
@@ -137,6 +154,9 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
   // A blank line above an item is space between items, and a new first item has nothing above it.
   for (const [collection, first] of firstLines(doc)) {
     if (first !== firsts.get(collection) && first.spaceBefore) first.spaceBefore = false;
+  }
+  for (const [dotted, sentence] of Object.entries(said)) {
+    if (hadPath.get(dotted)) setComment(doc, dotted, sentence);
   }
   // A recipe on this machine has no `runtime` of its own to require — its agent
   // is the machine file's (#180), and `runtime.limits` is the recipe's own

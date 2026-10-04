@@ -436,8 +436,13 @@ export async function resolveLocalRecipe(
 
     const dotted = `runtime.limits.${key}`;
     if (narrowed) {
-      const from = ownValue !== undefined ? "the recipe" : fallbackValue !== undefined ? scopedAt : "default";
-      provenance[dotted] = `${effective}${PROVENANCE_ARROW}${machineFile} — narrowing ${from}'s ${base}`;
+      // `base` is `undefined` here only for `usd`, which has no default to
+      // name (recipe.ts) — say there was no ceiling to narrow rather than
+      // naming a default that does not exist (#371's finding 3).
+      provenance[dotted] =
+        base === undefined
+          ? `${effective}${PROVENANCE_ARROW}${machineFile} — capping ${key}, which had no ceiling`
+          : `${effective}${PROVENANCE_ARROW}${machineFile} — narrowing ${ownValue !== undefined ? "the recipe" : fallbackValue !== undefined ? scopedAt : "default"}'s ${base}`;
     } else if (ownValue !== undefined) {
       provenance[dotted] = `${effective}${PROVENANCE_ARROW}${path}`;
     } else if (fallbackValue !== undefined) {
@@ -708,7 +713,11 @@ export function unnarrowedCeiling(
   const doc = parseDocument(fileText);
   const machine = machineText === null ? null : parseDocument(machineText);
   const filled: Record<string, unknown> = {};
-  for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
+  // `usd` beside the four dial keys (#371's finding 2): it has no entry in
+  // `LIMIT_DEFAULTS` (no default to fall back to, `recipe.ts`), but it has
+  // exactly the same legacy per-project fallback the dial keys do, and must
+  // be undone the same way — never read back from a machine-wide cap.
+  for (const key of [...(Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]), "usd" as const]) {
     if (doc.errors.length === 0 && doc.hasIn(["runtime", "limits", key])) continue;
     const legacy =
       machine !== null && machine.errors.length === 0

@@ -354,6 +354,90 @@ describe("an edit to a recipe that extends a preset", () => {
     });
     expect(resolved.recipe.runtime.limits.turns).toBe(300);
   });
+
+  /**
+   * **`#371`'s finding 1.** `usd` is not a page dial (`Limits` has no such
+   * field), so the four-key "undo the narrowing" logic never reaches it — a
+   * machine-wide `usd` cap used to ride along inside `ceilingOf(drafted)` and
+   * get baked into `after`, which `changesFrom` can never see (`PATHS` has no
+   * `usd` path) and which the read-back `describes` check then refuses on,
+   * for a save that never touched a dial at all.
+   */
+  it("saves under a machine-wide usd cap when no dial moved, and never states usd", async () => {
+    const machineBefore = "runtime:\n  agent: claude-code\n  limits:\n    usd: 5\n";
+    const seeded = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? FILE : path === machinePath(HOME) ? machineBefore : null),
+    });
+
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: seeded.recipe }), {
+      type: "kind",
+      label: "feature",
+      add: true,
+    });
+
+    const finished = await editExisting(FILE, state, { project: "shop", current: seeded.recipe, machine: machineBefore, home: HOME });
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.file).not.toContain("usd");
+  });
+
+  /**
+   * **`#371`'s finding 2, on `usd` rather than a dial key.** A dial moving
+   * must not bake the machine-wide `usd` cap into the recipe either — raising
+   * the cap afterwards must still have something to raise.
+   */
+  it("never bakes a machine-wide usd cap into the recipe, even when a dial moves", async () => {
+    const machineBefore = "runtime:\n  agent: claude-code\n  limits:\n    usd: 5\n";
+    const seeded = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? FILE : path === machinePath(HOME) ? machineBefore : null),
+    });
+
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: seeded.recipe }), {
+      type: "limit",
+      key: "turns",
+      value: 90,
+    });
+    const finished = await editExisting(FILE, state, { project: "shop", current: seeded.recipe, machine: machineBefore, home: HOME });
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.file).toContain("turns: 90");
+    expect(finished.file).not.toContain("usd");
+
+    const raised = "runtime:\n  agent: claude-code\n  limits:\n    usd: 50\n";
+    const resolved = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? raised : null),
+    });
+    expect(resolved.recipe.runtime.limits.usd).toBe(50);
+  });
+
+  /**
+   * **`#371`'s finding 4.** `wholeLimits` rewrites every key's value but
+   * `emit.ts`'s `replace` keeps the key's own `commentBefore` untouched, so
+   * the sentence above `limits:` used to go on naming the numbers a past save
+   * left behind. A save that moves a dial must carry a comment about *this*
+   * save's numbers.
+   */
+  it("refreshes the comment above runtime.limits to the numbers the save now writes", async () => {
+    const fileWithStaleComment =
+      "version: 2\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n\n" +
+      "runtime:\n" +
+      "  # A pass: up to 3 agent runs — the work, then 2 round(s) back to the agent\n" +
+      "  # carrying what refused it. 2h and 300 turns each, so at most 6h. A pass\n" +
+      "  # whose rounds are spent goes to you (runtime.limits.restarts: 0).\n" +
+      "  limits:\n    turns: 300\n    wall: 2h\n    rounds: 2\n    restarts: 0\n";
+    const { recipe } = await resolveRecipe(async () => fileWithStaleComment, "main");
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 90 });
+
+    const finished = await editExisting(fileWithStaleComment, state, on(recipe));
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    const comment = finished.file.match(/runtime:\n((?:\s*#.*\n)*)\s*limits:/)?.[1] ?? "";
+    expect(comment).not.toContain("300");
+    expect(comment).toContain("90");
+  });
 });
 
 describe("the end", () => {

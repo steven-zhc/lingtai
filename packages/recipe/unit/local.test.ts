@@ -278,6 +278,19 @@ steps:
     });
 
     /**
+     * **`#371`'s finding 3.** `usd` has no default to name (`LIMIT_DEFAULTS`
+     * carries no entry for it), so a machine-wide cap narrowing an absent
+     * ceiling must not say "narrowing default's undefined" — there was no
+     * default to narrow, only nothing at all.
+     */
+    it("names a machine-wide usd cap without naming a default that does not exist", async () => {
+      const resolved = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    usd: 5\n"));
+      expect(resolved.recipe.runtime.limits.usd).toBe(5);
+      expect(resolved.provenance?.["runtime.limits.usd"]).not.toContain("undefined");
+      expect(resolved.provenance?.["runtime.limits.usd"]).toBe(`5 ← ${HOME}/config.yml — capping usd, which had no ceiling`);
+    });
+
+    /**
      * **A narrowed resolve is not a different document from one that states
      * the narrowed number outright** — `configHash` is of the resolved form
      * (0047 §2), and the path a number took to get there is not part of it.
@@ -499,6 +512,25 @@ steps:
       // block would have refused this, comparing `limits` against nothing.
       if (!split.ok) throw new Error("expected ok, not a refusal");
       expect(split.machine).not.toContain("limits");
+    });
+
+    /**
+     * **The regression attempt 1 reintroduced, caught here rather than only in
+     * the 803-second integration half** (`#371`'s finding 5): `machineFiles`
+     * used to delete `runtime.limits` from the recipe text it returns
+     * (`doc.deleteIn(["runtime", "limits"])`), which would silently discard
+     * the ceiling `emitRecipe` just wrote. `file` here carries one, the way
+     * `emitRecipe` would leave it, with no legacy block on the machine side at
+     * all — so the only way `split.recipe` keeps `limits:` is this function
+     * never touching it.
+     */
+    it("never strips runtime.limits from the recipe text it returns", async () => {
+      const recipe = await parsed(undefined);
+      const file = `${RECIPE}runtime:\n  limits:\n    turns: 300\n    wall: 2h\n    rounds: 2\n    restarts: 0\n`;
+      const split = machineFiles({ file, recipe, project: "app", machine: null, home: HOME });
+      if (!split.ok) throw new Error("expected ok");
+      expect(split.recipe).toContain("limits:");
+      expect(split.recipe).toContain("turns: 300");
     });
   });
 

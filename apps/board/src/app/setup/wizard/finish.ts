@@ -24,6 +24,7 @@ import {
   applyDraft,
   changesFrom,
   finishRefusals,
+  limitsSentence,
   saidFor,
   wholeLimits,
   wholeSteps,
@@ -42,6 +43,7 @@ import {
   machinePath,
   recipePath,
   resolveRecipe,
+  type Said,
   unnarrowedCeiling,
 } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
@@ -143,9 +145,15 @@ export async function editExisting(
   const unnarrowed = unnarrowedCeiling(existing, recipe, at.machine, at.project);
   const seeded = ceilingOf(at.current);
   const dialKeys = Object.keys(state.draft.limits) as (keyof typeof state.draft.limits)[];
-  const limits = Object.fromEntries(
-    dialKeys.map((key) => [key, state.draft.limits[key] === seeded[key] ? unnarrowed[key] : state.draft.limits[key]]),
-  ) as Recipe["runtime"]["limits"];
+  const limits = {
+    ...Object.fromEntries(
+      dialKeys.map((key) => [key, state.draft.limits[key] === seeded[key] ? unnarrowed[key] : state.draft.limits[key]]),
+    ),
+    // `usd` is not a dial the page shows, so it is never "the operator moved
+    // it" — always the recipe's own stated number or this project's legacy
+    // fallback, never the machine-wide cap `at.current` was narrowed by.
+    usd: unnarrowed.usd,
+  } as Recipe["runtime"]["limits"];
 
   // The file's half: everything the page changed, including the ceiling —
   // `runtime.limits` is the recipe's own since `#371`. `agent` stays pinned to
@@ -160,13 +168,22 @@ export async function editExisting(
 
   let changes = changesFrom(recipe, after);
   const legacy = hasLegacyProjectLimits(at.machine, at.project);
-  if (legacy || changes.some((c) => c.path[0] === "runtime" && c.path[1] === "limits")) {
-    changes = wholeLimits(changes, after);
+  const rewroteLimits = legacy || changes.some((c) => c.path[0] === "runtime" && c.path[1] === "limits");
+  if (rewroteLimits) changes = wholeLimits(changes, after);
+  // The comment above `limits:` is a sentence about the numbers it holds
+  // (`saidFor`'s wording). `editRecipe` keeps whatever a past save left there
+  // (`emit.ts`'s `replace` preserves a key's own comment), so a block written
+  // whole here must also carry a comment about *this* save's numbers, or the
+  // sentence above the block drifts from the numbers under it.
+  const said: Said = {};
+  if (rewroteLimits) {
+    const sentence = limitsSentence(ceilingOf(after));
+    if (sentence.ok) said["runtime.limits"] = `A pass: ${sentence.sentence}.`;
   }
-  let file = editRecipe(existing, changes);
+  let file = editRecipe(existing, changes, said);
   if (!(await describes(file))) {
     changes = wholeSteps(changes, after);
-    file = editRecipe(existing, changes);
+    file = editRecipe(existing, changes, said);
     if (!(await describes(file))) {
       return {
         ok: false,
