@@ -162,11 +162,12 @@ describe("the review prompt", () => {
 
 /**
  * **`## How to report` is the last thing a reviewer reads, never the middle of
- * the prompt** (`#368`). Two re-reviews answered in prose instead of the
- * schema's shape, and the sentence that would have stopped that was true,
- * present, and buried under the recheck block and the whole diff. These pin the
- * contract's position rather than its wording, which the tests above already
- * cover.
+ * the prompt** (`#368`). A cold reviewer answered in prose instead of the
+ * schema's shape on a first review and on a re-review, both times with this
+ * contract sitting above the recheck block and the diff. The reorder is at
+ * most a contributing fix alongside the schema itself (`#369`) — these pin the
+ * contract's position rather than claim the reorder alone explains either
+ * occurrence, which the tests above already cover in another way.
  */
 describe("the output contract's place in the prompt", () => {
   it("comes after the diff on a plain review", () => {
@@ -298,9 +299,11 @@ describe("asking the reviewer again after a fix", () => {
     const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
     const slice = recheckSlice(prompt);
 
-    // "a finding" singular, not "findings list" — the empty-list sentence below
-    // says "empty findings list" and must not trip this.
-    expect(slice).not.toMatch(/every (verdict|scenario)[^.]*\bis\b[^.]*\ba finding\b/i);
+    // "finding" singular, not "findings list" — the empty-list sentence below
+    // says "empty findings list" and must not trip this. No copula required,
+    // so "becomes a finding", "belongs in a finding" and "gets its own finding"
+    // are caught the same as "is a finding".
+    expect(slice).not.toMatch(/\b(every|each) (verdict|scenario)\b[^.]*\bfinding\b/i);
   });
 
   it("puts the surviving-scenario bullet before the simply-not-reported one, so the scope isn't overridden", () => {

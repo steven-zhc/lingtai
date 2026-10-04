@@ -148,10 +148,15 @@ Look at these first. They are where the defects have actually been.
 
 /**
  * **The last thing the reviewer reads, not the middle of the prompt** (`#368`).
- * Two re-reviews answered in prose and were thrown away whole — the format rule
- * was true and present, and still as far from the model's turn as the prompt
- * could put it. `buildReviewPrompt` appends this after the diff for that reason;
- * do not move it back above the recheck block or the diff.
+ * A cold reviewer answered in prose instead of the schema's shape twice before
+ * this moved — once on a first review (`run-77a96d6a`, `#368` attempt 1) and
+ * once on a re-review (`#318` round 1) — and on both occasions this contract sat
+ * above the recheck block and the diff rather than after them. The ticket's own
+ * record is that the ordering is, at most, a contributing factor alongside
+ * `outputSchema` (`#369`, sent as `outputSchema` at `:489`) and is not claimed as
+ * the fix on its own. `buildReviewPrompt` appends it after the diff anyway,
+ * because the model's last turn is the cheapest place to put a rule it must not
+ * forget; do not move it back above the recheck block or the diff.
  */
 const CONTRACT = `
 Do not read other issues, run \`gh\`, or look at anything outside this worktree
@@ -222,11 +227,10 @@ For each one, walk the code as it now stands and answer the only question that
 matters: **does that sequence still produce that outcome?**
 
 - A scenario that is still reachable by *any* path is still a finding. Report it
-  again, at the same severity or higher, with the verdict in the finding itself:
-  \`claim\` says what is still wrong, and \`failureScenario\` gives the sequence
-  as the code now stands — narrower than the quote above, where only part of it
-  survives. A scenario with two paths that still produce the outcome is two
-  findings, one for each.
+  again, at the same severity or higher, with \`failureScenario\` the same quote
+  as above — never narrowed to only the path that still survives, because a path
+  dropped from it here is a path no later round is ever asked about again. Say
+  what is still wrong, and through which path, in \`claim\`.
 - **Code that was deleted, renamed, moved or suppressed is not, on its own, a
   fix.** If the behaviour the scenario describes can still be produced — through
   the new name, the new location, the remaining caller — the finding stands. If
