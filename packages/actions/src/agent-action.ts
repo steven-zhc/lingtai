@@ -141,6 +141,9 @@ Look at these first. They are where the defects have actually been.
    behaviour and whose assertions would pass with that behaviour broken.`;
 
 const CONTRACT = `
+Do not read other issues, run \`gh\`, or look at anything outside this worktree
+and the diff above. Your value is that you do not know what anyone concluded.
+
 Report as a single JSON object, and nothing else after it:
 
 {"about":"lines","findings":[{"file":"src/x.ts","line":42,"severity":"blocker",
@@ -161,10 +164,7 @@ Rules:
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
   should spend finding.
-- An empty list is a real answer. Say {"findings":[]}.
-
-Do not read other issues, run \`gh\`, or look at anything outside this worktree
-and the diff above. Your value is that you do not know what anyone concluded.`;
+- An empty list is a real answer. Say {"findings":[]}.`;
 
 export interface ReviewIssue {
   ref: string;
@@ -223,6 +223,12 @@ matters: **does that sequence still produce that outcome?**
   something it had.
 - A scenario that genuinely can no longer produce its outcome is simply not
   reported. Do not say so, and do not argue with the finding that made it.
+- **Every verdict above is a finding, in the format at *How to report* below —
+  never a sentence before or beside the JSON.** State what is still wrong in
+  \`claim\`, and put the sequence that still produces it, as the code now stands,
+  in \`failureScenario\` — narrower than the quote above where only part of it
+  still reproduces. A half-fixed scenario with two surviving paths is two
+  findings, not one finding straining to describe both.
 
 Then review the diff as it now stands for anything else, exactly as you would
 have without this section. The fix is part of the diff and is not above review.`;
@@ -257,15 +263,15 @@ ${CHECKLIST}
 ## Severity
 ${RUBRIC}
 
-## How to report
-${CONTRACT}
-
 ${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ""}
 ${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ""}## The diff
 
 \`\`\`diff
 ${clipped}
 \`\`\`
+
+## How to report
+${CONTRACT}
 `;
 }
 

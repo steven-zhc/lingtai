@@ -159,6 +159,51 @@ describe("the review prompt", () => {
 });
 
 /**
+ * **The contract is the last thing read** (`#368`). A reviewer answering a
+ * re-review spent the whole prompt on a narrative and never reached JSON
+ * ([0038 §2](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)'s
+ * run-333a14ea) — the format rule was correct and buried in the middle, between
+ * the recheck block and a diff that could run to `DIFF_BYTES` on its own.
+ * Nothing may sit between the closing diff fence and `## How to report` again.
+ */
+describe("the output contract comes after the diff", () => {
+  const diffWithoutMarkers = "THE-DIFF";
+
+  it("on a first review", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, diffWithoutMarkers, DIFF_BYTES);
+
+    expect(prompt.indexOf("## How to report")).toBeGreaterThan(prompt.lastIndexOf("```"));
+  });
+
+  it("on a re-review", () => {
+    const refused = [finding()] as never[];
+    const prompt = buildReviewPrompt(
+      { name: "review", prompt: "" },
+      ISSUE,
+      diffWithoutMarkers,
+      DIFF_BYTES,
+      refused,
+    );
+
+    expect(prompt.indexOf("## How to report")).toBeGreaterThan(prompt.lastIndexOf("```"));
+  });
+
+  it("above a recipe's own extra instructions, which stay before the diff", () => {
+    const spec = { name: "review", prompt: "watch the RLS policies" };
+    const prompt = buildReviewPrompt(spec, ISSUE, diffWithoutMarkers, DIFF_BYTES);
+
+    expect(prompt.indexOf("## How to report")).toBeGreaterThan(prompt.lastIndexOf("```"));
+    expect(prompt.indexOf("watch the RLS policies")).toBeLessThan(prompt.indexOf("## How to report"));
+  });
+
+  it("ends the prompt on the format rule, with nothing after it", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+
+    expect(prompt.trimEnd().endsWith('An empty list is a real answer. Say {"findings":[]}.')).toBe(true);
+  });
+});
+
+/**
  * The re-review, which is the acceptance contract of the fix loop
  * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
  *
@@ -199,6 +244,20 @@ describe("asking the reviewer again after a fix", () => {
     // finding's text go away, and the prompt has to refuse it in as many words.
     expect(prompt).toMatch(/deleted, renamed, moved or suppressed is not, on its own, a\s+fix/i);
     expect(prompt).toMatch(/still reachable by \*any\* path is still a finding/i);
+  });
+
+  it("says each scenario's verdict belongs in a finding, not beside the JSON", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+
+    expect(prompt).toMatch(/every verdict above is a finding/i);
+    expect(prompt).toContain("failureScenario");
+    expect(prompt).toMatch(/never a sentence before or beside the JSON/i);
+  });
+
+  it("says nothing about where a verdict goes on a first review", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+
+    expect(prompt).not.toMatch(/every verdict above is a finding/i);
   });
 
   it("keeps the rubric, the checklist and the diff exactly as they were", () => {
