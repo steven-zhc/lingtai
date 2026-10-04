@@ -1638,6 +1638,17 @@ export function limitsRow(
   const carries =
     `${capabilities.id} carries ${ignored.join(" and ")} and bounds nothing ` +
     `with ${ignored.length === 1 ? "it" : "them"}`;
+  // `turns` and `wall` are named at `runtime.agent`, because no edit to the
+  // recipe clears them: `turns` is always present and has no spelling for
+  // *unbounded*. `usd` has no default (recipe.ts), so unlike those two it
+  // clears by deleting the line that declared it — named here rather than
+  // folded into "name a runtime", which is not the only lever for `usd`.
+  const namedIgnored = ignored.filter((limit) => limit !== "usd");
+  const lever =
+    namedIgnored.length === 0
+      ? "The lever is deleting runtime.limits.usd, or naming a runtime that applies usd"
+      : `The lever is runtime.agent — name a runtime that applies ${namedIgnored.join(" and ")}` +
+        (ignored.includes("usd") ? ". usd also clears by deleting runtime.limits.usd" : "");
   return {
     name,
     status: "fail",
@@ -1647,9 +1658,7 @@ export function limitsRow(
       (applied.length === 0
         ? "Nothing will stop a run of this project at all. "
         : `What still stops one is ${applied.join(" and ")}, and not ${ignored.join(" or ")}. `) +
-      // Named, because no edit to the recipe clears it: `turns` is always present
-      // and has no spelling for *unbounded*.
-      `The lever is runtime.agent — name a runtime that applies ${ignored.join(" and ")}`,
+      lever,
   };
 }
 

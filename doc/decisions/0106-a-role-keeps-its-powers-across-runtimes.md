@@ -105,10 +105,10 @@ on that path is paid for thousands of times per run.
    `agentPlugin` embeds all three. `judgePlugin` embeds `model` and `limits` but
    not `prompt`, because its question is fixed by `judgePrompt`. A built-in
    judge takes neither. **`limits` here is a `strictObject` of `turns` and
-   `wall` only — `usd` is refused by name inside a dispatch (`#370`)**: every
-   call a pass makes gets the one dollar ceiling `runtime.limits.usd` states,
-   unchanged, the same way `rounds` and `restarts` are the pass's and not a
-   call's.
+   `wall` only — `usd` has no key inside a dispatch's `limits:` (`#370`)**:
+   every call a pass makes gets the one dollar ceiling `runtime.limits.usd`
+   states, unchanged, because nothing here lets a step narrow it the way it
+   can narrow `turns` and `wall`.
 
 9. **The ceiling is stated once, and a dispatch may only narrow it.**
    `runtime.limits` holds `turns` (default 300), `wall` (default `2h`),
@@ -120,10 +120,13 @@ on that path is paid for thousands of times per run.
    Absent means no dollar ceiling, said in `lingtai doctor`'s row as
    `usd — none declared` rather than a number. A dispatch's `limits` may lower
    `turns` or `wall`; raising either is refused at resolve, and so is writing
-   `rounds`, `restarts` or `usd` inside a dispatch — `usd` for the same reason
-   `rounds` is: it bounds the pass's spend across runs, not one call (via
-   `passCeiling`, which multiplies it by the rounds and restarts a pass may
-   buy, the same way it multiplies `wall`). `lingtai status` computes the
+   `rounds` or `restarts` inside a dispatch, each refused by name with its own
+   reason. `usd` bounds one run too, the same as `turns` and `wall`, but the
+   dispatch schema has no key for it at all, so writing it there is refused as
+   an unrecognized key rather than by a reasoned name. `passCeiling` reports
+   the pass's worst case in dollars by multiplying `usd` by the rounds and
+   restarts a pass may buy, the same way it multiplies `wall` — a derived
+   figure, not what the field itself bounds. `lingtai status` computes the
    pass's worst case, in dollars where one is declared, from these values.
    `discuss.limits` runs outside any pass, so it has its own defaults (40
    turns, `5m`, via `callFor`) and carries no dollar ceiling at all.

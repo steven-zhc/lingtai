@@ -55,20 +55,6 @@ import { formatDuration } from "@lingtai/recipe/duration";
  * for `steps`. Only `implement`'s runs are in the product, for the reason the
  * cold reviewer's own `wall` already is not (see `boundsBesides`).
  */
-/**
- * `usd * factor`, rounded to the cent before it is printed.
- *
- * A raw float multiply prints noise — `12.34 * 3` is `37.019999999999996` —
- * on the one sentence that says what a pass costs. Rounding to the nearest
- * cent first is enough: nothing here carries a fraction of a cent.
- */
-function dollarsAt(usd: number, factor: number): string {
-  const cents = Math.round(usd * factor * 100);
-  const whole = Math.trunc(cents / 100);
-  const frac = Math.abs(cents % 100);
-  return frac === 0 ? `${whole}` : `${whole}.${String(frac).padStart(2, "0")}`;
-}
-
 export function passCeiling(limits: {
   rounds: number;
   restarts: number;
@@ -120,4 +106,18 @@ export function passCeiling(limits: {
     (limits.usd === undefined ? "" : ` and $${dollarsAt(limits.usd, runs)}`) +
     ` before it is yours`
   );
+}
+
+/**
+ * `usd * factor`, rounded to the cent before it is printed.
+ *
+ * A raw float multiply prints noise — `12.34 * 3` is `37.019999999999996` —
+ * on the one sentence that says what a pass costs. Rounding to the nearest
+ * cent first is enough: nothing here carries a fraction of a cent.
+ */
+function dollarsAt(usd: number, factor: number): string {
+  const cents = Math.round(usd * factor * 100);
+  const whole = Math.trunc(cents / 100);
+  const frac = Math.abs(cents % 100);
+  return frac === 0 ? `${whole}` : `${whole}.${String(frac).padStart(2, "0")}`;
 }

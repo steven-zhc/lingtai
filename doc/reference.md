@@ -319,11 +319,13 @@ recipe resolves, by name:
 The ceiling is said **once**, here, and every other number is a reduction from
 it — otherwise what a pass may spend would only be knowable after reading every
 action in every step, and `passCeiling`'s sentence would stop being an upper
-bound. `rounds`, `restarts` and `usd` may not move at all: `rounds` and
-`restarts` count *how many* calls, which is not a thing one action can have an
-opinion about, and `usd` bounds the pass's spend across all of them rather than
-one call — writing any of the three inside a dispatch's `limits:` is refused by
-name. Where a step does narrow,
+bound. `rounds` and `restarts` may not move at all: they count *how many*
+calls, which is not a thing one action can have an opinion about. `usd` bounds
+one run, the same as `turns` and `wall` — but a dispatch's `limits:` has no
+key for it either, so writing it there is refused the same way: `rounds` and
+`restarts` are refused by name, with the reason above; `usd` is refused as an
+unrecognized key, the schema saying nothing else about it yet. Where a step
+does narrow,
 `passCeiling` names it on the same line — *1h and 150 turns each at implement
 (review 30m/50 turns), so at most 3h* — and a recipe that narrows nothing prints
 exactly what it always printed.
