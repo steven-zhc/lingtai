@@ -317,8 +317,10 @@ interface Where {
  * already run `JSON.parse` on. Shared so a schema-constrained answer and one
  * recovered from prose enforce exactly the same rule: **a schema guarantees
  * the keys are present, not that `failureScenario` is non-empty**, so a
- * finding without one is dropped here regardless of which path produced the
- * object (`#369`).
+ * finding without one is dropped here (`#369`). The strict and
+ * schema-constrained paths both read their value through this function; a
+ * repaired reading never does, and enforces the same non-empty rule itself,
+ * through `findingProblem` (`#318`).
  */
 function normaliseAnswer(value: unknown): ReadAnswer {
   const list = (value as { findings?: unknown })?.findings;
@@ -376,8 +378,17 @@ function candidatesIn(text: string): Candidate[] {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
   for (const block of fenced) {
     const stripped = block.replace(/```(?:json)?/g, "").replace(/```/g, "");
+    const blockStart = text.indexOf(block);
     const start = text.indexOf(stripped);
-    candidates.push({ text: stripped, start: start === -1 ? 0 : start });
+    // Whatever follows the closing fence is kept on the end of the candidate,
+    // not discarded with the fence markers — otherwise a findings-shaped
+    // example inside a ```json block would read as a complete value no matter
+    // what came after it, the one case the extent rule below does not reach on
+    // its own: an unfenced candidate already runs to the end of `text`, so
+    // trailing content there fails `JSON.parse`/`readTolerantJson` the same
+    // way it is meant to (`#318` finding 3).
+    const trailing = blockStart === -1 ? "" : text.slice(blockStart + block.length);
+    candidates.push({ text: stripped + trailing, start: start === -1 ? 0 : start });
   }
   // Last brace first: the outer object's own `{` is reached after the braces
   // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
@@ -409,8 +420,14 @@ function findingProblem(
     if (!(f.line === null || typeof f.line === "number")) {
       return { index, total: list.length, sentence: `${at} has no \`line\`` };
     }
-    if (typeof f.claim !== "string") return { index, total: list.length, sentence: `${at} has no \`claim\`` };
-    if (typeof f.failureScenario !== "string") {
+    // Empty counts as absent, the same as `normaliseAnswer`'s `!f?.claim` —
+    // the strict path drops a finding whose claim or scenario is "" rather
+    // than keep it, so a repaired one that kept the key but not its content is
+    // no more complete than that (`#318` finding 4).
+    if (typeof f.claim !== "string" || f.claim === "") {
+      return { index, total: list.length, sentence: `${at} has no \`claim\`` };
+    }
+    if (typeof f.failureScenario !== "string" || f.failureScenario === "") {
       return { index, total: list.length, sentence: `${at} has no \`failureScenario\`` };
     }
     if (f.severity === undefined) return { index, total: list.length, sentence: `${at} has no \`severity\`` };
@@ -526,12 +543,17 @@ export function parseFindings(text: string | null): ReadAnswer {
   for (const { text: candidate, start } of candidates) {
     const repaired = readTolerantJson(candidate);
     if (!repaired.ok) {
-      // A syntax failure on text that does not even look like JSON is not
-      // informative — every prose answer with nothing to recover would
-      // otherwise report the first letter of its first sentence as an
-      // "unexpected character", which is prose being misread as a one-byte
-      // repair rather than refused outright.
-      if (candidate.trim().startsWith("{")) {
+      // A syntax failure that did not get past the candidate's own opening
+      // brace is not informative. Every per-brace candidate starts with `{` by
+      // construction (`candidatesIn` cuts one at *every* brace in the text),
+      // so prose that quotes a bare object literal — `` `{ending:"passed"}` ``
+      // on the way to describing the code, never written as an attempt at
+      // JSON — produces exactly such a candidate, and checking `startsWith("{")`
+      // on it proves nothing: it is already true by how the candidate was cut.
+      // A real answer's first key opens with a quote, so a reading that tried
+      // fails at least one character past the brace; one that fails
+      // immediately never tried (`#318` finding 1).
+      if (repaired.offset > 1) {
         noteFurthest(
           { offset: start + repaired.offset, char: repaired.char, ...(repaired.context === undefined ? {} : { context: repaired.context }) },
           start,
@@ -799,11 +821,24 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * `describeUnreadable` names the offending character and its offset
          * where there is one, rather than leaving a person to guess whether one
          * byte was wrong or the reviewer wrote an essay.
+         *
+         * **`outcome.structured` never reaches `describeUnreadable`** (`#318`
+         * finding 2). That sentence is about where in `text` a byte reading
+         * gave up, and the structured path never read `text` at all — it is
+         * already a JS value, parsed by the runtime, that `normaliseAnswer`
+         * rejected for one reason only: no `findings` array on it. Handing that
+         * to `describeUnreadable` returned "no JSON object was found in it"
+         * beside the very JSON printed on the next line, which is false rather
+         * than merely unhelpful.
          */
         return {
           verdict: "failed",
           evidence: boundedEvidence(
-            `the reviewer's answer was not readable as findings: ${describeUnreadable(unreadableAt)}:\n${outcome.text ?? ""}`,
+            `the reviewer's answer was not readable as findings: ${
+              outcome.structured !== undefined
+                ? "it read as JSON with no `findings` array"
+                : describeUnreadable(unreadableAt)
+            }:\n${outcome.text ?? ""}`,
           ),
           findings: [],
           unreadable: true,

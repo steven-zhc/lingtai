@@ -129,6 +129,12 @@ export function readTolerantJson(text: string): TolerantParseResult {
         i++;
         continue;
       }
+      // JSON disallows a raw control character inside a quoted string — it
+      // must arrive escaped (`\n`, `\t`, `\u0001`, …) — and this reader is not
+      // the place to start accepting one unescaped: that is not in the listed
+      // repair set, and a reviewer's `claim` quoting code verbatim is exactly
+      // the text a silent exception here would corrupt.
+      if (ch.charCodeAt(0) < 0x20) return fail(i, ch);
       out += ch;
       i++;
     }
@@ -143,8 +149,14 @@ export function readTolerantJson(text: string): TolerantParseResult {
     const start = i;
     if (text[i] === "-") i++;
     const digitsStart = i;
-    while (i < len && text[i]! >= "0" && text[i]! <= "9") i++;
+    // JSON's own grammar: a leading zero is a complete integer part on its
+    // own — "0", never "00" or "01" — so only the single digit is consumed
+    // here, and a digit immediately following it is refused below rather than
+    // silently absorbed the way `007` would be.
+    if (text[i] === "0") i++;
+    else while (i < len && text[i]! >= "0" && text[i]! <= "9") i++;
     if (i === digitsStart) return fail(i, i < len ? text[i]! : null, "number");
+    if (i < len && text[i]! >= "0" && text[i]! <= "9") return fail(i, text[i]!);
     if (text[i] === ".") {
       i++;
       const fracStart = i;
