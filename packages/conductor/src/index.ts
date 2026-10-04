@@ -19,6 +19,9 @@ export {
   type Offered,
   type RunnableNowOptions,
   type SkipReason,
+  type TicketDetail,
+  type TicketListing,
+  type TicketSource,
 } from "./discover.ts";
 export {
   currentRecipe,

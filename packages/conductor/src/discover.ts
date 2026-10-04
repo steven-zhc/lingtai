@@ -27,9 +27,47 @@
  * discover it at all.
  */
 import type { AssigneeRule, QueueSettings } from "@lingtai/recipe";
-import type { GitHubClient, Issue, Label } from "@lingtai/github";
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
+
+/**
+ * What discovery needs of a ticket source — the fields it reads, and nothing
+ * else (`#347`). `GitHubClient` satisfies this structurally, the same way
+ * `IssueChannel` in `tell.ts` does for the write side: the caller names its own
+ * requirement rather than importing the shape `@lingtai/github` happens to
+ * have.
+ */
+export interface TicketListing {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  labels: readonly { name: string; color: string | null }[];
+  assignees: readonly string[];
+  /**
+   * `dependencies: null` means *GitHub said nothing about dependencies*, not
+   * *nothing blocks it* (CLAUDE.md, "Null is not zero"). A required, nullable
+   * key rather than an optional one: an optional `dependencies?:` would let a
+   * source leave it out, and `issue.dependencies === null` below would read
+   * `undefined` the same way, so every ticket would go silently clear.
+   */
+  dependencies: { blockedBy: number } | null;
+}
+
+/**
+ * `getIssue`'s answer carries the body too — fetched once, for the ticket a
+ * pass is about to claim ([0109](../../../doc/decisions/0109-the-core-takes-a-ticket.md)
+ * §1: the listing is cheap and holds no body, and the body is fetched once,
+ * for the ticket that was claimed).
+ */
+export interface TicketDetail extends TicketListing {
+  body: string;
+}
+
+/** The two calls discovery makes of a ticket source. */
+export interface TicketSource {
+  listOpenIssues(): Promise<TicketListing[]>;
+  getIssue(number: number): Promise<TicketDetail>;
+}
 
 /**
  * Which kind of work an issue is, from its labels — **the recipe's labels**.
@@ -50,7 +88,7 @@ import type { GitHubClient, Issue, Label } from "@lingtai/github";
  * guessing the first kind would put unclassified issues at the front of the
  * queue.
  */
-export function kindOf(issue: Issue, kinds: readonly string[]): string | null {
+export function kindOf(issue: TicketListing, kinds: readonly string[]): string | null {
   return kindLabelOf(issue, kinds)?.kind ?? null;
 }
 
@@ -63,9 +101,9 @@ export function kindOf(issue: Issue, kinds: readonly string[]): string | null {
  * label the queue did not prioritise it by.
  */
 export function kindLabelOf(
-  issue: Issue,
+  issue: TicketListing,
   kinds: readonly string[],
-): { kind: string; label: Label } | null {
+): { kind: string; label: TicketListing["labels"][number] } | null {
   const carried = new Map(issue.labels.map((l) => [normaliseLabel(l.name), l]));
   for (const kind of kinds) {
     const label = carried.get(normaliseLabel(kind));
@@ -127,7 +165,7 @@ export type SkipReason =
   | "assigned";
 
 export interface Considered {
-  issue: Issue;
+  issue: TicketListing;
   /** Null when the issue should be discovered. */
   skip: SkipReason | null;
 }
@@ -138,7 +176,7 @@ export interface Considered {
  * Separated from the appending so `lingtai status` can explain a queue's *absences*,
  * which is the question the old loop's `pick_ticket` could never answer.
  */
-export function considerIssue(issue: Issue, queue: QueueSettings): Considered {
+export function considerIssue(issue: TicketListing, queue: QueueSettings): Considered {
   if (issue.state === "closed") return { issue, skip: "closed" };
 
   const labels = issue.labels.map((l) => l.name.toLowerCase());
@@ -192,7 +230,7 @@ export function considerIssue(issue: Issue, queue: QueueSettings): Considered {
  * what the queue did before it read an assignee. Logins compare
  * case-insensitively, because GitHub's do.
  */
-export function assigneeSkip(issue: Issue, rule: AssigneeRule | undefined): SkipReason | null {
+export function assigneeSkip(issue: TicketListing, rule: AssigneeRule | undefined): SkipReason | null {
   const take = rule?.take ?? "both";
   if (take === "both") return null;
   const me = rule?.login?.toLowerCase();
@@ -301,7 +339,7 @@ export function passedOver(skipped: Offered["skipped"]): string | null {
 }
 
 export interface RunnableNowOptions {
-  client: GitHubClient;
+  client: TicketSource;
   /**
    * The four values `queue:` carries — **the block and not a recipe** (`#269`).
    *

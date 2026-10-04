@@ -18,6 +18,7 @@ import {
   kindOf,
   passedOver,
   runnableNow,
+  type TicketSource,
 } from "../src/index.ts";
 
 /**
@@ -536,5 +537,39 @@ describe("runnableNow", () => {
     });
 
     expect(result.runnable.map((r) => r.ref)).toEqual(["302"]);
+  });
+
+  /**
+   * The whole of `#347` in one test. `RunnableNowOptions.client` is a port
+   * discovery declares for itself — two functions — and `GitHubClient`
+   * satisfies it structurally rather than the other way round. A plain object
+   * with no cast and no network proves the port is the real requirement: a
+   * second ticket source only ever has to implement this much.
+   *
+   * One listing carries `dependencies: null`, so the same run also exercises
+   * `dependenciesUnread` through the narrower port, not just through
+   * `GitHubClient`.
+   */
+  it("is satisfied by a plain object of two functions, not just by GitHubClient", async () => {
+    const PROJECT = newProject();
+    const issues = [
+      issue({ number: 501, labels: ["bug"], title: "a plain port" }),
+      issue({ number: 502, labels: ["feature"], dependencies: null }),
+      issue({ number: 503, labels: ["bug", "agent:wip"] }),
+    ];
+
+    const plain: TicketSource = {
+      listOpenIssues: async () => issues,
+      getIssue: async (n) => {
+        const found = issues.find((i) => i.number === n);
+        if (!found) throw new Error(`no issue ${n}`);
+        return { ...found, body: "" };
+      },
+    };
+
+    const viaPort = await runnableNow({ client: plain, queue });
+    const viaGitHubClient = await runnableNow({ client: fakeClient(issues, PROJECT), queue });
+
+    expect(viaPort).toEqual(viaGitHubClient);
   });
 });

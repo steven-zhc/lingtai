@@ -182,7 +182,7 @@ import {
   reduceWorkItem,
   workItemStream,
 } from "@lingtai/domain";
-import { runnableNow } from "./discover.ts";
+import { runnableNow, type TicketSource } from "./discover.ts";
 import type { TerminalOutcome } from "./end-step.ts";
 import { stepsResolved } from "./steps-resolved.ts";
 import { labelsFor } from "./labels.ts";
@@ -1574,7 +1574,12 @@ export function runOnce(
         // The four values off the action and never off `recipe` here, so that the
         // ticket this takes is the one the reading of the recipe says it took
         // (`queueOf`, and `defaultsAt` below where a recipe declares nothing).
-        const found = await runnableNow({ client: options.client, queue, only: [options.issue] });
+        // Discovery's own port (`#347`): the two reads a pass makes of a ticket
+        // source go through one value typed by it, not by the wider
+        // `GitHubClient` — swapping the source later is then a one-line change
+        // here rather than one at each call site.
+        const tickets: TicketSource = options.client;
+        const found = await runnableNow({ client: tickets, queue, only: [options.issue] });
         const runnable = found.runnable.find((r) => r.ref === String(options.issue));
         if (!runnable) {
           return {
@@ -1585,7 +1590,7 @@ export function runOnce(
         // The ticket, fetched once, before anything that reads it: the
         // implementer's brief and the cold reviewer both want it, and a run still
         // costs one call for it.
-        const issue = await options.client.getIssue(options.issue);
+        const issue = await tickets.getIssue(options.issue);
         let claim;
         try {
           // The claim carries what the task is, because it is now the only place a
