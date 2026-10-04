@@ -698,6 +698,89 @@ describe("reading the reviewer's answer", () => {
   });
 
   /**
+   * **A well-formed fenced answer plus an ordinary closing sentence must
+   * still parse exactly as it did before `readTolerantJson` existed** (`#318`
+   * round-two finding 1). Gluing the fenced block's own trailing text onto
+   * its candidate unconditionally — the fix for the test right above this
+   * one — made `JSON.parse`'s own extent check see "That is all I found." as
+   * leftover content after the value, for every fenced answer with a closing
+   * remark, which is the ordinary case and not the exceptional one. Kept on
+   * only when the trailing text itself has a `{` in it: a plain sentence
+   * never does, and this is the regression that pins it.
+   */
+  it("parses a fenced answer with an ordinary closing sentence after it, same as a bare fenced block", () => {
+    const text =
+      "Answer:\n\n```json\n" +
+      JSON.stringify({
+        findings: [{ file: "a.ts", line: 1, severity: "major", claim: "a real claim", failureScenario: "a real scenario" }],
+      }) +
+      "\n```\n\nThat is all I found.\n";
+
+    const { findings, parsed } = parseFindings(text);
+
+    expect(parsed).toBe(true);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toBe("major");
+  });
+
+  /**
+   * **A complete, well-formed object read out of surrounding prose must never
+   * be described by the unrelated byte that happens to sit after it** (`#318`
+   * round-two finding 2). The existing test two above this one only exercises
+   * the unquoted-key shape, `{ending:"passed"}`, which fails one character
+   * past the brace and was already suppressed for that reason. A quoted key
+   * reads the whole object fine and only then meets the trailing backtick —
+   * a different code path (the extent check on a *completed* value, not a
+   * mid-object syntax failure), and the one this regression pins.
+   */
+  it("reports no JSON object was found, rather than the byte after a quoted object with a quoted key", () => {
+    const answer =
+      "**Refusal is about `lines`**\n\n" +
+      '- The `merge` step renders `{"ending":"passed"}` and executes nothing.\n';
+
+    const { unreadableAt, parsed } = parseFindings(answer);
+
+    expect(parsed).toBe(false);
+    expect(unreadableAt).toBeUndefined();
+  });
+
+  /**
+   * **A character that looks like a mangled quote, not a bare identifier,
+   * must be reported rather than swallowed into "no JSON object was found"**
+   * (`#318` round-two finding 3). The `offset > 1` check this replaced
+   * suppressed every failure one character past the brace regardless of what
+   * that character was, so a full-width quote standing in for `"` — the same
+   * full-width-punctuation family as `#243`'s colon — was hidden exactly like
+   * the unquoted-key case, even though there genuinely is a JSON object on
+   * the next line.
+   */
+  it("reports a mismatched quote character rather than claiming no JSON object was found", () => {
+    const { unreadableAt, parsed } = parseFindings("{＂findings＂:[]}");
+
+    expect(parsed).toBe(false);
+    expect(unreadableAt).toMatchObject({ offset: 1, char: "＂" });
+  });
+
+  /**
+   * **A fenced candidate's own offsets must name the byte they claim to**
+   * (`#318` round-two finding 4). `start` is the stripped interior's position,
+   * but the interior's own trailing newline — proven to be nothing but
+   * whitespace once the object has read in full — was still being counted as
+   * part of the value's extent, so the reported offset landed one byte short
+   * of where the object actually ends, inside the closing fence rather than
+   * on the character immediately after `}`.
+   */
+  it("names the offset right after a fenced object's own close, not inside the fence that follows it", () => {
+    const text = "Answer:\n\n```json\n" + JSON.stringify({ result: "ok" }) + "\n```\n\nThat is all I found.\n";
+    const closingBrace = text.indexOf("}");
+
+    const { unreadableAt } = parseFindings(text);
+
+    expect(unreadableAt).toMatchObject({ offset: closingBrace + 1, char: null, reason: "it had no `findings` array" });
+    expect(text[closingBrace + 1]).not.toBe("`");
+  });
+
+  /**
    * **The reviewer's own classification of its refusal, taken as it was said**
    * (`#293`, for `#223`).
    *
