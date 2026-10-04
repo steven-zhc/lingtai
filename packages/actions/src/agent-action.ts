@@ -387,7 +387,7 @@ function candidatesIn(text: string): Candidate[] {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
   let searchFrom = 0;
   for (let i = 0; i < fenced.length; i++) {
-    const block = fenced[i];
+    const block = fenced[i]!;
     const stripped = block.replace(/```(?:json)?/g, "").replace(/```/g, "");
     const blockStart = text.indexOf(block, searchFrom);
     const start = text.indexOf(stripped, searchFrom);
