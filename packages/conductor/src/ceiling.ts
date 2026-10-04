@@ -55,6 +55,20 @@ import { formatDuration } from "@lingtai/recipe/duration";
  * for `steps`. Only `implement`'s runs are in the product, for the reason the
  * cold reviewer's own `wall` already is not (see `boundsBesides`).
  */
+/**
+ * `usd * factor`, rounded to the cent before it is printed.
+ *
+ * A raw float multiply prints noise — `12.34 * 3` is `37.019999999999996` —
+ * on the one sentence that says what a pass costs. Rounding to the nearest
+ * cent first is enough: nothing here carries a fraction of a cent.
+ */
+function dollarsAt(usd: number, factor: number): string {
+  const cents = Math.round(usd * factor * 100);
+  const whole = Math.trunc(cents / 100);
+  const frac = Math.abs(cents % 100);
+  return frac === 0 ? `${whole}` : `${whole}.${String(frac).padStart(2, "0")}`;
+}
+
 export function passCeiling(limits: {
   rounds: number;
   restarts: number;
@@ -84,7 +98,7 @@ export function passCeiling(limits: {
       : `up to ${limits.rounds + 1} agent runs — the work, then ${limits.rounds} round(s) ` +
         `back to the agent carrying what refused it. ${wallAndTurns} each${at}${elsewhere}, ` +
         `so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}` +
-        (limits.usd === undefined ? "" : ` and $${limits.usd * (limits.rounds + 1)}`);
+        (limits.usd === undefined ? "" : ` and $${dollarsAt(limits.usd, limits.rounds + 1)}`);
 
   // **Said whether it buys anything or not**, like a `skipped` gate point and
   // like `rounds: 0` below it: a default that spends money has to be auditable
@@ -103,7 +117,7 @@ export function passCeiling(limits: {
     `${pass}. Then up to ${limits.restarts} restart(s) — the ticket started over ` +
     `from the base carrying what refused it — so at most ${passes} passes, ` +
     `${runs} agent runs and ${formatDuration(limits.wallMs * runs)}` +
-    (limits.usd === undefined ? "" : ` and $${limits.usd * runs}`) +
+    (limits.usd === undefined ? "" : ` and $${dollarsAt(limits.usd, runs)}`) +
     ` before it is yours`
   );
 }

@@ -146,8 +146,8 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
  * A total record for the reason `INTEGRATION_OWNER` is one, and this is the
  * record 0031 says was missing.
  *
- * One of them is the repository's, and each of the rest is not for its own
- * reason. `never-started` is 0031 §2: the agent could not begin, so nothing in
+ * A spent ceiling is the repository's, and each of the rest is not for its
+ * own reason. `never-started` is 0031 §2: the agent could not begin, so nothing in
  * the repository was reached, let alone broken. `timeout`, `crash`, `aborted`
  * and `no-commits` are endings the queue already answers with a backoff and a
  * better prompt (#82) — the ticket is coming back, and a card that blamed the

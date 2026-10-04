@@ -165,12 +165,12 @@ export type FixStop =
  * `RUN_OWNER`'s reason and with `#197` as the receipt for what a default costs:
  * `out-of-turns` was flattened into the crash's ending, and the card told a
  * person to send again a ticket this repository had already decided sending
- * again does not answer. A seventh `RunFailureKind` will not compile until
+ * again does not answer. An eighth `RunFailureKind` will not compile until
  * somebody says which sentence it gets.
  *
- * Read the rows against `attribution.ts`'s `RUN_OWNER`: the four Lingtai owns
- * are the ones the queue answers by running it again, and the one the
- * repository owns is the one it does not.
+ * Read the rows against `attribution.ts`'s `RUN_OWNER`: the five Lingtai owns
+ * are the ones the queue answers by running it again, and the two the
+ * repository owns are the ones it does not.
  *
  * `never-started` has a row because the record is total; it never arrives,
  * because `conduct.ts` stands the conductor down on it before the fix loop can

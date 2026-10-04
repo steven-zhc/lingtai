@@ -1577,8 +1577,8 @@ export function recipeRow(
  * measured, `codex exec` has no `--max-turns` and no flag of any name bounds
  * turns — and `runtime.limits.turns` has a schema default of `300` that is always
  * present, so red there is red for ever and `CheckStatus`'s docstring names that
- * trap. **The downgrade cost more than the trap.** `RUN_LIMITS` is two names and
- * every runtime in `RUNTIMES` applies at least one of them, so `fail` became a
+ * trap. **The downgrade cost more than the trap.** `RUN_LIMITS` was two names then
+ * and every runtime in `RUNTIMES` applies at least one of them, so `fail` became a
  * branch no real project could reach, and the state `#89` was built to catch
  * reported `warn` —
  * which `gatingFailures` does not count (`restart.ts`), so `lingtai restart` would

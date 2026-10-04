@@ -440,8 +440,8 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           const usage = usageFromModelUsage(parsed?.modelUsage);
 
           // The last line of the log is how it ended, in the runtime's own
-          // words — `subtype` included, which only `error_max_turns` is read
-          // out of (see below). A log kept
+          // words — `subtype` included, which only `error_max_turns` and
+          // `error_max_budget_usd` are read out of (see below). A log kept
           // because the run did not land opens on what it was for and closes on
           // this.
           trace.note(

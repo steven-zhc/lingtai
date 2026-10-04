@@ -2163,6 +2163,11 @@ export function runOnce(
             turns: ceiling.turns,
             wallMs: parseDuration(ceiling.wall),
             diffBytes: recipe.runtime.budget.diff,
+            // The pass's own, unnarrowable here for the reason `spendFor`
+            // carries it unchanged too: a dispatch's `limits:` refuses `usd`
+            // by name, so there is nothing for `actionsFromRecipe` to narrow
+            // (`#370`).
+            usd: ceiling.usd,
           },
         },
         // **A sibling of `agent` and not a key on it** (`#314`): an action is

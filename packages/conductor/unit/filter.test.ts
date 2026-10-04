@@ -390,7 +390,12 @@ describe("what a pass may spend in dollars", () => {
   });
 
   it("names one run's figure rather than 'each' where rounds is zero", () => {
-    expect(passCeiling({ ...limits(0), usd: 12 })).toContain("1h, 150 turns and $12");
+    const said = passCeiling({ ...limits(0), usd: 12 });
+    expect(said).toBe(
+      "one agent run — 1h, 150 turns and $12. Every refusal goes straight to you " +
+        "(runtime.limits.rounds: 0, restarts: 0)",
+    );
+    expect(said).not.toContain("each");
   });
 
   it("multiplies again for the passes a restart can buy", () => {
