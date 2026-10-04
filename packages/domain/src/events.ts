@@ -592,6 +592,13 @@ export const RunFinished = z.object({
  * and *"it ran out of time"* are different findings about a ticket, and it is
  * not `crash`, which is where `error_max_turns` used to land beside a segfault.
  *
+ * `no-structured-answer` is `#369`'s: the runtime forced the cold reviewer's
+ * answer onto `REVIEW_ANSWER_JSON_SCHEMA` and could not make one fit after
+ * retrying — Claude Code's `error_max_structured_output_retries`. The agent
+ * answered something and the runtime is what lost it, so this is Lingtai's own
+ * kind rather than a judgement about the diff, exactly as `out-of-turns` is the
+ * repository's for the opposite reason.
+ *
  * Additive to the enum. No stored event is rewritten and no version is bumped —
  * every payload a previous build wrote still parses against this.
  */
@@ -602,6 +609,7 @@ export const RUN_FAILURE_KINDS = [
   "aborted",
   "never-started",
   "out-of-turns",
+  "no-structured-answer",
 ] as const;
 
 export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];
@@ -842,6 +850,46 @@ export const StepPassed = z.object({
  */
 export const REFUSED_ABOUT = ["lines", "approach"] as const;
 export type RefusedAbout = (typeof REFUSED_ABOUT)[number];
+
+/**
+ * **What a cold review answers, as a schema rather than a sentence** (`#369`).
+ *
+ * `Finding.strict()` rather than `Finding` itself: `Finding` still has to parse
+ * a stored `StepPassed`/`StepFailed` payload above, and tightening it in place
+ * would refuse an old event the moment a key it never carried arrived on a new
+ * one. This is a derived, stricter copy made for a runtime flag to carry, never
+ * for the log to be read against.
+ *
+ * **All-required, and `about` is required but nullable rather than optional —
+ * a decision, not a quirk.** `codex exec --output-schema` is OpenAI structured
+ * output, whose strict mode refuses an optional property and refuses a schema
+ * without `additionalProperties: false` at every object level; one schema for
+ * both runtimes therefore has to be the strict shape, and Claude Code accepts
+ * it too. Making *did not say* an explicit `null` is also the fix for what the
+ * ticket measured losing: every one of four runs filled `about` when omitting
+ * it was available, because an absent key is a thing a model has to think to
+ * leave out and `null` is a value it has to choose.
+ */
+export const ReviewAnswer = z
+  .object({
+    findings: z.array(Finding.strict()),
+    about: z.enum(REFUSED_ABOUT).nullable(),
+  })
+  .strict();
+export type ReviewAnswer = z.infer<typeof ReviewAnswer>;
+
+/**
+ * `ReviewAnswer` as JSON Schema — the one shape each runtime takes by its own
+ * flag, `claude --json-schema <inline>` and `codex exec --output-schema
+ * <file>` (`#369`). `$schema` is stripped because it is a statement about the
+ * generator and not about the answer, and a binary that balks at an unknown
+ * top-level key would refuse the whole schema over it.
+ */
+export const REVIEW_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
+  const schema = z.toJSONSchema(ReviewAnswer) as Record<string, unknown>;
+  delete schema.$schema;
+  return schema;
+})();
 
 export const StepFailed = z.object({
   ...stepBase,

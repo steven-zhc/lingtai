@@ -382,6 +382,34 @@ describe("run", () => {
     expect(args[args.indexOf("--max-turns") + 1]).toBe("150");
   });
 
+  /**
+   * **The cold reviewer's own flag, absent on every other invocation** (`#369`).
+   * `outputSchema` is only ever set by `createAgentAction`; this just proves
+   * the adapter carries it through when it is there, and leaves it off when
+   * it is not.
+   */
+  it("passes an output schema as --json-schema, and omits the flag without one", () => {
+    const schema = { type: "object", properties: { findings: { type: "array" } } };
+    const withSchema = createClaudeCodeRuntime().invocation!({
+      runId: "run-01JX",
+      cwd: root,
+      settingsPath: join(root, "settings.json"),
+      env: {},
+      limits: { turns: 150, wallMs: 3_600_000 },
+      outputSchema: schema,
+    });
+    expect(withSchema.args[withSchema.args.indexOf("--json-schema") + 1]).toBe(JSON.stringify(schema));
+
+    const withoutSchema = createClaudeCodeRuntime().invocation!({
+      runId: "run-01JX",
+      cwd: root,
+      settingsPath: join(root, "settings.json"),
+      env: {},
+      limits: { turns: 150, wallMs: 3_600_000 },
+    });
+    expect(withoutSchema.args).not.toContain("--json-schema");
+  });
+
   it("turns an abort into aborted", async () => {
     const binary = await fakeClaude("sleep 30");
     const controller = new AbortController();
@@ -529,12 +557,15 @@ describe("the stream, and the accounting that must not move", () => {
   /**
    * The five `subtype`s of the shipped bundle, 2026-09-08 (0031 §2).
    *
-   * One `subtype` is branched on — `error_max_turns`, the runtime's answer to
-   * `--max-turns` (`#89`) — and the rest are classified by `neverStarted`'s
-   * three checkable facts, so what survives here is that each lands where it
-   * should with its turns and its cost intact. `error_max_turns` moved: it was
-   * a `crash`, beside a segfault, and it is emphatically not a run that never
-   * started.
+   * **Two `subtype`s are branched on** — `error_max_turns`, the runtime's
+   * answer to `--max-turns` (`#89`), and `error_max_structured_output_retries`,
+   * its answer to `--json-schema` (`#369`) — and the rest are classified by
+   * `neverStarted`'s three checkable facts, so what survives here is that each
+   * lands where it should with its turns and its cost intact. `error_max_turns`
+   * moved once already: it was a `crash`, beside a segfault, and it is
+   * emphatically not a run that never started. The structured-output one moved
+   * for the same reason: the agent answered something, and the runtime is what
+   * lost it.
    */
   const subtypes: readonly [
     string,
@@ -546,7 +577,12 @@ describe("the stream, and the accounting that must not move", () => {
     ["error_during_execution", { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, "crash"],
     ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "out-of-turns"],
     ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "crash"],
-    ["error_max_structured_output_retries", { is_error: true, num_turns: 3, total_cost_usd: 0.08 }, 1, "crash"],
+    [
+      "error_max_structured_output_retries",
+      { is_error: true, num_turns: 3, total_cost_usd: 0.08 },
+      1,
+      "no-structured-answer",
+    ],
     // Not a subtype: the shape 0031 measured, which carries no word of its own.
     ["error_during_execution", { is_error: true, num_turns: 0, total_cost_usd: 0 }, 1, "never-started"],
   ];
@@ -559,6 +595,28 @@ describe("the stream, and the accounting that must not move", () => {
     expect(outcome.turns).toBe(receipt.num_turns);
     expect(outcome.costUsd).toBe(receipt.total_cost_usd);
     expect(outcome.exitCode).toBe(exit);
+  });
+
+  /**
+   * **`structured_output` arrives on a clean answer, and nowhere else**
+   * (`#369`). It is the forced tool call's own argument, handed back on the
+   * receipt — `outcome.structured` is what `createAgentAction` reads instead
+   * of `parseFindings(outcome.text)` once a schema was sent.
+   */
+  it("carries structured_output through on a clean answer", async () => {
+    const structured = { findings: [], about: null };
+    const binary = await fakeStream(stream({ ...RECEIPT, structured_output: structured }));
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.failure).toBeNull();
+    expect(outcome.structured).toEqual(structured);
+  });
+
+  it("carries nothing where the receipt had no structured_output", async () => {
+    const binary = await fakeStream(stream());
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+
+    expect(outcome.structured).toBeUndefined();
   });
 
   /**

@@ -157,8 +157,10 @@ export type FixStop =
  * `RUN_OWNER`'s reason and with `#197` as the receipt for what a default costs:
  * `out-of-turns` was flattened into the crash's ending, and the card told a
  * person to send again a ticket this repository had already decided sending
- * again does not answer. A seventh `RunFailureKind` will not compile until
- * somebody says which sentence it gets.
+ * again does not answer. An eighth `RunFailureKind` will not compile until
+ * somebody says which sentence it gets — `#369`'s `no-structured-answer` was
+ * the seventh, and it got `crashed`: the machinery lost a judgement, which is
+ * the shape a crash is, not the repository's.
  *
  * Read the rows against `attribution.ts`'s `RUN_OWNER`: the four Lingtai owns
  * are the ones the queue answers by running it again, and the one the
@@ -175,6 +177,12 @@ const STOP_OF: Record<RunFailureKind, "crashed" | "out-of-turns"> = {
   "no-commits": "crashed",
   "never-started": "crashed",
   "out-of-turns": "out-of-turns",
+  // The runtime forced a schema and could not fit an answer to it after
+  // retrying (`#369`) — the machinery losing a judgement, which is `crashed`'s
+  // shape, not the repository's. Reachable only from a review's own runtime
+  // call; an implementer never sends a schema, so nothing routes a fixing
+  // round's own failure here.
+  "no-structured-answer": "crashed",
 };
 
 /**

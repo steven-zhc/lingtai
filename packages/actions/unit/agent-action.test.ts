@@ -8,7 +8,7 @@
 import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
 import { sessionIdFor } from "@lingtai/agent";
 import { describe, expect, it } from "vitest";
-import { REFUSED_ABOUT, SEVERITIES, parsePayload } from "@lingtai/domain";
+import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, parsePayload } from "@lingtai/domain";
 import {
   buildDesignPrompt,
   buildReviewPrompt,
@@ -18,7 +18,7 @@ import {
   parseFindings,
   verdictFor,
 } from "../src/agent-action.ts";
-import { NEEDS_INPUT, type Action, type ActionEvent, runActionPipeline } from "../src/action.ts";
+import { NEEDS_INPUT, type Action, type ActionEvent, type ActionFinding, runActionPipeline } from "../src/action.ts";
 import { REVIEW_THAT_DID_NOT_PARSE } from "../test/fixtures/review-269-attempt-3.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
@@ -142,11 +142,13 @@ describe("the review prompt", () => {
   it("asks a refusing reviewer which kind of refusal it is, in the two words", () => {
     const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
 
-    expect(prompt).toMatch(/say what a refusal is about/i);
+    expect(prompt).toMatch(/say what your findings are about/i);
     for (const word of REFUSED_ABOUT) expect(prompt).toContain(`"${word}"`);
     // And that not answering is a real answer — a reviewer told to pick one
     // anyway is a reviewer inventing the number this field exists to measure.
-    expect(prompt).toMatch(/omit the key when you\s+cannot say which/i);
+    // The schema (`#369`) makes that answer an explicit `null` rather than an
+    // omitted key, so the prompt now says so in those words.
+    expect(prompt).toMatch(/answer `null` whenever you cannot say which/i);
   });
 
   it("says nothing about a re-review when there is nothing to re-check", () => {
@@ -890,6 +892,88 @@ describe("the action", () => {
     expect(result.findings).toEqual([]);
   });
 
+  /**
+   * **The runtime forced the schema and could not make an answer fit it after
+   * retrying** — `error_max_structured_output_retries`, the one new
+   * `RunFailureKind` `#369` adds. The agent answered something and the runtime
+   * is what dropped it, so this is `unreadable` in `#279`'s sense rather than
+   * `did-not-finish`: a `failed` verdict that buys no round (0038 §2).
+   */
+  it("fails and marks the answer unreadable when the runtime could not fit it to the schema", async () => {
+    const result = await actionWith(
+      outcome({
+        turns: 3,
+        costUsd: 0.08,
+        exitCode: 1,
+        text: null,
+        failure: { kind: "no-structured-answer", detail: "retried and gave up" },
+      }),
+    ).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.unreadable).toBe(true);
+    expect(result.evidence).toContain("retried and gave up");
+    expect(result.findings).toEqual([]);
+  });
+
+  /**
+   * **Every reviewer run sends the schema** (`#369`). The flag is the hard
+   * constraint the ticket's measurement found — `--json-schema`/
+   * `--output-schema` forces a tool call rather than merely asking for one —
+   * so the action has to actually send it rather than rely on the prompt's
+   * prose, which `CONTRACT` no longer carries the shape rules for.
+   */
+  it("sends the findings schema with every review run", async () => {
+    const reply = reviewer(outcome({ text: '{"findings":[]}' }));
+    await createAgentAction(
+      { name: "review", prompt: "" },
+      {
+        runtime: reply,
+        issue: async () => ISSUE,
+        diff: async () => "diff --git a/x b/x\n+1",
+        settingsPath: "/tmp/settings.json",
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    ).run(context);
+
+    expect(reply.seen[0]?.outputSchema).toBe(REVIEW_ANSWER_JSON_SCHEMA);
+  });
+
+  /**
+   * **`outcome.structured` is read directly, and `outcome.text` is not a
+   * second opinion on the same answer** (`#369`). A runtime that honoured the
+   * schema already returned the parsed object; re-parsing `text` would only
+   * matter if the two could disagree, and reading both would mean deciding
+   * which one wins.
+   */
+  it("reads the runtime's own parse when it sent one, and ignores the text beside it", async () => {
+    const result = await actionWith(
+      outcome({ text: "not json at all", structured: { findings: [finding()], about: null } }),
+    ).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.findings).toHaveLength(1);
+    expect(result.unreadable).toBeUndefined();
+  });
+
+  /**
+   * **A `structured` answer with no `findings` array is `unreadable`, and
+   * `text` is not consulted to rescue it** (`#369`). The schema guarantees the
+   * key is present on anything the runtime actually constrained; an object
+   * that still lacks it did not come from the schema path working, and
+   * falling back to `text` would be a second reading of one answer — exactly
+   * what the structured path exists to avoid.
+   */
+  it("is unreadable when the structured answer has no findings array, and does not fall back to text", async () => {
+    const result = await actionWith(
+      outcome({ text: JSON.stringify({ findings: [finding()] }), structured: { about: null } }),
+    ).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.unreadable).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
   it("does not spend an agent call on an empty diff", async () => {
     const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
     const action = createAgentAction(
@@ -1277,5 +1361,43 @@ describe("an agent's evidence on the log", () => {
     );
 
     expect(evidence).toBe("blocker src/x.ts:42 — the guard is not asserted in the write\n\n(7 turns · $0.42)");
+  });
+});
+
+/**
+ * **`ActionFinding` and the schema cannot diverge, because one declaration is
+ * the source of both** (`#369`). `ActionFinding` is a re-export of domain's
+ * `Finding` type, and `REVIEW_ANSWER_JSON_SCHEMA` is generated from the same
+ * zod object — so a field added to one and not the other is a red test here
+ * rather than a runtime discovering it mid-review.
+ */
+describe("the schema and ActionFinding cannot diverge", () => {
+  it("has exactly the keys the schema's own finding shape has", () => {
+    const full: Required<ActionFinding> = {
+      file: "x.ts",
+      line: null,
+      claim: "c",
+      failureScenario: "f",
+      severity: "minor",
+    };
+    const findingsProp = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).findings as Record<
+      string,
+      unknown
+    >;
+    const items = findingsProp.items as Record<string, unknown>;
+    const schemaKeys = Object.keys(items.properties as Record<string, unknown>);
+
+    expect(Object.keys(full).sort()).toEqual(schemaKeys.sort());
+  });
+
+  it("carries severity's ladder as SEVERITIES, not a copy of it", () => {
+    const findingsProp = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).findings as Record<
+      string,
+      unknown
+    >;
+    const items = findingsProp.items as Record<string, unknown>;
+    const severity = (items.properties as Record<string, { enum: readonly string[] }>).severity!;
+
+    expect(severity.enum).toEqual(SEVERITIES);
   });
 });

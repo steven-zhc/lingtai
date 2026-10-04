@@ -27,18 +27,20 @@
  * completion each map to a kind. The old loop's failures produced no log line,
  * no comment and no label, and that silence is what `RunFailed` exists to end.
  *
- * Six kinds now rather than four: `crash` used to absorb every ending that was
- * not a clean result, so a quota, a segfault and a bad flag were one word and
- * six tickets burned in ninety-two seconds looked like six crashes
+ * Seven kinds now rather than four: `crash` used to absorb every ending that
+ * was not a clean result, so a quota, a segfault and a bad flag were one word
+ * and six tickets burned in ninety-two seconds looked like six crashes
  * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)). What told
  * them apart was never the message — it is `neverStarted`'s three facts. `#89`
  * took one more off the same word: a run the runtime stopped at the recipe's
- * `turns` is `out-of-turns`, which is a finding about the ticket.
+ * `turns` is `out-of-turns`, which is a finding about the ticket. `#369` took a
+ * seventh: a run the runtime stopped retrying to fit `--json-schema` is
+ * `no-structured-answer`, which is Lingtai's own, not the ticket's.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
-import type { TokenCounts, Usage } from "@lingtai/domain";
+import type { RunFailureKind, TokenCounts, Usage } from "@lingtai/domain";
 import type {
   AuthStatus,
   Invocable,
@@ -109,11 +111,12 @@ export function sessionIdFor(runId: string): string {
  * printed alone. `subtype` is one of `success`, `error_during_execution`,
  * `error_max_turns`, `error_max_budget_usd`,
  * `error_max_structured_output_retries` — read out of the shipped bundle on
- * 2026-09-08 (0031 §2). **One member is branched on**, `error_max_turns`, and
- * nothing else: the rest is classified by `neverStarted`'s three checkable
- * facts, and the prose is kept whole as evidence. 0031 refused to classify on
- * English prose; this is a member of a closed set the runtime prints, and it is
- * the runtime's answer to the `--max-turns` this adapter passed it (`#89`).
+ * 2026-09-08 (0031 §2). **Two members are branched on**, `error_max_turns` and
+ * `error_max_structured_output_retries` (`#369`), and nothing else: the rest is
+ * classified by `neverStarted`'s three checkable facts, and the prose is kept
+ * whole as evidence. 0031 refused to classify on English prose; these are
+ * members of a closed set the runtime prints, and each is the runtime's answer
+ * to a flag this adapter passed it — `--max-turns` (`#89`) and `--json-schema`.
  */
 interface ClaudeResult {
   /** Absent on the single object `--output-format json` prints; `"result"` in a stream. */
@@ -136,6 +139,13 @@ interface ClaudeResult {
    * tokens at a larger one's rates.
    */
   modelUsage?: Record<string, ClaudeModelUsage>;
+  /**
+   * The object a `--json-schema` answer parsed to — present only where that
+   * flag was sent and the forced tool call completed, absent otherwise
+   * (`#369`). This is the binary's own parse, handed back on the receipt
+   * rather than recovered from `result` a second time.
+   */
+  structured_output?: unknown;
 }
 
 /** One model's line in `modelUsage`. Extra fields the receipt carries are not read. */
@@ -252,6 +262,10 @@ function argsFor(
     "--max-turns",
     String(request.limits.turns),
     ...(request.model ? ["--model", request.model] : []),
+    // A forced tool call, measured against 2.1.285: every run that carried
+    // this flag answered `stop_reason: "tool_use"`, so the prose the prompt
+    // asks for is not a thing the model can produce instead (`#369`).
+    ...(request.outputSchema ? ["--json-schema", JSON.stringify(request.outputSchema)] : []),
     ...extraArgs,
   ];
 }
@@ -280,6 +294,65 @@ export interface ClaudeCodeOptions {
   extraArgs?: readonly string[];
   /** Defaults to `bypassPermissions`. See `PermissionMode`. */
   permissionMode?: PermissionMode;
+}
+
+/** What a closed Claude Code process said, for `claudeClose` to read. */
+export interface ClaudeClosed {
+  exitCode: number | null;
+  stderr: string;
+  stdout: string;
+}
+
+/**
+ * How a run ended, decided from the receipt and the exit — `null` for one that
+ * answered cleanly.
+ *
+ * Pure and exported for `codexClose`'s own reason (`codex.ts`): the close
+ * handler used to make this decision inline, where no unit test could reach it
+ * — `pnpm test` runs no process. **Two members of `subtype` are branched on
+ * now, not one**, and the second is `#369`'s: `error_max_turns` is the runtime
+ * answering `--max-turns` (`#89`), and `error_max_structured_output_retries` is
+ * the runtime answering `--json-schema` the same way — a forced tool call it
+ * could not complete after retrying, rather than a judgement about the diff.
+ * Everything else is still classified by `neverStarted`'s three checkable
+ * facts, exactly as it always was.
+ */
+export function claudeClose(
+  parsed: ClaudeResult | null,
+  closed: ClaudeClosed,
+  limits: { turns: number },
+): { kind: RunFailureKind; detail: string } | null {
+  const turns = parsed?.num_turns ?? 0;
+  const costUsd = parsed?.total_cost_usd ?? null;
+  const cost = costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`;
+
+  if (parsed?.subtype === "error_max_turns") {
+    return { kind: "out-of-turns", detail: `${turns} turns, and the recipe allows ${limits.turns} · ${cost}` };
+  }
+
+  if (parsed?.subtype === "error_max_structured_output_retries") {
+    return {
+      kind: "no-structured-answer",
+      detail: `the runtime could not make its answer fit the schema after retrying · ${turns} turns · ${cost}`,
+    };
+  }
+
+  if (parsed && closed.exitCode === 0 && parsed.is_error !== true) return null;
+
+  return {
+    kind:
+      parsed &&
+      neverStarted({
+        turns,
+        costUsd,
+        isError: parsed.is_error === true || (closed.exitCode !== null && closed.exitCode !== 0),
+      })
+        ? "never-started"
+        : "crash",
+    detail:
+      parsed?.result?.slice(0, 500) ??
+      ((closed.stderr.trim() || closed.stdout.trim()).slice(-500) || `exited ${closed.exitCode}`),
+  };
 }
 
 export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtime {
@@ -433,10 +506,9 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           const usage = usageFromModelUsage(parsed?.modelUsage);
 
           // The last line of the log is how it ended, in the runtime's own
-          // words — `subtype` included, which only `error_max_turns` is read
-          // out of (see below). A log kept
-          // because the run did not land opens on what it was for and closes on
-          // this.
+          // words — `subtype` included, which only `claudeClose` reads out of
+          // (below). A log kept because the run did not land opens on what it
+          // was for and closes on this.
           trace.note(
             "receipt",
             parsed
@@ -446,43 +518,10 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
               : `no receipt on the stream · exit ${code}`,
           );
 
-          // The turn bound, reached. Before the clean-exit branch so that no
-          // combination of exit code and `is_error` can read it as a finish,
-          // and with the receipt's own turns and cost: this is the ending
-          // `#89` was filed for, and it is recorded like the wall's — a
-          // failure with a kind — rather than as a run that simply stopped.
-          if (parsed?.subtype === "error_max_turns") {
-            finish({
-              exitCode: code,
-              turns,
-              durationMs,
-              costUsd,
-              text: parsed.result ?? null,
-              failure: {
-                kind: "out-of-turns",
-                detail:
-                  `${turns} turns, and the recipe allows ${request.limits.turns} · ` +
-                  (costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`),
-              },
-              sessionId,
-              usage,
-            });
-            return;
-          }
-
-          if (parsed && code === 0 && parsed.is_error !== true) {
-            finish({
-              exitCode: code,
-              turns,
-              durationMs,
-              costUsd,
-              text: parsed.result ?? null,
-              failure: null,
-              sessionId,
-              usage,
-            });
-            return;
-          }
+          // The decision, made once and pure — `claudeClose`. Before this it
+          // was three branches inline here, where no unit test could reach any
+          // of them (`pnpm test` runs no process).
+          const failure = claudeClose(parsed, { exitCode: code, stderr, stdout }, request.limits);
 
           finish({
             exitCode: code,
@@ -490,41 +529,16 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             durationMs,
             costUsd,
             text: parsed?.result ?? null,
-            failure: {
-              // A run that spent nothing and took no turns did not fail at its
-              // task; it failed to begin (0031 §1). Asked of the parsed receipt
-              // and only of it: `is_error` is the runtime saying so, and output
-              // that would not parse leaves turns at zero for a reason that is
-              // ignorance rather than evidence — which is a crash, as it was.
-              // A receipt beside a non-zero exit is the runtime saying so too:
-              // the wall's receipt is subtype `success` and exits 1 (0041).
-              kind:
-                parsed &&
-                neverStarted({
-                  turns,
-                  costUsd,
-                  isError: parsed.is_error === true || (code !== null && code !== 0),
-                })
-                  ? "never-started"
-                  : "crash",
-              // Whatever went wrong, something says so. A run that ends with no
-              // detail is the failure mode being replaced. Kept whole — as whole
-              // as it ever was — because for a run that never started this is
-              // the only evidence there is, and 0031 §4 reads a reset time back
-              // out of it.
-              //
-              // The fallback takes the *end* of stdout rather than the start,
-              // which under `json` was the same 500 characters and under a
-              // stream is not: the first line of a stream is the session
-              // banner, and the last is whatever it managed to say before it
-              // stopped. `exited <code>` is reachable — a process that printed
-              // nothing at all had no detail before this and has one now.
-              detail:
-                parsed?.result?.slice(0, 500) ??
-                ((stderr.trim() || stdout.trim()).slice(-500) || `exited ${code}`),
-            },
+            failure,
             sessionId,
             usage,
+            // Only on a clean answer, and only where the flag was sent: the
+            // forced tool call's own argument, handed back on the receipt
+            // (`#369`). A failed run has nothing here either way —
+            // `parseFindings` reads `text` instead, as it always has.
+            ...(failure === null && parsed?.structured_output !== undefined
+              ? { structured: parsed.structured_output }
+              : {}),
           });
         });
       });

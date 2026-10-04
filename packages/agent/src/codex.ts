@@ -51,7 +51,8 @@
  *   see that function.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import type { TokenCounts, Usage } from "@lingtai/domain";
@@ -906,6 +907,8 @@ export function codexArgv(
     /** See `gitWritableRoots`. Empty for a reader, which commits nothing. */
     writable?: readonly string[];
     extraArgs?: readonly string[];
+    /** See `outputSchemaPathFor`. Absent on every run but the cold reviewer's. */
+    outputSchemaPath?: string;
   },
 ): string[] {
   return argsFor(
@@ -915,6 +918,7 @@ export function codexArgv(
     options.sandbox,
     options.writable ?? [],
     options.extraArgs ?? [],
+    options.outputSchemaPath,
   );
 }
 
@@ -925,6 +929,7 @@ function argsFor(
   sandbox: CodexSandbox,
   writable: readonly string[],
   extraArgs: readonly string[],
+  outputSchemaPath: string | undefined,
 ): string[] {
   return [
     "exec",
@@ -949,6 +954,9 @@ function argsFor(
     ...writable.flatMap((dir) => ["--add-dir", dir]),
     ...hookArgs,
     ...(request.model ? ["--model", request.model] : []),
+    // The file `run()` writes just before this is built — `codexArgv` only
+    // names it (`#369`).
+    ...(outputSchemaPath ? ["--output-schema", outputSchemaPath] : []),
     ...extraArgs,
     // **Behind `--`, and it is load-bearing.** `codex exec` takes subcommands —
     // `resume`, `fork`, `review` — in the same position as the prompt, and
@@ -957,6 +965,28 @@ function argsFor(
     "--",
     prompt,
   ];
+}
+
+/**
+ * Where this run's `--output-schema` file lives, computed from the run id
+ * alone so `invocation()` can name it without writing it (`#369`).
+ *
+ * Outside the worktree, in `os.tmpdir()`, for `settingsPath`'s reason
+ * (`runtime.ts`): an agent that can rewrite its own answer schema has no
+ * schema. Deterministic, so the argv `invocation()` records and the argv
+ * `run()` spawns name the same file without either having to ask the other.
+ */
+function outputSchemaPathFor(runId: string): string {
+  return join(tmpdir(), `lingtai-output-schema-${runId}.json`);
+}
+
+/** `JSON.parse`, where failing to parse is `undefined` rather than a throw. */
+function tryParseJSON(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -987,11 +1017,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
     invocation(request: Invocable): Spawned {
       return {
         command: binary,
+        // Names the schema file without writing it — `outputSchemaPathFor` is
+        // deterministic, and `invocation()` must not do `run()`'s I/O.
         args: codexArgv(request, PROMPT_ELIDED, {
           settings: hookWiringAt(request.settingsPath),
           sandbox,
           writable: writableFor(sandbox, request.cwd),
           extraArgs,
+          outputSchemaPath: request.outputSchema ? outputSchemaPathFor(request.runId) : undefined,
         }),
       };
     },
@@ -1023,10 +1056,18 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         };
       }
 
+      // Written just ahead of the argv that names it, and removed in `finish`
+      // on every ending (`#369`). An agent that could overwrite its own answer
+      // schema has no schema, so this lives in `os.tmpdir()` rather than the
+      // worktree — `outputSchemaPathFor`'s reason.
+      const outputSchemaPath = request.outputSchema ? outputSchemaPathFor(request.runId) : undefined;
+      if (outputSchemaPath) writeFileSync(outputSchemaPath, JSON.stringify(request.outputSchema));
+
       const args = codexArgv(request, request.prompt, {
         settings: wiring,
         sandbox,
         writable: writableFor(sandbox, request.cwd),
+        outputSchemaPath,
         extraArgs,
       });
 
@@ -1097,6 +1138,19 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           settled = true;
           clearTimeout(wall);
           request.signal?.removeEventListener("abort", onAbort);
+          // On every ending, not only a clean close (`#369`): a kill or a
+          // spawn error leaves the file written just as surely as a receipt
+          // does, and an agent that could read its own schema past the run
+          // that asked for it is the thing `outputSchemaPathFor` exists to
+          // avoid.
+          if (outputSchemaPath) {
+            try {
+              unlinkSync(outputSchemaPath);
+            } catch {
+              // Already gone, or never written because the spawn itself never
+              // started — either way there is nothing left to clean up.
+            }
+          }
           resolve(outcome);
         };
 
@@ -1171,6 +1225,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             stdoutTail,
           });
 
+          // Codex prints no `structured_output` of its own: under a schema the
+          // final `agent_message` *is* the constrained JSON, so this is where it
+          // is read back (`#369`). Absent where no schema was sent, and absent
+          // where one was and the text would not parse — the same unreadable
+          // path `createAgentAction` already has for `outcome.text`.
+          const structured =
+            outputSchemaPath && receipt.text !== null ? tryParseJSON(receipt.text) : undefined;
+
           finish({
             exitCode: code,
             turns: receipt.turns,
@@ -1181,6 +1243,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             failure,
             sessionId: receipt.sessionId,
             usage: codexUsage(receipt.tokens, request.model),
+            ...(structured !== undefined ? { structured } : {}),
           });
         });
       });

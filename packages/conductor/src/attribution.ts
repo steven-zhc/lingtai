@@ -169,6 +169,11 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   // look for a fault that is not there. The owner buys nothing either way
   // (`#143`); it is only what the card says.
   "out-of-turns": "repository",
+  // The runtime forced a schema on the cold reviewer's answer and could not
+  // make one fit after retrying (`#369`) — the agent answered something and
+  // the runtime is what lost it, which is Lingtai's failure for the same
+  // reason a crash is.
+  "no-structured-answer": "lingtai",
 };
 
 /**

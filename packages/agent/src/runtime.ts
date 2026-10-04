@@ -119,6 +119,13 @@ export interface RunRequest {
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
   env: Record<string, string>;
   limits: { turns: number; wallMs: number };
+  /**
+   * The answer's shape, as JSON Schema — sent only by the cold reviewer and
+   * absent on every other run (`#369`). Each adapter hands it to the runtime
+   * its own way: `claude-code.ts`'s `--json-schema <inline>`, `codex.ts`'s
+   * `--output-schema <file>`. Absent is an ordinary, unconstrained run.
+   */
+  outputSchema?: Record<string, unknown>;
   /** Killed when this aborts, producing a `timeout` failure rather than silence. */
   signal?: AbortSignal;
 }
@@ -173,6 +180,14 @@ export interface RunOutcome {
    * the runtime reported nothing to accumulate — never zero.
    */
   usage?: Usage;
+  /**
+   * **The object a schema-constrained answer parsed to** — present only where
+   * `RunRequest.outputSchema` was sent and an answer could be read against it,
+   * absent otherwise (`#369`). Absent is not failure: `createAgentAction` reads
+   * `parseFindings(outcome.text)` instead, exactly as it did before this field
+   * existed.
+   */
+  structured?: unknown;
 }
 
 /**
