@@ -124,7 +124,7 @@ describe("a state wears the colour of its lane on the board", () => {
   it("still knows every state the domain has", () => {
     const declared = readFileSync(resolve(root, "packages/domain/src/streams.ts"), "utf8");
     const listed = /export const LABEL_STATES = \[([^\]]*)\]/.exec(declared)?.[1] ?? "";
-    const names = [...listed.matchAll(/"([a-z]+)"/g)].map((m) => m[1] ?? "");
+    const names = [...listed.matchAll(/["']([a-z]+)["']/g)].map((m) => m[1] ?? "");
     // If a sixth state lands, this fails and somebody decides what colour it
     // is — rather than it quietly rendering as the terminal's default forever.
     expect(names).toEqual(LABEL_STATES);

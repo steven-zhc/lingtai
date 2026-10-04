@@ -225,7 +225,7 @@ describe("the bar's amber", () => {
       // `className="a b"` and ``className={`a ${x ? " b" : ""}`}`` alike: every
       // bare word inside the attribute's string or template literals.
       for (const attr of src.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)) {
-        const text = (attr[1] ?? attr[2] ?? "").replace(/\$\{|\}|\?|:|"/g, " ");
+        const text = (attr[1] ?? attr[2] ?? "").replace(/\$\{|\}|\?|:|["']/g, " ");
         for (const word of text.split(/\s+/)) if (/^[a-z][a-z0-9-]*$/.test(word)) names.add(word);
       }
     }

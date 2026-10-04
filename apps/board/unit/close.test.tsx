@@ -72,7 +72,7 @@ describe("the row of moves", () => {
     // `lastIndexOf`: the string also appears in `accent()` near the top of the
     // file, where it picks a card's colour and has nothing to do with a row of
     // moves. The row is the last of them.
-    const queued = page.slice(page.lastIndexOf('card.column === "queued"'));
+    const queued = page.slice(page.search(/card\.column === ["']queued["'](?![\s\S]*card\.column === ["']queued["'])/));
     expect(queued.slice(0, 400)).toContain("<Close");
 
     const standing = read("../src/app/standing.tsx");

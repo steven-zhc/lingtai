@@ -76,10 +76,10 @@ function sourceFiles(): string[] {
 /** `process.env["X"]`, `from["X"]`, `optional("X"`, `required("X"`. */
 function namesRead(source: string): string[] {
   const found = new Set<string>();
-  for (const m of source.matchAll(/(?:process\.env|from)\["([A-Z][A-Z0-9_]*)"\]/g)) {
+  for (const m of source.matchAll(/(?:process\.env|from)\[["']([A-Z][A-Z0-9_]*)["']\]/g)) {
     found.add(m[1]!);
   }
-  for (const m of source.matchAll(/\b(?:optional|required)\(\s*"([A-Z][A-Z0-9_]*)"/g)) {
+  for (const m of source.matchAll(/\b(?:optional|required)\(\s*["']([A-Z][A-Z0-9_]*)["']/g)) {
     found.add(m[1]!);
   }
   return [...found].sort();

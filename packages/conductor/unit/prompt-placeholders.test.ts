@@ -25,7 +25,7 @@ describe("the prompt placeholders", () => {
   it("are the ones renderPrompt substitutes, and every one expands", async () => {
     const names = await documented();
     const source = await readFile(`${root}packages/conductor/src/prompt.ts`, "utf8");
-    const substituted = [...source.matchAll(/\.replaceAll\("(\{\{[a-z]+\}\})"/g)].map((m) => m[1]!);
+    const substituted = [...source.matchAll(/\.replaceAll\(["'](\{\{[a-z]+\}\})["']/g)].map((m) => m[1]!);
     expect(names.sort()).toEqual(substituted.sort());
 
     for (const name of names) {

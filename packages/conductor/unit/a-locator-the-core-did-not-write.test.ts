@@ -449,10 +449,10 @@ describe("a locator the core did not write", () => {
     // file that had moved, or a subject that had been renamed, would leave the
     // counts below true of nothing.
     expect(code).toContain("export function runOnce(");
-    expect(code).toContain('import { readWhatAFileKept } from "./file-port.ts";');
+    expect(code).toMatch(/import \{ readWhatAFileKept \} from ["']\.\/file-port\.ts["']/);
 
-    expect(code).toContain(
-      'const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, "utf8") });',
+    expect(code).toMatch(
+      /const read = readWhatAFileKept\(cwd, \{ read: \(at\) => readFile\(at, ["']utf8["']\) \}\)/,
     );
     expect(code).toContain("fileBrief: { read },");
     expect(code.match(/readWhatAFileKept\(/g)).toHaveLength(1);

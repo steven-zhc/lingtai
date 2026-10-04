@@ -12,6 +12,8 @@
     "build": "pnpm --filter @lingtai/release build",
     "binary": "pnpm --filter @lingtai/release binary",
     "typecheck": "pnpm -r --if-present typecheck",
+    "fmt": "oxfmt 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts'",
+    "fmt:check": "oxfmt --check 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts'",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:db": "pnpm test:integration",
@@ -25,6 +27,7 @@
     "db:verify": "pnpm --filter @lingtai/event-store db:verify"
   },
   "devDependencies": {
+    "oxfmt": "0.71.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

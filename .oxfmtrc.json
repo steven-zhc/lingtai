@@ -1,0 +1,13 @@
+{
+  "printWidth": 120,
+  "tabWidth": 2,
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "sortImports": true,
+  "ignorePatterns": [
+    "doc/decisions-archive/**",
+    "packages/event-store/src/prisma/contract.d.ts",
+    "packages/event-store/migrations/snapshots/**"
+  ]
+}

@@ -338,8 +338,8 @@ describe("the rail on the task page", () => {
     for (const route of ["../src/app/page.tsx", "../src/app/task/[id]/page.tsx", "../src/app/standing.tsx"]) {
       expect(read(route)).not.toMatch(/function (Rail|Segs)\b/);
     }
-    expect(read("../src/app/page.tsx")).toContain('from "./rail.tsx"');
-    expect(read("../src/app/task/[id]/page.tsx")).toContain('from "../../rail.tsx"');
+    expect(read("../src/app/page.tsx")).toMatch(/from ["']\.\/rail\.tsx["']/);
+    expect(read("../src/app/task/[id]/page.tsx")).toMatch(/from ["']\.\.\/\.\.\/rail\.tsx["']/);
     expect(read("../src/app/rail.tsx")).toMatch(/export function Rail\b/);
   });
 

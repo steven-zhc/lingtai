@@ -2297,11 +2297,15 @@ describe("the pass has one caller, and it is `conduct.ts`", () => {
     { module: "pass-steps.ts", allowed: ["conduct.ts"] },
   ])("$module is imported only by $allowed", ({ module, allowed }) => {
     const src = fileURLToPath(new URL("../src", import.meta.url));
-    // `[^;]*?` keeps the match inside one statement: without it the lazy span
-    // starts at some earlier value import and runs on to this specifier, and
-    // every file with any import at all is an offender.
+    // The span is kept inside one statement by refusing to cross the next
+    // `import` or `export` token, and **not** by stopping at a `;`: a statement
+    // ends at a semicolon or at a newline, and reading only the first made this
+    // guard report `judge-agent.ts` as an offender the moment the formatter
+    // dropped semicolons (`#367`). Without any bound the lazy span starts at
+    // some earlier value import and runs on to this specifier, and every file
+    // with any import at all is an offender — which is what the bound is for.
     const reaches = new RegExp(
-      `(?:import|export)(?!\\s+type\\b)[^;]*?["']\\./${module.replace(".", "\\.")}["']`,
+      `(?:import|export)(?!\\s+type\\b)(?:(?!\\bimport\\b|\\bexport\\b)[\\s\\S])*?["']\\./${module.replace(".", "\\.")}["']`,
     );
 
     const offenders = readdirSync(src)
@@ -2332,8 +2336,8 @@ describe("the pass has one caller, and it is `conduct.ts`", () => {
   it("is imported by `conduct.ts`", () => {
     const src = fileURLToPath(new URL("../src/conduct.ts", import.meta.url));
     const wiring = readFileSync(src, "utf8");
-    expect(wiring).toContain('from "./pass.ts"');
-    expect(wiring).toContain('from "./pass-steps.ts"');
+    expect(wiring).toMatch(/from ["']\.\/pass\.ts["']/);
+    expect(wiring).toMatch(/from ["']\.\/pass-steps\.ts["']/);
     expect(wiring).toContain("runPass({");
   });
 });
