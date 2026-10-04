@@ -68,6 +68,30 @@ describe("what it refuses, and where", () => {
     expect(read).toMatchObject({ ok: false, char: null, context: "key's value" });
   });
 
+  /**
+   * **Not in the listed repair set** (`#318` finding 5). The header's contract
+   * is "the same candidates, the same extent rule as `JSON.parse`, and only the
+   * listed repairs on top" — full-width colon/comma, a trailing comma, an
+   * answer closed at the end of input. A raw control character inside a quoted
+   * string is none of those, and `JSON.parse` refuses it too.
+   */
+  it("refuses a raw control character inside a string, the same as JSON.parse", () => {
+    const text = '{"a":"x\ty"}';
+    expect(() => JSON.parse(text)).toThrow();
+
+    const read = readTolerantJson(text);
+    expect(read).toMatchObject({ ok: false, char: "\t" });
+  });
+
+  /** The other half of finding 5: a leading zero is not a repair either, and `JSON.parse` refuses it the same way. */
+  it("refuses a number with a leading zero, the same as JSON.parse", () => {
+    const text = '{"a":01}';
+    expect(() => JSON.parse(text)).toThrow();
+
+    const read = readTolerantJson(text);
+    expect(read).toMatchObject({ ok: false, char: "1" });
+  });
+
   it("reports the offset and the exact character of an unrepairable byte", () => {
     // A full-width colon standing where a comma is expected is not "a colon
     // where a colon fits" — it is refused, at the offset it sits at.

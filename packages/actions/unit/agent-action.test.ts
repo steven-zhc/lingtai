@@ -503,6 +503,28 @@ describe("reading the reviewer's answer", () => {
     expect(unreadableAt).toBeUndefined();
   });
 
+  /**
+   * **`#262`'s own shape, one step worse** (`#318` finding 1). That reviewer's
+   * clean `{"findings":[]}` was waived by a person only once `#272` stopped
+   * reading the prose's own quoted brace as the answer's start. Here there is
+   * no trailing `{"findings":[]}` at all — the quoted brace is every `{` in the
+   * text — so every per-brace candidate the tolerant reader tries is cut from
+   * prose that was never attempting JSON, and the `startsWith("{")` a
+   * per-candidate gate once checked is true of every one of them by
+   * construction. The fix is that a failure one character past the open brace
+   * (never getting to a key's opening quote) does not count as evidence either.
+   */
+  it("reports no JSON object was found, rather than the byte right after a quoted code brace", () => {
+    const answer =
+      "**Refusal is about `lines`**\n\n" +
+      '- The `merge` point renders `{ending:"passed"}` and executes nothing.\n';
+
+    const { unreadableAt, parsed } = parseFindings(answer);
+
+    expect(parsed).toBe(false);
+    expect(unreadableAt).toBeUndefined();
+  });
+
   it("reports the offending character and its offset when the text does look like JSON", () => {
     const { unreadableAt } = parseFindings('{"a":1："b":2}');
 
@@ -598,6 +620,25 @@ describe("reading the reviewer's answer", () => {
     expect(unreadableAt).toMatchObject({ char: null, reason: "finding 2 of 2 has no `file`" });
   });
 
+  /**
+   * **An empty `claim` or `failureScenario` is not a complete finding, even
+   * though both keys are present and correctly typed** (`#318` finding 4). The
+   * strict path drops such an entry via `normaliseAnswer`'s `!f?.claim` check,
+   * so the same bytes with an ASCII colon return `findings: []`; before this,
+   * `findingProblem` only checked `typeof`, so the full-width-colon repair
+   * that reaches this same entry kept it — a `major` with nothing in either
+   * field — as though the reviewer had written one.
+   */
+  it("refuses a repaired reading whose finding has an empty claim and failure scenario", () => {
+    const text = '{"findings":[{"file":"","line":null,"severity"："major","claim":"","failureScenario":""}]}';
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(unreadableAt).toMatchObject({ char: null, reason: "finding 1 of 1 has no `claim`" });
+  });
+
   /** A severity that is not on the ladder at all — not merely missing — gets its own sentence, naming the value seen. */
   it("names the invalid severity it saw, rather than just saying one was missing", () => {
     const text = '{"findings":[{"file":"a.ts","line":1,"claim":"c1","failureScenario":"s1","severity"："critical"}]}';
@@ -625,6 +666,29 @@ describe("reading the reviewer's answer", () => {
       '"claim":"example","failureScenario":"example"}]}.\n\n' +
       'Here is my real answer, but it breaks: {"findings":[{"file":"a.ts","line":2,"severity":"blocker",' +
       '"claim":"c","failureScenario":"the real';
+
+    const { findings, parsed } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(findings.some((f) => f.claim === "example")).toBe(false);
+  });
+
+  /**
+   * **The same blocker, where the example is fenced rather than quoted inline**
+   * (`#318` finding 3). A fenced candidate's `text` used to be only the
+   * interior of the ```json block — stopping at the closing fence rather than
+   * running to the end of the answer the way an unfenced candidate already
+   * does — so it never saw the real answer that followed it, read as a
+   * complete value on its own, and won before the real (broken) answer was
+   * ever tried.
+   */
+  it("rejects a fenced example followed by a broken real answer, so the example is never read as the answer", () => {
+    const text =
+      "For example:\n\n```json\n" +
+      JSON.stringify({ findings: [{ file: "x.ts", line: 1, severity: "major", claim: "example", failureScenario: "example" }] }) +
+      "\n```\n\n" +
+      'My real answer: {"findings":[{"file":"a.ts","line":2,"severity":"blocker","claim":"c","failureScenario":"the real';
 
     const { findings, parsed } = parseFindings(text);
 
@@ -1201,6 +1265,27 @@ describe("the action", () => {
     expect(result.verdict).toBe("failed");
     expect(result.unreadable).toBe(true);
     expect(result.findings).toEqual([]);
+  });
+
+  /**
+   * **The structured path's own evidence must not claim no JSON was found,
+   * when a JSON object sits on the very next line of that same evidence**
+   * (`#318` finding 2). `outcome.structured` is already a parsed JS value —
+   * `codex.ts`'s `tryParseJSON` accepts any valid JSON under `--output-schema`,
+   * not only the findings shape — so a `{"result":"ok", ...}` answer never
+   * went through a byte reading `describeUnreadable(undefined)` could be
+   * honest about; that function's default is for `parseFindings`'s own `text`
+   * path, where "no JSON object was found" is true.
+   */
+  it("says the structured answer had no findings array, not that no JSON was found", async () => {
+    const result = await actionWith(
+      outcome({ text: "irrelevant", structured: { result: "ok", summary: "looks fine" } }),
+    ).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.unreadable).toBe(true);
+    expect(result.evidence).toContain("it read as JSON with no `findings` array");
+    expect(result.evidence).not.toContain("no JSON object was found in it");
   });
 
   it("does not spend an agent call on an empty diff", async () => {
