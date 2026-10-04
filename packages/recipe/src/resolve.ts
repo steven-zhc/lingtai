@@ -201,8 +201,10 @@ export async function resolveRecipe(
  *
  * `where` is how a refusal names the file; `shape` runs on the parsed YAML
  * before the preset and may refuse keys by name or fill fields in — which is
- * how `resolveLocalRecipe` puts the machine's `runtime.agent` and
- * `runtime.limits` into a recipe that may not carry them itself.
+ * how `resolveLocalRecipe` puts the machine's `runtime.agent` into a recipe
+ * that may not carry it itself, and resolves `runtime.limits` from the recipe,
+ * a project's old per-project block and the machine's own narrowing cap
+ * (`#371`).
  */
 export function resolveSource(
   source: string,

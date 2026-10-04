@@ -176,7 +176,8 @@ describe("a recipe on the base branch that does not parse", () => {
 });
 
 describe("an edit to a recipe that extends a preset", () => {
-  // The machine's recipe, which carries no `runtime.agent` or `runtime.limits` (#180).
+  // The machine's recipe, which carries no `runtime.agent` (#180). It may now
+  // carry its own `runtime.limits` — the ceiling is the recipe's since `#371`.
   const FILE =
     "version: 2\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n";
   const HOME = "/home/me/.lingtai";
@@ -202,24 +203,26 @@ describe("an edit to a recipe that extends a preset", () => {
     expect(edited.end).toEqual([{ name: "close the ticket", when: "landed", close: true }]);
   });
 
-  it("still changes one line when nothing it changes is inherited", async () => {
+  it("still changes one line when nothing it changes is inherited — written whole, since `#371`", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
 
     const finished = await editExisting(FILE, state, on(recipe));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
-    expect(finished.changed).toEqual(["runtime.limits.turns"]);
+    // The whole ceiling, not the one key that moved (`wholeLimits`) — and
+    // nothing for the machine file, since nothing on it needs to change.
+    expect(finished.changed).toEqual(["runtime.limits"]);
+    expect(finished.machine).toBeNull();
     expect((await resolveRecipe(async () => finished.file, "main")).recipe.steps).toEqual(recipe.steps);
   });
 
   /**
-   * **What the page shows is what the machine reads** (#180). A limit changed
-   * on the page goes into `~/.lingtai/config.yml`, never into the recipe file —
-   * a recipe carrying `runtime.limits` is refused at the path it is read from.
-   * Read back the way a run reads it, the two files are the recipe the page
-   * describes.
+   * **The ceiling is the recipe's own since `#371`.** A limit changed on the
+   * page is written into the recipe file, whole — every key, not only the one
+   * that moved — and the machine file is left alone when it has nothing of
+   * its own to say and nothing stale to migrate.
    */
-  it("keeps the agent and the limits out of the recipe file, and puts them in the machine file", async () => {
+  it("writes a limit change into the recipe file, and leaves an unrelated machine file alone", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
     const machineBefore = "# mine\nprojects:\n  shop:\n    runtime:\n      agent: claude-code\n";
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
@@ -227,17 +230,59 @@ describe("an edit to a recipe that extends a preset", () => {
     const finished = await editExisting(FILE, state, on(recipe, machineBefore));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
     expect(finished.path).toBe(recipePath("shop", HOME));
-    expect(finished.file).not.toMatch(/^\s*(agent|limits|turns):/m);
-    expect(finished.machine).toContain("# mine");
+    expect(finished.file).toMatch(/runtime:\n\s*limits:/);
+    expect(finished.file).not.toMatch(/^\s*agent:/m);
+    // Nothing on this machine needed to change: the agent still agrees and
+    // there is no legacy `projects.shop.runtime.limits` to migrate away.
+    expect(finished.machine).toBeNull();
 
     const resolved = await resolveLocalRecipe("shop", {
       home: HOME,
       signedIn: async () => [],
       read: async (path) =>
-        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? finished.machine : null,
+        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? machineBefore : null,
     });
     expect(resolved.recipe.runtime.limits.turns).toBe(7);
     expect(resolved.recipe.steps).toEqual(recipe.steps);
+  });
+
+  /**
+   * **The window attempt 1 reproduced, closed.** Both live machines today
+   * state this project's ceiling under `projects.<p>.runtime.limits` with a
+   * recipe silent about it — the dials seed from that fallback — and a save
+   * that moves a dial in either direction must write, never refuse, and must
+   * migrate the stale block out from under it.
+   */
+  it("migrates the machine's old per-project ceiling on the first save, in either direction", async () => {
+    const { recipe: fileAlone } = await resolveRecipe(async () => FILE, "main");
+    const machineBefore =
+      "projects:\n  shop:\n    runtime:\n      agent: claude-code\n      limits: { turns: 150, wall: 1h, rounds: 3, restarts: 0 }\n";
+    const seeded = await resolveLocalRecipe("shop", {
+      home: HOME,
+      signedIn: async () => [],
+      read: async (path) => (path === recipePath("shop", HOME) ? FILE : path === machinePath(HOME) ? machineBefore : null),
+    });
+
+    for (const [key, value] of [
+      ["turns", 90] as const,
+      ["turns", 280] as const,
+      ["rounds", 2] as const,
+      ["rounds", 4] as const,
+    ]) {
+      const state = wizardReducer(updateState({ slug: "acme/shop", recipe: seeded.recipe }), { type: "limit", key, value });
+      const finished = await editExisting(FILE, state, { project: "shop", current: fileAlone, machine: machineBefore, home: HOME });
+      if (!finished.ok) throw new Error(`${key}=${value}: ${finished.refusals.join("; ")}`);
+      expect(finished.file).toContain(`${key}: ${value}`);
+      if (finished.machine !== null) expect(finished.machine).not.toContain("limits");
+
+      const resolved = await resolveLocalRecipe("shop", {
+        home: HOME,
+        signedIn: async () => [],
+        read: async (path) =>
+          path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? (finished.machine ?? machineBefore) : null,
+      });
+      expect(resolved.recipe.runtime.limits[key]).toBe(value);
+    }
   });
 });
 

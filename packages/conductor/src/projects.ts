@@ -139,8 +139,11 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime());
 
 /**
  * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,
- * with `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
+ * with `runtime.agent` from `~/.lingtai/config.yml`
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
+ * `runtime.limits` is the recipe's own ceiling, narrowed only by a machine-wide
+ * cap and falling back to a project's old per-project block where the recipe
+ * is silent (`#371`) — never supplied by the machine file outright any more.
  *
  * Read from the file every time rather than from anything stored: a snapshot
  * in Lingtai's database would be a second source of truth. No request is made

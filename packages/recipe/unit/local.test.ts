@@ -229,21 +229,95 @@ steps:
   });
 
   describe("runtime.limits", () => {
-    it("comes from the machine, key by key, and each says where from", async () => {
+    /**
+     * **The window attempt 1 was refused for** (`#371`'s ticket). On both live
+     * machines today a recipe is silent about limits and the machine file
+     * states them under `projects.<p>.runtime.limits` — the ceiling's old
+     * home — so that fallback must resolve exactly as it did before this
+     * ticket, and say which file it came from.
+     */
+    it("falls back to the project's old per-project block when the recipe is silent, and says so", async () => {
       const resolved = await resolveLocalRecipe(
         "app",
-        withMachine("runtime:\n  limits:\n    rounds: 3\nprojects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n"),
+        withMachine("projects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n        rounds: 3\n"),
       );
       expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3, wall: "1h" });
-      expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${HOME}/config.yml`);
-      expect(resolved.provenance?.["runtime.limits.wall"]).toContain("projects.app");
+      expect(resolved.provenance?.["runtime.limits.wall"]).toBe(`1h ← ${HOME}/config.yml (projects.app) — not yet in the recipe; the next wizard save moves it`);
+      expect(resolved.provenance?.["runtime.limits.rounds"]).toContain("projects.app");
       expect(resolved.provenance?.["runtime.limits.turns"]).toBe(`${LIMIT_DEFAULTS.turns} ← default`);
+    });
+
+    it("is the recipe's own where the recipe states it, over the old per-project block", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    rounds: 4\n`,
+        [machinePath(HOME)]: "projects:\n  app:\n    runtime:\n      limits:\n        rounds: 3\n",
+      });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.recipe.runtime.limits.rounds).toBe(4);
+      expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`4 ← ${recipePath("app", HOME)}`);
+      // The stale machine value is named rather than read as live (#371).
+      expect(resolved.provenance?.[`machine: projects.app.runtime.limits.rounds`]).toBe(
+        "3 ← not applied: the recipe states 4",
+      );
+    });
+
+    /**
+     * **Narrowing, never a widening default.** A machine-wide value above
+     * what the recipe (or its fallback, or the schema) already states must
+     * not apply — that is attempt 1's *applied-nowhere* refusal arriving
+     * again, under "accepted silently" rather than "refused".
+     */
+    it("a machine-wide ceiling narrows the recipe's, and never widens it", async () => {
+      const narrowed = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
+      expect(narrowed.recipe.runtime.limits.turns).toBe(10);
+      expect(narrowed.provenance?.["runtime.limits.turns"]).toBe(`10 ← ${HOME}/config.yml — narrowing default's ${LIMIT_DEFAULTS.turns}`);
+
+      const notWidened = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    rounds: 9\n"));
+      expect(notWidened.recipe.runtime.limits.rounds).toBe(LIMIT_DEFAULTS.rounds);
+      expect(notWidened.provenance?.["runtime.limits.rounds"]).toBe(`${LIMIT_DEFAULTS.rounds} ← default`);
+    });
+
+    /**
+     * **A narrowed resolve is not a different document from one that states
+     * the narrowed number outright** — `configHash` is of the resolved form
+     * (0047 §2), and the path a number took to get there is not part of it.
+     */
+    it("hashes the same as a recipe that states the narrowed number outright", async () => {
+      const narrowed = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
+      const read = files({ [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 10\n` });
+      const stated = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(narrowed.configHash).toBe(stated.configHash);
     });
 
     it("changes the hash, because a run under other limits is another run", async () => {
       const a = await resolveLocalRecipe("app", withMachine(undefined));
       const b = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
       expect(a.configHash).not.toBe(b.configHash);
+    });
+
+    it("may be written in the recipe itself now, and resolves to exactly that", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 75\n    wall: 30m\n`,
+      });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, turns: 75, wall: "30m" });
+      expect(resolved.provenance?.["runtime.limits.turns"]).toBe(`75 ← ${recipePath("app", HOME)}`);
+    });
+
+    it("refuses an unknown key under the recipe's limits, by name", async () => {
+      for (const bad of ["round: 3", "restart: 1", "turn: 50", "dollars: 5"]) {
+        const read = files({ [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    ${bad}\n` });
+        await expect(
+          resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
+        ).rejects.toThrow(RecipeInvalidError);
+      }
+    });
+
+    it("refuses a malformed value in the recipe's limits rather than comparing it", async () => {
+      const read = files({ [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: "150"\n` });
+      await expect(
+        resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
+      ).rejects.toThrow(/runtime\.limits\.turns/);
     });
 
     /**
@@ -390,6 +464,44 @@ steps:
     });
   });
 
+  /** `#371`: the ceiling's old home, moved out from under it on every save. */
+  describe("machineFiles migrates the legacy per-project limits block", () => {
+    const parsed = async (machine: string | undefined) =>
+      (await resolveLocalRecipe("app", withMachine(machine))).recipe;
+
+    it("deletes it, and the now-empty sections above it, even when only the agent changed", async () => {
+      const recipe = await parsed(undefined);
+      const machine = "projects:\n  app:\n    runtime:\n      limits: { turns: 250, wall: 1h, rounds: 3, restarts: 2 }\n";
+      const split = machineFiles({ file: RECIPE, recipe, project: "app", machine, home: HOME });
+      if (!split.ok || split.machine === null) throw new Error("expected a migrated machine file");
+      expect(split.machine).not.toContain("limits");
+      // Nothing else was in that section, so the agent this project resolved
+      // to is written back in its place rather than leaving an empty husk.
+      expect(split.machine).toContain("claude-code");
+    });
+
+    it("keeps the agent beside it when the block held both", async () => {
+      const recipe = await parsed(undefined);
+      const machine =
+        "projects:\n  app:\n    runtime:\n      agent: claude-code\n      limits: { turns: 250 }\n";
+      const split = machineFiles({ file: RECIPE, recipe, project: "app", machine, home: HOME });
+      if (!split.ok || split.machine === null) throw new Error("expected a migrated machine file");
+      expect(split.machine).not.toContain("limits");
+      expect(split.machine).toContain("claude-code");
+    });
+
+    it("compares only the agent, never the whole runtime block — a stale limits block agrees", async () => {
+      const recipe = await parsed(undefined);
+      const machine = "projects:\n  app:\n    runtime:\n      agent: claude-code\n      limits: { turns: 250 }\n";
+      const split = machineFiles({ file: RECIPE, recipe, project: "app", machine, home: HOME });
+      // Agent agrees (both claude-code), so this is a migration-only write,
+      // not a disagreement refusal — the old `isDeepStrictEqual` on the whole
+      // block would have refused this, comparing `limits` against nothing.
+      if (!split.ok) throw new Error("expected ok, not a refusal");
+      expect(split.machine).not.toContain("limits");
+    });
+  });
+
   describe("what belongs in the other file is refused, not dropped", () => {
     it("a steps key in the machine file is a parse error that says where a pass is configured", async () => {
       const resolving = resolveLocalRecipe("app", withMachine("steps:\n  proposed: []\n"));
@@ -430,7 +542,7 @@ steps:
       ).rejects.toThrow(MachineConfigInvalidError);
     });
 
-    it("runtime.agent or runtime.limits in the recipe names the machine file", async () => {
+    it("runtime.agent in the recipe names the machine file — runtime.limits is the recipe's own now (#371)", async () => {
       const read = files({
         [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n  limits:\n    turns: 5\n`,
       });
@@ -438,7 +550,7 @@ steps:
       await expect(resolving).rejects.toThrow(RecipeInvalidError);
       await expect(
         resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
-      ).rejects.toThrow(/runtime\.limits: moved to this machine.*config\.yml/);
+      ).rejects.toThrow(/runtime\.agent: moved to this machine.*config\.yml/);
     });
   });
 });

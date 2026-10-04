@@ -270,9 +270,9 @@ export function nothingChecks(base: string): string {
  * written, where, and what is still to happen.
  *
  * **Where is this machine, and never the repository** (0046 §3). The recipe is
- * the file the button wrote; the agent and limits live beside every other
- * project's in the machine file; and the repository is named only to say that
- * nothing went to it.
+ * the file the button wrote, with its own ceiling in it (`#371`); the agent
+ * lives beside every other project's in the machine file; and the repository
+ * is named only to say that nothing went to it.
  *
  * **What is left is `Recheck`, and never "install the App".** The button only
  * gets here through a client built on the App's installation on that
@@ -284,8 +284,8 @@ export function nothingChecks(base: string): string {
 export function onboardingWritten(slug: string, path: string): string {
   const project = slug.slice(slug.lastIndexOf("/") + 1);
   return (
-    `Written on this machine: the recipe is ${path}, and the agent and limits are ` +
-    `projects.${project}.runtime in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
+    `Written on this machine: the recipe is ${path}, with its ceiling in it, and the agent is ` +
+    `projects.${project}.runtime.agent in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
     "Onboarding is recorded — press Recheck on the board's pending card to register it: it " +
     `checks the GitHub App's permissions on ${slug} and reads that recipe.`
   );
@@ -819,6 +819,9 @@ const PATHS: readonly (readonly string[])[] = [
  * **Editing one field changes one field.** A limit is its own path rather than
  * the block, so moving `rounds` touches the `rounds:` line and leaves the
  * comment above `limits:` and the other three dials as they were written.
+ * `editExisting` collapses the four limit paths back into one whole-block
+ * change where it must (`wholeLimits`); this function still reports each one
+ * on its own.
  */
 export function changesFrom(before: Recipe, after: Recipe): RecipeChange[] {
   return PATHS.flatMap((path) => {
@@ -854,6 +857,22 @@ export function saidFor(state: WizardState): Record<string, string> {
 export function wholeSteps(changes: readonly RecipeChange[], after: Recipe): RecipeChange[] {
   const rest = changes.filter((c) => c.path[0] !== "steps");
   return rest.length === changes.length ? [...changes] : [...rest, { path: ["steps"], value: after.steps }];
+}
+
+/**
+ * `changes` with every `runtime.limits.*` entry replaced by one change to the
+ * whole block — the ceiling, the recipe's own since `#371`.
+ *
+ * **One path pins all four**, the way `wholeSteps` pins `steps`: a dial left
+ * untouched still gets written, explicit, so a later change to a schema
+ * default does not move a number the page showed and nobody edited. The
+ * caller decides *when* — a dial that moved, or the machine's legacy
+ * per-project block still needing to migrate out from under it — and always
+ * writes the whole block rather than the few keys that happened to differ.
+ */
+export function wholeLimits(changes: readonly RecipeChange[], after: Recipe): RecipeChange[] {
+  const rest = changes.filter((c) => !(c.path[0] === "runtime" && c.path[1] === "limits"));
+  return [...rest, { path: ["runtime", "limits"], value: ceilingOf(after) }];
 }
 
 function at(value: unknown, path: readonly string[]): unknown {

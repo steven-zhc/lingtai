@@ -10,9 +10,10 @@ step that uses it, and every field is validated when the recipe resolves, before
 anything is claimed; the one templated field is judged again when it expands.
 The canonical recipe a run was given is appended to the log beside its hash, as
 a record nothing reads back. `~/.lingtai/config.yml` is the machine's file: which
-store holds the log and where the board listens, plus the run ceiling and
-default runtime that have not yet moved into the recipe. The assignee rule
-moved in (`#373`).
+store holds the log and where the board listens, plus the default runtime that
+has not yet moved into the recipe. The assignee rule moved in (`#373`), and the
+run ceiling moved in (`#371`): the machine file keeps only a narrowing cap on
+it, and this project's old per-project number until the first wizard save.
 
 ## Context
 
@@ -94,19 +95,31 @@ in the source.
 7. **The machine file, `~/.lingtai/config.yml`, holds the machine's facts.**
    `database.store` and `database.url` (which log; see [0100](0100-one-append-only-log.md)) and `board.port`
    are read by `packages/env`. `packages/recipe/src/local.ts` reads
-   `runtime.agent` and `runtime.limits`, either machine-wide or under
-   `projects.<name>.runtime`, and merges them into the resolved recipe.
-   A recipe that writes those two keys under `runtime:` is refused, naming the
-   machine file. A machine file that writes `steps:` is refused, naming the
-   recipe — and, since `#373`, so is one that writes `runtime.assignee`:
-   whose tickets a project takes is the recipe's (`queue.assignee`, or the v1
-   `runtime.assignee` on the recipe itself), and the machine file is refused by
-   name rather than silently dropping a key it no longer reads. When no file
-   names a runtime, the only runtime signed in is used. If several are signed
-   in, or none, Lingtai refuses rather than picking one (`resolveAgent`).
-   Whether a runtime is installed and signed in is checked, never written
-   down. Every `agent:` the recipe names must be signed in on this machine, or
-   the pass is refused before the claim (`agentRefusal`).
+   `runtime.agent`, either machine-wide or under `projects.<name>.runtime`,
+   and merges it into the resolved recipe. A recipe that writes `runtime.agent`
+   is refused, naming the machine file. A machine file that writes `steps:` is
+   refused, naming the recipe — and, since `#373`, so is one that writes
+   `runtime.assignee`: whose tickets a project takes is the recipe's
+   (`queue.assignee`, or the v1 `runtime.assignee` on the recipe itself), and
+   the machine file is refused by name rather than silently dropping a key it
+   no longer reads. When no file names a runtime, the only runtime signed in
+   is used. If several are signed in, or none, Lingtai refuses rather than
+   picking one (`resolveAgent`). Whether a runtime is installed and signed in
+   is checked, never written down. Every `agent:` the recipe names must be
+   signed in on this machine, or the pass is refused before the claim
+   (`agentRefusal`).
+
+   **`runtime.limits` is the recipe's own since `#371`, and the machine file's
+   same-named block now means two different things by where it is written.**
+   `projects.<name>.runtime.limits` is the ceiling's old home (`#180`–`#371`):
+   `local.ts` reads it only as a fallback, per key, where the recipe is
+   silent, and the first wizard save deletes it after moving the number into
+   the recipe. Machine-wide `runtime.limits` is what this machine will spend —
+   a metered account, a laptop on battery — and it only *narrows* the recipe's
+   value, per key, never widens it. A recipe silent about limits with a
+   per-project block in the machine file resolves to exactly what it resolved
+   to before `#371`, so landing this changes nothing until a save moves the
+   numbers across.
 
 8. **The backoff is `queue:`'s `backoff`: a positive duration, `1h` by default,
    and flat.** After a failed attempt, the ticket stays out of the queue until
@@ -190,17 +203,19 @@ in the source.
 
 ## Not built yet
 
-- **Moving the run ceiling and default runtime out of `~/.lingtai/config.yml`
-  and into the recipe is accepted and not done.** The intended end state is
-  that `config.yml` holds only the machine's own facts (store, board port).
-  `runtime.agent` and `runtime.limits` would be written in the recipe
-  (`agent:` on each step and the ceiling), the machine file would refuse those
-  keys by name, and `local.ts` would stop merging them in. Today the reverse
-  holds: the machine file supplies them, and the recipe refuses them under
-  `runtime:`. A per-step `agent:` is already accepted in the recipe. The
-  assignee rule made this move already (`#373`): `queue:`'s `assignee`, or
-  the v1 `runtime.assignee`, is the recipe's, and the machine file refuses
-  both spellings by name.
+- **Moving the default runtime out of `~/.lingtai/config.yml` and into the
+  recipe is accepted and not done.** The intended end state is that
+  `config.yml` holds only the machine's own facts (store, board port).
+  `runtime.agent` would be written in the recipe (`agent:` on each step), the
+  machine file would refuse the key by name, and `local.ts` would stop
+  merging it in. Today the reverse holds: the machine file supplies it, and
+  the recipe refuses it under `runtime:`. A per-step `agent:` is already
+  accepted in the recipe. The assignee rule made this move already (`#373`):
+  `queue:`'s `assignee`, or the v1 `runtime.assignee`, is the recipe's, and
+  the machine file refuses both spellings by name. The run ceiling made the
+  same move in `#371`: `runtime.limits` is the recipe's, and the machine file
+  keeps only a narrowing cap and this project's old per-project fallback,
+  gone after the first save.
 
 ---
 *Replaces archived 0005, 0028, 0029, 0045, 0046, 0047, 0061, 0063, 0071 in [decisions-archive](../decisions-archive/).*

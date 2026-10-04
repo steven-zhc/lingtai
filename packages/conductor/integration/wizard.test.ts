@@ -357,10 +357,11 @@ describe("the recipe the button writes", () => {
 
   /**
    * **The file `Recheck` reads, and nothing in the repository** (#180). The
-   * press writes `~/.lingtai/<project>/recipe.yml` and the page's agent and
-   * limits into the machine file, and `resolveLocalRecipe` — what `lingtai add`
-   * calls — reads back exactly the recipe the page built. So a pending card
-   * has a recipe to find, and no pull request exists to wait for.
+   * press writes `~/.lingtai/<project>/recipe.yml`, with its own ceiling in it
+   * (`#371`), and the page's agent into the machine file; `resolveLocalRecipe`
+   * — what `lingtai add` calls — reads back exactly the recipe the page built.
+   * So a pending card has a recipe to find, and no pull request exists to wait
+   * for.
    */
   it("writes the machine's recipe, which resolves to the recipe the page built", async () => {
     const project = fresh();
@@ -374,7 +375,10 @@ describe("the recipe the button writes", () => {
 
     const written = await readFile(recipePath(project, home), "utf8");
     expect(written).not.toMatch(/^\s+agent:/m);
-    expect(written).not.toMatch(/^\s+limits:/m);
+    // The ceiling the page showed, bound into the file whether or not it
+    // differs from the schema default (`#371`).
+    expect(written).toMatch(/^\s+limits:/m);
+    expect(written).toContain("turns: 300");
     const resolved = await resolveLocalRecipe(project, {
       home,
       signedIn: async () => {

@@ -183,8 +183,8 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
             {finished.machine === null ? null : (
               <>
                 <p className="note">
-                  The agent and the limits are this machine&apos;s, not the recipe&apos;s — <code>~/.lingtai/config.yml</code>{" "}
-                  with this change:
+                  The agent is this machine&apos;s, not the recipe&apos;s — <code>~/.lingtai/config.yml</code> with this
+                  change. The ceiling is the recipe&apos;s now; any stale copy of it here is being removed, not moved.
                 </p>
                 <pre className="wz-file">{finished.machine}</pre>
               </>

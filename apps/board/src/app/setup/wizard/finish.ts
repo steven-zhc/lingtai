@@ -10,10 +10,11 @@
  *
  * **Onboarding ends by writing, on this machine** (0046 §3, #180). A new recipe
  * goes through `startOnboarding` — parsed by the system's own parser on the
- * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's agent and
- * limits under `projects.<project>.runtime` in `~/.lingtai/config.yml`, and
- * `ProjectOnboardingStarted` appended — so the board draws a pending card whose
- * `Recheck` reads exactly that file. Nothing is written to the repository.
+ * bytes, written to `~/.lingtai/<project>/recipe.yml` with its own ceiling in
+ * it (`#371`) and the page's agent under `projects.<project>.runtime` in
+ * `~/.lingtai/config.yml`, and `ProjectOnboardingStarted` appended — so the
+ * board draws a pending card whose `Recheck` reads exactly that file. Nothing
+ * is written to the repository.
  *
  * An existing recipe — the machine's, never a copy in the repository — goes
  * through `editExisting`, which changes the lines of the fields that moved and
@@ -24,20 +25,21 @@ import {
   changesFrom,
   finishRefusals,
   saidFor,
+  wholeLimits,
   wholeSteps,
   type WizardState,
 } from "@lingtai/conductor/wizard-page";
 import { startOnboarding } from "@lingtai/conductor/wizard";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, ceilingOf, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, editRecipe, hashRecipe, hasLegacyProjectLimits, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
 export type Finished =
   | {
       ok: true;
-      /** `path`'s text — never with `runtime.agent` or `runtime.limits` in it. */
+      /** `path`'s text — never with `runtime.agent` in it; `runtime.limits` is in it since `#371`. */
       file: string;
       path: string;
       /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
@@ -99,10 +101,18 @@ export async function finishWizard(input: {
  * and must describe the recipe the page does; where it does not, the gates are
  * written whole, and where that still does not, nothing is offered.
  *
- * **`runtime.agent` and `runtime.limits` are never written into it** (#180): a
- * recipe carrying either is refused at the path it is read from. They are
- * compared with `current` — what the machine resolved them to — and a change to
- * them is the machine file with `projects.<project>.runtime` set, beside it.
+ * **`runtime.agent` is never written into it** (#180): a recipe carrying it is
+ * refused at the path it is read from. It is compared with `current` — what
+ * the machine resolved it to — and a change to it is the machine file with
+ * `projects.<project>.runtime.agent` set, beside it.
+ *
+ * **`runtime.limits` is the opposite since `#371`: it is written here, and the
+ * machine file only loses its stale copy of it.** The ceiling is written
+ * whole — every key, not only the ones that moved — whenever a dial moved or
+ * the machine file still carries `projects.<project>.runtime.limits`: a save
+ * nobody touched a dial on still migrates that block out from under it, and a
+ * number left unwritten would otherwise drift the day a schema default
+ * changes under a file nobody edited.
  */
 export async function editExisting(
   existing: string,
@@ -112,16 +122,22 @@ export async function editExisting(
   const ref = state.draft.base;
   const { recipe } = await resolveRecipe(async () => existing, ref);
   const drafted = Recipe.parse(applyDraft(at.current, state));
-  // The file's half: everything the page changed but the machine's two fields.
+  // The file's half: everything the page changed, including the ceiling —
+  // `runtime.limits` is the recipe's own since `#371`. `agent` stays pinned to
+  // what the file's own bytes already say (the machine's, until a save moves
+  // it), so it is never offered as a change to the file.
   const after = Recipe.parse({
     ...drafted,
-    // The machine file's ceiling, not a step's reduction from it (`#314`).
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: ceilingOf(recipe) },
+    runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
   });
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
 
   let changes = changesFrom(recipe, after);
+  const legacy = hasLegacyProjectLimits(at.machine, at.project);
+  if (legacy || changes.some((c) => c.path[0] === "runtime" && c.path[1] === "limits")) {
+    changes = wholeLimits(changes, after);
+  }
   let file = editRecipe(existing, changes);
   if (!(await describes(file))) {
     changes = wholeSteps(changes, after);
@@ -137,9 +153,12 @@ export async function editExisting(
     }
   }
 
-  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime");
+  // `limits` excluded: it is the recipe file's own change now, handled above,
+  // and reaches `machineFiles` only through `legacy`'s migration — never
+  // because a dial moved with nothing on this machine left to migrate.
+  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime" && c.path[1] !== "limits");
   let machine: string | null = null;
-  if (runtime.length > 0) {
+  if (runtime.length > 0 || legacy) {
     const split = machineFiles({
       file,
       recipe: drafted,

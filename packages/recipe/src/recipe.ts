@@ -1,8 +1,15 @@
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
- * `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
+ * `runtime.agent` from `~/.lingtai/config.yml`
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  * `local.ts` reads it; this file is its schema.
+ *
+ * **`runtime.limits` is the recipe's own since `#371`.** More rounds does not
+ * lower quality — the steps decide that, and it is a fact about this
+ * repository's work rather than about the machine running it. `local.ts`
+ * still lets the machine file's own `runtime.limits` *narrow* it, and still
+ * falls back to a project's old `projects.<p>.runtime.limits` where the
+ * recipe says nothing — the ceiling's home before this ticket moved it.
  *
  * **It is not in the managed repository any more.** A `.lingtai/config.yaml`
  * committed there is an ordinary file: nothing reads it to run anything, and
@@ -2967,8 +2974,14 @@ export const Recipe = z.object({
      * apart like that, and `passCeiling` is the one function that multiplies
      * them, so nothing else writes the product down.
      */
+    // `strictObject` since `#371`: the recipe may now write this block itself,
+    // and a misspelled key (`round`, `restart`, `turn`, `dollars`) must be
+    // refused by name rather than silently dropped — the same reason every
+    // other plugin's fields are strict (0061 §9). Nothing could have been
+    // relying on an unknown key here before this ticket: a recipe writing
+    // `runtime.limits` at all was refused (`local.ts`).
     limits: z
-      .object({
+      .strictObject({
         turns: z.number().int().positive().default(300),
         /**
          * A duration, checked here for the reason `source.backoff` is checked
