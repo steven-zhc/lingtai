@@ -1,6 +1,7 @@
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
- * `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
+ * `runtime.agent` from `~/.lingtai/config.yml` — and `runtime.limits`, the
+ * recipe's own since `#371`, narrowed by that file where it asks for less
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  * `local.ts` reads it; this file is its schema.
  *
@@ -3076,7 +3077,8 @@ export const Recipe = z.object({
      *
      * **The machine's, never the recipe file's** until it does:
      * `resolveLocalRecipe` puts it here from `~/.lingtai/config.yml` and
-     * refuses it written in the recipe, as it does `agent` and `limits`.
+     * refuses it written in the recipe, as it does `agent` — `limits` no
+     * longer keeps it company, since `#371` made the ceiling the recipe's own.
      *
      * **Optional, and absent is `both`** — every ticket, assigned or not, which
      * is how the queue behaved before an assignee was read and what somebody

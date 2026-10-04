@@ -1660,9 +1660,10 @@ export function limitsRow(
   // `runtime.limits.usd` declared has nothing for Codex to fail at holding.
   const declaredUsd = ceilingOf(recipe).usd;
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
-    // The ceiling beside its provenance: this row is about what
-    // `~/.lingtai/config.yml` says and whether the runtime applies it, and a
-    // step's reduction is neither (`#314`).
+    // The ceiling beside its provenance: this row is about the recipe's
+    // ceiling, as narrowed by `~/.lingtai/config.yml` where that file asks
+    // for less (`#371`), and whether the runtime applies it — a step's
+    // reduction is neither (`#314`).
     turns: String(ceilingOf(recipe).turns),
     wall: ceilingOf(recipe).wall,
     usd: declaredUsd === undefined ? "none declared" : `$${declaredUsd}`,

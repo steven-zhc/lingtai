@@ -30,7 +30,7 @@ import {
 import { startOnboarding } from "@lingtai/conductor/wizard";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, ceilingOf, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
@@ -99,10 +99,13 @@ export async function finishWizard(input: {
  * and must describe the recipe the page does; where it does not, the gates are
  * written whole, and where that still does not, nothing is offered.
  *
- * **`runtime.agent` and `runtime.limits` are never written into it** (#180): a
- * recipe carrying either is refused at the path it is read from. They are
- * compared with `current` — what the machine resolved them to — and a change to
- * them is the machine file with `projects.<project>.runtime` set, beside it.
+ * **`runtime.agent` is never written into it** (#180): a recipe carrying it is
+ * refused at the path it is read from. It is compared with `current` — what
+ * the machine resolved it to — and a change to it is the machine file with
+ * `projects.<project>.runtime` set, beside it. **`runtime.limits` is the
+ * opposite since `#371`: it is written into the file**, because the recipe
+ * states its own ceiling now, and only an edit to `agent` (or `assignee`,
+ * which this page does not show) still reaches the machine file.
  */
 export async function editExisting(
   existing: string,
@@ -112,11 +115,10 @@ export async function editExisting(
   const ref = state.draft.base;
   const { recipe } = await resolveRecipe(async () => existing, ref);
   const drafted = Recipe.parse(applyDraft(at.current, state));
-  // The file's half: everything the page changed but the machine's two fields.
+  // The file's half: everything the page changed but the machine's own agent.
   const after = Recipe.parse({
     ...drafted,
-    // The machine file's ceiling, not a step's reduction from it (`#314`).
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: ceilingOf(recipe) },
+    runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
   });
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
@@ -137,7 +139,10 @@ export async function editExisting(
     }
   }
 
-  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime");
+  // Not `limits`: that diff is already in `changes` above, written into the
+  // file text (`#371`) — only `agent` (and `assignee`, off this page) still
+  // belong to the machine file.
+  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime" && c.path[1] !== "limits");
   let machine: string | null = null;
   if (runtime.length > 0) {
     const split = machineFiles({

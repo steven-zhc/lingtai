@@ -286,11 +286,13 @@ async function readIfThere(path: string): Promise<string | null> {
  * onboarding started.
  *
  * **Nothing is written to the repository** (0046 §3, #180). The recipe is
- * `~/.lingtai/<project>/recipe.yml` and the agent and limits the page chose go
- * under `projects.<project>.runtime` in `~/.lingtai/config.yml` — the files
- * `Recheck`'s `lingtai add` reads — so a pending card is finished by pressing
- * `Recheck`, with no pull request for anybody to merge first. It used to open
- * one carrying `.lingtai/config.yaml`, which nothing reads any more.
+ * `~/.lingtai/<project>/recipe.yml`, with the limits the page chose written
+ * into it — the recipe states its own ceiling since `#371` — and the agent the
+ * page chose goes under `projects.<project>.runtime` in `~/.lingtai/config.yml`
+ * — the files `Recheck`'s `lingtai add` reads — so a pending card is finished
+ * by pressing `Recheck`, with no pull request for anybody to merge first. It
+ * used to open one carrying `.lingtai/config.yaml`, which nothing reads any
+ * more.
  *
  * **The only write the wizard makes of its own accord** — `Hold all` beside it
  * is the operator's — and everything that can refuse, refuses before anything

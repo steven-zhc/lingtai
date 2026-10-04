@@ -213,13 +213,13 @@ describe("an edit to a recipe that extends a preset", () => {
   });
 
   /**
-   * **What the page shows is what the machine reads** (#180). A limit changed
-   * on the page goes into `~/.lingtai/config.yml`, never into the recipe file —
-   * a recipe carrying `runtime.limits` is refused at the path it is read from.
-   * Read back the way a run reads it, the two files are the recipe the page
-   * describes.
+   * **Since `#371`, the recipe states its own ceiling.** A limit changed on
+   * the page is written into the recipe file now — only `runtime.agent` (and
+   * `runtime.assignee`, which this page does not show) still belongs in
+   * `~/.lingtai/config.yml`. Read back the way a run reads it, the two files
+   * are the recipe the page describes.
    */
-  it("keeps the agent and the limits out of the recipe file, and puts them in the machine file", async () => {
+  it("writes a changed limit into the recipe file, and leaves the machine file alone", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
     const machineBefore = "# mine\nprojects:\n  shop:\n    runtime:\n      agent: claude-code\n";
     const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
@@ -227,14 +227,16 @@ describe("an edit to a recipe that extends a preset", () => {
     const finished = await editExisting(FILE, state, on(recipe, machineBefore));
     if (!finished.ok) throw new Error(finished.refusals.join("; "));
     expect(finished.path).toBe(recipePath("shop", HOME));
-    expect(finished.file).not.toMatch(/^\s*(agent|limits|turns):/m);
-    expect(finished.machine).toContain("# mine");
+    expect(finished.file).toMatch(/runtime:\n\s+limits:\n\s+turns: 7/);
+    // Nothing about the agent or the assignee changed, so the machine file is
+    // left exactly as it was — a limit's edit does not touch it any more.
+    expect(finished.machine).toBeNull();
 
     const resolved = await resolveLocalRecipe("shop", {
       home: HOME,
       signedIn: async () => [],
       read: async (path) =>
-        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? finished.machine : null,
+        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? machineBefore : null,
     });
     expect(resolved.recipe.runtime.limits.turns).toBe(7);
     expect(resolved.recipe.steps).toEqual(recipe.steps);

@@ -4,16 +4,23 @@
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3).
  *
  * **The repository holds facts about itself; everything else is mine.** So the
- * recipe keeps `repo`, `source`, `env`, `steps` and `subscribers` — what this
- * repository needs and how I want its work judged — and the two fields that
- * were facts about a machine sitting in a file about a project move out of it:
+ * recipe keeps `repo`, `source`, `env`, `steps`, `subscribers` and, since
+ * `#371`, `runtime.limits` — what this repository needs, how I want its work
+ * judged, and what a pass of it may spend. One field still moves out of it:
  *
  * - `runtime.agent`, because which CLI is installed and signed in is a fact
  *   about this machine. **It moves; it does not go** — 0007 supports two
  *   runtimes, both can be signed in at once, and a choice nobody wrote down is
  *   the default this is here to refuse.
- * - `runtime.limits`, because more rounds does not lower quality — the steps
- *   decide that. It costs more money, and that is the spender's call.
+ *
+ * **`runtime.limits` is the recipe's ceiling, and the machine file may only
+ * lower it** (`#371`). What a pass of this repository may spend is a fact
+ * about the repository; what this machine is willing to spend on it *today* —
+ * a metered account, a laptop on battery — is a fact about the machine, and
+ * that is the one thing left for `config.yml` to say here. `resolveLocalRecipe`
+ * resolves the two per key: the smaller one applies, equal is the recipe's, and
+ * a machine value *larger* than the recipe's is refused by name rather than
+ * silently ignored.
  *
  * Nothing here makes a request. The file is read on every resolve, as the
  * branch was, so an edit reaches the next run and a daemon holds nothing stale.
@@ -31,9 +38,9 @@ import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
-import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
+import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, parseDuration, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from "./settings.ts";
+import { backoffOf, baseOf, excludeOf, kindsOf } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -45,7 +52,12 @@ export function machinePath(home: string = stateDir()): string {
   return join(home, "config.yml");
 }
 
-/** The limits a machine may set. Every key optional: an absent one is the default, and says so. */
+/**
+ * The limits a machine may set. Every key optional: an absent one is the
+ * default, and says so — unless the recipe states a ceiling of its own, in
+ * which case absent here means the recipe's number applies unchanged, and one
+ * present may only be smaller (`#371`).
+ */
 const MachineLimits = z.strictObject({
   turns: z.number().int().positive().optional(),
   /**
@@ -319,6 +331,26 @@ async function readIfThere(path: string): Promise<string | null> {
 }
 
 /**
+ * A limit's value, as a number comparable across keys — `wall`'s duration in
+ * milliseconds, everything else as itself — or `null` when the value does not
+ * pass the check `Recipe`'s own schema would run on it.
+ *
+ * Only used to compare a recipe's ceiling against the machine's narrowing: a
+ * malformed recipe value is applied exactly as written instead of being
+ * compared, so `Recipe.safeParse` is what refuses it, by key name (#218) — see
+ * `MachineLimits`'s own comment on `wall` for why the same care is needed here.
+ */
+function limitMagnitude(key: string, value: unknown): number | null {
+  if (key === "wall") return typeof value === "string" && positiveDuration(value) ? parseDuration(value) : null;
+  if (typeof value !== "number") return null;
+  if (key === "usd") return value > 0 ? value : null;
+  if (!Number.isInteger(value)) return null;
+  if (key === "turns") return value > 0 ? value : null;
+  if (key === "rounds" || key === "restarts") return value >= 0 ? value : null;
+  return null;
+}
+
+/**
  * The recipe governing this project's next run, from this machine.
  *
  * Throws, like `resolveRecipe`, for the same reason: every caller's correct
@@ -357,22 +389,11 @@ export async function resolveLocalRecipe(
   const provenance: Record<string, string> = {
     "runtime.agent": `${agent.agent}${PROVENANCE_ARROW}${agent.from}`,
   };
-  const limits: Record<string, unknown> = {};
-  for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
-    const value = scoped?.limits?.[key] ?? shared?.limits?.[key];
-    const from =
-      scoped?.limits?.[key] !== undefined ? scopedAt : shared?.limits?.[key] !== undefined ? machineFile : "default";
-    limits[key] = value ?? LIMIT_DEFAULTS[key];
-    provenance[`runtime.limits.${key}`] = `${limits[key]}${PROVENANCE_ARROW}${from}`;
-  }
-  // `usd` has no entry in `LIMIT_DEFAULTS` — it has no default to fall back to
-  // (recipe.ts), so the loop above never sees it as a key. Read explicitly, and
-  // absent reads as "(none)", never as a vanished key.
-  const usd = scoped?.limits?.usd ?? shared?.limits?.usd;
-  const usdFrom =
-    scoped?.limits?.usd !== undefined ? scopedAt : shared?.limits?.usd !== undefined ? machineFile : "default";
-  if (usd !== undefined) limits.usd = usd;
-  provenance["runtime.limits.usd"] = `${usd ?? "(none)"}${PROVENANCE_ARROW}${usd === undefined ? "default" : usdFrom}`;
+  // Filled inside `resolveSource`'s callback below, the only place that can
+  // see what the recipe itself wrote under `runtime.limits` (#371) — a missing
+  // key and one set to the schema's own default look the same once `Recipe`
+  // has parsed it, for the reason `wrote` a few lines down exists.
+  let limits: Record<string, unknown> = {};
 
   // Absent unless the machine said something, so a machine that has not heard
   // of assignees resolves the recipe — and its hash — exactly as before.
@@ -412,7 +433,7 @@ export async function resolveLocalRecipe(
       runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {};
-    for (const key of ["agent", "limits", "assignee"]) {
+    for (const key of ["agent", "assignee"]) {
       if (key in own) {
         refused.push(
           `runtime.${key}: moved to this machine (0046 §3) — write it in ${machineFile}, ` +
@@ -421,6 +442,78 @@ export async function resolveLocalRecipe(
       }
     }
     if (refused.length > 0) return refused;
+
+    const ownLimits =
+      own["limits"] !== null && typeof own["limits"] === "object" && !Array.isArray(own["limits"])
+        ? (own["limits"] as Record<string, unknown>)
+        : {};
+    const merged: Record<string, unknown> = {};
+    for (const key of [...Object.keys(LIMIT_DEFAULTS), "usd"] as (keyof typeof LIMIT_DEFAULTS | "usd")[]) {
+      const recipeWrote = ownLimits[key];
+      const machineValue = scoped?.limits?.[key] ?? shared?.limits?.[key];
+      const machineFrom =
+        scoped?.limits?.[key] !== undefined ? scopedAt : shared?.limits?.[key] !== undefined ? machineFile : null;
+
+      if (recipeWrote === undefined) {
+        // The recipe sets no ceiling here, so the machine's value applies
+        // unchecked. Comparing it against `LIMIT_DEFAULTS` instead would
+        // refuse every machine file that today narrows past the default the
+        // moment any recipe anywhere starts writing this key (#371) — no
+        // recipe can yet, so every key resolves through this branch exactly
+        // as it did before, and `configHash` does not move.
+        if (machineValue !== undefined) {
+          merged[key] = machineValue;
+          provenance[`runtime.limits.${key}`] = `${machineValue}${PROVENANCE_ARROW}${machineFrom}`;
+        } else if (key in LIMIT_DEFAULTS) {
+          merged[key] = (LIMIT_DEFAULTS as Record<string, unknown>)[key];
+          provenance[`runtime.limits.${key}`] = `${merged[key]}${PROVENANCE_ARROW}default`;
+        } else {
+          // `usd` stays out of `merged` entirely — absent means "no dollar
+          // ceiling", never a vanished key (recipe.ts).
+          provenance[`runtime.limits.${key}`] = `(none)${PROVENANCE_ARROW}default`;
+        }
+        continue;
+      }
+
+      const recipeMagnitude = limitMagnitude(key, recipeWrote);
+      if (recipeMagnitude === null) {
+        // Malformed — applied exactly as the recipe wrote it, so
+        // `Recipe.safeParse` is what refuses it, by key name (#218).
+        merged[key] = recipeWrote;
+        continue;
+      }
+      if (machineValue === undefined) {
+        merged[key] = recipeWrote;
+        provenance[`runtime.limits.${key}`] = `${recipeWrote}${PROVENANCE_ARROW}${path}`;
+        continue;
+      }
+      // Already validated by `MachineLimits` when the machine file was
+      // parsed, above — never malformed here.
+      const machineMagnitude = limitMagnitude(key, machineValue)!;
+      if (machineMagnitude > recipeMagnitude) {
+        const keyPath =
+          scoped?.limits?.[key] !== undefined
+            ? `projects.${project}.runtime.limits.${key}`
+            : `runtime.limits.${key}`;
+        throw new MachineConfigInvalidError(machineFile, [
+          `${keyPath} is ${machineValue} in ${machineFile}, above ${path}'s ${recipeWrote} — the recipe ` +
+            "states the ceiling and this file may only lower it. Nothing was applied",
+        ]);
+      }
+      if (machineMagnitude < recipeMagnitude) {
+        merged[key] = machineValue;
+        provenance[`runtime.limits.${key}`] =
+          `${machineValue}${PROVENANCE_ARROW}${machineFrom}, narrowing ${path}'s ${recipeWrote}`;
+      } else {
+        // Equal is not narrowing (recipe.ts's own rule for a step, one level
+        // down): the recipe's value applies, so a migration that copies the
+        // numbers across and leaves the machine file in place changes nothing.
+        merged[key] = recipeWrote;
+        provenance[`runtime.limits.${key}`] = `${recipeWrote}${PROVENANCE_ARROW}${path}`;
+      }
+    }
+    limits = merged;
+
     raw["runtime"] = { ...own, agent: agent.agent, limits, ...(assignee ? { assignee } : {}) };
     return [];
   });
@@ -464,8 +557,9 @@ export type MachineFiles =
   | {
       ok: true;
       /**
-       * `recipePath(project)`'s text: the recipe without `runtime.agent`,
-       * `runtime.limits` and `runtime.assignee`, each of which is carried to `machine`.
+       * `recipePath(project)`'s text: the recipe without `runtime.agent` and
+       * `runtime.assignee`, each of which is carried to `machine`.
+       * `runtime.limits` stays, since `#371` — it is the recipe's ceiling.
        */
       recipe: string;
       /** `machinePath()`'s new text, or null when it already says this and needs no write. */
@@ -474,18 +568,24 @@ export type MachineFiles =
   | { ok: false; refusal: string };
 
 /**
- * A whole recipe — the wizard's, with its agent and limits in it — split into
- * the files `resolveLocalRecipe` reads (0046 §3, #180).
+ * A whole recipe — the wizard's, with its agent in it — split into the files
+ * `resolveLocalRecipe` reads (0046 §3, #180).
  *
- * The agent and the limits the page chose are not dropped: they go under
+ * The agent the page chose is not dropped: it goes under
  * `projects.<project>.runtime` in the machine file, which is where a choice for
  * one repository lives, and every other byte of that file is kept. So is the
  * project's `runtime.assignee` (#181), which the page does not show: an edit to
- * the agent or the limits replaces the section without dropping whose tickets
- * this machine takes. One written in the recipe text goes there too. A machine
- * file that already names a *different* runtime for this project is refused
- * rather than overwritten — both are a person's recorded choice, and which one
- * is meant is theirs to say.
+ * the agent replaces the section without dropping whose tickets this machine
+ * takes. One written in the recipe text goes there too. A machine file that
+ * already names a *different* runtime for this project is refused rather than
+ * overwritten — both are a person's recorded choice, and which one is meant is
+ * theirs to say.
+ *
+ * **`runtime.limits` is not moved here any more** (`#371`) — it stays in the
+ * recipe text, which is the one place a recipe may now state its own ceiling.
+ * A `limits:` this machine file's project section already has survives a save,
+ * the same way `assignee` does: a narrowing written there by hand is not a
+ * thing a board edit that never touched it should erase.
  */
 export function machineFiles(input: {
   /** The recipe as emitted, comments and all. */
@@ -508,25 +608,25 @@ export function machineFiles(input: {
     node !== null && typeof node === "object" && "toJSON" in node ? (node as { toJSON: () => unknown }).toJSON() : node;
   const written = doc.hasIn(["runtime", "assignee"]) ? toJSON(doc.getIn(["runtime", "assignee"])) : undefined;
   // A file already without them — the machine's own, being edited — has no `runtime` to delete from.
+  // `runtime.limits` stays: it is the recipe's own ceiling since `#371`, not a
+  // field this split carries anywhere.
   if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
-  if (doc.hasIn(["runtime", "limits"])) doc.deleteIn(["runtime", "limits"]);
   if (doc.hasIn(["runtime", "assignee"])) doc.deleteIn(["runtime", "assignee"]);
   const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 
   const at = ["projects", input.project, "runtime"];
   const path = machinePath(home);
-  const choose = (kept: unknown) => ({
+  const choose = (kept: unknown, keptLimits: unknown) => ({
     agent: input.recipe.runtime.agent,
-    // **The ceiling and not `implement`'s bound** (`#314`). This writes
-    // `~/.lingtai/config.yml`'s `runtime.limits`, which is what every step
-    // narrows *from*; saving a narrowed figure here would lower the ceiling to
-    // whatever one step asked for, permanently, on a save nobody read as a change.
-    limits: { ...ceilingOf(input.recipe) },
+    // Kept rather than chosen: a `limits:` already in this project's section
+    // is a person's hand-written narrowing (`#371`), and a save that never
+    // showed or touched it must not erase it.
+    ...(keptLimits !== undefined ? { limits: keptLimits } : {}),
     ...(written !== undefined ? { assignee: written } : kept !== undefined ? { assignee: kept } : {}),
   });
 
   if (input.machine === null || input.machine.trim() === "") {
-    const created = new Document({ projects: { [input.project]: { runtime: choose(undefined) } } });
+    const created = new Document({ projects: { [input.project]: { runtime: choose(undefined, undefined) } } });
     return { ok: true, recipe, machine: created.toString() };
   }
 
@@ -534,13 +634,14 @@ export function machineFiles(input: {
   if (machine.errors.length > 0 || !isMap(machine.contents)) {
     return {
       ok: false,
-      refusal: `${path} does not parse as a mapping, so ${input.project}'s agent and limits cannot be added to it — fix it and press this again`,
+      refusal: `${path} does not parse as a mapping, so ${input.project}'s agent cannot be added to it — fix it and press this again`,
     };
   }
   // Not the resolved recipe's assignee: its login may be the machine-wide one,
   // and copying it into this project's section would stop it following that.
   const kept = machine.hasIn([...at, "assignee"]) ? toJSON(machine.getIn([...at, "assignee"])) : undefined;
-  const chosen = choose(kept);
+  const keptLimits = machine.hasIn([...at, "limits"]) ? toJSON(machine.getIn([...at, "limits"])) : undefined;
+  const chosen = choose(kept, keptLimits);
   if (machine.hasIn(at)) {
     const json = toJSON(machine.getIn(at));
     if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };

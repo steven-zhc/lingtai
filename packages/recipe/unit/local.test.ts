@@ -7,8 +7,10 @@ import {
   AgentUnresolvedError,
   LIMIT_DEFAULTS,
   MachineConfigInvalidError,
+  Recipe,
   RecipeInvalidError,
   RecipeMissingError,
+  hashRecipe,
   machineFiles,
   machinePath,
   recipePath,
@@ -271,6 +273,90 @@ steps:
         ),
       ).rejects.toThrow(/projects\.app\.runtime\.limits\.wall: must be a positive duration/);
     });
+
+    /** `#371`: the recipe states its own ceiling, and the machine may only narrow it. */
+    describe("stated by the recipe (#371)", () => {
+      const withRecipeLimits = (limits: string, machine?: string) => ({
+        home: HOME,
+        signedIn: signed("claude-code"),
+        read: files({
+          [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n${limits}\n`,
+          ...(machine === undefined ? {} : { [machinePath(HOME)]: machine }),
+        }),
+      });
+
+      it("applies when the machine says nothing about it", async () => {
+        const resolved = await resolveLocalRecipe("app", withRecipeLimits("    rounds: 3\n"));
+        expect(resolved.recipe.runtime.limits.rounds).toBe(3);
+        expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${HOME}/app/recipe.yml`);
+      });
+
+      it("is narrowed by a smaller machine value, which says so", async () => {
+        const resolved = await resolveLocalRecipe(
+          "app",
+          withRecipeLimits("    rounds: 5\n", "runtime:\n  limits:\n    rounds: 2\n"),
+        );
+        expect(resolved.recipe.runtime.limits.rounds).toBe(2);
+        expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(
+          `2 ← ${HOME}/config.yml, narrowing ${HOME}/app/recipe.yml's 5`,
+        );
+      });
+
+      it("is not narrowed by an equal machine value — the recipe's is what provenance names", async () => {
+        const resolved = await resolveLocalRecipe(
+          "app",
+          withRecipeLimits("    rounds: 2\n", "runtime:\n  limits:\n    rounds: 2\n"),
+        );
+        expect(resolved.recipe.runtime.limits.rounds).toBe(2);
+        expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`2 ← ${HOME}/app/recipe.yml`);
+      });
+
+      it("refuses a machine value larger than the recipe's, naming both files and both numbers", async () => {
+        const resolving = resolveLocalRecipe(
+          "app",
+          withRecipeLimits("    rounds: 2\n", "runtime:\n  limits:\n    rounds: 3\n"),
+        );
+        await expect(resolving).rejects.toThrow(MachineConfigInvalidError);
+        await expect(resolving).rejects.toThrow(
+          `runtime.limits.rounds is 3 in ${HOME}/config.yml, above ${HOME}/app/recipe.yml's 2`,
+        );
+      });
+
+      it("compares the scoped value, not the shared one, when both are set", async () => {
+        const resolving = resolveLocalRecipe(
+          "app",
+          withRecipeLimits(
+            "    turns: 150\n",
+            "runtime:\n  limits:\n    turns: 100\nprojects:\n  app:\n    runtime:\n      limits:\n        turns: 200\n",
+          ),
+        );
+        await expect(resolving).rejects.toThrow(
+          `projects.app.runtime.limits.turns is 200 in ${HOME}/config.yml, above ${HOME}/app/recipe.yml's 150`,
+        );
+      });
+
+      it("applies a malformed wall as written, so `RecipeInvalidError` names it rather than the comparison", async () => {
+        const resolving = resolveLocalRecipe(
+          "app",
+          withRecipeLimits('    wall: "90"\n', "runtime:\n  limits:\n    wall: 1h\n"),
+        );
+        await expect(resolving).rejects.toThrow(RecipeInvalidError);
+        await expect(resolving).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/);
+      });
+
+      it("hashes exactly as it did before #371, when the recipe is silent", async () => {
+        const resolved = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
+        const expected = Recipe.parse({
+          version: 2,
+          repo: { base: "main" },
+          source: { kinds: ["bug"] },
+          env: { plantAt: ".env.local" },
+          steps: { proposed: [{ name: "build", run: "pnpm test" }] },
+          runtime: { agent: "claude-code", limits: { ...LIMIT_DEFAULTS, turns: 10 } },
+        });
+        expect(resolved.configHash).toBe(hashRecipe(expected));
+      });
+    });
   });
 
   /** Whose tickets this machine takes (0046 §2, #181). */
@@ -326,11 +412,14 @@ steps:
       const before =
         "projects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        login: bob\n        take: mine\n";
       const current = await parsed(before);
-      const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
+      // The forcing edit is the agent, not `limits`: `#371` stopped
+      // `machineFiles` carrying limits at all, so editing them here would
+      // leave `chosen` equal to what the file already says and write nothing.
+      const edited = { ...current, runtime: { ...current.runtime, agent: "codex" as const } };
       const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
       if (!split.ok || split.machine === null) throw new Error("expected a machine file");
       const after = await parsed(split.machine);
-      expect(after.runtime.limits.rounds).toBe(3);
+      expect(after.runtime.agent).toBe("codex");
       expect(after.runtime.assignee).toEqual({ login: "bob", take: "mine" });
     });
 
@@ -338,11 +427,35 @@ steps:
       const before =
         "runtime:\n  assignee:\n    login: bob\nprojects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        take: mine\n";
       const current = await parsed(before);
-      const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
+      const edited = { ...current, runtime: { ...current.runtime, agent: "codex" as const } };
       const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
       if (!split.ok || split.machine === null) throw new Error("expected a machine file");
       expect(split.machine).toMatch(/app:\n\s+runtime:[\s\S]*assignee:\n\s+take: mine\n/);
       expect(split.machine.match(/login: bob/g)).toHaveLength(1);
+    });
+
+    /** `#371` — `runtime.limits` is the recipe's own, and this split stops moving it. */
+    it("keeps runtime.limits in the recipe text, rather than moving it to the machine file", async () => {
+      const split = machineFiles({
+        file: `${RECIPE}runtime:\n  limits:\n    rounds: 3\n`,
+        recipe: await parsed(""),
+        project: "app",
+        machine: null,
+        home: HOME,
+      });
+      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
+      expect(split.recipe).toMatch(/limits:\n\s+rounds: 3/);
+      expect(split.machine).not.toContain("limits");
+    });
+
+    it("keeps an existing project-level limits on replace, rather than dropping it", async () => {
+      const before = "projects:\n  app:\n    runtime:\n      agent: claude-code\n      limits:\n        wall: 1h\n";
+      const current = await parsed(before);
+      const edited = { ...current, runtime: { ...current.runtime, agent: "codex" as const } };
+      const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
+      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
+      expect(split.machine).toMatch(/agent: codex/);
+      expect(split.machine).toMatch(/limits:\n\s+wall: 1h/);
     });
 
     it("carries one written in the recipe text to the machine file, rather than deleting it", async () => {
@@ -399,15 +512,24 @@ steps:
       ).rejects.toThrow(MachineConfigInvalidError);
     });
 
-    it("runtime.agent or runtime.limits in the recipe names the machine file", async () => {
+    it("runtime.agent in the recipe names the machine file", async () => {
       const read = files({
-        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n  limits:\n    turns: 5\n`,
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n`,
       });
       const resolving = resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
       await expect(resolving).rejects.toThrow(RecipeInvalidError);
       await expect(
         resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
-      ).rejects.toThrow(/runtime\.limits: moved to this machine.*config\.yml/);
+      ).rejects.toThrow(/runtime\.agent: moved to this machine.*config\.yml/);
+    });
+
+    /** `#371` — the refusal above no longer covers `limits`, since the recipe states the ceiling there. */
+    it("runtime.limits in the recipe is not refused", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 5\n`,
+      });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.recipe.runtime.limits.turns).toBe(5);
     });
   });
 });
