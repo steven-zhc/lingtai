@@ -1,0 +1,44 @@
+# The unit half, on every PR and every push to main (#365).
+#
+# This is the gate that only ran inside the conductor's own `build:` step —
+# visible on this repository's copy of the recipe, but since #180 nothing
+# reads that copy, so it covered the conductor's own tickets and nothing a
+# person or a Claude session opened as a PR (#364 was one). This workflow is
+# that second witness.
+#
+# It is the unit project only (0060 §1), never `pnpm test:integration`: that
+# half takes 803s and belongs to T11, after the merge, on a separate system.
+# No `LINGTAI_*` secret goes anywhere near this workflow.
+#
+# It is deliberately not a required status check on `main`. The merge lane
+# does not land through a PR — it is `git merge --no-edit` into the base and
+# a push (`packages/actions/src/merge-action.ts:47`) — so a required check
+# here would refuse every landing the conductor makes.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: typecheck
+        run: pnpm typecheck
+      - name: test
+        run: pnpm test
+        env:
+          HOME: /nonexistent

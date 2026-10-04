@@ -355,6 +355,17 @@ hid every package after it (#222). `HOME=/nonexistent pnpm test` is green, and
 that is the claim rather than a habit — run it that way when you have touched
 what a test reaches for.
 
+**Since #365, `.github/workflows/check.yml` is the second witness for a PR the
+conductor's own `build:` gate never covers** — one a person or a Claude session
+opens directly, as #364 was. It runs `pnpm typecheck` and
+`HOME=/nonexistent pnpm test` on `pull_request`, on push to `main`, and on
+`workflow_dispatch`; it is the unit half only, never `pnpm test:integration`,
+for the same reason nobody runs that half as part of a ticket. It carries no
+`LINGTAI_*` secret. **It is deliberately not a required status check on
+`main`**: the merge lane is `git merge --no-edit` into the base and a push
+(`packages/actions/src/merge-action.ts:47`), never a pull request, so a
+required check here would refuse every landing the conductor makes.
+
 **Since #275 the integration half runs on a SQLite file of its own by
 default, and only a named few files still assert Postgres itself** — the
 projections, `LISTEN`/`NOTIFY`, two clients racing, and everything else that
