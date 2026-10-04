@@ -1,13 +1,15 @@
 /**
- * The pure half of the Claude Code adapter: `usageFromModelUsage` (#316).
+ * The pure half of the Claude Code adapter: `usageFromModelUsage` (#316) and
+ * `claudeClose` (#369).
  *
  * Everything that spawns a process is in `integration/claude-code.test.ts`,
  * which `pnpm test` does not run (see `unit/codex.test.ts`'s header for why).
- * This function needs no process: it reads the `modelUsage` object a real
- * receipt already carries and turns it into the shared shape (0110 §3).
+ * Neither function needs a process: `usageFromModelUsage` reads the
+ * `modelUsage` object a real receipt already carries, and `claudeClose` is
+ * the close handler's decision, pulled out so a unit test can reach it.
  */
 import { describe, expect, it } from "vitest";
-import { usageFromModelUsage } from "../src/claude-code.ts";
+import { claudeClose, usageFromModelUsage } from "../src/claude-code.ts";
 
 describe("usageFromModelUsage", () => {
   it("is absent where the receipt carried no modelUsage at all", () => {
@@ -78,5 +80,76 @@ describe("usageFromModelUsage", () => {
       "claude-haiku-4-5": {},
     });
     expect(usage).toEqual([{ model: "claude-sonnet-5", tokens: { fresh: 2 } }]);
+  });
+});
+
+describe("claudeClose", () => {
+  const closed = (over: Partial<{ exitCode: number | null; stderr: string; stdout: string }> = {}) => ({
+    exitCode: 0,
+    stderr: "",
+    stdout: "",
+    ...over,
+  });
+
+  it("answers null — no failure — on a clean result", () => {
+    const parsed = { is_error: false, num_turns: 3, total_cost_usd: 0.1 };
+    expect(claudeClose(parsed, closed({ exitCode: 0 }), { turns: 150 })).toBeNull();
+  });
+
+  it("is out-of-turns on error_max_turns, carrying the recipe's bound and the cost", () => {
+    const parsed = { subtype: "error_max_turns", is_error: true, num_turns: 300, total_cost_usd: 12.9 };
+    const result = claudeClose(parsed, closed({ exitCode: 1 }), { turns: 150 });
+
+    expect(result?.kind).toBe("out-of-turns");
+    expect(result?.detail).toContain("300 turns");
+    expect(result?.detail).toContain("150");
+    expect(result?.detail).toContain("$12.90");
+  });
+
+  /**
+   * **The one new case** (`#369`). Measured on the shipped bundle:
+   * `error_max_structured_output_retries` used to fall through to
+   * `neverStarted`'s three facts and land as `crash` — right by accident,
+   * since `#89` moved `error_max_turns` off that same path for being the
+   * wrong word rather than a wrong verdict. This is the runtime answering
+   * `--json-schema` the way `error_max_turns` answers `--max-turns`.
+   */
+  it("is no-structured-answer on error_max_structured_output_retries, not crash", () => {
+    const parsed = {
+      subtype: "error_max_structured_output_retries",
+      is_error: true,
+      num_turns: 3,
+      total_cost_usd: 0.08,
+    };
+    const result = claudeClose(parsed, closed({ exitCode: 1 }), { turns: 40 });
+
+    expect(result?.kind).toBe("no-structured-answer");
+    expect(result?.detail).toContain("3 turns");
+    expect(result?.detail).toContain("$0.08");
+  });
+
+  it("is still crash for an ordinary error subtype, and never-started for the zero-turn one", () => {
+    const ordinary = claudeClose(
+      { subtype: "error_during_execution", is_error: true, num_turns: 12, total_cost_usd: 0.41 },
+      closed({ exitCode: 1 }),
+      { turns: 40 },
+    );
+    expect(ordinary?.kind).toBe("crash");
+
+    const quota = claudeClose(
+      { subtype: "error_during_execution", is_error: true, num_turns: 0, total_cost_usd: 0 },
+      closed({ exitCode: 1 }),
+      { turns: 40 },
+    );
+    expect(quota?.kind).toBe("never-started");
+  });
+
+  it("is crash with no receipt at all, quoting whatever the process said", () => {
+    const result = claudeClose(null, closed({ exitCode: 1, stderr: "claude: command not found" }), {
+      turns: 40,
+    });
+
+    expect(result?.kind).toBe("crash");
+    expect(result?.detail).toContain("command not found");
   });
 });

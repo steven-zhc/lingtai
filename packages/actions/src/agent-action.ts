@@ -53,7 +53,13 @@
  * `recheckBlock`.
  */
 import type { Runtime } from "@lingtai/agent";
-import { REFUSED_ABOUT, SEVERITIES, type RefusedAbout, type Severity } from "@lingtai/domain";
+import {
+  REFUSED_ABOUT,
+  REVIEW_ANSWER_JSON_SCHEMA,
+  SEVERITIES,
+  type RefusedAbout,
+  type Severity,
+} from "@lingtai/domain";
 import {
   NEEDS_INPUT,
   type Action,
@@ -141,27 +147,22 @@ Look at these first. They are where the defects have actually been.
    behaviour and whose assertions would pass with that behaviour broken.`;
 
 const CONTRACT = `
-Report as a single JSON object, and nothing else after it:
-
-{"about":"lines","findings":[{"file":"src/x.ts","line":42,"severity":"blocker",
-  "claim":"one sentence, what is wrong",
-  "failureScenario":"concrete inputs or interleaving, then the wrong outcome"}]}
-
 Rules:
 - **No failure scenario, no finding.** If you cannot write the concrete sequence
   that produces a wrong outcome, you do not have a finding, you have an opinion.
   Leave it out.
-- **Say what a refusal is about.** Where your findings stop the change, add
-  \`"about"\` beside them: \`"lines"\` where this is the right change and part of
-  it is wrong, \`"approach"\` where no edit to these lines would fix it because
-  the shape is wrong and it should be written again. The example above shows
-  where the key goes and is not the usual answer. Omit the key when you
-  cannot say which — *did not say* is a real answer here and a guess is not.
-- \`line\` may be null if the defect is the absence of something.
+- **Say what your findings are about.** \`"lines"\` where this is the right
+  change and part of it is wrong; \`"approach"\` where no edit to these lines
+  would fix it, because the shape is wrong and it should be written again.
+  \`approach\` restarts the ticket from the base; \`lines\` buys one round of
+  fix-and-recheck on this diff — so answer \`approach\` only where that is
+  true, never as a hedge. Answer \`null\` whenever you cannot say which of the
+  two it is, and **always** where your findings list is empty: nothing is
+  stopping the change, so there is nothing for the answer to be about.
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
   should spend finding.
-- An empty list is a real answer. Say {"findings":[]}.
+- An empty findings list is a real answer.
 
 Do not read other issues, run \`gh\`, or look at anything outside this worktree
 and the diff above. Your value is that you do not know what anyone concluded.`;
@@ -269,28 +270,8 @@ ${clipped}
 `;
 }
 
-/**
- * The findings, from whatever the reviewer actually said.
- *
- * Defensive in the same way `parseResult` is, and for the same reason: a model
- * asked for JSON usually gives JSON, and the run where it does not must not
- * become a crash with no verdict.
- *
- * A finding without a failure scenario is **dropped, not repaired**. The rule is
- * in the prompt and enforcing it here is what makes it true rather than
- * aspirational.
- *
- * **Where the answer starts is not the first brace in it** (`#272`). It used to
- * be `indexOf("{")`, which is the *prose's* brace whenever the reviewer quoted
- * the code — and the more precisely it quoted, the likelier that was. `#262`'s
- * reviewer verified every citation in the diff, wrote
- * `` `StepPassed` = `{ending:"passed"}` `` on the way, answered `{"findings":[]}`
- * and had a clean review read as unreadable; a person waived it. So every brace
- * is a candidate, tried last first, because the object is what the answer *ends*
- * in. A truncated answer still parses at no position and is still refused: that
- * difference is the only thing the refusal below is for.
- */
-export function parseFindings(text: string | null): {
+/** What either reading of an answer produces. Shared so both enforce one rule. */
+interface ReadAnswer {
   findings: ActionFinding[];
   parsed: boolean;
   /**
@@ -303,7 +284,76 @@ export function parseFindings(text: string | null): {
    * counted as the default.
    */
   about?: RefusedAbout;
-} {
+}
+
+/**
+ * One answer's `findings` and `about`, off a JS value that is already an
+ * object — `outcome.structured`, or a candidate `parseFindings` below has
+ * already run `JSON.parse` on. Shared so a schema-constrained answer and one
+ * recovered from prose enforce exactly the same rule: **a schema guarantees
+ * the keys are present, not that `failureScenario` is non-empty**, so a
+ * finding without one is dropped here regardless of which path produced the
+ * object (`#369`).
+ */
+function normaliseAnswer(value: unknown): ReadAnswer {
+  const list = (value as { findings?: unknown })?.findings;
+  if (!Array.isArray(list)) return { findings: [], parsed: false };
+
+  const findings: ActionFinding[] = [];
+  for (const raw of list) {
+    const f = raw as Partial<ActionFinding>;
+    // The rule from the prompt, enforced.
+    if (!f?.claim || !f?.failureScenario) continue;
+    findings.push({
+      file: String(f.file ?? "(unknown)"),
+      line: typeof f.line === "number" ? f.line : null,
+      claim: String(f.claim),
+      failureScenario: String(f.failureScenario),
+      severity: isSeverity(f.severity)
+        ? f.severity
+        : // Unrecognised means the rubric was not followed, and the rubric
+          // exists because severity ran *low*. Take the higher one — and
+          // `SEVERITIES` is worst first, so the highest is its own head
+          // rather than a name spelled again here.
+          SEVERITIES[0],
+    });
+  }
+  // The reviewer's own classification, taken only where it is one of the two
+  // words and never repaired into one: a `severity` off the ladder is raised to
+  // the worst because the rubric is a thing the reviewer was told, and there is
+  // no equivalent safe direction here — `lines` and `approach` are opposite
+  // answers, and inventing either would put a classification at this seam that
+  // no reviewer made (0031 §1, `#223`'s own rule).
+  const about = (value as { about?: unknown })?.about;
+  return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
+}
+
+/**
+ * The findings, from whatever the reviewer actually said in prose.
+ *
+ * **The fallback since `#369`, not the primary path.** The cold reviewer now
+ * sends `REVIEW_ANSWER_JSON_SCHEMA` on every run, and a runtime that honours
+ * the flag hands `createAgentAction` a parsed `outcome.structured`, read with
+ * `normaliseAnswer` directly — no text, no search. This stays for a runtime
+ * with no schema flag, and for Codex's own case: under a schema the model's
+ * final message *is* the constrained JSON, but the adapter's own parse of it
+ * can still fail, and the fallback is what reads `outcome.text` then.
+ *
+ * Defensive in the same way `parseResult` is, and for the same reason: a model
+ * asked for JSON usually gives JSON, and the run where it does not must not
+ * become a crash with no verdict.
+ *
+ * **Where the answer starts is not the first brace in it** (`#272`). It used to
+ * be `indexOf("{")`, which is the *prose's* brace whenever the reviewer quoted
+ * the code — and the more precisely it quoted, the likelier that was. `#262`'s
+ * reviewer verified every citation in the diff, wrote
+ * `` `StepPassed` = `{ending:"passed"}` `` on the way, answered `{"findings":[]}`
+ * and had a clean review read as unreadable; a person waived it. So every brace
+ * is a candidate, tried last first, because the object is what the answer *ends*
+ * in. A truncated answer still parses at no position and is still refused: that
+ * difference is the only thing the refusal below is for.
+ */
+export function parseFindings(text: string | null): ReadAnswer {
   if (!text) return { findings: [], parsed: false };
 
   const candidates: string[] = [];
@@ -321,36 +371,8 @@ export function parseFindings(text: string | null): {
     } catch {
       continue;
     }
-    const list = (value as { findings?: unknown })?.findings;
-    if (!Array.isArray(list)) continue;
-
-    const findings: ActionFinding[] = [];
-    for (const raw of list) {
-      const f = raw as Partial<ActionFinding>;
-      // The rule from the prompt, enforced.
-      if (!f?.claim || !f?.failureScenario) continue;
-      findings.push({
-        file: String(f.file ?? "(unknown)"),
-        line: typeof f.line === "number" ? f.line : null,
-        claim: String(f.claim),
-        failureScenario: String(f.failureScenario),
-        severity: isSeverity(f.severity)
-          ? f.severity
-          : // Unrecognised means the rubric was not followed, and the rubric
-            // exists because severity ran *low*. Take the higher one — and
-            // `SEVERITIES` is worst first, so the highest is its own head
-            // rather than a name spelled again here.
-            SEVERITIES[0],
-      });
-    }
-    // The reviewer's own classification, taken only where it is one of the two
-    // words and never repaired into one: a `severity` off the ladder is raised to
-    // the worst because the rubric is a thing the reviewer was told, and there is
-    // no equivalent safe direction here — `lines` and `approach` are opposite
-    // answers, and inventing either would put a classification at this seam that
-    // no reviewer made (0031 §1, `#223`'s own rule).
-    const about = (value as { about?: unknown })?.about;
-    return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
+    const result = normaliseAnswer(value);
+    if (result.parsed) return result;
   }
 
   return { findings: [], parsed: false };
@@ -447,6 +469,10 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         runId: reviewId,
         cwd: context.cwd,
         prompt: buildReviewPrompt(spec, issue, diff, deps.limits.diffBytes, recheck),
+        // The cold reviewer's own flag (`#369`): the only action that sends one.
+        // Each adapter turns it into the runtime's own way of forcing the shape
+        // — `claude-code.ts`'s `--json-schema`, `codex.ts`'s `--output-schema`.
+        outputSchema: REVIEW_ANSWER_JSON_SCHEMA,
         // The recipe's, or the key is not sent at all — `RunRequest.model` is
         // optional and the adapter omits `--model` without it, which is what
         // "the runtime's own default" means in the one place it has to be true.
@@ -494,6 +520,26 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
           };
         }
         /**
+         * **The runtime forced the schema and could not make an answer fit it
+         * after retrying** — `error_max_structured_output_retries`, Claude
+         * Code's own silence under `--json-schema` (`#369`). The agent answered
+         * something; the runtime is what dropped it, which is `unreadable` in
+         * the same sense a reviewer whose prose would not parse is (`#279`),
+         * answered the same way: `failed`, and it buys no round (0038 §2) —
+         * never `did-not-finish`, which would reach `proposed` with the wrong
+         * sentence and no `unreadable` for the log to count.
+         */
+        if (outcome.failure.kind === "no-structured-answer") {
+          return {
+            verdict: "failed",
+            evidence: boundedEvidence(
+              `the reviewer's runtime could not fit its answer to the schema: ${outcome.failure.detail}`,
+            ),
+            findings: [],
+            unreadable: true,
+          };
+        }
+        /**
          * **And a reviewer that *started* and did not finish has not reviewed
          * anything either** — [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1.
          *
@@ -527,7 +573,13 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         };
       }
 
-      const { findings, parsed, about } = parseFindings(outcome.text);
+      // The runtime's own parse first, where it sent one — `outcome.structured`
+      // is never missing a `findings` key, only ever absent, so there is no
+      // second reading of it to fall back to on the way to `unreadable`
+      // (`#369`). `parseFindings` runs only where the runtime answered in
+      // prose instead.
+      const { findings, parsed, about } =
+        outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text);
       if (!parsed) {
         /**
          * A reviewer whose answer cannot be read has not reviewed anything. The

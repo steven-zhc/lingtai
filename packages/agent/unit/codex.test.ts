@@ -746,6 +746,26 @@ describe("the invocation", () => {
     // Still a runnable command line, and still sandboxed.
     expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
   });
+
+  /**
+   * **The cold reviewer's own flag, before `--`** (`#369`). Measured at
+   * 0.155.1: `--output-schema` is an ordinary flag like `--model`, so the only
+   * thing worth pinning here is that it is absent without a path and that it
+   * still lands ahead of the prompt when there is one.
+   */
+  it("names the output schema file only where one was given, ahead of the prompt", () => {
+    const withSchema = codexArgv(invocable, PROMPT_ELIDED, {
+      settings: wiring(),
+      sandbox: "workspace-write",
+      outputSchemaPath: "/tmp/lingtai-output-schema-run-1.json",
+    });
+    const at = withSchema.indexOf("--output-schema");
+    expect(at).toBeGreaterThan(-1);
+    expect(withSchema[at + 1]).toBe("/tmp/lingtai-output-schema-run-1.json");
+    expect(at).toBeLessThan(withSchema.indexOf("--"));
+
+    expect(argv()).not.toContain("--output-schema");
+  });
 });
 
 describe("Codex's capabilities, each measured against the binary", () => {

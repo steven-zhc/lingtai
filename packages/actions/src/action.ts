@@ -35,7 +35,7 @@
  * verdicts, they only run at `end`, and they never reach this interface.
  */
 import { taggedTrace, type RunTrace } from "@lingtai/agent/run-log";
-import type { Step, PayloadOf, RefusedAbout, Severity } from "@lingtai/domain";
+import type { Finding, Step, PayloadOf, RefusedAbout } from "@lingtai/domain";
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -78,15 +78,13 @@ import type { Step, PayloadOf, RefusedAbout, Severity } from "@lingtai/domain";
  */
 export type ActionVerdict = "passed" | "failed" | "needs-approval" | "never-ran" | "did-not-finish";
 
-export interface ActionFinding {
-  file: string;
-  line: number | null;
-  claim: string;
-  /** No failure scenario, no finding. An observation without one is an opinion. */
-  failureScenario: string;
-  /** The ladder is `SEVERITIES` in `@lingtai/domain` and is not restated here. */
-  severity: Severity;
-}
+/**
+ * One finding, exactly as a reviewer reported it — `@lingtai/domain`'s own
+ * `Finding`, and not a second interface. `ReviewAnswer` in that package is
+ * built from the same type, so the schema a runtime is handed and the shape
+ * this file reads cannot diverge (`#369`).
+ */
+export type ActionFinding = Finding;
 
 export interface ActionResult {
   verdict: ActionVerdict;
