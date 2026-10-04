@@ -355,10 +355,31 @@ function normaliseAnswer(value: unknown): ReadAnswer {
   return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
 }
 
-/** A JSON candidate and where it sits in the text it was cut from. */
+/**
+ * A JSON candidate and where it sits in the text it was cut from.
+ *
+ * **`gapAt`/`gapLength` exist for exactly one shape of candidate**: a fenced
+ * block whose trailing content was kept on past its closing fence (see
+ * `candidatesIn`). The fence markers between the interior and that trailing
+ * content are stripped out of `text`, so `text` is shorter than the span of
+ * the original string it was cut from — a local offset that lands at or past
+ * `gapAt` needs `gapLength` added back before `start` turns it into a global
+ * one, or it names a character `gapLength` bytes earlier than the one that is
+ * actually there (`#318` finding 4). Absent on every other kind of candidate,
+ * where `text` is an exact, contiguous slice of the original and a local
+ * offset needs nothing added.
+ */
 interface Candidate {
   text: string;
   start: number;
+  gapAt?: number;
+  gapLength?: number;
+}
+
+/** A local offset into `candidate.text`, translated back to its position in the text `candidatesIn` cut it from. */
+function globalOffset(candidate: Candidate, localOffset: number): number {
+  const extra = candidate.gapAt !== undefined && localOffset >= candidate.gapAt ? candidate.gapLength ?? 0 : 0;
+  return candidate.start + localOffset + extra;
 }
 
 /**
@@ -380,15 +401,23 @@ function candidatesIn(text: string): Candidate[] {
     const stripped = block.replace(/```(?:json)?/g, "").replace(/```/g, "");
     const blockStart = text.indexOf(block);
     const start = text.indexOf(stripped);
-    // Whatever follows the closing fence is kept on the end of the candidate,
-    // not discarded with the fence markers — otherwise a findings-shaped
-    // example inside a ```json block would read as a complete value no matter
-    // what came after it, the one case the extent rule below does not reach on
-    // its own: an unfenced candidate already runs to the end of `text`, so
-    // trailing content there fails `JSON.parse`/`readTolerantJson` the same
-    // way it is meant to (`#318` finding 3).
     const trailing = blockStart === -1 ? "" : text.slice(blockStart + block.length);
-    candidates.push({ text: stripped + trailing, start: start === -1 ? 0 : start });
+    // Whatever follows the closing fence is kept on the end of the candidate
+    // only when it could itself be mistaken for a second, competing answer —
+    // otherwise a findings-shaped example inside a ```json block would read
+    // as a complete value no matter what came after it (`#318` finding 3).
+    // **Only when `trailing` itself has a brace in it**, though: an ordinary
+    // closing remark after the fence never does, and gluing it onto the
+    // candidate unconditionally broke the common case instead — a well-formed
+    // fenced answer followed by a closing sentence — because `JSON.parse`'s
+    // own extent check then saw that sentence as leftover content after the
+    // value and refused the whole thing (`#318` finding 1).
+    if (trailing.includes("{")) {
+      const gapLength = blockStart === -1 || start === -1 ? 0 : blockStart + block.length - (start + stripped.length);
+      candidates.push({ text: stripped + trailing, start: start === -1 ? 0 : start, gapAt: stripped.length, gapLength });
+    } else {
+      candidates.push({ text: stripped, start: start === -1 ? 0 : start });
+    }
   }
   // Last brace first: the outer object's own `{` is reached after the braces
   // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
@@ -524,10 +553,10 @@ export function parseFindings(text: string | null): ReadAnswer {
     }
   };
 
-  for (const { text: candidate, start } of candidates) {
+  for (const candidate of candidates) {
     let value: unknown;
     try {
-      value = JSON.parse(candidate.trim());
+      value = JSON.parse(candidate.text.trim());
     } catch {
       continue;
     }
@@ -536,45 +565,70 @@ export function parseFindings(text: string | null): ReadAnswer {
     // It parsed, just not into findings: a readable object whose top-level key
     // is not `findings` is described by what was wrong with it, rather than by
     // whatever syntax failure happens to sit elsewhere in the text (`#318`
-    // finding, scenario 1).
-    noteFurthest({ offset: start + candidate.trim().length, char: null, reason: "it had no `findings` array" }, start);
+    // finding, scenario 1). `trimEnd` only, not `trim`: `start` already counts
+    // any whitespace trimmed off the front, so trimming it again here would
+    // double-count it and place the ending short by that much (`#318` finding 4).
+    noteFurthest(
+      { offset: globalOffset(candidate, candidate.text.trimEnd().length), char: null, reason: "it had no `findings` array" },
+      candidate.start,
+    );
   }
 
-  for (const { text: candidate, start } of candidates) {
-    const repaired = readTolerantJson(candidate);
+  for (const candidate of candidates) {
+    const repaired = readTolerantJson(candidate.text);
     if (!repaired.ok) {
-      // A syntax failure that did not get past the candidate's own opening
-      // brace is not informative. Every per-brace candidate starts with `{` by
-      // construction (`candidatesIn` cuts one at *every* brace in the text),
-      // so prose that quotes a bare object literal — `` `{ending:"passed"}` ``
-      // on the way to describing the code, never written as an attempt at
-      // JSON — produces exactly such a candidate, and checking `startsWith("{")`
-      // on it proves nothing: it is already true by how the candidate was cut.
-      // A real answer's first key opens with a quote, so a reading that tried
-      // fails at least one character past the brace; one that fails
-      // immediately never tried (`#318` finding 1).
-      if (repaired.offset > 1) {
-        noteFurthest(
-          { offset: start + repaired.offset, char: repaired.char, ...(repaired.context === undefined ? {} : { context: repaired.context }) },
-          start,
-        );
+      if (repaired.trailingValue !== undefined) {
+        // A complete value was read; what follows it belongs to some other
+        // attempt, or to no attempt at all. Neither accepting this reading nor
+        // describing it by the unrelated byte that happens to sit after it —
+        // that byte says nothing about whether *this* value was a broken
+        // answer (`#318` finding 2). If there is a real answer elsewhere in
+        // the text, its own candidate is tried on its own merits.
+        continue;
       }
+      // A failure at offset 0 never got past whatever the candidate's own
+      // first character was, which for the whole-text candidate is not
+      // necessarily `{` at all — prose starting with punctuation or a letter
+      // is exactly this, and neither names a byte worth reporting. Every
+      // per-brace and fenced candidate, by contrast, starts with `{` by
+      // construction (`candidatesIn` cuts one at *every* brace in the text),
+      // so a failure there lands at offset 1 at the earliest, and is only
+      // informative when the character there looks like an attempt at a
+      // quote and missed. Prose that quotes a bare object literal —
+      // `` `{ending:"passed"}` `` on the way to describing the code, never
+      // written as an attempt at JSON — fails at offset 1 on a character that
+      // opens an identifier, which is never what a mangled quote looks like,
+      // such as the full-width quote `#318` finding 3 is about.
+      if (repaired.offset === 0) continue;
+      if (repaired.offset === 1 && repaired.char !== null && /^[A-Za-z_$]/.test(repaired.char)) continue;
+      noteFurthest(
+        {
+          offset: globalOffset(candidate, repaired.offset),
+          char: repaired.char,
+          ...(repaired.context === undefined ? {} : { context: repaired.context }),
+        },
+        candidate.start,
+      );
       continue;
     }
 
     // Further into the text than any syntax failure can be, since those stop
-    // partway through and this reading used up the whole candidate.
-    const end = start + candidate.length;
+    // partway through and this reading used up the whole candidate. `trimEnd`,
+    // not the raw length: a fenced candidate's own interior carries a trailing
+    // newline before the closing fence, which the extent check already proved
+    // is nothing but whitespace, so the value's own end sits before it
+    // (`#318` finding 4, the same arithmetic the strict loop needed above).
+    const end = globalOffset(candidate, candidate.text.trimEnd().length);
 
     const list = (repaired.value as { findings?: unknown })?.findings;
     if (!Array.isArray(list)) {
-      noteFurthest({ offset: end, char: null, reason: "it had no `findings` array" }, start);
+      noteFurthest({ offset: end, char: null, reason: "it had no `findings` array" }, candidate.start);
       continue;
     }
 
     const problem = findingProblem(list);
     if (problem) {
-      noteFurthest({ offset: end, char: null, reason: problem.sentence }, start);
+      noteFurthest({ offset: end, char: null, reason: problem.sentence }, candidate.start);
       continue;
     }
 
@@ -583,7 +637,7 @@ export function parseFindings(text: string | null): ReadAnswer {
       // Repair buys a round, never a pass.
       noteFurthest(
         { offset: end, char: null, reason: "nothing in it was a blocker or a major, and a repaired reading may not pass" },
-        start,
+        candidate.start,
       );
       continue;
     }

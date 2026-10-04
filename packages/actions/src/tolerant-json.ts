@@ -45,6 +45,17 @@ export type TolerantParseResult =
       char: string | null;
       /** Only set when `char` is `null`: what was still open at that point. */
       context?: string;
+      /**
+       * **Set only when a complete top-level value was read before this
+       * failure** — the extent rule's own refusal, not a syntax error inside
+       * the value (`#318`). A caller that wants to know whether the bytes
+       * handed in even attempted JSON cannot read that off `char`/`offset`
+       * alone: an object that reads fine and is simply followed by unrelated
+       * text fails at the same shape of position as one that never parsed at
+       * all. This is the value that was read, so a caller can tell the two
+       * apart without guessing from the character that happens to sit after it.
+       */
+      trailingValue?: unknown;
     };
 
 const FULL_WIDTH_COLON = "：";
@@ -268,8 +279,10 @@ export function readTolerantJson(text: string): TolerantParseResult {
   if (!result.ok) return result;
   // The extent rule: `JSON.parse` throws on anything but whitespace after a
   // complete value, and this reader refuses it the same way rather than
-  // silently returning the value it found first.
+  // silently returning the value it found first. `result.value` rides along
+  // on the failure so a caller can tell this apart from a value that never
+  // completed at all.
   skipWhitespace();
-  if (i < len) return fail(i, text[i]!);
+  if (i < len) return { ok: false, offset: i, char: text[i]!, trailingValue: result.value };
   return result;
 }
