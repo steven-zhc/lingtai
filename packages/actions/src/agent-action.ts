@@ -146,7 +146,17 @@ Look at these first. They are where the defects have actually been.
 4. **Tests that assert less than they appear to.** A test whose name claims a
    behaviour and whose assertions would pass with that behaviour broken.`;
 
+/**
+ * **The last thing the reviewer reads, not the middle of the prompt** (`#368`).
+ * Two re-reviews answered in prose and were thrown away whole — the format rule
+ * was true and present, and still as far from the model's turn as the prompt
+ * could put it. `buildReviewPrompt` appends this after the diff for that reason;
+ * do not move it back above the recheck block or the diff.
+ */
 const CONTRACT = `
+Do not read other issues, run \`gh\`, or look at anything outside this worktree
+and the diff above. Your value is that you do not know what anyone concluded.
+
 Rules:
 - **No failure scenario, no finding.** If you cannot write the concrete sequence
   that produces a wrong outcome, you do not have a finding, you have an opinion.
@@ -162,10 +172,7 @@ Rules:
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
   should spend finding.
-- An empty findings list is a real answer.
-
-Do not read other issues, run \`gh\`, or look at anything outside this worktree
-and the diff above. Your value is that you do not know what anyone concluded.`;
+- An empty findings list is a real answer.`;
 
 export interface ReviewIssue {
   ref: string;
@@ -215,7 +222,11 @@ For each one, walk the code as it now stands and answer the only question that
 matters: **does that sequence still produce that outcome?**
 
 - A scenario that is still reachable by *any* path is still a finding. Report it
-  again, at the same severity or higher.
+  again, at the same severity or higher, with the verdict in the finding itself:
+  \`claim\` says what is still wrong, and \`failureScenario\` gives the sequence
+  as the code now stands — narrower than the quote above, where only part of it
+  survives. A scenario with two paths that still produce the outcome is two
+  findings, one for each.
 - **Code that was deleted, renamed, moved or suppressed is not, on its own, a
   fix.** If the behaviour the scenario describes can still be produced — through
   the new name, the new location, the remaining caller — the finding stands. If
@@ -223,7 +234,10 @@ matters: **does that sequence still produce that outcome?**
   longer be performed at all, say so in a new finding: the caller has lost
   something it had.
 - A scenario that genuinely can no longer produce its outcome is simply not
-  reported. Do not say so, and do not argue with the finding that made it.
+  reported. Do not say so, and do not argue with the finding that made it. Where
+  every scenario above is closed and nothing else is wrong, the answer is an
+  empty findings list — \`{"findings":[]}\` is as real an answer here as on a
+  first review.
 
 Then review the diff as it now stands for anything else, exactly as you would
 have without this section. The fix is part of the diff and is not above review.`;
@@ -258,15 +272,15 @@ ${CHECKLIST}
 ## Severity
 ${RUBRIC}
 
-## How to report
-${CONTRACT}
-
 ${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ""}
 ${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ""}## The diff
 
 \`\`\`diff
 ${clipped}
 \`\`\`
+
+## How to report
+${CONTRACT}
 `;
 }
 

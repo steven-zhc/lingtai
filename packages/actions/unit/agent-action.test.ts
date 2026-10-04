@@ -161,6 +161,44 @@ describe("the review prompt", () => {
 });
 
 /**
+ * **`## How to report` is the last thing a reviewer reads, never the middle of
+ * the prompt** (`#368`). Two re-reviews answered in prose instead of the
+ * schema's shape, and the sentence that would have stopped that was true,
+ * present, and buried under the recheck block and the whole diff. These pin the
+ * contract's position rather than its wording, which the tests above already
+ * cover.
+ */
+describe("the output contract's place in the prompt", () => {
+  it("comes after the diff on a plain review", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES);
+
+    const contract = prompt.indexOf("## How to report");
+    expect(contract).toBeGreaterThan(prompt.lastIndexOf("```diff"));
+    expect(contract).toBeGreaterThan(prompt.indexOf("THE-DIFF"));
+  });
+
+  it("stays after the diff and a recipe's own extras", () => {
+    const prompt = buildReviewPrompt(
+      { name: "review", prompt: "watch the RLS policies" },
+      ISSUE,
+      "THE-DIFF",
+      DIFF_BYTES,
+    );
+
+    const contract = prompt.indexOf("## How to report");
+    expect(contract).toBeGreaterThan(prompt.lastIndexOf("```diff"));
+    expect(contract).toBeGreaterThan(prompt.indexOf("watch the RLS policies"));
+  });
+
+  it("stays after a diff truncated for being over the byte limit", () => {
+    const huge = "x".repeat(DIFF_BYTES + 5_000);
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, huge, DIFF_BYTES);
+
+    expect(prompt.indexOf("## How to report")).toBeGreaterThan(prompt.lastIndexOf("[diff truncated at"));
+  });
+});
+
+/**
  * The re-review, which is the acceptance contract of the fix loop
  * ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md) §2).
  *
@@ -176,6 +214,20 @@ describe("asking the reviewer again after a fix", () => {
     "call deliver() while the log file is unreadable; readFile throws, the catch\n" +
     "swallows it, and the promise resolves as a success";
   const refused = [finding({ failureScenario: scenario })] as never[];
+
+  /**
+   * The recheck block's own text — the slice between its heading and the
+   * diff's. `toContain("failureScenario")` over the *whole* prompt would also
+   * be satisfied by `CONTRACT`'s own prose if a future edit ever named the key
+   * there, which is exactly the weakening attempt 1's review caught: assert
+   * against this slice, not the prompt as a whole.
+   */
+  function recheckSlice(prompt: string): string {
+    const start = prompt.indexOf("## Scenarios that must no longer happen");
+    if (start === -1) return "";
+    const end = prompt.indexOf("## The diff", start);
+    return prompt.slice(start, end === -1 ? undefined : end);
+  }
 
   it("quotes every failure scenario verbatim, because the fixer cannot author it", () => {
     const prompt = buildReviewPrompt(
@@ -211,6 +263,61 @@ describe("asking the reviewer again after a fix", () => {
     expect(prompt).toMatch(/silent corruption is a blocker/i);
     expect(prompt).toMatch(/check-then-write/i);
     expect(prompt).toContain("THE-DIFF");
+  });
+
+  it("keeps the output contract after the recheck block and the diff, not between them", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-FIXED-DIFF", DIFF_BYTES, refused);
+
+    const contract = prompt.indexOf("## How to report");
+    expect(contract).toBeGreaterThan(prompt.indexOf("Scenarios that must no longer happen"));
+    expect(contract).toBeGreaterThan(prompt.lastIndexOf("```diff"));
+  });
+
+  it("says a surviving scenario's verdict goes in the finding, not beside it", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+    const slice = recheckSlice(prompt);
+
+    expect(slice).toMatch(/`claim`/);
+    expect(slice).toMatch(/`failureScenario`/);
+  });
+
+  it("carries none of that recheck wording on a first review", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+
+    expect(recheckSlice(prompt)).toBe("");
+  });
+
+  /**
+   * **The contradiction attempt 1's own review found** (`#368`): a re-review
+   * instructed, with no scope, that *every verdict is a finding* will emit one
+   * per scenario even where the fix closed everything, and `parseFindings`
+   * keeps them all — a correct diff refused. Nothing here may read that way,
+   * and the empty-list answer has to still be reachable in words.
+   */
+  it("never tells the reviewer every verdict is a finding, unqualified", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+    const slice = recheckSlice(prompt);
+
+    // "a finding" singular, not "findings list" — the empty-list sentence below
+    // says "empty findings list" and must not trip this.
+    expect(slice).not.toMatch(/every (verdict|scenario)[^.]*\bis\b[^.]*\ba finding\b/i);
+  });
+
+  it("puts the surviving-scenario bullet before the simply-not-reported one, so the scope isn't overridden", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+    const bullets = recheckSlice(prompt).split(/\n- /);
+
+    const reachable = bullets.findIndex((b) => /still reachable/.test(b));
+    // Wrapped across a line break in the prompt, so the check has to tolerate one.
+    const notReported = bullets.findIndex((b) => /simply not\s+reported/.test(b));
+    expect(reachable).toBeGreaterThanOrEqual(0);
+    expect(notReported).toBeGreaterThan(reachable);
+  });
+
+  it("can answer an empty findings list where every scenario is closed and nothing else is wrong", () => {
+    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+
+    expect(recheckSlice(prompt)).toMatch(/\{"findings":\[\]\}/);
   });
 
   it("runs under an id of its own, so it is not asked whether it still agrees with itself", async () => {
