@@ -43,7 +43,6 @@ import {
   machinePath,
   recipePath,
   resolveRecipe,
-  type Said,
   unnarrowedCeiling,
 } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
@@ -175,7 +174,7 @@ export async function editExisting(
   // (`emit.ts`'s `replace` preserves a key's own comment), so a block written
   // whole here must also carry a comment about *this* save's numbers, or the
   // sentence above the block drifts from the numbers under it.
-  const said: Said = {};
+  const said: Record<string, string> = {};
   if (rewroteLimits) {
     const sentence = limitsSentence(ceilingOf(after));
     if (sentence.ok) said["runtime.limits"] = `A pass: ${sentence.sentence}.`;
