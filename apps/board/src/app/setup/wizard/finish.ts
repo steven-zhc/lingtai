@@ -10,10 +10,11 @@
  *
  * **Onboarding ends by writing, on this machine** (0046 §3, #180). A new recipe
  * goes through `startOnboarding` — parsed by the system's own parser on the
- * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's agent and
- * limits under `projects.<project>.runtime` in `~/.lingtai/config.yml`, and
- * `ProjectOnboardingStarted` appended — so the board draws a pending card whose
- * `Recheck` reads exactly that file. Nothing is written to the repository.
+ * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's limits in
+ * it (`#371`) and its agent under `projects.<project>.runtime` in
+ * `~/.lingtai/config.yml`, and `ProjectOnboardingStarted` appended — so the
+ * board draws a pending card whose `Recheck` reads exactly that file. Nothing
+ * is written to the repository.
  *
  * An existing recipe — the machine's, never a copy in the repository — goes
  * through `editExisting`, which changes the lines of the fields that moved and
@@ -37,10 +38,12 @@ import {
   hashRecipe,
   machineFiles,
   machinePath,
+  provenanceSource,
   recipePath,
   resolveLocalRecipe,
   resolveRecipe,
 } from "@lingtai/recipe";
+import { isDeepStrictEqual } from "node:util";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
@@ -191,12 +194,33 @@ export async function editExisting(
   // this check is about the limits, and is not the place to ask whether that
   // agent is actually signed in on this machine.
   try {
-    await resolveLocalRecipe(at.project, {
+    const resolved = await resolveLocalRecipe(at.project, {
       home: at.home,
       signedIn: async () => [drafted.runtime.agent],
       read: async (p) =>
         p === recipePath(at.project, at.home) ? file : p === machinePath(at.home) ? (machine ?? at.machine) : null,
     });
+    // Not throwing is not enough: a limit the operator *raised* above a
+    // narrower machine value does not throw (it is a legal narrowing from the
+    // machine's side), but it also does not take effect — the machine file
+    // still wins. That is applied nowhere, so it is refused here rather than
+    // offered as `ok` (`#371`).
+    const appliedCeiling = ceilingOf(resolved.recipe);
+    for (const change of touchedLimits) {
+      const key = change.path[2] as string;
+      const applied = (appliedCeiling as Record<string, unknown>)[key];
+      if (!isDeepStrictEqual(applied, change.value)) {
+        const from = provenanceSource(resolved.provenance?.[`runtime.limits.${key}`]) ?? "the machine file";
+        return {
+          ok: false,
+          refusals: [
+            `runtime.limits.${key}: this page would write ${String(change.value)}, but ${from} still ` +
+              `narrows it to ${String(applied)} — raise or remove that machine value first, or this change ` +
+              "would be applied nowhere",
+          ],
+        };
+      }
+    }
   } catch (err) {
     return { ok: false, refusals: [(err as Error).message] };
   }

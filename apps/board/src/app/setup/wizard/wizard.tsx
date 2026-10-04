@@ -174,7 +174,7 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
           <>
             <p className="decided">
               {finished.written
-                ? onboardingWritten(state.slug, finished.path)
+                ? onboardingWritten(state.slug, finished.path, finished.file)
                 : finished.changed.length === 0
                   ? "Nothing changed."
                   : `Changes ${finished.changed.join(", ")}, and every other line as it was. Nothing has been written — this is ${finished.path}:`}

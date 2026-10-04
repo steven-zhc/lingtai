@@ -305,6 +305,32 @@ describe("an edit to a recipe that extends a preset", () => {
     if (finished.ok) throw new Error("expected a refusal");
     expect(finished.refusals.join("; ")).toMatch(/runtime\.limits\.turns is 150.*above.*90/);
   });
+
+  /**
+   * **A raise the machine file still narrows below does not throw on its own
+   * — it is a legal narrowing from the machine's side — but it also does not
+   * take effect** (`#371`). Without comparing the resolved value against what
+   * the page asked for, this would read back as `ok` with a file that says
+   * `turns: 280` while every run still resolves `turns: 150`.
+   */
+  it("refuses a raised limit a project-scoped machine value still narrows below", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const machineBefore = "projects:\n  shop:\n    runtime:\n      limits:\n        turns: 150\n";
+    const current = Recipe.parse({
+      ...recipe,
+      runtime: { ...recipe.runtime, limits: { ...recipe.runtime.limits, turns: 150 } },
+    });
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe: current }), {
+      type: "limit",
+      key: "turns",
+      value: 280,
+    });
+
+    const finished = await editExisting(FILE, state, on(current, machineBefore));
+    expect(finished.ok).toBe(false);
+    if (finished.ok) throw new Error("expected a refusal");
+    expect(finished.refusals.join("; ")).toMatch(/runtime\.limits\.turns.*280.*150/);
+  });
 });
 
 describe("the end", () => {

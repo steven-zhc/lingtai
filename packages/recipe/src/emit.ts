@@ -88,17 +88,25 @@ const COMMENT_WIDTH = 78;
 /**
  * A new recipe file, with a comment above every block in `said`.
  *
- * **A ceiling equal to the schema's own defaults is not written** (`#371`):
- * nobody chose it, so writing it down would turn every onboarded recipe into
- * a stated ceiling that refuses a wider machine value for no reason — the
- * same *equal is not stating it* rule `local.ts` and `recipe.ts` already use
- * one level down. `said["runtime.limits"]` must be left out too when this
- * applies, or the comment has nowhere to land.
+ * **A key equal to the schema's own default is not written, one key at a
+ * time** (`#371`): nobody chose it, so writing it down — even as a neighbour
+ * of a key that *was* chosen — would turn every onboarded recipe into a
+ * stated ceiling that refuses a wider machine value on a dial nobody moved.
+ * Per key, not whole-block: moving one dial must not bake the other three
+ * into the file at whatever they currently resolve to. The same *equal is not
+ * stating it* rule `local.ts` and `recipe.ts` already use one level down.
+ * `said["runtime.limits"]` must be left out too when nothing is kept, or the
+ * comment has nowhere to land.
  */
 export function emitRecipe(recipe: Recipe, said: Said = {}): string {
   const parsed = Recipe.parse(recipe);
   const { limits, ...runtime } = parsed.runtime;
-  const value: unknown = isDeepStrictEqual(limits, LIMIT_DEFAULTS) ? { ...parsed, runtime } : parsed;
+  const kept = Object.fromEntries(
+    Object.entries(limits).filter(
+      ([key, v]) => !isDeepStrictEqual(v, (LIMIT_DEFAULTS as Record<string, unknown>)[key]),
+    ),
+  );
+  const value: unknown = Object.keys(kept).length === 0 ? { ...parsed, runtime } : { ...parsed, runtime: { ...runtime, limits: kept } };
   const doc = new Document(value);
   const root = doc.contents as YAMLMap;
   root.items.forEach((pair, i) => {

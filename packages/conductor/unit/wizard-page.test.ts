@@ -659,7 +659,8 @@ describe("an existing recipe", () => {
  * would send them after a step already done. What is left is `Recheck`.
  */
 describe("the last screen, written", () => {
-  const said = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml");
+  const withLimits = "runtime:\n  limits:\n    turns: 90\nsteps:\n  proposed: []\n";
+  const said = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml", withLimits);
 
   it("names the files it wrote on this machine", () => {
     expect(said).toContain("/home/me/.lingtai/shop/recipe.yml");
@@ -671,6 +672,16 @@ describe("the last screen, written", () => {
     expect(said).toContain("press Recheck");
     expect(said).toContain("permissions on acme/shop");
     expect(said).not.toMatch(/install|pull request|merge/i);
+  });
+
+  it("says the recipe has its own limits in it, when the file written has a limits block", () => {
+    expect(said).toContain("with its own limits in it");
+  });
+
+  /** `#371`: a dial nobody moved means `emitRecipe` wrote no limits block at all. */
+  it("says nothing about limits when the file written has none", () => {
+    const noLimits = onboardingWritten("acme/shop", "/home/me/.lingtai/shop/recipe.yml", "steps:\n  proposed: []\n");
+    expect(noLimits).not.toContain("limits");
   });
 });
 

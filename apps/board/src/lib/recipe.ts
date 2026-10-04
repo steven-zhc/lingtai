@@ -721,14 +721,16 @@ export function sourceOf(row: Reading, provenance?: Readonly<Record<string, stri
  * A path under this machine's home as its owner writes it — `~/.lingtai/…`.
  *
  * The source column is read across a row, and an absolute path spends most of
- * its width on the part every row shares. Only the prefix is touched, so a
- * source that is not a path (`default`, `detected — the only runtime signed
- * in`) and a path with a section after it (`…/config.yml (projects.lingtai)`)
- * both come back saying exactly what they said.
+ * its width on the part every row shares. Every occurrence is shortened, not
+ * only a leading one: a narrowing's `where` carries a second path mid-sentence
+ * (`… , narrowing /Users/…/recipe.yml's 300`, `#371`), and a source that is
+ * not a path (`default`, `detected — the only runtime signed in`) and a path
+ * with a section after it (`…/config.yml (projects.lingtai)`) both come back
+ * saying exactly what they said.
  */
 export function underHome(where: string): string {
   const home = homedir();
-  return home !== "" && where.startsWith(`${home}/`) ? `~${where.slice(home.length)}` : where;
+  return home === "" ? where : where.replaceAll(`${home}/`, "~/");
 }
 
 /** One line of `lingtai doctor`'s provenance block, split into its columns. */
