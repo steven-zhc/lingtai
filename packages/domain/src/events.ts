@@ -378,8 +378,14 @@ export const Invocation = z.object({
   args: z.array(z.string()),
   /** The containment this run executed at: the recipe's, matched before dispatch. */
   tier: Tier,
-  /** The limits in force, in the units the runtime was handed them. */
-  limits: z.object({ turns: z.number().int(), wallMs: z.number().int() }),
+  /**
+   * The limits in force, in the units the runtime was handed them. `usd` is
+   * additive (`#370`) — absent on every event written before it, and absent
+   * on one written after when the recipe declared no dollar ceiling. This is
+   * the bound the recipe *stated*, never a computed price: 0110 §5 forbids
+   * folding money, not naming a ceiling someone wrote down.
+   */
+  limits: z.object({ turns: z.number().int(), wallMs: z.number().int(), usd: z.number().optional() }),
 });
 export type Invocation = z.infer<typeof Invocation>;
 
@@ -598,6 +604,9 @@ export const RunFinished = z.object({
  * answered something and the runtime is what lost it, so this is Lingtai's own
  * kind rather than a judgement about the diff, exactly as `out-of-turns` is the
  * repository's for the opposite reason.
+ * `out-of-usd` is `#370`, the dollar twin of `out-of-turns` and for the same
+ * reason: `error_max_budget_usd` was pinned to `crash` before this, which
+ * reported a ceiling working correctly as the runtime falling over.
  *
  * Additive to the enum. No stored event is rewritten and no version is bumped —
  * every payload a previous build wrote still parses against this.
@@ -610,6 +619,7 @@ export const RUN_FAILURE_KINDS = [
   "never-started",
   "out-of-turns",
   "no-structured-answer",
+  "out-of-usd",
 ] as const;
 
 export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];

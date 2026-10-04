@@ -29,7 +29,7 @@ import type { RunTrace } from "./run-log.ts";
  * third limit added to `runtime.limits` and not here is one doctor never asks
  * about, which is `#89` again one field along.
  */
-export const RUN_LIMITS = ["turns", "wall"] as const;
+export const RUN_LIMITS = ["turns", "wall", "usd"] as const;
 
 export type RunLimit = (typeof RUN_LIMITS)[number];
 
@@ -118,7 +118,7 @@ export interface RunRequest {
   traceTools?: boolean;
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
   env: Record<string, string>;
-  limits: { turns: number; wallMs: number };
+  limits: { turns: number; wallMs: number; usd?: number };
   /**
    * The answer's shape, as JSON Schema — sent only by the cold reviewer and
    * absent on every other run (`#369`). Each adapter hands it to the runtime

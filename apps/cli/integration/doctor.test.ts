@@ -639,7 +639,9 @@ subscribers:
 
     expect(row.name).toBe("runtime: demo limits");
     expect(row.status).toBe("ok");
-    expect(row.detail).toBe("turns 300 ← applied by claude-code · wall 2h ← applied by claude-code");
+    expect(row.detail).toBe(
+      "turns 300 ← applied by claude-code · wall 2h ← applied by claude-code · usd — none declared",
+    );
   });
 
   /**
@@ -690,6 +692,44 @@ subscribers:
     expect(row.detail).toContain("turns 300 ← not applied");
     expect(row.detail).toContain("wall 2h ← not applied");
     expect(row.detail).toContain("Nothing will stop a run of this project at all");
+  });
+
+  /**
+   * `usd` has no schema default (recipe.ts) — unlike `turns`, which is why a
+   * Codex project does not read red forever on `usd` the way it does on
+   * `turns`: nothing is declared, so there is nothing for a runtime to fail at
+   * holding (`#370`).
+   */
+  it("is ok on usd where the recipe declares no dollar ceiling, whatever the runtime enforces", async () => {
+    const row = limitsRow("demo", await recipeOf(), { ...CLAUDE_CODE_CAPABILITIES, enforces: [] });
+
+    expect(row.detail).toContain("usd — none declared");
+    expect(row.detail).not.toContain("usd 0");
+  });
+
+  it("is red on usd where the recipe declares one and the runtime does not apply it", async () => {
+    const withUsd = await resolveRecipe(
+      async (path, ref) =>
+        ref === "main" && path === RECIPE_PATH ? RECIPE.replace("  agent: claude-code", "  agent: claude-code\n  limits:\n    usd: 12") : null,
+      "main",
+    );
+    const row = limitsRow("demo", withUsd.recipe, { ...CLAUDE_CODE_CAPABILITIES, enforces: ["wall"] });
+
+    expect(row.status).toBe("fail");
+    expect(row.detail).toContain("usd $12 ← not applied");
+    expect(row.detail).toContain("claude-code carries turns and usd and bounds nothing with them");
+  });
+
+  it("is ok on usd where the recipe declares one and the runtime applies it", async () => {
+    const withUsd = await resolveRecipe(
+      async (path, ref) =>
+        ref === "main" && path === RECIPE_PATH ? RECIPE.replace("  agent: claude-code", "  agent: claude-code\n  limits:\n    usd: 12") : null,
+      "main",
+    );
+    const row = limitsRow("demo", withUsd.recipe, CLAUDE_CODE_CAPABILITIES);
+
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("usd $12 ← applied by claude-code");
   });
 });
 

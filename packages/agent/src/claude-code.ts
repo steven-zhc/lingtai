@@ -80,10 +80,11 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // and the filtered environment. It is what carried the old loop's 73 runs.
   providesTier: "guarded",
   /**
-   * Both. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns` in
-   * `argsFor`, which the binary applies itself and answers with a receipt.
+   * All three. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns`
+   * and `usd` is `--max-budget-usd`, both in `argsFor`, both applied by the
+   * binary itself and answered with a receipt (`#370`).
    */
-  enforces: ["turns", "wall"],
+  enforces: ["turns", "wall", "usd"],
 };
 
 /**
@@ -111,12 +112,14 @@ export function sessionIdFor(runId: string): string {
  * printed alone. `subtype` is one of `success`, `error_during_execution`,
  * `error_max_turns`, `error_max_budget_usd`,
  * `error_max_structured_output_retries` — read out of the shipped bundle on
- * 2026-09-08 (0031 §2). **Two members are branched on**, `error_max_turns` and
+ * 2026-09-08 (0031 §2). **Three members are branched on** — `error_max_turns`,
+ * `error_max_budget_usd` (`#370`) and
  * `error_max_structured_output_retries` (`#369`), and nothing else: the rest is
  * classified by `neverStarted`'s three checkable facts, and the prose is kept
  * whole as evidence. 0031 refused to classify on English prose; these are
  * members of a closed set the runtime prints, and each is the runtime's answer
- * to a flag this adapter passed it — `--max-turns` (`#89`) and `--json-schema`.
+ * to a flag this adapter passed it — `--max-turns` (`#89`),
+ * `--max-budget-usd` (`#370`) and `--json-schema` (`#369`).
  */
 interface ClaudeResult {
   /** Absent on the single object `--output-format json` prints; `"result"` in a stream. */
@@ -261,6 +264,11 @@ function argsFor(
     // overspent as costing nothing.
     "--max-turns",
     String(request.limits.turns),
+    // The dollar twin of `--max-turns`, applied the same way: the binary
+    // stops the session itself and still prints a receipt, this time with
+    // `subtype: "error_max_budget_usd"` (`#370`). Absent unless the recipe
+    // declared `runtime.limits.usd` — there is no default to fall back to.
+    ...(request.limits.usd === undefined ? [] : ["--max-budget-usd", String(request.limits.usd)]),
     ...(request.model ? ["--model", request.model] : []),
     // A forced tool call, measured against 2.1.285: every run that carried
     // this flag answered `stop_reason: "tool_use"`, so the prose the prompt
@@ -320,7 +328,7 @@ export interface ClaudeClosed {
 export function claudeClose(
   parsed: ClaudeResult | null,
   closed: ClaudeClosed,
-  limits: { turns: number },
+  limits: { turns: number; usd?: number },
 ): { kind: RunFailureKind; detail: string } | null {
   const turns = parsed?.num_turns ?? 0;
   const costUsd = parsed?.total_cost_usd ?? null;
@@ -328,6 +336,18 @@ export function claudeClose(
 
   if (parsed?.subtype === "error_max_turns") {
     return { kind: "out-of-turns", detail: `${turns} turns, and the recipe allows ${limits.turns} · ${cost}` };
+  }
+
+  // The dollar twin of the branch above, and here for the same reason it is:
+  // `--max-budget-usd` reaching its ceiling is a bound applied, not the runtime
+  // falling over (`#370` — `error_max_budget_usd` was pinned to `crash` before
+  // it). Inline in `run` until `#369` made this decision a pure function; it
+  // belongs beside its twin rather than beside the spawn.
+  if (parsed?.subtype === "error_max_budget_usd") {
+    return {
+      kind: "out-of-usd",
+      detail: `${cost}, and the recipe allows $${limits.usd} · ${turns} turns`,
+    };
   }
 
   if (parsed?.subtype === "error_max_structured_output_retries") {

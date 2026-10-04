@@ -647,6 +647,10 @@ export function runOnce(
     const spendFor = (own?: { readonly turns?: number; readonly wall?: string }) => ({
       turns: own?.turns ?? ceiling.turns,
       wallMs: parseDuration(own?.wall ?? ceiling.wall),
+      // The ceiling's own, unchanged: a dispatch's `limits:` is a
+      // `strictObject` that refuses `usd` by name, so there is nothing a step
+      // could narrow here (`#370`).
+      usd: ceiling.usd,
     });
     /**
      * **The runtime a step named, dispatched** (`#314`, 0070 §7).
@@ -1161,16 +1165,18 @@ export function runOnce(
        */
       let judgements = 0;
       /**
-       * The turn limit's own words, where that is what stopped the agent.
+       * A reached ceiling's own words, where that is what stopped the agent —
+       * turns or dollars (`#370`), carrying which.
        *
-       * The pass reports an agent that ran out of turns as a `did-not-finish` and
-       * says nothing about *why* it did not finish — `Worked`'s `Stopped` is one
-       * string. The limit is a **scope alarm** and the recommendation that follows
-       * from it is *narrow or split the ticket*, which is different from every
-       * other way a dispatch can stop, so the distinction is kept here rather
-       * than pushed into a vocabulary the pass would then have to carry.
+       * The pass reports an agent that ran out of turns or dollars as a
+       * `did-not-finish` and says nothing about *why* it did not finish —
+       * `Worked`'s `Stopped` is one string. Either limit is a **scope alarm**
+       * and the recommendation that follows from it is *narrow or split the
+       * ticket*, which is different from every other way a dispatch can stop,
+       * so the distinction is kept here rather than pushed into a vocabulary
+       * the pass would then have to carry.
        */
-      let turnLimit: string | null = null;
+      let ceilingHit: { kind: "out-of-turns" | "out-of-usd"; detail: string } | null = null;
       /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
@@ -2157,6 +2163,11 @@ export function runOnce(
             turns: ceiling.turns,
             wallMs: parseDuration(ceiling.wall),
             diffBytes: recipe.runtime.budget.diff,
+            // The pass's own, unnarrowable here for the reason `spendFor`
+            // carries it unchanged too: a dispatch's `limits:` refuses `usd`
+            // by name, so there is nothing for `actionsFromRecipe` to narrow
+            // (`#370`).
+            usd: ceiling.usd,
           },
         },
         // **A sibling of `agent` and not a key on it** (`#314`): an action is
@@ -2645,11 +2656,12 @@ export function runOnce(
 
         if (outcome.failure) {
           runLog.note("run", `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`);
-          // **Both, for a run stopped at its turns, whose receipt is its spend.**
+          // **Both, for a run stopped at a ceiling, whose receipt is its spend.**
           // A `RunFinished` there is not a contradiction: turns were taken and
-          // money was spent, and the ending is what `RunFailed` says.
+          // money was spent, and the ending is what `RunFailed` says. True of
+          // `out-of-usd` for the same reason it is of `out-of-turns` (`#370`).
           const receipt: ToAppend[] =
-            outcome.failure.kind === "out-of-turns"
+            outcome.failure.kind === "out-of-turns" || outcome.failure.kind === "out-of-usd"
               ? [
                   {
                     type: "RunFinished",
@@ -2680,7 +2692,9 @@ export function runOnce(
               },
             };
           }
-          if (outcome.failure.kind === "out-of-turns") turnLimit = outcome.failure.detail;
+          if (outcome.failure.kind === "out-of-turns" || outcome.failure.kind === "out-of-usd") {
+            ceilingHit = { kind: outcome.failure.kind, detail: outcome.failure.detail };
+          }
           return { stopped: `${outcome.failure.kind}: ${outcome.failure.detail}` };
         }
 
@@ -3138,22 +3152,28 @@ export function runOnce(
             }),
           };
         }
-        if (turnLimit !== null) {
+        if (ceilingHit !== null) {
+          const isUsd = ceilingHit.kind === "out-of-usd";
           return {
-            question: `out-of-turns: ${said(turnLimit)}`,
+            question: `${ceilingHit.kind}: ${said(ceilingHit.detail)}`,
             needs: "acknowledgement" as const,
             diagnosis: {
-              what:
-                `the run reached the recipe's turn limit (${limitsFor(recipe, "implement").turns}) and was stopped: ` +
-                `${said(turnLimit)}. The limit is a scope alarm — the ticket asks for more than ` +
-                "one run should do.",
+              what: isUsd
+                ? `the run reached the recipe's dollar ceiling ($${limitsFor(recipe, "implement").usd}) and was ` +
+                  `stopped: ${said(ceilingHit.detail)}. The limit is a scope alarm — the ticket asks for more ` +
+                  "than one run should cost."
+                : `the run reached the recipe's turn limit (${limitsFor(recipe, "implement").turns}) and was stopped: ` +
+                  `${said(ceilingHit.detail)}. The limit is a scope alarm — the ticket asks for more than ` +
+                  "one run should do.",
               done: null,
-              raw: turnLimit,
+              raw: ceilingHit.detail,
               recommendation: {
                 action: "requeue" as const,
-                why:
-                  "narrow or split the ticket first; requeued as written, it buys another run to " +
-                  "the same limit",
+                why: isUsd
+                  ? "narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, " +
+                    "it buys another run to the same limit"
+                  : "narrow or split the ticket first; requeued as written, it buys another run to " +
+                    "the same limit",
               },
             },
           };

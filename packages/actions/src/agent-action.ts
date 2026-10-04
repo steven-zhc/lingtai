@@ -112,7 +112,7 @@ export interface AgentActionDeps {
    * Required rather than defaulted, so the number has one home. How large a
    * diff is normal is a fact about a repository, not about reviewing.
    */
-  limits: { turns: number; wallMs: number; diffBytes: number };
+  limits: { turns: number; wallMs: number; diffBytes: number; usd?: number };
 }
 
 const RUBRIC = `

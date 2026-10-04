@@ -77,12 +77,18 @@ in the source.
 6. **`runtime.limits` is the ceiling, stated once; a dispatch may only narrow
    it.** `turns` (default 300) and `wall` (default `2h`) bound one agent run.
    `rounds` (default 2) bounds how many times a pass sends the work back, and
-   `restarts` (default 0) bounds how many times a ticket starts over. A
-   dispatch's own `limits:` may lower `turns` and `wall`. A higher value is
-   refused at resolve, and so is `rounds` or `restarts` inside a dispatch.
-   `discuss:` carries its own `agent`, `model`, `prompt` and
-   `limits` (defaults 40 turns, `5m`), because a discussion spends money outside
-   any pass.
+   `restarts` (default 0) bounds how many times a ticket starts over. `usd`
+   (`#370`) bounds one agent run in dollars and has **no default** — absent
+   means no dollar ceiling, reported as such rather than assumed unbounded or
+   silently zero. A dispatch's own `limits:` may lower `turns` and `wall`; it
+   may not carry `usd` at all either, because the dispatch schema has no key
+   for it — unlike `rounds` and `restarts`, which are refused by name with a
+   stated reason, `usd` there is refused only as an unrecognized key. A higher
+   `turns` or `wall` is refused at resolve, and so is `rounds` or `restarts`
+   inside a dispatch. `discuss:` carries its own
+   `agent`, `model`, `prompt` and `limits` (defaults 40 turns, `5m`), because a
+   discussion spends money outside any pass, and that `limits` carries no `usd`
+   either.
 
 7. **The machine file, `~/.lingtai/config.yml`, holds the machine's facts.**
    `database.store` and `database.url` (which log; see [0100](0100-one-append-only-log.md)) and `board.port`

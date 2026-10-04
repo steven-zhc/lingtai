@@ -147,6 +147,14 @@ export type FixStop =
    * person buys another run to the same limit.
    */
   | { ended: "out-of-turns"; failure: string }
+  /**
+   * A round ran and its agent reached the recipe's dollar ceiling (`#370`).
+   *
+   * Its own ending for the same reason `out-of-turns` is its own: `RUN_OWNER`
+   * calls it the **repository's**, the ticket cost more than the ceiling
+   * allowed, and no retry of the same ticket at the same ceiling answers that.
+   */
+  | { ended: "out-of-usd"; failure: string }
   /** A round ran and its agent objected by committing nothing (0039 §5). */
   | { ended: "declined" };
 
@@ -157,20 +165,21 @@ export type FixStop =
  * `RUN_OWNER`'s reason and with `#197` as the receipt for what a default costs:
  * `out-of-turns` was flattened into the crash's ending, and the card told a
  * person to send again a ticket this repository had already decided sending
- * again does not answer. An eighth `RunFailureKind` will not compile until
+ * again does not answer. A ninth `RunFailureKind` will not compile until
  * somebody says which sentence it gets — `#369`'s `no-structured-answer` was
- * the seventh, and it got `crashed`: the machinery lost a judgement, which is
- * the shape a crash is, not the repository's.
+ * the seventh and got `crashed` (the machinery lost a judgement, which is the
+ * shape a crash is, not the repository's), and `#370`'s `out-of-usd` the
+ * eighth, which is its own.
  *
- * Read the rows against `attribution.ts`'s `RUN_OWNER`: the four Lingtai owns
- * are the ones the queue answers by running it again, and the one the
- * repository owns is the one it does not.
+ * Read the rows against `attribution.ts`'s `RUN_OWNER`: the five Lingtai owns
+ * are the ones the queue answers by running it again, and the two the
+ * repository owns are the ones it does not.
  *
  * `never-started` has a row because the record is total; it never arrives,
  * because `conduct.ts` stands the conductor down on it before the fix loop can
  * block anything.
  */
-const STOP_OF: Record<RunFailureKind, "crashed" | "out-of-turns"> = {
+const STOP_OF: Record<RunFailureKind, "crashed" | "out-of-turns" | "out-of-usd"> = {
   crash: "crashed",
   timeout: "crashed",
   aborted: "crashed",
@@ -183,6 +192,7 @@ const STOP_OF: Record<RunFailureKind, "crashed" | "out-of-turns"> = {
   // call; an implementer never sends a schema, so nothing routes a fixing
   // round's own failure here.
   "no-structured-answer": "crashed",
+  "out-of-usd": "out-of-usd",
 };
 
 /**
@@ -220,6 +230,7 @@ export function stopNeeds(stop: FixStop): "judgement" | "acknowledgement" {
   switch (stop.ended) {
     case "crashed":
     case "out-of-turns":
+    case "out-of-usd":
       return "acknowledgement";
     case "declined":
     case "no-criterion":
@@ -260,6 +271,8 @@ export function stopAction(stop: FixStop): string {
       return "unfinished";
     case "out-of-turns":
       return "out-of-turns";
+    case "out-of-usd":
+      return "out-of-usd";
     case "declined":
       return "declined";
     case "no-criterion":
@@ -889,6 +902,17 @@ export function diagnoseDisagreement(input: {
           `requeued as written this buys another round to the same limit, so what answers ` +
           `it is narrowing or splitting the ticket.`
         );
+      case "out-of-usd":
+        // The dollar twin of `out-of-turns`, same move: `RUN_OWNER` calls a
+        // spent dollar ceiling the repository's too, and requeuing as written
+        // buys another round against the same ceiling rather than answering it.
+        return (
+          `A fixing agent ran out of its dollar ceiling on ${at}, ${undecided}. ${refused}, ` +
+          `and the agent sent to answer them spent the recipe's whole budget without ` +
+          `committing — ${clipFailure(input.stop.failure)}. The limit is a scope alarm: ` +
+          `requeued as written this buys another round to the same limit, so what answers ` +
+          `it is narrowing or splitting the ticket, or raising runtime.limits.usd.`
+        );
       case "declined":
         // An argument, and the one ending where the thing to read first is not
         // the findings. The objection is in `done` verbatim, via `declineWhy` —
@@ -1165,6 +1189,18 @@ export function diagnoseUnfixed(input: {
           `The limit is a scope alarm: requeued as written this buys another ` +
           `round to the same limit, so what answers it is narrowing or splitting the ticket.`
         );
+      case "out-of-usd":
+        // The dollar twin, same remedy as `out-of-turns`: a spent ceiling is
+        // the repository's failure, and sending it again spends another whole
+        // budget against the same limit.
+        return (
+          `\`${input.action}\` refuses ${at}, and this pass stopped on the recipe's dollar ` +
+          `ceiling rather than on the check. The agent sent to make it green spent its whole ` +
+          `budget without committing — ${clipFailure(input.stop.failure)}, so ${notAgain}. ` +
+          `The limit is a scope alarm: requeued as written this buys another ` +
+          `round to the same limit, so what answers it is narrowing or splitting the ticket, ` +
+          `or raising runtime.limits.usd.`
+        );
       case "declined":
         return (
           `\`${input.action}\` refuses ${at}, and the fixing agent declined it — it ` +
@@ -1311,6 +1347,11 @@ export function unfixedQuestion(input: {
         `${input.action} refuses ${where} and the fixing agent ran out of turns after ` +
         `${spent}, ${notAgain}: the ticket needs narrowing, not a retry`
       );
+    case "out-of-usd":
+      return (
+        `${input.action} refuses ${where} and the fixing agent ran out of its dollar ` +
+        `ceiling after ${spent}, ${notAgain}: the ticket needs narrowing, not a retry`
+      );
     case "declined":
       return (
         `${input.action} refuses ${where} and the fixing agent declined after ${spent}: ` +
@@ -1378,6 +1419,12 @@ export function disagreementQuestion(input: {
     case "out-of-turns":
       return (
         `a fixing agent ran out of turns on ${where} after ${spent}, so the ` +
+        `${input.action} reviewer's ${scored} are unanswered: the ticket needs ` +
+        "narrowing, not a retry"
+      );
+    case "out-of-usd":
+      return (
+        `a fixing agent ran out of its dollar ceiling on ${where} after ${spent}, so the ` +
         `${input.action} reviewer's ${scored} are unanswered: the ticket needs ` +
         "narrowing, not a retry"
       );
@@ -1460,6 +1507,11 @@ export function mergeAnywayBecause(input: {
       return (
         `A fixing agent ran out of turns after ${after} and ${refuses}; the ticket ` +
         "needs narrowing, not a retry."
+      );
+    case "out-of-usd":
+      return (
+        `A fixing agent ran out of its dollar ceiling after ${after} and ${refuses}; the ` +
+        "ticket needs narrowing, not a retry."
       );
     case "declined":
       return `The fixing agent declined after ${after} and ${refuses}; read its objection first.`;

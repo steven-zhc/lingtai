@@ -134,6 +134,7 @@ export type ProjectFilter =
         turns: number;
         wall: string;
         wallMs: number;
+        usd?: number;
         steps: readonly StepBound[];
       };
       /**
@@ -229,6 +230,7 @@ export async function projectFilter(
         turns: limitsFor(resolved.recipe, "implement").turns,
         wall: limitsFor(resolved.recipe, "implement").wall,
         wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
+        usd: ceilingOf(resolved.recipe).usd,
         steps: boundsBesides(resolved.recipe, "implement"),
       },
       backoffMs: parseDuration(backoffOf(resolved.recipe)),

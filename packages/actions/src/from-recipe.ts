@@ -190,7 +190,10 @@ export class ActionUnavailableError extends Error {
  *
  * `diffBytes` is not in the group and is not narrowed: it is
  * `runtime.budget.diff`, a fact about how large this repository's diffs are
- * (0029), and not a bound on what a call may spend.
+ * (0029), and not a bound on what a call may spend. `usd` (`#370`) is carried
+ * the same way: it bounds one call, the same as `turns` and `wall`, but a
+ * dispatch's own `limits:` has no key for it to narrow — so `action.limits`
+ * is never asked about it here either.
  */
 function dispatchDeps(
   deps: ActionDeps & { agent: AgentActionDeps },
@@ -210,6 +213,7 @@ function dispatchDeps(
         wallMs:
           action.limits?.wall === undefined ? base.limits.wallMs : parseDuration(action.limits.wall),
         diffBytes: base.limits.diffBytes,
+        usd: base.limits.usd,
       };
     },
   };

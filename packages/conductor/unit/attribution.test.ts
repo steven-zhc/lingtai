@@ -131,10 +131,10 @@ describe("whose failure it is", () => {
    * over `RefusalReason`: a sixth kind must not default into blaming the
    * repository because nobody remembered this file existed.
    */
-  it("has an answer for every way a run can end badly, and only out-of-turns is the repository's", () => {
+  it("has an answer for every way a run can end badly, and only a spent ceiling is the repository's", () => {
     for (const reason of RUN_FAILURE_KINDS) {
       expect(whoseFailure({ source: "run", reason, detail: "" }), reason).toBe(
-        reason === "out-of-turns" ? "repository" : "lingtai",
+        reason === "out-of-turns" || reason === "out-of-usd" ? "repository" : "lingtai",
       );
     }
   });

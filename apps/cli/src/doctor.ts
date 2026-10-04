@@ -1577,8 +1577,8 @@ export function recipeRow(
  * measured, `codex exec` has no `--max-turns` and no flag of any name bounds
  * turns — and `runtime.limits.turns` has a schema default of `300` that is always
  * present, so red there is red for ever and `CheckStatus`'s docstring names that
- * trap. **The downgrade cost more than the trap.** `RUN_LIMITS` is two names and
- * every runtime in `RUNTIMES` applies at least one of them, so `fail` became a
+ * trap. **The downgrade cost more than the trap.** `RUN_LIMITS` was two names then
+ * and every runtime in `RUNTIMES` applies at least one of them, so `fail` became a
  * branch no real project could reach, and the state `#89` was built to catch
  * reported `warn` —
  * which `gatingFailures` does not count (`restart.ts`), so `lingtai restart` would
@@ -1609,19 +1609,27 @@ export function limitsRow(
   capabilities: RuntimeCapabilities,
 ): CheckResult {
   const name = `runtime: ${project} limits`;
+  // `usd` has no default (recipe.ts), so unlike `turns` and `wall` it can be
+  // genuinely absent — and absent is never "ignored": a Codex project with no
+  // `runtime.limits.usd` declared has nothing for Codex to fail at holding.
+  const declaredUsd = ceilingOf(recipe).usd;
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
     // The ceiling beside its provenance: this row is about what
     // `~/.lingtai/config.yml` says and whether the runtime applies it, and a
     // step's reduction is neither (`#314`).
     turns: String(ceilingOf(recipe).turns),
     wall: ceilingOf(recipe).wall,
+    usd: declaredUsd === undefined ? "none declared" : `$${declaredUsd}`,
   };
-  const ignored = RUN_LIMITS.filter((limit) => !capabilities.enforces.includes(limit));
-  const detail = RUN_LIMITS.map(
-    (limit) =>
-      `${limit} ${declared[limit]} ← ${
-        capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : "not applied"
-      }`,
+  const ignored = RUN_LIMITS.filter(
+    (limit) => (limit !== "usd" || declaredUsd !== undefined) && !capabilities.enforces.includes(limit),
+  );
+  const detail = RUN_LIMITS.map((limit) =>
+    limit === "usd" && declaredUsd === undefined
+      ? "usd — none declared"
+      : `${limit} ${declared[limit]} ← ${
+          capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : "not applied"
+        }`,
   ).join(" · ");
 
   if (ignored.length === 0) return { name, status: "ok", detail };
@@ -1630,6 +1638,17 @@ export function limitsRow(
   const carries =
     `${capabilities.id} carries ${ignored.join(" and ")} and bounds nothing ` +
     `with ${ignored.length === 1 ? "it" : "them"}`;
+  // `turns` and `wall` are named at `runtime.agent`, because no edit to the
+  // recipe clears them: `turns` is always present and has no spelling for
+  // *unbounded*. `usd` has no default (recipe.ts), so unlike those two it
+  // clears by deleting the line that declared it — named here rather than
+  // folded into "name a runtime", which is not the only lever for `usd`.
+  const namedIgnored = ignored.filter((limit) => limit !== "usd");
+  const lever =
+    namedIgnored.length === 0
+      ? "The lever is deleting runtime.limits.usd, or naming a runtime that applies usd"
+      : `The lever is runtime.agent — name a runtime that applies ${namedIgnored.join(" and ")}` +
+        (ignored.includes("usd") ? ". usd also clears by deleting runtime.limits.usd" : "");
   return {
     name,
     status: "fail",
@@ -1639,9 +1658,7 @@ export function limitsRow(
       (applied.length === 0
         ? "Nothing will stop a run of this project at all. "
         : `What still stops one is ${applied.join(" and ")}, and not ${ignored.join(" or ")}. `) +
-      // Named, because no edit to the recipe clears it: `turns` is always present
-      // and has no spelling for *unbounded*.
-      `The lever is runtime.agent — name a runtime that applies ${ignored.join(" and ")}`,
+      lever,
   };
 }
 
