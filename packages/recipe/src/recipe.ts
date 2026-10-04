@@ -930,8 +930,8 @@ export const mergePlugin = definePlugin("merge", {
  *
  * **`assignee` is not here, and that is the same rule kept rather than broken**
  * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3). It
- * is a field of `queue:`, and its v1 spelling is `runtime.assignee` on the
- * machine's own file — not `source.assignee`, which no file has ever held.
+ * is a field of `queue:`, and its v1 spelling is `runtime.assignee` below, in
+ * this same file — not `source.assignee`, which no file has ever held.
  * Putting it in `source:` too would invent a third spelling that nothing reads,
  * which is the silently-dropped key 0016 §4 is about.
  */
@@ -2805,8 +2805,8 @@ export const Recipe = z.object({
   // declares nothing at `claim` is selected on exactly these three.
   //
   // The fourth is `assignee`, and it is deliberately not here: its v1 spelling
-  // is `runtime.assignee` below, on the machine's own file (0046 §3), and a
-  // `source.assignee` nothing reads would be a key accepted and dropped.
+  // is `runtime.assignee` below, in this same file, and a `source.assignee`
+  // nothing reads would be a key accepted and dropped.
   source: z.object(SOURCE_FIELDS),
 
   /**
@@ -3064,7 +3064,7 @@ export const Recipe = z.object({
       })
       .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
     /**
-     * Which issues this machine takes, by their assignee
+     * Which issues this project takes, by their assignee
      * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2, #181).
      *
      * **This is `queue:`'s `assignee` field under its v1 name**
@@ -3072,11 +3072,13 @@ export const Recipe = z.object({
      * and `assigneeOf` in `settings.ts` is what every reader asks. 0063 §3
      * settles that it is one of the four settings that decide which ticket is
      * taken rather than a plugin beside them; §4 is what moves where a person
-     * writes it, and that has not happened.
+     * writes it, and since `#373` it has: this is written here, in the
+     * recipe, rather than on the machine.
      *
-     * **The machine's, never the recipe file's** until it does:
-     * `resolveLocalRecipe` puts it here from `~/.lingtai/config.yml` and
-     * refuses it written in the recipe, as it does `agent` and `limits`.
+     * **The recipe's, and refused on the machine file by name** —
+     * `resolveLocalRecipe` reads it from here untouched, and a machine file
+     * that still writes `runtime.assignee` or `projects.<p>.runtime.assignee`
+     * is refused rather than merged in.
      *
      * **Optional, and absent is `both`** — every ticket, assigned or not, which
      * is how the queue behaved before an assignee was read and what somebody

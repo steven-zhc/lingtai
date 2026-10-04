@@ -359,12 +359,12 @@ export async function recipeOfRun(
  *
  * **And it is not always the recipe's file.** Two files decide one project, so
  * three of the ways this resolve can fail leave `recipe.yml` perfectly
- * readable: `gates:` in the machine file, an ill-formed `runtime.assignee`
- * there, and two runtimes signed in with nothing naming one — which 0046 §3
- * treats as an expected state and not a mistake. A page that answered all
- * three with *the recipe could not be read* would send its reader to open the
- * one file there is nothing wrong with, so `fault` says which, and `at` is the
- * file that fault is in.
+ * readable: `gates:` in the machine file, a `runtime.assignee` written
+ * there since it moved to the recipe (`#373`), and two runtimes signed in
+ * with nothing naming one — which 0046 §3 treats as an expected state and not
+ * a mistake. A page that answered all three with *the recipe could not be
+ * read* would send its reader to open the one file there is nothing wrong
+ * with, so `fault` says which, and `at` is the file that fault is in.
  */
 export type ProjectRecipe =
   | {
@@ -392,8 +392,9 @@ export type ProjectRecipe =
 /**
  * Which file a refusal is about (#218).
  *
- * The machine file refuses `gates:` and an ill-formed `runtime.assignee` by
- * name, and `AgentUnresolvedError` is answered either there — by writing
+ * The machine file refuses `gates:` and `runtime.assignee` by name — the
+ * latter because it is the recipe's since `#373` — and `AgentUnresolvedError`
+ * is answered either there — by writing
  * `runtime.agent` — or by signing a runtime out. None of the three is fixed by
  * editing the recipe, and each names its own remedy in its message; what a
  * caller must not do is wrap all three in a sentence about the other file.

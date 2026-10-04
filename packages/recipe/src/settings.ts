@@ -290,17 +290,16 @@ export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
 }
 
 /**
- * Whose tickets this machine takes — **`queue:`'s fourth field**, and the one
+ * Whose tickets this project takes — **`queue:`'s fourth field**, and the one
  * whose v1 name is not `source:`'s
  * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3).
  *
  * The other three are written under `source:` and this is written under
- * `runtime:`, by the machine file rather than by the recipe (0046 §3), and
- * that difference is exactly what an accessor is for: 0063 §4 moves where a
- * person writes it and this is the file that move edits. Until it lands,
- * `#244` is the ticket that found the readers — `assigneeSkip`'s caller in
- * `discover.ts`, `describeFilter` and the board's reading — each reaching in
- * by hand.
+ * `runtime:`, both in the recipe since `#373` (0063 §4) — before that it was
+ * the machine file's, and this is the file that move edits. `#244` is the
+ * ticket that found the readers — `assigneeSkip`'s caller in `discover.ts`,
+ * `describeFilter` and the board's reading — each reaching in by hand, which
+ * is why they now ask here instead.
  *
  * Absent is `both`, and it is returned absent rather than filled in: what an
  * absent rule means belongs to `assigneeSkip` and to `describeAssignee`, which
@@ -309,7 +308,7 @@ export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
  *
  * **A declared `queue:` must name it**, so the `??` below is a spelling and not
  * a fallback, exactly as `submodulesOf`'s is: there is no third answer between
- * *the step said* and *the machine file said*, and a block that named only its
+ * *the step said* and *`runtime:` said*, and a block that named only its
  * kinds cannot silently hand this machine somebody else's tickets (`#269`).
  */
 export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
@@ -329,7 +328,7 @@ export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
  * reading of the recipe says it took.
  *
  * **`assignee` is the one value this fills in, because the block requires it and
- * `runtime.assignee` does not exist on every machine.** `EVERYONE` is what an
+ * `runtime.assignee` is absent from some recipes.** `EVERYONE` is what an
  * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
  * `rule?.take ?? "both"` — so writing it here selects identically and says out
  * loud what a pasted `queue:` must then write. The *reading* of an absent rule is

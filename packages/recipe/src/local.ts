@@ -31,9 +31,9 @@ import { z } from "zod";
 import { RuntimeId } from "@lingtai/domain";
 import { stateDir } from "@lingtai/env";
 import { PRESETS } from "./presets.ts";
-import { AssigneeRule, AssigneeTake, LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
+import { LIMIT_DEFAULTS, positiveDuration, type Recipe } from "./recipe.ts";
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from "./settings.ts";
+import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from "./settings.ts";
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
@@ -75,13 +75,6 @@ const MachineLimits = z.strictObject({
 const MachineRuntime = z.strictObject({
   agent: RuntimeId.optional(),
   limits: MachineLimits.optional(),
-  /**
-   * Whose tickets this machine takes (0046 §2, #181). Both keys optional, so
-   * the login can be said once machine-wide and `take` per project.
-   */
-  assignee: z
-    .strictObject({ login: z.string().min(1).optional(), take: AssigneeTake.optional() })
-    .optional(),
 });
 
 /**
@@ -89,8 +82,10 @@ const MachineRuntime = z.strictObject({
  *
  * Not strict at the top: this file is the machine's (ports, a database URL —
  * doc/design/1.0.md), and a section some other reader owns is not this
- * reader's to refuse. `steps` is refused anyway, before the schema, because it
- * is the one key whose silent absence weakens something.
+ * reader's to refuse. `steps` and `runtime.assignee` are refused anyway,
+ * before the schema: `steps` because its silent absence weakens a gate, and
+ * `runtime.assignee` because it moved to the recipe (`#373`) and a key
+ * accepted here but never read is 0016 §4's failure under a new name.
  */
 export const MachineConfig = z.object({
   runtime: MachineRuntime.optional(),
@@ -138,6 +133,27 @@ function stepsRefusal(at: string, project: string, home: string): string {
 }
 
 /**
+ * **Since `#373`.** Whose tickets this project takes is the recipe's — under
+ * `runtime.assignee`, or `assignee` in `claim`'s `queue:` — never the
+ * machine's, so a machine file that still writes it is a person who has not
+ * heard of the move, and a key accepted here but never read is exactly what
+ * `stepsRefusal` exists to keep this file from doing silently.
+ */
+function assigneeRefusal(at: string, project: string, home: string): string {
+  return (
+    `${at}: whose tickets this project takes is not configured in the machine file — it is configured ` +
+    `in the recipe, ${recipePath(project, home)}, under \`runtime.assignee\`, or \`assignee\` in \`claim\`'s ` +
+    "`queue:`. Nothing here was applied; move it there if it is meant to apply"
+  );
+}
+
+/** Whether `runtime.assignee` is written under `scope`, which is `top` or one `top.projects` entry. */
+function hasAssignee(scope: Record<string, unknown>): boolean {
+  const runtime = scope["runtime"];
+  return runtime !== null && typeof runtime === "object" && !Array.isArray(runtime) && "assignee" in runtime;
+}
+
+/**
  * Parses the machine file's text. `null` is a machine with no file, which is a
  * machine that has set nothing.
  */
@@ -162,11 +178,14 @@ export function parseMachineConfig(
   const problems: string[] = [];
   const top = raw as Record<string, unknown>;
   if ("steps" in top) problems.push(stepsRefusal("steps", project, home));
+  if (hasAssignee(top)) problems.push(assigneeRefusal("runtime.assignee", project, home));
   const projects = top["projects"];
   if (projects !== null && typeof projects === "object" && !Array.isArray(projects)) {
     for (const [name, scope] of Object.entries(projects as Record<string, unknown>)) {
       if (scope === null || typeof scope !== "object") continue;
-      if ("steps" in scope) problems.push(stepsRefusal(`projects.${name}.steps`, name, home));
+      const scoped = scope as Record<string, unknown>;
+      if ("steps" in scoped) problems.push(stepsRefusal(`projects.${name}.steps`, name, home));
+      if (hasAssignee(scoped)) problems.push(assigneeRefusal(`projects.${name}.runtime.assignee`, name, home));
     }
   }
   if (problems.length > 0) throw new MachineConfigInvalidError(path, problems);
@@ -374,26 +393,6 @@ export async function resolveLocalRecipe(
   if (usd !== undefined) limits.usd = usd;
   provenance["runtime.limits.usd"] = `${usd ?? "(none)"}${PROVENANCE_ARROW}${usd === undefined ? "default" : usdFrom}`;
 
-  // Absent unless the machine said something, so a machine that has not heard
-  // of assignees resolves the recipe — and its hash — exactly as before.
-  const assigneeFrom = (key: "login" | "take") =>
-    scoped?.assignee?.[key] !== undefined ? scopedAt : shared?.assignee?.[key] !== undefined ? machineFile : null;
-  const login = scoped?.assignee?.login ?? shared?.assignee?.login;
-  const take = scoped?.assignee?.take ?? shared?.assignee?.take;
-  let assignee: AssigneeRule | undefined;
-  if (login !== undefined || take !== undefined) {
-    const parsed = AssigneeRule.safeParse({ login, take });
-    if (!parsed.success) {
-      throw new MachineConfigInvalidError(
-        machineFile,
-        parsed.error.issues.map((i) => `runtime.assignee.${i.path.join(".")}: ${i.message}`),
-      );
-    }
-    assignee = parsed.data;
-  }
-  provenance["runtime.assignee.take"] = `${assignee?.take ?? "both"}${PROVENANCE_ARROW}${assigneeFrom("take") ?? "default"}`;
-  provenance["runtime.assignee.login"] = `${assignee?.login ?? "(none)"}${PROVENANCE_ARROW}${assigneeFrom("login") ?? "default"}`;
-
   // What the *file itself* carries, kept before anything is merged into it.
   // This is the only place the difference survives: `recipe.source.exclude`
   // reads `[]` and `recipe.steps.proposed` reads the preset's action whether
@@ -412,7 +411,7 @@ export async function resolveLocalRecipe(
       runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {};
-    for (const key of ["agent", "limits", "assignee"]) {
+    for (const key of ["agent", "limits"]) {
       if (key in own) {
         refused.push(
           `runtime.${key}: moved to this machine (0046 §3) — write it in ${machineFile}, ` +
@@ -421,7 +420,7 @@ export async function resolveLocalRecipe(
       }
     }
     if (refused.length > 0) return refused;
-    raw["runtime"] = { ...own, agent: agent.agent, limits, ...(assignee ? { assignee } : {}) };
+    raw["runtime"] = { ...own, agent: agent.agent, limits };
     return [];
   });
 
@@ -456,6 +455,18 @@ export async function resolveLocalRecipe(
   const from = originIn(wrote, resolved.preset, path);
   for (const [key, value] of Object.entries(recipeValues))
     provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;
+
+  // `assignee` is the recipe's now (`#373`), under either spelling — read
+  // only once the recipe has resolved, because which spelling it used is a
+  // fact `originIn` only has an answer for afterwards. A `claim` `queue:`
+  // that names it is the source for both halves, whichever one it wrote;
+  // otherwise each half asks `runtime.assignee.<key>` on its own, so a file
+  // that wrote only `login` still reads `take: both ← default`.
+  const rule = assigneeOf(recipe);
+  const atStep = recipe.steps.claim.some((action) => "queue" in action) ? from("steps.claim") : null;
+  provenance["runtime.assignee.take"] = `${rule?.take ?? "both"}${PROVENANCE_ARROW}${atStep ?? from("runtime.assignee.take")}`;
+  provenance["runtime.assignee.login"] = `${rule?.login ?? "(none)"}${PROVENANCE_ARROW}${atStep ?? from("runtime.assignee.login")}`;
+
   return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance };
 }
 
@@ -464,8 +475,10 @@ export type MachineFiles =
   | {
       ok: true;
       /**
-       * `recipePath(project)`'s text: the recipe without `runtime.agent`,
-       * `runtime.limits` and `runtime.assignee`, each of which is carried to `machine`.
+       * `recipePath(project)`'s text: the recipe without `runtime.agent` and
+       * `runtime.limits`, each of which is carried to `machine`.
+       * `runtime.assignee` is left exactly as the recipe wrote it (`#373`) —
+       * it is not one of the two this file moves.
        */
       recipe: string;
       /** `machinePath()`'s new text, or null when it already says this and needs no write. */
@@ -479,13 +492,12 @@ export type MachineFiles =
  *
  * The agent and the limits the page chose are not dropped: they go under
  * `projects.<project>.runtime` in the machine file, which is where a choice for
- * one repository lives, and every other byte of that file is kept. So is the
- * project's `runtime.assignee` (#181), which the page does not show: an edit to
- * the agent or the limits replaces the section without dropping whose tickets
- * this machine takes. One written in the recipe text goes there too. A machine
+ * one repository lives, and every other byte of that file is kept. A machine
  * file that already names a *different* runtime for this project is refused
  * rather than overwritten — both are a person's recorded choice, and which one
- * is meant is theirs to say.
+ * is meant is theirs to say. `runtime.assignee` takes no part in any of this
+ * since `#373`: it is the recipe's, so this function neither reads it out of
+ * the machine file nor writes it there.
  */
 export function machineFiles(input: {
   /** The recipe as emitted, comments and all. */
@@ -506,27 +518,24 @@ export function machineFiles(input: {
   const doc = parseDocument(input.file);
   const toJSON = (node: unknown) =>
     node !== null && typeof node === "object" && "toJSON" in node ? (node as { toJSON: () => unknown }).toJSON() : node;
-  const written = doc.hasIn(["runtime", "assignee"]) ? toJSON(doc.getIn(["runtime", "assignee"])) : undefined;
   // A file already without them — the machine's own, being edited — has no `runtime` to delete from.
   if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
   if (doc.hasIn(["runtime", "limits"])) doc.deleteIn(["runtime", "limits"]);
-  if (doc.hasIn(["runtime", "assignee"])) doc.deleteIn(["runtime", "assignee"]);
   const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 
   const at = ["projects", input.project, "runtime"];
   const path = machinePath(home);
-  const choose = (kept: unknown) => ({
+  const choose = () => ({
     agent: input.recipe.runtime.agent,
     // **The ceiling and not `implement`'s bound** (`#314`). This writes
     // `~/.lingtai/config.yml`'s `runtime.limits`, which is what every step
     // narrows *from*; saving a narrowed figure here would lower the ceiling to
     // whatever one step asked for, permanently, on a save nobody read as a change.
     limits: { ...ceilingOf(input.recipe) },
-    ...(written !== undefined ? { assignee: written } : kept !== undefined ? { assignee: kept } : {}),
   });
 
   if (input.machine === null || input.machine.trim() === "") {
-    const created = new Document({ projects: { [input.project]: { runtime: choose(undefined) } } });
+    const created = new Document({ projects: { [input.project]: { runtime: choose() } } });
     return { ok: true, recipe, machine: created.toString() };
   }
 
@@ -537,10 +546,7 @@ export function machineFiles(input: {
       refusal: `${path} does not parse as a mapping, so ${input.project}'s agent and limits cannot be added to it — fix it and press this again`,
     };
   }
-  // Not the resolved recipe's assignee: its login may be the machine-wide one,
-  // and copying it into this project's section would stop it following that.
-  const kept = machine.hasIn([...at, "assignee"]) ? toJSON(machine.getIn([...at, "assignee"])) : undefined;
-  const chosen = choose(kept);
+  const chosen = choose();
   if (machine.hasIn(at)) {
     const json = toJSON(machine.getIn(at));
     if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };

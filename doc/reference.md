@@ -1125,10 +1125,11 @@ agree is 0053's *one decision across two sources*, one level down. 0046 §3's
 argument for the setting being the machine's does not survive the move either:
 the recipe **is** that person's setting, written by them and outside the managed
 repository, and that sentence cannot tell two files inside `~/.lingtai/` apart.
-Where a person *writes* it has not moved — `runtime.assignee` in the machine
-file is still its v1 spelling, and 0063 §4 is what inverts that refusal — so
-every reader asks `assigneeOf` in `packages/recipe/src/settings.ts` and the day
-it moves is a change to that one file.
+Where a person *writes* it moved with `#373`: `runtime.assignee` is now the
+recipe's own v1 spelling, and the machine file refuses it by name instead of
+merging it in, which is 0063 §4 done for this one key. Every reader still asks
+`assigneeOf` in `packages/recipe/src/settings.ts`, so the move cost that one
+file and none of its callers.
 
 **Three of `queue:`'s four fields *are* `source:`'s three fields, and there is
 one declaration of them** — `KINDS`, `EXCLUDE` and `BACKOFF` in `recipe.ts`,

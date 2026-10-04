@@ -253,11 +253,11 @@ describe("a recipe that cannot be read", () => {
   /**
    * **And when the fault is in the other file, it says that one.** `gates:` in
    * the machine file is the mistake that file exists to refuse, and it stops
-   * the resolve with `recipe.yml` perfectly readable — as an ill-formed
-   * `runtime.assignee` does, and as `AgentUnresolvedError` does. A page
-   * answering all three with *the recipe could not be read* and then *edit the
-   * recipe* costs its reader two readings of the one file there is nothing
-   * wrong with.
+   * the resolve with `recipe.yml` perfectly readable — as a `runtime.assignee`
+   * written there does, since it moved to the recipe (`#373`), and as
+   * `AgentUnresolvedError` does. A page answering all three with *the recipe
+   * could not be read* and then *edit the recipe* costs its reader two
+   * readings of the one file there is nothing wrong with.
    */
   it("names the machine's file when the fault is there, and sends nobody to the recipe", async () => {
     await writeFile(join(home, "config.yml"), `${MACHINE}\ngates:\n  proposed: []\n`);
@@ -304,8 +304,12 @@ describe("a recipe that cannot be read", () => {
     expect(note).toContain(join(home, "config.yml"));
   });
 
-  /** The same file, refused by the schema rather than by name. */
-  it("names the machine's file for an assignee it will not accept", async () => {
+  /**
+   * Since `#373`, `runtime.assignee` is the recipe's — so a value here is
+   * refused by name, the same way `gates:` above is, rather than by the
+   * schema rejecting `take: nobody` as not one of the three.
+   */
+  it("names the machine's file for an assignee written there", async () => {
     await writeFile(join(home, "config.yml"), `runtime:\n  agent: claude-code\n  assignee: { take: nobody }\n`);
     const view = await projectRecipe(state);
 

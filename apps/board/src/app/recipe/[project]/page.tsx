@@ -99,11 +99,12 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                rendered as though there were simply nothing to do (#76).
 
                And the file named is the one at fault. `gates:` in the machine
-               file, an ill-formed `runtime.assignee` and two runtimes signed
-               in with nothing naming one all stop this resolve with the recipe
-               perfectly readable; a page that said *the recipe could not be
-               read* would have its reader open that file twice over and find
-               nothing wrong, while the one to edit went unnamed. */
+               file, a `runtime.assignee` written there since it moved to the
+               recipe (#373), and two runtimes signed in with nothing naming
+               one all stop this resolve with the recipe perfectly readable;
+               a page that said *the recipe could not be read* would have its
+               reader open that file twice over and find nothing wrong, while
+               the one to edit went unnamed. */
             <p className="refusal">
               {view.fault === "recipe" ? (
                 <>

@@ -13,6 +13,7 @@ import {
   machinePath,
   recipePath,
   resolveLocalRecipe,
+  resolveSource,
 } from "../src/index.ts";
 
 const HOME = "/home/me/.lingtai";
@@ -273,89 +274,119 @@ steps:
     });
   });
 
-  /** Whose tickets this machine takes (0046 §2, #181). */
+  /** Whose tickets this project takes (0046 §2, #181) — the recipe's since `#373`. */
   describe("runtime.assignee", () => {
-    it("is absent when the machine says nothing — `both`, and the hash is unchanged", async () => {
+    it("is absent when neither file says anything — `both`, and the hash is unchanged", async () => {
       const resolved = await resolveLocalRecipe("app", withMachine(undefined));
-      expect(resolved.recipe.runtime.assignee).toBeUndefined();
+      expect(resolved.recipe.runtime).not.toHaveProperty("assignee");
       expect(resolved.provenance?.["runtime.assignee.take"]).toBe("both ← default");
+      expect(resolved.provenance?.["runtime.assignee.login"]).toBe("(none) ← default");
+
+      // Built by hand with the same `agent`/`limits` merge and no `assignee`
+      // key at all — `.optional()`, never `.default({})` (0104 §6). A resolve
+      // that started writing the key in, even an empty one, would hash
+      // differently from this.
+      const byHand = resolveSource(RECIPE, "main", recipePath("app", HOME), (raw) => {
+        raw["runtime"] = { agent: "claude-code", limits: { ...LIMIT_DEFAULTS } };
+        return [];
+      });
+      expect(resolved.configHash).toBe(byHand.configHash);
     });
 
-    it("takes the login machine-wide and `take` per project", async () => {
-      const resolved = await resolveLocalRecipe(
-        "app",
-        withMachine("runtime:\n  assignee:\n    login: alice\nprojects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n"),
-      );
+    it("takes the recipe's v1 spelling, both halves named back to the recipe", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
+      });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
       expect(resolved.recipe.runtime.assignee).toEqual({ login: "alice", take: "mine" });
-      expect(resolved.provenance?.["runtime.assignee.login"]).toBe(`alice ← ${HOME}/config.yml`);
-      expect(resolved.provenance?.["runtime.assignee.take"]).toContain("projects.app");
+      expect(resolved.provenance?.["runtime.assignee.login"]).toBe(`alice ← ${recipePath("app", HOME)}`);
+      expect(resolved.provenance?.["runtime.assignee.take"]).toBe(`mine ← ${recipePath("app", HOME)}`);
     });
 
     it("defaults `take` to both when only a login is named", async () => {
-      const resolved = await resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    login: alice\n"));
-      expect(resolved.recipe.runtime.assignee).toEqual({ login: "alice", take: "both" });
-    });
-
-    it("refuses `mine` with no login, rather than taking nothing and saying nothing", async () => {
-      await expect(
-        resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    take: mine\n")),
-      ).rejects.toThrow(/runtime\.assignee\.login: take: mine needs a login/);
-    });
-
-    it("refuses a value that is not one of the three", async () => {
-      await expect(
-        resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    take: everyone\n")),
-      ).rejects.toThrow(MachineConfigInvalidError);
-    });
-
-    it("is the machine's: written in the recipe it is refused, naming the machine file", async () => {
       const read = files({
-        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  assignee:\n    take: both\n`,
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n`,
       });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.recipe.runtime.assignee).toEqual({ login: "alice", take: "both" });
+      expect(resolved.provenance?.["runtime.assignee.take"]).toBe("both ← default");
+      expect(resolved.provenance?.["runtime.assignee.login"]).toBe(`alice ← ${recipePath("app", HOME)}`);
+    });
+
+    it("refuses `mine` with no login, naming the recipe's path and not the machine file's", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  assignee:\n    take: mine\n`,
+      });
+      try {
+        await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+        expect.unreachable();
+      } catch (err) {
+        expect(err).toBeInstanceOf(RecipeInvalidError);
+        expect(String(err)).toContain(recipePath("app", HOME));
+        expect(String(err)).toMatch(/runtime\.assignee\.login: take: mine needs a login/);
+        expect(String(err)).not.toContain("config.yml");
+      }
+    });
+
+    it("a `claim` `queue:` is the source for both halves, over the v1 spelling", async () => {
+      const withClaim = RECIPE.replace(
+        "steps:\n  proposed:",
+        "steps:\n  claim:\n    - name: pick\n      queue:\n        kinds: [bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: unassigned\n  proposed:",
+      );
+      const read = files({ [recipePath("app", HOME)]: withClaim });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.provenance?.["runtime.assignee.take"]).toBe(`unassigned ← ${recipePath("app", HOME)}`);
+      expect(resolved.provenance?.["runtime.assignee.login"]).toBe(`(none) ← ${recipePath("app", HOME)}`);
+    });
+
+    it("is refused in the machine file by name, machine-wide and per project", async () => {
       await expect(
-        resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
-      ).rejects.toThrow(/runtime\.assignee: moved to this machine.*config\.yml/);
+        resolveLocalRecipe("app", withMachine("runtime:\n  assignee:\n    take: both\n")),
+      ).rejects.toThrow(
+        new RegExp(`runtime\\.assignee: whose tickets this project takes.*${recipePath("app", HOME)}`),
+      );
+      await expect(
+        resolveLocalRecipe("app", withMachine("projects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n")),
+      ).rejects.toThrow(
+        new RegExp(`projects\\.app\\.runtime\\.assignee: whose tickets this project takes.*${recipePath("app", HOME)}`),
+      );
     });
   });
 
-  /** The page edits the agent and limits; the assignee it does not show is kept (#181). */
+  /** The page edits the agent and limits; an assignee is never theirs to move (#181, #373). */
   describe("machineFiles and runtime.assignee", () => {
-    const parsed = async (machine: string) => (await resolveLocalRecipe("app", withMachine(machine))).recipe;
+    const parsed = async (machine: string | undefined) =>
+      (await resolveLocalRecipe("app", withMachine(machine))).recipe;
 
-    it("keeps the project's assignee when an edit replaces the section", async () => {
-      const before =
-        "projects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        login: bob\n        take: mine\n";
-      const current = await parsed(before);
-      const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
-      const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
-      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
-      const after = await parsed(split.machine);
-      expect(after.runtime.limits.rounds).toBe(3);
-      expect(after.runtime.assignee).toEqual({ login: "bob", take: "mine" });
-    });
-
-    it("does not copy a machine-wide login into the project's section", async () => {
-      const before =
-        "runtime:\n  assignee:\n    login: bob\nprojects:\n  app:\n    runtime:\n      agent: claude-code\n      assignee:\n        take: mine\n";
-      const current = await parsed(before);
-      const edited = { ...current, runtime: { ...current.runtime, limits: { ...current.runtime.limits, rounds: 3 } } };
-      const split = machineFiles({ file: RECIPE, recipe: edited, project: "app", machine: before, home: HOME, replace: true });
-      if (!split.ok || split.machine === null) throw new Error("expected a machine file");
-      expect(split.machine).toMatch(/app:\n\s+runtime:[\s\S]*assignee:\n\s+take: mine\n/);
-      expect(split.machine.match(/login: bob/g)).toHaveLength(1);
-    });
-
-    it("carries one written in the recipe text to the machine file, rather than deleting it", async () => {
+    it("leaves one written in the recipe text in the recipe, and it never reaches the machine file", async () => {
+      const recipe = await parsed(undefined);
       const split = machineFiles({
         file: `${RECIPE}runtime:\n  assignee:\n    take: unassigned\n`,
-        recipe: await parsed(""),
+        recipe,
         project: "app",
         machine: null,
         home: HOME,
       });
       if (!split.ok || split.machine === null) throw new Error("expected a machine file");
-      expect(split.recipe).not.toContain("assignee");
-      expect((await parsed(split.machine)).runtime.assignee).toEqual({ take: "unassigned" });
+      expect(split.recipe).toContain("assignee:");
+      expect(split.recipe).toContain("take: unassigned");
+      expect(split.machine).not.toContain("assignee");
+    });
+
+    it("does not add one to a machine file being edited, even when the recipe has one", async () => {
+      const recipe = await parsed(undefined);
+      const machine = "projects:\n  app:\n    runtime:\n      agent: claude-code\n      limits: {}\n";
+      const split = machineFiles({
+        file: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
+        recipe,
+        project: "app",
+        machine,
+        home: HOME,
+        replace: true,
+      });
+      if (!split.ok) throw new Error("expected ok");
+      expect(split.recipe).toContain("assignee:");
+      expect(split.machine ?? "").not.toContain("assignee");
     });
   });
 
