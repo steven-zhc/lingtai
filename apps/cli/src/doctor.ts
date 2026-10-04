@@ -89,6 +89,7 @@ import {
   projectionShape,
   readTasks,
   taskViewProjection,
+  type Projection,
 } from "@lingtai/projector";
 import { createPublicKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -552,9 +553,12 @@ async function schema(url: string): Promise<CheckResult[]> {
  * folds through the one this machine wrote down (#179), which is what lets a
  * file-backed machine have this row at all.
  */
-async function projections(url?: string): Promise<CheckResult> {
+async function projections(
+  url?: string,
+  fetch: () => ReturnType<typeof projectionLag> = () => projectionLag(url),
+): Promise<CheckResult> {
   try {
-    const lags = await projectionLag(url);
+    const lags = await fetch();
     if (lags.length === 0) {
       return {
         name: "projections: lag",
@@ -592,13 +596,16 @@ async function projections(url?: string): Promise<CheckResult> {
  * `information_schema` only, so it obeys the rule at the top of this file and
  * runs on every doctor.
  */
-async function projectionShapes(url?: string): Promise<CheckResult> {
+async function projectionShapes(
+  url?: string,
+  fetch: (p: Projection) => ReturnType<typeof projectionShape> = (p) => projectionShape(p, url),
+): Promise<CheckResult> {
   const name = "projections: shape";
   try {
     // Every projection, not the first one: `finding_backlog` (#137) has a
     // `create table if not exists` of its own, and the same #84 waiting in it.
     const shapes = await Promise.all(
-      [taskViewProjection, backlogProjection].map((p) => projectionShape(p, url)),
+      [taskViewProjection, backlogProjection].map((p) => fetch(p)),
     );
     return {
       name,
@@ -658,14 +665,19 @@ async function projectionShapes(url?: string): Promise<CheckResult> {
  * Never a `fail`: none of this is wrong, and a check that goes red for a
  * `settings.json` everyone has is a check people learn to skip.
  */
-async function settingsSources(): Promise<CheckResult> {
+async function settingsSources(
+  fetch: () => Promise<string | null> = async () => {
+    try {
+      return await readFile(join(homedir(), ".claude", "settings.json"), "utf8");
+    } catch {
+      return null;
+    }
+  },
+): Promise<CheckResult> {
   const name = "runtime: other settings in scope";
-  const path = join(homedir(), ".claude", "settings.json");
 
-  let raw: string;
-  try {
-    raw = await readFile(path, "utf8");
-  } catch {
+  const raw = await fetch();
+  if (raw === null) {
     return { name, status: "ok", detail: "no ~/.claude/settings.json — the recipe is the whole story" };
   }
 
@@ -717,12 +729,14 @@ async function settingsSources(): Promise<CheckResult> {
  * recipe, and it is a `fail` in exactly that case. Neither row is the other's
  * summary.
  */
-async function runtimeAuth(): Promise<CheckResult> {
+async function runtimeAuth(
+  fetch: () => ReturnType<typeof everyRuntime> = () => everyRuntime(),
+): Promise<CheckResult> {
   const name = "runtime: signed in";
   // Exactly what a run gets. Not `process.env`.
   const env = runnableEnv({});
   const asked = await Promise.all(
-    everyRuntime().map(async (runtime) => ({
+    fetch().map(async (runtime) => ({
       id: runtime.capabilities.id,
       // A runtime that cannot be asked cheaply must not pretend.
       status: runtime.checkAuth ? await runtime.checkAuth(env) : null,
@@ -816,6 +830,32 @@ const DEFERRED: { name: string; detail: string }[] = [
       "land (#69) — so label drift has an owner rather than needing a check here",
   },
 ];
+
+/**
+ * The seams `runDoctor` needs besides `load` and `queries` to run the
+ * file-backed branch without reaching outside the process.
+ *
+ * `load` and `queries` were the whole story until this ticket: the rows below
+ * take no parameter today, so a unit test handing in only those two still
+ * reaches `~/.lingtai`, a spawned process, or a store this test process never
+ * chose. Every member here defaults to exactly the call `runDoctor` made
+ * before this existed, so `doctorReport` and every caller that does not name
+ * `reach` are unchanged (#242, #349).
+ */
+export interface DoctorReach {
+  /** As `daemonLiveness` and `daemonCurrency` already take it. */
+  status: () => ReturnType<typeof readStatus>;
+  /** As `daemonLiveness` already takes it. */
+  pause: () => Promise<Awaited<ReturnType<typeof readControl>> | null>;
+  lags: () => ReturnType<typeof projectionLag>;
+  shapes: (p: Projection) => ReturnType<typeof projectionShape>;
+  lockHolder: () => ReturnType<typeof conductorLockHolder>;
+  orphans: () => ReturnType<typeof findOrphans>;
+  titles: () => ReturnType<typeof readTasks>;
+  /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
+  settings: () => Promise<string | null>;
+  runtimes: () => ReturnType<typeof everyRuntime>;
+}
 
 export interface DoctorReport {
   results: CheckResult[];
@@ -1132,10 +1172,12 @@ export function describeRefusal(
  * daemon on it, and a lock that is free is the normal state of one without.
  * What would be wrong is not being able to say which.
  */
-async function conductorLock(): Promise<CheckResult> {
+async function conductorLock(
+  fetch: () => ReturnType<typeof conductorLockHolder> = () => conductorLockHolder(),
+): Promise<CheckResult> {
   let holder: string | null;
   try {
-    holder = await conductorLockHolder();
+    holder = await fetch();
   } catch (err) {
     return { name: "conductor: lock", status: "ok", detail: `could not be read — ${(err as Error).message}` };
   }
@@ -1154,8 +1196,10 @@ async function conductorLock(): Promise<CheckResult> {
  * `dryRun` is the whole point: a check that changed the thing it was checking
  * would tell you about a state that no longer exists by the time you read it.
  */
-async function orphans(): Promise<CheckResult> {
-  const found = await findOrphans({ dryRun: true }).catch(() => null);
+async function orphans(
+  fetch: () => ReturnType<typeof findOrphans> = () => findOrphans({ dryRun: true }),
+): Promise<CheckResult> {
+  const found = await fetch().catch(() => null);
   if (found === null) {
     return { name: "worktrees: reconciliation", status: "ok", detail: "could not read the worktree directory" };
   }
@@ -1225,8 +1269,10 @@ type TitleBook = Map<string, string>;
  * a store that cannot answer costs the titles rather than the check, which is
  * why the failure is an empty book.
  */
-async function issueTitles(): Promise<TitleBook> {
-  const cards = await readTasks({ retentionDays: 36_500 }).catch(() => []);
+async function issueTitles(
+  fetch: () => ReturnType<typeof readTasks> = () => readTasks({ retentionDays: 36_500 }),
+): Promise<TitleBook> {
+  const cards = await fetch().catch(() => []);
   return new Map(cards.map((c) => [`${c.project}#${c.issue}`, c.title]));
 }
 
@@ -2043,6 +2089,7 @@ export async function runDoctor(
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
   load: typeof loadProjects = loadProjects,
+  reach: Partial<DoctorReach> = {},
 ): Promise<DoctorReport> {
   const results: CheckResult[] = [];
 
@@ -2119,17 +2166,17 @@ export async function runDoctor(
     // `daemon_status` — which is how that store is opened at all and how the
     // very next command would open it; not one row goes in.
     results.push(await logReachable(choice.path, queries));
-    results.push(await projections());
-    results.push(await projectionShapes());
-    results.push(await daemonLiveness());
-    results.push(await daemonCurrency());
+    results.push(await projections(undefined, reach.lags));
+    results.push(await projectionShapes(undefined, reach.shapes));
+    results.push(await daemonLiveness(reach.status, reach.pause));
+    results.push(await daemonCurrency(reach.status));
     results.push(await passRefusals(load));
-    results.push(await conductorLock());
+    results.push(await conductorLock(reach.lockHolder));
     results.push(await readableTypes(queries));
-    results.push(await orphans());
+    results.push(await orphans(reach.orphans));
     // Read once and handed to both: the two rows below name issues, and a
     // number on its own is homework for whoever is reading them (#258).
-    const titles = await issueTitles();
+    const titles = await issueTitles(reach.titles);
     results.push(await unconverged(queries, titles));
     results.push(await subscribers(queries));
     results.push(await endStepRan(queries, titles));
@@ -2185,8 +2232,8 @@ export async function runDoctor(
   results.push(...(await projectRecipes(env, load)));
   results.push(...(await declaredEnvironment(env, load)));
   results.push(...(await recipeGovernsItsBase(env, load)));
-  results.push(await settingsSources());
-  results.push(await runtimeAuth());
+  results.push(await settingsSources(reach.settings));
+  results.push(await runtimeAuth(reach.runtimes));
   for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });
 
   return {
