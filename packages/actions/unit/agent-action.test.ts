@@ -20,6 +20,7 @@ import {
 } from "../src/agent-action.ts";
 import { NEEDS_INPUT, type Action, type ActionEvent, type ActionFinding, runActionPipeline } from "../src/action.ts";
 import { REVIEW_THAT_DID_NOT_PARSE } from "../test/fixtures/review-269-attempt-3.ts";
+import { REVIEW_WITH_FULL_WIDTH_COLON } from "../test/fixtures/review-243-reconstructed.ts";
 
 const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
 
@@ -417,21 +418,27 @@ describe("reading the reviewer's answer", () => {
     expect(findings).toHaveLength(1);
   });
 
-  it("still refuses an answer truncated mid-object", () => {
+  it("still refuses an answer truncated mid-object, even once the tolerant reader can run", () => {
     // `#253`'s attempt 1, where the answer was cut off mid-JSON and was readable
     // only by luck. Scanning every brace must not turn *cannot be read* into a
-    // green action: no position in a truncated object parses, and that is the
-    // whole of the difference the refusal downstream is for.
-    const { findings, parsed } = parseFindings(
-      `Here is what I found.\n\n{"findings":[{"file":"pass.ts","line":1473,"severity":"major","claim":"the ending is`,
-    );
+    // green action: no position in a truncated object parses strictly, and the
+    // tolerant reader (`#318`) does not guess the end of an unterminated string
+    // either — it has nothing complete to close around. That is the whole of
+    // the difference the refusal downstream is for.
+    const text = `Here is what I found.\n\n{"findings":[{"file":"pass.ts","line":1473,"severity":"major","claim":"the ending is`;
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
 
     expect(parsed).toBe(false);
     expect(findings).toEqual([]);
+    // Points at the end of input, inside the string that never closed — not at
+    // the position the value started, which would be a long way back for a
+    // reviewer who had written most of a paragraph by then.
+    expect(unreadableAt).toMatchObject({ offset: text.length, char: null, context: "string" });
   });
 
   /**
-   * **`#269` attempt 3's own answer, and what it cost** (`#279`).
+   * **`#269` attempt 3's own answer, and what it cost** (`#279`, recovered by `#318`).
    *
    * Four findings — a `major` with a failure scenario and three minors — ending one
    * closing brace short of valid JSON, with `stop_reason: end_turn`: the model
@@ -439,25 +446,191 @@ describe("reading the reviewer's answer", () => {
    * the reviewer had held an opinion not worth a round, because `parsed` stopped at
    * this function.
    *
-   * The assertion is `false` and not a repair. Reading four findings out of an
-   * object that does not close would mean guessing where the writer meant to stop,
-   * and the case above is the rule: no position in a truncated object parses. What
-   * `#279` changed is that *this* answer and `{"findings":[]}` no longer reach the
-   * router as the same thing.
+   * **The assertion is a repair now, and not a refusal.** Every strict candidate
+   * still fails exactly as before — no fence to strip, and the outer `{` is
+   * followed by the rest of the array rather than by its own close. What is new is
+   * the tolerant reading reached only once every strict one has: every value in the
+   * object is complete, only the outer `}` is missing, and `readTolerantJson` closes
+   * it. All four findings kept every one of `Finding`'s five keys, so none was
+   * dropped by `findingProblem`, and the `major` among them makes the verdict
+   * `failed` — the two conditions that let a repaired reading count at all.
    */
-  it("refuses the answer that was dropped whole, which is a truncation and not a fence", () => {
+  it("recovers the answer that was dropped whole, a truncation and not a fence", () => {
     // Not a fenced block and not prose around a brace: there is no fence to strip,
     // an inner `{` is followed by the rest of the array, and the outer one never
-    // closes. So every candidate fails and the answer is refused.
+    // closes. So every *strict* candidate fails.
     expect(REVIEW_THAT_DID_NOT_PARSE).not.toContain("```");
     expect(REVIEW_THAT_DID_NOT_PARSE.startsWith('{"findings":[')).toBe(true);
     expect(REVIEW_THAT_DID_NOT_PARSE.endsWith("}]")).toBe(true);
 
-    expect(parseFindings(REVIEW_THAT_DID_NOT_PARSE)).toEqual({ findings: [], parsed: false });
+    const { findings, parsed } = parseFindings(REVIEW_THAT_DID_NOT_PARSE);
 
-    // And the fixture is only worth keeping while that is true of it: one more
-    // brace and it parses, which is the thing a tidy-up would quietly do.
+    expect(parsed).toBe(true);
+    expect(findings).toHaveLength(4);
+    expect(findings.map((f) => f.severity)).toEqual(["major", "minor", "minor", "minor"]);
+    expect(findings[0]).toMatchObject({ file: "packages/recipe/src/recipe.ts", line: 1413 });
+
+    // And the fixture is only worth keeping while the strict reading alone still
+    // fails on it: one more brace and step 2 is never reached.
     expect(parseFindings(`${REVIEW_THAT_DID_NOT_PARSE}}`)).toMatchObject({ parsed: true });
+  });
+
+  /** `#243`'s own failure mode — a full-width colon, not a truncation — recovered the same way. */
+  it("recovers a full-width colon in a key separator, and leaves one quoted inside a claim alone", () => {
+    expect(() => JSON.parse(REVIEW_WITH_FULL_WIDTH_COLON)).toThrow();
+
+    const { findings, parsed } = parseFindings(REVIEW_WITH_FULL_WIDTH_COLON);
+
+    expect(parsed).toBe(true);
+    expect(findings).toHaveLength(3);
+    expect(findings.map((f) => f.severity)).toEqual(["major", "minor", "minor"]);
+    // The repair table only ever answers a question the string scanner never
+    // asks, so the colon quoted inside this claim survives character for character.
+    expect(findings[0]?.claim).toContain("的分支：未实现");
+  });
+
+  /**
+   * **A prose answer with no JSON in it at all must not report the first letter
+   * of the first sentence as an "unexpected character"** (`#318`, round one's
+   * own regression). Without the `startsWith("{")` gate, the whole-text
+   * candidate's syntax failure at offset 0 would win `furthest` by default,
+   * which turned *there is nothing here to repair* into a sentence that reads
+   * exactly like a one-byte repair gone wrong.
+   */
+  it("reports no JSON object was found, rather than the first letter of the prose, when there is none to find", () => {
+    const { unreadableAt } = parseFindings("I looked at it and it seems fine to me.");
+
+    expect(unreadableAt).toBeUndefined();
+  });
+
+  it("reports the offending character and its offset when the text does look like JSON", () => {
+    const { unreadableAt } = parseFindings('{"a":1："b":2}');
+
+    expect(unreadableAt).toMatchObject({ offset: 6, char: "：" });
+  });
+
+  /**
+   * **A repaired reading that read fine and was then refused must say so**
+   * (`#318` finding 1, the round-one review). Before this, `unreadableAt` was
+   * only ever set from a candidate the tolerant reader failed *syntactically*
+   * on — so a repair that parsed in full and was then refused by
+   * `findingProblem` or the minors-only guard left `furthest` untouched, and
+   * the sentence either claimed no JSON was found at all or pointed at an
+   * unrelated syntax failure elsewhere in the text (a quoted brace, or prose
+   * ahead of the real object).
+   */
+  it("says a repaired reading was rejected, not that nothing was found, when an entry is incomplete", () => {
+    // One finding earlier than `#269`'s own truncation: the second entry stops
+    // right after `severity`, so it closes complete but with no `claim` or
+    // `failureScenario` at all — incomplete by `findingProblem`, and the object
+    // it sits in read fine.
+    const text =
+      '{"findings":[{"file":"a.ts","line":1,"severity":"blocker","claim":"c1","failureScenario":"s1"},' +
+      '{"file":"b.ts","line":2,"severity":"major"';
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(unreadableAt).toMatchObject({ char: null, reason: "finding 2 of 2 has no `claim`" });
+  });
+
+  it("says a repaired reading was rejected rather than naming the first letter of a prose preamble", () => {
+    // Prefixing the same truncation with prose used to make `furthest` the
+    // whole-text candidate's syntax failure at offset 0 — the one place
+    // nothing went wrong, because the object candidate behind it parsed fine
+    // and was correctly refused for its incomplete entry.
+    const text =
+      "Here is what I found.\n\n" +
+      '{"findings":[{"file":"a.ts","line":1,"severity":"blocker","claim":"c1","failureScenario":"s1"},' +
+      '{"file":"b.ts","line":2,"severity":"major"';
+
+    const { unreadableAt } = parseFindings(text);
+
+    expect(unreadableAt).toMatchObject({ reason: "finding 2 of 2 has no `claim`" });
+  });
+
+  it("says a repaired reading of only minors was rejected, not that nothing parsed", () => {
+    // A full-width colon repaired fine, and the only finding in it is a minor
+    // — refused by the bar in `verdictFor`, not because reading it failed.
+    const text = '{"findings":[{"file":"a.ts","line":1,"severity":"minor","claim":"c1","failureScenario"："s1"}]}';
+
+    const { unreadableAt } = parseFindings(text);
+
+    expect(unreadableAt).toMatchObject({
+      char: null,
+      reason: "nothing in it was a blocker or a major, and a repaired reading may not pass",
+    });
+  });
+
+  /**
+   * **A truncation landing between `failureScenario` and `severity` must not
+   * invent a severity** (`#318` finding 3). The old dropped-entry guard only
+   * counted entries, so an entry complete enough to keep its `claim` and
+   * `failureScenario` but cut off before `severity` used to pass that guard
+   * unchanged and a stale implementation filled in `SEVERITIES[0]` —
+   * `blocker` — for a finding the reviewer never classified at all.
+   * `findingProblem` requires the key to be present, so this is refused
+   * instead.
+   */
+  it("refuses a repaired reading rather than invent a severity for a finding truncated before it", () => {
+    const text =
+      '{"findings":[{"file":"a.ts","line":1,"claim":"c1","failureScenario":"s1","severity":"minor"},' +
+      '{"file":"b.ts","line":2,"claim":"c2","failureScenario":"the real second scenario"';
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(unreadableAt).toMatchObject({ char: null, reason: "finding 2 of 2 has no `severity`" });
+  });
+
+  /** `findingProblem`'s other half of scenario 3: a truncation before `file` must not return `file: "(unknown)"`. */
+  it("refuses a repaired reading rather than invent a file for a finding truncated before it", () => {
+    const text =
+      '{"findings":[{"file":"a.ts","line":1,"claim":"c1","failureScenario":"s1","severity":"minor"},' +
+      '{"line":2,"claim":"c2","failureScenario":"the real second scenario","severity":"major"';
+
+    const { findings, parsed, unreadableAt } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(unreadableAt).toMatchObject({ char: null, reason: "finding 2 of 2 has no `file`" });
+  });
+
+  /** A severity that is not on the ladder at all — not merely missing — gets its own sentence, naming the value seen. */
+  it("names the invalid severity it saw, rather than just saying one was missing", () => {
+    const text = '{"findings":[{"file":"a.ts","line":1,"claim":"c1","failureScenario":"s1","severity"："critical"}]}';
+
+    const { unreadableAt } = parseFindings(text);
+
+    expect(unreadableAt).toMatchObject({
+      char: null,
+      reason: "finding 1 of 1's `severity` is `critical`, not one of blocker, major, minor",
+    });
+  });
+
+  /**
+   * **The blocker found in attempt 1's own round-one review: a candidate must
+   * use up its whole extent, exactly as `JSON.parse` does** (`#318`). Without
+   * this, a findings-shaped example quoted in the reviewer's prose — to
+   * illustrate the shape it was about to answer in — would read as a complete
+   * value in its own right, and the agent's real (and broken) answer after it
+   * would never be reached. Fabricated findings off the example would come
+   * back as the reviewer's own.
+   */
+  it("rejects a reading that parsed but left trailing content, so a quoted example is never read as the answer", () => {
+    const text =
+      'For example, a clean answer looks like {"findings":[{"file":"x.ts","line":1,"severity":"major",' +
+      '"claim":"example","failureScenario":"example"}]}.\n\n' +
+      'Here is my real answer, but it breaks: {"findings":[{"file":"a.ts","line":2,"severity":"blocker",' +
+      '"claim":"c","failureScenario":"the real';
+
+    const { findings, parsed } = parseFindings(text);
+
+    expect(parsed).toBe(false);
+    expect(findings).toEqual([]);
+    expect(findings.some((f) => f.claim === "example")).toBe(false);
   });
 
   /**
@@ -674,10 +847,57 @@ describe("the action", () => {
     // system exists to remove.
     expect(result.verdict).toBe("failed");
     expect(result.evidence).toContain("not readable");
+    // `describeUnreadable`'s own sentence (`#318`), not just the word before
+    // it: prose with no JSON in it at all is `#369`'s to prevent, and this
+    // must say so in those words rather than naming the first letter of the
+    // prose as though it were a one-byte repair.
+    expect(result.evidence).toContain("no JSON object was found in it");
     // And in a word as well as in the sentence (`#279`): `carriesACriterion` one
     // layer up reads fields, not prose, and for four days the only difference
     // between this and a clean review lived in the string above.
     expect(result.unreadable).toBe(true);
+  });
+
+  /**
+   * **Every `describeUnreadable` branch, through the real action and not only
+   * through `parseFindings`** (`#318`, scenario 2's own gap — one of the four
+   * branches had no test anywhere, and it was the `reason` branch, which is
+   * the fix for scenario 1).
+   */
+  it("names the offset and character of an unrepairable byte in the evidence", async () => {
+    const result = await actionWith(outcome({ text: '{"a":1："b":2}' })).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.evidence).toContain("unexpected `：` (U+FF1A) at offset 6");
+  });
+
+  it("names where input ran out inside an open value, in the evidence", async () => {
+    const result = await actionWith(
+      outcome({ text: `{"findings":[{"file":"pass.ts","line":1,"severity":"major","claim":"the ending is` }),
+    ).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.evidence).toContain("inside a string");
+  });
+
+  it("names a readable object's missing findings array, in the evidence", async () => {
+    const result = await actionWith(outcome({ text: '{"result":"ok"}' })).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.evidence).toContain("it read as an object ending at offset 15, but it had no `findings` array");
+  });
+
+  it("names a repaired reading's incomplete finding, in the evidence", async () => {
+    const result = await actionWith(
+      outcome({
+        text:
+          '{"findings":[{"file":"a.ts","line":1,"claim":"c1","failureScenario":"s1","severity":"minor"},' +
+          '{"line":2,"claim":"c2","failureScenario":"the real second scenario","severity":"major"',
+      }),
+    ).run(context);
+
+    expect(result.verdict).toBe("failed");
+    expect(result.evidence).toContain("finding 2 of 2 has no `file`");
   });
 
   /**
@@ -712,7 +932,12 @@ describe("the action", () => {
       return events;
     };
 
-    const dropped = (await eventsFor(REVIEW_THAT_DID_NOT_PARSE)).at(-1);
+    // Not `REVIEW_THAT_DID_NOT_PARSE` any more — `#318` recovers that one, so it
+    // is no longer an example of *could not be read at all*. A string
+    // truncated mid-quote is: the tolerant reader has nothing complete to
+    // close around.
+    const stillUnreadable = `Here is what I found.\n\n{"findings":[{"file":"pass.ts","line":1473,"severity":"major","claim":"the ending is`;
+    const dropped = (await eventsFor(stillUnreadable)).at(-1);
     if (dropped?.type !== "StepFailed") throw new Error("the reviewer's answer was read after all");
     expect(dropped.data).toHaveProperty("unreadable", true);
     // The schema's, not just the object's: an optional `true` is what the log
@@ -763,9 +988,13 @@ describe("the action", () => {
    * 0031 §1's).
    *
    * Three ways to say nothing — no key, a word that is neither, and an answer
-   * nobody could read at all — and none of them may arrive as `lines`. A count
-   * whose unclassified rows were filled in with a default is a count of the
-   * default, and this field exists only to be counted.
+   * written before this field existed at all — and none of them may arrive as
+   * `lines`. A count whose unclassified rows were filled in with a default is
+   * a count of the default, and this field exists only to be counted.
+   *
+   * `REVIEW_THAT_DID_NOT_PARSE` is the third: `#318` recovers it (it is a
+   * `failed` verdict now, not an unreadable one), and it still carries no
+   * `about` because the real review it came from predates `#293` by months.
    */
   it("says nothing about the kind of refusal where the reviewer said nothing", async () => {
     const saidNothing = [
