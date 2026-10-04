@@ -356,30 +356,18 @@ function normaliseAnswer(value: unknown): ReadAnswer {
 }
 
 /**
- * A JSON candidate and where it sits in the text it was cut from.
- *
- * **`gapAt`/`gapLength` exist for exactly one shape of candidate**: a fenced
- * block whose trailing content was kept on past its closing fence (see
- * `candidatesIn`). The fence markers between the interior and that trailing
- * content are stripped out of `text`, so `text` is shorter than the span of
- * the original string it was cut from — a local offset that lands at or past
- * `gapAt` needs `gapLength` added back before `start` turns it into a global
- * one, or it names a character `gapLength` bytes earlier than the one that is
- * actually there (`#318` finding 4). Absent on every other kind of candidate,
- * where `text` is an exact, contiguous slice of the original and a local
- * offset needs nothing added.
+ * A JSON candidate and where it sits in the text it was cut from — always a
+ * contiguous slice, so a local offset into `text` is `start` away from its
+ * position in the original.
  */
 interface Candidate {
   text: string;
   start: number;
-  gapAt?: number;
-  gapLength?: number;
 }
 
 /** A local offset into `candidate.text`, translated back to its position in the text `candidatesIn` cut it from. */
 function globalOffset(candidate: Candidate, localOffset: number): number {
-  const extra = candidate.gapAt !== undefined && localOffset >= candidate.gapAt ? candidate.gapLength ?? 0 : 0;
-  return candidate.start + localOffset + extra;
+  return candidate.start + localOffset;
 }
 
 /**
@@ -397,27 +385,34 @@ function globalOffset(candidate: Candidate, localOffset: number): number {
 function candidatesIn(text: string): Candidate[] {
   const candidates: Candidate[] = [];
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
-  for (const block of fenced) {
+  let searchFrom = 0;
+  for (let i = 0; i < fenced.length; i++) {
+    const block = fenced[i];
     const stripped = block.replace(/```(?:json)?/g, "").replace(/```/g, "");
-    const blockStart = text.indexOf(block);
-    const start = text.indexOf(stripped);
-    const trailing = blockStart === -1 ? "" : text.slice(blockStart + block.length);
-    // Whatever follows the closing fence is kept on the end of the candidate
-    // only when it could itself be mistaken for a second, competing answer —
-    // otherwise a findings-shaped example inside a ```json block would read
-    // as a complete value no matter what came after it (`#318` finding 3).
-    // **Only when `trailing` itself has a brace in it**, though: an ordinary
-    // closing remark after the fence never does, and gluing it onto the
-    // candidate unconditionally broke the common case instead — a well-formed
-    // fenced answer followed by a closing sentence — because `JSON.parse`'s
-    // own extent check then saw that sentence as leftover content after the
-    // value and refused the whole thing (`#318` finding 1).
-    if (trailing.includes("{")) {
-      const gapLength = blockStart === -1 || start === -1 ? 0 : blockStart + block.length - (start + stripped.length);
-      candidates.push({ text: stripped + trailing, start: start === -1 ? 0 : start, gapAt: stripped.length, gapLength });
-    } else {
-      candidates.push({ text: stripped, start: start === -1 ? 0 : start });
-    }
+    const blockStart = text.indexOf(block, searchFrom);
+    const start = text.indexOf(stripped, searchFrom);
+    const blockEnd = blockStart === -1 ? -1 : blockStart + block.length;
+    searchFrom = blockEnd === -1 ? searchFrom : blockEnd;
+    // What disqualifies this block as a standalone candidate is a *bare*
+    // brace sitting between its own close and whatever fenced block comes
+    // next (or the end of the text, when none does) — not merely a brace
+    // anywhere after it. A bare brace there is a second, unfenced attempt at
+    // an answer, still being written, that a well-formed fenced example must
+    // not be allowed to win over (`#318` finding 3: an illustrative example
+    // quoted in prose, read as the answer while the real one sat unfinished
+    // after it). **A brace that instead belongs to another fenced block is
+    // not that kind of attempt** — a markdown fence is the model's own
+    // deliberate "this is JSON" signal, so that later block is pushed as a
+    // candidate in its own right, and both compete in the strict loop below,
+    // which prefers a non-empty reading over an empty one exactly to settle
+    // this case: a reviewer who answers for real in one fenced block and then
+    // shows the empty shape for contrast in a second one must not have the
+    // contrast win just because it is better-formed or comes last (`#318`,
+    // the two-fenced-blocks blocker).
+    const nextBlock: string | undefined = fenced[i + 1];
+    const nextBlockStart = nextBlock === undefined || blockEnd === -1 ? -1 : text.indexOf(nextBlock, blockEnd);
+    const gap = blockEnd === -1 ? "" : text.slice(blockEnd, nextBlockStart === -1 ? text.length : nextBlockStart);
+    if (!gap.includes("{")) candidates.push({ text: stripped, start: start === -1 ? 0 : start });
   }
   // Last brace first: the outer object's own `{` is reached after the braces
   // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
@@ -538,6 +533,14 @@ function describeUnreadable(where: Where | undefined): string {
  * `unreadableAt` for a person to read. So is a reading that parsed in full and
  * was refused for what it contained: that is further into the text than any
  * syntax failure can be, so it always wins the position over one.
+ *
+ * **An empty reading never beats a non-empty one, however the two are
+ * ordered** (`#318`, the two-fenced-blocks blocker). `candidatesIn` pushes
+ * every fenced block whose gap to the next one is bare-brace-free, so a
+ * reviewer who answers for real in one fenced block and then writes "had I
+ * found nothing I would have said" with the empty shape for contrast puts
+ * both in the strict loop. The loop holds the first empty success rather than
+ * returning it, so a later non-empty one — wherever it sits — wins instead.
  */
 export function parseFindings(text: string | null): ReadAnswer {
   if (!text) return { findings: [], parsed: false };
@@ -553,6 +556,15 @@ export function parseFindings(text: string | null): ReadAnswer {
     }
   };
 
+  // An empty reading is held rather than returned the moment it is found:
+  // `candidatesIn` now pushes every fenced block whose gap to the next one
+  // is bare-brace-free, so an answer with two complete fenced blocks — a real
+  // one and an empty contrast — puts both in this loop. Returning on the
+  // first success would let whichever parses first stand for the reviewer
+  // regardless of which one actually found something; held instead, it only
+  // wins if nothing later in the same loop reads a non-empty list (`#318`,
+  // the two-fenced-blocks blocker).
+  let emptyReading: ReadAnswer | undefined;
   for (const candidate of candidates) {
     let value: unknown;
     try {
@@ -561,7 +573,11 @@ export function parseFindings(text: string | null): ReadAnswer {
       continue;
     }
     const result = normaliseAnswer(value);
-    if (result.parsed) return result;
+    if (result.parsed) {
+      if (result.findings.length > 0) return result;
+      emptyReading ??= result;
+      continue;
+    }
     // It parsed, just not into findings: a readable object whose top-level key
     // is not `findings` is described by what was wrong with it, rather than by
     // whatever syntax failure happens to sit elsewhere in the text (`#318`
@@ -573,6 +589,7 @@ export function parseFindings(text: string | null): ReadAnswer {
       candidate.start,
     );
   }
+  if (emptyReading) return emptyReading;
 
   for (const candidate of candidates) {
     const repaired = readTolerantJson(candidate.text);

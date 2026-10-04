@@ -700,13 +700,9 @@ describe("reading the reviewer's answer", () => {
   /**
    * **A well-formed fenced answer plus an ordinary closing sentence must
    * still parse exactly as it did before `readTolerantJson` existed** (`#318`
-   * round-two finding 1). Gluing the fenced block's own trailing text onto
-   * its candidate unconditionally — the fix for the test right above this
-   * one — made `JSON.parse`'s own extent check see "That is all I found." as
-   * leftover content after the value, for every fenced answer with a closing
-   * remark, which is the ordinary case and not the exceptional one. Kept on
-   * only when the trailing text itself has a `{` in it: a plain sentence
-   * never does, and this is the regression that pins it.
+   * round-two finding 1). An ordinary closing remark carries no brace at all,
+   * so the gap after the fence (`candidatesIn`'s own term) is bare and this
+   * block is pushed as a standalone candidate, same as a bare fenced block.
    */
   it("parses a fenced answer with an ordinary closing sentence after it, same as a bare fenced block", () => {
     const text =
@@ -721,6 +717,56 @@ describe("reading the reviewer's answer", () => {
     expect(parsed).toBe(true);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.severity).toBe("major");
+  });
+
+  /**
+   * **The blocker the round-two review found against `cb6f78b`: two fenced
+   * blocks, a real answer and an empty contrast, must not let whichever
+   * parses first stand for the reviewer** (`#318`). A reviewer who answers
+   * for real and then writes "had I found nothing, I would have said" with
+   * the empty shape for contrast is not choosing between two real answers —
+   * only one of the two blocks is. Document order must not decide this: the
+   * real block is pushed because the gap before the next fence is bare (no
+   * stray brace), exactly as the other block is, and the strict loop holds an
+   * empty reading rather than returning it so the later, non-empty one wins.
+   */
+  it("prefers a non-empty fenced block over an empty contrast fenced after it", () => {
+    const text =
+      "My answer:\n\n```json\n" +
+      JSON.stringify({
+        findings: [
+          { file: "a.ts", line: 1, severity: "blocker", claim: "the real blocker", failureScenario: "the real scenario" },
+        ],
+      }) +
+      "\n```\n\nHad I found nothing I would have written:\n\n```json\n" +
+      JSON.stringify({ findings: [] }) +
+      "\n```\n";
+
+    const { findings, parsed } = parseFindings(text);
+
+    expect(parsed).toBe(true);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.claim).toBe("the real blocker");
+  });
+
+  /** The same blocker, with the empty contrast written first and the real answer last — order must not matter either way. */
+  it("prefers a non-empty fenced block over an empty contrast fenced before it", () => {
+    const text =
+      "If I'd found nothing I would have written:\n\n```json\n" +
+      JSON.stringify({ findings: [] }) +
+      "\n```\n\nBut my real answer is:\n\n```json\n" +
+      JSON.stringify({
+        findings: [
+          { file: "a.ts", line: 1, severity: "blocker", claim: "the real blocker", failureScenario: "the real scenario" },
+        ],
+      }) +
+      "\n```\n";
+
+    const { findings, parsed } = parseFindings(text);
+
+    expect(parsed).toBe(true);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.claim).toBe("the real blocker");
   });
 
   /**
