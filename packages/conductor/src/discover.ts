@@ -29,6 +29,7 @@
 import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
+import type { Tickets } from './ticket-store.ts'
 
 /**
  * What discovery needs of a ticket source — the fields it reads, and nothing
@@ -63,11 +64,14 @@ export interface TicketDetail extends TicketListing {
   body: string
 }
 
-/** The two calls discovery makes of a ticket source. */
-export interface TicketSource {
-  listOpenIssues(): Promise<TicketListing[]>
-  getIssue(number: number): Promise<TicketDetail>
-}
+/**
+ * The two calls discovery makes of a ticket source — a `Pick` of `Tickets`
+ * (`ticket-store.ts`, `#377`) rather than a shape of its own, so the two
+ * cannot drift apart. `GitHubClient` satisfies `Tickets` structurally, the
+ * same way `IssueChannel` in `tell.ts` does for the write side, and so
+ * satisfies this.
+ */
+export type TicketSource = Pick<Tickets, 'listOpenIssues' | 'getIssue'>
 
 /**
  * Which kind of work an issue is, from its labels — **the recipe's labels**.

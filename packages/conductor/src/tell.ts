@@ -19,9 +19,12 @@
  * ## The port, declared here
  *
  * `IssueChannel` is the shape this needs, not the shape `@lingtai/github`
- * happens to have. `GitHubClient` satisfies it structurally, and a test
- * satisfies it with four functions and no network — which is the whole point of
- * a caller naming its own requirement.
+ * happens to have. It is `Tickets` (`ticket-store.ts`, `#377`) narrowed on one
+ * verb: `getIssue` here answers labels only, because what Lingtai writes back
+ * is a set of names and a repository's colour is a fact for the board to read
+ * (#85), not one a write has any business carrying. `GitHubClient` satisfies
+ * it structurally, and a test satisfies it with four functions and no
+ * network — which is the whole point of a caller naming its own requirement.
  */
 import { parseWorkItemStream } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
@@ -29,9 +32,10 @@ import type { EventStore } from '@lingtai/event-store'
 
 import { agentBranch, armPrefix } from './branches.ts'
 import { foreignLabels } from './labels.ts'
+import type { Tickets } from './ticket-store.ts'
 
 /** What this needs of GitHub, and nothing more. */
-export interface IssueChannel {
+export type IssueChannel = Pick<Tickets, 'comment' | 'setLabels' | 'closeIssue' | 'updateBody'> & {
   /**
    * The labels as GitHub holds them — names, and the colours it sends beside
    * them. Only the names matter here: what Lingtai writes back is a set of
@@ -39,15 +43,6 @@ export interface IssueChannel {
    * one a write has any business carrying.
    */
   getIssue(number: number): Promise<{ labels: readonly { name: string }[] }>
-  comment(issue: number, body: string): Promise<{ id: number }>
-  setLabels(issue: number, labels: readonly string[]): Promise<void>
-  closeIssue(issue: number): Promise<void>
-  /**
-   * Replaces the whole issue body. Read-modify-write, like `setLabels`, and
-   * for the same reason: GitHub offers a replace and nothing else, so whoever
-   * composes the new body has to have read the old one.
-   */
-  updateBody(issue: number, body: string): Promise<void>
 }
 
 /**
