@@ -24,6 +24,11 @@
  * a database-backed implementation's own equivalent) and the comment case
  * verifies storage directly; omit it and that one assertion is skipped, same
  * as every other case still runs.
+ *
+ * **The option's return may be a promise.** `memoryTickets()`'s
+ * `commentBodies` answers synchronously, but a database-backed implementation
+ * (`dbTickets`, #380) cannot — `await`ing a plain array still answers the
+ * array, so one `await` at the call site serves both.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -32,7 +37,7 @@ import type { Tickets } from '../src/ticket-store.ts'
 export function describeTicketsContract<T extends Tickets>(
   name: string,
   make: () => T | Promise<T>,
-  options: { commentBodies?: (t: T, issue: number) => readonly string[] } = {},
+  options: { commentBodies?: (t: T, issue: number) => readonly string[] | Promise<readonly string[]> } = {},
 ): void {
   const tickets = async (): Promise<T> => await make()
 
@@ -85,7 +90,7 @@ export function describeTicketsContract<T extends Tickets>(
       expect(got.body).toBe('original body')
 
       if (options.commentBodies) {
-        expect(options.commentBodies(t, created.number)).toEqual(['first', 'second'])
+        expect(await options.commentBodies(t, created.number)).toEqual(['first', 'second'])
       }
     })
 

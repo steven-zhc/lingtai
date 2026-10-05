@@ -1,17 +1,20 @@
 /**
- * `ensureTicketTables` on Postgres, the half of #379's claim no unit test can
- * make: `TIMESTAMPTZ` and `BIGSERIAL` are Postgres syntax, so what proves the
- * DDL is accepted is a real server.
+ * `ensureTicketTables` and `dbTickets` on Postgres, the half of #379 and #380's
+ * claims no unit test can make: `TIMESTAMPTZ` and `BIGSERIAL` are Postgres
+ * syntax, and a real `createIssue` race needs a real second connection, so
+ * what proves both is a real server.
  *
- * **Both tables are dropped before this runs.** `CREATE TABLE IF NOT EXISTS`
- * against an existing table short-circuits before resolving the column
- * list — verified against this project's own test database: with the table
- * already present, a DDL naming a nonexistent type, or a completely
+ * **Both tables are dropped before the DDL case runs.** `CREATE TABLE IF NOT
+ * EXISTS` against an existing table short-circuits before resolving the
+ * column list — verified against this project's own test database: with the
+ * table already present, a DDL naming a nonexistent type, or a completely
  * different column list, returns ok. Left standing between runs, this file
  * would exercise that no-op from its second run onward and stay green while
  * asserting nothing about the DDL text. Dropping first means every run
  * re-parses and re-resolves the real statement, which is the only thing that
- * proves it's accepted Postgres syntax.
+ * proves it's accepted Postgres syntax. The `describe` blocks after it rely on
+ * the tables existing, which is why that one runs first — vitest runs a file's
+ * `describe` blocks in declaration order.
  *
  * Run only this file — `pnpm vitest run --project integration
  * packages/conductor/integration/db-tickets.test.ts` — not
@@ -32,7 +35,8 @@ import { createPostgresTicketSql } from '@lingtai/event-store/queries'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { ensureTicketTables } from '../src/db-tickets.ts'
+import { type DbTickets, dbTickets, ensureTicketTables } from '../src/db-tickets.ts'
+import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 interface PgColumn {
   column_name: string
@@ -134,5 +138,40 @@ describe.skipIf(!postgresUnderTest())('ensureTicketTables on Postgres', () => {
       project,
     ])
     expect(comments).toEqual([{ body: 'a comment' }])
+  })
+})
+
+describe.skipIf(!postgresUnderTest())('dbTickets on Postgres', () => {
+  const projects: string[] = []
+
+  afterAll(async () => {
+    const sql = createPostgresTicketSql({ url: postgresUrl() })
+    for (const project of projects) {
+      await sql.exec(`DELETE FROM ticket_comments WHERE project = '${project}'`)
+      await sql.exec(`DELETE FROM tickets WHERE project = '${project}'`)
+    }
+  })
+
+  function freshProject(): string {
+    const project = `dbtix${crypto.randomUUID().slice(0, 6)}`
+    projects.push(project)
+    return project
+  }
+
+  describeTicketsContract<DbTickets>(
+    'dbTickets on Postgres',
+    () => dbTickets(createPostgresTicketSql({ url: postgresUrl() }), freshProject()),
+    { commentBodies: (t, issue) => t.commentBodies(issue) },
+  )
+
+  it('eight concurrent createIssue calls on one project produce eight distinct numbers, 1..8', async () => {
+    const project = freshProject()
+    const t = dbTickets(createPostgresTicketSql({ url: postgresUrl() }), project)
+
+    const created = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => t.createIssue({ title: `concurrent ${i}`, body: '', labels: [] })),
+    )
+
+    expect(created.map((c) => c.number).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
   })
 })

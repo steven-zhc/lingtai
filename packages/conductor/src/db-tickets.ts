@@ -1,6 +1,8 @@
 /**
  * `tickets` and `ticket_comments` — Lingtai's own ticket store, created on
- * whichever database the log itself is (#379).
+ * whichever database the log itself is (#379), and `dbTickets` (#380), the
+ * `Tickets` implementation over those two tables for a project with no GitHub
+ * App.
  *
  * **Not through the event migrations.** `schema.ts` leaves a database alone
  * once it has `events`, so a migration added there never reaches a machine
@@ -12,7 +14,24 @@
  * `@lingtai/event-store` exports beside `processLog` — and never names
  * `pg` or `node:sqlite` itself; `unit/one-store.test.ts` is the test that holds
  * that.
+ *
+ * **The columns.** `tickets.labels` is a JSON array of label names, and
+ * `tickets.state` is `'open' | 'closed'`. `ticket_comments` is one row per
+ * comment, appended and never rewritten — there is no verb on `Tickets` that
+ * edits one. Neither table has a column for `url`, a label's `color`, or
+ * `assignees`: `dbTickets` answers those `null`, `null` and `[]`, because
+ * there is no web page, no colour, and this store tracks no assignee.
+ * `dependencies` is always `{ blockedBy: 0 }`, never `null` — `discover.ts`'s
+ * `TicketListing` (`:46-53`) says `null` means *the source said nothing about
+ * dependencies*, and `ticket-store.ts`'s note on `Tickets.dependencies` says
+ * answering the zero rather than the unread case is a rule on an
+ * implementation with no notion of a blocker, not on every `Tickets` — this
+ * one has none, the same as `memoryTickets`. `closeIssue`'s `reason` is
+ * accepted and not stored: nothing here reads it back.
  */
+import type { TicketListing } from './discover.ts'
+import type { Ticket, Tickets } from './ticket-store.ts'
+
 import type { TicketSql } from '@lingtai/event-store'
 
 const SQLITE_TICKETS = `
@@ -101,14 +120,229 @@ async function execIdempotently(sql: TicketSql, ddl: string): Promise<void> {
  * including concurrently: a second run finds both tables present and changes
  * nothing.
  *
- * **Called from nowhere in this ticket.** The tables are created by the
- * adapter on first use (#380), not by every process that opens the log —
- * calling this from `processTicketSql()` would put ticket tables in front of
- * every command that merely reads the event store.
+ * **Called by `dbTickets`, on first use, and from nowhere else.** The tables
+ * are created by the adapter the first time one of its verbs runs (#380), not
+ * by every process that opens the log — calling this from
+ * `processTicketSql()` would put ticket tables in front of every command that
+ * merely reads the event store.
  */
 export async function ensureTicketTables(sql: TicketSql): Promise<void> {
   const [tickets, comments] =
     sql.dialect === 'postgres' ? [POSTGRES_TICKETS, POSTGRES_TICKET_COMMENTS] : [SQLITE_TICKETS, SQLITE_TICKET_COMMENTS]
   await execIdempotently(sql, tickets)
   await execIdempotently(sql, comments)
+}
+
+/**
+ * `MemoryTickets`'s equivalent (`test/memory-tickets.ts:40-42`), widened past
+ * `Tickets` with the one inspection seam `tickets-contract.ts`'s comment case
+ * uses to verify storage rather than only `id` and the issue body.
+ *
+ * **Async, unlike `MemoryTickets.commentBodies`.** A database cannot answer
+ * synchronously; `describeTicketsContract`'s `commentBodies` option accepts
+ * either shape (`test/tickets-contract.ts`), and `await`ing `memoryTickets()`'s
+ * array still answers the array.
+ */
+export interface DbTickets extends Tickets {
+  commentBodies(issue: number): Promise<readonly string[]>
+}
+
+interface TicketRow {
+  number: number
+  title: string
+  body: string
+  labels: string
+  state: 'open' | 'closed'
+}
+
+/**
+ * Postgres reports a duplicate `(project, number)` as SQLSTATE 23505, straight
+ * on the error `pg.Client.query` throws — this file talks to Postgres through
+ * `createPostgresTicketSql`'s own client, never through the Prisma ORM that
+ * wraps `events`' own writes, so there is no `cause` chain to walk the way
+ * `event-store.ts`'s `isVersionConflict` does.
+ *
+ * SQLite reports the same thing as `code: 'ERR_SQLITE_ERROR'`, `errcode:
+ * 1555` — observed directly from `node:sqlite` against this file's own
+ * `tickets` table.
+ *
+ * Matching only this shape matters: a refusal for any other reason (a closed
+ * connection, a malformed statement) must not be retried as though it were
+ * the number race.
+ */
+function isDuplicateTicketNumber(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const e = err as { code?: unknown; errcode?: unknown }
+  return e.code === '23505' || (e.code === 'ERR_SQLITE_ERROR' && e.errcode === 1555)
+}
+
+/** A caller named a ticket this project does not have. */
+function noSuchTicket(project: string, number: number): Error {
+  return new Error(`no ticket #${number} for project ${JSON.stringify(project)}`)
+}
+
+function parseLabels(labels: string): { name: string; color: null }[] {
+  return (JSON.parse(labels) as string[]).map((name) => ({ name, color: null }))
+}
+
+function toListing(row: Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>): TicketListing {
+  return {
+    number: row.number,
+    title: row.title,
+    state: row.state,
+    labels: parseLabels(row.labels),
+    assignees: [],
+    // Never null: this implementation has no notion of an unread dependency,
+    // only of one that is clear (CLAUDE.md, "Null is not zero").
+    dependencies: { blockedBy: 0 },
+  }
+}
+
+function toTicket(row: TicketRow): Ticket {
+  return { ...toListing(row), body: row.body, url: null }
+}
+
+export interface DbTicketsOptions {
+  /** The clock a written row's `created_at`/`updated_at` is read from. Defaults to the wall clock. */
+  now?: () => Date
+}
+
+/**
+ * `Tickets` over `tickets` and `ticket_comments`, for one `project` on `sql`
+ * (#380). Passes the same contract suite `memoryTickets()` passes
+ * (`test/tickets-contract.ts`), on SQLite under `unit/` and on Postgres under
+ * `integration/`.
+ *
+ * **Creates the tables on first use.** Every verb awaits one lazily-started
+ * `ensureTicketTables(sql)` before it runs; a failed attempt is not cached, so
+ * the next call tries again instead of failing forever on a transient error.
+ *
+ * **Numbers are allocated by the insert statement itself, not by a
+ * `BEGIN … COMMIT`.** `TicketSql` has no transaction verb — Postgres opens a
+ * fresh connection per call (`queries.ts:306-323`), so a `BEGIN` sent through
+ * `sql.query` would commit on a connection already closed. `INSERT …  VALUES
+ * ($1, (SELECT COALESCE(MAX(number), 0) + 1 FROM tickets WHERE project = $1),
+ * …)` is one statement on both dialects, so it is the transaction: SQLite
+ * serialises it under the write lock and cannot race, but Postgres runs under
+ * READ COMMITTED and can run two of these at once, each reading the same
+ * `MAX` — `PRIMARY KEY (project, number)` then refuses one, and `createIssue`
+ * retries on exactly that refusal (`isDuplicateTicketNumber`), up to 5 times,
+ * and rethrows anything else immediately.
+ */
+export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOptions = {}): DbTickets {
+  const now = options.now ?? (() => new Date())
+  const MAX_RETRIES = 5
+
+  let ready: Promise<void> | undefined
+  async function ensureReady(): Promise<void> {
+    if (ready === undefined) ready = ensureTicketTables(sql)
+    try {
+      await ready
+    } catch (err) {
+      ready = undefined
+      throw err
+    }
+  }
+
+  return {
+    async listOpenIssues() {
+      await ensureReady()
+      const rows = await sql.query<Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>>(
+        `SELECT number, title, labels, state FROM tickets WHERE project = $1 AND state = 'open' ORDER BY number`,
+        [project],
+      )
+      return rows.map(toListing)
+    },
+
+    async listIssuesSince(since) {
+      await ensureReady()
+      const rows = await sql.query<TicketRow>(
+        `SELECT number, title, body, labels, state FROM tickets
+         WHERE project = $1 AND created_at >= $2
+         ORDER BY created_at, number`,
+        [project, since.toISOString()],
+      )
+      return rows.map(toTicket)
+    },
+
+    async getIssue(number) {
+      await ensureReady()
+      const rows = await sql.query<TicketRow>(
+        `SELECT number, title, body, labels, state FROM tickets WHERE project = $1 AND number = $2`,
+        [project, number],
+      )
+      const row = rows[0]
+      if (!row) throw noSuchTicket(project, number)
+      return toTicket(row)
+    },
+
+    async createIssue(input) {
+      await ensureReady()
+      const labels = JSON.stringify(input.labels)
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const rows = await sql.query<TicketRow>(
+            `INSERT INTO tickets (project, number, title, body, labels, state, created_at, updated_at)
+             VALUES ($1, (SELECT COALESCE(MAX(number), 0) + 1 FROM tickets WHERE project = $1), $2, $3, $4, 'open', $5, $5)
+             RETURNING number, title, body, labels, state`,
+            [project, input.title, input.body, labels, now().toISOString()],
+          )
+          return toTicket(rows[0]!)
+        } catch (err) {
+          if (!isDuplicateTicketNumber(err) || attempt >= MAX_RETRIES) throw err
+        }
+      }
+    },
+
+    async comment(number, body) {
+      await ensureReady()
+      const exists = await sql.query<{ number: number }>(
+        `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
+        [project, number],
+      )
+      if (exists.length === 0) throw noSuchTicket(project, number)
+
+      const rows = await sql.query<{ id: number | string }>(
+        `INSERT INTO ticket_comments (project, number, body, created_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [project, number, body, now().toISOString()],
+      )
+      return { id: Number(rows[0]!.id) }
+    },
+
+    async commentBodies(number) {
+      await ensureReady()
+      const rows = await sql.query<{ body: string }>(
+        `SELECT body FROM ticket_comments WHERE project = $1 AND number = $2 ORDER BY id`,
+        [project, number],
+      )
+      return rows.map((r) => r.body)
+    },
+
+    async setLabels(number, labels) {
+      await ensureReady()
+      const rows = await sql.query<{ number: number }>(
+        `UPDATE tickets SET labels = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
+        [project, number, JSON.stringify(labels), now().toISOString()],
+      )
+      if (rows.length === 0) throw noSuchTicket(project, number)
+    },
+
+    async closeIssue(number) {
+      await ensureReady()
+      const rows = await sql.query<{ number: number }>(
+        `UPDATE tickets SET state = 'closed', updated_at = $3 WHERE project = $1 AND number = $2 RETURNING number`,
+        [project, number, now().toISOString()],
+      )
+      if (rows.length === 0) throw noSuchTicket(project, number)
+    },
+
+    async updateBody(number, body) {
+      await ensureReady()
+      const rows = await sql.query<{ number: number }>(
+        `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
+        [project, number, body, now().toISOString()],
+      )
+      if (rows.length === 0) throw noSuchTicket(project, number)
+    },
+  }
 }

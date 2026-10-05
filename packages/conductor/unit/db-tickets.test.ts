@@ -1,17 +1,24 @@
 /**
- * `ensureTicketTables` on SQLite — `:memory:`, so this touches no filesystem,
- * no process and no network (0060 §1), and runs under `unit/` for exactly
- * that reason. The Postgres half of the same claim is
+ * `ensureTicketTables` and `dbTickets` on SQLite — `:memory:`, so this touches
+ * no filesystem, no process and no network (0060 §1), and runs under `unit/`
+ * for exactly that reason. The Postgres half of the same claim is
  * `integration/db-tickets.test.ts`, which `pnpm test` does not run.
  */
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import { describe, expect, it } from 'vitest'
 
-import { ensureTicketTables } from '../src/db-tickets.ts'
+import { type DbTickets, dbTickets, ensureTicketTables } from '../src/db-tickets.ts'
+import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 function freshStore(): TicketSql {
   return createSqliteTicketSql(openSqliteLog(':memory:'))
+}
+
+/** A fresh `:memory:` database and a fresh synthetic clock, each call — proves `ensureTicketTables` runs on first use, since no returned store has the tables yet. */
+function freshDbTickets(project = 'p'): DbTickets {
+  let tick = 0
+  return dbTickets(freshStore(), project, { now: () => new Date(tick++) })
 }
 
 interface TicketColumn {
@@ -112,5 +119,99 @@ describe('ensureTicketTables on SQLite', () => {
     const sql = freshStore()
     const rows = await sql.query<{ a: string; b: string }>("SELECT 'costs $5 now' as a, $1 as b", ['first'])
     expect(rows).toEqual([{ a: 'costs $5 now', b: 'first' }])
+  })
+})
+
+describeTicketsContract<DbTickets>('dbTickets on SQLite', () => freshDbTickets(), {
+  commentBodies: (t, issue) => t.commentBodies(issue),
+})
+
+describe('dbTickets, beyond the shared contract', () => {
+  it('two createIssue calls on one project get distinct numbers, and two projects each start at 1', async () => {
+    const sql = freshStore()
+    const projectA = dbTickets(sql, 'proj-a')
+
+    const a1 = await projectA.createIssue({ title: 'a1', body: '', labels: [] })
+    const a2 = await projectA.createIssue({ title: 'a2', body: '', labels: [] })
+    expect(a1.number).toBe(1)
+    expect(a2.number).toBe(2)
+
+    const projectB = dbTickets(sql, 'proj-b')
+    const b1 = await projectB.createIssue({ title: 'b1', body: '', labels: [] })
+    expect(b1.number).toBe(1)
+  })
+
+  /**
+   * The real refusal `sql.query` throws for a duplicate `(project, number)` —
+   * captured from an actual SQLite insert against a scratch `:memory:`
+   * database, the same way `ensureTicketTables`'s own "refuses a second
+   * ticket" case above does, rather than a hand-built stand-in that might not
+   * match `isDuplicateTicketNumber`'s shape.
+   */
+  async function realSqliteDuplicateError(): Promise<unknown> {
+    const sql = freshStore()
+    await ensureTicketTables(sql)
+    const now = new Date().toISOString()
+    const insert = () =>
+      sql.query(
+        `INSERT INTO tickets (project, number, title, body, labels, state, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        ['proj', 1, 'a title', 'a body', '["bug"]', 'open', now, now],
+      )
+    await insert()
+    try {
+      await insert()
+      throw new Error('expected the second insert to be refused as a duplicate')
+    } catch (err) {
+      return err
+    }
+  }
+
+  it(
+    'createIssue retries once on a duplicate ticket number and resolves — the race a real ' +
+      'Postgres can hit but SQLite, serialising the statement, cannot (see integration/db-tickets.test.ts)',
+    async () => {
+      const sql = freshStore()
+      const duplicate = await realSqliteDuplicateError()
+      let insertAttempts = 0
+      const flaky: TicketSql = {
+        dialect: sql.dialect,
+        exec: (text) => sql.exec(text),
+        async query<T>(text: string, params?: readonly unknown[]): Promise<T[]> {
+          if (text.includes('INSERT INTO tickets')) {
+            insertAttempts++
+            if (insertAttempts === 1) throw duplicate
+          }
+          return sql.query<T>(text, params)
+        },
+      }
+
+      const t = dbTickets(flaky, 'retry-proj')
+      const created = await t.createIssue({ title: 'x', body: '', labels: [] })
+
+      expect(created.number).toBe(1)
+      expect(insertAttempts).toBe(2)
+    },
+  )
+
+  it('createIssue rejects immediately on a non-duplicate error, without retrying', async () => {
+    const sql = freshStore()
+    let insertAttempts = 0
+    const alwaysBroken: TicketSql = {
+      dialect: sql.dialect,
+      exec: (text) => sql.exec(text),
+      async query<T>(text: string, params?: readonly unknown[]): Promise<T[]> {
+        if (text.includes('INSERT INTO tickets')) {
+          insertAttempts++
+          throw new Error('connection reset')
+        }
+        return sql.query<T>(text, params)
+      },
+    }
+
+    const t = dbTickets(alwaysBroken, 'retry-proj-2')
+
+    await expect(t.createIssue({ title: 'x', body: '', labels: [] })).rejects.toThrow('connection reset')
+    expect(insertAttempts).toBe(1)
   })
 })
