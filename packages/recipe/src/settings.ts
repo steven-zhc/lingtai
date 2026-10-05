@@ -65,7 +65,7 @@ import { STEPS, type Step } from '@lingtai/domain'
 
 import { parseDuration } from './duration.ts'
 import { isBuiltInJudge } from './judges.ts'
-import type { QueueSettings, Recipe, StepAction } from './recipe.ts'
+import type { QueueSettings, Recipe, StepAction, TicketSource } from './recipe.ts'
 
 /**
  * What one call this step makes may spend, **as a dispatch's own `limits:`**, or
@@ -288,6 +288,24 @@ export function excludeOf(recipe: Recipe): Recipe['source']['exclude'] {
  */
 export function backoffOf(recipe: Recipe): Recipe['source']['backoff'] {
   return takeAt(recipe)?.backoff ?? recipe.source.backoff
+}
+
+/**
+ * Where this project's tickets live — `github` where a recipe writes
+ * nothing, `db` where it names it.
+ *
+ * **Not one of `queue:`'s four, and `takeAt` plays no part here** (#381):
+ * this is where tickets live, not which of them the queue takes, so a
+ * `queue:` block declared at `claim` cannot narrow or override it. The
+ * default lives here and not on the schema field, for `backoffOf`'s reason:
+ * a recipe that writes nothing hashes exactly as it did before this setting
+ * existed.
+ *
+ * **Nothing reads this yet** — #382 is what wires a `db` answer into the
+ * pass.
+ */
+export function ticketSourceOf(recipe: Recipe): TicketSource {
+  return recipe.source.tickets ?? 'github'
 }
 
 /**

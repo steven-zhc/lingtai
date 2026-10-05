@@ -57,6 +57,7 @@ import {
   kindsOf,
   limitsFor,
   submodulesOf,
+  ticketSourceOf,
 } from '../src/settings.ts'
 
 const WRITTEN = {
@@ -104,6 +105,27 @@ describe('the accessors', () => {
       runtime: { assignee: { login: 'steven-zhc', take: 'mine' } },
     })
     expect(assigneeOf(mine)).toEqual({ login: 'steven-zhc', take: 'mine' })
+  })
+
+  /**
+   * `source.tickets` (#381). Absent defaults in the accessor, not the schema
+   * — the fixture's parsed `source` carries no `tickets` key at all, which is
+   * the half of this that pins the `configHash` decision.
+   */
+  it('reads `source.tickets`, defaulting to `github` where the recipe says nothing', () => {
+    expect(ticketSourceOf(RECIPE)).toBe('github')
+    expect(RECIPE.source).not.toHaveProperty('tickets')
+
+    const db = Recipe.parse({ ...WRITTEN, source: { ...WRITTEN.source, tickets: 'db' } })
+    expect(ticketSourceOf(db)).toBe('db')
+  })
+
+  it('refuses any other value by name', () => {
+    const result = Recipe.safeParse({ ...WRITTEN, source: { ...WRITTEN.source, tickets: 'gitlab' } })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.join('.') === 'source.tickets')).toBe(true)
+    }
   })
 
   /**

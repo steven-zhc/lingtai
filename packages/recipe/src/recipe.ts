@@ -1010,6 +1010,18 @@ const BACKOFF = z
   // of the middle of a queue pass names nothing.
   .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 1h' })
 
+/**
+ * Where this project's tickets live. `github`: the repository's GitHub
+ * issues, as every project before this field assumed. `db`: the `tickets`
+ * table on whichever store this machine chose (`#379`/`5517e86`,
+ * `ensureTicketTables`).
+ *
+ * **Nothing reads this yet.** It is declared here so a recipe can say it;
+ * wiring it into the pass — discovery, the queue, the board — is #382's.
+ */
+export const TicketSource = z.enum(['github', 'db'])
+export type TicketSource = z.infer<typeof TicketSource>
+
 const SOURCE_FIELDS = {
   /**
    * Labels of yours that mark an issue as work, **most wanted first** — `KINDS`.
@@ -1022,6 +1034,36 @@ const SOURCE_FIELDS = {
    * and an hour where a v1 file says nothing, which is what it has always meant.
    */
   backoff: BACKOFF.default('1h'),
+  /**
+   * Where this project's tickets live — `TicketSource`.
+   *
+   * **Declared without its default, for `EXCLUDE`'s and `AssigneeRule`'s
+   * reason**: `ticketSourceOf` in `settings.ts` returns `recipe.source.tickets
+   * ?? 'github'` rather than this field defaulting to `'github'`, because a
+   * schema default would put `tickets: 'github'` into every recipe's parsed
+   * body and change every project's `configHash` the moment a restarted
+   * daemon loaded this code, with no edit to any recipe file
+   * (`resolveRecipe`'s `hashRecipe(parsed.data)`, `0047` §2). A recipe that
+   * does not write the key hashes exactly as it did before this field
+   * existed.
+   *
+   * **_Code, restart, paste_** ([the-plugin-body.md](../../../doc/design/the-plugin-body.md)):
+   * `source:` is `z.object`, not `z.strictObject`, so an older daemon handed
+   * `tickets: db` does not refuse it — it silently drops the key and keeps
+   * running the project from GitHub. There is no refusal to notice that by;
+   * a `db` project on an old daemon just reads as a `github` one.
+   *
+   * **Switching a project with history is unsupported.** Work items are the
+   * streams `wi-<project>-<number>` (`packages/domain/src/streams.ts:14`). A
+   * DB ticket numbered from 1 would append into the stream of the GitHub
+   * issue that happens to share its number. Refusing that by name is #382's
+   * job; this field only carries the value.
+   *
+   * **Not `source.local` (#351).** That field says where this project's code
+   * is pushed; this one says where its tickets live — independent axes, and
+   * a project may set either, both, or neither.
+   */
+  tickets: TicketSource.optional(),
 } satisfies PluginFields
 
 /**
