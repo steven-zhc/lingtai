@@ -12,7 +12,7 @@
  * every ticket this suite creates, which is what keeps this file usable
  * against a future database-backed `Tickets` as well as against
  * `memoryTickets()`. Pinning the exact boundary against a controlled clock is
- * `memory-tickets.test.ts`'s, because only that implementation's clock is
+ * `unit/tickets.test.ts`'s, because only that implementation's clock is
  * something a test can place.
  */
 import { describe, expect, it } from 'vitest'

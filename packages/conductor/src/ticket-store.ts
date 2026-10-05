@@ -40,10 +40,13 @@ export type Ticket = TicketDetail & { url: string | null }
  * or a narrowed method here would otherwise drift silently until `pnpm
  * typecheck` next ran.
  *
- * **`dependencies` on a `Ticket` or a `TicketListing` is `{ blockedBy: 0 }`,
- * never `null`.** `discover.ts`'s `runnableNow` reads `null` as *GitHub said
- * nothing about dependencies*, not *nothing blocks it* — an implementation
- * with no notion of blockers answers the zero rather than the unread case.
+ * `dependencies` on a `Ticket` or a `TicketListing` is `{ blockedBy: number }
+ * | null`, same as `GitHubClient`'s — `discover.ts`'s `runnableNow` reads
+ * `null` as *GitHub said nothing about dependencies*, not *nothing blocks
+ * it*. **`memoryTickets`, having no notion of blockers, answers the zero
+ * rather than the unread case**, but that is a rule on that one
+ * implementation, not on every `Tickets`: a real `GitHubClient` can still
+ * answer `null` here, and a caller must keep reading the null branch.
  */
 export interface Tickets {
   listOpenIssues(): Promise<TicketListing[]>

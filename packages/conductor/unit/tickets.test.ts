@@ -34,11 +34,16 @@ const _ticketsSatisfiesIssueChannel: IssueChannel = {} as Tickets
 describeTicketsContract('memoryTickets', () => memoryTickets())
 
 describe('memoryTickets, beyond the shared contract', () => {
-  it('touches no clock by default: two tickets never collide on a wall-clock millisecond', async () => {
+  it('touches no clock by default: a created ticket is stamped by the synthetic counter, not the wall clock', async () => {
     const t = memoryTickets()
-    const a = await t.createIssue({ title: 'a', body: '', labels: [] })
-    const b = await t.createIssue({ title: 'b', body: '', labels: [] })
-    expect(a.number).not.toBe(b.number)
+    await t.createIssue({ title: 'a', body: '', labels: [] })
+    await t.createIssue({ title: 'b', body: '', labels: [] })
+
+    // The synthetic counter starts at the epoch, so nothing it stamps is "at
+    // or after" a cutoff near the real now — were this reading `Date.now()`
+    // instead, both tickets would land on the near side of that cutoff.
+    const sinceNearRealNow = await t.listIssuesSince(new Date(Date.now() - 1000))
+    expect(sinceNearRealNow).toEqual([])
   })
 
   it("listIssuesSince filters on the creation time it stored, placed exactly by an injected clock", async () => {
