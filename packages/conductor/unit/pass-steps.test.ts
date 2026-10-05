@@ -46,10 +46,9 @@ import {
   type Judged,
   type Judging,
   type PassPorts,
-  type SentBack,
   type Worked,
 } from '../src/pass-steps.ts'
-import { NEEDS_INPUT, outcomeOf, runPass, type Destination, type PassOptions, type PassResult } from '../src/pass.ts'
+import { NEEDS_INPUT, outcomeOf, runPass, type PassOptions, type PassResult } from '../src/pass.ts'
 
 // --------------------------------------------------------------- fixtures ----
 

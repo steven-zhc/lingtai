@@ -20,7 +20,6 @@ import { createRuntime } from '@lingtai/agent'
 import {
   PortsLive,
   currentRecipe,
-  foreignLabels,
   loadProjects,
   runOnce,
   runQueue,

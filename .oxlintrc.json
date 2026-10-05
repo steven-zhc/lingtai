@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // The floor, written out rather than left to the default (0064 §5). `correctness`
+  // is what oxlint enables on its own today and what found the 47 problems #366
+  // was filed for; saying it here means a later oxlint changing its default
+  // cannot widen or narrow this gate without the change showing in a diff.
+  // `pedantic` and `style` are deliberately not on: the point is an enforced
+  // floor, not a new style argument.
+  "categories": {
+    "correctness": "warn"
+  },
+
+  "rules": {
+    // `then:` is a real field of the `watch` plugin, declared as
+    // `then: z.enum(["request-approval", "fail"])` in packages/recipe/src/recipe.ts.
+    // Renaming it would change the schema every machine's `recipe.yml` is
+    // written in, so the ten hits this rule reports are false positives and the
+    // rule is off rather than silenced site by site (#366).
+    "unicorn/no-thenable": "off",
+
+    // Two exemptions, both of them recognising something the code already does.
+    //
+    // `ignoreRestSiblings`: `const { seq, streamId, at, ...rest } = envelope` is
+    // how a test says *the payload without its bookkeeping*, and those three
+    // names exist in order to be left out of `rest`. Renaming them to `_seq`
+    // would not silence the rule, it would change the meaning — `_seq` omits
+    // nothing and `seq` reappears inside `rest`.
+    //
+    // `^_`: this repository already marks a binding it keeps on purpose with a
+    // leading underscore (`_context`, `_work`, `_refused`), which is what the
+    // rule's own help text asks for — so it is told to honour the convention it
+    // recommends instead of reporting it.
+    "no-unused-vars": [
+      "warn",
+      {
+        "ignoreRestSiblings": true,
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ]
+  }
+}

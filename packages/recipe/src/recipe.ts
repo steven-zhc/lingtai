@@ -2877,7 +2877,7 @@ export const Recipe = z
           z
             .string()
             .regex(
-              /^[a-z0-9_]+(?:[.\-][a-z0-9_]+)*$/i,
+              /^[a-z0-9_]+(?:[.-][a-z0-9_]+)*$/i,
               'a host, or segments of one — no port, scheme, user or path, and no empty segment',
             ),
         )

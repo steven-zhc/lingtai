@@ -1,4 +1,5 @@
-# The unit half and the formatter, on every PR and every push to main (#365, #367).
+# The unit half, the formatter and the linter, on every PR and every push to
+# main (#365, #367, #366).
 #
 # This is the gate that only ran inside the conductor's own `build:` step —
 # visible on this repository's copy of the recipe, but since #180 nothing
@@ -41,6 +42,10 @@ jobs:
       # checkout rather than having found it correct (#367).
       - name: fmt
         run: pnpm fmt:check
+      # `--deny-warnings` is in the script, and it is the whole of the gate:
+      # without it a warning count only ever goes up (#366).
+      - name: lint
+        run: pnpm lint
       - name: typecheck
         run: pnpm typecheck
       - name: test

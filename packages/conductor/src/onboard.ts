@@ -34,7 +34,7 @@
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
 import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
-import { STEPS, type Tier, parsePayload } from '@lingtai/domain'
+import { STEPS, parsePayload } from '@lingtai/domain'
 import { githubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import {
@@ -47,7 +47,6 @@ import {
 } from '@lingtai/github'
 import {
   RECIPE_PATH,
-  RecipeMissingError,
   baseDivergence,
   baseOf,
   baseWrittenAt,

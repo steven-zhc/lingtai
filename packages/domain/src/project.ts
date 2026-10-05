@@ -14,7 +14,7 @@
  * configuration.
  */
 import type { Envelope, ToAppend } from './envelope.ts'
-import type { PayloadOf, Tier } from './events.ts'
+import type { PayloadOf } from './events.ts'
 
 export interface ProjectState {
   /** Null until the first event; a stream can be read before it exists. */

@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import {
-  NEEDS_INPUT,
   NO_DESIGN,
   type Action,
   type ActionContext,
@@ -170,7 +169,7 @@ import {
 } from '@lingtai/recipe'
 import { isBuiltInJudge } from '@lingtai/recipe'
 import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
-import { Data, Effect, Either } from 'effect'
+import { Effect, Either } from 'effect'
 
 import { armsOnOrigin } from './arms.ts'
 import { priorAttempts } from './attempts.ts'

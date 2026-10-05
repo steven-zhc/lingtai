@@ -281,7 +281,7 @@ export function describeLogQueriesContract(
       // which is what a caller reads.
       expect(byType.get('WorkItemLanded') ?? 0).toBeGreaterThanOrEqual(1)
       expect(byType.get('EndActionsResolved') ?? 0).toBeGreaterThanOrEqual(2)
-      expect(counts.map((c) => c.type)).toEqual([...counts.map((c) => c.type)].sort())
+      expect(counts.map((c) => c.type)).toEqual(counts.map((c) => c.type).sort())
       // And the pair, named: one order for both stores, or this contract means
       // two different things by the same word.
       const names = counts.map((c) => c.type)

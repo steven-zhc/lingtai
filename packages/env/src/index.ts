@@ -73,7 +73,7 @@ const loaded = config({
  * is to say what the file holds, and whose it is, is somebody else's question.
  */
 export function machineEnvFile(): Record<string, string> {
-  return { ...(loaded.parsed ?? {}) }
+  return { ...loaded.parsed }
 }
 
 /**

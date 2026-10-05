@@ -24,17 +24,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { runOnce } from '../src/conduct.ts'
-import {
-  PROJECT,
-  RECIPE,
-  fakeGitHub,
-  fakePorts,
-  issue,
-  memoryStore,
-  project,
-  runtime,
-  withPorts,
-} from '../test/one-pass.ts'
+import { PROJECT, RECIPE, fakeGitHub, fakePorts, memoryStore, project, runtime, withPorts } from '../test/one-pass.ts'
 
 /**
  * The governance rule, at the point where it bites: which recipe judges a

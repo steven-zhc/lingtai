@@ -38,7 +38,6 @@
  * A project that configures no `end` at all still writes nothing. There the
  * skip is the user's decision, and `StepsResolved` already records it.
  */
-import { workItemStream } from '@lingtai/domain'
 import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
 import type { LogQueries } from '@lingtai/event-store/log'
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel

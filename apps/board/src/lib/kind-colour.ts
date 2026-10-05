@@ -72,7 +72,7 @@ export function kindDot(color: string | null | undefined): string | null {
   const rgb = parseHex(color)
   if (rgb === null) return null
 
-  const { h, s, l } = toHsl(rgb)
+  const { h, s } = toHsl(rgb)
   if (s >= AMBER_MIN_SATURATION && h >= AMBER_FROM && h <= AMBER_TO) return null
 
   const lum = luminance(rgb)

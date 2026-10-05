@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { Action, ActionContext, ActionEvent, ActionFinding, ActionResult } from '@lingtai/actions'
 import { STEPS, type Step } from '@lingtai/domain'
-import { StepMap, type StepAction } from '@lingtai/recipe'
+import { StepMap } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import type { TerminalOutcome } from '../src/end-step.ts'

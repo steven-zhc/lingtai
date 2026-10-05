@@ -117,6 +117,9 @@ export interface RunCommandOptions {
  * and leaves its body showing, rather than swallowing the output after it. A
  * lone C1 ST byte reaches here as U+FFFD, since the chunk is decoded as UTF-8.
  */
+// The control characters are the subject, not an accident: this is what strips
+// an ANSI escape, and the docblock above is about which bytes reach it (#366).
+// oxlint-disable-next-line no-control-regex
 const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x00-\x1f\x9c�]*(?:\x07|\x1b\\|\x9c|�)|[ -/]*[0-~])/g
 
 /**

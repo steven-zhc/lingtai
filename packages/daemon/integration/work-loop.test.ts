@@ -17,7 +17,7 @@ import { createWorkLoop } from '../src/index.ts'
 const created = new Set<string>()
 let store: EventStore
 
-const landed = (id: string) => ({
+const landed = (_id: string) => ({
   type: 'WorkItemLanded',
   actor: 'conductor',
   data: { mergeCommit: 'abc1234', base: 'develop' },

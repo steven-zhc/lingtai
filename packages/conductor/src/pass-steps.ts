@@ -127,14 +127,13 @@
  * the ending happened, and neither does this file's failure to resolve them.
  */
 import type { ActionContext, ActionFinding, TheDesign } from '@lingtai/actions'
-import type { Envelope, Step, ToAppend } from '@lingtai/domain'
+import type { Envelope, ToAppend } from '@lingtai/domain'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
-import type { Worktree } from '@lingtai/repo'
 
-import { type TerminalOutcome, resolveEndActions } from './end-step.ts'
+import { resolveEndActions } from './end-step.ts'
 import { BUILT_IN_FOR } from './judge.ts'
 import {
   NEEDS_INPUT,
@@ -148,7 +147,6 @@ import {
   type StepNeverRan,
   type StepPassed,
   type StepReached,
-  type StepRefused,
   type StepRouted,
 } from './pass.ts'
 

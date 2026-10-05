@@ -887,9 +887,11 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const passed = run.find(
       (event) => event.type === 'StepPassed' && (event.data as { step: string }).step === 'design',
     )
-    expect(passed?.data).toMatchObject({ step: 'design', action: 'draft' })
+    expect(passed).toBeDefined()
+    const passedData = passed!.data as { step: string; action: string; evidence: string }
+    expect(passedData).toMatchObject({ step: 'design', action: 'draft' })
     // The document, and a person's sentence about what it cost beside it.
-    expect((passed?.data as { evidence: string }).evidence).toContain('beside `whyNoKindAt`')
+    expect(passedData.evidence).toContain('beside `whyNoKindAt`')
 
     /**
      * **And the implementer was handed it**, which is the half nothing did before.

@@ -10,7 +10,7 @@ import type { GitHubClient, Issue, Label } from '@lingtai/github'
  * nothing" is a claim about the log rather than about a return value.
  */
 import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   considerIssue,
@@ -307,8 +307,6 @@ function newProject(): string {
   return p
 }
 
-const created = new Set<string>()
-
 /** A client that answers from a fixed set of issues. */
 function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
   return {
@@ -355,10 +353,6 @@ let store: EventStore
 beforeAll(() => {
   store = createMemoryEventStore()
 })
-
-function track(streams: string[]): void {
-  for (const s of streams) created.add(s)
-}
 
 describe('runnableNow', () => {
   /**

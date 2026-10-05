@@ -169,7 +169,7 @@ export function describeEventStoreContract(
       expect(second[0]!.seq).toBeGreaterThan(first[0]!.seq)
 
       const after = await s.readAll(first[0]!.seq, 100)
-      expect(after.map((e) => e.seq)).toEqual([...after.map((e) => e.seq)].sort((x, y) => (x < y ? -1 : 1)))
+      expect(after.map((e) => e.seq)).toEqual(after.map((e) => e.seq).sort((x, y) => (x < y ? -1 : 1)))
       expect(after.some((e) => e.seq === second[0]!.seq)).toBe(true)
       expect(after.some((e) => e.seq === first[0]!.seq)).toBe(false)
     })

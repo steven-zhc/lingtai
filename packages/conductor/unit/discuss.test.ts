@@ -251,7 +251,9 @@ describe('holding one question', () => {
     // Both rounds, on one event. A person watching the meter is watching what
     // the question cost, not what one of its rounds did.
     expect(held.costUsd).toBeCloseTo(0.3)
-    expect((store.appended[1]?.data as { read: string[] }).read).toEqual(['main:a.ts'])
+    const second = store.appended[1]
+    expect(second).toBeDefined()
+    expect((second!.data as { read: string[] }).read).toEqual(['main:a.ts'])
   })
 
   /**

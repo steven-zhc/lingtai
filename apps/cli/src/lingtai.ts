@@ -41,7 +41,6 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import type { Tier } from '@lingtai/domain'
 import { BOARD_PORT, boardPort } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'

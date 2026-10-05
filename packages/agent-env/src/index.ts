@@ -97,9 +97,9 @@ export function productionPatterns(refuseHosts: readonly string[] = []): string[
  * boundaries, and this is what makes it refuse rather than warn.
  */
 export function hostLooksProduction(host: string, patterns: readonly string[]): string | null {
-  const segments = host.toLowerCase().split(/[.\-]/)
+  const segments = host.toLowerCase().split(/[.-]/)
   for (const pattern of patterns) {
-    const run = pattern.toLowerCase().split(/[.\-]/)
+    const run = pattern.toLowerCase().split(/[.-]/)
     for (let i = 0; i + run.length <= segments.length; i++) {
       if (run.every((piece, j) => segments[i + j] === piece)) return pattern
     }

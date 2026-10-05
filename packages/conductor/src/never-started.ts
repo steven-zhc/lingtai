@@ -171,7 +171,7 @@ function clockReset(detail: string, now: Date, zone: string | undefined): { at: 
   ).exec(detail)
   if (!clock) return null
 
-  const zoned = /\(([A-Za-z][A-Za-z0-9_+\-]*(?:\/[A-Za-z0-9_+\-]+)*)\)/.exec(
+  const zoned = /\(([A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*)\)/.exec(
     detail.slice(clock.index + clock[0].length, clock.index + clock[0].length + 40),
   )
 

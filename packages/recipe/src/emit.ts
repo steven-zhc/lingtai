@@ -328,6 +328,10 @@ function reconcile(doc: Document, path: readonly (string | number)[], old: unkno
     return old
   }
   if (isMap(old) && isPlainObject(value)) {
+    // The copy is what makes `old.delete(k)` below safe: iterating `old.items`
+    // while deleting from it skips entries. `no-useless-spread` reads the
+    // `for…of` and not the mutation inside it (#366).
+    // oxlint-disable-next-line unicorn/no-useless-spread
     for (const pair of [...old.items]) {
       const k = keyOf(pair)
       if (!Object.hasOwn(value, k) || value[k] === undefined) {
