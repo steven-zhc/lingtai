@@ -151,19 +151,20 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 stops offering it because the log says it is
                                 over. Nothing lifts a close — if the work is
                                 wanted again, open a new ticket
-  lingtai ticket list [project]     a project's own tickets — only for a project
+  lingtai ticket list               a project's own tickets — only for a project
                                 whose recipe keeps them in Lingtai's database
                                 (source.tickets: db); a GitHub-backed project's
                                 are read with gh issue list instead. Open ones,
                                 by default
-    --all                        the closed ones too, marked closed
-    --project <p>                required with more than one project registered
+    --all                       the closed ones too, marked closed
+    --project <p>               required with more than one project registered
   lingtai ticket close <n>          closes that row in the table — not lingtai
                                 close, which ends a work item on the log; this
-                                changes nothing there. The daemon notices on
-                                its next sweep, every 5m, not at once: there is
-                                no webhook
-    --project <p>                as above
+                                changes nothing there. Nothing in the running
+                                conductor reads this table yet, so closing one
+                                here has no effect on what the daemon offers
+                                next
+    --project <p>               as above
   lingtai ask <project> --issue <n> "<question>"
                                 hold a ticket on a decision before any run
                                 claims it: nothing is spent, the queue passes

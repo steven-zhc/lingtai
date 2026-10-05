@@ -132,7 +132,7 @@ export async function ticketList(
     : await tickets.listOpenIssues()
 
   if (listing.length === 0) {
-    log(`no open tickets for ${name}`)
+    log(options.all ? `no tickets for ${name}` : `no open tickets for ${name}`)
     return 0
   }
 

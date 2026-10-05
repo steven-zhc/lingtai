@@ -148,6 +148,19 @@ describe('lingtai ticket', () => {
     expect(listOut.lines[0]).toBe(`no open tickets for p`)
   })
 
+  it('says "no tickets", not "no open tickets", when --all finds none either', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+    }
+    const { log, lines } = sink()
+    const code = await ticketList({ project: 'p', all: true }, log, reading)
+    expect(code).toBe(0)
+    expect(lines[0]).toBe(`no tickets for p`)
+  })
+
   it('refuses closing an unknown ticket number, by name', async () => {
     const tickets = dbTickets(freshSql(), 'p')
     const reading: TicketReading = {
