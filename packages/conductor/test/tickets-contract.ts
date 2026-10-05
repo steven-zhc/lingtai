@@ -14,13 +14,27 @@
  * `memoryTickets()`. Pinning the exact boundary against a controlled clock is
  * `unit/tickets.test.ts`'s, because only that implementation's clock is
  * something a test can place.
+ *
+ * **`commentBodies` is how this reaches a comment's stored text.** `Tickets`
+ * itself carries no verb for reading one back, so a `comment` that drops the
+ * body or overwrites the previous row instead of appending is, to anything
+ * holding only a `Tickets`, indistinguishable from one that stored it — which
+ * is exactly the gap `tell.ts`'s audit-trail rule cannot survive. Pass the
+ * implementation's own inspection seam (`memoryTickets()`'s `commentBodies`, or
+ * a database-backed implementation's own equivalent) and the comment case
+ * verifies storage directly; omit it and that one assertion is skipped, same
+ * as every other case still runs.
  */
 import { describe, expect, it } from 'vitest'
 
 import type { Tickets } from '../src/ticket-store.ts'
 
-export function describeTicketsContract(name: string, make: () => Tickets | Promise<Tickets>): void {
-  const tickets = async (): Promise<Tickets> => await make()
+export function describeTicketsContract<T extends Tickets>(
+  name: string,
+  make: () => T | Promise<T>,
+  options: { commentBodies?: (t: T, issue: number) => readonly string[] } = {},
+): void {
+  const tickets = async (): Promise<T> => await make()
 
   describe(`${name}: the Tickets contract`, () => {
     it('lists open tickets by number; a closed one is not listed', async () => {
@@ -69,6 +83,10 @@ export function describeTicketsContract(name: string, make: () => Tickets | Prom
       expect(first.id).not.toBe(second.id)
       const got = await t.getIssue(created.number)
       expect(got.body).toBe('original body')
+
+      if (options.commentBodies) {
+        expect(options.commentBodies(t, created.number)).toEqual(['first', 'second'])
+      }
     })
 
     it('updateBody replaces only the body: title, labels and state unchanged', async () => {

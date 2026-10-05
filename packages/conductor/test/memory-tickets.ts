@@ -33,9 +33,9 @@ interface StoredTicket {
  * *"nothing renders comments into a prompt"*), so `Tickets` carries no verb
  * for it — but a test fake that threw the text away regardless would be
  * indistinguishable from one that stored it, to every caller that only has a
- * `Tickets`. `commentBodies` is for `unit/tickets.test.ts` alone, which imports
- * this factory directly rather than through the shared contract's narrower
- * `make: () => Tickets`.
+ * `Tickets`. `commentBodies` is handed to `tickets-contract.ts` as its
+ * `commentBodies` option (`unit/tickets.test.ts`), so the shared suite's own
+ * comment case verifies storage rather than only `id` and the issue body.
  */
 export interface MemoryTickets extends Tickets {
   commentBodies(issue: number): readonly string[]

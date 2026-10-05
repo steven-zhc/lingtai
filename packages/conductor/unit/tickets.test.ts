@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { IssueChannel } from '../src/tell.ts'
 import type { Tickets } from '../src/ticket-store.ts'
-import { memoryTickets } from '../test/memory-tickets.ts'
+import { type MemoryTickets, memoryTickets } from '../test/memory-tickets.ts'
 import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 /**
@@ -31,7 +31,9 @@ const _gitHubSatisfiesTickets: Tickets = {} as GitHubClient
  */
 const _ticketsSatisfiesIssueChannel: IssueChannel = {} as Tickets
 
-describeTicketsContract('memoryTickets', () => memoryTickets())
+describeTicketsContract<MemoryTickets>('memoryTickets', () => memoryTickets(), {
+  commentBodies: (t, issue) => t.commentBodies(issue),
+})
 
 describe('memoryTickets, beyond the shared contract', () => {
   it('touches no clock by default: a created ticket is stamped by the synthetic counter, not the wall clock', async () => {
