@@ -61,8 +61,10 @@ function barrier(expected: number) {
 /**
  * A project that answered, carrying only what the fold reads.
  *
- * `recipe` and `client` are on a resolved filter and are the *asking*'s, not
- * the fold's — nothing below this point looks at either.
+ * `client` is on a resolved filter and is the *asking*'s, not the fold's —
+ * nothing below this point looks at it. `recipe` is read now, for
+ * `ticketSourceOf` (#384), so it carries just enough of one for that call to
+ * answer `'github'`.
  */
 function resolvedFilter(name: string, kinds: string[]) {
   return {
@@ -74,6 +76,7 @@ function resolvedFilter(name: string, kinds: string[]) {
     // which names both ceilings because they multiply.
     limits: { rounds: 2, restarts: 0, turns: 150, wall: '1h', wallMs: 3_600_000 },
     plan: new Map(),
+    recipe: { source: {} },
   } as unknown as Extract<ProjectQueue, { state: 'listed' }>['filter']
 }
 

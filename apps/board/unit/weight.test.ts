@@ -134,7 +134,9 @@ describe('what the board says it has cost', () => {
 
 describe("where a card's reference points", () => {
   it('goes to the issue on GitHub', () => {
-    expect(issueUrl('lingtai-dev', 'lingtai', '112')).toBe('https://github.com/lingtai-dev/lingtai/issues/112')
+    expect(issueUrl('lingtai-dev', 'lingtai', '112', 'github')).toBe(
+      'https://github.com/lingtai-dev/lingtai/issues/112',
+    )
   })
 
   /**
@@ -142,6 +144,24 @@ describe("where a card's reference points", () => {
    * link to build, and a dead one is worse than none.
    */
   it('declines to invent one for a project with no owner recorded', () => {
-    expect(issueUrl(null, 'lingtai', '112')).toBeNull()
+    expect(issueUrl(null, 'lingtai', '112', 'github')).toBeNull()
+  })
+
+  /**
+   * A `db` project's tickets are not on GitHub, so a card for one carries no
+   * issue link (#384) — the title still goes to the task page.
+   */
+  it('carries no link for a project whose tickets are in the database', () => {
+    expect(issueUrl('lingtai-dev', 'lingtai', '112', 'db')).toBeNull()
+  })
+
+  /**
+   * Unknown is not `'github'`: a project the board could not read a recipe
+   * for is exactly the project likeliest to have no GitHub App, so it gets
+   * no link rather than the bogus one it would have gotten before `tickets`
+   * existed.
+   */
+  it('declines to invent one for a project whose ticket source is unknown', () => {
+    expect(issueUrl('lingtai-dev', 'lingtai', '112', null)).toBeNull()
   })
 })

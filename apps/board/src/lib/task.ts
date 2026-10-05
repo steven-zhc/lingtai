@@ -53,6 +53,7 @@ import { eventStore } from '@lingtai/event-store'
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubError } from '@lingtai/github'
+import { ticketSourceOf } from '@lingtai/recipe/settings'
 
 import { issueUrl } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
@@ -1276,8 +1277,13 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
 
   // Buildable without GitHub, and worth building: a link to the issue is the
   // thing the page exists to save a trip for, and it does not need an answer.
-  // The same shape the cards link to, said once (`board.ts`).
-  const url = issueUrl(state.owner, project, issue)
+  // The same shape the cards link to, said once (`board.ts`). A recipe that
+  // will not parse costs the link, not the page — caught here rather than
+  // read twice.
+  const tickets = await currentRecipe(state)
+    .then((r) => ticketSourceOf(r.recipe))
+    .catch(() => null)
+  const url = issueUrl(state.owner, project, issue, tickets)
   try {
     const client = await githubClientFor(state)
     const live = await client.getIssue(Number(issue))

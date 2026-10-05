@@ -67,6 +67,8 @@ import { parseDuration } from './duration.ts'
 import { isBuiltInJudge } from './judges.ts'
 import type { QueueSettings, Recipe, StepAction, TicketSource } from './recipe.ts'
 
+export type { TicketSource } from './recipe.ts'
+
 /**
  * What one call this step makes may spend, **as a dispatch's own `limits:`**, or
  * null where it declares none and the ceiling is what bounds it (0070 §5).
@@ -301,8 +303,8 @@ export function backoffOf(recipe: Recipe): Recipe['source']['backoff'] {
  * a recipe that writes nothing hashes exactly as it did before this setting
  * existed.
  *
- * **Nothing reads this yet** — #382 is what wires a `db` answer into the
- * pass.
+ * The board reads it (#384), for whether a card's reference points at
+ * GitHub — #382 is what wires a `db` answer into the pass itself.
  */
 export function ticketSourceOf(recipe: Recipe): TicketSource {
   return recipe.source.tickets ?? 'github'
