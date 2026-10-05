@@ -518,15 +518,50 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
 // --------------------------------------------------------------- tickets ----
 
 /**
- * `$1`, `$2`, … → `?1`, `?2`, …
+ * `$1`, `$2`, … → `?1`, `?2`, …, skipping anything inside a `'…'` string
+ * literal — a title or body containing `$5` is text, not a placeholder, and
+ * `node:sqlite` would otherwise bind it as one and write `?5` into the stored
+ * row.
  *
  * `node:sqlite` binds a numbered placeholder by its number rather than by its
  * position in the call — `?2` written twice in one statement still reads the
  * one value bound at index 2, rather than needing a second — so rewriting the
- * digits is the whole of the translation `TicketSql` promises.
+ * digits outside of literals is the whole of the translation `TicketSql`
+ * promises.
  */
 function sqliteParams(text: string): string {
-  return text.replace(/\$(\d+)/g, '?$1')
+  let result = ''
+  let i = 0
+  while (i < text.length) {
+    const ch = text[i]
+    if (ch === "'") {
+      let j = i + 1
+      while (j < text.length) {
+        if (text[j] === "'") {
+          if (text[j + 1] === "'") {
+            j += 2
+            continue
+          }
+          j += 1
+          break
+        }
+        j += 1
+      }
+      result += text.slice(i, j)
+      i = j
+      continue
+    }
+    if (ch === '$' && /\d/.test(text[i + 1] ?? '')) {
+      let j = i + 1
+      while (j < text.length && /\d/.test(text[j] ?? '')) j += 1
+      result += `?${text.slice(i + 1, j)}`
+      i = j
+      continue
+    }
+    result += ch
+    i += 1
+  }
+  return result
 }
 
 /**

@@ -16,32 +16,56 @@ function freshStore(): TicketSql {
 
 interface TicketColumn {
   name: string
+  type: string
   notnull: number
+  dflt_value: string | null
+  pk: number
 }
 
 async function columns(sql: TicketSql, table: string): Promise<TicketColumn[]> {
-  return sql.query<TicketColumn>(`PRAGMA table_info(${table})`)
+  const rows = await sql.query<TicketColumn & { cid: number }>(`PRAGMA table_info(${table})`)
+  return rows.map(({ name, type, notnull, dflt_value, pk }) => ({ name, type, notnull, dflt_value, pk }))
 }
 
 describe('ensureTicketTables on SQLite', () => {
-  it('creates both tables, with the columns the ticket asks for', async () => {
+  it('creates both tables, with the columns, types, defaults and primary key the ticket asks for', async () => {
     const sql = freshStore()
     await ensureTicketTables(sql)
 
-    const ticketColumns = (await columns(sql, 'tickets')).map((c) => c.name)
-    expect(ticketColumns).toEqual([
-      'project',
-      'number',
-      'title',
-      'body',
-      'labels',
-      'state',
-      'created_at',
-      'updated_at',
+    expect(await columns(sql, 'tickets')).toEqual([
+      { name: 'project', type: 'TEXT', notnull: 1, dflt_value: null, pk: 1 },
+      { name: 'number', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 2 },
+      { name: 'title', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+      { name: 'body', type: 'TEXT', notnull: 1, dflt_value: "''", pk: 0 },
+      { name: 'labels', type: 'TEXT', notnull: 1, dflt_value: "'[]'", pk: 0 },
+      { name: 'state', type: 'TEXT', notnull: 1, dflt_value: "'open'", pk: 0 },
+      { name: 'created_at', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+      { name: 'updated_at', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
     ])
 
-    const commentColumns = (await columns(sql, 'ticket_comments')).map((c) => c.name)
-    expect(commentColumns).toEqual(['id', 'project', 'number', 'body', 'created_at'])
+    expect(await columns(sql, 'ticket_comments')).toEqual([
+      { name: 'id', type: 'INTEGER', notnull: 0, dflt_value: null, pk: 1 },
+      { name: 'project', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+      { name: 'number', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 0 },
+      { name: 'body', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+      { name: 'created_at', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    ])
+  })
+
+  it('refuses a second ticket for the same project and number', async () => {
+    const sql = freshStore()
+    await ensureTicketTables(sql)
+
+    const now = new Date().toISOString()
+    const insert = () =>
+      sql.query(
+        `INSERT INTO tickets (project, number, title, body, labels, state, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        ['proj', 1, 'a title', 'a body', '["bug"]', 'open', now, now],
+      )
+    await insert()
+
+    await expect(insert()).rejects.toThrow()
   })
 
   it('running it twice leaves a row already written untouched', async () => {
@@ -82,5 +106,11 @@ describe('ensureTicketTables on SQLite', () => {
       'second',
     ])
     expect(rows).toEqual([{ a: 'first', b: 'second', c: 'second' }])
+  })
+
+  it('leaves a $<digit> inside a string literal untouched, rather than binding it as a placeholder', async () => {
+    const sql = freshStore()
+    const rows = await sql.query<{ a: string; b: string }>("SELECT 'costs $5 now' as a, $1 as b", ['first'])
+    expect(rows).toEqual([{ a: 'costs $5 now', b: 'first' }])
   })
 })

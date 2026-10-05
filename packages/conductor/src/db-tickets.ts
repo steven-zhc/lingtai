@@ -64,9 +64,42 @@ const POSTGRES_TICKET_COMMENTS = `
 `
 
 /**
+ * Postgres's `CREATE TABLE IF NOT EXISTS` is not atomic: two sessions can both
+ * pass the existence check and then collide creating the table's row type,
+ * one losing with `duplicate key value violates unique constraint
+ * "pg_type_typname_nsp_index"` (23505) — reproduced 7/8, 4/8, 2/8 and 3/8 of
+ * eight concurrent clients across four runs against a real server. By the
+ * time that throws, the winner has committed, so retrying the same statement
+ * finds the table already there and no-ops.
+ */
+const POSTGRES_CREATE_RACE_CODES = new Set(['23505', '42710', '42P07'])
+
+function isPostgresCreateRace(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    typeof (err as { code: unknown }).code === 'string' &&
+    POSTGRES_CREATE_RACE_CODES.has((err as { code: string }).code)
+  )
+}
+
+async function execIdempotently(sql: TicketSql, ddl: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await sql.exec(ddl)
+      return
+    } catch (err) {
+      if (sql.dialect !== 'postgres' || !isPostgresCreateRace(err) || attempt >= 4) throw err
+    }
+  }
+}
+
+/**
  * Creates `tickets` and `ticket_comments` on `sql`'s store if they are not
- * already there. Safe to call every time something is about to use them: a
- * second run finds both tables present and changes nothing.
+ * already there. Safe to call every time something is about to use them,
+ * including concurrently: a second run finds both tables present and changes
+ * nothing.
  *
  * **Called from nowhere in this ticket.** The tables are created by the
  * adapter on first use (#380), not by every process that opens the log —
@@ -76,6 +109,6 @@ const POSTGRES_TICKET_COMMENTS = `
 export async function ensureTicketTables(sql: TicketSql): Promise<void> {
   const [tickets, comments] =
     sql.dialect === 'postgres' ? [POSTGRES_TICKETS, POSTGRES_TICKET_COMMENTS] : [SQLITE_TICKETS, SQLITE_TICKET_COMMENTS]
-  await sql.exec(tickets)
-  await sql.exec(comments)
+  await execIdempotently(sql, tickets)
+  await execIdempotently(sql, comments)
 }
