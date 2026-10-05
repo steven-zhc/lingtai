@@ -301,8 +301,9 @@ export function backoffOf(recipe: Recipe): Recipe['source']['backoff'] {
  * a recipe that writes nothing hashes exactly as it did before this setting
  * existed.
  *
- * **Nothing reads this yet** — #382 is what wires a `db` answer into the
- * pass.
+ * **Read by `ticketsFor`** (`@lingtai/conductor/ticket-store`, `#382`), which
+ * is what the pass, the queue and the daemon's convergence take their
+ * tickets from instead of a `GitHubClient` directly.
  */
 export function ticketSourceOf(recipe: Recipe): TicketSource {
   return recipe.source.tickets ?? 'github'

@@ -1016,8 +1016,10 @@ const BACKOFF = z
  * table on whichever store this machine chose (`#379`/`5517e86`,
  * `ensureTicketTables`).
  *
- * **Nothing reads this yet.** It is declared here so a recipe can say it;
- * wiring it into the pass — discovery, the queue, the board — is #382's.
+ * **Wired into the pass by `ticketSourceOf` and `ticketsFor`** (`#382`) —
+ * discovery, the queue, the board's Queued column and the daemon's
+ * convergence all take their tickets from there rather than from a
+ * `GitHubClient` directly.
  */
 export const TicketSource = z.enum(['github', 'db'])
 export type TicketSource = z.infer<typeof TicketSource>
