@@ -80,7 +80,10 @@ describe('ticketsFor', () => {
     const recipe = await recipeOf(RECIPE_DB)
     const client = fakeGitHub([])
 
-    const tickets = await ticketsFor(project, recipe, client, { sql })
+    const tickets = await ticketsFor(project, recipe, client, {
+      sql,
+      log: { projectStreams: async () => [] },
+    })
     expect(tickets).not.toBe(client)
 
     const opened = await tickets.createIssue({ title: 'a race in the importer', body: 'fix it', labels: ['bug'] })
