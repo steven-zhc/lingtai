@@ -221,6 +221,21 @@ describe('dbTickets, beyond the shared contract', () => {
     },
   )
 
+  it('updateTitle changes only the title: labels, body and state unchanged, and an unknown number rejects', async () => {
+    const t = freshDbTickets()
+    const created = await t.createIssue({ title: 'old title', body: 'the body', labels: ['bug'] })
+
+    await t.updateTitle(created.number, 'new title')
+
+    const got = await t.getIssue(created.number)
+    expect(got.title).toBe('new title')
+    expect(got.body).toBe('the body')
+    expect(got.labels.map((l) => l.name)).toEqual(['bug'])
+    expect(got.state).toBe('open')
+
+    await expect(t.updateTitle(999_999, 'x')).rejects.toThrow('no ticket #999999')
+  })
+
   it('createIssue rejects immediately on a non-duplicate error, without retrying', async () => {
     const sql = freshStore()
     let insertAttempts = 0

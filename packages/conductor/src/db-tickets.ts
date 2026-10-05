@@ -145,6 +145,8 @@ export async function ensureTicketTables(sql: TicketSql): Promise<void> {
  */
 export interface DbTickets extends Tickets {
   commentBodies(issue: number): Promise<readonly string[]>
+  /** Not on `Tickets` — no GitHub verb changes a title, so no caller through that interface needs one (`ticket.ts`'s `ticketEdit`, #386). */
+  updateTitle(issue: number, title: string): Promise<void>
 }
 
 interface TicketRow {
@@ -345,6 +347,15 @@ export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOpt
       const rows = await sql.query<{ number: number }>(
         `UPDATE tickets SET body = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
         [project, number, body, now().toISOString()],
+      )
+      if (rows.length === 0) throw noSuchTicket(project, number)
+    },
+
+    async updateTitle(number, title) {
+      await ensureReady()
+      const rows = await sql.query<{ number: number }>(
+        `UPDATE tickets SET title = $3, updated_at = $4 WHERE project = $1 AND number = $2 RETURNING number`,
+        [project, number, title, now().toISOString()],
       )
       if (rows.length === 0) throw noSuchTicket(project, number)
     },

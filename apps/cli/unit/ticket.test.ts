@@ -11,7 +11,16 @@ import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import { resolveRecipe, type ResolvedRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { ticketClose, ticketList, type TicketReading } from '../src/ticket.ts'
+import {
+  type EditedForm,
+  parseTicketForm,
+  renderTicketForm,
+  ticketClose,
+  ticketEdit,
+  ticketList,
+  ticketNew,
+  type TicketReading,
+} from '../src/ticket.ts'
 
 const DB_YAML = `
 version: 2
@@ -56,6 +65,41 @@ function freshSql(): TicketSql {
 function sink(): { log: (line: string) => void; lines: string[] } {
   const lines: string[] = []
   return { log: (l) => lines.push(l), lines }
+}
+
+const EDITOR_ENV = { VISUAL: undefined, EDITOR: 'fake-editor' }
+
+/**
+ * `TicketReading['edit']`, scripted rather than spawning anything (0060 §1):
+ * the "editor" is just `script`, applied to whatever `ticket.ts` rendered.
+ * Records every call and whether `discard` ran, which is how a test proves
+ * "refusal keeps, success discards" without a real file.
+ */
+function fakeEdit(script: string | ((initial: string) => string)): {
+  edit: NonNullable<TicketReading['edit']>
+  discards: number
+  calls: { command: string; initial: string; name: string }[]
+} {
+  const calls: { command: string; initial: string; name: string }[] = []
+  let discards = 0
+  const edit = async (command: string, initial: string, name: string): Promise<EditedForm> => {
+    calls.push({ command, initial, name })
+    const text = typeof script === 'function' ? script(initial) : script
+    return {
+      text,
+      path: `/fake/${name}.md`,
+      async discard() {
+        discards++
+      },
+    }
+  }
+  return {
+    edit,
+    get discards(): number {
+      return discards
+    },
+    calls,
+  }
 }
 
 describe('lingtai ticket', () => {
@@ -208,5 +252,230 @@ describe('lingtai ticket', () => {
     expect(lines[0]).toContain('a')
     expect(lines[0]).toContain('b')
     expect(lines[0]).toContain('--project')
+  })
+})
+
+describe('lingtai ticket new / edit (#386)', () => {
+  it('new refuses by name, before opening any store, when neither $VISUAL nor $EDITOR is set', async () => {
+    let called = false
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => {
+        called = true
+        throw new Error('must not be called')
+      },
+      env: { VISUAL: undefined, EDITOR: undefined },
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('VISUAL')
+    expect(lines[0]).toContain('EDITOR')
+    expect(called).toBe(false)
+  })
+
+  it('new creates a ticket with the parsed title, labels and body, from a form seeded with the recipe\'s kinds', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const fake = fakeEdit('a fresh bug\nlabels: bug, agent:hold\n\nSteps to reproduce.\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    const code = await ticketNew({ project: 'p' }, log, reading)
+    expect(code).toBe(0)
+    expect(lines[0]).toContain('created #1')
+    expect(lines[0]).toContain('a fresh bug')
+
+    const created = await tickets.getIssue(1)
+    expect(created.title).toBe('a fresh bug')
+    expect(created.labels.map((l) => l.name).sort()).toEqual(['agent:hold', 'bug'])
+    expect(created.body).toBe('Steps to reproduce.')
+    expect(fake.calls[0]?.initial).toContain('#! kinds: bug, feature')
+    expect(fake.discards).toBe(1)
+  })
+
+  it("new still creates the ticket when no kind label is in labels:, with a warning that the queue won't take it", async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const fake = fakeEdit('untriaged\nlabels: \n\nbody\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('created #1')
+    expect(lines[1]).toContain('no kind label')
+    expect((await tickets.getIssue(1)).title).toBe('untriaged')
+  })
+
+  it('new does nothing and discards the file when the form is quit unchanged', async () => {
+    let createCalled = false
+    const fake = fakeEdit((initial) => initial)
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => ({
+        ...dbTickets(freshSql(), 'p'),
+        createIssue: async () => {
+          createCalled = true
+          throw new Error('must not be called')
+        },
+      }),
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('no change')
+    expect(createCalled).toBe(false)
+    expect(fake.discards).toBe(1)
+  })
+
+  it('new refuses an empty title and keeps the file, even once the body was filled in', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const fake = fakeEdit('\nlabels: bug\n\nsomebody wrote a body but never a title\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('title')
+    expect(lines[0]).toContain('/fake/')
+    expect(fake.discards).toBe(0)
+    expect((await tickets.listIssuesSince(new Date(0))).length).toBe(0)
+  })
+
+  it('edit refuses an unknown ticket number, by name, without opening the editor', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const fake = fakeEdit('unreached')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: 999 }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('no ticket #999')
+    expect(fake.calls).toHaveLength(0)
+  })
+
+  it('edit writes only the fields that changed', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
+    const fake = fakeEdit('old title\nlabels: bug\n\nnew body\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('body')
+    expect(lines[0]).not.toContain('title')
+    expect(lines[0]).not.toContain('labels')
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('old title')
+    expect(after.body).toBe('new body')
+    expect(after.labels.map((l) => l.name)).toEqual(['bug'])
+  })
+
+  it('edit does nothing when the form is quit unchanged', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'steady', body: 'steady body', labels: ['feature'] })
+    const fake = fakeEdit((initial) => initial)
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('no change')
+    expect(fake.discards).toBe(1)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('steady')
+    expect(after.body).toBe('steady body')
+  })
+
+  it('edit refuses an emptied title and keeps the file, without writing anything', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'had a title', body: 'body', labels: [] })
+    const fake = fakeEdit('\nlabels: \n\nbody\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('title')
+    expect(fake.discards).toBe(0)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('had a title')
+  })
+})
+
+describe('renderTicketForm / parseTicketForm round-trip (#386)', () => {
+  it('parse(render(t)) equals t for a title, labels and a multi-line body with blank lines', () => {
+    const form = {
+      title: "the sample's tests fail on an empty input",
+      labels: ['bug', 'agent:hold'],
+      body: 'first paragraph.\n\nsecond paragraph, after a blank line.',
+    }
+    const rendered = renderTicketForm(form)
+    const parsed = parseTicketForm(rendered)
+    expect(parsed).toEqual({ ok: true, form })
+  })
+
+  it('a body that itself contains a labels: line or a #! line round-trips, because those only count in the header', () => {
+    const form = {
+      title: 'body carries header-shaped lines',
+      labels: ['feature'],
+      body: 'labels: not actually a header\n#! not actually an instruction',
+    }
+    const rendered = renderTicketForm(form)
+    expect(parseTicketForm(rendered)).toEqual({ ok: true, form })
+  })
+
+  it('an extra trailing newline on save still parses equal to the original', () => {
+    const form = { title: 'tidy save', labels: ['bug'], body: 'the body' }
+    const rendered = renderTicketForm(form)
+    const savedWithExtraNewline = `${rendered}\n`
+    expect(parseTicketForm(savedWithExtraNewline)).toEqual({ ok: true, form })
+  })
+
+  it('instructions passed to render are dropped by parse wherever they fall in the header', () => {
+    const form = { title: 'x', labels: ['bug'], body: 'y' }
+    const rendered = renderTicketForm(form, ['#! kinds: bug, feature — one belongs in labels:'])
+    expect(parseTicketForm(rendered)).toEqual({ ok: true, form })
+  })
+
+  it('a stray header line that is neither the title nor labels: is refused by name', () => {
+    const text = 'a title\nlabels: bug\nthis line should have been under a blank line\n\nbody'
+    const parsed = parseTicketForm(text)
+    expect(parsed.ok).toBe(false)
+    expect(!parsed.ok && parsed.why).toContain('header')
   })
 })
