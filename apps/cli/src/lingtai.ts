@@ -165,14 +165,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 here has no effect on what the daemon offers
                                 next
     --project <p>               as above
-  lingtai ticket new                 opens $VISUAL or $EDITOR on a short text
+  lingtai ticket new                opens $VISUAL or $EDITOR on a short text
                                 form — a title, a labels: line, then the body.
                                 Saving creates the ticket; quitting with the
                                 form unchanged does nothing. No kind label in
                                 labels: and the ticket is still created, with
                                 a warning that the queue will not take it
     --project <p>               as above
-  lingtai ticket edit <n>            the same form, started from the ticket.
+  lingtai ticket edit <n>           the same form, started from the ticket.
                                 Saving writes only the fields that changed
     --project <p>               as above
   lingtai ask <project> --issue <n> "<question>"

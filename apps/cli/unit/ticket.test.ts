@@ -356,6 +356,24 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect((await tickets.listIssuesSince(new Date(0))).length).toBe(0)
   })
 
+  it('new keeps the file and prints its path when creating the ticket fails', async () => {
+    const fake = fakeEdit('a fresh bug\nlabels: bug\n\nbody\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => {
+        throw new Error('the store is down')
+      },
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('the store is down')
+    expect(lines[0]).toContain('/fake/')
+    expect(fake.discards).toBe(0)
+  })
+
   it('edit refuses an unknown ticket number, by name, without opening the editor', async () => {
     const tickets = dbTickets(freshSql(), 'p')
     const fake = fakeEdit('unreached')
@@ -393,6 +411,85 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect(after.title).toBe('old title')
     expect(after.body).toBe('new body')
     expect(after.labels.map((l) => l.name)).toEqual(['bug'])
+  })
+
+  it('edit reports no change when the stored body ends in a newline the form never shows', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'steady', body: 'steady body\n\nFinding: x\n', labels: ['bug'] })
+    const fake = fakeEdit((initial) => initial)
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('no change')
+    expect(fake.discards).toBe(1)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.body).toBe('steady body\n\nFinding: x\n')
+  })
+
+  it('edit reports which fields already landed when a later write throws, and keeps the file', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
+    const fake = fakeEdit('new title\nlabels: bug\n\nnew body\n')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => ({
+        ...tickets,
+        updateBody: async () => {
+          throw new Error('connection dropped')
+        },
+      }),
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('connection dropped')
+    expect(lines[0]).toContain('title')
+    expect(lines[0]).toContain('already written')
+    expect(fake.discards).toBe(0)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('new title')
+    expect(after.body).toBe('old body')
+  })
+
+  it('edit refuses when the ticket changed since the form was opened, and keeps the file', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
+    const fake = fakeEdit('old title\nlabels: bug\n\nnew body\n')
+    let reads = 0
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => ({
+        ...tickets,
+        async getIssue(n: number) {
+          reads++
+          const row = await tickets.getIssue(n)
+          // The second read is the pre-write recheck — stand in for a second
+          // `edit` session that saved first, between this one's read and its write.
+          return reads === 1 ? row : { ...row, body: 'a second edit landed first' }
+        },
+      }),
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(1)
+    expect(lines[0]).toContain('changed since')
+    expect(fake.discards).toBe(0)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('old title')
+    expect(after.body).toBe('old body')
   })
 
   it('edit does nothing when the form is quit unchanged', async () => {
