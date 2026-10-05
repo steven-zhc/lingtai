@@ -51,6 +51,7 @@ const TICKET: TicketView = {
   labels: ['bug'],
   url: 'https://github.com/steven-zhc/lingtai/issues/112',
   found: true,
+  askedGitHub: true,
   body: 'the body',
   problem: null,
 }

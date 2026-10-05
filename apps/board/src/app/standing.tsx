@@ -134,7 +134,7 @@ export function Standing({
    *
    * Null when the id is not a work item: there is no ticket to name.
    */
-  subject: { ref: string; title: string | null; url: string | null } | null
+  subject: { ref: string; title: string | null; url: string | null; askedGitHub: boolean } | null
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
   project: string | null
   issue: number | null
@@ -260,9 +260,12 @@ export function Standing({
         {/* ---- what was asked, in one line (see `subject`) ------------------
             The number is the way out to GitHub, which is where the ticket is
             edited and where a reader goes to argue with it; the title is the
-            sentence. When GitHub could not be asked the title is null and the
-            number still stands on its own, because *which ticket this is* is a
-            fact the log holds and does not need GitHub to answer. */}
+            sentence. The title is null either because GitHub could not be
+            asked or because it was never going to be — a `db` project's
+            tickets (#384) — and `askedGitHub` is what tells those two apart,
+            because only the first may say GitHub did not answer. The number
+            still stands on its own either way, because *which ticket this is*
+            is a fact the log holds and does not need GitHub to answer. */}
         {subject !== null ? (
           <p className="ssubject" data-rank="subject">
             {subject.url !== null ? (
@@ -272,7 +275,12 @@ export function Standing({
             ) : (
               <span className="sref">#{subject.ref}</span>
             )}
-            <span className="stitle">{subject.title ?? 'GitHub did not answer, so the title is not on this page'}</span>
+            <span className="stitle">
+              {subject.title ??
+                (subject.askedGitHub
+                  ? 'GitHub did not answer, so the title is not on this page'
+                  : 'the title is not on this page')}
+            </span>
           </p>
         ) : null}
 

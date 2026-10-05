@@ -649,7 +649,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, queueOrder, projects: filters, pending }, registered, control] = await Promise.all([
+  const [{ columns, queueOrder, ticketSources, projects: filters, pending }, registered, control] = await Promise.all([
     loadBoard(only),
     loadProjects().catch(() => []),
     readControl(),
@@ -674,7 +674,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // Where each card's ticket lives, from the owners already loaded — a lookup,
   // not a request per card.
   const owners = new Map(registered.map((p) => [p.project, p.owner]))
-  const ticket = (card: BoardCard) => issueUrl(owners.get(card.project) ?? null, card.project, card.ref)
+  const ticket = (card: BoardCard) =>
+    issueUrl(owners.get(card.project) ?? null, card.project, card.ref, ticketSources.get(card.project) ?? null)
 
   return (
     <main>

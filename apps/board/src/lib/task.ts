@@ -53,6 +53,7 @@ import { eventStore } from '@lingtai/event-store'
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubError } from '@lingtai/github'
+import { ticketSourceOf } from '@lingtai/recipe/settings'
 
 import { issueUrl } from './board.ts'
 import { type HistoryLine, toLine } from './history.ts'
@@ -128,12 +129,25 @@ export interface TicketView {
    *
    * `false` is a definite absence: GitHub answered 404, or the project is not
    * one Lingtai has been told about, in which case it cannot have this work
-   * item. `null` is a rate limit, a revoked installation, an App that cannot
-   * reach the repository — and it must never become a 404, because a page that
-   * says *this does not exist* when it means *I cannot tell* is exactly the
-   * flattening this field exists to end.
+   * item. `null` is either GitHub not answering — a rate limit, a revoked
+   * installation, an App that cannot reach the repository — or GitHub never
+   * being asked at all, because the project's tickets are not on GitHub to
+   * begin with (`tickets === 'db'`, #384). It must never become a 404,
+   * because a page that says *this does not exist* when it means *I cannot
+   * tell* is exactly the flattening this field exists to end. Which of the two
+   * `null` is, `askedGitHub` says.
    */
   found: boolean | null
+  /**
+   * Whether `problem` is GitHub refusing to answer, as opposed to a reason
+   * nothing was asked in the first place — an unregistered project, or
+   * tickets that live in the database rather than on GitHub (#384).
+   *
+   * The renderers wrap `problem` in a sentence that names GitHub; this is what
+   * tells them whether that sentence is true. `found === null` alone cannot,
+   * because both reasons leave it `null`.
+   */
+  askedGitHub: boolean
   /**
    * Why the body and the labels are not here, when they are not.
    *
@@ -1268,6 +1282,7 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     return {
       ...base,
       found: false,
+      askedGitHub: false,
       url: null,
       body: null,
       problem: `${project} is not a registered project`,
@@ -1276,14 +1291,34 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
 
   // Buildable without GitHub, and worth building: a link to the issue is the
   // thing the page exists to save a trip for, and it does not need an answer.
-  // The same shape the cards link to, said once (`board.ts`).
-  const url = issueUrl(state.owner, project, issue)
+  // The same shape the cards link to, said once (`board.ts`). A recipe that
+  // will not parse costs the link, not the page — caught here rather than
+  // read twice.
+  const tickets = await currentRecipe(state)
+    .then((r) => ticketSourceOf(r.recipe))
+    .catch(() => null)
+  const url = issueUrl(state.owner, project, issue, tickets)
+  // A `db` ticket's number is not a GitHub issue number — it can collide with
+  // an unrelated issue on the same repository (`recipe.ts`, `TicketSource`'s
+  // doc comment), so asking GitHub about it answers a different ticket's
+  // title, labels and body rather than 404ing the way the catch below expects.
+  if (tickets === 'db') {
+    return {
+      ...base,
+      found: null,
+      askedGitHub: false,
+      url,
+      body: null,
+      problem: `${project}'s tickets are read from the database`,
+    }
+  }
   try {
     const client = await githubClientFor(state)
     const live = await client.getIssue(Number(issue))
     return {
       ...base,
       found: true,
+      askedGitHub: true,
       title: live.title,
       // Names only. The colours GitHub sends with them are the board's, for the
       // dot on a card (#85); this page lists every label a ticket carries, and
@@ -1301,7 +1336,14 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     // behind a rate limit render identically, and only the first of them is a
     // page that should not exist (#113).
     const missing = err instanceof GitHubError && err.status === 404
-    return { ...base, found: missing ? false : null, url, body: null, problem: (err as Error).message }
+    return {
+      ...base,
+      found: missing ? false : null,
+      askedGitHub: true,
+      url,
+      body: null,
+      problem: (err as Error).message,
+    }
   }
 }
 
@@ -1388,7 +1430,7 @@ async function recipesFor(project: string, runs: readonly RunView[]): Promise<Ma
  * |---|---|---|
  * | `false` | GitHub has no such issue, or Lingtai has no such project | `null` — a 404, and it is right |
  * | `true` | GitHub is offering it and nothing has run it | a page saying it has not started |
- * | `null` | it could not be asked — a rate limit, a revoked App | a page saying **that**, never a 404 |
+ * | `null` | GitHub could not be asked — a rate limit, a revoked App — or it was never going to be asked, because the project's tickets are not on GitHub (`askedGitHub`, #384) | a page saying **that**, never a 404 |
  *
  * A `ticket` of `null` — an id that is not `wi-<project>-<n>` at all — is the
  * first row: there is no issue behind it to have an opinion about.

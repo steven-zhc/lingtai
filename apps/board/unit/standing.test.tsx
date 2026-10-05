@@ -1280,6 +1280,7 @@ describe('the subject, at the top', () => {
           ref: '159',
           title: 'Stopping the daemon should not make starting it a two-command job',
           url: 'https://github.com/steven-zhc/lingtai/issues/159',
+          askedGitHub: true,
         }}
         standing={HELD}
         project="lingtai"
@@ -1308,7 +1309,7 @@ describe('the subject, at the top', () => {
   it('still says which ticket this is when GitHub could not be asked', () => {
     const html = renderToStaticMarkup(
       <Standing
-        subject={{ ref: '159', title: null, url: null }}
+        subject={{ ref: '159', title: null, url: null, askedGitHub: true }}
         standing={HELD}
         project="lingtai"
         issue={159}
@@ -1323,6 +1324,28 @@ describe('the subject, at the top', () => {
     expect(html).toContain('GitHub did not answer')
     // No link, rather than a link that goes nowhere.
     expect(html).not.toMatch(/<a[^>]*class="sref"/)
+  })
+
+  /**
+   * A `db` project's tickets were never asked about on GitHub (#384), so the
+   * fallback must not claim GitHub was asked and did not answer.
+   */
+  it('does not blame GitHub for a title it was never going to be asked about', () => {
+    const html = renderToStaticMarkup(
+      <Standing
+        subject={{ ref: '7', title: null, url: null, askedGitHub: false }}
+        standing={HELD}
+        project="demo"
+        issue={7}
+        taskId="wi-demo-7"
+        discussions={[]}
+        outgoing={null}
+        queued={null}
+      />,
+    )
+
+    expect(html).toContain('#7')
+    expect(html).not.toContain('GitHub')
   })
 
   /** An id that is not `wi-<p>-<n>` has no ticket, and the line is simply absent. */

@@ -38,7 +38,7 @@ import {
   type TaskCard,
   type TaskState,
 } from '@lingtai/projector/task-view'
-import { queueOf } from '@lingtai/recipe/settings'
+import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 
 import { foldProgress, type RunProgress } from './progress.ts'
 
@@ -275,6 +275,14 @@ export interface Board {
    * first".
    */
   queueOrder: string[]
+  /**
+   * Where each project's tickets live, for the reference `issueUrl` builds.
+   *
+   * Here rather than read in the page, for the reason `queueOrder` is here:
+   * `queuedCards` already resolved every recipe this loop needs, and reading
+   * one twice is how a render gets expensive.
+   */
+  ticketSources: Map<string, TicketSource>
   /**
    * Every project this board can be narrowed to, in the order the bar offers
    * them.
@@ -576,6 +584,8 @@ export async function queuedCards(
    * every recipe, and reading one twice is how a render gets expensive.
    */
   plans: Map<string, StepPlan>
+  /** Where each project's tickets live, for the reference `loadBoard` carries onto `Board`. */
+  ticketSources: Map<string, TicketSource>
   /**
    * What each project's repository calls each kind's colour, keyed by project
    * and then by kind. Off the issues `runnableNow` has already read, for the
@@ -595,6 +605,7 @@ export async function queuedCards(
   const limits: PassLimitsView[] = []
   const backoffMs = new Map<string, number>()
   const plans = new Map<string, StepPlan>()
+  const ticketSources = new Map<string, TicketSource>()
   const kindColors = new Map<string, Record<string, string>>()
   // First mention wins, so two projects that order their kinds differently give
   // one column one order rather than an order that changes as rows arrive.
@@ -628,6 +639,7 @@ export async function queuedCards(
     })
     backoffMs.set(filter.project, filter.backoffMs)
     plans.set(filter.project, filter.plan)
+    ticketSources.set(filter.project, ticketSourceOf(filter.recipe))
     for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind)
     if (answer.state === 'unanswered') {
       problems.push({ project: filter.project, reason: answer.problem })
@@ -692,7 +704,7 @@ export async function queuedCards(
       })
     }
   }
-  return { cards, problems, notes, limits, backoffMs, plans, kindColors, kindOrder }
+  return { cards, problems, notes, limits, backoffMs, plans, ticketSources, kindColors, kindOrder }
 }
 
 /**
@@ -836,6 +848,7 @@ export async function loadBoard(project?: string): Promise<Board> {
     columns: toColumns(cards, queued.problems, queued.notes),
     limits: queued.limits,
     queueOrder: queued.kindOrder,
+    ticketSources: queued.ticketSources,
     // Unfiltered, deliberately. This is the list the filter is chosen *from*,
     // so narrowing it to the current choice would remove every way back to the
     // rest — including "all".
@@ -1174,15 +1187,27 @@ export function ledger(columns: readonly BoardColumn[]): {
 
 /**
  * Where a ticket lives on GitHub, or null when the project predates `owner`
- * being recorded.
+ * being recorded, or its tickets are not on GitHub at all (`tickets` is not
+ * known to be `'github'`, #384).
  *
  * Built rather than asked for: it needs no answer from GitHub, so a card can
  * carry it without the board spending a request per card per render. The card's
  * title goes to the task page and its reference comes here — two destinations,
  * because *what Lingtai did* and *what was asked, and what people said about
  * it* are different questions and the second one had no link at all (#81).
+ *
+ * `tickets` is `null` where the board does not know where a project's tickets
+ * live — a project that is `'unreadable'` (`queuedCards`) included, which is
+ * exactly the project likeliest to be a `db` one with no GitHub App. A dead
+ * link is worse than none, so an unknown source gets no link rather than the
+ * `'github'` one it would have gotten before this field existed.
  */
-export function issueUrl(owner: string | null, project: string, ref: string): string | null {
-  if (owner === null) return null
+export function issueUrl(
+  owner: string | null,
+  project: string,
+  ref: string,
+  tickets: TicketSource | null,
+): string | null {
+  if (owner === null || tickets !== 'github') return null
   return `https://github.com/${owner}/${project}/issues/${encodeURIComponent(ref)}`
 }

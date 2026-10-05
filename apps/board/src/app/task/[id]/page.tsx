@@ -98,9 +98,13 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
       {/* Never merely absent. An App that cannot reach the repository, a
           project that was never registered and an issue that has been deleted
           all render as a ticket with no body, and only the reason tells them
-          apart (#76, one page along). */}
+          apart (#76, one page along). The sentence names GitHub only where
+          GitHub was actually asked — `askedGitHub` — because a project whose
+          tickets live in the database was never going to be (#384). */}
       {ticket.problem ? (
-        <p className="refusal">The issue could not be read from GitHub: {ticket.problem}</p>
+        <p className={ticket.askedGitHub ? 'refusal' : 'note'}>
+          {ticket.askedGitHub ? `The issue could not be read from GitHub: ${ticket.problem}` : ticket.problem}
+        </p>
       ) : ticket.body ? null : (
         <p className="empty">This issue has no body.</p>
       )}
@@ -702,7 +706,16 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // What is being decided about, named where the decision is. The log
           // carries the ref and the title; GitHub carries the URL, and a null
           // one is a page that still says which ticket this is.
-          subject={task.ticket ? { ref: task.ticket.ref, title: task.ticket.title, url: task.ticket.url } : null}
+          subject={
+            task.ticket
+              ? {
+                  ref: task.ticket.ref,
+                  title: task.ticket.title,
+                  url: task.ticket.url,
+                  askedGitHub: task.ticket.askedGitHub,
+                }
+              : null
+          }
           taskId={task.taskId}
           discussions={task.discussions}
           outgoing={task.outgoing}
@@ -718,8 +731,16 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // and no answer from GitHub is *I cannot tell*, and a page that said
           // "it does not exist" was making a claim Lingtai is not in a position
           // to make (#113). Only when the log has nothing at all — an item it
-          // has touched is a page whatever GitHub says today.
-          unknown={task.history.length === 0 && task.ticket?.found === null ? task.ticket.problem : null}
+          // has touched is a page whatever GitHub says today. `askedGitHub`
+          // keeps this to a GitHub that would not answer — a `db` project's
+          // tickets were never going to be asked about, so an unclaimed one
+          // (all of them, while #382 is unwired) is not "existence unknown"
+          // (#384).
+          unknown={
+            task.history.length === 0 && task.ticket?.found === null && task.ticket.askedGitHub
+              ? task.ticket.problem
+              : null
+          }
         />
 
         <Record task={task} />
