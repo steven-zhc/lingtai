@@ -706,7 +706,16 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // What is being decided about, named where the decision is. The log
           // carries the ref and the title; GitHub carries the URL, and a null
           // one is a page that still says which ticket this is.
-          subject={task.ticket ? { ref: task.ticket.ref, title: task.ticket.title, url: task.ticket.url } : null}
+          subject={
+            task.ticket
+              ? {
+                  ref: task.ticket.ref,
+                  title: task.ticket.title,
+                  url: task.ticket.url,
+                  askedGitHub: task.ticket.askedGitHub,
+                }
+              : null
+          }
           taskId={task.taskId}
           discussions={task.discussions}
           outgoing={task.outgoing}
