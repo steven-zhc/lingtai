@@ -1,0 +1,13 @@
+# Revisions that changed layout and nothing else. `git blame` is told to skip
+# them so a line's history points at the commit that decided its content.
+#
+# Turn it on once per clone — git does not read this file by itself:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# A commit belongs here only if `pnpm typecheck` and `pnpm test` were green
+# across it and it contains nothing but formatting. An `oxfmt` version bump
+# changes its output, so each bump's reformat is its own line here (#367).
+
+# style: the TypeScript is oxfmt's output and nothing else changed
+b56044f3ae432e94d2c1fd224c74fb6fde1fd661

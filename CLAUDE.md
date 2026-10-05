@@ -413,3 +413,16 @@ not done by this* or *see #231*.
 One line, lower case, stating what is now true rather than what was done —
 `fix(end): the point runs on every outcome, not just an inline merge`. An ADR
 lands as `NNNN: <the decision, as a sentence>`. `git log` is the reference.
+
+**A reformat is skipped by `git blame`, and git will not do that by itself.**
+`.git-blame-ignore-revs` names every commit that changed layout and nothing
+else — `oxfmt`'s first sweep is the one there now — and the line that makes it
+take effect is run once per clone:
+
+    git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+Without it, `git blame` on any reformatted line answers the sweep instead of the
+commit that decided the line's content, which is 468 files' worth of wrong
+answer. A commit earns a line in that file only when it contains nothing but
+formatting and `pnpm typecheck` and `pnpm test` were green across it; an `oxfmt`
+version bump changes its output, so each bump's reformat is its own line.
