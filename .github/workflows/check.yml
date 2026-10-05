@@ -1,4 +1,4 @@
-# The unit half, on every PR and every push to main (#365).
+# The unit half and the formatter, on every PR and every push to main (#365, #367).
 #
 # This is the gate that only ran inside the conductor's own `build:` step —
 # visible on this repository's copy of the recipe, but since #180 nothing
@@ -36,6 +36,11 @@ jobs:
           node-version: 22.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # `--check` and never a bare `oxfmt`: with no flag it writes files in
+      # place, so a formatter in CI would report success having changed the
+      # checkout rather than having found it correct (#367).
+      - name: fmt
+        run: pnpm fmt:check
       - name: typecheck
         run: pnpm typecheck
       - name: test
