@@ -1,7 +1,6 @@
 import type { Runtime } from '@lingtai/agent'
 import { type ProjectState, reduceWorkItem } from '@lingtai/domain'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import type { GitHubClient } from '@lingtai/github'
 /**
  * Taking the queue, rather than one issue somebody named.
  *
@@ -39,14 +38,14 @@ import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
-import { type RunOnceResult, runOnce } from './conduct.ts'
+import { type PassClient, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNow } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
 
 export interface ScheduleOptions {
   project: ProjectState
-  client: GitHubClient
+  client: PassClient
   runtime: Runtime
   hookBinary: string
   /** False wires no hooks and skips the smoke test. See `RenderOptions.guard`. */

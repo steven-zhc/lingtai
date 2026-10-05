@@ -47,7 +47,7 @@ import { AgentHost, Repo, type RunPorts } from '../src/ports.ts'
 export const withPorts = (ports: RunPorts) =>
   Layer.merge(Layer.succeed(Repo, ports.repo), Layer.succeed(AgentHost, ports.agent))
 
-export const once = (options: Parameters<typeof runOnce>[0], ports: RunPorts) =>
+export const once = (options: Parameters<typeof runOnce>[0] & { client: GitHubClient }, ports: RunPorts) =>
   Effect.runPromise(
     runOnce({
       // The recipe through the fake GitHub's `fileAt`, so each test keeps the

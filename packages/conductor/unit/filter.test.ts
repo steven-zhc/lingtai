@@ -52,7 +52,8 @@ runtime:
  * wrote. Where a conductor reads it from is `local.test.ts`'s; what is under
  * test here is what a resolved recipe reduces to.
  */
-const fromFile: RecipeFor = (state, c) => resolveRecipe((p, r) => c.fileAt(p, r), state.base ?? 'main')
+const fromFile: RecipeFor = (state, c) =>
+  resolveRecipe((p, r) => (c as GitHubClient).fileAt(p, r), state.base ?? 'main')
 
 /** Answers one file at one ref, and nothing else. */
 function client(file: string | null): GitHubClient {

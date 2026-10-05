@@ -35,7 +35,6 @@ import {
 import type { ProjectState } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import type { GitHubClient } from '@lingtai/github'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -203,7 +202,8 @@ import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
 import { restartReason } from './restart.ts'
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { stepsResolved } from './steps-resolved.ts'
-import { tellGitHubAbout } from './tell.ts'
+import { type RefChannel, tellGitHubAbout } from './tell.ts'
+import type { Tickets } from './ticket-store.ts'
 
 export const changedFilesArgs = (baseSha: string): string[] => [
   'diff',
@@ -320,9 +320,18 @@ export function agentRefusal(
   return null
 }
 
+/**
+ * What a pass needs of the client it is handed: ticket verbs, ref verbs, and
+ * the repository's own identity (`owner`/`repo`) that recipe-resolution and
+ * the lane both read off it. `GitHubClient` satisfies this structurally —
+ * pinned in `unit/tickets.test.ts` — so every caller keeps passing the same
+ * value; only the type named here narrows.
+ */
+export type PassClient = Tickets & RefChannel & { readonly owner: string; readonly repo: string }
+
 export interface RunOnceOptions {
   project: ProjectState
-  client: GitHubClient
+  client: PassClient
   /** The recipe this run obeys. `currentRecipe` — the machine's file — unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>
   runtime: Runtime

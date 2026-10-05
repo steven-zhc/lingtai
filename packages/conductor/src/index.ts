@@ -49,7 +49,14 @@ export {
 } from './queue.ts'
 export { AgentHost, Repo, type AgentHostPort, type RepoPort, type RunPorts } from './ports.ts'
 export { AgentHostLive, PortsLive, RepoLive, livePorts } from './live.ts'
-export { agentRefusal, runOnce, type AgentRefusal, type RunOnceOptions, type RunOnceResult } from './conduct.ts'
+export {
+  agentRefusal,
+  runOnce,
+  type AgentRefusal,
+  type PassClient,
+  type RunOnceOptions,
+  type RunOnceResult,
+} from './conduct.ts'
 export {
   findRunLog,
   followRunLog,
@@ -108,5 +115,6 @@ export {
   keyMarker,
   type ProposedRef,
   type ProposedTicket,
+  type Tickets,
   type TicketStore,
 } from './ticket-store.ts'

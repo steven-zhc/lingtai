@@ -10,6 +10,7 @@
 import type { GitHubClient } from '@lingtai/github'
 import { describe, expect, it } from 'vitest'
 
+import type { PassClient } from '../src/conduct.ts'
 import type { IssueChannel } from '../src/tell.ts'
 import type { Tickets } from '../src/ticket-store.ts'
 import { type MemoryTickets, memoryTickets } from '../test/memory-tickets.ts'
@@ -30,6 +31,13 @@ const _gitHubSatisfiesTickets: Tickets = {} as GitHubClient
  * does today.
  */
 const _ticketsSatisfiesIssueChannel: IssueChannel = {} as Tickets
+
+/**
+ * `PassClient` (`conduct.ts`, `#378`) is `Tickets & RefChannel` plus `owner`
+ * and `repo` — the same claim as the two pins above, made about the type
+ * every caller still hands `runOnce` a real `GitHubClient` for.
+ */
+const _gitHubSatisfiesPassClient: PassClient = {} as GitHubClient
 
 describeTicketsContract<MemoryTickets>('memoryTickets', () => memoryTickets(), {
   commentBodies: (t, issue) => t.commentBodies(issue),

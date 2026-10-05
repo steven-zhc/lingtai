@@ -21,7 +21,6 @@ import type { Log, LogQueries } from '@lingtai/event-store/log'
 // anything at import; the split stays because a caller that brings its own log
 // should still load no store at all.
 import type { EventStore } from '@lingtai/event-store/store'
-import type { GitHubClient } from '@lingtai/github'
 import { type LocalRecipeOptions, type ResolvedRecipe, type SignedIn, resolveLocalRecipe } from '@lingtai/recipe'
 
 /** The process-wide log — whichever store this machine chose — reached only when nobody supplied one. */
@@ -153,7 +152,7 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  */
 export async function currentRecipe(
   state: ProjectState,
-  _client?: GitHubClient,
+  _client?: unknown,
   base?: string,
   options: Omit<LocalRecipeOptions, 'base' | 'signedIn'> & { signedIn?: SignedIn } = {},
 ): Promise<ResolvedRecipe> {

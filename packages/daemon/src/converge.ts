@@ -63,7 +63,8 @@ import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
 import { loadProjects } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
-import { sweepFailure } from '@lingtai/conductor/tell'
+import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
+import type { Tickets } from '@lingtai/conductor/ticket-store'
 import {
   parseWorkItemStream,
   parsePayload,
@@ -157,7 +158,7 @@ export interface ConvergeOptions {
    */
   daemonStore?: DaemonStore
   /** Injected so a test needs no GitHub App. Keyed by project name. */
-  clients?: Map<string, GitHubClient>
+  clients?: ReadonlyMap<string, Pick<Tickets, 'getIssue' | 'setLabels' | 'closeIssue'> & RefChannel>
   /** Injected so a test needs no `prj-` streams. */
   projects?: readonly ProjectState[]
   dryRun?: boolean

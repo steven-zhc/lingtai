@@ -32,6 +32,7 @@ import {
 } from '@lingtai/recipe/settings'
 
 import { passCeiling } from './ceiling.ts'
+import type { TicketSource } from './discover.ts'
 import { currentRecipe } from './projects.ts'
 
 // Its own file so a page can call it in the browser (#164); every caller that
@@ -171,7 +172,7 @@ export type ProjectFilter =
        * to go on and ask GitHub what is offered does not fetch either twice.
        */
       recipe: Recipe
-      client: GitHubClient
+      client: TicketSource
     }
   | { project: string; ok: false; problem: string }
 
@@ -188,7 +189,7 @@ export type ClientFor = (state: ProjectState) => Promise<GitHubClient>
  * every append (#112) and asks the same branch the same thing several times a
  * second — and the answer to that one lives with the board.
  */
-export type RecipeFor = (state: ProjectState, client: GitHubClient) => Promise<ResolvedRecipe>
+export type RecipeFor = (state: ProjectState, client: unknown) => Promise<ResolvedRecipe>
 
 /**
  * The `ClientFor` everything outside a test uses.
