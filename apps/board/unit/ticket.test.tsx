@@ -23,6 +23,7 @@ const TICKET: TicketView = {
   labels: ['bug', 'lingtai:waiting'],
   url: 'https://github.com/steven-zhc/lingtai/issues/89',
   found: true,
+  askedGitHub: true,
   body: null,
   problem: null,
 }
@@ -63,5 +64,45 @@ describe('the kind, and the labels', () => {
     const html = renderToStaticMarkup(<Ticket ticket={{ ...TICKET, kind: null }} />)
 
     expect(pills(html)).toEqual(['bug', 'lingtai:waiting'])
+  })
+})
+
+describe('why the body is missing', () => {
+  /**
+   * A GitHub that would not answer — `askedGitHub` — still gets the sentence
+   * that names it, in the colour a failure wears (#113).
+   */
+  it('says GitHub could not be read, for a ticket GitHub was asked about', () => {
+    const html = renderToStaticMarkup(
+      <Ticket
+        ticket={{ ...TICKET, found: null, askedGitHub: true, problem: '403 on /repos/…: rate limit exceeded' }}
+      />,
+    )
+
+    expect(html).toContain('class="refusal"')
+    expect(html).toContain('The issue could not be read from GitHub: 403 on /repos/…: rate limit exceeded')
+  })
+
+  /**
+   * A `db` project's tickets were never asked about — `askedGitHub` is false —
+   * so the sentence must not claim GitHub refused to answer, and the colour
+   * must not say it did either (#384).
+   */
+  it('states the reason plainly for a ticket GitHub was never going to be asked about', () => {
+    const html = renderToStaticMarkup(
+      <Ticket
+        ticket={{
+          ...TICKET,
+          url: null,
+          found: null,
+          askedGitHub: false,
+          problem: "demo's tickets are read from the database",
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('GitHub')
+    expect(html).toContain('class="note"')
+    expect(html).toContain('demo&#x27;s tickets are read from the database')
   })
 })

@@ -66,6 +66,7 @@ const TICKET: TicketView = {
   url: 'https://github.com/example/lingtai/issues/147',
   body: 'The reviewer crashed.',
   found: true,
+  askedGitHub: true,
   problem: null,
 }
 
@@ -449,5 +450,30 @@ describe('the record', () => {
     // second thing in it — and the one place holding *what was asked*
     // announced itself as the agent's input.
     expect([...RECORD_ROWS]).toEqual(['findings', 'files', 'attempts', 'ticket'])
+  })
+})
+
+describe('a ticket whose project keeps its tickets in the database', () => {
+  /**
+   * `found: null` on an untouched ticket used to always read as "GitHub could
+   * not be asked, so whether it exists is not known" — true for a rate limit,
+   * false for a `db` project, which was never going to ask GitHub at all. An
+   * unclaimed `db` ticket is every one of them while #382 is unwired, so this
+   * sentence appearing for all of them was the reachable case (#384).
+   */
+  it('never says existence is unknown for a project GitHub was never asked about', () => {
+    const dbTicket = task([], [], {
+      ticket: {
+        ...TICKET,
+        found: null,
+        askedGitHub: false,
+        body: null,
+        problem: "demo's tickets are read from the database",
+      },
+    })
+
+    const html = page(dbTicket)
+    expect(html).not.toContain('could not be asked')
+    expect(html).not.toContain('is not known here')
   })
 })
