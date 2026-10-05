@@ -1,8 +1,8 @@
 import { SEVERITIES, Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
 import { PREFIX } from '@lingtai/env'
 /**
- * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
- * `runtime.agent` from `~/.lingtai/config.yml`
+ * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, its
+ * `runtime.agent` included (`#372`)
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  * `local.ts` reads it; this file is its schema.
  *
@@ -337,9 +337,9 @@ export const agentPlugin = definePlugin('agent', {
    * asymmetry.**
    *
    * The cold reviewer has been an `agent:` a person can read and edit since this
-   * schema existed; the agent that *writes the code* was `runtime.agent` in
-   * `~/.lingtai/config.yml`, reached through a port, with no line in any recipe
-   * naming it. Both are here now, and a recipe that declares nothing at
+   * schema existed; the agent that *writes the code* was `runtime.agent`, read
+   * from the machine file then, reached through a port, with no line at
+   * `implement` naming it. Both are here now, and a recipe that declares nothing at
    * `implement` gets `conduct.ts`'s `defaultsAt` row — which reads
    * `runtime.agent`, so nothing changes for a file nobody edited.
    *

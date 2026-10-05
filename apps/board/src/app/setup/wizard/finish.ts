@@ -33,8 +33,7 @@ import {
 } from '@lingtai/conductor/wizard-page'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, parseSlug } from '@lingtai/github'
-import { Recipe, editRecipe, hashRecipe, recipePath, resolveRecipe } from '@lingtai/recipe'
-import { parse as parseYaml } from 'yaml'
+import { Recipe, editRecipe, hashRecipe, recipePath, resolveRecipe, writtenAgent } from '@lingtai/recipe'
 
 import { actor } from '../../../lib/actor.ts'
 
@@ -115,7 +114,7 @@ export async function editExisting(
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after)
 
   let changes = changesFrom(recipe, after)
-  if (!namesAgent(existing) && !changes.some((c) => c.path.join('.') === 'runtime.agent')) {
+  if (writtenAgent(existing) === 'absent' && !changes.some((c) => c.path.join('.') === 'runtime.agent')) {
     changes = [...changes, { path: ['runtime', 'agent'], value: after.runtime.agent }]
   }
   let file = editRecipe(existing, changes)
@@ -140,11 +139,4 @@ export async function editExisting(
     changed: changes.map((c) => c.path.join('.')),
     written: false,
   }
-}
-
-/** Whether the file itself writes `runtime.agent`, before any preset or default. */
-function namesAgent(text: string): boolean {
-  const raw = parseYaml(text) as { runtime?: unknown } | null
-  const runtime = raw?.runtime
-  return runtime !== null && typeof runtime === 'object' && 'agent' in runtime
 }

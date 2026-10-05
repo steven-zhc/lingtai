@@ -299,8 +299,10 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // Past this point these are one branch, and this one is the file's.
   const base = baseOf(resolved.recipe)
   log(`base: ${base} — the recipe's ${baseWrittenAt(resolved.recipe)}`)
+  // The run's own settings, and each dispatching step's runtime (`#372`) — the
+  // recipe's answer to *what will run*, read off it alone.
   for (const [key, from] of Object.entries(resolved.provenance ?? {})) {
-    if (key.startsWith('runtime.')) log(`  ${key.padEnd(24)} ${from}`)
+    if (key.startsWith('runtime.') || /^steps\.[a-z]+\.agent$/.test(key)) log(`  ${key.padEnd(24)} ${from}`)
   }
 
   const fromSha = await client.refSha(base)

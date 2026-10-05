@@ -14,6 +14,7 @@ import {
   recipePath,
   resolveLocalRecipe,
   resolveSource,
+  writtenAgent,
 } from '../src/index.ts'
 
 const HOME = '/home/me/.lingtai'
@@ -414,6 +415,20 @@ steps:
       )
     })
 
+    it("names both when a project's section holds steps and a runtime", async () => {
+      const refusing = resolveLocalRecipe(
+        'app',
+        withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
+      )
+      await expect(refusing).rejects.toThrow(/projects\.app\.steps: a pass is not configured/)
+      await expect(
+        resolveLocalRecipe(
+          'app',
+          withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
+        ),
+      ).rejects.toThrow(/projects\.app: how a project's work is run/)
+    })
+
     it("so is one under a project's section", async () => {
       await expect(
         resolveLocalRecipe('app', withMachine('projects:\n  app:\n    steps:\n      merge: []\n')),
@@ -452,5 +467,16 @@ steps:
       const resolved = await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
       expect(resolved.recipe.runtime.limits.turns).toBe(5)
     })
+  })
+})
+
+/** The one reader of what a recipe's text writes at `runtime.agent`, before any default. */
+describe('writtenAgent', () => {
+  it('tells a runtime, a value that is not one, and nothing at all apart', () => {
+    expect(writtenAgent('runtime:\n  agent: codex\n')).toBe('codex')
+    expect(writtenAgent('runtime:\n  agent: claud\n')).toBe('not a runtime')
+    expect(writtenAgent('runtime:\n  limits: { turns: 5 }\n')).toBe('absent')
+    expect(writtenAgent('version: 2\n')).toBe('absent')
+    expect(writtenAgent('runtime: [unclosed\n')).toBe('absent')
   })
 })
