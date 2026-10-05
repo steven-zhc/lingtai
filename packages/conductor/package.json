@@ -26,6 +26,7 @@
     "./close": "./src/close.ts",
     "./create-app": "./src/create-app.ts",
     "./ticket-store": "./src/ticket-store.ts",
+    "./db-tickets": "./src/db-tickets.ts",
     "./wizard": "./src/wizard.ts",
     "./wizard-page": "./src/wizard-page.ts"
   },

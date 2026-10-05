@@ -84,6 +84,7 @@ import { run as runOnceCommand } from './run.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
+import { ticketClose, ticketList } from './ticket.ts'
 import { versionLine } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
@@ -150,6 +151,19 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 stops offering it because the log says it is
                                 over. Nothing lifts a close — if the work is
                                 wanted again, open a new ticket
+  lingtai ticket list [project]     a project's own tickets — only for a project
+                                whose recipe keeps them in Lingtai's database
+                                (source.tickets: db); a GitHub-backed project's
+                                are read with gh issue list instead. Open ones,
+                                by default
+    --all                        the closed ones too, marked closed
+    --project <p>                required with more than one project registered
+  lingtai ticket close <n>          closes that row in the table — not lingtai
+                                close, which ends a work item on the log; this
+                                changes nothing there. The daemon notices on
+                                its next sweep, every 5m, not at once: there is
+                                no webhook
+    --project <p>                as above
   lingtai ask <project> --issue <n> "<question>"
                                 hold a ticket on a decision before any run
                                 claims it: nothing is spent, the queue passes
@@ -1247,6 +1261,28 @@ async function main(argv: string[]): Promise<number> {
       // an unquoted sentence still arrives whole, and blank is refused by the
       // command rather than defaulted here.
       return closeCommand({ project: positional[0], issue, reason: positional.slice(1).join(' ') })
+    }
+    case 'ticket': {
+      const [verb, ...ticketRest] = rest
+      const { positional, flags } = parseFlags(ticketRest)
+      const project = flags['project']
+      if (verb === 'list') {
+        if (positional.length > 0) {
+          console.error('lingtai ticket list [--all] [--project <p>]')
+          return 2
+        }
+        return ticketList({ ...(project === undefined ? {} : { project }), all: 'all' in flags })
+      }
+      if (verb === 'close') {
+        const issue = Number(positional[0])
+        if (!positional[0] || !Number.isInteger(issue)) {
+          console.error('lingtai ticket close <n> [--project <p>]')
+          return 2
+        }
+        return ticketClose({ issue, ...(project === undefined ? {} : { project }) })
+      }
+      console.error('lingtai ticket list [--all] [--project <p>]\nlingtai ticket close <n> [--project <p>]')
+      return 2
     }
     case 'attach': {
       const runId = parseFlags(rest).positional[0]
