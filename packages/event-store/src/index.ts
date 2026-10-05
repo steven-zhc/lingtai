@@ -15,7 +15,8 @@ export { createDb, type Db } from './db.ts'
 import { deferredEventStore, deferredLog, processEventStore, processLog } from './choose.ts'
 import type { EventStore } from './event-store.ts'
 import type { Log } from './log.ts'
-export { processEventStore, processLog } from './choose.ts'
+export { processEventStore, processLog, processTicketSql } from './choose.ts'
+export type { TicketSql } from './ticket-sql.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
 export {
   type EndedOutcome,

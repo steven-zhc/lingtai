@@ -43,20 +43,33 @@ import { createDb } from './db.ts'
 import { createEventStore, type EventStore } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
 import type { LogQueries } from './queries.ts'
+import { createPostgresTicketSql } from './queries.ts'
+import type { TicketSql } from './ticket-sql.ts'
 import type { WakeListener, Waker, WakeSession } from './wake.ts'
 
-/** The log this process opened, or the open in flight. Null until something asks. */
-let opening: Promise<Log> | null = null
+/** What one process opens: the log, and the ticket store beside it (#379). */
+interface Opened {
+  log: Log
+  tickets: TicketSql
+}
+
+/** What this process opened, or the open in flight. Null until something asks. */
+let opening: Promise<Opened> | null = null
+
+/**
+ * Memoised on the promise and not on the value, so two callers racing the first
+ * use open one of each between them.
+ */
+function openOnce(): Promise<Opened> {
+  return (opening ??= open())
+}
 
 /**
  * The log this process runs: the store, the questions beside it and the waker
  * that goes with both (#221).
- *
- * Memoised on the promise and not on the value, so two callers racing the first
- * use open one log between them.
  */
-export function processLog(): Promise<Log> {
-  return (opening ??= open())
+export async function processLog(): Promise<Log> {
+  return (await openOnce()).log
 }
 
 /** Just the store, for the callers that append and read and ask nothing else. */
@@ -64,7 +77,17 @@ export async function processEventStore(): Promise<EventStore> {
   return (await processLog()).store
 }
 
-async function open(): Promise<Log> {
+/**
+ * The ticket store this process runs — `tickets` and `ticket_comments`, in
+ * whichever database the log itself is (#379). Opened alongside the log by the
+ * same call, so a SQLite machine shares the one handle rather than opening the
+ * file twice.
+ */
+export async function processTicketSql(): Promise<TicketSql> {
+  return (await openOnce()).tickets
+}
+
+async function open(): Promise<Opened> {
   const choice = chosenStore()
   if (choice.store === 'postgres') {
     // **Both connections come out of the choice**, and the waker's is the one
@@ -79,14 +102,22 @@ async function open(): Promise<Log> {
     // `LINGTAI_DATABASE_URL`, which is the fallback that could name a different
     // database, and never a direct name that points at one either: a stale one
     // left exported is the same split by another route.
-    return createPostgresLog({
+    const log = createPostgresLog({
       store: createEventStore(createDb(choice.url)),
       url: choice.url,
       wakeUrl: choice.directUrl,
     })
+    // The written URL, not `postgresUrl()` — the same reason `log` above reads
+    // `choice.url` rather than asking again: a second read could answer a
+    // stale export rather than the choice this process already made.
+    return { log, tickets: createPostgresTicketSql({ url: choice.url }) }
   }
   const sqlite = await import('./sqlite.ts')
-  return sqlite.createSqliteLog({ db: sqlite.openSqliteLog(choice.path), path: choice.path })
+  const db = sqlite.openSqliteLog(choice.path)
+  return {
+    log: sqlite.createSqliteLog({ db, path: choice.path }),
+    tickets: sqlite.createSqliteTicketSql(db),
+  }
 }
 
 // ------------------------------------------------------------- deferred ----

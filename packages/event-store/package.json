@@ -14,7 +14,8 @@
     "./subscribe": "./src/subscribe.ts",
     "./wake": "./src/wake.ts",
     "./schema": "./src/schema.ts",
-    "./sqlite": "./src/sqlite.ts"
+    "./sqlite": "./src/sqlite.ts",
+    "./ticket-sql": "./src/ticket-sql.ts"
   },
   "scripts": {
     "contract:emit": "prisma contract emit",

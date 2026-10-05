@@ -53,6 +53,7 @@
 import pg from 'pg'
 
 import { postgresUrl } from './env.ts'
+import type { TicketSql } from './ticket-sql.ts'
 
 /** Which ending an item reached. The recipe's `when:` at `end` names one of these. */
 export type EndedOutcome = 'landed' | 'closed'
@@ -293,6 +294,41 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
         recent: r.recent,
         lastReason: r.last,
       }))
+    },
+  }
+}
+
+export interface PostgresTicketSqlOptions {
+  /** Defaults to `postgresUrl()`. */
+  url?: string
+}
+
+/**
+ * `TicketSql` over Postgres. A connection per question, opened and closed
+ * around it — the same shape `createPostgresLogQueries` keeps, above, and for
+ * the same reason: a pool held here would be a connection the ticket store has
+ * to remember to end.
+ */
+export function createPostgresTicketSql(options: PostgresTicketSqlOptions = {}): TicketSql {
+  const url = () => options.url ?? postgresUrl()
+
+  async function withClient<T>(run: (client: pg.Client) => Promise<T>): Promise<T> {
+    const client = new pg.Client({ connectionString: url() })
+    await client.connect()
+    try {
+      return await run(client)
+    } finally {
+      await client.end()
+    }
+  }
+
+  return {
+    dialect: 'postgres',
+    async query<T>(text: string, params: readonly unknown[] = []): Promise<T[]> {
+      return withClient(async (client) => (await client.query(text, [...params])).rows as T[])
+    },
+    async exec(text: string): Promise<void> {
+      await withClient((client) => client.query(text))
     },
   }
 }

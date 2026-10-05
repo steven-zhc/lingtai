@@ -28,13 +28,14 @@
  * writer at a time, and `seq` is assigned inside the write transaction, so
  * commit order is seq order.
  */
-import type { DatabaseSync, StatementSync } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 
 import type { Envelope } from '@lingtai/domain'
 
 import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from './event-store.ts'
 import type { Log } from './log.ts'
 import type { LogQueries, UnconvergedUpdate } from './queries.ts'
+import type { TicketSql } from './ticket-sql.ts'
 import type { Waker } from './wake.ts'
 
 /**
@@ -510,6 +511,37 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
           lastReason: row.last,
         }
       })
+    },
+  }
+}
+
+// --------------------------------------------------------------- tickets ----
+
+/**
+ * `$1`, `$2`, … → `?1`, `?2`, …
+ *
+ * `node:sqlite` binds a numbered placeholder by its number rather than by its
+ * position in the call — `?2` written twice in one statement still reads the
+ * one value bound at index 2, rather than needing a second — so rewriting the
+ * digits is the whole of the translation `TicketSql` promises.
+ */
+function sqliteParams(text: string): string {
+  return text.replace(/\$(\d+)/g, '?$1')
+}
+
+/**
+ * `TicketSql` over the log's own handle (#379). `db` is the caller's, as it is
+ * for `createSqliteEventStore` and `createSqliteLogQueries` — this opens no
+ * second connection to the file.
+ */
+export function createSqliteTicketSql(db: DatabaseSync): TicketSql {
+  return {
+    dialect: 'sqlite',
+    async query<T>(text: string, params: readonly unknown[] = []): Promise<T[]> {
+      return db.prepare(sqliteParams(text)).all(...(params as SQLInputValue[])) as T[]
+    },
+    async exec(text: string): Promise<void> {
+      db.exec(text)
     },
   }
 }

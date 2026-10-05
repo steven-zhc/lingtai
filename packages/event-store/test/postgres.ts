@@ -34,6 +34,8 @@ export const ON_POSTGRES: Record<string, string> = {
     "only its 'against the real database' describe — session mode, the pooler rows, and Phase 0's green check",
   'packages/conductor/integration/queue.test.ts':
     'only one case — readAttempt()/drop() read and clean task_view with a raw, Postgres-only pg.Client',
+  'packages/conductor/integration/db-tickets.test.ts':
+    'the Postgres DDL for tickets and ticket_comments — timestamptz and BIGSERIAL',
 }
 
 /**
