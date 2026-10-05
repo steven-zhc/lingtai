@@ -1,20 +1,18 @@
 /**
  * `TicketStore` — where tickets come from, and the one door a new one goes in by
  * ([0036](../../../doc/decisions-archive/0036-the-core-takes-a-ticket.md) §2).
+ * `Tickets`, below, is every other verb Lingtai uses against a ticket system
+ * (`#377`): 0036 named `list`, `get` and `save` as the port's shape, and this is
+ * where they land, one interface rather than the three partial ports
+ * (`TicketSource` in `discover.ts`, `IssueChannel` in `tell.ts`, and this file's
+ * own `Pick<GitHubClient, …>`) that could drift from each other. Moving the
+ * callers onto it is `#378`; this file changes no caller.
  *
- * **`propose`, and the `withdraw` that undoes it, are the only verbs here yet.**
- * 0036 names `list`, `get` and `save` as the port's shape, and their extraction
- * out of `@lingtai/github` has not happened: discovery, the prompt and `end`
- * still hold the client directly. This file does not do that extraction under
- * another ticket's name. It puts the verbs the backlog needs where the others
- * will go, so that the backlog's accept calls *the thing that owns tickets*
- * rather than a GitHub call of its own (`#137`).
- *
- * **An adapter implements both, and `withdraw` really closes.** `propose` is
- * safe to race only because the loser withdraws what it wrote: the backlog's
- * `settle` calls `withdraw` on the duplicate an opener created after another
- * recorded first, and reports it closed. A no-op `withdraw` leaves that
- * duplicate open while the caller is told it is not.
+ * **An adapter implements both `propose` and `withdraw`, and `withdraw` really
+ * closes.** `propose` is safe to race only because the loser withdraws what it
+ * wrote: the backlog's `settle` calls `withdraw` on the duplicate an opener
+ * created after another recorded first, and reports it closed. A no-op
+ * `withdraw` leaves that duplicate open while the caller is told it is not.
  *
  * > **Lingtai proposes; a person decides it exists.**
  *
@@ -25,7 +23,42 @@
  * GitHub, the kind is a label, so is a hold, and the key is a comment in the
  * body.
  */
-import type { GitHubClient, Issue } from '@lingtai/github'
+import type { TicketDetail, TicketListing } from './discover.ts'
+
+/**
+ * A ticket's detail plus where it lives, if anywhere a person can browse to —
+ * `TicketDetail` is the body-bearing read and `url` is the one field no
+ * existing port carried: GitHub always has one, and a ticket system with no
+ * web pages has none.
+ */
+export type Ticket = TicketDetail & { url: string | null }
+
+/**
+ * Every verb Lingtai uses against a ticket system, outside `@lingtai/github`
+ * itself (`#377`). `GitHubClient` satisfies this structurally — pinned in
+ * `unit/tickets.test.ts`, because `pnpm test` does not typecheck and a `Pick`
+ * or a narrowed method here would otherwise drift silently until `pnpm
+ * typecheck` next ran.
+ *
+ * **`dependencies` on a `Ticket` or a `TicketListing` is `{ blockedBy: 0 }`,
+ * never `null`.** `discover.ts`'s `runnableNow` reads `null` as *GitHub said
+ * nothing about dependencies*, not *nothing blocks it* — an implementation
+ * with no notion of blockers answers the zero rather than the unread case.
+ */
+export interface Tickets {
+  listOpenIssues(): Promise<TicketListing[]>
+  /** Every ticket, open or closed, created at or after `since` — oldest first. */
+  listIssuesSince(since: Date): Promise<Ticket[]>
+  /** Rejects when no ticket carries this number. */
+  getIssue(number: number): Promise<Ticket>
+  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Ticket>
+  comment(issue: number, body: string): Promise<{ id: number }>
+  /** Replaces the whole label set. */
+  setLabels(issue: number, labels: readonly string[]): Promise<void>
+  closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
+  /** Replaces the whole body. */
+  updateBody(issue: number, body: string): Promise<void>
+}
 
 export interface ProposedTicket {
   /**
@@ -84,16 +117,16 @@ const SKEW_MS = 60 * 60_000
 
 /** GitHub issues. `client` is the one the caller already has for the project. */
 export function githubTicketStore(
-  client: Pick<GitHubClient, 'createIssue' | 'listIssuesSince' | 'comment' | 'closeIssue'>,
+  client: Pick<Tickets, 'createIssue' | 'listIssuesSince' | 'comment' | 'closeIssue'>,
 ): TicketStore {
-  const ref = (issue: Issue, created: boolean): ProposedRef => ({
+  const ref = (issue: Ticket, created: boolean): ProposedRef => ({
     externalRef: String(issue.number),
     url: issue.url,
     created,
   })
 
   /** The issue a key belongs to: the oldest one carrying it. */
-  async function carrying(key: string, since: Date): Promise<Issue | undefined> {
+  async function carrying(key: string, since: Date): Promise<Ticket | undefined> {
     const marker = keyMarker(key)
     const found = (await client.listIssuesSince(new Date(since.getTime() - SKEW_MS)))
       .filter((i) => i.body.includes(marker))
