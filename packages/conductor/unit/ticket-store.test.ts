@@ -171,13 +171,51 @@ describe('ticketsFor', () => {
   })
 })
 
+describe('passClientOf', () => {
+  /**
+   * The claim the pass test below only partly checks: `createIssue`,
+   * `listIssuesSince` and `updateBody` are never reached through `client` by
+   * either test there (the pass calls `dbTickets.createIssue` directly to
+   * seed the ticket, and `runOnce` never updates a body or lists since a
+   * date), so a regression dropping one of those three from `passClientOf`'s
+   * named list is invisible to the pass test's `ticketCalls`. This calls all
+   * eight verbs on the client itself.
+   */
+  it('routes every one of the eight Tickets verbs to tickets, not to the raw client', async () => {
+    const ticketCalls: string[] = []
+    const github = recordTicketCalls(fakeGitHub([]), ticketCalls)
+    const sql = freshSql()
+    const tickets = dbTickets(sql, PROJECT)
+    const client = passClientOf(github, tickets)
+
+    const created = await client.createIssue({ title: 'a race in the importer', body: 'fix it', labels: ['bug'] })
+    await client.listOpenIssues()
+    await client.listIssuesSince(new Date(0))
+    await client.getIssue(created.number)
+    await client.comment(created.number, 'a comment')
+    await client.setLabels(created.number, ['bug', 'lingtai:working'])
+    await client.updateBody(created.number, 'an updated body')
+    await client.closeIssue(created.number)
+
+    expect(ticketCalls).toEqual([])
+
+    const after = await dbTickets(sql, PROJECT).getIssue(created.number)
+    expect(after).toMatchObject({ body: 'an updated body', state: 'closed' })
+    expect(after.labels.map((l) => l.name).sort()).toEqual(['bug', 'lingtai:working'])
+  })
+})
+
 describe('a pass under source.tickets: db', () => {
   /**
-   * **Every ticket verb a pass makes lands in `dbTickets`, and the fake
-   * GitHub records none of its own** — the claim, the block's comment and
-   * label change, and the `end` point's close. `ticketCalls` watches all
-   * eight `Tickets` verbs on the fake, not the three `said` happens to cover,
-   * so a regression that leaves any one of them wired to GitHub fails here.
+   * **Every ticket verb this pass itself makes lands in `dbTickets`, and the
+   * fake GitHub records none of its own** — the claim, the block's comment
+   * and label change, and the `end` point's close. `ticketCalls` watches all
+   * eight `Tickets` verbs on the fake, so a regression leaving any verb this
+   * pass actually calls wired to GitHub fails here; `createIssue`,
+   * `listIssuesSince` and `updateBody` are not among those (the ticket is
+   * seeded directly on `dbTickets` above, and `runOnce` neither updates a
+   * body nor lists since a date) — `passClientOf`'s own describe block above
+   * covers those three instead.
    */
   it('claims a ticket dbTickets created, blocks, and closes it — all without a GitHub call', async () => {
     const store = memoryStore()

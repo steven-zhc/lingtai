@@ -97,16 +97,18 @@ import type { DaemonStore } from './store.ts'
  * everything this map's one reader (`findIssueDrift`/`convergeIssues`,
  * `ConvergeOptions.clients`) asks of a value is `Tickets` and `RefChannel`.
  *
- * **The client building and the recipe resolving fail independently.** Only a
- * client that will not build costs a project its convergence — "one
- * repository's expired installation must not cost the rest theirs," unchanged
- * from before `#382`. A recipe that will not resolve (the daemon running code
- * that cannot serve a step the recipe names, or a `db` project in conflict
- * with its own GitHub-numbered history) falls back to the client itself
- * rather than dropping the project: for a `github` project the recipe read
- * cannot change the outcome, and a `TicketSourceConflict` means the project's
- * existing work items are GitHub-numbered already, which is exactly what the
- * client itself answers for.
+ * **The client building and the recipe resolving fail independently, and a
+ * recipe that will not resolve drops the project rather than falling back to
+ * the raw client.** A recipe that throws — the daemon running code that
+ * cannot serve a step the recipe names (#76), or a `db` project's own
+ * `TicketSourceConflict` — leaves this function not knowing whether the
+ * project's tickets live on GitHub or in `dbTickets`. Handing `convergeIssues`
+ * the raw client for what might be a `db` project means its ticket numbers
+ * are asked of GitHub as issue numbers, which can write Lingtai's labels onto,
+ * and close, an unrelated GitHub issue that happens to share the number. So
+ * this project is skipped for the pass instead — "one repository's expired
+ * installation must not cost the rest theirs," extended to a recipe that
+ * will not resolve.
  */
 export async function clientsForProjects(
   projects: readonly ProjectState[],
@@ -127,7 +129,10 @@ export async function clientsForProjects(
       const resolved = await currentRecipe(p, client)
       clients.set(p.project, passClientOf(client, await ticketsFor(p, resolved.recipe, client)))
     } catch {
-      clients.set(p.project, client)
+      // Not known whether this project's tickets are GitHub's or dbTickets' —
+      // see the doc comment above for why that rules out falling back to the
+      // raw client.
+      continue
     }
   }
   return clients
