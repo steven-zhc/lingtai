@@ -1,3 +1,21 @@
+import type {
+  AgentHostFailed,
+  HookServer,
+  HookServerOptions,
+  HookWiring,
+  OpenRunLogOptions,
+  RenderOptions,
+  RunLog,
+} from '@lingtai/agent'
+import type { AgentEnv } from '@lingtai/agent-env'
+import type {
+  GitRunOptions,
+  IntegrateOptions,
+  IntegrateResult,
+  ProvisionOptions,
+  RepoFailed,
+  Worktree,
+} from '@lingtai/repo'
 /**
  * What the conductor needs from outside itself, named as interfaces.
  *
@@ -25,29 +43,11 @@
  * `AgentHostFailed` — and `serve` can ask for a `Scope`, which is how the
  * socket's close stopped being something `runOnce` had to remember.
  */
-import { Context, type Effect, type Scope } from "effect";
-import type { AgentEnv } from "@lingtai/agent-env";
-import type {
-  AgentHostFailed,
-  HookServer,
-  HookServerOptions,
-  HookWiring,
-  OpenRunLogOptions,
-  RenderOptions,
-  RunLog,
-} from "@lingtai/agent";
-import type {
-  GitRunOptions,
-  IntegrateOptions,
-  IntegrateResult,
-  ProvisionOptions,
-  RepoFailed,
-  Worktree,
-} from "@lingtai/repo";
+import { Context, type Effect, type Scope } from 'effect'
 
 /** Everything a run does to a git repository. */
 export interface RepoPort {
-  provision(options: ProvisionOptions): Effect.Effect<Worktree, RepoFailed>;
+  provision(options: ProvisionOptions): Effect.Effect<Worktree, RepoFailed>
   /**
    * Removing is separate from provisioning and never optional.
    *
@@ -56,14 +56,14 @@ export interface RepoPort {
    * path including a refusal. That ordering is the reason this is a port and
    * not a convenience: a fake can assert it.
    */
-  remove(options: { project: string; runId: string; home?: string }): Effect.Effect<void>;
-  git(args: string[], options?: GitRunOptions): Effect.Effect<string, RepoFailed>;
-  integrate(options: IntegrateOptions): Effect.Effect<IntegrateResult>;
+  remove(options: { project: string; runId: string; home?: string }): Effect.Effect<void>
+  git(args: string[], options?: GitRunOptions): Effect.Effect<string, RepoFailed>
+  integrate(options: IntegrateOptions): Effect.Effect<IntegrateResult>
 }
 
 /** Everything a run needs to start an agent and hear what it reports. */
 export interface AgentHostPort {
-  wire(options: RenderOptions): Effect.Effect<HookWiring, AgentHostFailed>;
+  wire(options: RenderOptions): Effect.Effect<HookWiring, AgentHostFailed>
   /**
    * Proves the hook refuses when it cannot reach the socket.
    *
@@ -73,11 +73,15 @@ export interface AgentHostPort {
    */
   smokeTest(
     hookBinary: string,
-    run: (bin: string, env: Record<string, string>, stdin: string) => Promise<{
-      code: number | null;
-      stderr: string;
+    run: (
+      bin: string,
+      env: Record<string, string>,
+      stdin: string,
+    ) => Promise<{
+      code: number | null
+      stderr: string
     }>,
-  ): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed>;
+  ): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed>
   /**
    * A listening server, for as long as the scope that asked for it.
    *
@@ -87,7 +91,7 @@ export interface AgentHostPort {
    * implements the same pair, which is what lets
    * `unit/conduct-a-whole-pass.test.ts` assert that the close happened at all.
    */
-  serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>;
+  serve(options: HookServerOptions): Effect.Effect<HookServer, AgentHostFailed, Scope.Scope>
   /**
    * A settings file for an agent that is a *step inside* a run — the cold
    * reviewer, a fix round — with no hook in it.
@@ -100,11 +104,11 @@ export interface AgentHostPort {
    * `wire`, one step down: the wiring is a run's, this is a step's.
    */
   unhookedSettings(options: {
-    runId: string;
+    runId: string
     /** `review`, `fix-1` — what the file is named after, and who reads it. */
-    label: string;
-    home?: string;
-  }): Effect.Effect<string, AgentHostFailed>;
+    label: string
+    home?: string
+  }): Effect.Effect<string, AgentHostFailed>
   /**
    * The run's log file, open for writing
    * ([0034](../../../doc/decisions-archive/0034-the-run-log.md)).
@@ -119,19 +123,19 @@ export interface AgentHostPort {
    * closes, not before. So the pair is made there, in the open, where a fake
    * can assert which way it went.
    */
-  runLog(options: OpenRunLogOptions): Effect.Effect<RunLog, AgentHostFailed>;
+  runLog(options: OpenRunLogOptions): Effect.Effect<RunLog, AgentHostFailed>
   resolveEnv(options: {
-    project: string;
+    project: string
     /** `env.required` — a check against the merged data, not a filter. */
-    required?: readonly string[];
+    required?: readonly string[]
     /** `env.allow` — absent means no allowlist; `[]` means nothing passes. */
-    allow?: readonly string[] | undefined;
+    allow?: readonly string[] | undefined
     /** `env.deny` — never reaches the agent, whatever `allow` says. */
-    deny?: readonly string[] | undefined;
-    machine?: Record<string, string>;
-    home?: string;
-    patterns?: readonly string[];
-  }): Effect.Effect<AgentEnv, AgentHostFailed>;
+    deny?: readonly string[] | undefined
+    machine?: Record<string, string>
+    home?: string
+    patterns?: readonly string[]
+  }): Effect.Effect<AgentEnv, AgentHostFailed>
 }
 
 /**
@@ -142,8 +146,8 @@ export interface AgentHostPort {
  * `livePorts()` returns one, and a test's fakes are one.
  */
 export interface RunPorts {
-  repo: RepoPort;
-  agent: AgentHostPort;
+  repo: RepoPort
+  agent: AgentHostPort
 }
 
 /**
@@ -162,8 +166,5 @@ export interface RunPorts {
  * `runOnce` actually does, rather than taking a `RunPorts` parameter a host
  * had to unpack from these same two tags.
  */
-export class Repo extends Context.Tag("@lingtai/conductor/Repo")<Repo, RepoPort>() {}
-export class AgentHost extends Context.Tag("@lingtai/conductor/AgentHost")<
-  AgentHost,
-  AgentHostPort
->() {}
+export class Repo extends Context.Tag('@lingtai/conductor/Repo')<Repo, RepoPort>() {}
+export class AgentHost extends Context.Tag('@lingtai/conductor/AgentHost')<AgentHost, AgentHostPort>() {}

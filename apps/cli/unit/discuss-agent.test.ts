@@ -1,3 +1,6 @@
+import { createRuntime, ToolsCannotBeDenied } from '@lingtai/agent'
+import { RuntimeId } from '@lingtai/domain'
+import { DiscussAgent } from '@lingtai/recipe'
 /**
  * `@lingtai/recipe`'s `DiscussAgent` against `@lingtai/agent`'s own table —
  * the two halves of `#243`'s enum that cannot be one import.
@@ -11,22 +14,19 @@
  * gains the ability to be given no tools is a failure here, not a schema
  * `recipe.ts` forgot to widen.
  */
-import { describe, expect, it } from "vitest";
-import { RuntimeId } from "@lingtai/domain";
-import { createRuntime, ToolsCannotBeDenied } from "@lingtai/agent";
-import { DiscussAgent } from "@lingtai/recipe";
+import { describe, expect, it } from 'vitest'
 
-describe("DiscussAgent", () => {
-  it("names exactly the runtimes that can be held to tools: none", () => {
+describe('DiscussAgent', () => {
+  it('names exactly the runtimes that can be held to tools: none', () => {
     const toolless = RuntimeId.options.filter((id) => {
       try {
-        createRuntime(id, { tools: "none" });
-        return true;
+        createRuntime(id, { tools: 'none' })
+        return true
       } catch (err) {
-        if (err instanceof ToolsCannotBeDenied) return false;
-        throw err;
+        if (err instanceof ToolsCannotBeDenied) return false
+        throw err
       }
-    });
-    expect([...DiscussAgent.options].sort()).toEqual(toolless.sort());
-  });
-});
+    })
+    expect([...DiscussAgent.options].sort()).toEqual(toolless.sort())
+  })
+})

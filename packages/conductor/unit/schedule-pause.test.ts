@@ -1,3 +1,5 @@
+import type { Runtime } from '@lingtai/agent'
+import type { ProjectState } from '@lingtai/domain'
 /**
  * A pass that is asked whether it is paused, and is (#166).
  *
@@ -9,53 +11,55 @@
  * The second time round, with a ticket finished between, needs the projection,
  * and nothing asserts it since `#256` deleted the old engine's tests.
  */
-import type { GitHubClient } from "@lingtai/github";
-import type { Runtime } from "@lingtai/agent";
-import type { ProjectState } from "@lingtai/domain";
-import type { Recipe } from "@lingtai/recipe";
-import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
-import { AgentHost, Repo } from "../src/ports.ts";
-import { runQueue } from "../src/schedule.ts";
+import type { GitHubClient } from '@lingtai/github'
+import type { Recipe } from '@lingtai/recipe'
+import { Effect, Layer } from 'effect'
+import { describe, expect, it } from 'vitest'
+
+import { AgentHost, Repo } from '../src/ports.ts'
+import { runQueue } from '../src/schedule.ts'
 
 // Every one of these throws: a paused pass reaches none of them.
 const untouched = <T>(what: string): T =>
-  new Proxy({}, {
-    get: (_, key) => {
-      if (key === "then") return undefined;
-      return () => {
-        throw new Error(`a paused pass reached ${what}.${String(key)}`);
-      };
+  new Proxy(
+    {},
+    {
+      get: (_, key) => {
+        if (key === 'then') return undefined
+        return () => {
+          throw new Error(`a paused pass reached ${what}.${String(key)}`)
+        }
+      },
     },
-  }) as T;
+  ) as T
 
-describe("runQueue under a pause", () => {
-  it("stops before it asks GitHub for anything, and says why", async () => {
-    const lines: string[] = [];
-    let asked = 0;
+describe('runQueue under a pause', () => {
+  it('stops before it asks GitHub for anything, and says why', async () => {
+    const lines: string[] = []
+    let asked = 0
     const outcome = await Effect.runPromise(
       runQueue({
-        project: { project: "purecheck" } as ProjectState,
-        client: untouched<GitHubClient>("client"),
-        runtime: untouched<Runtime>("runtime"),
-        hookBinary: "/nonexistent",
-        prompt: "p",
-        recipe: untouched<Recipe>("recipe"),
+        project: { project: 'purecheck' } as ProjectState,
+        client: untouched<GitHubClient>('client'),
+        runtime: untouched<Runtime>('runtime'),
+        hookBinary: '/nonexistent',
+        prompt: 'p',
+        recipe: untouched<Recipe>('recipe'),
         paused: async () => {
-          asked += 1;
-          return "paused by human:ops — migrating the database";
+          asked += 1
+          return 'paused by human:ops — migrating the database'
         },
         log: (l) => lines.push(l),
       }).pipe(
         Effect.provide(
-          Layer.merge(Layer.succeed(Repo, untouched("repo")), Layer.succeed(AgentHost, untouched("agent"))),
+          Layer.merge(Layer.succeed(Repo, untouched('repo')), Layer.succeed(AgentHost, untouched('agent'))),
         ),
       ),
-    );
+    )
 
-    expect(asked).toBe(1);
-    expect(outcome.stopped).toBe("paused");
-    expect(outcome.ran).toEqual([]);
-    expect(lines).toContain("paused by human:ops — migrating the database");
-  });
-});
+    expect(asked).toBe(1)
+    expect(outcome.stopped).toBe('paused')
+    expect(outcome.ran).toEqual([])
+    expect(lines).toContain('paused by human:ops — migrating the database')
+  })
+})

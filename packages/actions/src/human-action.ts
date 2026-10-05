@@ -19,29 +19,27 @@
  * a recipe that could name its own approvers could approve itself. Who answered
  * is recorded rather than restricted — `by` on the approval, in the log.
  */
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import type { Action, ActionContext, ActionResult } from './action.ts'
 
 export interface HumanActionSpec {
-  name: string;
+  name: string
   /** What the person is being asked. The card shows this and nothing else. */
-  question?: string;
+  question?: string
 }
 
 export function createHumanAction(spec: HumanActionSpec): Action {
   return {
     name: spec.name,
-    kind: "human",
+    kind: 'human',
 
     async run(context: ActionContext): Promise<ActionResult> {
       return {
-        verdict: "needs-approval",
+        verdict: 'needs-approval',
         // The sha is in the question because the answer is about *this* commit
         // and a person reading the card should be able to see which.
-        evidence:
-          spec.question ??
-          `${spec.name}: this needs a person before it merges (${context.onSha.slice(0, 7)}).`,
+        evidence: spec.question ?? `${spec.name}: this needs a person before it merges (${context.onSha.slice(0, 7)}).`,
         findings: [],
-      };
+      }
     },
-  };
+  }
 }

@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * A disclosure that opens itself when something starts, and stays where you put it.
@@ -18,8 +18,8 @@
  * person opened stays open and what they closed stays closed, which is the only
  * behaviour a disclosure on a live page can have and still be usable.
  */
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 
 /**
  * The open state of one disclosure, latched.
@@ -29,20 +29,17 @@ import type { ReactNode } from "react";
  * boolean itself (it decides whether to follow a file), so this is a hook and
  * `Latch` below is the ordinary case wrapped around it.
  */
-export function useLatch(
-  initial: boolean,
-  openWhen = false,
-): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(initial || openWhen);
+export function useLatch(initial: boolean, openWhen = false): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(initial || openWhen)
 
   // Only ever true. This runs when `openWhen` becomes true — a run that started
   // after this mounted — and never puts it back, which is the half `open={…}`
   // as a bare attribute got wrong in both directions.
   useEffect(() => {
-    if (openWhen) setOpen(true);
-  }, [openWhen]);
+    if (openWhen) setOpen(true)
+  }, [openWhen])
 
-  return [open, setOpen];
+  return [open, setOpen]
 }
 
 /** `<details>` under `useLatch`. See the module header for why it is not an attribute. */
@@ -53,25 +50,20 @@ export function Latch({
   openWhen,
   children,
 }: {
-  className?: string;
-  id?: string;
+  className?: string
+  id?: string
   /** Open from the first paint, on the server and in the browser. */
-  initial: boolean;
+  initial: boolean
   /** Opens it when it becomes true, and never closes it. */
-  openWhen?: boolean;
-  children: ReactNode;
+  openWhen?: boolean
+  children: ReactNode
 }) {
-  const [open, setOpen] = useLatch(initial, openWhen);
+  const [open, setOpen] = useLatch(initial, openWhen)
   return (
-    <details
-      className={className}
-      id={id}
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
+    <details className={className} id={id} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       {children}
     </details>
-  );
+  )
 }
 
 /**
@@ -79,8 +71,8 @@ export function Latch({
  * Structural, so the walk is testable without a document.
  */
 export interface Disclosing {
-  open?: boolean;
-  parentElement: { closest(selector: "details"): Disclosing | null } | null;
+  open?: boolean
+  parentElement: { closest(selector: 'details'): Disclosing | null } | null
 }
 
 /**
@@ -94,14 +86,14 @@ export interface Disclosing {
  * is not left to the browser.
  */
 export function openTo(target: Disclosing): number {
-  let opened = 0;
-  for (let d = target.parentElement?.closest("details") ?? null; d; d = d.parentElement?.closest("details") ?? null) {
+  let opened = 0
+  for (let d = target.parentElement?.closest('details') ?? null; d; d = d.parentElement?.closest('details') ?? null) {
     if (!d.open) {
-      d.open = true;
-      opened += 1;
+      d.open = true
+      opened += 1
     }
   }
-  return opened;
+  return opened
 }
 
 /**
@@ -111,11 +103,11 @@ export function openTo(target: Disclosing): number {
  * fragment has only ever done nothing.
  */
 export function fragmentId(hash: string): string {
-  const raw = hash.slice(1);
+  const raw = hash.slice(1)
   try {
-    return decodeURIComponent(raw);
+    return decodeURIComponent(raw)
   } catch {
-    return raw;
+    return raw
   }
 }
 
@@ -131,28 +123,28 @@ export function fragmentId(hash: string): string {
 export function Reveal() {
   useEffect(() => {
     const reveal = (hash: string, scroll: boolean) => {
-      if (!hash.startsWith("#") || hash.length < 2) return;
-      const target = document.getElementById(fragmentId(hash));
-      if (target === null) return;
+      if (!hash.startsWith('#') || hash.length < 2) return
+      const target = document.getElementById(fragmentId(hash))
+      if (target === null) return
       // Scrolled only where the browser will not: a row that was closed when it
       // navigated, or a link to the hash it is already at.
-      if (openTo(target) > 0 || scroll) target.scrollIntoView({ block: "start" });
-    };
-    const onHash = () => reveal(window.location.hash, false);
+      if (openTo(target) > 0 || scroll) target.scrollIntoView({ block: 'start' })
+    }
+    const onHash = () => reveal(window.location.hash, false)
     const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || !(event.target instanceof Element)) return;
-      const href = event.target.closest("a")?.getAttribute("href") ?? "";
+      if (event.defaultPrevented || !(event.target instanceof Element)) return
+      const href = event.target.closest('a')?.getAttribute('href') ?? ''
       // Before the browser's own navigation, so the row is open by the time it
       // looks for the target; and scrolled here when that navigation is none.
-      if (href.startsWith("#")) reveal(href, href === window.location.hash);
-    };
-    reveal(window.location.hash, false);
-    window.addEventListener("hashchange", onHash);
-    document.addEventListener("click", onClick);
+      if (href.startsWith('#')) reveal(href, href === window.location.hash)
+    }
+    reveal(window.location.hash, false)
+    window.addEventListener('hashchange', onHash)
+    document.addEventListener('click', onClick)
     return () => {
-      window.removeEventListener("hashchange", onHash);
-      document.removeEventListener("click", onClick);
-    };
-  }, []);
-  return null;
+      window.removeEventListener('hashchange', onHash)
+      document.removeEventListener('click', onClick)
+    }
+  }, [])
+  return null
 }

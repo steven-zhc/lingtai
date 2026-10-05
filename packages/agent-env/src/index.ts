@@ -19,24 +19,25 @@
  * `resolveAgentEnv`, which reads the project's own file. That one read is the
  * whole of the impurity and is marked where it happens.
  */
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { PREFIX, machineEnvFile, stateDir } from "@lingtai/env";
-import { dirname, join } from "node:path";
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+
+import { PREFIX, machineEnvFile, stateDir } from '@lingtai/env'
 
 // ------------------------------------------------------------ environment ----
 
 export class ProductionValueError extends Error {
-  override readonly name = "ProductionValueError";
-  readonly variable: string;
-  readonly matched: string;
+  override readonly name = 'ProductionValueError'
+  readonly variable: string
+  readonly matched: string
 
   constructor(variable: string, matched: string) {
     super(
       `${variable} looks like production (its host or user matches "${matched}"). ` +
-        "Refusing to plant it: an agent must never hold a production credential.",
-    );
-    this.variable = variable;
-    this.matched = matched;
+        'Refusing to plant it: an agent must never hold a production credential.',
+    )
+    this.variable = variable
+    this.matched = matched
   }
 }
 
@@ -64,7 +65,7 @@ export class ProductionValueError extends Error {
  * cries wolf trains people to pass an override flag, which is the worst outcome
  * for one. See `hostLooksProduction`.
  */
-export const DEFAULT_PRODUCTION_PATTERNS = ["prod", "production"];
+export const DEFAULT_PRODUCTION_PATTERNS = ['prod', 'production']
 
 /**
  * The patterns a run refuses: the default, **and** the recipe's `refuseHosts`.
@@ -75,7 +76,7 @@ export const DEFAULT_PRODUCTION_PATTERNS = ["prod", "production"];
  * remove it" was withdrawn by 0016 along with policy, so it is not cited here.
  */
 export function productionPatterns(refuseHosts: readonly string[] = []): string[] {
-  return [...new Set([...DEFAULT_PRODUCTION_PATTERNS, ...refuseHosts])];
+  return [...new Set([...DEFAULT_PRODUCTION_PATTERNS, ...refuseHosts])]
 }
 
 /**
@@ -96,14 +97,14 @@ export function productionPatterns(refuseHosts: readonly string[] = []): string[
  * boundaries, and this is what makes it refuse rather than warn.
  */
 export function hostLooksProduction(host: string, patterns: readonly string[]): string | null {
-  const segments = host.toLowerCase().split(/[.\-]/);
+  const segments = host.toLowerCase().split(/[.\-]/)
   for (const pattern of patterns) {
-    const run = pattern.toLowerCase().split(/[.\-]/);
+    const run = pattern.toLowerCase().split(/[.\-]/)
     for (let i = 0; i + run.length <= segments.length; i++) {
-      if (run.every((piece, j) => segments[i + j] === piece)) return pattern;
+      if (run.every((piece, j) => segments[i + j] === piece)) return pattern
     }
   }
-  return null;
+  return null
 }
 
 /**
@@ -123,7 +124,7 @@ export function hostLooksProduction(host: string, patterns: readonly string[]): 
  * keeps working.
  */
 function isMachineOwn(name: string): boolean {
-  return name.startsWith(PREFIX);
+  return name.startsWith(PREFIX)
 }
 
 /**
@@ -162,19 +163,19 @@ function isMachineOwn(name: string): boolean {
  * deliberately *not* here: it was not needed, and leaving it out keeps the
  * shell a command runs under predictable rather than inherited.
  */
-export const RUNNABLE = ["PATH", "HOME", "TMPDIR", "LANG", "USER", "LOGNAME"] as const;
+export const RUNNABLE = ['PATH', 'HOME', 'TMPDIR', 'LANG', 'USER', 'LOGNAME'] as const
 
 export function runnableEnv(
   values: Record<string, string>,
   from: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
-  const base: Record<string, string> = {};
+  const base: Record<string, string> = {}
   for (const name of RUNNABLE) {
-    const value = from[name];
-    if (value) base[name] = value;
+    const value = from[name]
+    if (value) base[name] = value
   }
   // The project's own values win: a recipe that requires `PATH` meant it.
-  return { ...base, ...values };
+  return { ...base, ...values }
 }
 
 /**
@@ -197,23 +198,23 @@ export function filterEnv(
   merged: Record<string, string>,
   filters: { allow?: readonly string[] | undefined; deny?: readonly string[] | undefined } = {},
 ): Record<string, string> {
-  const allow = filters.allow ? new Set(filters.allow) : null;
-  const deny = new Set(filters.deny ?? []);
-  const out: Record<string, string> = {};
+  const allow = filters.allow ? new Set(filters.allow) : null
+  const deny = new Set(filters.deny ?? [])
+  const out: Record<string, string> = {}
   for (const [name, value] of Object.entries(merged)) {
-    if (allow && !allow.has(name)) continue;
-    if (deny.has(name)) continue;
-    out[name] = value;
+    if (allow && !allow.has(name)) continue
+    if (deny.has(name)) continue
+    out[name] = value
   }
-  return out;
+  return out
 }
 
 /** What an extension asked for, and what this machine could answer with. */
 export interface ExtensionEnv {
   /** The declared names that had a value. Layer 1 is added by `runnableEnv`. */
-  values: Record<string, string>;
+  values: Record<string, string>
   /** Declared, and no value in either file. Reported, never guessed at. */
-  missing: string[];
+  missing: string[]
 }
 
 /**
@@ -243,52 +244,52 @@ export function extensionEnv(
   declared: readonly string[],
   patterns: readonly string[] = DEFAULT_PRODUCTION_PATTERNS,
 ): ExtensionEnv {
-  const values: Record<string, string> = {};
-  const missing: string[] = [];
+  const values: Record<string, string> = {}
+  const missing: string[] = []
   for (const name of declared) {
-    const value = merged[name];
-    if (value === undefined || value === "") {
-      missing.push(name);
-      continue;
+    const value = merged[name]
+    if (value === undefined || value === '') {
+      missing.push(name)
+      continue
     }
-    guardProduction(name, value, patterns);
-    values[name] = value;
+    guardProduction(name, value, patterns)
+    values[name] = value
   }
-  return { values, missing };
+  return { values, missing }
 }
 
 function guardProduction(name: string, value: string, patterns: readonly string[]): void {
-  const url = urlOf(value);
-  if (!url) return;
+  const url = urlOf(value)
+  if (!url) return
   // The username too, because Supabase's pooler moves the ref there:
   // `postgres.<ref>@aws-0-us-east-1.pooler.supabase.com` has a host that names
   // no project at all. The username is an identifier and not the password,
   // which stays out of it for the reason the host is split by segment.
   // Only the recipe's refs, not `prod`/`production`: those name hosts, and a
   // local database with a role called `prod` is not a production one.
-  const refs = patterns.filter((p) => !DEFAULT_PRODUCTION_PATTERNS.includes(p.toLowerCase()));
+  const refs = patterns.filter((p) => !DEFAULT_PRODUCTION_PATTERNS.includes(p.toLowerCase()))
   const hit =
     hostLooksProduction(url.hostname, patterns) ??
-    (url.username && refs.length > 0 ? hostLooksProduction(usernameOf(url), refs) : null);
-  if (hit) throw new ProductionValueError(name, hit);
+    (url.username && refs.length > 0 ? hostLooksProduction(usernameOf(url), refs) : null)
+  if (hit) throw new ProductionValueError(name, hit)
 }
 
 /** The username decoded, or as written when its `%` is not an escape — never a throw. */
 function usernameOf(url: URL): string {
   try {
-    return decodeURIComponent(url.username);
+    return decodeURIComponent(url.username)
   } catch {
-    return url.username;
+    return url.username
   }
 }
 
 /** A URL-shaped value parsed, or null when it is not one. */
 function urlOf(value: string): URL | null {
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return null
   try {
-    return new URL(value);
+    return new URL(value)
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -296,17 +297,17 @@ function urlOf(value: string): URL | null {
 
 /** **Layer 3**: `~/.lingtai/env/<project>.env`, and the only file layer there is. */
 export function projectEnvPath(project: string, home: string = stateDir()): string {
-  return join(home, "env", `${project}.env`);
+  return join(home, 'env', `${project}.env`)
 }
 
 export interface EnvFile {
-  values: Record<string, string>;
+  values: Record<string, string>
   /**
    * Names whose value asks for a **secret source** — layer 4, which is not
    * built. Kept apart rather than taken literally: planting `!op read op://…`
    * as a connection string is the silent half-move this file exists to refuse.
    */
-  commands: Record<string, string>;
+  commands: Record<string, string>
 }
 
 /**
@@ -322,54 +323,57 @@ export interface EnvFile {
  * `renderEnvFile` and means an embedded newline survives a round trip.
  */
 export function parseEnvFile(text: string): EnvFile {
-  const values: Record<string, string> = {};
-  const commands: Record<string, string> = {};
+  const values: Record<string, string> = {}
+  const commands: Record<string, string> = {}
 
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq <= 0) continue;
-    const name = trimmed.slice(0, eq).trim().replace(/^export\s+/, "");
-    const raw = trimmed.slice(eq + 1).trim();
-    if (name === "") continue;
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const name = trimmed
+      .slice(0, eq)
+      .trim()
+      .replace(/^export\s+/, '')
+    const raw = trimmed.slice(eq + 1).trim()
+    if (name === '') continue
 
-    if (raw.startsWith("!")) {
-      commands[name] = raw.slice(1).trim();
-      continue;
+    if (raw.startsWith('!')) {
+      commands[name] = raw.slice(1).trim()
+      continue
     }
     if (raw.startsWith('"')) {
       try {
-        values[name] = JSON.parse(raw) as string;
-        continue;
+        values[name] = JSON.parse(raw) as string
+        continue
       } catch {
         // Not JSON after all. Fall through and take it literally rather than
         // dropping the line — a value nobody can see is worse than a quoted one.
       }
     }
     if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
-      values[name] = raw.slice(1, -1);
-      continue;
+      values[name] = raw.slice(1, -1)
+      continue
     }
-    values[name] = raw;
+    values[name] = raw
   }
 
-  return { values, commands };
+  return { values, commands }
 }
 
 // --------------------------------------------------- the merged environment ---
 
 /** Where a declared name's value came from. Names only — never values. */
-export type EnvLayer = "machine file" | "project file" | "not set";
+export type EnvLayer = 'machine file' | 'project file' | 'not set'
 
 export interface AgentEnvName {
-  name: string;
-  layer: EnvLayer;
+  name: string
+  layer: EnvLayer
 }
 
 export interface AgentEnv {
   /** What reaches the agent, after `allow`/`deny`. Layer 1 is added by `runnableEnv`. */
-  values: Record<string, string>;
+  values: Record<string, string>
   /**
    * The two files merged, **before** `allow`/`deny` — 0021's data layer, which
    * `required` is already checked against.
@@ -384,15 +388,15 @@ export interface AgentEnv {
    * things that spawn take `values` (the agent) or `extensionEnv(merged, …)`
    * (an extension), and both are narrower than it by construction.
    */
-  merged: Record<string, string>;
+  merged: Record<string, string>
   /** Every name either file offered, and which one answered, in name order. */
-  names: AgentEnvName[];
+  names: AgentEnvName[]
   /** `required` names the merged data did not supply. */
-  missing: string[];
+  missing: string[]
   /** Declared names whose file value asks for the unbuilt layer 4. */
-  deferred: string[];
+  deferred: string[]
   /** The per-project file, whether or not it exists. */
-  file: string;
+  file: string
   /**
    * Why this project cannot run, or null.
    *
@@ -400,7 +404,7 @@ export interface AgentEnv {
    * the same — refuse the project before anything is claimed — and a caller that
    * assembled the sentence itself would assemble a different one each time.
    */
-  refusal: string | null;
+  refusal: string | null
 }
 
 /**
@@ -421,32 +425,32 @@ export interface AgentEnv {
  * and a clock, which is what lets `lingtai doctor` ask it for free.
  */
 export async function resolveAgentEnv(options: {
-  project: string;
+  project: string
   /** `env.required` — checked against the merged data, before the filters. */
-  required?: readonly string[];
+  required?: readonly string[]
   /** `env.allow` — absent means no allowlist; `[]` means nothing passes. */
-  allow?: readonly string[] | undefined;
+  allow?: readonly string[] | undefined
   /** `env.deny` — names that never reach the agent. */
-  deny?: readonly string[] | undefined;
+  deny?: readonly string[] | undefined
   /** Layer 2, injectable. Defaults to the machine's own env file. */
-  machine?: Record<string, string>;
-  home?: string;
+  machine?: Record<string, string>
+  home?: string
   /** Every pattern refused — `productionPatterns(env.refuseHosts)` for a run. */
-  patterns?: readonly string[];
+  patterns?: readonly string[]
 }): Promise<AgentEnv> {
-  const required = options.required ?? [];
-  const patterns = options.patterns ?? DEFAULT_PRODUCTION_PATTERNS;
-  const { file, merged, fromFile, commands } = await readEnvLayers(options);
+  const required = options.required ?? []
+  const patterns = options.patterns ?? DEFAULT_PRODUCTION_PATTERNS
+  const { file, merged, fromFile, commands } = await readEnvLayers(options)
 
-  const deferred = required.filter((name) => commands[name] !== undefined);
-  const missing = required.filter((name) => !(name in merged));
+  const deferred = required.filter((name) => commands[name] !== undefined)
+  const missing = required.filter((name) => !(name in merged))
 
-  const values = filterEnv(merged, { allow: options.allow, deny: options.deny });
+  const values = filterEnv(merged, { allow: options.allow, deny: options.deny })
   // Over every value that actually reaches an agent, from either file — which
   // is the only place it can be over, now that the filters run last.
-  for (const [name, value] of Object.entries(values)) guardProduction(name, value, patterns);
+  for (const [name, value] of Object.entries(values)) guardProduction(name, value, patterns)
 
-  const names = layerNames(merged, fromFile, required);
+  const names = layerNames(merged, fromFile, required)
 
   return {
     values,
@@ -456,7 +460,7 @@ export async function resolveAgentEnv(options: {
     deferred,
     file,
     refusal: refusalFor(options.project, missing, deferred, file),
-  };
+  }
 }
 
 /**
@@ -468,43 +472,39 @@ export async function resolveAgentEnv(options: {
  * the operator is being asked to be responsible for
  * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
  */
-async function readEnvLayers(options: {
-  project: string;
-  machine?: Record<string, string>;
-  home?: string;
-}): Promise<{
-  file: string;
-  merged: Record<string, string>;
-  fromFile: Set<string>;
-  commands: Record<string, string>;
+async function readEnvLayers(options: { project: string; machine?: Record<string, string>; home?: string }): Promise<{
+  file: string
+  merged: Record<string, string>
+  fromFile: Set<string>
+  commands: Record<string, string>
 }> {
-  const file = projectEnvPath(options.project, options.home ?? stateDir());
+  const file = projectEnvPath(options.project, options.home ?? stateDir())
 
   // Layer 2, minus what is Lingtai's own. See `isMachineOwn`: this is the one
   // asymmetry left, and it is a prefix rather than a list.
-  const fromMachine: Record<string, string> = {};
+  const fromMachine: Record<string, string> = {}
   for (const [name, value] of Object.entries(options.machine ?? machineEnvFile())) {
-    if (!isMachineOwn(name) && value !== "") fromMachine[name] = value;
+    if (!isMachineOwn(name) && value !== '') fromMachine[name] = value
   }
 
-  let parsed: EnvFile = { values: {}, commands: {} };
+  let parsed: EnvFile = { values: {}, commands: {} }
   try {
-    parsed = parseEnvFile(await readFile(file, "utf8"));
+    parsed = parseEnvFile(await readFile(file, 'utf8'))
   } catch {
     // No file is the ordinary case for a project whose values are all on the
     // machine. An unreadable one is reported by the names it fails to supply.
   }
 
   // Layer 3 over layer 2: one project can differ from the machine.
-  const merged: Record<string, string> = { ...fromMachine };
-  const fromFile = new Set<string>();
+  const merged: Record<string, string> = { ...fromMachine }
+  const fromFile = new Set<string>()
   for (const [name, value] of Object.entries(parsed.values)) {
-    if (value === "") continue;
-    merged[name] = value;
-    fromFile.add(name);
+    if (value === '') continue
+    merged[name] = value
+    fromFile.add(name)
   }
 
-  return { file, merged, fromFile, commands: parsed.commands };
+  return { file, merged, fromFile, commands: parsed.commands }
 }
 
 function layerNames(
@@ -514,8 +514,8 @@ function layerNames(
 ): AgentEnvName[] {
   return [...new Set([...Object.keys(merged), ...also])].sort().map((name) => ({
     name,
-    layer: fromFile.has(name) ? "project file" : name in merged ? "machine file" : "not set",
-  }));
+    layer: fromFile.has(name) ? 'project file' : name in merged ? 'machine file' : 'not set',
+  }))
 }
 
 function refusalFor(
@@ -524,15 +524,15 @@ function refusalFor(
   deferred: readonly string[],
   file: string,
 ): string | null {
-  if (missing.length === 0) return null;
-  const isDeferredName = new Set(deferred);
+  if (missing.length === 0) return null
+  const isDeferredName = new Set(deferred)
 
   const lines = [
-    `env: ${missing.join(", ")} declared in env.required and not set in either file. ` +
+    `env: ${missing.join(', ')} declared in env.required and not set in either file. ` +
       `Nothing was claimed and no agent was started.`,
-  ];
+  ]
 
-  const ordinary = missing.filter((n) => !isDeferredName.has(n));
+  const ordinary = missing.filter((n) => !isDeferredName.has(n))
   if (ordinary.length > 0) {
     // The command, not the path and the format. Naming the file left four
     // things to get right — the directory, the filename, dotenv syntax, and
@@ -541,18 +541,18 @@ function refusalFor(
     // value reads stdin unechoed, which is how a connection string stays out
     // of shell history.
     lines.push(
-      `  ${ordinary.join(", ")}: lingtai env set ${project} ${ordinary[0]}` +
-        `${ordinary.length > 1 ? " (one per name)" : ""} — it reads the value from stdin, unechoed.`,
-    );
+      `  ${ordinary.join(', ')}: lingtai env set ${project} ${ordinary[0]}` +
+        `${ordinary.length > 1 ? ' (one per name)' : ''} — it reads the value from stdin, unechoed.`,
+    )
   }
-  const asked = missing.filter((n) => isDeferredName.has(n));
+  const asked = missing.filter((n) => isDeferredName.has(n))
   if (asked.length > 0) {
     lines.push(
-      `  ${asked.join(", ")}: ${file} asks for a secret source (a "!" value), which is not built yet. ` +
+      `  ${asked.join(', ')}: ${file} asks for a secret source (a "!" value), which is not built yet. ` +
         `Write the value with lingtai env set ${project} ${asked[0]}, or quote it to mean it literally.`,
-    );
+    )
   }
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 // ----------------------------------------------- writing the project's file ---
@@ -564,9 +564,9 @@ function refusalFor(
  * a command that reset it would be a command that widened a file somebody had
  * deliberately narrowed, while claiming to be securing it.
  */
-export const ENV_FILE_MODE = 0o600;
+export const ENV_FILE_MODE = 0o600
 /** `~/.lingtai/env`, created with the same instinct as the file inside it. */
-export const ENV_DIR_MODE = 0o700;
+export const ENV_DIR_MODE = 0o700
 
 /**
  * A `!` value refused, with the thing to do instead.
@@ -578,37 +578,37 @@ export const ENV_DIR_MODE = 0o700;
  * the one `parseEnvFile` documents: quote it, by hand, in the file.
  */
 export class SecretSourceError extends Error {
-  override readonly name = "SecretSourceError";
-  readonly variable: string;
+  override readonly name = 'SecretSourceError'
+  readonly variable: string
 
   constructor(variable: string) {
     super(
       `${variable}: a value beginning with "!" is reserved for a secret source — layer 4 of ` +
-        "0021, which is not built. Writing it would plant the literal text where the value " +
-        "belongs, and the project would go on refusing past a line that looks correct. " +
+        '0021, which is not built. Writing it would plant the literal text where the value ' +
+        'belongs, and the project would go on refusing past a line that looks correct. ' +
         `If "!" really is the first character of the value, write the line by hand and quote ` +
         `it: ${variable}="!…" is those characters and nothing else.`,
-    );
-    this.variable = variable;
+    )
+    this.variable = variable
   }
 }
 
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 /** A project name is a filename here, so `..` and a slash have to be refused. */
-const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 function checkName(name: string): string {
   if (!ENV_NAME.test(name)) {
-    throw new Error(`"${name}" is not an environment variable name — letters, digits and _, not starting with a digit`);
+    throw new Error(`"${name}" is not an environment variable name — letters, digits and _, not starting with a digit`)
   }
-  return name;
+  return name
 }
 
 function checkProject(project: string): string {
   if (!PROJECT_NAME.test(project)) {
-    throw new Error(`"${project}" is not a project name — it is used as a filename under ~/.lingtai/env`);
+    throw new Error(`"${project}" is not a project name — it is used as a filename under ~/.lingtai/env`)
   }
-  return project;
+  return project
 }
 
 /**
@@ -619,17 +619,20 @@ function checkProject(project: string): string {
  * exactly one of them correct.
  */
 function nameOfLine(line: string): string | null {
-  const trimmed = line.trim();
-  if (trimmed === "" || trimmed.startsWith("#")) return null;
-  const eq = trimmed.indexOf("=");
-  if (eq <= 0) return null;
-  const name = trimmed.slice(0, eq).trim().replace(/^export\s+/, "");
-  return name === "" ? null : name;
+  const trimmed = line.trim()
+  if (trimmed === '' || trimmed.startsWith('#')) return null
+  const eq = trimmed.indexOf('=')
+  if (eq <= 0) return null
+  const name = trimmed
+    .slice(0, eq)
+    .trim()
+    .replace(/^export\s+/, '')
+  return name === '' ? null : name
 }
 
 function linesOf(text: string): string[] {
-  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
-  return body === "" ? [] : body.split("\n");
+  const body = text.endsWith('\n') ? text.slice(0, -1) : text
+  return body === '' ? [] : body.split('\n')
 }
 
 /**
@@ -646,30 +649,30 @@ function linesOf(text: string): string[] {
  * file does not report.
  */
 export function setEnvLine(text: string, name: string, value: string): string {
-  const line = `${name}=${JSON.stringify(value)}`;
-  const out: string[] = [];
-  let written = false;
+  const line = `${name}=${JSON.stringify(value)}`
+  const out: string[] = []
+  let written = false
   for (const l of linesOf(text)) {
     if (nameOfLine(l) !== name) {
-      out.push(l);
-      continue;
+      out.push(l)
+      continue
     }
-    if (written) continue;
-    out.push(line);
-    written = true;
+    if (written) continue
+    out.push(line)
+    written = true
   }
-  if (!written) out.push(line);
-  return `${out.join("\n")}\n`;
+  if (!written) out.push(line)
+  return `${out.join('\n')}\n`
 }
 
 /** Every line declaring the name removed, comments and neighbours untouched. */
 export function unsetEnvLine(text: string, name: string): { text: string; removed: boolean } {
-  const lines = linesOf(text);
-  const kept = lines.filter((l) => nameOfLine(l) !== name);
+  const lines = linesOf(text)
+  const kept = lines.filter((l) => nameOfLine(l) !== name)
   return {
-    text: kept.length === 0 ? "" : `${kept.join("\n")}\n`,
+    text: kept.length === 0 ? '' : `${kept.join('\n')}\n`,
     removed: kept.length !== lines.length,
-  };
+  }
 }
 
 function header(project: string): string {
@@ -677,14 +680,14 @@ function header(project: string): string {
     `# ${project} — the values Lingtai merges over the machine's own file when it\n` +
     `# prepares a run (doc/decisions-archive/0021). One NAME=value per line.\n` +
     `# Written by \`lingtai env set ${project}\`; edit it by hand if you prefer.\n`
-  );
+  )
 }
 
 async function readOrNull(file: string): Promise<string | null> {
   try {
-    return await readFile(file, "utf8");
+    return await readFile(file, 'utf8')
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -699,54 +702,54 @@ async function readOrNull(file: string): Promise<string | null> {
  * A `!` value is refused rather than written — see `SecretSourceError`.
  */
 export async function setProjectEnv(options: {
-  project: string;
-  name: string;
-  value: string;
-  home?: string;
+  project: string
+  name: string
+  value: string
+  home?: string
 }): Promise<{ file: string; created: boolean; replaced: boolean }> {
-  const project = checkProject(options.project);
-  const name = checkName(options.name);
-  if (options.value.startsWith("!")) throw new SecretSourceError(name);
+  const project = checkProject(options.project)
+  const name = checkName(options.name)
+  if (options.value.startsWith('!')) throw new SecretSourceError(name)
 
-  const file = projectEnvPath(project, options.home ?? stateDir());
-  const before = await readOrNull(file);
-  const created = before === null;
-  const text = before ?? header(project);
-  const replaced = linesOf(text).some((l) => nameOfLine(l) === name);
+  const file = projectEnvPath(project, options.home ?? stateDir())
+  const before = await readOrNull(file)
+  const created = before === null
+  const text = before ?? header(project)
+  const replaced = linesOf(text).some((l) => nameOfLine(l) === name)
 
-  await mkdir(dirname(file), { recursive: true, mode: ENV_DIR_MODE });
-  await writeFile(file, setEnvLine(text, name, options.value), { mode: ENV_FILE_MODE });
+  await mkdir(dirname(file), { recursive: true, mode: ENV_DIR_MODE })
+  await writeFile(file, setEnvLine(text, name, options.value), { mode: ENV_FILE_MODE })
   // `mode` on `writeFile` only applies when the file is created, and a umask
   // can narrow it on the way. Asked for outright, so "the file is 0600" is a
   // fact rather than a hope.
-  if (created) await chmod(file, ENV_FILE_MODE);
+  if (created) await chmod(file, ENV_FILE_MODE)
 
-  return { file, created, replaced };
+  return { file, created, replaced }
 }
 
 /** `lingtai env unset` — the name gone from the file, and nothing else changed. */
 export async function unsetProjectEnv(options: {
-  project: string;
-  name: string;
-  home?: string;
+  project: string
+  name: string
+  home?: string
 }): Promise<{ file: string; removed: boolean }> {
-  const project = checkProject(options.project);
-  const name = checkName(options.name);
-  const file = projectEnvPath(project, options.home ?? stateDir());
+  const project = checkProject(options.project)
+  const name = checkName(options.name)
+  const file = projectEnvPath(project, options.home ?? stateDir())
 
-  const before = await readOrNull(file);
-  if (before === null) return { file, removed: false };
-  const { text, removed } = unsetEnvLine(before, name);
-  if (removed) await writeFile(file, text, { mode: ENV_FILE_MODE });
-  return { file, removed };
+  const before = await readOrNull(file)
+  if (before === null) return { file, removed: false }
+  const { text, removed } = unsetEnvLine(before, name)
+  if (removed) await writeFile(file, text, { mode: ENV_FILE_MODE })
+  return { file, removed }
 }
 
 export interface ProjectEnvListing {
-  file: string;
+  file: string
   /** Every name either file offers, and which one answered. Never a value. */
-  names: AgentEnvName[];
+  names: AgentEnvName[]
   /** Names in the project's file whose value asks for the unbuilt layer 4. */
-  deferred: string[];
+  deferred: string[]
 }
 
 /**
@@ -759,24 +762,24 @@ export interface ProjectEnvListing {
  * `resolveAgentEnv`, over these same two layers.
  */
 export async function projectEnvNames(options: {
-  project: string;
-  machine?: Record<string, string>;
-  home?: string;
+  project: string
+  machine?: Record<string, string>
+  home?: string
 }): Promise<ProjectEnvListing> {
-  const project = checkProject(options.project);
-  const { file, merged, fromFile, commands } = await readEnvLayers({ ...options, project });
-  const deferred = Object.keys(commands).sort();
-  return { file, names: layerNames(merged, fromFile, deferred), deferred };
+  const project = checkProject(options.project)
+  const { file, merged, fromFile, commands } = await readEnvLayers({ ...options, project })
+  const deferred = Object.keys(commands).sort()
+  return { file, names: layerNames(merged, fromFile, deferred), deferred }
 }
 
 /** `.env`-file text. Values are quoted so a `#` or a space cannot truncate one. */
 export function renderEnvFile(values: Record<string, string>): string {
   const lines = [
-    "# Written by Lingtai for one run. Not committed, not inherited —",
+    '# Written by Lingtai for one run. Not committed, not inherited —',
     "# only the names the recipe's env.required lists.",
-  ];
+  ]
   for (const [name, value] of Object.entries(values).sort(([a], [b]) => (a < b ? -1 : 1))) {
-    lines.push(`${name}=${JSON.stringify(value)}`);
+    lines.push(`${name}=${JSON.stringify(value)}`)
   }
-  return `${lines.join("\n")}\n`;
+  return `${lines.join('\n')}\n`
 }

@@ -6,33 +6,35 @@
  * a dead one. So the fixture has both, side by side, and the assertion is about
  * the pair.
  */
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { selectRunnable } from "@lingtai/conductor/queue";
-import type { ProjectState } from "@lingtai/domain";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
-import { beforeAll, describe, expect, it } from "vitest";
-import { exists, findOrphanLogs, findOrphans, reconcile } from "../src/index.ts";
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
-const created = new Set<string>();
-let store: EventStore;
-let home: string;
+import { selectRunnable } from '@lingtai/conductor/queue'
+import type { ProjectState } from '@lingtai/domain'
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const wt = (runId: string) => join(home, "worktrees", PROJECT, runId);
+import { exists, findOrphanLogs, findOrphans, reconcile } from '../src/index.ts'
+
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
+const created = new Set<string>()
+let store: EventStore
+let home: string
+
+const wt = (runId: string) => join(home, 'worktrees', PROJECT, runId)
 /** The worktree's shape, one directory over. That is the whole point of it. */
-const rl = (runId: string) => join(home, "runs", PROJECT, `${runId}.log`);
+const rl = (runId: string) => join(home, 'runs', PROJECT, `${runId}.log`)
 
 async function plantLog(runId: string): Promise<void> {
-  await mkdir(join(home, "runs", PROJECT), { recursive: true });
-  await writeFile(rl(runId), "12:00:00  Read    src/x.ts\n", { mode: 0o600 });
+  await mkdir(join(home, 'runs', PROJECT), { recursive: true })
+  await writeFile(rl(runId), '12:00:00  Read    src/x.ts\n', { mode: 0o600 })
 }
 
 async function plant(runId: string): Promise<void> {
-  await mkdir(wt(runId), { recursive: true });
-  await writeFile(join(wt(runId), "file.txt"), "work in progress");
+  await mkdir(wt(runId), { recursive: true })
+  await writeFile(join(wt(runId), 'file.txt'), 'work in progress')
 }
 
 /**
@@ -40,114 +42,112 @@ async function plant(runId: string): Promise<void> {
  * now (0027), so every fixture here has to say who took it.
  */
 const claim = (runId: string, worker: string, title: string | null = null) => ({
-  type: "WorkItemClaimed",
-  actor: "conductor",
-  data: { runId, worker, title, kind: "bug" },
-});
+  type: 'WorkItemClaimed',
+  actor: 'conductor',
+  data: { runId, worker, title, kind: 'bug' },
+})
 
 /** This conductor, and the one it replaced. Two pids, one at a time. */
-const ME = "local:11111";
-const DEAD = "local:22222";
+const ME = 'local:11111'
+const DEAD = 'local:22222'
 
 const started = (taskId: string) => ({
-  type: "RunStarted",
-  actor: "conductor",
+  type: 'RunStarted',
+  actor: 'conductor',
   data: {
     workItemId: taskId,
-    runtime: "claude-code",
-    model: "m",
-    promptVersion: "p",
-    baseSha: "base000",
-    configHash: "c",
-    worktree: "/tmp/wt",
+    runtime: 'claude-code',
+    model: 'm',
+    promptVersion: 'p',
+    baseSha: 'base000',
+    configHash: 'c',
+    worktree: '/tmp/wt',
     invocation: null,
   },
-});
+})
 
 beforeAll(async () => {
-  store = await processEventStore();
-  home = await mkdtemp(join(tmpdir(), "lingtai-reconcile-"));
-}, 120_000);
+  store = await processEventStore()
+  home = await mkdtemp(join(tmpdir(), 'lingtai-reconcile-'))
+}, 120_000)
 
-describe("reconciliation", () => {
-  it("removes a worktree the log says is finished, and leaves a live one alone", async () => {
-    const dead = `run-${PROJECT}-dead`;
-    const live = `run-${PROJECT}-live`;
-    const deadTask = `wi-${PROJECT}-1`;
-    const liveTask = `wi-${PROJECT}-2`;
-    for (const id of [dead, live, deadTask, liveTask]) created.add(id);
+describe('reconciliation', () => {
+  it('removes a worktree the log says is finished, and leaves a live one alone', async () => {
+    const dead = `run-${PROJECT}-dead`
+    const live = `run-${PROJECT}-live`
+    const deadTask = `wi-${PROJECT}-1`
+    const liveTask = `wi-${PROJECT}-2`
+    for (const id of [dead, live, deadTask, liveTask]) created.add(id)
 
     // Landed: the run is over, the directory is not.
     await store.append(deadTask, 0, [
       claim(dead, ME),
-      { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "abc1234", base: "develop" } },
-    ]);
-    await store.append(dead, 0, [started(deadTask)]);
+      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'develop' } },
+    ])
+    await store.append(dead, 0, [started(deadTask)])
 
     // Still claimed, by this conductor. An agent between tool calls looks
     // exactly like this, and deleting its worktree would be the worst thing
     // this could do.
-    await store.append(liveTask, 0, [claim(live, ME)]);
-    await store.append(live, 0, [started(liveTask)]);
+    await store.append(liveTask, 0, [claim(live, ME)])
+    await store.append(live, 0, [started(liveTask)])
 
-    await plant(dead);
-    await plant(live);
+    await plant(dead)
+    await plant(live)
 
-    const found = await reconcile({ home, store, worker: ME });
+    const found = await reconcile({ home, store, worker: ME })
 
-    expect(found.map((f) => f.stream)).toEqual([dead]);
-    expect(found[0]!.action).toBe("removed");
-    expect(await exists(wt(dead))).toBe(false);
-    expect(await exists(wt(live))).toBe(true);
-  });
+    expect(found.map((f) => f.stream)).toEqual([dead])
+    expect(found[0]!.action).toBe('removed')
+    expect(await exists(wt(dead))).toBe(false)
+    expect(await exists(wt(live))).toBe(true)
+  })
 
   /**
    * The claim that used to be recovered by waiting. Its lease has not lapsed —
    * there is no lease — and the worktree is orphaned anyway, because the
    * conductor named on the claim is not the one running this pass.
    */
-  it("treats a claim by another conductor as finished", async () => {
-    const stale = `run-${PROJECT}-stale`;
-    const staleTask = `wi-${PROJECT}-3`;
-    created.add(stale);
-    created.add(staleTask);
+  it('treats a claim by another conductor as finished', async () => {
+    const stale = `run-${PROJECT}-stale`
+    const staleTask = `wi-${PROJECT}-3`
+    created.add(stale)
+    created.add(staleTask)
 
-    await store.append(staleTask, 0, [claim(stale, DEAD)]);
-    await store.append(stale, 0, [started(staleTask)]);
-    await plant(stale);
+    await store.append(staleTask, 0, [claim(stale, DEAD)])
+    await store.append(stale, 0, [started(staleTask)])
+    await plant(stale)
 
     // Nothing about the claim itself says it is dead — the claim check works
     // that out from the lock and hands the answer over.
-    expect((await findOrphans({ home, store, dryRun: true })).map((f) => f.stream)).not.toContain(
-      stale,
-    );
+    expect((await findOrphans({ home, store, dryRun: true })).map((f) => f.stream)).not.toContain(stale)
 
     const found = await findOrphans({
       home,
       store,
       dryRun: true,
       abandoned: new Set([staleTask]),
-    });
-    expect(found.map((f) => f.stream)).toContain(stale);
+    })
+    expect(found.map((f) => f.stream)).toContain(stale)
     // Still there: dryRun reports, it does not act. A doctor that changed what
     // it was checking would describe a state that no longer exists.
-    expect(await exists(wt(stale))).toBe(true);
-  });
+    expect(await exists(wt(stale))).toBe(true)
+  })
 
   /**
    * A worktree whose run never said what it was for is a mystery, and deleting
    * mysteries is how you stop being able to explain them.
    */
-  it("reports a worktree it cannot attribute, and does not remove it", async () => {
-    const nameless = `run-${PROJECT}-nameless`;
-    await plant(nameless);
+  it('reports a worktree it cannot attribute, and does not remove it', async () => {
+    const nameless = `run-${PROJECT}-nameless`
+    await plant(nameless)
 
-    const found = await reconcile({ home, store, worker: ME });
-    const it_ = found.find((f) => f.stream === nameless);
+    const found = await reconcile({ home, store, worker: ME })
+    const it_ = found.find((f) => f.stream === nameless)
 
-    expect(it_?.action).toBe("reported");
-    expect(await exists(wt(nameless))).toBe(true);
-  });
+    expect(it_?.action).toBe('reported')
+    expect(await exists(wt(nameless))).toBe(true)
+  })
 
   /**
    * **A log is kept until its ticket is done, and that is not the worktree's
@@ -161,70 +161,70 @@ describe("reconciliation", () => {
    * about the set.
    */
   it("reaps a landed item's log, keeps an unfinished one's, and reports a mystery", async () => {
-    const landed = `run-${PROJECT}-log-landed`;
-    const waiting = `run-${PROJECT}-log-waiting`;
-    const nameless = `run-${PROJECT}-log-nameless`;
-    const landedTask = `wi-${PROJECT}-10`;
-    const waitingTask = `wi-${PROJECT}-11`;
-    for (const id of [landed, waiting, landedTask, waitingTask]) created.add(id);
+    const landed = `run-${PROJECT}-log-landed`
+    const waiting = `run-${PROJECT}-log-waiting`
+    const nameless = `run-${PROJECT}-log-nameless`
+    const landedTask = `wi-${PROJECT}-10`
+    const waitingTask = `wi-${PROJECT}-11`
+    for (const id of [landed, waiting, landedTask, waitingTask]) created.add(id)
 
     await store.append(landedTask, 0, [
       claim(landed, ME),
-      { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "def5678", base: "main" } },
-    ]);
-    await store.append(landed, 0, [started(landedTask)]);
+      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'def5678', base: 'main' } },
+    ])
+    await store.append(landed, 0, [started(landedTask)])
 
     // Blocked on a person. The log is half of what they answer the question
     // with, so it must survive a reconcile that runs while they think.
     await store.append(waitingTask, 0, [
       claim(waiting, ME),
       {
-        type: "WorkItemBlocked",
-        actor: "conductor",
+        type: 'WorkItemBlocked',
+        actor: 'conductor',
         data: {
-          question: "merge it?",
-          needsFrom: "human",
+          question: 'merge it?',
+          needsFrom: 'human',
           runId: waiting,
-          needs: "judgement",
+          needs: 'judgement',
           diagnosis: null,
         },
       },
-    ]);
-    await store.append(waiting, 0, [started(waitingTask)]);
+    ])
+    await store.append(waiting, 0, [started(waitingTask)])
 
-    for (const id of [landed, waiting, nameless]) await plantLog(id);
+    for (const id of [landed, waiting, nameless]) await plantLog(id)
 
     // Reported before anything is touched, so a `lingtai doctor` reading the
     // same function says what would happen without making it happen.
-    const dry = await findOrphanLogs({ home, store, dryRun: true });
-    expect(dry.find((f) => f.stream === landed)?.action).toBe("reported");
+    const dry = await findOrphanLogs({ home, store, dryRun: true })
+    expect(dry.find((f) => f.stream === landed)?.action).toBe('reported')
 
-    const found = await reconcile({ home, store, worker: ME });
+    const found = await reconcile({ home, store, worker: ME })
 
-    expect(found.find((f) => f.stream === landed)?.action).toBe("removed");
-    expect(await exists(rl(landed))).toBe(false);
+    expect(found.find((f) => f.stream === landed)?.action).toBe('removed')
+    expect(await exists(rl(landed))).toBe(false)
 
     // Not a finding at all: nothing has diverged, the file is doing its job.
-    expect(found.map((f) => f.stream)).not.toContain(waiting);
-    expect(await exists(rl(waiting))).toBe(true);
+    expect(found.map((f) => f.stream)).not.toContain(waiting)
+    expect(await exists(rl(waiting))).toBe(true)
 
     // Deleting mysteries is how you stop being able to explain them.
-    expect(found.find((f) => f.stream === nameless)?.action).toBe("reported");
-    expect(await exists(rl(nameless))).toBe(true);
-  });
+    expect(found.find((f) => f.stream === nameless)?.action).toBe('reported')
+    expect(await exists(rl(nameless))).toBe(true)
+  })
 
-  it("appends nothing when there is nothing to say", async () => {
-    const quiet = await mkdtemp(join(tmpdir(), "lingtai-quiet-"));
-    const before = (await store.read("ctl-conductor")).length;
+  it('appends nothing when there is nothing to say', async () => {
+    const quiet = await mkdtemp(join(tmpdir(), 'lingtai-quiet-'))
+    const before = (await store.read('ctl-conductor')).length
 
-    const found = await reconcile({ home: quiet, store, worker: ME });
+    const found = await reconcile({ home: quiet, store, worker: ME })
 
-    expect(found).toEqual([]);
+    expect(found).toEqual([])
     // An empty Reconciled on every startup would be noise in the one place
     // noise is expensive.
-    expect((await store.read("ctl-conductor")).length).toBe(before);
-  });
-});
+    expect((await store.read('ctl-conductor')).length).toBe(before)
+  })
+})
 
 /**
  * #87, and the reason 0027 deleted the lease.
@@ -240,106 +240,106 @@ describe("reconciliation", () => {
  * no clock injected and no window to sit out, because what decides it is who
  * holds `lingtai:daemon` and not how old the claim is.
  */
-describe("a conductor that replaces a dead one", () => {
+describe('a conductor that replaces a dead one', () => {
   /** Its own worktree root, so the claim check is the only thing under test. */
-  let quiet: string;
+  let quiet: string
   beforeAll(async () => {
-    quiet = await mkdtemp(join(tmpdir(), "lingtai-inherit-"));
-  });
+    quiet = await mkdtemp(join(tmpdir(), 'lingtai-inherit-'))
+  })
 
   /** The projection has to exist before the queue can subtract from it. */
   async function build(): Promise<void> {
-    const runner = createProjectionRunner({ projection: taskViewProjection, store });
+    const runner = createProjectionRunner({ projection: taskViewProjection, store })
     try {
-      await runner.start();
+      await runner.start()
     } finally {
-      await runner.close();
+      await runner.close()
     }
   }
 
-  it("releases the claim it inherited, and the ticket is offered on the next pass", async () => {
-    const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
+  it('releases the claim it inherited, and the ticket is offered on the next pass', async () => {
+    const project = `esctest${crypto.randomUUID().slice(0, 6)}`
     const projects: ProjectState[] = [
       {
         project,
-        owner: "steven-zhc",
-        base: "main",
-        configHash: "seeded",
-        fromSha: "0".repeat(40),
+        owner: 'steven-zhc',
+        base: 'main',
+        configHash: 'seeded',
+        fromSha: '0'.repeat(40),
         refused: null,
         version: 1,
         lastSeq: null,
       },
-    ];
-    const taskId = `wi-${project}-87`;
-    const runId = `run-${project}-orphan`;
-    created.add(taskId);
-    created.add(runId);
+    ]
+    const taskId = `wi-${project}-87`
+    const runId = `run-${project}-orphan`
+    created.add(taskId)
+    created.add(runId)
 
     // The killed conductor took it and never came back. Nothing released it,
     // and nothing was ever going to. Its worktree is still on disk holding a
     // branch checked out, which is why both halves have to happen in one pass.
-    await store.append(taskId, 0, [claim(runId, DEAD, "three claims, the last orphaned")]);
-    await store.append(runId, 0, [started(taskId)]);
-    const orphanTree = join(quiet, "worktrees", project, runId);
-    await mkdir(orphanTree, { recursive: true });
-    await writeFile(join(orphanTree, "file.txt"), "work in progress");
-    await build();
+    await store.append(taskId, 0, [claim(runId, DEAD, 'three claims, the last orphaned')])
+    await store.append(runId, 0, [started(taskId)])
+    const orphanTree = join(quiet, 'worktrees', project, runId)
+    await mkdir(orphanTree, { recursive: true })
+    await writeFile(join(orphanTree, 'file.txt'), 'work in progress')
+    await build()
 
-    const offered = [{ ref: "87", title: "three claims, the last orphaned", kind: "bug" }];
+    const offered = [{ ref: '87', title: 'three claims, the last orphaned', kind: 'bug' }]
     // Out of circulation: `task_view` folds a claim as `running`, and the queue
     // offers nothing that is not `queued`. `backoffMs: 0` so the only thing
     // being tested is the claim — a blind retry is 0028's subject, not this one.
-    expect(await selectRunnable({ project, offered, kinds: ["bug"], backoffMs: 0 })).toEqual([]);
+    expect(await selectRunnable({ project, offered, kinds: ['bug'], backoffMs: 0 })).toEqual([])
 
     // The new conductor starts. It holds the lock, so it is the only conductor,
     // so `local:22222` is dead — whatever any timestamp says.
-    const found = await reconcile({ home: quiet, store, worker: ME, projects });
+    const found = await reconcile({ home: quiet, store, worker: ME, projects })
 
-    const release = found.find((f) => f.stream === taskId);
-    expect(release?.action).toBe("released");
+    const release = found.find((f) => f.stream === taskId)
+    expect(release?.action).toBe('released')
     // Cites the lock, not a clock.
-    expect(release?.expected).toContain("lingtai:daemon");
+    expect(release?.expected).toContain('lingtai:daemon')
 
     // And the directory went with it, in the same pass — a worktree left
     // holding `agent/87` would stop git updating that ref on the next attempt.
-    expect(found.find((f) => f.stream === runId)?.action).toBe("removed");
-    expect(await exists(orphanTree)).toBe(false);
+    expect(found.find((f) => f.stream === runId)?.action).toBe('removed')
+    expect(await exists(orphanTree)).toBe(false)
 
     // An appended event, never a recomputation: `rebuild task_view` replays
     // this same row and reaches the same answer, which it could not do if
     // `queued` were a function of the current time.
-    const types = (await store.read(taskId)).map((e) => e.type);
-    expect(types).toEqual(["WorkItemClaimed", "WorkItemReleased"]);
+    const types = (await store.read(taskId)).map((e) => e.type)
+    expect(types).toEqual(['WorkItemClaimed', 'WorkItemReleased'])
 
-    await build();
-    expect(
-      (await selectRunnable({ project, offered, kinds: ["bug"], backoffMs: 0 })).map((r) => r.issue),
-    ).toEqual(["87"]);
-  });
+    await build()
+    expect((await selectRunnable({ project, offered, kinds: ['bug'], backoffMs: 0 })).map((r) => r.issue)).toEqual([
+      '87',
+    ])
+  })
 
   /** The other half of the proof: this conductor's own claims are not foreign. */
-  it("leaves its own claim alone", async () => {
-    const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
+  it('leaves its own claim alone', async () => {
+    const project = `esctest${crypto.randomUUID().slice(0, 6)}`
     const projects: ProjectState[] = [
       {
         project,
-        owner: "steven-zhc",
-        base: "main",
-        configHash: "seeded",
-        fromSha: "0".repeat(40),
+        owner: 'steven-zhc',
+        base: 'main',
+        configHash: 'seeded',
+        fromSha: '0'.repeat(40),
         refused: null,
         version: 1,
         lastSeq: null,
       },
-    ];
-    const taskId = `wi-${project}-1`;
-    created.add(taskId);
-    await store.append(taskId, 0, [claim(`run-${project}-mine`, ME)]);
+    ]
+    const taskId = `wi-${project}-1`
+    created.add(taskId)
+    await store.append(taskId, 0, [claim(`run-${project}-mine`, ME)])
 
-    const found = await reconcile({ home: quiet, store, worker: ME, projects });
+    const found = await reconcile({ home: quiet, store, worker: ME, projects })
 
-    expect(found.find((f) => f.stream === taskId)).toBeUndefined();
-    expect((await store.read(taskId)).map((e) => e.type)).toEqual(["WorkItemClaimed"]);
-  });
-});
+    expect(found.find((f) => f.stream === taskId)).toBeUndefined()
+    expect((await store.read(taskId)).map((e) => e.type)).toEqual(['WorkItemClaimed'])
+  })
+})

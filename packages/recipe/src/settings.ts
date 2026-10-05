@@ -61,10 +61,11 @@
  * which is the failure `#231` found, arriving through a half-moved setting rather
  * than through a reader.
  */
-import { STEPS, type Step } from "@lingtai/domain";
-import { parseDuration } from "./duration.ts";
-import { isBuiltInJudge } from "./judges.ts";
-import type { QueueSettings, Recipe, StepAction } from "./recipe.ts";
+import { STEPS, type Step } from '@lingtai/domain'
+
+import { parseDuration } from './duration.ts'
+import { isBuiltInJudge } from './judges.ts'
+import type { QueueSettings, Recipe, StepAction } from './recipe.ts'
 
 /**
  * What one call this step makes may spend, **as a dispatch's own `limits:`**, or
@@ -77,9 +78,9 @@ import type { QueueSettings, Recipe, StepAction } from "./recipe.ts";
  * action that never runs.
  */
 function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | null | undefined {
-  if ("agent" in action) return action.limits ?? null;
-  if ("judge" in action && !isBuiltInJudge(action.judge)) return action.limits ?? null;
-  return undefined;
+  if ('agent' in action) return action.limits ?? null
+  if ('judge' in action && !isBuiltInJudge(action.judge)) return action.limits ?? null
+  return undefined
 }
 
 /**
@@ -114,27 +115,27 @@ function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | n
  * *a recipe nobody edited resolves to the same values* is cheap to assert
  * (0070 §8).
  */
-export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits"] {
-  const ceiling = recipe.runtime.limits;
-  const ceilingWallMs = parseDuration(ceiling.wall);
-  let turns = 0;
-  let wall = ceiling.wall;
-  let wallMs = 0;
-  let dispatches = 0;
+export function limitsFor(recipe: Recipe, step: Step): Recipe['runtime']['limits'] {
+  const ceiling = recipe.runtime.limits
+  const ceilingWallMs = parseDuration(ceiling.wall)
+  let turns = 0
+  let wall = ceiling.wall
+  let wallMs = 0
+  let dispatches = 0
   for (const action of recipe.steps[step]) {
-    const own = dispatchedBy(action);
-    if (own === undefined) continue;
-    dispatches += 1;
-    turns = Math.max(turns, own?.turns ?? ceiling.turns);
-    const ms = own?.wall === undefined ? ceilingWallMs : parseDuration(own.wall);
+    const own = dispatchedBy(action)
+    if (own === undefined) continue
+    dispatches += 1
+    turns = Math.max(turns, own?.turns ?? ceiling.turns)
+    const ms = own?.wall === undefined ? ceilingWallMs : parseDuration(own.wall)
     if (ms > wallMs) {
-      wallMs = ms;
-      wall = own?.wall ?? ceiling.wall;
+      wallMs = ms
+      wall = own?.wall ?? ceiling.wall
     }
   }
-  if (dispatches === 0) return ceiling;
-  if (turns === ceiling.turns && wallMs === ceilingWallMs) return ceiling;
-  return { ...ceiling, turns, wall };
+  if (dispatches === 0) return ceiling
+  if (turns === ceiling.turns && wallMs === ceilingWallMs) return ceiling
+  return { ...ceiling, turns, wall }
 }
 
 /**
@@ -151,15 +152,15 @@ export function limitsFor(recipe: Recipe, step: Step): Recipe["runtime"]["limits
  * past them* greps the workspace for exactly that expression, and the day the
  * ceiling moves it moves here.
  */
-export function ceilingOf(recipe: Recipe): Recipe["runtime"]["limits"] {
-  return recipe.runtime.limits;
+export function ceilingOf(recipe: Recipe): Recipe['runtime']['limits'] {
+  return recipe.runtime.limits
 }
 
 /** A step that dispatches, and what it may spend — `boundsBesides`' rows. */
 export interface StepBound {
-  step: Step;
-  turns: number;
-  wall: string;
+  step: Step
+  turns: number
+  wall: string
 }
 
 /**
@@ -178,16 +179,16 @@ export interface StepBound {
  * `implement` would be a bound on a step that buys no agent at all.
  */
 export function boundsBesides(recipe: Recipe, named: Step): readonly StepBound[] {
-  const figure = limitsFor(recipe, named);
-  const rows: StepBound[] = [];
+  const figure = limitsFor(recipe, named)
+  const rows: StepBound[] = []
   for (const step of STEPS) {
-    if (step === named) continue;
-    if (!recipe.steps[step].some((action) => dispatchedBy(action) !== undefined)) continue;
-    const own = limitsFor(recipe, step);
-    if (own.turns === figure.turns && parseDuration(own.wall) === parseDuration(figure.wall)) continue;
-    rows.push({ step, turns: own.turns, wall: own.wall });
+    if (step === named) continue
+    if (!recipe.steps[step].some((action) => dispatchedBy(action) !== undefined)) continue
+    const own = limitsFor(recipe, step)
+    if (own.turns === figure.turns && parseDuration(own.wall) === parseDuration(figure.wall)) continue
+    rows.push({ step, turns: own.turns, wall: own.wall })
   }
-  return rows;
+  return rows
 }
 
 /**
@@ -199,13 +200,13 @@ export function boundsBesides(recipe: Recipe, named: Step): readonly StepBound[]
  * resolves, so *the first one* and *the only one* are the same entry here.
  */
 function cutAt(recipe: Recipe): { base: string; submodules: boolean } | null {
-  const declared = recipe.steps.admit.find((action) => "worktree" in action);
-  return declared === undefined ? null : declared.worktree;
+  const declared = recipe.steps.admit.find((action) => 'worktree' in action)
+  return declared === undefined ? null : declared.worktree
 }
 
 /** The branch a pass cuts from and lands on. */
 export function baseOf(recipe: Recipe): string {
-  return cutAt(recipe)?.base ?? recipe.repo.base;
+  return cutAt(recipe)?.base ?? recipe.repo.base
 }
 
 /**
@@ -220,7 +221,7 @@ export function baseOf(recipe: Recipe): string {
  * message rather than through a reader.
  */
 export function baseWrittenAt(recipe: Recipe): string {
-  return cutAt(recipe) === null ? "repo.base" : "steps.admit's worktree.base";
+  return cutAt(recipe) === null ? 'repo.base' : "steps.admit's worktree.base"
 }
 
 /**
@@ -238,7 +239,7 @@ export function baseWrittenAt(recipe: Recipe): string {
  * way that reads as the agent's fault.
  */
 export function submodulesOf(recipe: Recipe): boolean {
-  return cutAt(recipe)?.submodules ?? recipe.repo.submodules;
+  return cutAt(recipe)?.submodules ?? recipe.repo.submodules
 }
 
 /**
@@ -251,16 +252,16 @@ export function submodulesOf(recipe: Recipe): boolean {
  * *the only one* are the same entry here.
  */
 function takeAt(recipe: Recipe): QueueSettings | null {
-  const declared = recipe.steps.claim.find((action) => "queue" in action);
-  return declared === undefined ? null : declared.queue;
+  const declared = recipe.steps.claim.find((action) => 'queue' in action)
+  return declared === undefined ? null : declared.queue
 }
 
 /**
  * The kinds the queue takes, **in priority order** — the order is the
  * meaning, so this returns the list rather than a set.
  */
-export function kindsOf(recipe: Recipe): Recipe["source"]["kinds"] {
-  return takeAt(recipe)?.kinds ?? recipe.source.kinds;
+export function kindsOf(recipe: Recipe): Recipe['source']['kinds'] {
+  return takeAt(recipe)?.kinds ?? recipe.source.kinds
 }
 
 /**
@@ -272,8 +273,8 @@ export function kindsOf(recipe: Recipe): Recipe["source"]["kinds"] {
  * because the match is case-insensitive and that is the *matcher's* rule rather
  * than this list's.
  */
-export function excludeOf(recipe: Recipe): Recipe["source"]["exclude"] {
-  return takeAt(recipe)?.exclude ?? recipe.source.exclude;
+export function excludeOf(recipe: Recipe): Recipe['source']['exclude'] {
+  return takeAt(recipe)?.exclude ?? recipe.source.exclude
 }
 
 /**
@@ -285,8 +286,8 @@ export function excludeOf(recipe: Recipe): Recipe["source"]["exclude"] {
  * the string, and 0028's whole point is that the value is the repository's own
  * and is read back by whoever set it.
  */
-export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
-  return takeAt(recipe)?.backoff ?? recipe.source.backoff;
+export function backoffOf(recipe: Recipe): Recipe['source']['backoff'] {
+  return takeAt(recipe)?.backoff ?? recipe.source.backoff
 }
 
 /**
@@ -311,8 +312,8 @@ export function backoffOf(recipe: Recipe): Recipe["source"]["backoff"] {
  * *the step said* and *`runtime:` said*, and a block that named only its
  * kinds cannot silently hand this machine somebody else's tickets (`#269`).
  */
-export function assigneeOf(recipe: Recipe): Recipe["runtime"]["assignee"] {
-  return takeAt(recipe)?.assignee ?? recipe.runtime.assignee;
+export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
+  return takeAt(recipe)?.assignee ?? recipe.runtime.assignee
 }
 
 /**
@@ -341,7 +342,7 @@ export function queueOf(recipe: Recipe): QueueSettings {
     exclude: excludeOf(recipe),
     backoff: backoffOf(recipe),
     assignee: assigneeOf(recipe) ?? EVERYONE,
-  };
+  }
 }
 
 /**
@@ -349,4 +350,4 @@ export function queueOf(recipe: Recipe): QueueSettings {
  * assigned to**, which is how the queue behaved before it read an assignee at
  * all (`assigneeSkip`).
  */
-const EVERYONE = { take: "both" } as const;
+const EVERYONE = { take: 'both' } as const

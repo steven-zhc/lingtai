@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 /**
  * Reading code out of the mirror, without a worktree.
  *
@@ -21,25 +23,25 @@
  * that case is `#89`'s second attempt and reading `main` silently instead is
  * what killed the repair.
  */
-import { stateDir } from "@lingtai/env";
-import { join } from "node:path";
-import { git } from "./git.ts";
+import { stateDir } from '@lingtai/env'
+
+import { git } from './git.ts'
 
 /** `<home>/repos/<project>.git`. The bare clone the conductor cuts worktrees from. */
 export function mirrorPathFor(project: string, home = stateDir()): string {
-  return join(home, "repos", `${project}.git`);
+  return join(home, 'repos', `${project}.git`)
 }
 
 export interface MirrorOptions {
-  project: string;
-  home?: string;
+  project: string
+  home?: string
 }
 
 /** The commit a ref points at, or null when the mirror has no such ref. */
 export async function refSha(options: MirrorOptions & { ref: string }): Promise<string | null> {
-  return git(["rev-parse", "--verify", `${options.ref}^{commit}`], {
+  return git(['rev-parse', '--verify', `${options.ref}^{commit}`], {
     cwd: mirrorPathFor(options.project, options.home),
-  }).catch(() => null);
+  }).catch(() => null)
 }
 
 /**
@@ -52,14 +54,14 @@ export async function refSha(options: MirrorOptions & { ref: string }): Promise<
 export async function readAt(
   options: MirrorOptions & { ref: string; path: string; limitBytes?: number },
 ): Promise<string | null> {
-  const limit = options.limitBytes ?? 64_000;
-  const text = await git(["show", `${options.ref}:${options.path}`], {
+  const limit = options.limitBytes ?? 64_000
+  const text = await git(['show', `${options.ref}:${options.path}`], {
     cwd: mirrorPathFor(options.project, options.home),
-  }).catch(() => null);
-  if (text === null) return null;
+  }).catch(() => null)
+  if (text === null) return null
   return text.length > limit
     ? `${text.slice(0, limit)}\n\n[truncated at ${limit} bytes; the file is ${text.length}]`
-    : text;
+    : text
 }
 
 /**
@@ -72,11 +74,11 @@ export async function readAt(
 export async function listAt(
   options: MirrorOptions & { ref: string; limit?: number },
 ): Promise<{ paths: string[]; truncated: boolean }> {
-  const limit = options.limit ?? 1_500;
-  const out = await git(["ls-tree", "-r", "--name-only", options.ref], {
+  const limit = options.limit ?? 1_500
+  const out = await git(['ls-tree', '-r', '--name-only', options.ref], {
     cwd: mirrorPathFor(options.project, options.home),
-  }).catch(() => null);
-  if (out === null) return { paths: [], truncated: false };
-  const paths = out.split("\n").filter((p) => p !== "");
-  return { paths: paths.slice(0, limit), truncated: paths.length > limit };
+  }).catch(() => null)
+  if (out === null) return { paths: [], truncated: false }
+  const paths = out.split('\n').filter((p) => p !== '')
+  return { paths: paths.slice(0, limit), truncated: paths.length > limit }
 }

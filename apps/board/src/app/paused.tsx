@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * What the board says when the conductor has been told to take nothing.
@@ -25,15 +25,16 @@
  * hosting the work reads it on its next opportunity (0013). So the button
  * asks once before it acts: this is the whole installation, not one card.
  */
-import { useState, useTransition } from "react";
-import { resumeWork } from "./actions.ts";
+import { useState, useTransition } from 'react'
+
+import { resumeWork } from './actions.ts'
 
 export function Paused({ by, reason }: { by: string | null; reason: string | null }) {
-  const [asking, setAsking] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [asking, setAsking] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
 
-  const said = `paused by ${by ?? "somebody"}${reason ? ` — ${reason}` : ""}`;
+  const said = `paused by ${by ?? 'somebody'}${reason ? ` — ${reason}` : ''}`
 
   return (
     <>
@@ -43,8 +44,8 @@ export function Paused({ by, reason }: { by: string | null; reason: string | nul
         paused
       </span>
       <span className="why" title={said}>
-        by {by ?? "somebody"}
-        {reason ? ` — ${reason}` : ""}
+        by {by ?? 'somebody'}
+        {reason ? ` — ${reason}` : ''}
       </span>
       {asking ? (
         <span className="btnrow">
@@ -54,18 +55,18 @@ export function Paused({ by, reason }: { by: string | null; reason: string | nul
             className="btn held"
             disabled={pending}
             onClick={() => {
-              setRefusal(null);
+              setRefusal(null)
               startTransition(async () => {
-                const result = await resumeWork();
+                const result = await resumeWork()
                 // Reverted, with the server's own sentence. The chip stays
                 // paused, because it is: this reports the append, and the
                 // append is what a re-read will find or not find.
-                if (!result.ok) setRefusal(result.detail);
-                else setAsking(false);
-              });
+                if (!result.ok) setRefusal(result.detail)
+                else setAsking(false)
+              })
             }}
           >
-            {pending ? "…" : "Resume — sure?"}
+            {pending ? '…' : 'Resume — sure?'}
           </button>
           <button className="btn" disabled={pending} onClick={() => setAsking(false)}>
             Cancel
@@ -78,5 +79,5 @@ export function Paused({ by, reason }: { by: string | null; reason: string | nul
       )}
       {refusal ? <span className="refusal">{refusal}</span> : null}
     </>
-  );
+  )
 }

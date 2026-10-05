@@ -28,12 +28,14 @@
  * writer at a time, and `seq` is assigned inside the write transaction, so
  * commit order is seq order.
  */
-import type { DatabaseSync, StatementSync } from "node:sqlite";
-import type { Envelope } from "@lingtai/domain";
-import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from "./event-store.ts";
-import type { Log } from "./log.ts";
-import type { LogQueries, UnconvergedUpdate } from "./queries.ts";
-import type { Waker } from "./wake.ts";
+import type { DatabaseSync, StatementSync } from 'node:sqlite'
+
+import type { Envelope } from '@lingtai/domain'
+
+import { ConcurrencyError, decodeRow, type EventStore, prepareAppend } from './event-store.ts'
+import type { Log } from './log.ts'
+import type { LogQueries, UnconvergedUpdate } from './queries.ts'
+import type { Waker } from './wake.ts'
 
 /**
  * How often a session asks whether the log moved.
@@ -49,7 +51,7 @@ import type { Waker } from "./wake.ts";
  * subscriber opens another session and drains everything after its `lastSeq`,
  * and the daemon's `SWEEP_MS` pass runs whether or not anything woke it.
  */
-export const POLL_MS = 100;
+export const POLL_MS = 100
 
 /**
  * How long a write waits on another writer before it fails. SQLite serialises
@@ -62,11 +64,11 @@ export const POLL_MS = 100;
  * on a timer instead — see `createPollingWaker`. This is also how long it
  * keeps trying before its session gives up.
  */
-const BUSY_MS = 5_000;
+const BUSY_MS = 5_000
 
 /** `SQLITE_BUSY` and `SQLITE_LOCKED`: somebody else has the file for now. */
-const SQLITE_BUSY = 5;
-const SQLITE_LOCKED = 6;
+const SQLITE_BUSY = 5
+const SQLITE_LOCKED = 6
 
 /**
  * `node:sqlite`, loaded when a log is first opened rather than when this file
@@ -76,16 +78,18 @@ const SQLITE_LOCKED = 6;
  * with it, where this fails only the SQLite store, by name. It is unflagged
  * from 22.13, which is why `engines` says so.
  */
-function sqlite(): typeof import("node:sqlite") {
-  const mod = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite") | undefined;
+function sqlite(): typeof import('node:sqlite') {
+  const mod = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite') | undefined
   if (mod === undefined) {
-    throw new Error(`the SQLite store needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`);
+    throw new Error(
+      `the SQLite store needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`,
+    )
   }
-  return mod;
+  return mod
 }
 
 /** SQLite's extended code for a UNIQUE violation, as `node:sqlite` reports it. */
-const SQLITE_CONSTRAINT_UNIQUE = 2067;
+const SQLITE_CONSTRAINT_UNIQUE = 2067
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS events (
@@ -100,7 +104,7 @@ const SCHEMA = `
     at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     UNIQUE (stream_id, version)
   );
-`;
+`
 
 /**
  * Opens — creating if absent — the log at `path`. `":memory:"` is a log nobody
@@ -115,24 +119,24 @@ const SCHEMA = `
  * second writer to fail with `SQLITE_BUSY` rather than wait.
  */
 export function openSqliteLog(path: string, busyMs: number = BUSY_MS): DatabaseSync {
-  const db = new (sqlite().DatabaseSync)(path);
+  const db = new (sqlite().DatabaseSync)(path)
   try {
-    db.exec(`PRAGMA busy_timeout = ${Math.trunc(busyMs)}`);
-    if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL");
-    db.exec(SCHEMA);
-    return db;
+    db.exec(`PRAGMA busy_timeout = ${Math.trunc(busyMs)}`)
+    if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL')
+    db.exec(SCHEMA)
+    return db
   } catch (err) {
-    db.close();
-    throw err;
+    db.close()
+    throw err
   }
 }
 
 /** Whether `err` is somebody else holding the file, which waiting cures. */
 function isBusy(err: unknown): boolean {
-  const code = (err as { errcode?: unknown }).errcode;
-  if (typeof code !== "number") return false;
-  const primary = code & 0xff;
-  return primary === SQLITE_BUSY || primary === SQLITE_LOCKED;
+  const code = (err as { errcode?: unknown }).errcode
+  if (typeof code !== 'number') return false
+  const primary = code & 0xff
+  return primary === SQLITE_BUSY || primary === SQLITE_LOCKED
 }
 
 /**
@@ -141,31 +145,31 @@ function isBusy(err: unknown): boolean {
  * column must not be mistaken for a lost race.
  */
 function isVersionConflict(err: unknown): boolean {
-  const e = err as { errcode?: unknown; message?: unknown };
+  const e = err as { errcode?: unknown; message?: unknown }
   return (
     e.errcode === SQLITE_CONSTRAINT_UNIQUE &&
-    typeof e.message === "string" &&
-    e.message.includes("events.stream_id, events.version")
-  );
+    typeof e.message === 'string' &&
+    e.message.includes('events.stream_id, events.version')
+  )
 }
 
 interface SqliteRow {
-  seq: bigint;
-  stream_id: string;
-  version: bigint;
-  type: string;
-  schema_ver: bigint;
-  data: string;
-  actor: string;
-  causation: bigint | null;
-  at: string;
+  seq: bigint
+  stream_id: string
+  version: bigint
+  type: string
+  schema_ver: bigint
+  data: string
+  actor: string
+  causation: bigint | null
+  at: string
 }
 
 function toEnvelope(row: SqliteRow): Envelope {
-  const at = new Date(row.at);
+  const at = new Date(row.at)
   // Loud rather than an `Invalid Date` carried into a projection — the rule
   // `timestamptz.ts` exists for.
-  if (Number.isNaN(at.getTime())) throw new Error(`event ${row.seq} has an unreadable time: ${row.at}`);
+  if (Number.isNaN(at.getTime())) throw new Error(`event ${row.seq} has an unreadable time: ${row.at}`)
   return decodeRow(
     {
       seq: row.seq,
@@ -178,13 +182,13 @@ function toEnvelope(row: SqliteRow): Envelope {
       causation: row.causation,
     },
     at,
-  );
+  )
 }
 
 /** Every integer comes back a bigint, so `seq` never loses precision past 2^53. */
 function bigints(statement: StatementSync): StatementSync {
-  statement.setReadBigInts(true);
-  return statement;
+  statement.setReadBigInts(true)
+  return statement
 }
 
 export function createSqliteEventStore(db: DatabaseSync): EventStore {
@@ -194,22 +198,20 @@ export function createSqliteEventStore(db: DatabaseSync): EventStore {
        VALUES (?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     ),
-  );
-  const readStream = bigints(
-    db.prepare("SELECT * FROM events WHERE stream_id = ? AND version >= ? ORDER BY version"),
-  );
-  const readLog = bigints(db.prepare("SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?"));
+  )
+  const readStream = bigints(db.prepare('SELECT * FROM events WHERE stream_id = ? AND version >= ? ORDER BY version'))
+  const readLog = bigints(db.prepare('SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?'))
 
   return {
     async append(streamId, expectedVersion, events) {
-      const rows = prepareAppend(streamId, expectedVersion, events);
-      if (rows.length === 0) return [];
+      const rows = prepareAppend(streamId, expectedVersion, events)
+      if (rows.length === 0) return []
 
       // `node:sqlite` is synchronous, so nothing else in this process runs
       // between BEGIN and COMMIT. IMMEDIATE takes the write lock up front, so a
       // second process waits at the start of the batch rather than failing in
       // the middle of it.
-      db.exec("BEGIN IMMEDIATE");
+      db.exec('BEGIN IMMEDIATE')
       try {
         const written = rows.map((r) =>
           toEnvelope(
@@ -223,16 +225,16 @@ export function createSqliteEventStore(db: DatabaseSync): EventStore {
               r.causation,
             ) as unknown as SqliteRow,
           ),
-        );
-        db.exec("COMMIT");
-        return written;
+        )
+        db.exec('COMMIT')
+        return written
       } catch (err) {
         // The error that got here is the one to report. SQLite may already
         // have ended the transaction itself, and then `ROLLBACK` throws *no
         // transaction is active* — which, let through, would turn a lost race
         // into a crash for a caller that retries on `ConcurrencyError`.
         try {
-          db.exec("ROLLBACK");
+          db.exec('ROLLBACK')
         } catch {
           // Nothing left to roll back.
         }
@@ -242,27 +244,27 @@ export function createSqliteEventStore(db: DatabaseSync): EventStore {
             expectedVersion,
             rows.map((r) => r.version),
             { cause: err },
-          );
+          )
         }
-        throw err;
+        throw err
       }
     },
 
     async read(streamId, fromVersion = 1) {
-      return readStream.all(streamId, fromVersion).map((r) => toEnvelope(r as unknown as SqliteRow));
+      return readStream.all(streamId, fromVersion).map((r) => toEnvelope(r as unknown as SqliteRow))
     },
 
     async readAll(fromSeq, limit) {
-      return readLog.all(fromSeq, limit).map((r) => toEnvelope(r as unknown as SqliteRow));
+      return readLog.all(fromSeq, limit).map((r) => toEnvelope(r as unknown as SqliteRow))
     },
-  };
+  }
 }
 
 export interface PollingWakerOptions {
   /** The log's file — the same one the store writes. Not `:memory:`, which no second connection can see. */
-  path: string;
+  path: string
   /** Defaults to `POLL_MS`. Replaceable so a test need not wait on the real one. */
-  intervalMs?: number;
+  intervalMs?: number
 }
 
 /**
@@ -282,80 +284,80 @@ export interface PollingWakerOptions {
  * before `ready` rejects, and a busy poll is simply skipped until the next.
  */
 export function createPollingWaker(options: PollingWakerOptions): Waker {
-  const every = options.intervalMs ?? POLL_MS;
+  const every = options.intervalMs ?? POLL_MS
   return {
     open(listener) {
-      let db: DatabaseSync | null = null;
-      let timer: NodeJS.Timeout | undefined;
-      let closed = false;
+      let db: DatabaseSync | null = null
+      let timer: NodeJS.Timeout | undefined
+      let closed = false
 
       const stop = () => {
-        clearInterval(timer);
-        timer = undefined;
+        clearInterval(timer)
+        timer = undefined
         try {
-          db?.close();
+          db?.close()
         } catch {
           // Already closed. `close()` must never throw.
         }
-        db = null;
-      };
+        db = null
+      }
 
       const ready = (async () => {
-        const giveUp = Date.now() + BUSY_MS;
-        let head: StatementSync;
-        let seen: bigint;
+        const giveUp = Date.now() + BUSY_MS
+        let head: StatementSync
+        let seen: bigint
         for (;;) {
-          if (closed) return;
+          if (closed) return
           try {
-            db = openSqliteLog(options.path, 0);
-            head = bigints(db.prepare("SELECT coalesce(max(seq), 0) AS head FROM events"));
-            seen = (head.get() as { head: bigint }).head;
-            break;
+            db = openSqliteLog(options.path, 0)
+            head = bigints(db.prepare('SELECT coalesce(max(seq), 0) AS head FROM events'))
+            seen = (head.get() as { head: bigint }).head
+            break
           } catch (err) {
-            stop();
-            if (!isBusy(err) || Date.now() >= giveUp) throw err;
-            await new Promise((resolve) => setTimeout(resolve, Math.min(every, POLL_MS)));
+            stop()
+            if (!isBusy(err) || Date.now() >= giveUp) throw err
+            await new Promise((resolve) => setTimeout(resolve, Math.min(every, POLL_MS)))
           }
         }
         if (closed) {
-          stop();
-          return;
+          stop()
+          return
         }
         timer = setInterval(() => {
-          let now: bigint;
+          let now: bigint
           try {
-            now = (head.get() as { head: bigint }).head;
+            now = (head.get() as { head: bigint }).head
           } catch (err) {
             // Busy is somebody else's instant on the file, not a lost session:
             // the next poll asks again.
-            if (isBusy(err)) return;
+            if (isBusy(err)) return
             // A file that cannot be read can wake nobody. Said once, and the
             // subscriber opens another session — whose catch-up read is what
             // recovers anything this one missed.
-            stop();
-            if (!closed) listener.lost(err);
-            return;
+            stop()
+            if (!closed) listener.lost(err)
+            return
           }
           if (now !== seen) {
-            seen = now;
-            listener.nudge();
+            seen = now
+            listener.nudge()
           }
-        }, every);
-      })();
+        }, every)
+      })()
       ready.catch(() => {
-        stop();
-      });
+        stop()
+      })
 
       return {
         ready,
         close() {
-          if (closed) return;
-          closed = true;
-          stop();
+          if (closed) return
+          closed = true
+          stop()
         },
-      };
+      }
     },
-  };
+  }
 }
 
 // ------------------------------------------------------------- questions ----
@@ -378,8 +380,8 @@ export function createPollingWaker(options: PollingWakerOptions): Waker {
  */
 export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
   const streams = db.prepare(
-    "SELECT DISTINCT stream_id AS streamId FROM events WHERE stream_id LIKE ? ORDER BY stream_id",
-  );
+    'SELECT DISTINCT stream_id AS streamId FROM events WHERE stream_id LIKE ? ORDER BY stream_id',
+  )
 
   const endedWithout = db.prepare(
     `WITH over AS (
@@ -413,9 +415,9 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
          AND json_extract(resolved.data, '$.outcome') = over.outcome
      )
      ORDER BY over.streamId`,
-  );
+  )
 
-  const types = db.prepare("SELECT type, count(*) AS n FROM events GROUP BY type ORDER BY type");
+  const types = db.prepare('SELECT type, count(*) AS n FROM events GROUP BY type ORDER BY type')
 
   const unconverged = db.prepare(
     `WITH said AS (
@@ -439,7 +441,7 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
        ON ok.project = failed.project AND ok.issue = failed.issue AND ok.change = failed.change
      WHERE ok.seq IS NULL OR ok.seq < failed.seq
      ORDER BY failed.project, failed.issue, failed.change`,
-  );
+  )
 
   // `e.data` inside the correlated subquery is a bare column under a GROUP BY,
   // which SQLite allows and which is unambiguous here for the one reason that
@@ -460,32 +462,32 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
      WHERE e.type = 'PluginFailed'
      GROUP BY json_extract(e.data, '$.name')
      ORDER BY recent DESC, total DESC, name`,
-  );
+  )
 
   return {
     async projectStreams(prefix) {
-      return streams.all(`${prefix}%`).map((r) => (r as { streamId: string }).streamId);
+      return streams.all(`${prefix}%`).map((r) => (r as { streamId: string }).streamId)
     },
 
     async endedWithoutEndActions() {
       return endedWithout.all().map((r) => {
-        const row = r as { streamId: string; outcome: string };
+        const row = r as { streamId: string; outcome: string }
         return {
           streamId: row.streamId,
-          outcome: row.outcome === "closed" ? ("closed" as const) : ("landed" as const),
-        };
-      });
+          outcome: row.outcome === 'closed' ? ('closed' as const) : ('landed' as const),
+        }
+      })
     },
 
     async typeCounts() {
       return types.all().map((r) => {
-        const row = r as { type: string; n: number };
-        return { type: row.type, rows: Number(row.n) };
-      });
+        const row = r as { type: string; n: number }
+        return { type: row.type, rows: Number(row.n) }
+      })
     },
 
     async unconvergedUpdates() {
-      return unconverged.all().map((r) => r as unknown as UnconvergedUpdate);
+      return unconverged.all().map((r) => r as unknown as UnconvergedUpdate)
     },
 
     /**
@@ -498,18 +500,18 @@ export function createSqliteLogQueries(db: DatabaseSync): LogQueries {
      * comparison against it would be wrong in the same silent direction.
      */
     async subscriberFailures(since) {
-      const cutoff = since.toISOString();
+      const cutoff = since.toISOString()
       return subscriberRows.all(cutoff, cutoff).map((r) => {
-        const row = r as { name: string; total: number; recent: number; last: string | null };
+        const row = r as { name: string; total: number; recent: number; last: string | null }
         return {
           name: row.name,
           total: Number(row.total),
           recent: Number(row.recent),
           lastReason: row.last,
-        };
-      });
+        }
+      })
     },
-  };
+  }
 }
 
 /**
@@ -525,19 +527,19 @@ export function createSqliteLog(options: SqliteLogOptions): Log {
   const waker = createPollingWaker({
     path: options.path,
     ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
-  });
+  })
   return {
     store: createSqliteEventStore(options.db),
     queries: createSqliteLogQueries(options.db),
     waker: () => waker,
-  };
+  }
 }
 
 export interface SqliteLogOptions {
   /** An open log — `openSqliteLog(path)`. */
-  db: DatabaseSync;
+  db: DatabaseSync
   /** The same file, for the waker's own connection. Never `:memory:`. */
-  path: string;
+  path: string
   /** Defaults to `POLL_MS`. */
-  intervalMs?: number;
+  intervalMs?: number
 }

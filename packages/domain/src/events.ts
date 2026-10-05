@@ -15,8 +15,9 @@
  * Bump `SCHEMA_VER` for a type and add an upcaster rather than changing a
  * payload in place.
  */
-import { z } from "zod";
-import { Usage } from "./spend.ts";
+import { z } from 'zod'
+
+import { Usage } from './spend.ts'
 
 // ---------------------------------------------------------------- shared ----
 
@@ -48,8 +49,8 @@ import { Usage } from "./spend.ts";
  * it does not (ADR 0016 §6); containment is the worktree and the filtered
  * environment. `sandboxed` adds a filesystem boundary the runtime enforces.
  */
-export const Tier = z.enum(["open", "guarded", "sandboxed"]);
-export type Tier = z.infer<typeof Tier>;
+export const Tier = z.enum(['open', 'guarded', 'sandboxed'])
+export type Tier = z.infer<typeof Tier>
 
 /**
  * The ten steps a pass goes through, in the order it reaches them.
@@ -99,18 +100,18 @@ export type Tier = z.infer<typeof Tier>;
  * walks it is still load-bearing.
  */
 export const Step = z.enum([
-  "claim",
-  "admit",
-  "prepared",
-  "design",
-  "implement",
-  "build",
-  "review",
-  "proposed",
-  "merge",
-  "end",
-]);
-export type Step = z.infer<typeof Step>;
+  'claim',
+  'admit',
+  'prepared',
+  'design',
+  'implement',
+  'build',
+  'review',
+  'proposed',
+  'merge',
+  'end',
+])
+export type Step = z.infer<typeof Step>
 
 /**
  * The ten, in the order the loop reaches them.
@@ -119,10 +120,10 @@ export type Step = z.infer<typeof Step>;
  * need to iterate — `StepsResolved`, the board, `lingtai add` — and each writing
  * its own list is how one of them ends up missing a step and nobody notices.
  */
-export const STEPS = Step.options;
+export const STEPS = Step.options
 
-export const RuntimeId = z.enum(["claude-code", "codex"]);
-export type RuntimeId = z.infer<typeof RuntimeId>;
+export const RuntimeId = z.enum(['claude-code', 'codex'])
+export type RuntimeId = z.infer<typeof RuntimeId>
 
 /**
  * Why an integration did not happen. Every one of these was a silent
@@ -130,19 +131,19 @@ export type RuntimeId = z.infer<typeof RuntimeId>;
  * label, and five re-runs of the same ticket before anyone noticed.
  */
 export const RefusalReason = z.enum([
-  "conflict",
-  "dirty-base",
-  "unpushed-base",
-  "pending-migration",
-  "verify-failed",
-  "no-commits",
+  'conflict',
+  'dirty-base',
+  'unpushed-base',
+  'pending-migration',
+  'verify-failed',
+  'no-commits',
   /**
    * Two integrations computed against one base, found where git finds it: the
    * ref update is atomic, one push lands and the other is rejected as not a
    * fast-forward. It is what `lane-busy` below was, discovered one step later
    * and by the thing that was always the guarantee (#194).
    */
-  "push-rejected",
+  'push-rejected',
   /**
    * **Never written since #194, and never removable.**
    *
@@ -156,21 +157,21 @@ export const RefusalReason = z.enum([
    * type — this comment is the whole of the marking, and `attribution.ts` still
    * has a sentence and a move for it.
    */
-  "lane-busy",
-]);
-export type RefusalReason = z.infer<typeof RefusalReason>;
+  'lane-busy',
+])
+export type RefusalReason = z.infer<typeof RefusalReason>
 
 // ------------------------------------------------------------- work item ----
 
 export const WorkItemDiscovered = z.object({
   project: z.string(),
-  source: z.enum(["github-issue", "manual", "agent-followup"]),
+  source: z.enum(['github-issue', 'manual', 'agent-followup']),
   externalRef: z.string(),
   title: z.string(),
   /** A label of the repository's, not a member of a set this file keeps. */
   kind: z.string(),
   labels: z.array(z.string()),
-});
+})
 
 export const WorkItemClaimed = z.object({
   runId: z.string(),
@@ -198,9 +199,9 @@ export const WorkItemClaimed = z.object({
    */
   title: z.string().nullable(),
   kind: z.string().nullable(),
-});
+})
 
-export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string() });
+export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string() })
 
 /**
  * What to do about a block, in the vocabulary of the controls that exist.
@@ -215,11 +216,11 @@ export const WorkItemReleased = z.object({ runId: z.string(), reason: z.string()
  * out would be a sentence rather than a recommendation.
  */
 export const BlockRecommendation = z.object({
-  action: z.enum(["approve", "reject", "requeue"]),
+  action: z.enum(['approve', 'reject', 'requeue']),
   /** Why that is the move. The half that makes it a recommendation and not a guess. */
   why: z.string(),
-});
-export type BlockRecommendation = z.infer<typeof BlockRecommendation>;
+})
+export type BlockRecommendation = z.infer<typeof BlockRecommendation>
 
 /**
  * What happened, what was done about it, and what to do now.
@@ -246,8 +247,8 @@ export const BlockDiagnosis = z.object({
   /** The failure as it arrived, untouched. Null when there was no raw output. */
   raw: z.string().nullable(),
   recommendation: BlockRecommendation.nullable(),
-});
-export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>;
+})
+export type BlockDiagnosis = z.infer<typeof BlockDiagnosis>
 
 export const WorkItemBlocked = z.object({
   /** The question, not just the fact. The old `agent:blocked` label carried no question. */
@@ -264,7 +265,7 @@ export const WorkItemBlocked = z.object({
    * a legal state nobody can reach, which is how the need went unmet for as
    * long as it did.
    */
-  needsFrom: z.enum(["human", "external"]),
+  needsFrom: z.enum(['human', 'external']),
   /**
    * The run that asked, or null for a question asked **before any run** — by
    * `lingtai ask`, which is the one appender that has no run to name (#147).
@@ -287,10 +288,10 @@ export const WorkItemBlocked = z.object({
    * Null on a v1 event, which recorded neither — and guessing which of the two
    * a historical block was would be worse than saying so.
    */
-  needs: z.enum(["judgement", "acknowledgement"]).nullable(),
+  needs: z.enum(['judgement', 'acknowledgement']).nullable(),
   /** Null when nobody has diagnosed it, which is every block written before #83. */
   diagnosis: BlockDiagnosis.nullable(),
-});
+})
 
 /**
  * A person answered the block. `note` **is** the answer — `lingtai answer`'s
@@ -307,18 +308,18 @@ export const WorkItemUnblocked = z.object({
   by: z.string(),
   note: z.string(),
   withdrawn: z.literal(true).optional(),
-});
+})
 
 /**
  * How "merged is not correct" becomes queryable. #134 and #136 were bugs filed
  * against code that #58 had already merged, and nothing connected them.
  */
 export const WorkItemLinked = z.object({
-  relation: z.enum(["caused-by", "follows-up", "duplicates"]),
+  relation: z.enum(['caused-by', 'follows-up', 'duplicates']),
   otherRef: z.string(),
-});
+})
 
-export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string() });
+export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string() })
 
 /**
  * A person decided nobody is going to do this — the second terminal, and the
@@ -341,19 +342,16 @@ export const WorkItemLanded = z.object({ mergeCommit: z.string(), base: z.string
  * intent that is no longer the intent, into every prompt after it. If the work
  * is wanted again, open a new ticket.
  */
-export const WorkItemClosed = z.object({ by: z.string(), reason: z.string() });
+export const WorkItemClosed = z.object({ by: z.string(), reason: z.string() })
 
 /** Capability matching refused the dispatch. Never silently downgrade a tier. */
 export const DispatchRefused = z.object({
   requiredTier: Tier,
   runtime: RuntimeId,
   missing: z.array(z.string()),
-});
+})
 
 // --------------------------------------------------------------- prepare ----
-
-
-
 
 // ------------------------------------------------------------------- run ----
 
@@ -386,8 +384,8 @@ export const Invocation = z.object({
    * folding money, not naming a ceiling someone wrote down.
    */
   limits: z.object({ turns: z.number().int(), wallMs: z.number().int(), usd: z.number().optional() }),
-});
-export type Invocation = z.infer<typeof Invocation>;
+})
+export type Invocation = z.infer<typeof Invocation>
 
 export const RunStarted = z.object({
   workItemId: z.string(),
@@ -405,7 +403,7 @@ export const RunStarted = z.object({
    * recording a reconstruction that might not be what ran.
    */
   invocation: Invocation.nullable(),
-});
+})
 
 /**
  * The prompt an agent was handed. The whole of it.
@@ -443,14 +441,14 @@ export const RunPrompted = z.object({
    * event answer "how big was it" the same way.
    */
   prompt: z.string().nullable(),
-});
+})
 
-export const RunTouchedFile = z.object({ path: z.string(), op: z.enum(["edit", "write", "delete"]) });
+export const RunTouchedFile = z.object({ path: z.string(), op: z.enum(['edit', 'write', 'delete']) })
 
 /** Compaction means the ticket was scoped too large. That is a metric, not noise. */
-export const RunContextExhausted = z.object({ turn: z.number().int() });
+export const RunContextExhausted = z.object({ turn: z.number().int() })
 
-export const RunAwaitingInput = z.object({ prompt: z.string() });
+export const RunAwaitingInput = z.object({ prompt: z.string() })
 
 export const RunProducedDiff = z.object({
   branch: z.string(),
@@ -458,7 +456,7 @@ export const RunProducedDiff = z.object({
   files: z.number().int(),
   insertions: z.number().int(),
   deletions: z.number().int(),
-});
+})
 
 /**
  * What a claim left on origin, appended whichever way that went
@@ -549,23 +547,16 @@ export const RunRefsPublished = z.object({
    * that publish only from the finalizer — a crash, the wall — there is no third
    * call to hope for, so a claim whose record is lost says so here or nowhere.
    */
-  outcome: z.enum([
-    "published",
-    "nothing-committed",
-    "already-published",
-    "arm-only",
-    "refused",
-    "unrecorded",
-  ]),
+  outcome: z.enum(['published', 'nothing-committed', 'already-published', 'arm-only', 'refused', 'unrecorded']),
   /**
    * Git's own words when `refused` or `arm-only`, the store's and the ref they
    * were about when `unrecorded`, and null otherwise.
    */
   detail: z.string().nullable(),
-});
+})
 
 /** The moment the gate pipeline fires. */
-export const RunProposedCompletion = z.object({ headSha: z.string() });
+export const RunProposedCompletion = z.object({ headSha: z.string() })
 
 export const RunFinished = z.object({
   exitCode: z.number().int(),
@@ -574,7 +565,7 @@ export const RunFinished = z.object({
   costUsd: z.number().nullable(),
   /** What the run billed, by the runtime's own counts (0110 §3). Absent, never zero. */
   usage: Usage.optional(),
-});
+})
 
 /**
  * How a run ended when it did not end well.
@@ -612,22 +603,22 @@ export const RunFinished = z.object({
  * every payload a previous build wrote still parses against this.
  */
 export const RUN_FAILURE_KINDS = [
-  "timeout",
-  "crash",
-  "no-commits",
-  "aborted",
-  "never-started",
-  "out-of-turns",
-  "no-structured-answer",
-  "out-of-usd",
-] as const;
+  'timeout',
+  'crash',
+  'no-commits',
+  'aborted',
+  'never-started',
+  'out-of-turns',
+  'no-structured-answer',
+  'out-of-usd',
+] as const
 
-export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number];
+export type RunFailureKind = (typeof RUN_FAILURE_KINDS)[number]
 
 export const RunFailed = z.object({
   kind: z.enum(RUN_FAILURE_KINDS),
   detail: z.string(),
-});
+})
 
 // --------------------------------------------------------------- verdicts ----
 
@@ -659,7 +650,7 @@ export const RunFailed = z.object({
  * keep doing so: it spreads into `parsePayload`, which takes `unknown`, so a
  * drift between the two compiles and is refused at append time.
  */
-const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.string() };
+const stepBase = { step: Step, action: z.string(), runId: z.string(), onSha: z.string() }
 
 /**
  * The plan for a run: all ten steps, and what will run at each.
@@ -718,7 +709,7 @@ export const StepsResolved = z.object({
    * ran. Names environment variables and never their values (0021, 0047 §4).
    */
   recipe: z.record(z.string(), z.unknown()).optional(),
-});
+})
 
 /**
  * What the `end` point resolved to, and the outcome it resolved against.
@@ -744,7 +735,7 @@ export const EndActionsResolved = z.object({
    * test found rather than a reader, which is the argument for the enum being
    * here at all.
    */
-  outcome: z.enum(["landed", "blocked", "failed", "closed"]),
+  outcome: z.enum(['landed', 'blocked', 'failed', 'closed']),
   /**
    * `refs` is the third, and it is the one that **deletes** (`#240`): the
    * `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on
@@ -763,10 +754,10 @@ export const EndActionsResolved = z.object({
       z.object({ name: z.string(), refs: z.literal(true), branch: z.boolean() }),
     ]),
   ),
-});
+})
 
-export const StepRequested = z.object(stepBase);
-export const StepStarted = z.object(stepBase);
+export const StepRequested = z.object(stepBase)
+export const StepStarted = z.object(stepBase)
 
 /**
  * How bad a defect is, **worst first**.
@@ -796,8 +787,8 @@ export const StepStarted = z.object(stepBase);
  * that one comparison as a function, and the `backlog:` plugin's schema in
  * `packages/recipe/src/recipe.ts` is this array again.
  */
-export const SEVERITIES = ["blocker", "major", "minor"] as const;
-export type Severity = (typeof SEVERITIES)[number];
+export const SEVERITIES = ['blocker', 'major', 'minor'] as const
+export type Severity = (typeof SEVERITIES)[number]
 
 /**
  * One finding, as a reviewer reported it.
@@ -816,9 +807,9 @@ const Finding = z.object({
   /** No failure scenario, no finding. An observation without one is an opinion. */
   failureScenario: z.string(),
   severity: z.enum(SEVERITIES),
-});
+})
 
-export type Finding = z.infer<typeof Finding>;
+export type Finding = z.infer<typeof Finding>
 
 /**
  * A pass carries its findings too (`#135`).
@@ -834,7 +825,7 @@ export const StepPassed = z.object({
   ...stepBase,
   evidence: z.string(),
   findings: z.array(Finding),
-});
+})
 
 /**
  * **What a refusal is about: these lines, or this approach** (`#223`, `#293`).
@@ -858,8 +849,8 @@ export const StepPassed = z.object({
  * own rule). A count whose missing rows were filled in with a default is a count
  * of the default.
  */
-export const REFUSED_ABOUT = ["lines", "approach"] as const;
-export type RefusedAbout = (typeof REFUSED_ABOUT)[number];
+export const REFUSED_ABOUT = ['lines', 'approach'] as const
+export type RefusedAbout = (typeof REFUSED_ABOUT)[number]
 
 /**
  * **What a cold review answers, as a schema rather than a sentence** (`#369`).
@@ -885,8 +876,8 @@ export const ReviewAnswer = z
     findings: z.array(Finding.strict()),
     about: z.enum(REFUSED_ABOUT).nullable(),
   })
-  .strict();
-export type ReviewAnswer = z.infer<typeof ReviewAnswer>;
+  .strict()
+export type ReviewAnswer = z.infer<typeof ReviewAnswer>
 
 /**
  * `ReviewAnswer` as JSON Schema — the one shape each runtime takes by its own
@@ -896,10 +887,10 @@ export type ReviewAnswer = z.infer<typeof ReviewAnswer>;
  * top-level key would refuse the whole schema over it.
  */
 export const REVIEW_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
-  const schema = z.toJSONSchema(ReviewAnswer) as Record<string, unknown>;
-  delete schema.$schema;
-  return schema;
-})();
+  const schema = z.toJSONSchema(ReviewAnswer) as Record<string, unknown>
+  delete schema.$schema
+  return schema
+})()
 
 export const StepFailed = z.object({
   ...stepBase,
@@ -962,7 +953,7 @@ export const StepFailed = z.object({
    * `#223` has the rate to decide with.
    */
   about: z.enum(REFUSED_ABOUT).optional(),
-});
+})
 
 /**
  * The gate's agent never started, so the point produced no verdict about the
@@ -996,7 +987,7 @@ export const StepFailed = z.object({
  * either; it is at 2 for a reason of its own, which is `#234` dropping the two
  * fields 0057 §4's retry wrote and nothing to do with the rename.
  */
-export const StepNeverRan = z.object({ ...stepBase, detail: z.string() });
+export const StepNeverRan = z.object({ ...stepBase, detail: z.string() })
 
 /**
  * The gate's agent **started**, ended without a receipt, and so judged nothing
@@ -1034,7 +1025,7 @@ export const StepNeverRan = z.object({ ...stepBase, detail: z.string() });
  * for `WorkItemClaimed`'s `leaseUntilMs` reason: no event is rewritten, so the
  * reader is what has to stop believing them.
  */
-export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() });
+export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() })
 
 /**
  * The step's agent **stopped and asked something**, so it judged nothing and
@@ -1066,14 +1057,14 @@ export const StepDidNotFinish = z.object({ ...stepBase, detail: z.string() });
  * the eight `Gate*` renames. **After 1.0 the answer is an upcaster** and this
  * sentence is where the next person reads which side of that line they are on.
  */
-export const StepAsked = z.object({ ...stepBase, detail: z.string() });
+export const StepAsked = z.object({ ...stepBase, detail: z.string() })
 
 /** Humans need an escape hatch. It is recorded, never silent. */
-export const StepWaived = z.object({ ...stepBase, by: z.string(), reason: z.string() });
+export const StepWaived = z.object({ ...stepBase, by: z.string(), reason: z.string() })
 
-export const ApprovalRequested = z.object({ ...stepBase, question: z.string(), artifacts: z.array(z.string()) });
-export const ApprovalGranted = z.object({ ...stepBase, by: z.string(), note: z.string() });
-export const ApprovalRevoked = z.object({ ...stepBase, by: z.string(), reason: z.string() });
+export const ApprovalRequested = z.object({ ...stepBase, question: z.string(), artifacts: z.array(z.string()) })
+export const ApprovalGranted = z.object({ ...stepBase, by: z.string(), note: z.string() })
+export const ApprovalRevoked = z.object({ ...stepBase, by: z.string(), reason: z.string() })
 
 // --------------------------------------------------------------- backlog ----
 
@@ -1104,7 +1095,7 @@ export const FindingAccepted = z.object({
   by: z.string(),
   kind: z.string(),
   labels: z.array(z.string()),
-});
+})
 
 /**
  * The ticket store has the ticket an accepted finding asked for (`#137`).
@@ -1126,7 +1117,7 @@ export const FindingProposed = z.object({
   /** The store's own identity for the ticket: `"212"` on GitHub. */
   externalRef: z.string(),
   url: z.string().nullable(),
-});
+})
 
 /**
  * A person declined a minor finding.
@@ -1141,23 +1132,23 @@ export const FindingDeclined = z.object({
   key: z.string(),
   by: z.string(),
   reason: z.string(),
-});
+})
 
 // ----------------------------------------------------------- integration ----
 
-export const IntegrationAttempted = z.object({ workItemId: z.string(), branch: z.string(), headSha: z.string() });
+export const IntegrationAttempted = z.object({ workItemId: z.string(), branch: z.string(), headSha: z.string() })
 export const IntegrationRefused = z.object({
   workItemId: z.string(),
   branch: z.string(),
   reason: RefusalReason,
   detail: z.string(),
-});
+})
 export const IntegrationSucceeded = z.object({
   workItemId: z.string(),
   branch: z.string(),
   base: z.string(),
   mergeCommit: z.string(),
-});
+})
 
 // -------------------------------------------------------------- repair ----
 
@@ -1205,7 +1196,7 @@ export const RepairRequested = z.object({
   detail: z.string(),
   fingerprint: z.string(),
   attempt: z.number().int().positive(),
-});
+})
 
 /**
  * **Retired** with `RepairRequested` above, and for the same reasons.
@@ -1224,7 +1215,7 @@ export const RepairDeclined = z.object({
   fingerprint: z.string(),
   /** The sentence the card shows. Names the rule that refused, not just "no". */
   why: z.string(),
-});
+})
 
 // ------------------------------------------------------------------ fix ----
 
@@ -1267,7 +1258,7 @@ export const FixRequested = z.object({
   /** The head the findings were made against. */
   onSha: z.string(),
   findings: z.array(Finding),
-});
+})
 
 /**
  * What the fixing agent produced, and what it cost.
@@ -1288,7 +1279,7 @@ export const FixApplied = z.object({
   failure: z.string().nullable(),
   /** What the fix round billed, by the runtime's own counts (0110 §3). */
   usage: Usage.optional(),
-});
+})
 
 /**
  * A review refusal that bought no fixer, and why — including the round that ran
@@ -1309,7 +1300,7 @@ export const FixDeclined = z.object({
   why: z.string(),
   /** What is still live, as the reviewer last said it. */
   findings: z.array(Finding),
-});
+})
 
 // --------------------------------------------------------------- route ----
 
@@ -1320,7 +1311,7 @@ export const FixDeclined = z.object({
  * `waiting` is not a step (0058 §3) and has exactly one way in, so it is the
  * one value here that is not one of the ten.
  */
-const Destination = z.union([Step, z.literal("waiting")]);
+const Destination = z.union([Step, z.literal('waiting')])
 
 /**
  * **`proposed` sent the pass somewhere, and why** (`#271`).
@@ -1375,8 +1366,8 @@ export const PassRouted = z.object({
    * the plugin's to know (0061 §3), which is why this field is written by the
    * pass and not by whatever answered.
    */
-  ceiling: z.enum(["rounds", "restarts"]).nullable(),
-});
+  ceiling: z.enum(['rounds', 'restarts']).nullable(),
+})
 
 // ------------------------------------------------------------- restart ----
 
@@ -1442,7 +1433,7 @@ export const PassRestarted = z.object({
   headSha: z.string(),
   /** What was still refused when this arm ended, as the reviewer last said it. */
   findings: z.array(Finding),
-});
+})
 
 // --------------------------------------------------------------- control ----
 
@@ -1479,9 +1470,9 @@ export const ConductorPaused = z.object({
    * before this field existed still parses as the pause it was.
    */
   until: z.string().nullable().default(null),
-});
+})
 
-export const ConductorResumed = z.object({ by: z.string() });
+export const ConductorResumed = z.object({ by: z.string() })
 
 /**
  * Stop, once the pass in flight has finished.
@@ -1528,7 +1519,7 @@ export const ConductorShutdownRequested = z.object({
    * as the drain it was.
    */
   force: z.boolean().default(false),
-});
+})
 
 /**
  * A conductor started, from this commit, at this person's hand.
@@ -1592,7 +1583,7 @@ export const ConductorStarted = z.object({
    * commit it checked instead.
    */
   handoff: z.number().int().positive().nullable().default(null),
-});
+})
 
 /**
  * One shutdown request lifted — the one named, and nothing else.
@@ -1619,11 +1610,8 @@ export const ConductorShutdownWithdrawn = z.object({
    * parse. It carried the commit a supervised restart checked, for the daemon
    * the supervisor started — which, since #159, never read it (0048).
    */
-  handoff: z
-    .object({ sha: z.string().nullable(), dirty: z.boolean() })
-    .nullable()
-    .default(null),
-});
+  handoff: z.object({ sha: z.string().nullable(), dirty: z.boolean() }).nullable().default(null),
+})
 
 /**
  * Run this one now, ahead of the queue.
@@ -1667,7 +1655,7 @@ export const OutboxDelivered = z.object({
   target: z.string(),
   /** Whatever identifies the thing that was created, when there is one. */
   detail: z.string(),
-});
+})
 
 /** **Retired** with `OutboxDelivered` above, and for the same reasons. */
 export const OutboxFailed = z.object({
@@ -1676,7 +1664,7 @@ export const OutboxFailed = z.object({
   target: z.string(),
   error: z.string(),
   permanent: z.boolean(),
-});
+})
 
 /**
  * Lingtai told GitHub something about an issue, and it landed.
@@ -1715,10 +1703,10 @@ export const OutboxFailed = z.object({
 export const IssueUpdated = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(["comment", "labels", "closed", "body", "refs"]),
+  change: z.enum(['comment', 'labels', 'closed', 'body', 'refs']),
   /** Whatever identifies what happened: a comment id, the labels that were set, the refs deleted. */
   detail: z.string(),
-});
+})
 
 /**
  * The same attempt, refused.
@@ -1733,22 +1721,22 @@ export const IssueUpdated = z.object({
 export const IssueUpdateFailed = z.object({
   project: z.string(),
   issue: z.string(),
-  change: z.enum(["comment", "labels", "closed", "body", "refs"]),
+  change: z.enum(['comment', 'labels', 'closed', 'body', 'refs']),
   error: z.string(),
-});
+})
 
 export const QueueChanged = z.object({
   project: z.string(),
   /** `issues.opened`, `issues.labeled`, and so on. */
   reason: z.string(),
   delivery: z.string(),
-});
+})
 
 export const RunRequested = z.object({
   project: z.string(),
   issue: z.string(),
   by: z.string(),
-});
+})
 
 /**
  * Somebody asked a question about one work item.
@@ -1776,11 +1764,9 @@ export const DiscussionRequested = z.object({
   attempt: z.number().int().nullable(),
   question: z.string(),
   by: z.string(),
-});
-
+})
 
 // ------------------------------------------------------------ discussion ----
-
 
 /**
  * A question put to the discussion assistant, and what it was given to answer
@@ -1804,7 +1790,7 @@ export const DiscussionAsked = z.object({
   question: z.string(),
   /** What was actually readable, in words — including the branch that was not there. */
   reading: z.array(z.string()),
-});
+})
 
 /**
  * What the assistant said, what it read to say it, and what it cost.
@@ -1832,9 +1818,7 @@ export const DiscussionAnswered = z.object({
   /** What it said it could not establish without a command it does not have. */
   cannot: z.array(z.string()),
   /** What it proposes writing down, and where. Null when it only answered. */
-  proposal: z
-    .object({ kind: z.enum(["prompt", "ticket"]), text: z.string() })
-    .nullable(),
+  proposal: z.object({ kind: z.enum(['prompt', 'ticket']), text: z.string() }).nullable(),
   turns: z.number().int(),
   durationMs: z.number().int(),
   costUsd: z.number().nullable(),
@@ -1842,7 +1826,7 @@ export const DiscussionAnswered = z.object({
   failure: z.string().nullable(),
   /** What this turn billed, by the runtime's own counts (0110 §3). */
   usage: Usage.optional(),
-});
+})
 
 /**
  * One line on the work item for a whole conversation.
@@ -1861,11 +1845,11 @@ export const DiscussionHeld = z.object({
   chatId: z.string(),
   /** The whole conversation's spend. Null when nothing reported a cost. */
   costUsd: z.number().nullable(),
-  outcome: z.enum(["prompt", "ticket", "none"]),
+  outcome: z.enum(['prompt', 'ticket', 'none']),
   by: z.string(),
   /** The whole conversation's tokens, by the runtime's own counts (0110 §3). */
   usage: Usage.optional(),
-});
+})
 
 /**
  * A sentence added to the next run's prompt, and to that one only.
@@ -1922,11 +1906,9 @@ export const PromptEdited = z.object({
   basedOn: z.string().nullable(),
   /** The discussion it came out of, when one did. */
   chatId: z.string().nullable(),
-});
-
+})
 
 // --------------------------------------------------------------- project ----
-
 
 /**
  * A repository is on its way in: recorded, visible, and not yet conducted.
@@ -1964,7 +1946,7 @@ export const ProjectOnboardingStarted = z.object({
   base: z.string(),
   /** Who asked for it — `human:<id>`. */
   by: z.string(),
-});
+})
 
 /**
  * The recipe as resolved from origin/<base>, hashed so replays can be compared.
@@ -1992,7 +1974,7 @@ export const ProjectConfigured = z.object({
   base: z.string().nullable(),
   configHash: z.string(),
   fromSha: z.string(),
-});
+})
 
 /**
  * A conductor's pass could not look at this project, and said why — **on the
@@ -2029,7 +2011,7 @@ export const ProjectRefused = z.object({
   ref: z.string().nullable(),
   /** The commit the refusing process was loaded from. Null when it recorded none. */
   codeSha: z.string().nullable(),
-});
+})
 
 /**
  * A pass looked at a project it had refused, and did not refuse it.
@@ -2043,7 +2025,7 @@ export const ProjectRecovered = z.object({
   project: z.string(),
   ref: z.string().nullable(),
   codeSha: z.string().nullable(),
-});
+})
 
 /**
  * What a restarted daemon found that the log did not predict, and what it did.
@@ -2074,10 +2056,9 @@ export const Reconciled = z.object({
       action: z.string(),
     }),
   ),
-});
+})
 
 // ------------------------------------------------------------ github app ----
-
 
 /**
  * The team's GitHub App was minted from a manifest (`#169`).
@@ -2113,10 +2094,9 @@ export const GitHubAppCreated = z.object({
   appId: z.string(),
   /** `lingtai-…` — what the person named it, as GitHub slugged it. */
   slug: z.string(),
-});
+})
 
 // ------------------------------------------------------------- extension ----
-
 
 /**
  * An event subscriber was handed an event and did not come back from it.
@@ -2155,7 +2135,7 @@ export const PluginFailed = z.object({
    * whatever it was going to do, nobody was told.
    */
   reason: z.string(),
-});
+})
 
 // -------------------------------------------------------------- registry ----
 
@@ -2228,10 +2208,10 @@ export const EVENTS = {
   Reconciled,
   GitHubAppCreated,
   PluginFailed,
-} as const;
+} as const
 
-export type EventType = keyof typeof EVENTS;
-export type PayloadOf<T extends EventType> = z.infer<(typeof EVENTS)[T]>;
+export type EventType = keyof typeof EVENTS
+export type PayloadOf<T extends EventType> = z.infer<(typeof EVENTS)[T]>
 
 /**
  * Current payload shape per type. Everything starts at 1; a type that has moved
@@ -2291,11 +2271,11 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // that rename — so 1 → 2 is the drop and not the rename's step, which is why
   // it is the one number in this group that `#247` left standing.
   StepDidNotFinish: 2,
-};
+}
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
   (Object.keys(EVENTS) as EventType[]).map((k) => [k, BUMPED[k] ?? 1]),
-) as Record<EventType, number>;
+) as Record<EventType, number>
 
 /**
  * Types the log holds and nothing appends again.
@@ -2306,23 +2286,23 @@ export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
  * reading them for ever.
  */
 export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
-  "OutboxDelivered",
-  "OutboxFailed",
+  'OutboxDelivered',
+  'OutboxFailed',
   // A lane refusal buys nothing, so nothing decides whether it bought an agent
   // (`#143`, 0039 §Consequences). See the note on `RepairRequested`.
-  "RepairRequested",
-  "RepairDeclined",
-]);
+  'RepairRequested',
+  'RepairDeclined',
+])
 
 export function isRetiredEventType(t: string): boolean {
-  return isEventType(t) && RETIRED.has(t);
+  return isEventType(t) && RETIRED.has(t)
 }
 
 export function isEventType(t: string): t is EventType {
-  return Object.hasOwn(EVENTS, t);
+  return Object.hasOwn(EVENTS, t)
 }
 
 /** Parse a stored payload, or throw. The store never hands out unvalidated data. */
 export function parsePayload<T extends EventType>(type: T, data: unknown): PayloadOf<T> {
-  return EVENTS[type].parse(data) as PayloadOf<T>;
+  return EVENTS[type].parse(data) as PayloadOf<T>
 }

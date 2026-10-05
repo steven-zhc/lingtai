@@ -34,105 +34,102 @@
  * only assertion was `test/contract.ts`'s, in the integration half. So the
  * round trip is asserted here, where the gate runs.
  */
-import { describe, expect, it } from "vitest";
-import { ProjectionShapeError, columnOf } from "../src/store.ts";
-import { createSqliteProjectionStore, openSqliteProjections } from "../src/sqlite.ts";
-import { taskViewProjection } from "../src/task-view.ts";
-import { backlogProjection, type BacklogEntry } from "../src/backlog.ts";
-import type { ProjectionStore } from "../src/store.ts";
+import { describe, expect, it } from 'vitest'
 
-const RUN = "run-drift-1";
-const RECORDED = JSON.stringify({ [`${RUN}:proposed:build`]: "failed" });
+import { backlogProjection, type BacklogEntry } from '../src/backlog.ts'
+import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { ProjectionShapeError, columnOf } from '../src/store.ts'
+import type { ProjectionStore } from '../src/store.ts'
+import { taskViewProjection } from '../src/task-view.ts'
+
+const RUN = 'run-drift-1'
+const RECORDED = JSON.stringify({ [`${RUN}:proposed:build`]: 'failed' })
 
 /**
  * A store whose `task_view` is the real one, optionally aged back to the shape
  * it had before the rename — which is what a live table actually is until
  * somebody runs `lingtai projection rebuild task_view`.
  */
-async function storeWith(column: "verdicts" | "gates"): Promise<ProjectionStore> {
-  const store = createSqliteProjectionStore(openSqliteProjections(":memory:"));
+async function storeWith(column: 'verdicts' | 'gates'): Promise<ProjectionStore> {
+  const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
   await store.transact(async (ctx) => {
-    await taskViewProjection.create(ctx);
-    if (column === "gates") {
-      await ctx.query("alter table task_view rename column verdicts to gates");
+    await taskViewProjection.create(ctx)
+    if (column === 'gates') {
+      await ctx.query('alter table task_view rename column verdicts to gates')
     }
     await ctx.query(
       `insert into task_view
          (task_id, project, issue, state, run_id, ${column}, updated_at, updated_seq)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      ["wi-drift-1", "drift", "1", "gates", RUN, RECORDED, new Date().toISOString(), 1],
-    );
-  });
-  return store;
+      ['wi-drift-1', 'drift', '1', 'gates', RUN, RECORDED, new Date().toISOString(), 1],
+    )
+  })
+  return store
 }
 
-describe("a column the row has not got", () => {
-  it("answers with the value when the column is there", () => {
-    expect(columnOf({ verdicts: { a: "passed" } }, "task_view", "verdicts")).toEqual({
-      a: "passed",
-    });
-  });
+describe('a column the row has not got', () => {
+  it('answers with the value when the column is there', () => {
+    expect(columnOf({ verdicts: { a: 'passed' } }, 'task_view', 'verdicts')).toEqual({
+      a: 'passed',
+    })
+  })
 
-  it("answers with null rather than refusing — empty is not absent", () => {
+  it('answers with null rather than refusing — empty is not absent', () => {
     // The distinction the whole guard turns on. A column that exists and holds
     // nothing is a run that recorded nothing, which is a fact and not drift.
-    expect(columnOf({ verdicts: null }, "task_view", "verdicts")).toBeNull();
-  });
+    expect(columnOf({ verdicts: null }, 'task_view', 'verdicts')).toBeNull()
+  })
 
-  it("refuses when the column is absent, and names the rebuild", () => {
-    let err: unknown;
+  it('refuses when the column is absent, and names the rebuild', () => {
+    let err: unknown
     try {
-      columnOf({ steps: "{}" }, "task_view", "verdicts");
+      columnOf({ steps: '{}' }, 'task_view', 'verdicts')
     } catch (e) {
-      err = e;
+      err = e
     }
-    expect(err).toBeInstanceOf(ProjectionShapeError);
-    expect((err as ProjectionShapeError).drift).toEqual([
-      { table: "task_view", missing: ["verdicts"], unexpected: [] },
-    ]);
-    expect((err as Error).message).toContain("lingtai projection rebuild task_view");
-  });
+    expect(err).toBeInstanceOf(ProjectionShapeError)
+    expect((err as ProjectionShapeError).drift).toEqual([{ table: 'task_view', missing: ['verdicts'], unexpected: [] }])
+    expect((err as Error).message).toContain('lingtai projection rebuild task_view')
+  })
 
-  it("does not say `does not exist`, which the board reads as an empty board", () => {
+  it('does not say `does not exist`, which the board reads as an empty board', () => {
     // `emptyIfUnbuilt` in apps/board/src/lib/board.ts swallows any error whose
     // message matches /does not exist/i and renders no cards: before the first
     // run there is no table, and that is a state rather than a fault. A
     // refusal phrased as the driver's own `column t.verdicts does not exist`
     // would be swallowed by it and land back on a board saying nothing is
     // wrong.
-    const message = new ProjectionShapeError("task_view", [
-      { table: "task_view", missing: ["verdicts"], unexpected: [] },
-    ]).message;
-    expect(message).not.toMatch(/does not exist/i);
-  });
-});
+    const message = new ProjectionShapeError('task_view', [
+      { table: 'task_view', missing: ['verdicts'], unexpected: [] },
+    ]).message
+    expect(message).not.toMatch(/does not exist/i)
+  })
+})
 
-describe("the board, reading a task_view built before the rename", () => {
-  it("refuses the read rather than reporting four zeros", async () => {
-    const store = await storeWith("gates");
+describe('the board, reading a task_view built before the rename', () => {
+  it('refuses the read rather than reporting four zeros', async () => {
+    const store = await storeWith('gates')
     try {
-      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(ProjectionShapeError);
-      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(
-        /lingtai projection rebuild task_view/,
-      );
+      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(ProjectionShapeError)
+      await expect(store.tasks({ retentionDays: 2 })).rejects.toThrow(/lingtai projection rebuild task_view/)
     } finally {
-      await store.close();
+      await store.close()
     }
-  });
+  })
 
-  it("counts the verdict the run recorded once the column is the declared one", async () => {
+  it('counts the verdict the run recorded once the column is the declared one', async () => {
     // The control: the same row, the same read, a table at the current shape.
     // Without it the assertion above passes on a store that refuses everything.
-    const store = await storeWith("verdicts");
+    const store = await storeWith('verdicts')
     try {
-      const [card] = await store.tasks({ retentionDays: 2 });
-      expect(card!.failed).toBe(1);
-      expect(card!.passed).toBe(0);
+      const [card] = await store.tasks({ retentionDays: 2 })
+      expect(card!.failed).toBe(1)
+      expect(card!.passed).toBe(0)
     } finally {
-      await store.close();
+      await store.close()
     }
-  });
-});
+  })
+})
 
 /**
  * The columns `finding_backlog` is declared with, and the value each one holds
@@ -141,53 +138,53 @@ describe("the board, reading a task_view built before the rename", () => {
  * the two vocabularies are allowed to meet.
  */
 const RAISED = {
-  project: "drift",
-  key: "f-1",
-  issue: "251",
-  task_id: "wi-drift-251",
-  run_id: "run-drift-2",
-  step: "proposed",
-  action: "review",
-  on_sha: "e".repeat(40),
-  file: "packages/projector/src/postgres.ts",
+  project: 'drift',
+  key: 'f-1',
+  issue: '251',
+  task_id: 'wi-drift-251',
+  run_id: 'run-drift-2',
+  step: 'proposed',
+  action: 'review',
+  on_sha: 'e'.repeat(40),
+  file: 'packages/projector/src/postgres.ts',
   line: 136,
-  severity: "minor",
-  claim: "the bar is written twice",
-  failure_scenario: "a passing review raises a minor and the backlog cannot say what raised it",
+  severity: 'minor',
+  claim: 'the bar is written twice',
+  failure_scenario: 'a passing review raises a minor and the backlog cannot say what raised it',
   raised_seq: 4211,
-  raised_at: "2026-09-25T09:15:00.000Z",
-} as const;
+  raised_at: '2026-09-25T09:15:00.000Z',
+} as const
 
 async function withOneRaised(): Promise<ProjectionStore> {
-  const store = createSqliteProjectionStore(openSqliteProjections(":memory:"));
-  const columns = Object.keys(RAISED);
+  const store = createSqliteProjectionStore(openSqliteProjections(':memory:'))
+  const columns = Object.keys(RAISED)
   await store.transact(async (ctx) => {
-    await backlogProjection.create(ctx);
+    await backlogProjection.create(ctx)
     await ctx.query(
-      `insert into finding_backlog (${columns.join(", ")})
-       values (${columns.map((_, i) => `$${i + 1}`).join(", ")})`,
+      `insert into finding_backlog (${columns.join(', ')})
+       values (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
       Object.values(RAISED) as unknown[],
-    );
-  });
-  return store;
+    )
+  })
+  return store
 }
 
-describe("a backlog entry read back out of the table that holds it", () => {
-  it("says which step raised the finding, and never `undefined`", async () => {
-    const store = await withOneRaised();
+describe('a backlog entry read back out of the table that holds it', () => {
+  it('says which step raised the finding, and never `undefined`', async () => {
+    const store = await withOneRaised()
     try {
-      const [entry] = await store.backlog({ project: RAISED.project });
+      const [entry] = await store.backlog({ project: RAISED.project })
 
       // The defect, stated as the thing a person reads: `lingtai backlog` prints
       // `${step}:${action}` and `backlog accept` writes it into an issue body,
       // so `undefined` here is a durable record of which step raised it, wrong.
-      expect(entry?.step).toBe("proposed");
-      expect(entry?.step).not.toBeUndefined();
-      expect(`${entry?.step}:${entry?.action}`).toBe("proposed:review");
+      expect(entry?.step).toBe('proposed')
+      expect(entry?.step).not.toBeUndefined()
+      expect(`${entry?.step}:${entry?.action}`).toBe('proposed:review')
     } finally {
-      await store.close();
+      await store.close()
     }
-  });
+  })
 
   /**
    * **And the next one of these, not only this one.** The defect was a field
@@ -197,10 +194,10 @@ describe("a backlog entry read back out of the table that holds it", () => {
    * for the one somebody happened to rename — the round trip, and no field left
    * to be quietly absent.
    */
-  it("carries every declared column through, with nothing silently absent", async () => {
-    const store = await withOneRaised();
+  it('carries every declared column through, with nothing silently absent', async () => {
+    const store = await withOneRaised()
     try {
-      const [entry] = await store.backlog({ project: RAISED.project });
+      const [entry] = await store.backlog({ project: RAISED.project })
 
       expect(entry).toEqual({
         key: RAISED.key,
@@ -221,16 +218,16 @@ describe("a backlog entry read back out of the table that holds it", () => {
         // The default the DDL gives a row nobody has decided yet, and the nulls
         // beside it: absent because nothing was decided, not because a key
         // missed its column.
-        status: "open",
+        status: 'open',
         decidedBy: null,
         decidedAt: null,
         kind: null,
         proposedRef: null,
         proposedUrl: null,
         reason: null,
-      } satisfies BacklogEntry);
+      } satisfies BacklogEntry)
     } finally {
-      await store.close();
+      await store.close()
     }
-  });
-});
+  })
+})

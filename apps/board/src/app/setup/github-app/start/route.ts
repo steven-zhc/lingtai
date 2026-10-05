@@ -15,21 +15,21 @@
  * anywhere on this path: press this, close the tab, and Lingtai has done
  * nothing that needs undoing.
  */
-import { creation, offerCreation } from "@lingtai/conductor/create-app";
-import { unreachableWebhook } from "@lingtai/github";
+import { creation, offerCreation } from '@lingtai/conductor/create-app'
+import { unreachableWebhook } from '@lingtai/github'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 /** `"` and `&` in an attribute, `<` for good measure. The manifest carries both. */
 function attr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 export async function POST(request: Request): Promise<Response> {
   // **The same question the page asked**, asked again where the form arrives.
   // The screen not drawing a button is what stops a second App by accident; a
   // route that posts anyway is what would stop one on purpose.
-  const offer = await offerCreation();
+  const offer = await offerCreation()
   // **Unknown is not no, here as on the page.** The durable record is the only
   // thing that remembers a creation whose writes failed, so a log that will not
   // say whether an App exists holds this route too: posting anyway mints a
@@ -37,11 +37,11 @@ export async function POST(request: Request): Promise<Response> {
   // once.
   if (offer.unanswered !== null) {
     return new Response(
-      "Lingtai cannot tell whether an App was already created here: the log could not be read " +
+      'Lingtai cannot tell whether an App was already created here: the log could not be read ' +
         `(${offer.unanswered}). Creating one now could mint a second App beside a working one. ` +
-        "Run pnpm lingtai doctor, then try again.",
-      { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
-    );
+        'Run pnpm lingtai doctor, then try again.',
+      { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    )
   }
   if (!offer.offered) {
     // Configured, and not merely minted: an App whose credentials never landed
@@ -49,22 +49,22 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(
       offer.configured !== null
         ? `a GitHub App is already configured — app ${offer.configured.appId}. Creating a second ` +
-          "one would leave an App nothing is installed on. Install this one instead."
-        : "creation is not offered here.",
-      { status: 409, headers: { "content-type": "text/plain; charset=utf-8" } },
-    );
+            'one would leave an App nothing is installed on. Install this one instead.'
+        : 'creation is not offered here.',
+      { status: 409, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    )
   }
 
-  const form = await request.formData();
-  const name = String(form.get("name") ?? "").trim();
-  const org = String(form.get("org") ?? "").trim();
-  const webhook = String(form.get("webhook") ?? "").trim();
+  const form = await request.formData()
+  const name = String(form.get('name') ?? '').trim()
+  const org = String(form.get('org') ?? '').trim()
+  const webhook = String(form.get('webhook') ?? '').trim()
 
-  if (name === "") {
-    return new Response("the App needs a name — GitHub requires one and it is unique across all of GitHub", {
+  if (name === '') {
+    return new Response('the App needs a name — GitHub requires one and it is unique across all of GitHub', {
       status: 400,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
   }
 
   // A `localhost` hook is refused rather than quietly accepted: it produces an
@@ -78,28 +78,28 @@ export async function POST(request: Request): Promise<Response> {
   // `active: true` pointed at this machine, which is the exact state the
   // paragraph above says is refused. `unreachableWebhook` is where that
   // judgement lives, beside the manifest it decides a field of.
-  const unreachable = webhook === "" ? null : unreachableWebhook(webhook);
+  const unreachable = webhook === '' ? null : unreachableWebhook(webhook)
   if (unreachable !== null) {
     return new Response(
       `a webhook address has to be one GitHub can reach: ${unreachable}. Leave it blank and the hook ` +
         "is declared inactive — discovery runs on the daemon's sweep until this board has a public " +
-        "address.",
-      { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } },
-    );
+        'address.',
+      { status: 400, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    )
   }
 
-  const origin = new URL(request.url).origin;
+  const origin = new URL(request.url).origin
   const begun = creation.begin({
     name,
-    org: org === "" ? null : org,
-    webhookUrl: webhook === "" ? null : webhook,
+    org: org === '' ? null : org,
+    webhookUrl: webhook === '' ? null : webhook,
     // The loopback is accepted by GitHub, which is what makes a local board a
     // place this flow can finish.
-    redirectUrl: new URL("/setup/github-app/created", origin).toString(),
+    redirectUrl: new URL('/setup/github-app/created', origin).toString(),
     // Installing comes back to the repository picker (#168). An App created
     // before this has no setup URL, and the picker does not need one.
-    setupUrl: new URL("/setup/repository/installed", origin).toString(),
-  });
+    setupUrl: new URL('/setup/repository/installed', origin).toString(),
+  })
 
   // One field and not two. The manifest is the body; the `state` is already in
   // `begun.action`'s query string, which is the only place GitHub takes it from
@@ -115,10 +115,10 @@ export async function POST(request: Request): Promise<Response> {
 <button type="submit">Continue to GitHub</button>
 </form>
 <script>document.getElementById("manifest").submit()</script>
-</body></html>`;
+</body></html>`
 
   return new Response(html, {
     status: 200,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+  })
 }

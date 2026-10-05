@@ -27,10 +27,12 @@
  * and the busy timeout the log already sets. Last write wins, which is what the
  * contract asserts and what a beacon means.
  */
-import type { DatabaseSync } from "node:sqlite";
-import { createSqliteEventStore, openSqliteLog } from "@lingtai/event-store/sqlite";
-import type { EventStore } from "@lingtai/event-store/store";
-import type { Beat, DaemonStatus, DaemonStore, StreamQuery } from "./store.ts";
+import type { DatabaseSync } from 'node:sqlite'
+
+import { createSqliteEventStore, openSqliteLog } from '@lingtai/event-store/sqlite'
+import type { EventStore } from '@lingtai/event-store/store'
+
+import type { Beat, DaemonStatus, DaemonStore, StreamQuery } from './store.ts'
 
 /**
  * The one mutable row, in SQLite's types.
@@ -52,10 +54,10 @@ const SCHEMA = `
     code_sha       TEXT,
     code_dirty     INTEGER NOT NULL DEFAULT 0
   );
-`;
+`
 
 /** The clock, in the representation the column holds. SQLite's own, as `events.at` is. */
-const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
 
 /**
  * Opens — creating if absent — the daemon's database at `path`: the log's file,
@@ -71,39 +73,39 @@ const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
  * Close what you open.
  */
 export function openSqliteDaemon(path: string, busyMs?: number): DatabaseSync {
-  const db = openSqliteLog(path, busyMs);
+  const db = openSqliteLog(path, busyMs)
   try {
-    db.exec("PRAGMA case_sensitive_like = ON");
-    db.exec(SCHEMA);
-    return db;
+    db.exec('PRAGMA case_sensitive_like = ON')
+    db.exec(SCHEMA)
+    return db
   } catch (err) {
-    db.close();
-    throw err;
+    db.close()
+    throw err
   }
 }
 
 /** A table nobody has made yet. An empty read, never a failure — `42P01`'s twin. */
 function isMissingTable(err: unknown): boolean {
-  const m = (err as { message?: unknown }).message;
-  return typeof m === "string" && m.startsWith("no such table:");
+  const m = (err as { message?: unknown }).message
+  return typeof m === 'string' && m.startsWith('no such table:')
 }
 
 interface StatusRow {
-  pid: number;
-  host: string;
-  started_at: string;
-  last_seen_at: string;
-  state: string;
-  current_run_id: string | null;
-  code_sha: string | null;
-  code_dirty: number;
+  pid: number
+  host: string
+  started_at: string
+  last_seen_at: string
+  state: string
+  current_run_id: string | null
+  code_sha: string | null
+  code_dirty: number
 }
 
 /** Loud rather than an `Invalid Date` carried into a health dot. */
 function at(text: string, column: string): Date {
-  const d = new Date(text);
-  if (Number.isNaN(d.getTime())) throw new Error(`the beacon's ${column} is unreadable: ${text}`);
-  return d;
+  const d = new Date(text)
+  if (Number.isNaN(d.getTime())) throw new Error(`the beacon's ${column} is unreadable: ${text}`)
+  return d
 }
 
 export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): DaemonStore {
@@ -114,7 +116,7 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
     events: events ?? createSqliteEventStore(db),
 
     async create() {
-      db.exec(SCHEMA);
+      db.exec(SCHEMA)
     },
 
     async beat(beat: Beat) {
@@ -133,61 +135,54 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
                current_run_id = excluded.current_run_id,
                code_sha = excluded.code_sha,
                code_dirty = excluded.code_dirty`,
-      ).run(
-        beat.pid,
-        beat.host,
-        beat.state,
-        beat.currentRunId,
-        beat.codeSha,
-        beat.codeDirty ? 1 : 0,
-      );
+      ).run(beat.pid, beat.host, beat.state, beat.currentRunId, beat.codeSha, beat.codeDirty ? 1 : 0)
     },
 
     async status(): Promise<DaemonStatus | null> {
-      let row: StatusRow | undefined;
+      let row: StatusRow | undefined
       try {
-        row = db.prepare("SELECT * FROM daemon_status WHERE id = 1").get() as StatusRow | undefined;
+        row = db.prepare('SELECT * FROM daemon_status WHERE id = 1').get() as StatusRow | undefined
       } catch (err) {
         // No table means no daemon has ever started, which is a state the
         // system can be in and not an error to show a person.
-        if (isMissingTable(err)) return null;
-        throw err;
+        if (isMissingTable(err)) return null
+        throw err
       }
-      if (!row) return null;
+      if (!row) return null
       return {
         pid: Number(row.pid),
         host: row.host,
-        startedAt: at(row.started_at, "started_at"),
-        lastSeenAt: at(row.last_seen_at, "last_seen_at"),
+        startedAt: at(row.started_at, 'started_at'),
+        lastSeenAt: at(row.last_seen_at, 'last_seen_at'),
         state: row.state,
         currentRunId: row.current_run_id ?? null,
         codeSha: row.code_sha ?? null,
         codeDirty: !!row.code_dirty,
-      };
+      }
     },
 
     async head(): Promise<bigint> {
-      const statement = db.prepare("SELECT coalesce(max(seq), 0) AS head FROM events");
-      statement.setReadBigInts(true);
-      return (statement.get() as { head: bigint }).head;
+      const statement = db.prepare('SELECT coalesce(max(seq), 0) AS head FROM events')
+      statement.setReadBigInts(true)
+      return (statement.get() as { head: bigint }).head
     },
 
     async streams(query: StreamQuery): Promise<string[]> {
-      if (query.prefixes.length === 0 || query.types.length === 0) return [];
-      const types = query.types.map(() => "?").join(", ");
-      const like = query.prefixes.map(() => "stream_id LIKE ?").join(" OR ");
+      if (query.prefixes.length === 0 || query.types.length === 0) return []
+      const types = query.types.map(() => '?').join(', ')
+      const like = query.prefixes.map(() => 'stream_id LIKE ?').join(' OR ')
       const rows = db
         .prepare(
           `SELECT DISTINCT stream_id FROM events
             WHERE type IN (${types}) AND (${like})
             ORDER BY stream_id`,
         )
-        .all(...query.types, ...query.prefixes) as { stream_id: string }[];
-      return rows.map((r) => r.stream_id);
+        .all(...query.types, ...query.prefixes) as { stream_id: string }[]
+      return rows.map((r) => r.stream_id)
     },
 
     async close() {
-      db.close();
+      db.close()
     },
-  };
+  }
 }

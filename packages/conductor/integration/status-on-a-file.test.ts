@@ -24,102 +24,104 @@
  * it. What it asserts is that the road is open, which is the half that was
  * closed.
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { parsePayload, projectStream } from "@lingtai/domain";
-import { postgresUrl } from "@lingtai/env";
-import { createSqliteLog, openSqliteLog } from "@lingtai/event-store/sqlite";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const dirs: string[] = [];
-const opened: { close(): void }[] = [];
+import { parsePayload, projectStream } from '@lingtai/domain'
+import { postgresUrl } from '@lingtai/env'
+import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+
+import { loadAllProjects, loadProject, loadProjects } from '../src/projects.ts'
+
+const dirs: string[] = []
+const opened: { close(): void }[] = []
 
 function freshLog() {
-  const dir = mkdtempSync(join(tmpdir(), "lingtai-status-"));
-  dirs.push(dir);
-  const path = join(dir, "log.db");
-  const db = openSqliteLog(path);
-  opened.push(db);
-  return createSqliteLog({ db, path });
+  const dir = mkdtempSync(join(tmpdir(), 'lingtai-status-'))
+  dirs.push(dir)
+  const path = join(dir, 'log.db')
+  const db = openSqliteLog(path)
+  opened.push(db)
+  return createSqliteLog({ db, path })
 }
 
-const LIVE = "esctest-live";
-const PENDING = "esctest-pending";
+const LIVE = 'esctest-live'
+const PENDING = 'esctest-pending'
 
-let log: ReturnType<typeof freshLog>;
+let log: ReturnType<typeof freshLog>
 
 beforeAll(async () => {
   // Every name `postgresUrl()` and `directPostgresUrl()` read. With these gone
   // a stray `createDb()` throws by name, which is the point of the test.
   for (const name of [
-    "LINGTAI_DATABASE_URL",
-    "LINGTAI_DIRECT_DATABASE_URL",
-    "LINGTAI_TEST_DATABASE_URL",
-    "LINGTAI_TEST_DIRECT_DATABASE_URL",
+    'LINGTAI_DATABASE_URL',
+    'LINGTAI_DIRECT_DATABASE_URL',
+    'LINGTAI_TEST_DATABASE_URL',
+    'LINGTAI_TEST_DIRECT_DATABASE_URL',
   ]) {
-    vi.stubEnv(name, undefined as unknown as string);
+    vi.stubEnv(name, undefined as unknown as string)
   }
 
-  log = freshLog();
+  log = freshLog()
   await log.store.append(projectStream(LIVE), 0, [
     {
-      type: "ProjectConfigured",
-      actor: "conductor",
-      data: parsePayload("ProjectConfigured", {
+      type: 'ProjectConfigured',
+      actor: 'conductor',
+      data: parsePayload('ProjectConfigured', {
         project: LIVE,
-        owner: "steven-zhc",
-        base: "main",
-        configHash: "h",
-        fromSha: "s",
+        owner: 'steven-zhc',
+        base: 'main',
+        configHash: 'h',
+        fromSha: 's',
       }),
     },
-  ]);
+  ])
   await log.store.append(projectStream(PENDING), 0, [
     {
-      type: "ProjectOnboardingStarted",
-      actor: "human:esctest",
-      data: parsePayload("ProjectOnboardingStarted", {
+      type: 'ProjectOnboardingStarted',
+      actor: 'human:esctest',
+      data: parsePayload('ProjectOnboardingStarted', {
         slug: `steven-zhc/${PENDING}`,
-        base: "develop",
-        by: "human:esctest",
+        base: 'develop',
+        by: 'human:esctest',
       }),
     },
-  ]);
-});
+  ])
+})
 
 afterAll(() => {
-  vi.unstubAllEnvs();
-  for (const db of opened.splice(0)) db.close();
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+  vi.unstubAllEnvs()
+  for (const db of opened.splice(0)) db.close()
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
-describe("what lingtai status asks first, on a machine with no Postgres", () => {
-  it("refuses to name a connection at all, so nothing here can quietly have one", () => {
+describe('what lingtai status asks first, on a machine with no Postgres', () => {
+  it('refuses to name a connection at all, so nothing here can quietly have one', () => {
     // The guard on the guard: if this ever stops throwing, every assertion
     // below proves only that the machine running them has a database.
     // `postgresUrl` reads the environment when it is called, so the stubbing
     // above is in force here.
-    expect(() => postgresUrl()).toThrow();
-  });
+    expect(() => postgresUrl()).toThrow()
+  })
 
-  it("lists the projects a conductor may take work from", async () => {
-    const names = (await loadProjects(log)).map((p) => p.project);
+  it('lists the projects a conductor may take work from', async () => {
+    const names = (await loadProjects(log)).map((p) => p.project)
 
-    expect(names).toEqual([LIVE]);
-  });
+    expect(names).toEqual([LIVE])
+  })
 
-  it("reads the whole register, pending projects included", async () => {
-    const all = await loadAllProjects(log);
+  it('reads the whole register, pending projects included', async () => {
+    const all = await loadAllProjects(log)
 
-    expect(all.map((p) => p.project).sort()).toEqual([LIVE, PENDING].sort());
-  });
+    expect(all.map((p) => p.project).sort()).toEqual([LIVE, PENDING].sort())
+  })
 
-  it("answers about one project by name", async () => {
-    expect((await loadProject(LIVE, log.store))?.base).toBe("main");
+  it('answers about one project by name', async () => {
+    expect((await loadProject(LIVE, log.store))?.base).toBe('main')
     // Recorded and not yet registered, so the conductor is told nothing — the
     // rule `integration/projects.test.ts` pins against the real store.
-    expect(await loadProject(PENDING, log.store)).toBeNull();
-  });
-});
+    expect(await loadProject(PENDING, log.store)).toBeNull()
+  })
+})

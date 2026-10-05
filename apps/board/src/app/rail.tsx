@@ -1,5 +1,6 @@
-import { inWords } from "@lingtai/conductor/queue";
-import { elapsed, stepOf, type StepProgress, type StepState, type RunProgress } from "@/lib/progress";
+import { inWords } from '@lingtai/conductor/queue'
+
+import { elapsed, stepOf, type StepProgress, type StepState, type RunProgress } from '@/lib/progress'
 
 /**
  * The ten steps as a sequence, on every surface that draws one.
@@ -31,30 +32,30 @@ import { elapsed, stepOf, type StepProgress, type StepState, type RunProgress } 
  * those as the first, which is precisely the failure 0016 §4 names.
  */
 const CELL_TONE: Record<StepState, string> = {
-  passed: "t-pass",
-  failed: "t-fail",
-  running: "t-run",
+  passed: 't-pass',
+  failed: 't-fail',
+  running: 't-run',
   // A person's word standing in for a gate, and never the green one: an
   // override of a red build must not look like a build that went green.
-  waived: "t-waived",
+  waived: 't-waived',
   // Hatched, in the fail colour and with no verdict behind it — the one mark
   // that breaks the rhythm, because it is the one state that is our bug.
-  "never-ran": "t-never",
+  'never-ran': 't-never',
   // The same hatch, because it is the same thing to a reader of a bar: a point
   // that was configured, was reached, and judged nothing. What separates the
   // two is *whose* fault and *what to do*, which is a sentence and not a tone —
   // so it is on the segment's title and on the card, not in a sixth colour.
-  "did-not-finish": "t-never",
+  'did-not-finish': 't-never',
   // **The same hatch in the held colour, and not the fail one** (`#296`). It was
   // `did-not-finish` until *asked* was its own ending, so a step waiting for an
   // answer wore the mark that means *our bug*. The hatch is kept because the fact
   // it carries is the one `never-ran` and `did-not-finish` carry too — nothing
   // judged this diff here — and the colour is the one `waived` wears, because
   // what is standing in for a verdict is a person either way.
-  asked: "t-asked",
-  pending: "t-pending",
-  skipped: "t-skipped",
-};
+  asked: 't-asked',
+  pending: 't-pending',
+  skipped: 't-skipped',
+}
 
 /**
  * Which of the five weights a point's name carries.
@@ -68,26 +69,26 @@ const CELL_TONE: Record<StepState, string> = {
  * colour over its name would say the thing the ending exists to stop saying.
  */
 function labelTone(p: StepProgress, at: string | null): string {
-  if (p.actions.length === 0) return "l-off";
-  if (p.state === "failed" || p.state === "never-ran" || p.state === "did-not-finish") return "l-bad";
-  if (p.state === "asked") return "l-held";
-  if (p.state === "running" || p.step === at) return "l-at";
-  return "l-done";
+  if (p.actions.length === 0) return 'l-off'
+  if (p.state === 'failed' || p.state === 'never-ran' || p.state === 'did-not-finish') return 'l-bad'
+  if (p.state === 'asked') return 'l-held'
+  if (p.state === 'running' || p.step === at) return 'l-at'
+  return 'l-done'
 }
 
 /** What a segment says on hover: what was configured there, and what came of it. */
 function segTitle(p: StepProgress): string {
-  if (p.actions.length === 0) return `${p.step}: nothing configured, so nothing runs`;
-  if (p.state === "never-ran") {
-    return `${p.step}: ${p.planned.join(", ")} — configured and did not run, which is Lingtai's bug (0016 §4)`;
+  if (p.actions.length === 0) return `${p.step}: nothing configured, so nothing runs`
+  if (p.state === 'never-ran') {
+    return `${p.step}: ${p.planned.join(', ')} — configured and did not run, which is Lingtai's bug (0016 §4)`
   }
-  if (p.state === "did-not-finish") {
-    return `${p.step}: ${p.planned.join(", ")} — its agent started and produced no verdict (0057)`;
+  if (p.state === 'did-not-finish') {
+    return `${p.step}: ${p.planned.join(', ')} — its agent started and produced no verdict (0057)`
   }
-  if (p.state === "asked") {
-    return `${p.step}: ${p.planned.join(", ")} — its agent stopped and asked something (0058 §3c)`;
+  if (p.state === 'asked') {
+    return `${p.step}: ${p.planned.join(', ')} — its agent stopped and asked something (0058 §3c)`
   }
-  return `${p.step}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(", ")}`;
+  return `${p.step}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(', ')}`
 }
 
 /**
@@ -136,14 +137,14 @@ export function Segs({
   at,
   labels,
 }: {
-  steps: readonly StepProgress[];
-  at: string | null;
+  steps: readonly StepProgress[]
+  at: string | null
   /**
    * Off on a landed row, which is one line by #81's decision and has no room
    * for ten names — it had none for five. The row's rail is scanned for the one
    * mark that is wrong — the hatch — and the title on each segment says the rest.
    */
-  labels: boolean;
+  labels: boolean
 }) {
   return (
     <ol className="segs">
@@ -158,7 +159,7 @@ export function Segs({
         </li>
       ))}
     </ol>
-  );
+  )
 }
 
 /**
@@ -188,13 +189,13 @@ export function Segs({
  */
 function refusedAt(steps: readonly StepProgress[]): string | null {
   for (const p of steps) {
-    const bad = p.actions.find((a) => a.state === "failed");
-    if (bad) return `${p.step}:${bad.name}`;
+    const bad = p.actions.find((a) => a.state === 'failed')
+    if (bad) return `${p.step}:${bad.name}`
     // A step that failed with no action naming it is already a step name, and
     // qualifying it with itself would read `proposed:proposed`.
-    if (p.state === "failed") return p.step;
+    if (p.state === 'failed') return p.step
   }
-  return null;
+  return null
 }
 
 /**
@@ -230,26 +231,26 @@ export function Rail({
   progress,
   live,
 }: {
-  progress: RunProgress;
+  progress: RunProgress
   /**
    * Whether the run is in flight — the lane's word, as it is for the elapsed
    * pill above, and never the rail's. A fold cannot answer it: a pass stopped
    * by the merge lane's refusal has a run stream that simply ends, which is
    * indistinguishable here from one a second between two points.
    */
-  live: boolean;
+  live: boolean
 }) {
-  const now = progress.now;
+  const now = progress.now
   // The point half of `proposed:build`, which is what the label highlights.
   // Null where the phase names no point — the agent, and a bought round.
-  const at = now === null ? null : stepOf(now.label);
+  const at = now === null ? null : stepOf(now.label)
   // Only when nothing is in flight, **and** only off the running lane — the
   // sentence's own title says a person is being waited on, and that is a fact
   // about the lane rather than about the stream. A refusal from an earlier
   // round sits under a live gate on the same card, and between a refusal and
   // the round bought to answer it there is a moment with neither; both are a
   // pass still working, and neither is anybody's to act on.
-  const refused = now === null && !live ? refusedAt(progress.steps) : null;
+  const refused = now === null && !live ? refusedAt(progress.steps) : null
 
   return (
     <div className="seq">
@@ -267,9 +268,8 @@ export function Rail({
               killed*, and it is absent rather than invented where nothing
               bounds the phase — an approval waits on a person, and a person has
               no timeout. */}
-          {at === null ? now.label : now.label.slice(at.length + 1)}{" "}
-          {elapsed(Date.now() - Date.parse(now.since))}
-          {now.budgetMs === null ? "" : ` / ${inWords(now.budgetMs)}`}
+          {at === null ? now.label : now.label.slice(at.length + 1)} {elapsed(Date.now() - Date.parse(now.since))}
+          {now.budgetMs === null ? '' : ` / ${inWords(now.budgetMs)}`}
         </p>
       ) : refused ? (
         /* The action and what came of it, the same shape as the line above —
@@ -319,5 +319,5 @@ export function Rail({
         </p>
       )}
     </div>
-  );
+  )
 }

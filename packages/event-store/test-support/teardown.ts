@@ -73,11 +73,12 @@
  *   database left dirty.
  */
 // Side effect: loads `.env.local` from the workspace root. See above.
-import "@lingtai/env";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import pg from "pg";
+import '@lingtai/env'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import pg from 'pg'
 
 /**
  * The names the suite invents for itself, as one pattern.
@@ -100,33 +101,32 @@ import pg from "pg";
  * protecting it.** The protection that is wanted is against a *real* log, and a
  * stream the suite itself named is not one.
  */
-const THROWAWAY = String.raw`(esctest|test-[0-9a-f]{8}$)`;
+const THROWAWAY = String.raw`(esctest|test-[0-9a-f]{8}$)`
 
 /**
  * A directory made for this run alone, when nothing named a Postgres test URL
  * — see the module comment. `null` on a run that has one, so `teardown` knows
  * which cleanup is its to do.
  */
-let sqliteDir: string | null = null;
+let sqliteDir: string | null = null
 
 export async function setup(): Promise<void> {
-  if (process.env["LINGTAI_TEST_DATABASE_URL"]) return;
-  sqliteDir = await mkdtemp(join(tmpdir(), "lingtai-test-"));
-  process.env["LINGTAI_TEST_SQLITE_PATH"] = join(sqliteDir, "lingtai.db");
+  if (process.env['LINGTAI_TEST_DATABASE_URL']) return
+  sqliteDir = await mkdtemp(join(tmpdir(), 'lingtai-test-'))
+  process.env['LINGTAI_TEST_SQLITE_PATH'] = join(sqliteDir, 'lingtai.db')
 }
 
 export async function teardown(): Promise<void> {
-  if (process.env["LINGTAI_KEEP_TEST_DATA"]) return;
+  if (process.env['LINGTAI_KEEP_TEST_DATA']) return
 
   if (sqliteDir) {
-    await rm(sqliteDir, { recursive: true, force: true });
-    return;
+    await rm(sqliteDir, { recursive: true, force: true })
+    return
   }
 
   // Session mode, like every other statement that is not an ordinary query.
   // `LINGTAI_`-prefixed since `#63`: every name Lingtai reads for itself is.
-  const url =
-    process.env["LINGTAI_TEST_DIRECT_DATABASE_URL"] ?? process.env["LINGTAI_TEST_DATABASE_URL"];
+  const url = process.env['LINGTAI_TEST_DIRECT_DATABASE_URL'] ?? process.env['LINGTAI_TEST_DATABASE_URL']
   // Read by name rather than through `postgresUrl()`, which decides between the
   // two by whether it thinks it is in a test. This file may only ever touch the
   // test one, and naming it is how that stays checkable.
@@ -135,10 +135,10 @@ export async function teardown(): Promise<void> {
   // returned above — or the suite could not have run at all, and saying so here
   // would be the second complaint: `@lingtai/env` already refuses, by name,
   // before a single test starts.
-  if (!url) return;
+  if (!url) return
 
-  const c = new pg.Client({ connectionString: url });
-  await c.connect();
+  const c = new pg.Client({ connectionString: url })
+  await c.connect()
   try {
     // The guard. A work item, run, integration or project stream that is not a
     // throwaway means this is pointed at a log with real history in it, and
@@ -147,17 +147,17 @@ export async function teardown(): Promise<void> {
       `select distinct stream_id from events
        where stream_id ~ '^(wi|run|int|prj)-' and stream_id !~ $1 limit 5`,
       [`^(wi|run|int|prj)-${THROWAWAY}`],
-    );
+    )
     if (real.rows.length > 0) {
       console.warn(
         `[teardown] leaving the test log alone: it holds streams that are not throwaway — ` +
-          real.rows.map((r: { stream_id: string }) => r.stream_id).join(", "),
-      );
-      return;
+          real.rows.map((r: { stream_id: string }) => r.stream_id).join(', '),
+      )
+      return
     }
 
     try {
-      await c.query("alter table events disable rule lingtai_events_no_delete");
+      await c.query('alter table events disable rule lingtai_events_no_delete')
       // The work the suite invented, and the control aggregate beside it.
       //
       // **`ctl-` is swept wholesale, and it has to be.** There is one control
@@ -174,9 +174,9 @@ export async function teardown(): Promise<void> {
       // no real control history either.
       await c.query(`delete from events where stream_id ~ $1 or stream_id ~ '^ctl-'`, [
         `^(wi|run|int|prj)-${THROWAWAY}`,
-      ]);
+      ])
     } finally {
-      await c.query("alter table events enable rule lingtai_events_no_delete");
+      await c.query('alter table events enable rule lingtai_events_no_delete')
     }
 
     // Every projection that names a project, found rather than listed: a table
@@ -185,11 +185,11 @@ export async function teardown(): Promise<void> {
       `select table_name from information_schema.columns
        where table_schema = 'public' and column_name = 'project'
          and table_name != 'events'`,
-    );
+    )
     for (const { table_name } of projections.rows as { table_name: string }[]) {
-      await c.query(`delete from "${table_name}" where project like $1`, [`${THROWAWAY}%`]);
+      await c.query(`delete from "${table_name}" where project like $1`, [`${THROWAWAY}%`])
     }
   } finally {
-    await c.end();
+    await c.end()
   }
 }

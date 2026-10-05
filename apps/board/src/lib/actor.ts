@@ -10,8 +10,8 @@
  * waiver from the terminal records the same actor as a click — against this
  * function, not a copy of it.
  */
-import { userInfo } from "node:os";
+import { userInfo } from 'node:os'
 
 export function actor(): string {
-  return `human:${userInfo().username}`;
+  return `human:${userInfo().username}`
 }

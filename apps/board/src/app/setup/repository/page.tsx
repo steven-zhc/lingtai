@@ -1,3 +1,16 @@
+import { offerCreation } from '@lingtai/conductor/create-app'
+import {
+  type Choice,
+  type Picker,
+  choose,
+  listRepositories,
+  taken,
+  unrecorded,
+} from '@lingtai/conductor/pick-repository'
+import { loadAllProjects } from '@lingtai/conductor/projects'
+import type { ProjectState } from '@lingtai/domain'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { REQUIRED_PERMISSIONS, createAppReader } from '@lingtai/github'
 /**
  * Step 0, after the App exists: which repository (#168).
  *
@@ -16,59 +29,53 @@
  * comes after a slug is known is not this page's — the wizard (#164), or
  * `lingtai add`.
  */
-import Link from "next/link";
-import { offerCreation } from "@lingtai/conductor/create-app";
-import { type Choice, type Picker, choose, listRepositories, taken, unrecorded } from "@lingtai/conductor/pick-repository";
-import { loadAllProjects } from "@lingtai/conductor/projects";
-import type { ProjectState } from "@lingtai/domain";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { REQUIRED_PERMISSIONS, createAppReader } from "@lingtai/github";
+import Link from 'next/link'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 export type Loaded =
-  | { state: "no-app" }
-  | { state: "unreadable"; why: string }
-  | { state: "listed"; picker: Picker; logUnanswered: string | null };
+  | { state: 'no-app' }
+  | { state: 'unreadable'; why: string }
+  | { state: 'listed'; picker: Picker; logUnanswered: string | null }
 
 export default async function PickRepository({
   searchParams,
 }: {
-  searchParams: Promise<{ repo?: string; installed?: string; requested?: string }>;
+  searchParams: Promise<{ repo?: string; installed?: string; requested?: string }>
 }) {
-  const params = await searchParams;
-  const loaded = await load();
-  const choice = loaded.state === "listed" && params.repo ? choose(loaded.picker, params.repo) : null;
+  const params = await searchParams
+  const loaded = await load()
+  const choice = loaded.state === 'listed' && params.repo ? choose(loaded.picker, params.repo) : null
   return (
     <RepositoryScreen
       loaded={loaded}
-      input={params.repo ?? ""}
-      choice={loaded.state === "listed" && loaded.logUnanswered !== null ? null : choice}
+      input={params.repo ?? ''}
+      choice={loaded.state === 'listed' && loaded.logUnanswered !== null ? null : choice}
       installed={params.installed === undefined ? null : Number(params.installed)}
-      requested={params.requested === "1"}
+      requested={params.requested === '1'}
     />
-  );
+  )
 }
 
 async function load(): Promise<Loaded> {
-  if (!hasGitHubApp()) return { state: "no-app" };
-  let projects: ProjectState[] = [];
-  let logUnanswered: string | null = null;
+  if (!hasGitHubApp()) return { state: 'no-app' }
+  let projects: ProjectState[] = []
+  let logUnanswered: string | null = null
   try {
-    projects = await loadAllProjects();
+    projects = await loadAllProjects()
   } catch (err) {
-    logUnanswered = (err as Error).message;
+    logUnanswered = (err as Error).message
   }
   try {
-    const offer = await offerCreation();
+    const offer = await offerCreation()
     const picker = await listRepositories({
       reader: createAppReader(githubApp()),
       projects,
       installUrl: offer.installUrl,
-    });
-    return { state: "listed", picker, logUnanswered };
+    })
+    return { state: 'listed', picker, logUnanswered }
   } catch (err) {
-    return { state: "unreadable", why: (err as Error).message };
+    return { state: 'unreadable', why: (err as Error).message }
   }
 }
 
@@ -83,11 +90,11 @@ export function RepositoryScreen({
   installed,
   requested,
 }: {
-  loaded: Loaded;
-  input: string;
-  choice: Choice | null;
-  installed: number | null;
-  requested: boolean;
+  loaded: Loaded
+  input: string
+  choice: Choice | null
+  installed: number | null
+  requested: boolean
 }) {
   return (
     <main className="detail">
@@ -108,16 +115,16 @@ export function RepositoryScreen({
 
           {requested ? (
             <p className="note">
-              The install was requested, and an organisation owner has to approve it on GitHub. Nothing
-              here has to be kept open: come back to this page once they have, and it will be listed.
+              The install was requested, and an organisation owner has to approve it on GitHub. Nothing here has to be
+              kept open: come back to this page once they have, and it will be listed.
             </p>
           ) : null}
 
-          {loaded.state === "no-app" ? (
+          {loaded.state === 'no-app' ? (
             <p className="note">
               There is no GitHub App configured yet. <Link href="/setup/github-app">Create it first</Link>.
             </p>
-          ) : loaded.state === "unreadable" ? (
+          ) : loaded.state === 'unreadable' ? (
             <p className="refusal">GitHub would not say what the App can see — {loaded.why}. Reload to ask again.</p>
           ) : loaded.picker.installations.length === 0 ? (
             <NotInstalled installUrl={loaded.picker.installUrl} logUnanswered={loaded.logUnanswered} />
@@ -133,7 +140,7 @@ export function RepositoryScreen({
         </section>
       </div>
     </main>
-  );
+  )
 }
 
 function Grants() {
@@ -145,7 +152,7 @@ function Grants() {
         </li>
       ))}
     </ul>
-  );
+  )
 }
 
 /** The first-class *not installed yet* screen. */
@@ -153,23 +160,23 @@ function NotInstalled({ installUrl, logUnanswered }: { installUrl: string | null
   return (
     <>
       <p className="note">
-        The App is not installed anywhere yet, so there is nothing to pick from. Installing it is
-        GitHub&rsquo;s screen: you choose the account and which of its repositories the App may see.
-        On those repositories it may do this, and nothing else:
+        The App is not installed anywhere yet, so there is nothing to pick from. Installing it is GitHub&rsquo;s screen:
+        you choose the account and which of its repositories the App may see. On those repositories it may do this, and
+        nothing else:
       </p>
       <Grants />
       {installUrl === null && logUnanswered !== null ? (
         <p className="refusal">
-          The log could not be read — {logUnanswered} — so Lingtai cannot tell this App&rsquo;s name, which
-          creating it recorded there. Install it from{" "}
-          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, or
-          reload this page once the log answers.
+          The log could not be read — {logUnanswered} — so Lingtai cannot tell this App&rsquo;s name, which creating it
+          recorded there. Install it from{' '}
+          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, or reload this
+          page once the log answers.
         </p>
       ) : installUrl === null ? (
         <p className="note">
-          Lingtai does not know this App&rsquo;s name, because it was configured by hand. Install it from{" "}
-          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then
-          reload this page.
+          Lingtai does not know this App&rsquo;s name, because it was configured by hand. Install it from{' '}
+          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then reload this
+          page.
         </p>
       ) : (
         <div className="btnrow">
@@ -179,7 +186,7 @@ function NotInstalled({ installUrl, logUnanswered }: { installUrl: string | null
         </div>
       )}
     </>
-  );
+  )
 }
 
 function Listed({
@@ -189,13 +196,13 @@ function Listed({
   installed,
   logUnanswered,
 }: {
-  picker: Picker;
-  input: string;
-  choice: Choice | null;
-  installed: number | null;
-  logUnanswered: string | null;
+  picker: Picker
+  input: string
+  choice: Choice | null
+  installed: number | null
+  logUnanswered: string | null
 }) {
-  const justInstalled = picker.installations.find((l) => l.installation.id === installed);
+  const justInstalled = picker.installations.find((l) => l.installation.id === installed)
   return (
     <>
       {justInstalled === undefined ? null : (
@@ -203,8 +210,8 @@ function Listed({
       )}
       {logUnanswered === null ? null : (
         <p className="refusal">
-          The log could not be read — {logUnanswered} — so Lingtai cannot tell which of these are already
-          onboarded, and none is offered until it can.
+          The log could not be read — {logUnanswered} — so Lingtai cannot tell which of these are already onboarded, and
+          none is offered until it can.
         </p>
       )}
       {choice === null ? null : <Chosen choice={choice} />}
@@ -212,12 +219,12 @@ function Listed({
       {picker.installations.map(({ installation, unanswered, gaps, repositories }) => (
         <div key={installation.id}>
           <h3>
-            {installation.account}{" "}
+            {installation.account}{' '}
             <small>
-              {installation.repositorySelection === "all" ? "every repository" : "selected repositories"}
+              {installation.repositorySelection === 'all' ? 'every repository' : 'selected repositories'}
               {installation.htmlUrl === null ? null : (
                 <>
-                  {" · "}
+                  {' · '}
                   <a href={installation.htmlUrl}>change</a>
                 </>
               )}
@@ -225,25 +232,27 @@ function Listed({
           </h3>
           {unanswered === null ? null : (
             <p className="refusal">
-              GitHub would not say what the App can see on {installation.account} — {unanswered}. Reload to ask
-              again.
+              GitHub would not say what the App can see on {installation.account} — {unanswered}. Reload to ask again.
             </p>
           )}
           {gaps.length === 0 ? null : <Gaps gaps={gaps} />}
           <ul className="meta">
             {repositories.map((r) => (
               <li key={r.slug}>
-                {r.onboarded === "unrecorded" ? (
+                {r.onboarded === 'unrecorded' ? (
                   <>
                     <code>{r.slug}</code> — {unrecorded(r)}
                   </>
-                ) : r.onboarded === "taken" ? (
+                ) : r.onboarded === 'taken' ? (
                   <>
                     <code>{r.slug}</code> — {taken(r)}
                   </>
                 ) : r.onboarded !== null ? (
                   <>
-                    <code>{r.slug}</code> — {r.onboarded === "registered" ? "already onboarded" : "onboarding — press Recheck on the board's pending card"}
+                    <code>{r.slug}</code> —{' '}
+                    {r.onboarded === 'registered'
+                      ? 'already onboarded'
+                      : "onboarding — press Recheck on the board's pending card"}
                   </>
                 ) : logUnanswered !== null || gaps.length > 0 ? (
                   <code>{r.slug}</code>
@@ -261,7 +270,7 @@ function Listed({
           <span>Or paste a link</span>
           <input name="repo" defaultValue={input} placeholder="https://github.com/owner/repo" />
           <small>
-            Any shape: <code>owner/repo</code>, a GitHub link, <code>.git</code>, a <code>/tree/</code> page, or{" "}
+            Any shape: <code>owner/repo</code>, a GitHub link, <code>.git</code>, a <code>/tree/</code> page, or{' '}
             <code>git@github.com:owner/repo.git</code>.
           </small>
         </label>
@@ -278,7 +287,7 @@ function Listed({
         </p>
       )}
     </>
-  );
+  )
 }
 
 function Gaps({ gaps }: { gaps: { name: string; need: string; have: string; why: string }[] }) {
@@ -293,7 +302,7 @@ function Gaps({ gaps }: { gaps: { name: string; need: string; have: string; why:
         ))}
       </ul>
     </>
-  );
+  )
 }
 
 function Chosen({ choice }: { choice: Choice }) {
@@ -304,11 +313,11 @@ function Chosen({ choice }: { choice: Choice }) {
           Chosen — {choice.slug}, on installation {choice.installation.id}.
         </p>
         <p className="note">
-          Next: <Link href={`/setup/wizard?repo=${encodeURIComponent(choice.slug)}`}>read it back</Link>, or{" "}
+          Next: <Link href={`/setup/wizard?repo=${encodeURIComponent(choice.slug)}`}>read it back</Link>, or{' '}
           <code>pnpm lingtai add {choice.slug}</code>
         </p>
       </>
-    );
+    )
   }
   return (
     <>
@@ -320,5 +329,5 @@ function Chosen({ choice }: { choice: Choice }) {
         </p>
       )}
     </>
-  );
+  )
 }

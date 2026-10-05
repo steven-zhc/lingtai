@@ -110,28 +110,23 @@
  * about a plugin instead, and it is held to a property of its own rather than
  * trusted.
  */
-import { readdir, readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
-import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from "@lingtai/domain";
-import {
-  type ActionKind,
-  type StepAction,
-  StepMap,
-  PLUGINS,
-  servesStep,
-  whyNoKindAt,
-} from "@lingtai/recipe";
+import { readdir, readFile } from 'node:fs/promises'
+
 import {
   type AgentActionDeps,
   ActionUnavailableError,
   type ActionDeps,
   actionsFromRecipe,
   verdictFor,
-} from "@lingtai/actions";
-import { resolveEndActions } from "../src/end-step.ts";
-import { BUILT_IN_FOR, judgeDeclaredAt } from "../src/judge.ts";
-import { NOT_BUILT_YET } from "../src/pass.ts";
-import { decideBacklog } from "../src/backlog.ts";
+} from '@lingtai/actions'
+import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from '@lingtai/domain'
+import { type ActionKind, type StepAction, StepMap, PLUGINS, servesStep, whyNoKindAt } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
+
+import { decideBacklog } from '../src/backlog.ts'
+import { resolveEndActions } from '../src/end-step.ts'
+import { BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
+import { NOT_BUILT_YET } from '../src/pass.ts'
 
 /**
  * The closed set's kinds, one action each, exactly as a resolved recipe would
@@ -148,51 +143,51 @@ import { decideBacklog } from "../src/backlog.ts";
  * read as *refused by name* and never test the one that runs.
  */
 const ACTION: Record<ActionKind, StepAction> = {
-  run: { name: "build", run: "pnpm verify", timeout: "15m", env: [] },
-  agent: { name: "review", agent: "claude-code", prompt: "read the diff" },
+  run: { name: 'build', run: 'pnpm verify', timeout: '15m', env: [] },
+  agent: { name: 'review', agent: 'claude-code', prompt: 'read the diff' },
   // **The one action the probe cannot write alone** (`#300`). A `file:` keeps what
   // an earlier entry made, so `actionsAt` refuses one at entry 0 — which is a rule
   // about the *list* and not about the pair this matrix asks about, exactly as the
   // lane's two are. `accepted` below carries a drafter ahead of it wherever the
   // step keeps, so what comes back is the cell's own answer.
-  file: { name: "keep the design", file: "doc/design/x.md" },
+  file: { name: 'keep the design', file: 'doc/design/x.md' },
   // **And the one the probe cannot write last** (`#301`). A `file-brief:` briefs
   // the entries after it, so `actionsAt` refuses one written last — the mirror of
   // the rule above, and about the *list* rather than about this pair. `accepted`
   // carries an agent behind it wherever the step reads a design back.
-  "file-brief": { name: "read the design back", "file-brief": true },
-  watch: { name: "tamper", watch: ["**/steps.yml"], then: "fail" },
-  human: { name: "approve", human: "merge this?" },
-  close: { name: "close the ticket", close: true, when: "landed" },
-  labels: { name: "label it", labels: ["shipped"], when: "any" },
-  refs: { name: "delete the arms", refs: true, branch: false, when: "landed" },
-  worktree: { name: "cut the branch", worktree: { base: "main", submodules: false } },
-  merge: { name: "land the branch", merge: { strategy: "merge-commit" } },
+  'file-brief': { name: 'read the design back', 'file-brief': true },
+  watch: { name: 'tamper', watch: ['**/steps.yml'], then: 'fail' },
+  human: { name: 'approve', human: 'merge this?' },
+  close: { name: 'close the ticket', close: true, when: 'landed' },
+  labels: { name: 'label it', labels: ['shipped'], when: 'any' },
+  refs: { name: 'delete the arms', refs: true, branch: false, when: 'landed' },
+  worktree: { name: 'cut the branch', worktree: { base: 'main', submodules: false } },
+  merge: { name: 'land the branch', merge: { strategy: 'merge-commit' } },
   queue: {
-    name: "what this machine works on",
+    name: 'what this machine works on',
     queue: {
-      kinds: ["bug", "feature"],
-      exclude: ["agent:hold"],
-      backoff: "1h",
+      kinds: ['bug', 'feature'],
+      exclude: ['agent:hold'],
+      backoff: '1h',
       // `assignee:` was a twelfth column until 0063 §3 made it this plugin's
       // fourth field (`#244`), so the cell it had is gone and what it decides
       // is walked here instead.
-      assignee: { login: "steven-zhc", take: "mine" },
+      assignee: { login: 'steven-zhc', take: 'mine' },
     },
   },
-  judge: { name: "the lines or the approach", judge: "same-worktree", when: "findings" },
-  backlog: { name: "the minors", backlog: "minor" },
-};
+  judge: { name: 'the lines or the approach', judge: 'same-worktree', when: 'findings' },
+  backlog: { name: 'the minors', backlog: 'minor' },
+}
 
 /** One finding of a given severity, with a scenario, so only the severity varies. */
 function finding(severity: Severity): Finding {
   return {
-    file: "src/a.ts",
+    file: 'src/a.ts',
     line: 1,
-    claim: "the name is wrong",
-    failureScenario: "a reader looks for it under the other name and does not find it",
+    claim: 'the name is wrong',
+    failureScenario: 'a reader looks for it under the other name and does not find it',
     severity,
-  };
+  }
 }
 /**
  * **The columns are the closed set's, in the closed set's order** (`#228`).
@@ -204,7 +199,7 @@ function finding(severity: Severity): Finding {
  * A plugin added with no row here has no `ACTION` either, and the case below
  * says so by name rather than the matrix quietly walking six of seven.
  */
-const KINDS = PLUGINS.map((plugin) => plugin.key);
+const KINDS = PLUGINS.map((plugin) => plugin.key)
 
 /**
  * What a step hands `actionsFromRecipe`, which is the other half of what it can
@@ -222,18 +217,18 @@ const EVERY_DEP: ActionDeps = {
   // Built, never run — building is the whole of what this file asserts.
   agent: {} as unknown as AgentActionDeps,
   watch: { changedFiles: async () => [] },
-  worktree: { cut: async () => ({ head: "0".repeat(40), where: "/nowhere" }) },
-  merge: { land: async () => ({ merged: "0".repeat(40) }) },
-  queue: { take: async () => ({ taken: { workItemId: "wi-nowhere-1", kind: "bug" } }) },
-  work: { work: async () => ({ committed: "0".repeat(40) }) },
-  file: { keep: async () => ({ at: "doc/design/x.md" }), issue: async () => ({ ref: "310" }) },
-  fileBrief: { read: async () => ({ document: "the shape" }) },
-};
-const DEPS: Record<"prepared" | "proposed" | "merge", ActionDeps> = {
+  worktree: { cut: async () => ({ head: '0'.repeat(40), where: '/nowhere' }) },
+  merge: { land: async () => ({ merged: '0'.repeat(40) }) },
+  queue: { take: async () => ({ taken: { workItemId: 'wi-nowhere-1', kind: 'bug' } }) },
+  work: { work: async () => ({ committed: '0'.repeat(40) }) },
+  file: { keep: async () => ({ at: 'doc/design/x.md' }), issue: async () => ({ ref: '310' }) },
+  fileBrief: { read: async () => ({ document: 'the shape' }) },
+}
+const DEPS: Record<'prepared' | 'proposed' | 'merge', ActionDeps> = {
   prepared: { env: () => ({}) },
   proposed: EVERY_DEP,
   merge: EVERY_DEP,
-};
+}
 
 /**
  * Does the code that consumes this step actually dispatch this action?
@@ -256,10 +251,10 @@ function runsAt(step: Step, kind: ActionKind): boolean {
   // A throw is a refusal and not a run, which is the answer this asks for; the
   // refusals themselves are asserted by name below.
   try {
-    if (step === "end") {
-      const resolved = resolveEndActions([], [ACTION[kind]], "landed");
-      const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? [];
-      return named.some((a) => a.name === ACTION[kind].name);
+    if (step === 'end') {
+      const resolved = resolveEndActions([], [ACTION[kind]], 'landed')
+      const named = (resolved[0]?.data as { actions: { name: string }[] } | undefined)?.actions ?? []
+      return named.some((a) => a.name === ACTION[kind].name)
     }
     /**
      * **`judge:`'s consumer is the router, and asking the pipeline for it would
@@ -272,16 +267,14 @@ function runsAt(step: Step, kind: ActionKind): boolean {
      * false at nine of them because the line below throws there first: the cell
      * has to be refused *and* unread away from `proposed`.
      */
-    if (kind === "judge") {
-      actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP);
-      const read = judgeDeclaredAt([ACTION[kind] as StepAction], "findings");
-      return read?.named === ACTION[kind].name;
+    if (kind === 'judge') {
+      actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP)
+      const read = judgeDeclaredAt([ACTION[kind] as StepAction], 'findings')
+      return read?.named === ACTION[kind].name
     }
-    return actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP).some(
-      (step) => step.name === ACTION[kind].name,
-    );
+    return actionsFromRecipe(step, [ACTION[kind]], EVERY_DEP).some((step) => step.name === ACTION[kind].name)
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -312,18 +305,18 @@ function runsAt(step: Step, kind: ActionKind): boolean {
  * smallest list that rule accepts.
  */
 function accepted(step: Step, kind: ActionKind): string | null {
-  const lands = whyNoKindAt(step, "merge") === null;
-  const keeps = whyNoKindAt(step, "file") === null;
-  const briefs = whyNoKindAt(step, "file-brief") === null;
+  const lands = whyNoKindAt(step, 'merge') === null
+  const keeps = whyNoKindAt(step, 'file') === null
+  const briefs = whyNoKindAt(step, 'file-brief') === null
   const probe =
-    keeps && kind === "file"
+    keeps && kind === 'file'
       ? [ACTION.agent, ACTION[kind]]
-      : briefs && kind === "file-brief"
+      : briefs && kind === 'file-brief'
         ? [ACTION[kind], ACTION.agent]
-        : [ACTION[kind]];
-  const written = !lands || kind === "merge" ? probe : [...probe, ACTION.merge];
-  const parsed = StepMap.safeParse({ [step]: written });
-  return parsed.success ? null : (parsed.error.issues[0]?.message ?? "refused with no message");
+        : [ACTION[kind]]
+  const written = !lands || kind === 'merge' ? probe : [...probe, ACTION.merge]
+  const parsed = StepMap.safeParse({ [step]: written })
+  return parsed.success ? null : (parsed.error.issues[0]?.message ?? 'refused with no message')
 }
 
 /**
@@ -343,8 +336,8 @@ function accepted(step: Step, kind: ActionKind): string | null {
  * ``.
  */
 function reasonAt(step: Step, kind: ActionKind): string | null {
-  const why = whyNoKindAt(step, kind);
-  return why === null ? null : why.slice(why.indexOf(": ") + 2);
+  const why = whyNoKindAt(step, kind)
+  return why === null ? null : why.slice(why.indexOf(': ') + 2)
 }
 
 /**
@@ -379,17 +372,17 @@ function reasonAt(step: Step, kind: ActionKind): string | null {
  * is given at no other step, so it passes the cell's own assertion.
  */
 const ANSWERED_BY_THE_KIND: readonly ActionKind[] = [
-  "judge",
-  "merge",
-  "worktree",
-  "queue",
-  "file",
-  "file-brief",
-  "close",
-  "labels",
-  "refs",
-  "backlog",
-];
+  'judge',
+  'merge',
+  'worktree',
+  'queue',
+  'file',
+  'file-brief',
+  'close',
+  'labels',
+  'refs',
+  'backlog',
+]
 
 /**
  * **The three paragraphs `prepared` owns**, read off `prepared` rather than
@@ -405,10 +398,10 @@ const ANSWERED_BY_THE_KIND: readonly ActionKind[] = [
  * newly opened step would fall through to the hold paragraph, and since
  * `prepared` runs a `run:` there would be no `prepared` cell to collide with.
  */
-const PREPARED_OWNS = (["agent", "watch", "human"] as const).map((kind) => reasonAt("prepared", kind));
+const PREPARED_OWNS = (['agent', 'watch', 'human'] as const).map((kind) => reasonAt('prepared', kind))
 
-describe("every step × kind cell runs or refuses", () => {
-  const cells = STEPS.flatMap((step) => KINDS.map((kind) => [step, kind] as const));
+describe('every step × kind cell runs or refuses', () => {
+  const cells = STEPS.flatMap((step) => KINDS.map((kind) => [step, kind] as const))
 
   /**
    * **The size of the matrix is the closed set's, and it is read rather than
@@ -417,32 +410,30 @@ describe("every step × kind cell runs or refuses", () => {
    * `undefined` — which is the silent half `#61` is about, arriving through the
    * test rather than through the schema.
    */
-  it("has one column per plugin and one action for each", () => {
-    expect(Object.keys(ACTION)).toEqual([...KINDS]);
-    expect(cells).toHaveLength(STEPS.length * PLUGINS.length);
+  it('has one column per plugin and one action for each', () => {
+    expect(Object.keys(ACTION)).toEqual([...KINDS])
+    expect(cells).toHaveLength(STEPS.length * PLUGINS.length)
     for (const kind of KINDS) {
-      expect(ACTION[kind], `no action for the "${kind}" plugin`).toBeDefined();
+      expect(ACTION[kind], `no action for the "${kind}" plugin`).toBeDefined()
     }
-  });
+  })
 
-  it.each(cells)("%s × %s", (step, kind) => {
-    const refusal = accepted(step, kind);
+  it.each(cells)('%s × %s', (step, kind) => {
+    const refusal = accepted(step, kind)
     if (refusal === null) {
       // Accepted, so it must run. This is the half `#58` and `#61` are about:
       // a recipe the log says was resolved, and a point that never called it.
-      expect(whyNoKindAt(step, kind)).toBeNull();
-      expect(runsAt(step, kind), `${step} accepts a ${kind} action and nothing runs it`).toBe(
-        true,
-      );
-      return;
+      expect(whyNoKindAt(step, kind)).toBeNull()
+      expect(runsAt(step, kind), `${step} accepts a ${kind} action and nothing runs it`).toBe(true)
+      return
     }
     // Refused, so it must refuse by name — the action, its kind, the point, and
     // a reason about the point rather than about a missing dependency.
-    expect(refusal).toContain(`"${ACTION[kind].name}"`);
-    expect(refusal).toContain(`"${kind}"`);
-    expect(refusal).toContain(`"${step}"`);
-    expect(whyNoKindAt(step, kind)).not.toBeNull();
-    expect(runsAt(step, kind)).toBe(false);
+    expect(refusal).toContain(`"${ACTION[kind].name}"`)
+    expect(refusal).toContain(`"${kind}"`)
+    expect(refusal).toContain(`"${step}"`)
+    expect(whyNoKindAt(step, kind)).not.toBeNull()
+    expect(runsAt(step, kind)).toBe(false)
     /**
      * **And the reason is about the step it was asked about** (`#306`).
      *
@@ -471,20 +462,19 @@ describe("every step × kind cell runs or refuses", () => {
      * there is no `prepared` cell for those two to collide with and
      * `PREPARED_OWNS` is what catches them.
      */
-    if (ANSWERED_BY_THE_KIND.includes(kind)) return;
-    const mine = reasonAt(step, kind);
-    const borrowed = STEPS.filter((other) => other !== step && reasonAt(other, kind) === mine);
-    expect(
-      borrowed,
-      `the "${step}" × "${kind}" refusal answers with the reason ${borrowed.join(", ")} gives`,
-    ).toEqual([]);
-    if (step !== "prepared") {
+    if (ANSWERED_BY_THE_KIND.includes(kind)) return
+    const mine = reasonAt(step, kind)
+    const borrowed = STEPS.filter((other) => other !== step && reasonAt(other, kind) === mine)
+    expect(borrowed, `the "${step}" × "${kind}" refusal answers with the reason ${borrowed.join(', ')} gives`).toEqual(
+      [],
+    )
+    if (step !== 'prepared') {
       expect(
         PREPARED_OWNS,
         `the "${step}" × "${kind}" refusal answers with one of \`prepared\`'s three paragraphs`,
-      ).not.toContain(mine);
+      ).not.toContain(mine)
     }
-  });
+  })
 
   /**
    * The same refusal one level down, for a caller that builds actions in code
@@ -493,19 +483,15 @@ describe("every step × kind cell runs or refuses", () => {
    * to answer the same at both doors.
    */
   it.each(
-    (["prepared", "proposed", "merge"] as const).flatMap((step) =>
-      KINDS.filter((kind) => whyNoKindAt(step, kind) !== null).map(
-        (kind) => [step, kind] as const,
-      ),
+    (['prepared', 'proposed', 'merge'] as const).flatMap((step) =>
+      KINDS.filter((kind) => whyNoKindAt(step, kind) !== null).map((kind) => [step, kind] as const),
     ),
-  )("actionsFromRecipe refuses %s × %s by name", (step, kind) => {
-    expect(() => actionsFromRecipe(step, [ACTION[kind]], DEPS[step])).toThrow(
-      ActionUnavailableError,
-    );
+  )('actionsFromRecipe refuses %s × %s by name', (step, kind) => {
+    expect(() => actionsFromRecipe(step, [ACTION[kind]], DEPS[step])).toThrow(ActionUnavailableError)
     expect(() => actionsFromRecipe(step, [ACTION[kind]], DEPS[step])).toThrow(
       new RegExp(`"${kind}" at the "${step}" step`),
-    );
-  });
+    )
+  })
 
   /**
    * **And the fourth door, which is the one `runsAt` cannot watch.** `end`'s
@@ -523,17 +509,13 @@ describe("every step × kind cell runs or refuses", () => {
    * declared `at: { end }` name instead, so a plugin spelling `when:` is
    * refused rather than dropped.
    */
-  it.each(KINDS.filter((kind) => whyNoKindAt("end", kind) !== null))(
-    "resolveEndActions refuses end × %s by name, rather than dropping it",
+  it.each(KINDS.filter((kind) => whyNoKindAt('end', kind) !== null))(
+    'resolveEndActions refuses end × %s by name, rather than dropping it',
     (kind) => {
-      expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
-        new RegExp(`"${kind}" at the "end" step`),
-      );
-      expect(() => resolveEndActions([], [ACTION[kind]], "landed")).toThrow(
-        new RegExp(`"${ACTION[kind].name}"`),
-      );
+      expect(() => resolveEndActions([], [ACTION[kind]], 'landed')).toThrow(new RegExp(`"${kind}" at the "end" step`))
+      expect(() => resolveEndActions([], [ACTION[kind]], 'landed')).toThrow(new RegExp(`"${ACTION[kind].name}"`))
     },
-  );
+  )
 
   /**
    * And the keys that guard reads are the plugins' own, not a second list
@@ -545,18 +527,18 @@ describe("every step × kind cell runs or refuses", () => {
    * `KINDS_AT.end`, which said the same thing from a table; 0064 §4 makes the
    * plugin say it, and this walks the closed set asking each one.
    */
-  it("refuses at `end` exactly the kinds no plugin declares itself at `end` for", () => {
-    const atEnd = PLUGINS.filter((plugin) => servesStep(plugin, "end")).map((plugin) => plugin.key);
-    expect(atEnd).toEqual(["close", "labels", "refs"]);
+  it('refuses at `end` exactly the kinds no plugin declares itself at `end` for', () => {
+    const atEnd = PLUGINS.filter((plugin) => servesStep(plugin, 'end')).map((plugin) => plugin.key)
+    expect(atEnd).toEqual(['close', 'labels', 'refs'])
     for (const kind of KINDS) {
-      const resolve = () => resolveEndActions([], [ACTION[kind]], "landed");
+      const resolve = () => resolveEndActions([], [ACTION[kind]], 'landed')
       if (atEnd.includes(kind)) {
-        expect(resolve, kind).not.toThrow();
+        expect(resolve, kind).not.toThrow()
       } else {
-        expect(resolve, kind).toThrow();
+        expect(resolve, kind).toThrow()
       }
     }
-  });
+  })
 
   /**
    * **`prepared`'s three refusals are about the point, not about the caller.**
@@ -569,12 +551,12 @@ describe("every step × kind cell runs or refuses", () => {
    * a release, which is what `whyNoKindAt` says back, so the person is asked a question
    * that re-asks itself every pass and can never be answered.
    */
-  it("says why `prepared` is narrower than `proposed`", () => {
-    expect(whyNoKindAt("prepared", "agent")).toMatch(/nothing has been committed/);
-    expect(whyNoKindAt("prepared", "watch")).toMatch(/nothing has been committed/);
-    expect(whyNoKindAt("prepared", "human")).toMatch(/released back to the queue/);
-    expect(whyNoKindAt("prepared", "run")).toBeNull();
-  });
+  it('says why `prepared` is narrower than `proposed`', () => {
+    expect(whyNoKindAt('prepared', 'agent')).toMatch(/nothing has been committed/)
+    expect(whyNoKindAt('prepared', 'watch')).toMatch(/nothing has been committed/)
+    expect(whyNoKindAt('prepared', 'human')).toMatch(/released back to the queue/)
+    expect(whyNoKindAt('prepared', 'run')).toBeNull()
+  })
 
   /**
    * **And why `design` is narrower than `proposed`, which is the newest step to
@@ -594,25 +576,25 @@ describe("every step × kind cell runs or refuses", () => {
    * that checks the diff is `build`'s, which is the part they can act on.
    */
   it("says why `design` takes the drafter and the destination, and not `prepared`'s reason", () => {
-    for (const kind of ["run", "watch", "human"] as const) {
-      const why = whyNoKindAt("design", kind);
-      expect(why, `${kind} is no longer refused at design`).not.toBeNull();
-      expect(why).toContain(`\`${kind}:\` does not implement \`design\``);
-      expect(why).toContain("`design` produces a document before any code");
-      expect(why).toContain("at this step it drafts rather than reviews");
+    for (const kind of ['run', 'watch', 'human'] as const) {
+      const why = whyNoKindAt('design', kind)
+      expect(why, `${kind} is no longer refused at design`).not.toBeNull()
+      expect(why).toContain(`\`${kind}:\` does not implement \`design\``)
+      expect(why).toContain('`design` produces a document before any code')
+      expect(why).toContain('at this step it drafts rather than reviews')
       // **And the destination beside it since `#300`**, which is the one clause
       // this sentence gained: the step carries two plugins now, one that makes the
       // document and one that keeps it, so a refusal naming only the drafter would
       // send its reader looking for a `destination:` field that does not exist.
-      expect(why).toContain("the one that keeps it, `file:`");
+      expect(why).toContain('the one that keeps it, `file:`')
       // Not the sentences about a step this operator never wrote.
-      expect(why).not.toContain("no plugin implements `design`");
-      expect(why).not.toContain("at `prepared`");
+      expect(why).not.toContain('no plugin implements `design`')
+      expect(why).not.toContain('at `prepared`')
     }
     // The one that runs there — and it is the same key that reviews elsewhere.
-    expect(whyNoKindAt("design", "agent")).toBeNull();
-    expect(whyNoKindAt("review", "agent")).toBeNull();
-  });
+    expect(whyNoKindAt('design', 'agent')).toBeNull()
+    expect(whyNoKindAt('review', 'agent')).toBeNull()
+  })
 
   /**
    * **And why `merge` is narrower than `proposed` too, which is a subtraction and
@@ -633,20 +615,20 @@ describe("every step × kind cell runs or refuses", () => {
    * walked into, and `not.toMatch` is the half of this case that catches it.
    */
   it("says why `merge` may not ask a person, and does not answer with `prepared`'s reason", () => {
-    for (const kind of ["human", "watch"] as const) {
-      const why = whyNoKindAt("merge", kind);
-      expect(why, `${kind} is no longer refused at merge`).not.toBeNull();
-      expect(why).toContain(`\`${kind}:\` does not implement \`merge\``);
-      expect(why).toContain("only `proposed` may send it to a person");
-      expect(why).toContain("`proposed:`, and that is the step to write this at");
+    for (const kind of ['human', 'watch'] as const) {
+      const why = whyNoKindAt('merge', kind)
+      expect(why, `${kind} is no longer refused at merge`).not.toBeNull()
+      expect(why).toContain(`\`${kind}:\` does not implement \`merge\``)
+      expect(why).toContain('only `proposed` may send it to a person')
+      expect(why).toContain('`proposed:`, and that is the step to write this at')
       // Not the sentence about a step this operator never wrote.
-      expect(why).not.toMatch(/at `prepared`/);
+      expect(why).not.toMatch(/at `prepared`/)
     }
     // The two that still run there, and the lane itself.
-    expect(whyNoKindAt("merge", "run")).toBeNull();
-    expect(whyNoKindAt("merge", "agent")).toBeNull();
-    expect(whyNoKindAt("merge", "merge")).toBeNull();
-  });
+    expect(whyNoKindAt('merge', 'run')).toBeNull()
+    expect(whyNoKindAt('merge', 'agent')).toBeNull()
+    expect(whyNoKindAt('merge', 'merge')).toBeNull()
+  })
 
   /**
    * **And why `claim` is not `prepared` either, which is the same trap sprung by
@@ -668,20 +650,20 @@ describe("every step × kind cell runs or refuses", () => {
    * nothing has been spent at all.
    */
   it("says why `claim` is not `prepared`, and does not answer with `prepared`'s reason", () => {
-    for (const kind of ["run", "agent", "watch", "human"] as const) {
-      const why = whyNoKindAt("claim", kind);
-      expect(why, `${kind} is no longer refused at claim`).not.toBeNull();
-      expect(why).toContain(`\`${kind}:\` does not implement \`claim\``);
+    for (const kind of ['run', 'agent', 'watch', 'human'] as const) {
+      const why = whyNoKindAt('claim', kind)
+      expect(why, `${kind} is no longer refused at claim`).not.toBeNull()
+      expect(why).toContain(`\`${kind}:\` does not implement \`claim\``)
       // In `claim`'s own terms: the one plugin it carries, and the remedy.
-      expect(why).toContain("`queue:`, which is the key `queuePlugin` declares there");
-      expect(why).toContain("`lingtai ask`");
+      expect(why).toContain('`queue:`, which is the key `queuePlugin` declares there')
+      expect(why).toContain('`lingtai ask`')
       // Not the two sentences about a step this operator never wrote.
-      expect(why).not.toContain("nothing has been committed at `prepared`");
-      expect(why).not.toContain("a hold at `prepared` cannot be answered");
+      expect(why).not.toContain('nothing has been committed at `prepared`')
+      expect(why).not.toContain('a hold at `prepared` cannot be answered')
     }
     // The one that runs there.
-    expect(whyNoKindAt("claim", "queue")).toBeNull();
-  });
+    expect(whyNoKindAt('claim', 'queue')).toBeNull()
+  })
 
   /**
    * **The sixth and seventh of the same class, found by asserting it rather than
@@ -708,29 +690,29 @@ describe("every step × kind cell runs or refuses", () => {
    * take — and no step branch can say why that is meaningless somewhere else.
    */
   it("says what a cut and a take are for, rather than answering with `prepared`'s hold", () => {
-    for (const step of ["prepared", "proposed", "merge"] as const) {
-      const cut = whyNoKindAt(step, "worktree");
-      expect(cut, `worktree is no longer refused at ${step}`).not.toBeNull();
-      expect(cut, step).toContain("`worktree:` is what `admit` does");
-      expect(cut, step).toContain("createWorktreeAction");
-      const take = whyNoKindAt(step, "queue");
-      expect(take, `queue is no longer refused at ${step}`).not.toBeNull();
-      expect(take, step).toContain("`queue:` is what `claim` does");
-      expect(take, step).toContain("createQueueAction");
+    for (const step of ['prepared', 'proposed', 'merge'] as const) {
+      const cut = whyNoKindAt(step, 'worktree')
+      expect(cut, `worktree is no longer refused at ${step}`).not.toBeNull()
+      expect(cut, step).toContain('`worktree:` is what `admit` does')
+      expect(cut, step).toContain('createWorktreeAction')
+      const take = whyNoKindAt(step, 'queue')
+      expect(take, `queue is no longer refused at ${step}`).not.toBeNull()
+      expect(take, step).toContain('`queue:` is what `claim` does')
+      expect(take, step).toContain('createQueueAction')
       // The paragraph both of them were given until `#306`.
       for (const why of [cut, take]) {
-        expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
+        expect(why, step).not.toContain('a hold at `prepared` cannot be answered')
       }
     }
     // The steps each of them does run at, so the refusals above are about the
     // pair and not about a key that was lost.
-    expect(whyNoKindAt("admit", "worktree")).toBeNull();
-    expect(whyNoKindAt("claim", "queue")).toBeNull();
+    expect(whyNoKindAt('admit', 'worktree')).toBeNull()
+    expect(whyNoKindAt('claim', 'queue')).toBeNull()
     // And the refusal a `worktree:` gets must not send its author to the code the
     // pass calls itself (`#268`) — `provisionWorktree` would read as *your
     // declaration is not what runs*, and at `admit` it is.
-    expect(whyNoKindAt("proposed", "worktree")).not.toContain("packages/repo/src/worktree.ts");
-  });
+    expect(whyNoKindAt('proposed', 'worktree')).not.toContain('packages/repo/src/worktree.ts')
+  })
 
   /**
    * **The exemption the cell walk needs, held to a property rather than trusted**
@@ -749,27 +731,27 @@ describe("every step × kind cell runs or refuses", () => {
    * neighbour, and it is asserted below by being the same sentence a `run:` gets
    * there.
    */
-  it("answers a kind-wide refusal with one sentence everywhere, and `end` with its own", () => {
+  it('answers a kind-wide refusal with one sentence everywhere, and `end` with its own', () => {
     for (const kind of ANSWERED_BY_THE_KIND) {
-      const refused = STEPS.filter((step) => step !== "end" && whyNoKindAt(step, kind) !== null);
-      expect(refused.length, `\`${kind}:\` is refused at no step but \`end\``).toBeGreaterThan(1);
-      const reasons = [...new Set(refused.map((step) => reasonAt(step, kind)))];
+      const refused = STEPS.filter((step) => step !== 'end' && whyNoKindAt(step, kind) !== null)
+      expect(refused.length, `\`${kind}:\` is refused at no step but \`end\``).toBeGreaterThan(1)
+      const reasons = [...new Set(refused.map((step) => reasonAt(step, kind)))]
       expect(
         reasons,
         `\`${kind}:\` is exempt from the cell's assertion and yet answers ${reasons.length} ways`,
-      ).toHaveLength(1);
+      ).toHaveLength(1)
     }
     // The five whose output is one step's own work take `end`'s sentence at
     // `end`, which is the one step that answers before the kind is looked at.
-    for (const kind of ["worktree", "merge", "queue", "judge", "file"] as const) {
-      expect(reasonAt("end", kind), kind).toBe(reasonAt("end", "run"));
+    for (const kind of ['worktree', 'merge', 'queue', 'judge', 'file'] as const) {
+      expect(reasonAt('end', kind), kind).toBe(reasonAt('end', 'run'))
     }
     // And the three effects are the kinds `end` accepts, so they are refused at
     // nine steps with the effect-only rule and at none with a step's own words.
-    for (const kind of ["close", "labels", "refs"] as const) {
-      expect(whyNoKindAt("end", kind), kind).toBeNull();
+    for (const kind of ['close', 'labels', 'refs'] as const) {
+      expect(whyNoKindAt('end', kind), kind).toBeNull()
     }
-  });
+  })
 
   /**
    * **The refusal a plugin author gets, and it names the step they should have
@@ -785,18 +767,18 @@ describe("every step × kind cell runs or refuses", () => {
    * writing one, and the three effects are the only plugins in the closed set
    * that are legal somewhere and refused somewhere else.
    */
-  it("names where a plugin does serve, when it is declared at a step it does not", () => {
-    for (const kind of ["close", "labels", "refs"] as const) {
-      const why = whyNoKindAt("proposed", kind);
-      expect(why, `${kind} is no longer refused at proposed`).not.toBeNull();
-      expect(why).toContain(`\`${kind}:\` does not implement \`proposed\``);
-      expect(why).toContain("it serves `end`");
+  it('names where a plugin does serve, when it is declared at a step it does not', () => {
+    for (const kind of ['close', 'labels', 'refs'] as const) {
+      const why = whyNoKindAt('proposed', kind)
+      expect(why, `${kind} is no longer refused at proposed`).not.toBeNull()
+      expect(why).toContain(`\`${kind}:\` does not implement \`proposed\``)
+      expect(why).toContain('it serves `end`')
       // And the whole sentence, as a recipe's reader meets it: the action, the
       // kind and the step are `kindRefusedAt`'s, the rest is the plugin's.
-      expect(accepted("proposed", kind)).toContain(`"${ACTION[kind].name}"`);
-      expect(accepted("proposed", kind)).toContain("it serves `end`");
+      expect(accepted('proposed', kind)).toContain(`"${ACTION[kind].name}"`)
+      expect(accepted('proposed', kind)).toContain('it serves `end`')
     }
-  });
+  })
 
   /**
    * **And a step nobody implements says that, rather than *this step takes
@@ -811,54 +793,52 @@ describe("every step × kind cell runs or refuses", () => {
    * carried `WHERE_INSTEAD`'s half — the only part an operator could act on —
    * until `#266` emptied both the class and the table.
    */
-  it("says a step no plugin implements, and where that work happens today", () => {
-    const unimplemented = STEPS.filter((step) =>
-      PLUGINS.every((plugin) => !servesStep(plugin, step)),
-    );
+  it('says a step no plugin implements, and where that work happens today', () => {
+    const unimplemented = STEPS.filter((step) => PLUGINS.every((plugin) => !servesStep(plugin, step)))
     // **Empty since `#266`, and that is the assertion** (0065 §1). `implement`
     // was the last name on this list; `agentPlugin` serves it now, so every one
     // of the ten steps has a plugin and the branch below has no subject left.
     // A step arriving back here would mean a key was lost, and the walk above
     // would go red with it.
-    expect(unimplemented).toEqual([]);
+    expect(unimplemented).toEqual([])
     // The branch itself is still reachable code and is asserted by the sentence
     // it would print: `whyNoKindAt` answers about the *pair* at every step now,
     // and *no plugin implements* appears nowhere.
     for (const step of STEPS) {
-      expect(whyNoKindAt(step, "run") ?? "", step).not.toContain("no plugin implements");
+      expect(whyNoKindAt(step, 'run') ?? '', step).not.toContain('no plugin implements')
     }
     // **Both were opened on 2026-09-27 and their refusals went with them.** A
     // `run:` at `build` and an `agent:` at `review` are what the recipe declares
     // there now, so there is no sentence left to send a reader to `proposed` —
     // `null` is the assertion, and a refusal coming back here again would mean a
     // key was lost.
-    expect(whyNoKindAt("build", "run")).toBeNull();
-    expect(whyNoKindAt("review", "agent")).toBeNull();
+    expect(whyNoKindAt('build', 'run')).toBeNull()
+    expect(whyNoKindAt('review', 'agent')).toBeNull()
     // **And `admit` left the same list on the same terms** (`#268`): the step has
     // a plugin now, so the refusal for every *other* kind there is about the pair
     // rather than about a step nobody built — and it keeps the remedy that branch
     // carried, which is the only part an operator can act on.
-    expect(whyNoKindAt("admit", "worktree")).toBeNull();
+    expect(whyNoKindAt('admit', 'worktree')).toBeNull()
     // **And `merge` is the third step to leave it, on the same terms** (`#270`):
     // the lane is a `merge:` action, so the refusal for every other kind there is
     // about the pair rather than about a step nobody built.
-    expect(whyNoKindAt("merge", "merge")).toBeNull();
+    expect(whyNoKindAt('merge', 'merge')).toBeNull()
     // **And `claim` is the fourth and the last of 0061 §3's five names** (`#269`):
     // the take is a `queue:` action, so the refusal for every other kind there is
     // about the pair rather than about a step nobody built.
-    expect(whyNoKindAt("claim", "queue")).toBeNull();
+    expect(whyNoKindAt('claim', 'queue')).toBeNull()
     // **And `design` is the fifth, and the first that is not a name 0061 §3 gave
     // code the pass already ran** (`#265`): `agentPlugin` declares the step, so
     // the refusal for every other kind there is about the pair.
     //
     // **And `implement` is the sixth and the last** (`#266`): the same plugin,
     // the same key, and the list is empty behind it.
-    expect(whyNoKindAt("design", "agent")).toBeNull();
-    expect(whyNoKindAt("implement", "agent")).toBeNull();
-    expect(whyNoKindAt("admit", "run")).toContain("`lingtai ask`");
-    expect(whyNoKindAt("admit", "run")).not.toContain("no plugin implements `admit`");
-    expect(whyNoKindAt("admit", "run")).not.toContain("nothing has been committed at `prepared`");
-  });
+    expect(whyNoKindAt('design', 'agent')).toBeNull()
+    expect(whyNoKindAt('implement', 'agent')).toBeNull()
+    expect(whyNoKindAt('admit', 'run')).toContain('`lingtai ask`')
+    expect(whyNoKindAt('admit', 'run')).not.toContain('no plugin implements `admit`')
+    expect(whyNoKindAt('admit', 'run')).not.toContain('nothing has been committed at `prepared`')
+  })
 
   /**
    * **The arithmetic the header argues from, asserted rather than remembered.**
@@ -868,28 +848,24 @@ describe("every step × kind cell runs or refuses", () => {
    * two cells and six places went on saying five or six, and `#268` moves a third.
    * A docblock cannot go red, so the numbers live here and the prose quotes them.
    */
-  it("runs twenty of the hundred and forty cells and refuses a hundred and twenty", () => {
-    const cellsThatRun = STEPS.flatMap((step) =>
-      PLUGINS.filter((plugin) => servesStep(plugin, step)),
-    );
-    expect(STEPS.length * PLUGINS.length).toBe(140);
-    expect(cellsThatRun).toHaveLength(20);
-    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(120);
+  it('runs twenty of the hundred and forty cells and refuses a hundred and twenty', () => {
+    const cellsThatRun = STEPS.flatMap((step) => PLUGINS.filter((plugin) => servesStep(plugin, step)))
+    expect(STEPS.length * PLUGINS.length).toBe(140)
+    expect(cellsThatRun).toHaveLength(20)
+    expect(STEPS.length * PLUGINS.length - cellsThatRun.length).toBe(120)
 
     // The two classes the header decomposes the refusals into, and their overlap.
-    const stepsNobodyImplements = STEPS.filter((step) =>
-      PLUGINS.every((plugin) => !servesStep(plugin, step)),
-    );
-    const pluginsServingNothing = PLUGINS.filter((plugin) => plugin.serves.length === 0);
+    const stepsNobodyImplements = STEPS.filter((step) => PLUGINS.every((plugin) => !servesStep(plugin, step)))
+    const pluginsServingNothing = PLUGINS.filter((plugin) => plugin.serves.length === 0)
     // **The first class is empty since `#266`**, and the second is the whole of
     // what refuses by column now. The overlap went with it: a `backlog:` at
     // `implement` was the one cell in both, and it is in one.
-    expect(stepsNobodyImplements).toHaveLength(0);
-    expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual(["backlog"]);
-    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(0);
-    expect(pluginsServingNothing.length * STEPS.length).toBe(10);
-    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(0);
-  });
+    expect(stepsNobodyImplements).toHaveLength(0)
+    expect(pluginsServingNothing.map((plugin) => plugin.key)).toEqual(['backlog'])
+    expect(stepsNobodyImplements.length * PLUGINS.length).toBe(0)
+    expect(pluginsServingNothing.length * STEPS.length).toBe(10)
+    expect(stepsNobodyImplements.length * pluginsServingNothing.length).toBe(0)
+  })
 
   /**
    * **What the two steps that opened say to a kind they still refuse**, pinned
@@ -913,33 +889,33 @@ describe("every step × kind cell runs or refuses", () => {
    * it, because *where do I write this instead* is the only part an operator
    * can act on.
    */
-  it("says why `build` and `review` are narrower than `proposed`, and where each kind goes", () => {
-    for (const kind of ["agent", "watch", "human"] as const) {
-      const why = whyNoKindAt("build", kind);
-      expect(why, `${kind} is no longer refused at build`).not.toBeNull();
-      expect(why).toContain("`build` is the independent build of what was written");
+  it('says why `build` and `review` are narrower than `proposed`, and where each kind goes', () => {
+    for (const kind of ['agent', 'watch', 'human'] as const) {
+      const why = whyNoKindAt('build', kind)
+      expect(why, `${kind} is no longer refused at build`).not.toBeNull()
+      expect(why).toContain('`build` is the independent build of what was written')
       // The three sentences `prepared` owns, and `build` must not borrow.
-      expect(why).not.toContain("nothing has been committed");
-      expect(why).not.toContain("released back to the queue");
-      expect(why).not.toContain("`lingtai ask`");
+      expect(why).not.toContain('nothing has been committed')
+      expect(why).not.toContain('released back to the queue')
+      expect(why).not.toContain('`lingtai ask`')
     }
     // And it says where each of them goes instead: a cold read is `review`'s,
     // a glob and a hold are `proposed`'s.
-    expect(whyNoKindAt("build", "agent")).toContain("a cold read of the diff is `review`");
-    expect(whyNoKindAt("build", "watch")).toContain("questions about a change already built, which is `proposed`");
+    expect(whyNoKindAt('build', 'agent')).toContain('a cold read of the diff is `review`')
+    expect(whyNoKindAt('build', 'watch')).toContain('questions about a change already built, which is `proposed`')
 
-    for (const kind of ["run", "watch", "human"] as const) {
-      const why = whyNoKindAt("review", kind);
-      expect(why, `${kind} is no longer refused at review`).not.toBeNull();
-      expect(why).toContain("`review` returns findings and judges nothing");
-      expect(why).toContain("`agent:` is the only plugin that answers with findings");
-      expect(why).not.toContain("nothing has been committed");
-      expect(why).not.toContain("released back to the queue");
+    for (const kind of ['run', 'watch', 'human'] as const) {
+      const why = whyNoKindAt('review', kind)
+      expect(why, `${kind} is no longer refused at review`).not.toBeNull()
+      expect(why).toContain('`review` returns findings and judges nothing')
+      expect(why).toContain('`agent:` is the only plugin that answers with findings')
+      expect(why).not.toContain('nothing has been committed')
+      expect(why).not.toContain('released back to the queue')
     }
     // The remedy, which is the half of `#263` that moved: a command that
     // decides whether a diff stands has a step of its own now.
-    expect(whyNoKindAt("review", "run")).toContain("a `run:` at `build`");
-  });
+    expect(whyNoKindAt('review', 'run')).toContain('a `run:` at `build`')
+  })
 
   /**
    * **A step has one body and three steps have several plugins**, which is why
@@ -968,26 +944,26 @@ describe("every step × kind cell runs or refuses", () => {
   it("gives a step one body and several plugins, which is what `at`'s value cannot be one of", () => {
     const serving = new Map(
       STEPS.map((step) => [step, PLUGINS.filter((plugin) => servesStep(plugin, step)).map((p) => p.key)]),
-    );
+    )
 
     expect([...serving].filter(([, keys]) => keys.length > 1).map(([step]) => step)).toEqual([
-      "design",
-      "implement",
-      "proposed",
-      "merge",
-      "end",
-    ]);
+      'design',
+      'implement',
+      'proposed',
+      'merge',
+      'end',
+    ])
     // **`design` is the second step to hold more than one, and the two are not two
     // checks** (`#300`): one makes the document and one keeps it, which is the pair
     // 0066 §5 asks for and the reason a destination is a plugin rather than a field
     // on the drafter.
-    expect(serving.get("design")).toEqual(["agent", "file"]);
+    expect(serving.get('design')).toEqual(['agent', 'file'])
     // **And `implement` is the third, on the same terms read backwards** (`#301`):
     // one reads the design back off the locator and one is briefed with it, which
     // is the same destination as `design`'s pair at the other end. Two keys and not
     // a `destination:` field on `agent:`, for 0066 §5's reason.
-    expect(serving.get("implement")).toEqual(["agent", "file-brief"]);
-    expect(serving.get("proposed")).toEqual(["run", "agent", "watch", "human", "judge"]);
+    expect(serving.get('implement')).toEqual(['agent', 'file-brief'])
+    expect(serving.get('proposed')).toEqual(['run', 'agent', 'watch', 'human', 'judge'])
     // **`merge` is not `proposed` with a fifth entry, and `#270` is where the two
     // stopped being the same list.** It carries three: two checks, and the lane the
     // step's own work reduced to. `watch:` and `human:` were here until that ticket
@@ -995,11 +971,11 @@ describe("every step × kind cell runs or refuses", () => {
     // only `proposed` may send one to a person, and since the landing is an action
     // in this list a hold declared beside it would be asked about a merge already
     // made. So this row is the one place the two closed sets record a *subtraction*.
-    expect(serving.get("merge")).toEqual(["run", "agent", "merge"]);
-    expect(serving.get("end")).toEqual(["close", "labels", "refs"]);
+    expect(serving.get('merge')).toEqual(['run', 'agent', 'merge'])
+    expect(serving.get('end')).toEqual(['close', 'labels', 'refs'])
     // And exactly one body per step, which is the other half of the sentence.
-    expect(Object.keys(NOT_BUILT_YET).sort()).toEqual([...STEPS].sort());
-  });
+    expect(Object.keys(NOT_BUILT_YET).sort()).toEqual([...STEPS].sort())
+  })
 
   /**
    * **`claim` runs `queue:` and refuses a second one, which is the reduction 0061
@@ -1016,25 +992,25 @@ describe("every step × kind cell runs or refuses", () => {
    * Pinned here rather than left as prose because the refusal is the only place a
    * person meets the rule, and the one it replaced promised the opposite.
    */
-  it("runs a `queue:` at `claim`, and refuses a second one by name", () => {
-    expect(whyNoKindAt("claim", "queue")).toBeNull();
-    expect(runsAt("claim", "queue")).toBe(true);
+  it('runs a `queue:` at `claim`, and refuses a second one by name', () => {
+    expect(whyNoKindAt('claim', 'queue')).toBeNull()
+    expect(runsAt('claim', 'queue')).toBe(true)
 
     const twice = StepMap.safeParse({
-      claim: [ACTION.queue, { ...ACTION.queue, name: "and again" }],
-    });
-    expect(twice.success).toBe(false);
-    const why = twice.error?.issues.map((issue) => issue.message).join("\n") ?? "";
-    expect(why).toContain('"and again"');
-    expect(why).toContain("already takes a ticket at entry 0");
-    expect(why).toContain("a step takes one or none");
+      claim: [ACTION.queue, { ...ACTION.queue, name: 'and again' }],
+    })
+    expect(twice.success).toBe(false)
+    const why = twice.error?.issues.map((issue) => issue.message).join('\n') ?? ''
+    expect(why).toContain('"and again"')
+    expect(why).toContain('already takes a ticket at entry 0')
+    expect(why).toContain('a step takes one or none')
     // The pipeline's rule said out loud, because it is what makes the order
     // meaningless rather than merely redundant.
-    expect(why).toContain("stops at the first action that did not pass");
+    expect(why).toContain('stops at the first action that did not pass')
 
     // And one is accepted, so the refusal is about the duplicate and not the kind.
-    expect(StepMap.safeParse({ claim: [ACTION.queue] }).success).toBe(true);
-  });
+    expect(StepMap.safeParse({ claim: [ACTION.queue] }).success).toBe(true)
+  })
 
   /**
    * **`judge:` is declarable at `proposed` and nowhere else, and the refusal at
@@ -1054,47 +1030,39 @@ describe("every step × kind cell runs or refuses", () => {
    * chooses** (0061 §3): a judge that could carry its own `rounds` could answer
    * *back to `implement`* for ever and nothing would report a fault.
    */
-  it("declares `judge:` at `proposed`, and says at the other nine why it is not theirs", () => {
+  it('declares `judge:` at `proposed`, and says at the other nine why it is not theirs', () => {
     // The one cell this ticket opened: accepted, and something reads it.
-    expect(whyNoKindAt("proposed", "judge")).toBeNull();
-    expect(runsAt("proposed", "judge")).toBe(true);
+    expect(whyNoKindAt('proposed', 'judge')).toBeNull()
+    expect(runsAt('proposed', 'judge')).toBe(true)
 
-    const why = whyNoKindAt("merge", "judge");
-    expect(why, "`judge:` is no longer refused at merge").not.toBeNull();
-    expect(why).toContain("`judge:` does not implement `merge`");
-    expect(why).toContain("it serves `proposed`");
-    expect(why).toContain("only step that routes");
-    expect(why).toContain("ARRIVE_AT_THE_ROUTER");
-    expect(why).toContain("the workflow counts, the judge chooses");
-    expect(why).toContain("one judge per direction");
-    expect(why).toContain("refused by name");
-    expect(why).toContain("not only on what is left to spend");
+    const why = whyNoKindAt('merge', 'judge')
+    expect(why, '`judge:` is no longer refused at merge').not.toBeNull()
+    expect(why).toContain('`judge:` does not implement `merge`')
+    expect(why).toContain('it serves `proposed`')
+    expect(why).toContain('only step that routes')
+    expect(why).toContain('ARRIVE_AT_THE_ROUTER')
+    expect(why).toContain('the workflow counts, the judge chooses')
+    expect(why).toContain('one judge per direction')
+    expect(why).toContain('refused by name')
+    expect(why).toContain('not only on what is left to spend')
     // The reason is a fact about the pair and not about the step, so every step
     // some plugin serves gives the same one — under an opening clause that names
     // the step the operator actually wrote.
-    const reason = why!.slice(why!.indexOf(": ") + 2);
-    for (const step of [
-      "admit",
-      "prepared",
-      "design",
-      "implement",
-      "build",
-      "review",
-      "merge",
-    ] as const) {
-      expect(whyNoKindAt(step, "judge"), step).toBe(
+    const reason = why!.slice(why!.indexOf(': ') + 2)
+    for (const step of ['admit', 'prepared', 'design', 'implement', 'build', 'review', 'merge'] as const) {
+      expect(whyNoKindAt(step, 'judge'), step).toBe(
         `\`judge:\` does not implement \`${step}\` — it serves \`proposed\`: ${reason}`,
-      );
+      )
     }
     // `end`'s own sentence names `judge:`'s `when:` in order to say what picks
     // the three effects out, and that is the more useful half there.
-    expect(whyNoKindAt("end", "judge")).toContain("what picks");
+    expect(whyNoKindAt('end', 'judge')).toContain('what picks')
     // **And the *no plugin implements this step* branch has no subject left**
     // (`#266`). It was three until `#269` gave `claim` a `queue:`, two until
     // `#265` gave `design` an `agent:`, one until this one gave `implement` the
     // same key — so `implement` joins the list above and answers about the pair
     // like every other step.
-  });
+  })
 
   /**
    * **And the plugin beside it that decides nothing about where the pass goes**
@@ -1112,16 +1080,16 @@ describe("every step × kind cell runs or refuses", () => {
    * recipe that raised the bar believing it bought a round per finding would be
    * sizing its spend off the wrong half of the output.
    */
-  it("says how `proposed` will file at or below the bar, and that it routes nothing", () => {
-    const why = whyNoKindAt("proposed", "backlog");
-    expect(why, "`backlog:` is no longer refused at proposed").not.toBeNull();
-    expect(why).toContain("buys no");
-    expect(why).toContain("routes nothing");
-    expect(why).toContain("plugins that route and plugins that only act");
+  it('says how `proposed` will file at or below the bar, and that it routes nothing', () => {
+    const why = whyNoKindAt('proposed', 'backlog')
+    expect(why, '`backlog:` is no longer refused at proposed').not.toBeNull()
+    expect(why).toContain('buys no')
+    expect(why).toContain('routes nothing')
+    expect(why).toContain('plugins that route and plugins that only act')
     // Where the bar is decided today, and where it is a function a recipe will
     // hand a value to — both file references, so they go red if either moves.
-    expect(why).toContain("packages/projector/src/backlog.ts");
-    expect(why).toContain("packages/conductor/src/backlog.ts");
+    expect(why).toContain('packages/projector/src/backlog.ts')
+    expect(why).toContain('packages/conductor/src/backlog.ts')
     // **And the half a reader of the fold alone would miss.** The bar is one
     // comparison written in two packages: the fold decides what is *filed*, and
     // `verdictFor` decides what *refuses*. An implementer who follows this
@@ -1129,15 +1097,15 @@ describe("every step × kind cell runs or refuses", () => {
     // returning `failed` for a major — `StepFailed`, no filing, a fix round
     // bought — under a recipe that reads as honoured. The refusal has to name
     // it, so this asserts it does.
-    expect(why).toContain("verdictFor");
-    expect(why).toContain("packages/actions/src/agent-action.ts");
+    expect(why).toContain('verdictFor')
+    expect(why).toContain('packages/actions/src/agent-action.ts')
     // And the dedup nobody has to build: the refusal says why a second round
     // does not file a second entry, which is the Done-when this ticket asserts
     // against today's behaviour rather than adding machinery for.
-    expect(why).toContain("packages/domain/src/backlog.ts");
+    expect(why).toContain('packages/domain/src/backlog.ts')
     // A fact about the plugin, so it is the same sentence at all ten steps.
-    for (const step of STEPS) expect(whyNoKindAt(step, "backlog")).toBe(why);
-  });
+    for (const step of STEPS) expect(whyNoKindAt(step, 'backlog')).toBe(why)
+  })
 
   /**
    * **The two halves of *a severity is an outcome*, asserted where the matrix
@@ -1157,21 +1125,24 @@ describe("every step × kind cell runs or refuses", () => {
    * `packages/conductor/unit/fix.test.ts`. This test asserts the bar; those
    * assert that there is one ladder to put a bar on.
    */
-  it("files at or below the bar, and nothing filed buys a round", () => {
+  it('files at or below the bar, and nothing filed buys a round', () => {
     for (const bar of SEVERITIES) {
-      const all = SEVERITIES.map(finding);
-      const { filed, refuses, buysARound } = decideBacklog(all, bar);
-      expect([...filed, ...refuses].length, bar).toBe(all.length);
-      expect(filed.every((f) => SEVERITIES.indexOf(f.severity) >= SEVERITIES.indexOf(bar)), bar).toBe(true);
-      expect(buysARound, bar).toBe(refuses.length > 0);
+      const all = SEVERITIES.map(finding)
+      const { filed, refuses, buysARound } = decideBacklog(all, bar)
+      expect([...filed, ...refuses].length, bar).toBe(all.length)
+      expect(
+        filed.every((f) => SEVERITIES.indexOf(f.severity) >= SEVERITIES.indexOf(bar)),
+        bar,
+      ).toBe(true)
+      expect(buysARound, bar).toBe(refuses.length > 0)
       // The whole of *buys no round*: nothing at or below the bar refuses, so
       // a run whose findings are all filed has no refusal to buy one with.
-      expect(decideBacklog(filed, bar).buysARound, bar).toBe(false);
+      expect(decideBacklog(filed, bar).buysARound, bar).toBe(false)
     }
     // And the default is today's fold: a `minor` is filed, a `major` is not.
-    expect(decideBacklog([finding("minor")]).buysARound).toBe(false);
-    expect(decideBacklog([finding("major")]).buysARound).toBe(true);
-  });
+    expect(decideBacklog([finding('minor')]).buysARound).toBe(false)
+    expect(decideBacklog([finding('major')]).buysARound).toBe(true)
+  })
 
   /**
    * **And the same bar, read off the half that actually refuses** (`#237`).
@@ -1184,14 +1155,14 @@ describe("every step × kind cell runs or refuses", () => {
    * refusal: move one bar and this goes red naming the severity that now
    * disagrees.
    */
-  it("agrees, severity by severity, with the half of the bar that refuses", () => {
+  it('agrees, severity by severity, with the half of the bar that refuses', () => {
     for (const severity of SEVERITIES) {
-      const one = [finding(severity)];
-      expect(decideBacklog(one).buysARound, severity).toBe(verdictFor(one) === "failed");
+      const one = [finding(severity)]
+      expect(decideBacklog(one).buysARound, severity).toBe(verdictFor(one) === 'failed')
     }
-    expect(verdictFor([])).toBe("passed");
-    expect(decideBacklog([]).buysARound).toBe(false);
-  });
+    expect(verdictFor([])).toBe('passed')
+    expect(decideBacklog([]).buysARound).toBe(false)
+  })
 
   /**
    * **The conductor builds every step's list through one seam**, and a second
@@ -1219,39 +1190,38 @@ describe("every step × kind cell runs or refuses", () => {
    * that read comments would read that sentence as a second call site.
    */
   it("builds every step's list through one `actionsFromRecipe` call, and it takes the step as a variable", async () => {
-    const src = new URL("../src/", import.meta.url);
-    const files = (await readdir(src, { recursive: true })).filter((f) => f.endsWith(".ts"));
-    let calls = 0;
-    let literals = 0;
-    let end = false;
+    const src = new URL('../src/', import.meta.url)
+    const files = (await readdir(src, { recursive: true })).filter((f) => f.endsWith('.ts'))
+    let calls = 0
+    let literals = 0
+    let end = false
 
     /** The file with every comment taken out, so a sentence is not a call. */
-    const code = (text: string) =>
-      text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 
     for (const file of files) {
-      const text = code(await readFile(new URL(file, src), "utf8"));
-      calls += text.match(/actionsFromRecipe\(/g)?.length ?? 0;
-      literals += [...text.matchAll(/actionsFromRecipe\(\s*"([a-z]+)"/g)].length;
-      if (/export function resolveEndActions\b/.test(text)) end = true;
+      const text = code(await readFile(new URL(file, src), 'utf8'))
+      calls += text.match(/actionsFromRecipe\(/g)?.length ?? 0
+      literals += [...text.matchAll(/actionsFromRecipe\(\s*"([a-z]+)"/g)].length
+      if (/export function resolveEndActions\b/.test(text)) end = true
     }
 
-    expect(calls, "the conductor has more than one `actionsFromRecipe` call site").toBe(1);
+    expect(calls, 'the conductor has more than one `actionsFromRecipe` call site').toBe(1)
     // Zero literals is the seam: a call site that named a step would be a step
     // built differently from the other nine.
-    expect(literals, "an `actionsFromRecipe` call site names its step literally").toBe(0);
+    expect(literals, 'an `actionsFromRecipe` call site names its step literally').toBe(0)
     // And `end`'s consumer, which is its resolver and never a pipeline.
-    expect(end, "`end` has no `resolveEndActions` to carry its effects out").toBe(true);
-  });
+    expect(end, '`end` has no `resolveEndActions` to carry its effects out').toBe(true)
+  })
 
   /** And the call is the pass's seam, handed to `runPass` rather than called directly. */
-  it("hands that call to the pass as `actionsAt`", async () => {
-    const wiring = await readFile(new URL("../src/conduct.ts", import.meta.url), "utf8");
-    expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/);
-    expect(wiring).toMatch(/actionsFromRecipe\(step, actions, stepDeps\)/);
-    expect(wiring).toMatch(/runPass\(\{[\s\S]*actionsAt,/);
-  });
-});
+  it('hands that call to the pass as `actionsAt`', async () => {
+    const wiring = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
+    expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/)
+    expect(wiring).toMatch(/actionsFromRecipe\(step, actions, stepDeps\)/)
+    expect(wiring).toMatch(/runPass\(\{[\s\S]*actionsAt,/)
+  })
+})
 
 /**
  * **`doc/reference.md` no longer carries a copy of the matrix, and that is
@@ -1266,7 +1236,7 @@ describe("every step × kind cell runs or refuses", () => {
  * file. What is left here is the *other* table in that document, whose column
  * nothing else walks.
  */
-describe("doc/reference.md", () => {
+describe('doc/reference.md', () => {
   /**
    * **The other table, whose `Needs` column is what a person budgets from.**
    *
@@ -1282,15 +1252,14 @@ describe("doc/reference.md", () => {
    * the directions with no built-in, so the day a third one gets one the
    * document is red rather than quietly a direction out.
    */
-  it("says how many directions a judge needs an agent for", async () => {
-    const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
-    const NUMERAL = ["none", "one", "two", "three", "four", "five"] as const;
-    const spendsAnAgent = Object.values(BUILT_IN_FOR).filter((built) => built === null).length;
-    expect(
-      doc,
-      "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs",
-    ).toContain(`for ${NUMERAL[spendsAnAgent]} of the five directions an agent`);
-  });
+  it('says how many directions a judge needs an agent for', async () => {
+    const doc = await readFile(new URL('../../../doc/reference.md', import.meta.url), 'utf8')
+    const NUMERAL = ['none', 'one', 'two', 'three', 'four', 'five'] as const
+    const spendsAnAgent = Object.values(BUILT_IN_FOR).filter((built) => built === null).length
+    expect(doc, "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs").toContain(
+      `for ${NUMERAL[spendsAnAgent]} of the five directions an agent`,
+    )
+  })
 
   /**
    * **And the table has a row per key, which is the half that went stale**
@@ -1307,27 +1276,27 @@ describe("doc/reference.md", () => {
    * table rather than the whole file, so the row that has to arrive with the
    * fourteenth plugin is a red test rather than something somebody remembers.
    */
-  it("has a row for every key in the closed set", async () => {
-    const doc = await readFile(new URL("../../../doc/reference.md", import.meta.url), "utf8");
+  it('has a row for every key in the closed set', async () => {
+    const doc = await readFile(new URL('../../../doc/reference.md', import.meta.url), 'utf8')
     // Found by the table's own header row and not by the heading above it: the
     // heading carries a word `retired-names.test.ts` counts, and a test that
     // wrote it would be raising the number that file holds `doc/reference.md`
     // to in order to assert this one.
-    const header = doc.indexOf("| Key | Verdict comes from | Needs |");
-    expect(header, "doc/reference.md has no table of the closed set's keys").toBeGreaterThan(0);
-    const table = doc.slice(header).split("\n\n")[0]!;
+    const header = doc.indexOf('| Key | Verdict comes from | Needs |')
+    expect(header, "doc/reference.md has no table of the closed set's keys").toBeGreaterThan(0)
+    const table = doc.slice(header).split('\n\n')[0]!
 
     // `[a-z-]` and not `[a-z]`: a key may carry a hyphen since `file-brief:`
     // (`#301`), and a class that could not match one would drop its row and
     // report the table as short by a key nobody wrote.
-    const rows = [...table.matchAll(/^\| `([a-z-]+):` \|/gm)].map((row) => row[1]);
-    expect(rows, "doc/reference.md's table of the keys").toEqual(PLUGINS.map((plugin) => plugin.key));
+    const rows = [...table.matchAll(/^\| `([a-z-]+):` \|/gm)].map((row) => row[1])
+    expect(rows, "doc/reference.md's table of the keys").toEqual(PLUGINS.map((plugin) => plugin.key))
     // And the heading over it counts the same set, which is what the rows are
     // under — the nearest `##` above the table, read rather than named.
-    const heading = doc.slice(0, header).split(/^## /m).at(-1)!.split("\n")[0]!;
-    expect(heading, "doc/reference.md's heading over that table").toContain(`${PLUGINS.length} keys`);
-  });
-});
+    const heading = doc.slice(0, header).split(/^## /m).at(-1)!.split('\n')[0]!
+    expect(heading, "doc/reference.md's heading over that table").toContain(`${PLUGINS.length} keys`)
+  })
+})
 
 /**
  * **The guide's own arithmetic, against the same closed set** (`#300`, the fix
@@ -1344,42 +1313,41 @@ describe("doc/reference.md", () => {
  * sentence and summed, so a plugin that arrives with no bucket to go in is red
  * here rather than quietly one out.
  */
-describe("doc/guide.md", () => {
+describe('doc/guide.md', () => {
   const NUMERAL = [
-    "no",
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-  ] as const;
+    'no',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+    'thirteen',
+    'fourteen',
+    'fifteen',
+  ] as const
 
-  it("counts the action kinds, and its buckets add up to them", async () => {
-    const guide = await readFile(new URL("../../../doc/guide.md", import.meta.url), "utf8");
-    const sentence = /(\w+) action kinds, of\s+which ([\s\S]*?)\n\(\[reference\]/.exec(guide);
-    expect(sentence, "doc/guide.md no longer says how many action kinds there are").not.toBeNull();
+  it('counts the action kinds, and its buckets add up to them', async () => {
+    const guide = await readFile(new URL('../../../doc/guide.md', import.meta.url), 'utf8')
+    const sentence = /(\w+) action kinds, of\s+which ([\s\S]*?)\n\(\[reference\]/.exec(guide)
+    expect(sentence, 'doc/guide.md no longer says how many action kinds there are').not.toBeNull()
 
-    expect(
-      sentence![1]!.toLowerCase(),
-      "doc/guide.md's count of the action kinds disagrees with PLUGINS",
-    ).toBe(NUMERAL[PLUGINS.length]);
+    expect(sentence![1]!.toLowerCase(), "doc/guide.md's count of the action kinds disagrees with PLUGINS").toBe(
+      NUMERAL[PLUGINS.length],
+    )
 
     const buckets = [...sentence![2]!.matchAll(/\b([a-z]+)\b/g)]
       .map((word) => NUMERAL.indexOf(word[1] as (typeof NUMERAL)[number]))
-      .filter((each) => each >= 0);
+      .filter((each) => each >= 0)
     expect(
       buckets.reduce((sum, each) => sum + each, 0),
       "doc/guide.md's buckets do not add up to the closed set",
-    ).toBe(PLUGINS.length);
-  });
-});
+    ).toBe(PLUGINS.length)
+  })
+})

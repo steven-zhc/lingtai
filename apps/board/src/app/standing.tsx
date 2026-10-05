@@ -1,19 +1,21 @@
-import { inWords } from "@lingtai/conductor/queue";
+import { inWords } from '@lingtai/conductor/queue'
 // The subpath, for the reason `board.ts` gives: the barrel pulls the gate
 // pipeline in behind it. `describeHold` is pure and lives beside the field it
 // reads, so this block, the card and `lingtai status` say the same thing about
 // the same hold rather than keeping three copies of the words.
-import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
-import type { DiscussionView, StandingView } from "@/lib/task";
-import type { OutgoingView } from "@/lib/prompt";
-import { holding, place, type QueuedView } from "@/lib/queued";
-import { Close, Decide, Requeue, RunNow, Send } from "./decide.tsx";
-import { Discussion } from "./discussion.tsx";
-import { Outgoing } from "./outgoing.tsx";
-import { Plan } from "./plan.tsx";
-import type { RunProgress } from "@/lib/progress";
-import { Rail } from "./rail.tsx";
-import { FollowedLog } from "./run-log.tsx";
+import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
+
+import type { RunProgress } from '@/lib/progress'
+import type { OutgoingView } from '@/lib/prompt'
+import { holding, place, type QueuedView } from '@/lib/queued'
+import type { DiscussionView, StandingView } from '@/lib/task'
+
+import { Close, Decide, Requeue, RunNow, Send } from './decide.tsx'
+import { Discussion } from './discussion.tsx'
+import { Outgoing } from './outgoing.tsx'
+import { Plan } from './plan.tsx'
+import { Rail } from './rail.tsx'
+import { FollowedLog } from './run-log.tsx'
 
 /**
  * Why this task is not moving, above everything else.
@@ -114,7 +116,7 @@ export function Standing({
   unknown,
   progress = null,
 }: {
-  standing: StandingView;
+  standing: StandingView
   /**
    * What was asked, in one line, under the state and above the reason.
    *
@@ -132,16 +134,16 @@ export function Standing({
    *
    * Null when the id is not a work item: there is no ticket to name.
    */
-  subject: { ref: string; title: string | null; url: string | null } | null;
+  subject: { ref: string; title: string | null; url: string | null } | null
   /** From the ticket, and null when the id is not a work item — nothing can be decided then. */
-  project: string | null;
-  issue: number | null;
-  taskId: string;
-  discussions: DiscussionView[];
+  project: string | null
+  issue: number | null
+  taskId: string
+  discussions: DiscussionView[]
   /** What the next attempt will be handed. Null when there will not be one. */
-  outgoing: OutgoingView | null;
+  outgoing: OutgoingView | null
   /** Where it is in line and what taking it runs. Null in every other state. */
-  queued: QueuedView | null;
+  queued: QueuedView | null
   /**
    * Why Lingtai cannot say whether this ticket exists at all, when it cannot.
    *
@@ -150,7 +152,7 @@ export function Standing({
    * 404 — which says *"it does not exist"*, which is a different sentence and
    * is not one Lingtai is in a position to say.
    */
-  unknown?: string | null;
+  unknown?: string | null
   /**
    * Where the run in flight has got to — the board's rail, drawn at rank 2 of
    * a running item and nowhere else in this block.
@@ -163,15 +165,15 @@ export function Standing({
    * fold, and its clock ticks here because `Follow` re-renders on an append
    * (#172). Null for a run with nothing on its stream yet.
    */
-  progress?: RunProgress | null;
+  progress?: RunProgress | null
 }) {
-  const held = describeHold(standing);
-  const acting = project !== null && issue !== null;
+  const held = describeHold(standing)
+  const acting = project !== null && issue !== null
   // What is stopping it and where it is in line — two facts, and the second is
   // not an annotation on the first. `holding` is null for the item that is
   // simply next, which is the answer rather than an omission.
-  const stopped = queued === null ? null : holding(queued);
-  const inLine = queued === null ? null : place(queued);
+  const stopped = queued === null ? null : holding(queued)
+  const inLine = queued === null ? null : place(queued)
   // There is a document to send exactly when there is one to show. `problem` is
   // the case #76 is about — an unregistered project, a template that is not
   // there — and a Send on a prompt nobody could compose would send whatever the
@@ -180,21 +182,20 @@ export function Standing({
   // **And not on a question asked before any run** (#147): what that block wants
   // is an answer, and sending would put it back in the queue unanswered — the
   // server refuses it, and a row offering only that would be #84 again.
-  const sendable =
-    outgoing !== null && outgoing.problem === null && !standing.asked ? outgoing.attempt : null;
+  const sendable = outgoing !== null && outgoing.problem === null && !standing.asked ? outgoing.attempt : null
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
   // is being waited on, that is what this page exists to say, whatever else is
   // also true — a run that is mid-flight while an approval sits unanswered is
   // still your move. `live` only ever paints when nothing is on you.
-  const mark = standing.onYou ? " onyou" : standing.state === "running" ? " live" : "";
+  const mark = standing.onYou ? ' onyou' : standing.state === 'running' ? ' live' : ''
 
   // `describeHold` decides the words. *What happened* is the reason and reads
   // second; what is needed and what is recommended are `soWhat`'s one sentence,
   // and what was already done is the record's (#152).
-  const what = held.find((line) => line.part === "what") ?? null;
+  const what = held.find((line) => line.part === 'what') ?? null
   // The run whose log is rank 2, when the item is running. See the doc above.
-  const following = standing.state === "running" ? standing.runId : null;
+  const following = standing.state === 'running' ? standing.runId : null
 
   /**
    * The refusal in the words of whatever refused, and who said them.
@@ -214,8 +215,8 @@ export function Standing({
    * failed verdicts and `diagnosis` is the hold written when it stopped — which
    * is why neither needs to say which attempt it came from and `deciding` does.
    */
-  const raw = standing.diagnosis?.raw ?? null;
-  const said = standing.saidBy?.replace(":", " / ") ?? null;
+  const raw = standing.diagnosis?.raw ?? null
+  const said = standing.saidBy?.replace(':', ' / ') ?? null
 
   /**
    * The question, only where nothing better was written down.
@@ -229,7 +230,7 @@ export function Standing({
    * Nothing is lost: `WorkItemBlocked.question` is verbatim in the history row
    * for the event that carries it.
    */
-  const question = standing.diagnosis === null ? standing.question : null;
+  const question = standing.diagnosis === null ? standing.question : null
 
   return (
     <section className={`standing${mark}`}>
@@ -271,9 +272,7 @@ export function Standing({
             ) : (
               <span className="sref">#{subject.ref}</span>
             )}
-            <span className="stitle">
-              {subject.title ?? "GitHub did not answer, so the title is not on this page"}
-            </span>
+            <span className="stitle">{subject.title ?? 'GitHub did not answer, so the title is not on this page'}</span>
           </p>
         ) : null}
 
@@ -284,9 +283,7 @@ export function Standing({
               under it is what that build is printing. `live`, because the
               state is `running` — the lane's word, which is what `Rail` asks
               for rather than its own guess. */}
-          {standing.state === "running" && progress !== null ? (
-            <Rail progress={progress} live />
-          ) : null}
+          {standing.state === 'running' && progress !== null ? <Rail progress={progress} live /> : null}
           {/* The run in flight, following (#152). The `RunLog` the attempt row
               had, moved and not changed — latched open, tailing, pinned to its
               last line — and told so by its class, which is the slot's size and
@@ -295,57 +292,54 @@ export function Standing({
               goes under the lines below, which are its children so that it
               can, because the refusal is the answer then (`logBelow`). */}
           <FollowedLog running={following} className="alog slog">
-
-          {/* The sentence a 404 was standing in for. Lingtai has nothing on this
+            {/* The sentence a 404 was standing in for. Lingtai has nothing on this
               stream *and* could not ask GitHub, so what it knows is that it does
               not know — which is not the same claim as "there is no such
               ticket", and is the whole of #113's first requirement. */}
-          {unknown ? (
-            <p className="refusal">
-              Lingtai has never touched this ticket and GitHub could not be asked, so whether it
-              exists is not known here: {unknown}
-            </p>
-          ) : null}
+            {unknown ? (
+              <p className="refusal">
+                Lingtai has never touched this ticket and GitHub could not be asked, so whether it exists is not known
+                here: {unknown}
+              </p>
+            ) : null}
 
-          {/* Why it is not moving, in the wording `lingtai status` and the card
+            {/* Why it is not moving, in the wording `lingtai status` and the card
               use for the same hold. Null — and absent — for the item that is
               simply next, because `runnable now` on every ordinary queued item
               would bury the two that mean something. This is a queued item's
               whole second rank: it has no gate to quote (#113). */}
-          {stopped !== null ? <p className="squestion">{stopped}</p> : null}
+            {stopped !== null ? <p className="squestion">{stopped}</p> : null}
 
-          {/* Not a hold, so not in `holding`: the order above was not checked
+            {/* Not a hold, so not in `holding`: the order above was not checked
               against a chain for this repository, or for the issues it names,
               and a place in line that does not say so reads as next (#131). */}
-          {queued?.dependenciesUnread ? (
-            <p className="refusal">{queued.dependenciesUnread}</p>
-          ) : null}
+            {queued?.dependenciesUnread ? <p className="refusal">{queued.dependenciesUnread}</p> : null}
 
-          {/* Never merely absent (#76). A recipe that will not parse and a
+            {/* Never merely absent (#76). A recipe that will not parse and a
               GitHub behind a rate limit both leave the queue unanswered, and
               only the reason tells them apart — the same argument the Queued
               column's own `problems` make. */}
-          {queued?.problem ? (
-            <p className="refusal">Its place in the queue could not be read: {queued.problem}</p>
-          ) : null}
+            {queued?.problem ? (
+              <p className="refusal">Its place in the queue could not be read: {queued.problem}</p>
+            ) : null}
 
-          {/* Verbatim, and only where nothing better was written down — see
+            {/* Verbatim, and only where nothing better was written down — see
               `question` above. It is what the conductor wrote, and a page that
               paraphrases it is a second version of the question. */}
-          {question !== null ? <p className="squestion">{question}</p> : null}
+            {question !== null ? <p className="squestion">{question}</p> : null}
 
-          {/* What happened, in the diagnosis' own sentence. Absent until #83
+            {/* What happened, in the diagnosis' own sentence. Absent until #83
               writes one, which is every block written before it. */}
-          {what !== null ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
+            {what !== null ? <p className={HELD_CLASS[what.part]}>{what.text}</p> : null}
 
-          <Reason
-            raw={raw}
-            said={said}
-            diagnosed={standing.diagnosis !== null}
-            refused={standing.failed}
-            deciding={standing.deciding}
-            attempt={standing.attempt}
-          />
+            <Reason
+              raw={raw}
+              said={said}
+              diagnosed={standing.diagnosis !== null}
+              refused={standing.failed}
+              deciding={standing.deciding}
+              attempt={standing.attempt}
+            />
           </FollowedLog>
         </div>
 
@@ -374,7 +368,7 @@ export function Standing({
           the one that had no button at all (#111). Reject and Waive are gone
           (#150): neither moved the card, and a waiver is what Approve records
           when a gate still refuses. */}
-      {acting && standing.state === "blocked" ? (
+      {acting && standing.state === 'blocked' ? (
         <div className="btnrow smoves" data-rank="moves">
           {standing.awaitingSha !== null ? (
             <Decide
@@ -396,8 +390,8 @@ export function Standing({
               // and otherwise only when the recommendation points here.
               primary={
                 standing.awaitingSha === null ||
-                standing.diagnosis?.recommendation?.action === "requeue" ||
-                standing.diagnosis?.recommendation?.action === "reject"
+                standing.diagnosis?.recommendation?.action === 'requeue' ||
+                standing.diagnosis?.recommendation?.action === 'reject'
               }
             />
           ) : null}
@@ -431,7 +425,7 @@ export function Standing({
           the page that says why the item is not moving is the page the button
           belongs on. It jumps the backoff, and says so when there is one to
           jump (0028 §3). */}
-      {acting && standing.state === "queued" && queued !== null ? (
+      {acting && standing.state === 'queued' && queued !== null ? (
         <div className="btnrow smoves" data-rank="moves">
           <RunNow project={project} issue={String(issue)} holding={stopped} />
           {/* Beside it, the opposite move. A queued item has exactly two
@@ -461,7 +455,7 @@ export function Standing({
             // The editor offers Send only where the row above it does. A
             // sentence typed and not staged is otherwise lost to the click that
             // was meant to send it.
-            sendable={acting && standing.state === "blocked" && sendable !== null}
+            sendable={acting && standing.state === 'blocked' && sendable !== null}
           />
         ) : null}
 
@@ -481,11 +475,11 @@ export function Standing({
           taskId={taskId}
           attempt={standing.attempt}
           discussions={discussions}
-          quiet={standing.state === "running"}
+          quiet={standing.state === 'running'}
         />
       </div>
     </section>
-  );
+  )
 }
 
 /**
@@ -506,18 +500,16 @@ export function Standing({
  */
 export function soWhat(standing: StandingView): string {
   const needed =
-    standing.needs === null
-      ? null
-      : (describeHold({ needs: standing.needs, diagnosis: null })[0]?.text ?? null);
-  const head = needed ?? standing.who;
-  const rec = standing.diagnosis?.recommendation ?? null;
-  if (rec === null) return head;
-  const why = firstClause(rec.why);
-  return why === "" ? `${head} — recommends ${rec.action}` : `${head} — recommends ${rec.action}, because ${why}`;
+    standing.needs === null ? null : (describeHold({ needs: standing.needs, diagnosis: null })[0]?.text ?? null)
+  const head = needed ?? standing.who
+  const rec = standing.diagnosis?.recommendation ?? null
+  if (rec === null) return head
+  const why = firstClause(rec.why)
+  return why === '' ? `${head} — recommends ${rec.action}` : `${head} — recommends ${rec.action}, because ${why}`
 }
 
 /** How long rank 3's reason may run before it is clipped. The whole is in the record. */
-const CLAUSE_MAX = 160;
+const CLAUSE_MAX = 160
 
 /**
  * The first sentence of a recommendation's why, flattened to one line.
@@ -527,13 +519,13 @@ const CLAUSE_MAX = 160;
  * `oneLine` makes for the question, for the same reason.
  */
 function firstClause(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  const end = flat.search(/[.!?](\s|$)/);
-  let clause = (end === -1 ? flat : flat.slice(0, end)).replace(/[\s.;:,—-]+$/, "");
+  const flat = text.replace(/\s+/g, ' ').trim()
+  const end = flat.search(/[.!?](\s|$)/)
+  let clause = (end === -1 ? flat : flat.slice(0, end)).replace(/[\s.;:,—-]+$/, '')
   // `Develop has moved` reads as a new sentence after *because*; `CONFLICT`
   // and `PR` are words that stay as written.
-  if (/^[A-Z][a-z]/.test(clause)) clause = clause[0]!.toLowerCase() + clause.slice(1);
-  return clause.length > CLAUSE_MAX ? `${clause.slice(0, CLAUSE_MAX - 1)}…` : clause;
+  if (/^[A-Z][a-z]/.test(clause)) clause = clause[0]!.toLowerCase() + clause.slice(1)
+  return clause.length > CLAUSE_MAX ? `${clause.slice(0, CLAUSE_MAX - 1)}…` : clause
 }
 
 /**
@@ -550,9 +542,9 @@ export function Coords({
   taskId,
   queued,
 }: {
-  standing: StandingView;
-  taskId: string;
-  queued: QueuedView | null;
+  standing: StandingView
+  taskId: string
+  queued: QueuedView | null
 }) {
   return (
     <span className="coords" data-rank="coords">
@@ -569,9 +561,7 @@ export function Coords({
       {/* Whose fact this is. `queued` is the one state that is not in the log,
           so a page that stated it without saying where it came from would be
           claiming a fold it did not make (0012). */}
-      {queued !== null && queued.problem === null && queued.notOffered === null ? (
-        <span>offered by GitHub</span>
-      ) : null}
+      {queued !== null && queued.problem === null && queued.notOffered === null ? <span>offered by GitHub</span> : null}
       {/* The coordinate is the pointer: which attempt produced this state, and
           the way down to it. `of N` because the number alone reads as the whole
           story on an item that has had three (#102). */}
@@ -581,16 +571,16 @@ export function Coords({
         </a>
       ) : null}
     </span>
-  );
+  )
 }
 
 /** The card's weights, said once there and read here. See `page.tsx`'s `HELD_CLASS`. */
-const HELD_CLASS: Record<HoldLine["part"], string> = {
-  needs: "needs",
-  what: "diag",
-  did: "did",
-  rec: "rec",
-};
+const HELD_CLASS: Record<HoldLine['part'], string> = {
+  needs: 'needs',
+  what: 'diag',
+  did: 'did',
+  rec: 'rec',
+}
 
 /**
  * The second rank: what refused, in its own words.
@@ -643,21 +633,21 @@ function Reason({
   attempt,
 }: {
   /** `diagnosis.raw`: the failing gate's evidence, verbatim. */
-  raw: string | null;
+  raw: string | null
   /** The gate that said it, or null when what refused was not a gate. */
-  said: string | null;
+  said: string | null
   /** Whether the hold carries a diagnosis at all. See above: it decides the rank. */
-  diagnosed: boolean;
+  diagnosed: boolean
   /** The named attempt's verdicts that stand failed, by `point:action`. */
-  refused: readonly string[];
-  deciding: StandingView["deciding"];
+  refused: readonly string[]
+  deciding: StandingView['deciding']
   /** The attempt rank 4 names, so this rank names one only when it differs. */
-  attempt: number | null;
+  attempt: number | null
 }) {
   if (!diagnosed) {
     // The block as it was before #83, and the one deciding line is all it has
     // ever had here. Attributed, because it may be an earlier attempt's.
-    if (deciding === null) return null;
+    if (deciding === null) return null
     return (
       <p className="sevidence">
         <span className="sstep">{deciding.source}</span>
@@ -668,13 +658,13 @@ function Reason({
           </a>
         ) : null}
       </p>
-    );
+    )
   }
 
   if (raw === null) {
     // Nothing refused: `what` has already said so in a sentence, and a quote of
     // something else under it would be a cause this hold does not have.
-    if (refused.length === 0) return null;
+    if (refused.length === 0) return null
 
     // Something did, and the diagnosis quoted none of it. This attempt's own
     // deciding line is that refusal — `decidingOf` takes the named attempt's
@@ -686,37 +676,32 @@ function Reason({
           <span className="sstep">{deciding.source}</span>
           <span className="sline">{deciding.line}</span>
         </p>
-      );
+      )
     }
-    const step = refused.at(-1)!.replace(":", " / ");
-    return (
-      <p className="sevidence snone">
-        The {step} step refused, and nothing it said was recorded here to quote.
-      </p>
-    );
+    const step = refused.at(-1)!.replace(':', ' / ')
+    return <p className="sevidence snone">The {step} step refused, and nothing it said was recorded here to quote.</p>
   }
 
-  if (raw.trim() === "") {
+  if (raw.trim() === '') {
     return (
       <p className="sevidence snone">
-        {said === null ? "The refusal" : `The ${said} step`} recorded no output, so there is
-        nothing to quote.
+        {said === null ? 'The refusal' : `The ${said} step`} recorded no output, so there is nothing to quote.
       </p>
-    );
+    )
   }
 
-  const lines = raw.split("\n").length;
+  const lines = raw.split('\n').length
   return (
     <details className="sreason" open>
       <summary>
-        <span className="sstep">{said ?? "what refused, verbatim"}</span>
+        <span className="sstep">{said ?? 'what refused, verbatim'}</span>
         <span className="ssize">
-          {lines} line{lines === 1 ? "" : "s"}
+          {lines} line{lines === 1 ? '' : 's'}
         </span>
       </summary>
       {/* Never markdown, and never a paragraph: design §6's third row and
           #111's, one page along. A log rendered as prose is not that log. */}
       <pre className="sraw">{raw}</pre>
     </details>
-  );
+  )
 }

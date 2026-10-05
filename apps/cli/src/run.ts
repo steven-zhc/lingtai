@@ -1,3 +1,7 @@
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+import { createRuntime } from '@lingtai/agent'
 /**
  * `lingtai run --once <project> --issue <n>` — Phase 1's whole shape.
  *
@@ -24,44 +28,42 @@
  * See `heedThePause` below for why this read is not scoped the way the daemon's
  * is.
  */
-import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from "@lingtai/conductor";
-import { readControl } from "@lingtai/daemon";
-import type { EventStore } from "@lingtai/event-store";
-import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
-import { createGitHubClient } from "@lingtai/github";
-import { createRuntime } from "@lingtai/agent";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { PortsLive } from "@lingtai/conductor";
-import { Data, Effect } from "effect";
-import { ConductorLock, ConductorLockLive } from "./conductor-lock.ts";
-import { Projector, ProjectorLive } from "./projector.ts";
+import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from '@lingtai/conductor'
+import { PortsLive } from '@lingtai/conductor'
+import { readControl } from '@lingtai/daemon'
+import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
+import type { EventStore } from '@lingtai/event-store'
+import { createGitHubClient } from '@lingtai/github'
+import { Data, Effect } from 'effect'
+
+import { ConductorLock, ConductorLockLive } from './conductor-lock.ts'
+import { Projector, ProjectorLive } from './projector.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
-const root = repoRoot();
+const root = repoRoot()
 
 export interface RunOptions {
-  project: string;
+  project: string
   /**
    * One nominated issue. Undefined takes the queue instead, which is what
    * "consecutive" in Phase 2's exit criterion means: the conductor picked the
    * next one up, not a person typing another number.
    */
-  issue?: number;
+  issue?: number
   /** Stop after this many. `--max 2` is the exit criterion. */
-  max?: number;
+  max?: number
   /** False for `--no-merge`: stop after the gates and ask before writing. */
-  merge?: boolean;
+  merge?: boolean
   /** Defaults to the compiled hook in `packages/hook/bin`. */
-  hookBinary?: string;
-  promptPath?: string;
+  hookBinary?: string
+  promptPath?: string
   /**
    * The conductor lock's key. The suite passes its own so a test does not fight
    * the operator's daemon; nothing else should set it.
    */
-  lockKey?: string;
+  lockKey?: string
   /** The log the pause is read from. The suite passes a memory store; nothing else should set it. */
-  store?: EventStore;
+  store?: EventStore
 }
 
 /**
@@ -71,7 +73,7 @@ export interface RunOptions {
  * second attempt printed a sentence about this command that was false.
  */
 export const RUN_UNDER_A_PAUSE =
-  "lingtai run takes no ticket while it stands, daemon or none — one already working finishes the ticket in hand and takes no other; lingtai resume lifts it";
+  'lingtai run takes no ticket while it stands, daemon or none — one already working finishes the ticket in hand and takes no other; lingtai resume lifts it'
 
 /**
  * A refusal, in the error channel rather than as a `return 1` and a log line.
@@ -86,15 +88,15 @@ export const RUN_UNDER_A_PAUSE =
  * projector was ever read still closes it, because release is the scope's job
  * and not this function's.
  */
-class Refused extends Data.TaggedError("Refused")<{ readonly detail: string }> {}
+class Refused extends Data.TaggedError('Refused')<{ readonly detail: string }> {}
 
-const refuse = (detail: string) => new Refused({ detail });
+const refuse = (detail: string) => new Refused({ detail })
 
 /** Somebody paused the conductor, and this command is a conductor. */
-class Paused extends Data.TaggedError("Paused")<{
-  readonly by: string | null;
-  readonly reason: string | null;
-  readonly until: Date | null;
+class Paused extends Data.TaggedError('Paused')<{
+  readonly by: string | null
+  readonly reason: string | null
+  readonly until: Date | null
 }> {}
 
 /**
@@ -125,11 +127,11 @@ const heedThePause = (store: EventStore | undefined) =>
         ? Effect.fail(new Paused({ by: control.by, reason: control.reason, until: control.until }))
         : Effect.void,
     ),
-  );
+  )
 
 /** Who paused it and why, in the one form both refusals print. */
 const saidPaused = (p: { by: string | null; reason: string | null; until: Date | null }) =>
-  `paused by ${p.by ?? "somebody"}${p.until ? ` until ${p.until.toISOString()}` : ""} — ${p.reason ?? "no reason given"}`;
+  `paused by ${p.by ?? 'somebody'}${p.until ? ` until ${p.until.toISOString()}` : ''} — ${p.reason ?? 'no reason given'}`
 
 /**
  * The same read, between tickets — for `runQueue`, which stops on a sentence.
@@ -138,12 +140,12 @@ const saidPaused = (p: { by: string | null; reason: string | null; until: Date |
  */
 const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
   try {
-    const control = await readControl(store);
-    return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null;
+    const control = await readControl(store)
+    return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null
   } catch (err) {
-    return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`;
+    return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
   }
-};
+}
 
 export async function run(options: RunOptions, log = console.log): Promise<number> {
   const program = Effect.gen(function* () {
@@ -162,10 +164,10 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
      * It is one statement on one connection, which is why it can go here and the
      * projector — which creates tables and replays to the head — cannot.
      */
-    yield* ConductorLock;
+    yield* ConductorLock
 
     if (!hasGitHubApp()) {
-      return yield* refuse("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
+      return yield* refuse('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
     }
 
     const project = yield* Effect.tryPromise({
@@ -173,17 +175,17 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       // Reading the project list is reading the log, and a log this command
       // cannot read is a refusal like any other rather than a stack trace.
       catch: (err) => refuse(`could not read the projects: ${(err as Error).message}`),
-    });
+    })
     if (!project) {
-      return yield* refuse(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
+      return yield* refuse(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     }
     if (!project.owner) {
-      return yield* refuse(`${options.project} has no owner recorded — re-run lingtai add to record it`);
+      return yield* refuse(`${options.project} has no owner recorded — re-run lingtai add to record it`)
     }
     // Bound now: a property narrowing does not survive into the closure below.
-    const owner = project.owner;
+    const owner = project.owner
 
-    const hookBinary = options.hookBinary ?? resolve(root, "packages/hook/bin/lingtai-hook");
+    const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
     yield* Effect.tryPromise({
       try: () => readFile(hookBinary),
       // The hook is a compiled artefact and is not committed. It refuses nothing
@@ -191,20 +193,20 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       // without it is a run that records nothing — which must not start. There is
       // no flag to skip this any more: there is nothing left to skip.
       catch: () => refuse(`no lingtai-hook binary at ${hookBinary} — run: pnpm --filter @lingtai/hook build`),
-    });
+    })
 
-    const promptPath = options.promptPath ?? resolve(root, "prompts/ticket.md");
+    const promptPath = options.promptPath ?? resolve(root, 'prompts/ticket.md')
     const prompt = yield* Effect.tryPromise({
-      try: () => readFile(promptPath, "utf8"),
+      try: () => readFile(promptPath, 'utf8'),
       catch: () => refuse(`no prompt at ${promptPath}`),
-    });
+    })
 
     const client = yield* Effect.tryPromise({
       try: () => createGitHubClient({ auth: githubApp(), owner, repo: options.project }),
       // `NotInstalledError` says what to do about it, and every other failure
       // here is the App or the network. Either way a person reads one line.
       catch: (err) => refuse((err as Error).message),
-    });
+    })
 
     /**
      * The work, with the world provided **around it and not around the
@@ -227,7 +229,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
     const work = Effect.gen(function* () {
       // Asked for, not threaded through — and the release is the scope's, which
       // is the whole of why `run()` no longer has to remember it on four paths.
-      yield* Projector;
+      yield* Projector
 
       /**
        * The recipe, **resolved before `common` and in both branches** (`#313`).
@@ -245,7 +247,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       const resolved = yield* Effect.tryPromise({
         try: () => currentRecipe(project, client),
         catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
-      });
+      })
 
       const common = {
         project,
@@ -261,7 +263,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         hookBinary,
         promptVersion: `ticket@${prompt.length}`,
         log,
-      };
+      }
 
       // ---- the queue ---------------------------------------------------------
       if (options.issue === undefined) {
@@ -275,7 +277,7 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
           recipe: resolved.recipe,
           ...(options.max === undefined ? {} : { max: options.max }),
           paused: stillPaused(options.store),
-        });
+        })
 
         // Read back, not counted up. An item this pass held and somebody approved
         // while the pass carried on has landed, and the log says so — see
@@ -284,14 +286,12 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         const { landed, held, stopped } = yield* Effect.tryPromise({
           try: () => tallyPass(outcome.ran),
           catch: (err) => refuse(`the pass ran, but its summary could not be read back: ${(err as Error).message}`),
-        });
-        log(
-          `${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`,
-        );
+        })
+        log(`${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`)
         // Exit 0 unless something actually went wrong. An empty queue is not a
         // failure, neither is a bounded run reaching its bound, and neither is an
         // item waiting on a person.
-        return stopped > 0 ? 1 : 0;
+        return stopped > 0 ? 1 : 0
       }
 
       // ---- one nominated issue -----------------------------------------------
@@ -301,27 +301,27 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         // The raw template. `runOnce` fetches the ticket and fills it in — it is
         // the only place that has the title and the body.
         prompt,
-      });
+      })
 
       if (result.ok === true) {
-        log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`);
-        return 0;
+        log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`)
+        return 0
       }
-      if (result.ok === "held") {
+      if (result.ok === 'held') {
         // Exit 0: holding is what was asked for, and a non-zero code here would
         // teach a person to ignore it.
-        log(`held at ${result.headSha.slice(0, 7)} — ${result.workItemId} is waiting on you`);
-        log(`nothing was merged. Re-run without --no-merge to merge it.`);
-        return 0;
+        log(`held at ${result.headSha.slice(0, 7)} — ${result.workItemId} is waiting on you`)
+        log(`nothing was merged. Re-run without --no-merge to merge it.`)
+        return 0
       }
       // Every stage that can refuse names itself, so "why did nothing happen" has
       // an answer at the shell as well as on the board.
-      log(`stopped at ${result.stage}: ${result.detail}`);
-      return 1;
-    });
+      log(`stopped at ${result.stage}: ${result.detail}`)
+      return 1
+    })
 
-    return yield* work.pipe(Effect.provide(ProjectorLive(log)), Effect.provide(PortsLive));
-  });
+    return yield* work.pipe(Effect.provide(ProjectorLive(log)), Effect.provide(PortsLive))
+  })
 
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
@@ -333,36 +333,36 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
       // Exit 0, as for the lock below: nothing went wrong, a person decided
       // this. Who and why, because a pause nobody remembers is the one this
       // line is for.
-      Effect.catchTag("Paused", (p) =>
+      Effect.catchTag('Paused', (p) =>
         Effect.sync(() => {
-          log(saidPaused(p));
-          log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`);
-          return 0;
+          log(saidPaused(p))
+          log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+          return 0
         }),
       ),
-      Effect.catchTag("Refused", (r) =>
+      Effect.catchTag('Refused', (r) =>
         Effect.sync(() => {
-          log(r.detail);
-          return 1;
+          log(r.detail)
+          return 1
         }),
       ),
       // Exit 0. Typing this while the daemon is up is a reasonable thing to do,
       // and answering it with an error would teach people to ignore errors —
       // `lingtai daemon` has said so since it grew the lock.
-      Effect.catchTag("ConductorBusy", (busy) =>
+      Effect.catchTag('ConductorBusy', (busy) =>
         Effect.sync(() => {
-          log(`another conductor holds the lock${busy.holder ? ` (${busy.holder})` : ""} — nothing to do`);
-          return 0;
+          log(`another conductor holds the lock${busy.holder ? ` (${busy.holder})` : ''} — nothing to do`)
+          return 0
         }),
       ),
       // Not a busy signal: the log could not be reached at all. One line and a
       // non-zero code, the same shape as every other refusal.
-      Effect.catchTag("LockUnreadable", (err) =>
+      Effect.catchTag('LockUnreadable', (err) =>
         Effect.sync(() => {
-          log(`could not reach the log to take the conductor lock: ${err.detail}`);
-          return 1;
+          log(`could not reach the log to take the conductor lock: ${err.detail}`)
+          return 1
         }),
       ),
     ),
-  );
+  )
 }

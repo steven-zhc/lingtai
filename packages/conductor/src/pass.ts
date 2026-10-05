@@ -1,3 +1,16 @@
+import {
+  NEEDS_INPUT,
+  NO_DESIGN,
+  runActionPipeline,
+  type Action,
+  type ActionContext,
+  type ActionEvent,
+  type ActionFinding,
+  type ActionVerdict,
+  type PipelineResult,
+  type SentBack,
+  type TheDesign,
+} from '@lingtai/actions'
 /**
  * The pass: the ten steps as data, and the loop that runs them.
  *
@@ -71,22 +84,10 @@
  * from a `PipelineResult` to a step's ending, so the five verdicts the pipeline
  * can produce are read in one place rather than at every call site.
  */
-import { STEPS, type Step } from "@lingtai/domain";
-import {
-  NEEDS_INPUT,
-  NO_DESIGN,
-  runActionPipeline,
-  type Action,
-  type ActionContext,
-  type ActionEvent,
-  type ActionFinding,
-  type ActionVerdict,
-  type PipelineResult,
-  type SentBack,
-  type TheDesign,
-} from "@lingtai/actions";
-import type { Recipe, StepAction } from "@lingtai/recipe";
-import type { TerminalOutcome } from "./end-step.ts";
+import { STEPS, type Step } from '@lingtai/domain'
+import type { Recipe, StepAction } from '@lingtai/recipe'
+
+import type { TerminalOutcome } from './end-step.ts'
 
 // ------------------------------------------------------- the ten, as data ----
 
@@ -104,10 +105,10 @@ import type { TerminalOutcome } from "./end-step.ts";
  * It is a list here rather than a `refuses: true` on ten rows because the four
  * are also a **type** below, and a boolean per row could not be one.
  */
-export const REFUSING_STEPS = ["prepared", "build", "proposed", "merge"] as const satisfies readonly Step[];
+export const REFUSING_STEPS = ['prepared', 'build', 'proposed', 'merge'] as const satisfies readonly Step[]
 
 /** One of the four. `StepEnding`'s `refused` is reachable only from these. */
-export type RefusingStep = (typeof REFUSING_STEPS)[number];
+export type RefusingStep = (typeof REFUSING_STEPS)[number]
 
 /**
  * One of the other six — `claim`, `admit`, `design`, `implement`, `review`,
@@ -118,7 +119,7 @@ export type RefusingStep = (typeof REFUSING_STEPS)[number];
  * nothing (0058 §3b). **Arriving at the router and refusing are different
  * things, and only one of them is charged for.**
  */
-export type SettlingStep = Exclude<Step, RefusingStep>;
+export type SettlingStep = Exclude<Step, RefusingStep>
 
 /**
  * **The only step that routes** (0058 §3, §3b).
@@ -129,7 +130,7 @@ export type SettlingStep = Exclude<Step, RefusingStep>;
  * *What is not decided*; this file keeps them merged and tells them apart by
  * **how `proposed` was reached** — see `StepWork.arriving`.
  */
-export type RoutingStep = "proposed";
+export type RoutingStep = 'proposed'
 
 /**
  * Whether a step's plugins produce verdicts or run for effect.
@@ -140,16 +141,16 @@ export type RoutingStep = "proposed";
  * the `Action` interface, and `actionsFromRecipe("end", …)` refuses them by
  * name. They are resolved by `resolveEndActions` and carried out by `tell.ts`.
  */
-export type PluginsAre = "verdicts" | "effects";
+export type PluginsAre = 'verdicts' | 'effects'
 
 /** One of the ten, and the three things about it the workflow fixes. */
 export interface StepSpec {
-  readonly step: Step;
+  readonly step: Step
   /** True for exactly `REFUSING_STEPS`. Derived, so the two cannot disagree. */
-  readonly refuses: boolean;
+  readonly refuses: boolean
   /** True for `proposed` alone. Derived, for the same reason. */
-  readonly routes: boolean;
-  readonly plugins: PluginsAre;
+  readonly routes: boolean
+  readonly plugins: PluginsAre
 }
 
 /**
@@ -164,16 +165,17 @@ export interface StepSpec {
 export const PASS: readonly StepSpec[] = STEPS.map((step) => ({
   step,
   refuses: (REFUSING_STEPS as readonly Step[]).includes(step),
-  routes: step === "proposed",
+  routes: step === 'proposed',
   // `end` alone, and named by the step rather than by a second list: one
   // exception written as a condition reads better than a table of nine `true`s.
-  plugins: step === "end" ? "effects" : "verdicts",
-}));
+  plugins: step === 'end' ? 'effects' : 'verdicts',
+}))
 
 /** The ten rows by name, because the loop moves by name rather than by index. */
-const SPEC: Readonly<Record<Step, StepSpec>> = Object.fromEntries(
-  PASS.map((spec) => [spec.step, spec]),
-) as Record<Step, StepSpec>;
+const SPEC: Readonly<Record<Step, StepSpec>> = Object.fromEntries(PASS.map((spec) => [spec.step, spec])) as Record<
+  Step,
+  StepSpec
+>
 
 /**
  * The step after this one on the spine, or `null` at `end`.
@@ -183,7 +185,7 @@ const SPEC: Readonly<Record<Step, StepSpec>> = Object.fromEntries(
  * `proposed`'s to choose.
  */
 function after(step: Step): Step | null {
-  return STEPS[STEPS.indexOf(step) + 1] ?? null;
+  return STEPS[STEPS.indexOf(step) + 1] ?? null
 }
 
 // ------------------------------------------------- what a step hands back ----
@@ -212,7 +214,7 @@ function after(step: Step): Step | null {
  */
 export interface LeftTheTreeAt {
   /** The commit the step's own work left the worktree at, when it moved it. */
-  readonly head?: string;
+  readonly head?: string
 }
 
 /**
@@ -251,12 +253,12 @@ export interface WroteTheDesign {
    * What the step's own work produced and where it kept it, when it produced
    * something. `TheDesign`.
    */
-  readonly design?: TheDesign;
+  readonly design?: TheDesign
 }
 
 /** Nothing to report. The pass moves to the next step on the spine. */
 export interface StepPassed extends LeftTheTreeAt, WroteTheDesign {
-  readonly ending: "passed";
+  readonly ending: 'passed'
 }
 
 /**
@@ -285,11 +287,11 @@ export interface StepPassed extends LeftTheTreeAt, WroteTheDesign {
  * enumerated here.
  */
 export interface StepRefused extends LeftTheTreeAt {
-  readonly ending: "refused";
-  readonly because: string;
+  readonly ending: 'refused'
+  readonly because: string
   /** The action that refused, or null where the step refused without one. */
-  readonly at: string | null;
-  readonly detail: string;
+  readonly at: string | null
+  readonly detail: string
 }
 
 /**
@@ -309,9 +311,9 @@ export interface StepRefused extends LeftTheTreeAt {
  * the question was put.
  */
 export interface StepHeld extends LeftTheTreeAt {
-  readonly ending: "held";
-  readonly at: string;
-  readonly question: string;
+  readonly ending: 'held'
+  readonly at: string
+  readonly question: string
 }
 
 /**
@@ -335,10 +337,10 @@ export interface StepHeld extends LeftTheTreeAt {
  * person, and the one the *workflow* branched on is the ending below.
  */
 export interface StepDidNotFinish extends LeftTheTreeAt {
-  readonly ending: "did-not-finish";
-  readonly because: string;
-  readonly at: string | null;
-  readonly detail: string;
+  readonly ending: 'did-not-finish'
+  readonly because: string
+  readonly at: string | null
+  readonly detail: string
 }
 
 /**
@@ -367,11 +369,11 @@ export interface StepDidNotFinish extends LeftTheTreeAt {
  * of. `detail` is the question, in the agent's own words (0043).
  */
 export interface StepAsked extends LeftTheTreeAt {
-  readonly ending: "asked";
+  readonly ending: 'asked'
   /** The action whose agent asked, or null where the step's own work did. */
-  readonly at: string | null;
+  readonly at: string | null
   /** The question. */
-  readonly detail: string;
+  readonly detail: string
 }
 
 /**
@@ -389,7 +391,7 @@ export interface StepAsked extends LeftTheTreeAt {
  * the agent at `implement` is a plugin and a second definition of one word is the
  * drift `worktree-action.ts` names.
  */
-export { NEEDS_INPUT, NO_DESIGN, type SentBack, type TheDesign };
+export { NEEDS_INPUT, NO_DESIGN, type SentBack, type TheDesign }
 
 /**
  * The step was reached and its agent never started.
@@ -408,9 +410,9 @@ export { NEEDS_INPUT, NO_DESIGN, type SentBack, type TheDesign };
  * to ask *what shall we do about the quota* is the one route that cannot work.
  */
 export interface StepNeverRan extends LeftTheTreeAt {
-  readonly ending: "never-ran";
-  readonly at: string;
-  readonly detail: string;
+  readonly ending: 'never-ran'
+  readonly at: string
+  readonly detail: string
 }
 
 /**
@@ -427,7 +429,7 @@ export interface StepNeverRan extends LeftTheTreeAt {
  * moves it, and 0058 §3b's property worth keeping is that it has exactly one
  * way in.
  */
-export type Destination = Step | "waiting";
+export type Destination = Step | 'waiting'
 
 /**
  * `proposed` sent the pass somewhere — **the only ending that is a decision
@@ -439,9 +441,9 @@ export type Destination = Step | "waiting";
  * evidence is plain text and not a structure to be parsed.
  */
 export interface StepRouted extends LeftTheTreeAt {
-  readonly ending: "routed";
-  readonly to: Destination;
-  readonly why: string;
+  readonly ending: 'routed'
+  readonly to: Destination
+  readonly why: string
   /**
    * Where the decision **wanted** to go, where that is not where it went — and
    * absent everywhere else, which is every route that got what it asked for.
@@ -452,21 +454,14 @@ export interface StepRouted extends LeftTheTreeAt {
    * workflow counts the rounds and the restarts (0061 §3) — so `take` names the
    * ceiling and this says only what was wanted (`RouteTaken`, `#271`).
    */
-  readonly chose?: Destination;
+  readonly chose?: Destination
 }
 
 /** The seven ways a step ends: six reports, and `proposed`'s one decision. */
-export type StepEnding =
-  | StepPassed
-  | StepRefused
-  | StepHeld
-  | StepDidNotFinish
-  | StepAsked
-  | StepNeverRan
-  | StepRouted;
+export type StepEnding = StepPassed | StepRefused | StepHeld | StepDidNotFinish | StepAsked | StepNeverRan | StepRouted
 
 /** The six a step *reports*. Exactly the six `runActionPipeline` can produce. */
-export type StepReport = Exclude<StepEnding, StepRouted>;
+export type StepReport = Exclude<StepEnding, StepRouted>
 
 /**
  * **What a given step may hand back — the type, rather than a comment.**
@@ -485,12 +480,12 @@ export type EndingAt<S extends Step> = S extends RoutingStep
   ? StepReport | StepRouted
   : S extends RefusingStep
     ? StepReport
-    : Exclude<StepReport, StepRefused>;
+    : Exclude<StepReport, StepRefused>
 
 // --------------------------------------------------------- the step bodies ----
 
 /** One action's verdict, with the findings behind it, as the pipeline reports it. */
-export type ActionOutcome = PipelineResult["results"][number];
+export type ActionOutcome = PipelineResult['results'][number]
 
 /**
  * One visit to a step, and how it ended — with everything its plugins said.
@@ -514,9 +509,9 @@ export type ActionOutcome = PipelineResult["results"][number];
  * arrived at by routing, whose plugins are not re-run — see `StepWork.arriving`.
  */
 export interface StepReached {
-  readonly step: Step;
-  readonly ending: StepEnding;
-  readonly results: readonly ActionOutcome[];
+  readonly step: Step
+  readonly ending: StepEnding
+  readonly results: readonly ActionOutcome[]
 }
 
 /**
@@ -530,10 +525,10 @@ export interface StepReached {
  * routing at `proposed`.
  */
 export interface StepWork<S extends Step = Step> {
-  readonly step: S;
-  readonly actions: readonly StepAction[];
+  readonly step: S
+  readonly actions: readonly StepAction[]
   /** Whether this step may refuse. The workflow's fact, never a plugin's. */
-  readonly refuses: boolean;
+  readonly refuses: boolean
   /**
    * Every visit the pass has already made, in order, with how each ended and
    * what its plugins said. Empty at `claim`; nine long at `end` on a pass that
@@ -547,7 +542,7 @@ export interface StepWork<S extends Step = Step> {
    * memory — which is the second source of truth `PipelineResult.results`
    * exists to avoid one layer down.
    */
-  readonly reached: readonly StepReached[];
+  readonly reached: readonly StepReached[]
   /**
    * **The step that did not pass and sent the pass here — at `proposed`, and
    * nowhere else.**
@@ -572,7 +567,7 @@ export interface StepWork<S extends Step = Step> {
    * nothing: it passes carrying findings, and the visit that reads them is the
    * `null` one. What is legal only on the second is *anything but* a route.
    */
-  readonly arriving: S extends RoutingStep ? StepReached | null : null;
+  readonly arriving: S extends RoutingStep ? StepReached | null : null
   /**
    * **What is on offer — at `proposed`, and nowhere else.** Never empty on
    * either of its visits, because a judge may hold a change back on the way
@@ -593,7 +588,7 @@ export interface StepWork<S extends Step = Step> {
    *
    * `onOffer` is the computation and its doc comment is the rule, cell by cell.
    */
-  readonly offering: S extends RoutingStep ? Offer : NoOffer;
+  readonly offering: S extends RoutingStep ? Offer : NoOffer
   /**
    * **Which ending the pass reached — at `end`, and nowhere else.**
    *
@@ -610,7 +605,7 @@ export interface StepWork<S extends Step = Step> {
    * not been decided yet — the outcome is *where the pass came to rest*, and
    * only `end` runs after that is known. `outcomeOf` is the rule.
    */
-  readonly outcome: S extends "end" ? TerminalOutcome : null;
+  readonly outcome: S extends 'end' ? TerminalOutcome : null
   /**
    * **This visit's context, and the same object its plugins were just run
    * with** — so a body dispatching an agent and the pipeline that judges what
@@ -622,11 +617,11 @@ export interface StepWork<S extends Step = Step> {
    * bought), and `recheck` (what this round was bought on, 0038 §2). The rest is
    * the caller's and never changes.
    */
-  readonly context: ActionContext;
-  readonly emit: (event: ActionEvent) => Promise<void> | void;
+  readonly context: ActionContext
+  readonly emit: (event: ActionEvent) => Promise<void> | void
 }
 
-export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Promise<EndingAt<S>>;
+export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Promise<EndingAt<S>>
 
 /**
  * All ten, and all ten required.
@@ -636,10 +631,10 @@ export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Promise<End
  * configured* and *something is configured and did not run* must not look the
  * same (0016 §4).
  */
-export type StepBodies = { readonly [S in Step]: StepBody<S> };
+export type StepBodies = { readonly [S in Step]: StepBody<S> }
 
 /** The body of a step whose own work is nothing beyond its plugins. */
-const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: "passed" });
+const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: 'passed' })
 
 /**
  * The ten bodies, empty — and each one says what will be in it.
@@ -709,15 +704,15 @@ export const NOT_BUILT_YET: StepBodies = {
    */
   proposed: async ({ arriving, offering }) =>
     arriving === null
-      ? { ending: "passed" }
+      ? { ending: 'passed' }
       : {
-          ending: "routed",
-          to: "waiting",
+          ending: 'routed',
+          to: 'waiting',
           why:
             `no \`judge:\` is built yet in these bodies (\`bodiesFor\`'s ask one), so the ` +
             `\`${arriving.step}\` step's ` +
             `${arriving.ending.ending} goes to a person rather than to ` +
-            `${offering.affordable.filter((d) => d !== "waiting").join(" or ") || "any step"}`,
+            `${offering.affordable.filter((d) => d !== 'waiting').join(' or ') || 'any step'}`,
         },
   /**
    * **Refuses**, and reports a `reason` and a `detail` rather than deciding —
@@ -743,22 +738,22 @@ export const NOT_BUILT_YET: StepBodies = {
    * names.
    */
   end: async ({ actions, outcome }) => {
-    if (actions.length === 0) return { ending: "passed" };
+    if (actions.length === 0) return { ending: 'passed' }
     throw new Error(
       `the \`end\` step has ${actions.length} effect(s) declared — ${actions
         .map((a) => `"${a.name}"`)
-        .join(", ")} — and this pass has no body to carry them out. ` +
+        .join(', ')} — and this pass has no body to carry them out. ` +
         // The outcome is quoted into the call the body will make, because it is
         // the argument a body had no value for until `StepWork` carried one:
         // the effects are filtered by `when:`, and a body that cannot read the
         // outcome can only run every cell or none, which is `#61` either way.
         `\`resolveEndActions(events, end, "${outcome}")\` resolves them onto the item's own stream ` +
-        "and `tell.ts` does them; " +
-        "throwing rather than passing, because a step that was configured and did not run must not " +
-        "look like one that was empty (0016 §4, #61).",
-    );
+        'and `tell.ts` does them; ' +
+        'throwing rather than passing, because a step that was configured and did not run must not ' +
+        'look like one that was empty (0016 §4, #61).',
+    )
   },
-};
+}
 
 // ---------------------------------------------------------- what is on offer ----
 
@@ -785,7 +780,7 @@ export interface Ceilings {
    * stops offering a step. A judge that answers `implement` anyway is refused
    * by name.
    */
-  readonly rounds: number;
+  readonly rounds: number
   /**
    * How many restarts this **item** has left — its history, not this pass's, so
    * the caller counts it off the item's stream and the pass is told the answer.
@@ -796,11 +791,11 @@ export interface Ceilings {
    * orders by kind and then by number as it always does — so *the next ticket
    * taken may not be this one*.
    */
-  readonly restartsLeft: number;
+  readonly restartsLeft: number
 }
 
 /** Nothing on the back edges, which is what a caller that says nothing gets. */
-const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
+const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 }
 
 /**
  * What `proposed`'s own visit is judging: nothing refused.
@@ -811,7 +806,7 @@ const NOTHING_SPARE: Ceilings = { rounds: 0, restartsLeft: 0 };
  * bare `{ ending: "passed" }` at the first of those two calls would not say
  * which of the two questions it is asking.
  */
-const PASSED_THROUGH: StepPassed = { ending: "passed" };
+const PASSED_THROUGH: StepPassed = { ending: 'passed' }
 
 /**
  * **What is on offer, and it is two sets rather than one** (0064 §7).
@@ -842,12 +837,12 @@ export interface Offer {
    * Everything the arrival could mean, whatever is left to spend — *how far the
    * pass got*, and the half no ceiling participates in.
    */
-  readonly reachable: readonly Destination[];
+  readonly reachable: readonly Destination[]
   /**
    * Those of them this pass can pay for. **This is the set, and the only one a
    * decision is held to** (`theWorkflowsToSay`).
    */
-  readonly affordable: readonly Destination[];
+  readonly affordable: readonly Destination[]
 }
 
 /**
@@ -858,12 +853,12 @@ export interface Offer {
  * nowhere else* in the type rather than in a comment.
  */
 export interface NoOffer {
-  readonly reachable: readonly [];
-  readonly affordable: readonly [];
+  readonly reachable: readonly []
+  readonly affordable: readonly []
 }
 
 /** The one value of `NoOffer`, so the nine visits share it. */
-export const NO_OFFER: NoOffer = { reachable: [], affordable: [] };
+export const NO_OFFER: NoOffer = { reachable: [], affordable: [] }
 
 /**
  * **Which ceiling took a destination off the offer, or null** — and null is a
@@ -882,8 +877,8 @@ export const NO_OFFER: NoOffer = { reachable: [], affordable: [] };
  * route again.
  */
 export function ceilingFor(to: Destination, offer: Offer): Ceiling | null {
-  if (offer.affordable.includes(to) || !offer.reachable.includes(to)) return null;
-  return to === "claim" ? "restarts" : "rounds";
+  if (offer.affordable.includes(to) || !offer.reachable.includes(to)) return null
+  return to === 'claim' ? 'restarts' : 'rounds'
 }
 
 /**
@@ -943,34 +938,32 @@ export function ceilingFor(to: Destination, offer: Offer): Ceiling | null {
  * which half refused a destination without being asked a second question.
  */
 export function onOffer(at: Step, ending: StepEnding, ceilings: Ceilings, roundsSpent: number): Offer {
-  const reachable: Destination[] = ["waiting"];
+  const reachable: Destination[] = ['waiting']
   // The way-through visit, which is the `findings` direction and the only one a
   // restart is offered for — see the table above. **Reachable whatever the item
   // has left**: having no restart to spend is the budget's answer and not this
   // half's, which is the distinction the two sets exist to keep.
-  if (at === "proposed" && ending.ending === "passed") reachable.push("claim");
+  if (at === 'proposed' && ending.ending === 'passed') reachable.push('claim')
 
-  if (ending.ending === "asked") {
+  if (ending.ending === 'asked') {
     // The step that asked, and nothing else: nobody but it knows the question,
     // so the edges below are not reachable from a question either.
-    reachable.push(at);
+    reachable.push(at)
   } else {
     // `implement` is on offer once the pass has got as far as an agent having
     // written something for the decision to be about.
-    if (AFTER_AN_AGENT.includes(at)) reachable.push("implement");
-    if (at === "merge") reachable.push("build");
+    if (AFTER_AN_AGENT.includes(at)) reachable.push('implement')
+    if (at === 'merge') reachable.push('build')
   }
 
-  const round = roundsSpent < ceilings.rounds;
-  const restart = ceilings.restartsLeft > 0;
+  const round = roundsSpent < ceilings.rounds
+  const restart = ceilings.restartsLeft > 0
   return {
     reachable,
     // `waiting` costs nothing, so no ceiling can take it out — which is what
     // keeps the set non-empty and therefore keeps every arrival answerable.
-    affordable: reachable.filter((to) =>
-      to === "waiting" ? true : to === "claim" ? restart : round,
-    ),
-  };
+    affordable: reachable.filter((to) => (to === 'waiting' ? true : to === 'claim' ? restart : round)),
+  }
 }
 
 /**
@@ -983,7 +976,7 @@ export function onOffer(at: Step, ending: StepEnding, ceilings: Ceilings, rounds
  * answer is *the lines or the approach* (0061 §3). `prepared` is not on the
  * list, and that omission is the whole of 0061 §3's worked example.
  */
-const AFTER_AN_AGENT: readonly Step[] = ["implement", "build", "review", "proposed", "merge"];
+const AFTER_AN_AGENT: readonly Step[] = ['implement', 'build', 'review', 'proposed', 'merge']
 
 /**
  * The seven steps whose non-pass arrives at `proposed` — 0058 §3b's second
@@ -1003,14 +996,14 @@ const AFTER_AN_AGENT: readonly Step[] = ["implement", "build", "review", "propos
  * **`end`** runs after the decision rather than before it.
  */
 export const ARRIVE_AT_THE_ROUTER = [
-  "admit",
-  "prepared",
-  "design",
-  "implement",
-  "build",
-  "review",
-  "merge",
-] as const satisfies readonly Step[];
+  'admit',
+  'prepared',
+  'design',
+  'implement',
+  'build',
+  'review',
+  'merge',
+] as const satisfies readonly Step[]
 
 /**
  * Whether an ending has anywhere to go, or is where the pass rests.
@@ -1029,7 +1022,7 @@ export const ARRIVE_AT_THE_ROUTER = [
  * stop instead of to a judge.
  */
 function goesToTheRouter(ending: StepEnding): ending is StepRefused | StepAsked {
-  return ending.ending === "refused" || ending.ending === "asked";
+  return ending.ending === 'refused' || ending.ending === 'asked'
 }
 
 // ------------------------------------------------------------- the loop ----
@@ -1039,7 +1032,7 @@ export interface PassOptions {
    * The resolved recipe. Only `steps` is read, and it holds all ten (0061 §5),
    * so `recipe.steps[step]` is a lookup that cannot miss.
    */
-  readonly recipe: Pick<Recipe, "steps">;
+  readonly recipe: Pick<Recipe, 'steps'>
   /**
    * **What the walk starts from, and not what every visit is handed.**
    *
@@ -1055,7 +1048,7 @@ export interface PassOptions {
    * so `stepsOn()` filters all of them out and the board shows a change with no
    * build and no review — while `PassResult.steps` says ten steps passed.
    */
-  readonly context: ActionContext;
+  readonly context: ActionContext
   /**
    * Every event the pipeline produces, in order, before the next action starts.
    *
@@ -1064,7 +1057,7 @@ export interface PassOptions {
    * whose verdict was never recorded is the failure this design exists to
    * remove.*
    */
-  readonly emit: (event: ActionEvent) => Promise<void> | void;
+  readonly emit: (event: ActionEvent) => Promise<void> | void
   /**
    * The ten bodies.
    *
@@ -1074,9 +1067,9 @@ export interface PassOptions {
    * the thing with no consequences, not the thing with a GitHub client behind it,
    * so *forgot to pass them* cannot claim a ticket.
    */
-  readonly bodies?: StepBodies;
+  readonly bodies?: StepBodies
   /** What the back edges may spend. Nothing, when a caller says nothing. */
-  readonly ceilings?: Ceilings;
+  readonly ceilings?: Ceilings
   /**
    * How a step's declared list becomes actions that can run.
    *
@@ -1092,7 +1085,7 @@ export interface PassOptions {
    * which is what puts this file's tests in the half of the suite the `build`
    * point runs (0060 §1).
    */
-  readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[];
+  readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[]
 }
 
 /**
@@ -1111,7 +1104,7 @@ export interface RouteTaken {
    * itself where the judgement was made on the way through, which is where a
    * `review`'s findings are read.
    */
-  readonly from: Step;
+  readonly from: Step
   /**
    * Where the decision wanted to go — `to` on every route nothing intervened in.
    *
@@ -1121,9 +1114,9 @@ export interface RouteTaken {
    * read as `waiting` on `to` alone, and they are not the same thing to somebody
    * deciding what to do about it.
    */
-  readonly chose: Destination;
-  readonly to: Destination;
-  readonly why: string;
+  readonly chose: Destination
+  readonly to: Destination
+  readonly why: string
   /**
    * Which ceiling refused `chose`, or null — including on every route that went
    * where it wanted.
@@ -1134,14 +1127,14 @@ export interface RouteTaken {
    * answering a step the arrival never reached, which the offer refuses on its
    * own grounds. `ceilingFor` is the reading, off `Offer`'s two sets.
    */
-  readonly ceiling: Ceiling | null;
+  readonly ceiling: Ceiling | null
 }
 
 /** The two limits that take a destination off the offer. */
-export type Ceiling = "rounds" | "restarts";
+export type Ceiling = 'rounds' | 'restarts'
 
 /** Where a pass came to rest, when it did not simply get through. */
-export type Rest = "waiting" | "requeued";
+export type Rest = 'waiting' | 'requeued'
 
 export interface PassResult {
   /**
@@ -1151,7 +1144,7 @@ export interface PassResult {
    * the list is the anti-skip assertion either way, since a `continue` anywhere
    * in the loop would drop one.
    */
-  readonly steps: readonly StepReached[];
+  readonly steps: readonly StepReached[]
   /**
    * **The step that reported something the pass stopped for**, or null where
    * nothing did.
@@ -1181,7 +1174,7 @@ export interface PassResult {
    * **How `end` itself ended is `end`'s own entry in `steps`**, which is the
    * only place it is written down and the only place to read it.
    */
-  readonly stoppedAt: { readonly step: Step; readonly ending: StepReport } | null;
+  readonly stoppedAt: { readonly step: Step; readonly ending: StepReport } | null
   /**
    * Every decision `proposed` made, in order — the pass's own audit of the loops
    * it bought.
@@ -1190,7 +1183,7 @@ export interface PassResult {
    * judgement, so the ones whose `to` is a step are the rounds spent and the
    * reason each was spent on.
    */
-  readonly routes: readonly RouteTaken[];
+  readonly routes: readonly RouteTaken[]
   /**
    * Where the pass came to rest, when `proposed` sent it somewhere that is not a
    * step.
@@ -1200,7 +1193,7 @@ export interface PassResult {
    * whose own plugins refused, a judge that answered something it was not
    * offered. `stoppedAt` is what tells those apart from a landing.
    */
-  readonly rested: Rest | null;
+  readonly rested: Rest | null
 }
 
 /**
@@ -1235,11 +1228,11 @@ export interface PassResult {
  * ticket is over ([0044](../../../doc/decisions-archive/0044-a-close-is-a-terminal-outcome.md)),
  * and `close.ts` resolves `end` for it on its own path.
  */
-export function outcomeOf(pass: Pick<PassResult, "stoppedAt" | "rested">): TerminalOutcome {
-  if (pass.rested === "requeued") return "failed";
-  if (pass.rested === "waiting") return "blocked";
-  if (pass.stoppedAt === null) return "landed";
-  return pass.stoppedAt.ending.ending === "never-ran" ? "failed" : "blocked";
+export function outcomeOf(pass: Pick<PassResult, 'stoppedAt' | 'rested'>): TerminalOutcome {
+  if (pass.rested === 'requeued') return 'failed'
+  if (pass.rested === 'waiting') return 'blocked'
+  if (pass.stoppedAt === null) return 'landed'
+  return pass.stoppedAt.ending.ending === 'never-ran' ? 'failed' : 'blocked'
 }
 
 /**
@@ -1275,16 +1268,16 @@ export function outcomeOf(pass: Pick<PassResult, "stoppedAt" | "rested">): Termi
  * is refused. So the walk is at most `rounds + 1` laps long.
  */
 export async function runPass(options: PassOptions): Promise<PassResult> {
-  const bodies = options.bodies ?? NOT_BUILT_YET;
-  const ceilings = options.ceilings ?? NOTHING_SPARE;
-  const steps: StepReached[] = [];
-  const routes: RouteTaken[] = [];
-  let stoppedAt: PassResult["stoppedAt"] = null;
-  let rested: Rest | null = null;
-  let roundsSpent = 0;
+  const bodies = options.bodies ?? NOT_BUILT_YET
+  const ceilings = options.ceilings ?? NOTHING_SPARE
+  const steps: StepReached[] = []
+  const routes: RouteTaken[] = []
+  let stoppedAt: PassResult['stoppedAt'] = null
+  let rested: Rest | null = null
+  let roundsSpent = 0
 
   /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
-  let at: Step | null = "claim";
+  let at: Step | null = 'claim'
 
   /**
    * The three fields of the context that move while the pass runs, and the one
@@ -1295,10 +1288,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * round the pass is in was bought on, and is empty on the first lap because
    * nothing has been refused yet.
    */
-  let onSha = options.context.onSha;
-  let recheck: readonly ActionFinding[] = options.context.recheck ?? [];
+  let onSha = options.context.onSha
+  let recheck: readonly ActionFinding[] = options.context.recheck ?? []
   /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
-  let lapStart = 0;
+  let lapStart = 0
 
   /**
    * What this visit is judged against — rebuilt per visit, never shared.
@@ -1308,7 +1301,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * `onSha` from the pipeline that just ran at `build` would be two verdicts
    * about two commits on one card.
    */
-  const contextFor = (): ActionContext => ({ ...options.context, onSha, round: roundsSpent, recheck });
+  const contextFor = (): ActionContext => ({ ...options.context, onSha, round: roundsSpent, recheck })
 
   /**
    * One visit, recorded — and the head it left the tree at, if it moved it.
@@ -1318,10 +1311,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * after it is judged against.
    */
   const record = (visit: StepReached): StepReached => {
-    steps.push(visit);
-    if (visit.ending.head !== undefined) onSha = visit.ending.head;
-    return visit;
-  };
+    steps.push(visit)
+    if (visit.ending.head !== undefined) onSha = visit.ending.head
+    return visit
+  }
 
   /**
    * What a route does to the walk, in one place — because a route is chosen at
@@ -1336,14 +1329,10 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
    * built differently on the two visits, and the way-through one is judged on a
    * `review` that passed.
    */
-  const take = (
-    route: StepRouted,
-    reported: { step: Step; ending: StepReport } | null,
-    offer: Offer,
-  ): boolean => {
-    const chose = route.chose ?? route.to;
+  const take = (route: StepRouted, reported: { step: Step; ending: StepReport } | null, offer: Offer): boolean => {
+    const chose = route.chose ?? route.to
     routes.push({
-      from: reported?.step ?? "proposed",
+      from: reported?.step ?? 'proposed',
       chose,
       to: route.to,
       why: route.why,
@@ -1352,13 +1341,13 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       // got what it wanted took an affordable destination, so this is null
       // without a `chose === to` case of its own.
       ceiling: ceilingFor(chose, offer),
-    });
-    if (route.to === "waiting" || route.to === "claim") {
-      rested = route.to === "claim" ? "requeued" : "waiting";
+    })
+    if (route.to === 'waiting' || route.to === 'claim') {
+      rested = route.to === 'claim' ? 'requeued' : 'waiting'
       // What a person reads is the step that did not pass, never the router that
       // sent it to them; where it was sent is `routes`.
-      stoppedAt = reported;
-      return false;
+      stoppedAt = reported
+      return false
     }
     // Back into the spine, and a round is what that costs.
     //
@@ -1375,15 +1364,15 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // `review` that **passed** carrying findings (0058 §3b). Reading only what
     // refused would hand the fixer nothing in exactly the case 0061 §3 calls the
     // one judgement worth an agent.
-    recheck = findingsIn(steps.slice(lapStart));
-    lapStart = steps.length;
-    roundsSpent += 1;
-    at = route.to;
-    return true;
-  };
+    recheck = findingsIn(steps.slice(lapStart))
+    lapStart = steps.length
+    roundsSpent += 1
+    at = route.to
+    return true
+  }
 
-  while (at !== null && at !== "end") {
-    const spec = SPEC[at];
+  while (at !== null && at !== 'end') {
+    const spec = SPEC[at]
     // **`proposed` routes on the way through as well as on the way back** (0058
     // §3b) — and that visit is where a `review`'s findings are judged, which is
     // 231 of the log's refusals and 0061 §3's one judgement worth an agent.
@@ -1392,7 +1381,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // what it may answer is this offer. Held in a local because `take` is
     // handed the same object the body was, rather than a second computation of
     // it (`ceilingFor`).
-    const offer = spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : NO_OFFER;
+    const offer = spec.routes ? onOffer(at, PASSED_THROUGH, ceilings, roundsSpent) : NO_OFFER
     const reached = record(
       await runStep(spec, options, bodies, [...steps], {
         context: contextFor(),
@@ -1404,29 +1393,29 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         // after it is known.
         outcome: null,
       }),
-    );
-    const ending = reached.ending;
+    )
+    const ending = reached.ending
 
-    if (ending.ending === "routed") {
+    if (ending.ending === 'routed') {
       // `proposed`, on the way through, having decided the change is not going
       // to `merge` as it stands. Nothing reported anything, so nothing is named
       // as having stopped the pass: `routes` says what was decided and
       // `review`'s own entry says what it was decided on.
-      if (take(ending, null, offer)) continue;
-      break;
+      if (take(ending, null, offer)) continue
+      break
     }
 
-    if (ending.ending === "passed") {
-      at = after(at);
-      continue;
+    if (ending.ending === 'passed') {
+      at = after(at)
+      continue
     }
 
     // A step that did not pass, and is not one of the seven the drawing takes to
     // the router — either by which step it is, or by which of the five endings
     // it reported.
     if (!(ARRIVE_AT_THE_ROUTER as readonly Step[]).includes(at) || !goesToTheRouter(ending)) {
-      stoppedAt = { step: at, ending };
-      break;
+      stoppedAt = { step: at, ending }
+      break
     }
 
     // **Every one of the seven arrives at `proposed`, carrying its reason** —
@@ -1434,7 +1423,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // visit to `proposed` in the pass rather than a branch inside the spine
     // walk, and it runs the router without the inspection: see
     // `StepWork.arriving`.
-    const arrival = onOffer(at, ending, ceilings, roundsSpent);
+    const arrival = onOffer(at, ending, ceilings, roundsSpent)
     const router = record(
       await runStep(SPEC.proposed, options, bodies, [...steps], {
         context: contextFor(),
@@ -1442,17 +1431,17 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
         offering: arrival,
         outcome: null,
       }),
-    );
+    )
 
-    if (router.ending.ending !== "routed") {
+    if (router.ending.ending !== 'routed') {
       // The router did not answer — its body threw, or `theWorkflowsToSay`
       // refused what it answered. What stopped the pass is then `proposed`, and
       // the step that arrived is in `steps` one entry above it.
-      stoppedAt = { step: "proposed", ending: router.ending };
-      break;
+      stoppedAt = { step: 'proposed', ending: router.ending }
+      break
     }
 
-    if (!take(router.ending, { step: at, ending }, arrival)) break;
+    if (!take(router.ending, { step: at, ending }, arrival)) break
   }
 
   // **`end` runs on every ending and cannot refuse** (0058 §3) — nothing can be
@@ -1460,7 +1449,7 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   // the pass stopped early either. A point that fires on *any* terminal outcome
   // cannot live on one of the paths that reaches one (`end-step.ts`), so it is
   // here, once, after the walk, whichever of the four ways the walk ended.
-  const outcome = outcomeOf({ stoppedAt, rested });
+  const outcome = outcomeOf({ stoppedAt, rested })
   record(
     await runStep(SPEC.end, options, bodies, [...steps], {
       context: contextFor(),
@@ -1468,9 +1457,9 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
       offering: NO_OFFER,
       outcome,
     }),
-  );
+  )
 
-  return { steps, stoppedAt, routes, rested };
+  return { steps, stoppedAt, routes, rested }
 }
 
 /**
@@ -1490,10 +1479,10 @@ interface Reaching {
    * A visit is judged against a head, in a round, about findings, and all three
    * move: the one a caller handed in is the base the walk started from.
    */
-  readonly context: ActionContext;
-  readonly arriving: StepReached | null;
-  readonly offering: Offer;
-  readonly outcome: TerminalOutcome | null;
+  readonly context: ActionContext
+  readonly arriving: StepReached | null
+  readonly offering: Offer
+  readonly outcome: TerminalOutcome | null
 }
 
 /**
@@ -1505,7 +1494,7 @@ interface Reaching {
  * in memory, and reading it back would be a second source of truth for it.
  */
 function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
-  return lap.flatMap((visit) => visit.results.flatMap((result) => result.findings));
+  return lap.flatMap((visit) => visit.results.flatMap((result) => result.findings))
 }
 
 /**
@@ -1531,8 +1520,8 @@ function findingsIn(lap: readonly StepReached[]): readonly ActionFinding[] {
  * distinction survives on the ending, where the card is rendered from.
  */
 function designOn(reached: readonly StepReached[]): TheDesign {
-  const drafted = reached.filter((visit) => visit.step === "design").at(-1);
-  return drafted?.ending.ending === "passed" ? (drafted.ending.design ?? NO_DESIGN) : NO_DESIGN;
+  const drafted = reached.filter((visit) => visit.step === 'design').at(-1)
+  return drafted?.ending.ending === 'passed' ? (drafted.ending.design ?? NO_DESIGN) : NO_DESIGN
 }
 
 /**
@@ -1548,25 +1537,23 @@ function designOn(reached: readonly StepReached[]): TheDesign {
  * `bodiesFor`'s until `#266`, and here for `designOn`'s reason.
  */
 function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | null {
-  const judged = reached.at(-1);
-  if (judged === undefined || judged.step !== "proposed") return null;
-  const route = judged.ending;
-  if (route.ending !== "routed" || route.to !== step) return null;
-  const arrived = reached.at(-2);
+  const judged = reached.at(-1)
+  if (judged === undefined || judged.step !== 'proposed') return null
+  const route = judged.ending
+  if (route.ending !== 'routed' || route.to !== step) return null
+  const arrived = reached.at(-2)
   const asked =
-    arrived !== undefined && arrived.step === step && arrived.ending.ending === "asked"
-      ? arrived.ending.detail
-      : null;
+    arrived !== undefined && arrived.step === step && arrived.ending.ending === 'asked' ? arrived.ending.detail : null
   // And what it printed, where that is not the question `asked` already holds.
   // The evidence the judge weighed is on the arriving visit's ending, and this
   // is the only thing that carries it as far as the agent buying the round:
   // `context.recheck` is empty on a mechanical route, because a command's
   // refusal raises no findings.
   const printed =
-    asked === null && arrived !== undefined && "detail" in arrived.ending && arrived.ending.detail !== ""
+    asked === null && arrived !== undefined && 'detail' in arrived.ending && arrived.ending.detail !== ''
       ? { step: arrived.step, detail: arrived.ending.detail }
-      : null;
-  return { why: route.why, asked, printed };
+      : null
+  return { why: route.why, asked, printed }
 }
 
 /**
@@ -1590,8 +1577,8 @@ async function runStep(
   reached: readonly StepReached[],
   reaching: Reaching,
 ): Promise<StepReached> {
-  const actions = options.recipe.steps[spec.step];
-  let results: readonly ActionOutcome[] = [];
+  const actions = options.recipe.steps[spec.step]
+  let results: readonly ActionOutcome[] = []
   /**
    * **Where the step's plugins left the worktree, kept across the body** (`#268`).
    *
@@ -1601,7 +1588,7 @@ async function runStep(
    * head of its own wins — `implement`'s does, and its commit is later than
    * anything its plugins could have said.
    */
-  let leftTheTreeAt: LeftTheTreeAt = {};
+  let leftTheTreeAt: LeftTheTreeAt = {}
   /**
    * **What the step's plugins drafted, kept across the body** (`#265`).
    *
@@ -1611,13 +1598,13 @@ async function runStep(
    * nothing for a body to win against — the spread below puts it on the ending a
    * passing body returned.
    */
-  let wroteTheDesign: WroteTheDesign = {};
+  let wroteTheDesign: WroteTheDesign = {}
 
   try {
     // A routing arrival runs the router and not the inspection — `StepWork
     // .arriving` is the whole argument, and it is why this is `=== null` rather
     // than an unconditional call.
-    if (spec.plugins === "verdicts" && reaching.arriving === null) {
+    if (spec.plugins === 'verdicts' && reaching.arriving === null) {
       const result = await runActionPipeline({
         step: spec.step,
         actions: options.actionsAt(spec.step, actions),
@@ -1641,7 +1628,7 @@ async function runStep(
           again: sentBackTo(spec.step, reached),
         },
         emit: options.emit,
-      });
+      })
       // Carried out whatever the step then did, because the verdicts are what a
       // later body routes on and a refusal's are the ones it most needs: a
       // `proposed` handed only *`build` refused* cannot tell a findings-bearing
@@ -1649,14 +1636,14 @@ async function runStep(
       //
       // Assigned before the body runs, so a body that throws still reports what
       // its own plugins said.
-      results = result.results;
-      leftTheTreeAt = headFrom(result);
-      wroteTheDesign = designFrom(result);
-      const ending = endingOf(spec, result);
+      results = result.results
+      leftTheTreeAt = headFrom(result)
+      wroteTheDesign = designFrom(result)
+      const ending = endingOf(spec, result)
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.
-      if (ending.ending !== "passed") {
-        return { step: spec.step, ending, results };
+      if (ending.ending !== 'passed') {
+        return { step: spec.step, ending, results }
       }
     }
 
@@ -1666,7 +1653,7 @@ async function runStep(
     // parameters. `EndingAt<Step>` distributes to `StepEnding`, so what comes
     // back is checked by `theWorkflowsToSay` on the line below rather than by
     // the compiler.
-    const body = bodies[spec.step] as StepBody<Step>;
+    const body = bodies[spec.step] as StepBody<Step>
     const ending = await body({
       step: spec.step,
       actions,
@@ -1681,14 +1668,14 @@ async function runStep(
       outcome: reaching.outcome,
       context: reaching.context,
       emit: options.emit,
-    });
+    })
     return {
       step: spec.step,
       ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }, reaching),
       results,
-    };
+    }
   } catch (error) {
-    return { step: spec.step, ending: threw(spec, error), results };
+    return { step: spec.step, ending: threw(spec, error), results }
   }
 }
 
@@ -1718,14 +1705,14 @@ async function runStep(
  */
 function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
   return {
-    ending: "did-not-finish",
-    because: "threw",
+    ending: 'did-not-finish',
+    because: 'threw',
     // No action to name: `runActionPipeline` has already turned a throwing
     // action into a verdict, so what arrives here is the step's own body or the
     // building of its list.
     at: null,
     detail: `the \`${spec.step}\` step threw: ${error instanceof Error ? error.message : String(error)}`,
-  };
+  }
 }
 
 /**
@@ -1740,30 +1727,30 @@ function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
  */
 function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   if (result.neverRanAt !== null) {
-    return { ending: "never-ran", at: result.neverRanAt.action, detail: result.neverRanAt.detail };
+    return { ending: 'never-ran', at: result.neverRanAt.action, detail: result.neverRanAt.detail }
   }
   // **Asked before did-not-finish, and neither reads a string** (`#296`). The
   // pipeline compares `NEEDS_INPUT` once, in the file that defines it, and what
   // arrives here is two fields that are never both set: *the agent asked
   // something* has a destination, and *the agent left no receipt* has none.
   if (result.askedAt !== null) {
-    return { ending: "asked", at: result.askedAt.action, detail: result.askedAt.detail };
+    return { ending: 'asked', at: result.askedAt.action, detail: result.askedAt.detail }
   }
   if (result.didNotFinishAt !== null) {
     return {
-      ending: "did-not-finish",
+      ending: 'did-not-finish',
       // The pipeline's own name for it, and no finer word: it knows that an
       // agent started and left no receipt and nothing else. **Unless the action
       // had a word of its own** (`#266`), which is `becauseFrom`'s rule one
       // branch down — and none of the words left here is one the workflow reads,
       // which is what the branch above bought.
-      because: result.didNotFinishAt.because ?? "did-not-finish",
+      because: result.didNotFinishAt.because ?? 'did-not-finish',
       at: result.didNotFinishAt.action,
       detail: result.didNotFinishAt.detail,
-    };
+    }
   }
   if (result.heldAt !== null) {
-    return { ending: "held", at: result.heldAt, question: evidenceFrom(result, "needs-approval") };
+    return { ending: 'held', at: result.heldAt, question: evidenceFrom(result, 'needs-approval') }
   }
   if (result.failedAt !== null) {
     const said = {
@@ -1782,10 +1769,10 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
       // a `merge:` action they arrive here on the result rather than being
       // re-derived from a sentence (`ActionResult.because`). Every other kind
       // says nothing and gets the pipeline's word.
-      because: becauseFrom(result) ?? "action-refused",
+      because: becauseFrom(result) ?? 'action-refused',
       at: result.failedAt,
-      detail: evidenceFrom(result, "failed"),
-    } as const;
+      detail: evidenceFrom(result, 'failed'),
+    } as const
     // **A reviewer's `failed` is its findings, and not a verdict about the
     // step** (0058 §3: *a reviewer returns findings with a severity and no
     // verdict*). So `review` passes, carrying them on `results`, and the
@@ -1803,7 +1790,7 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
     // pipeline stops at the first action that did not pass, so a second
     // reviewer declared after this one is not asked about a diff the first
     // already has findings on.
-    if (spec.step === "review") return { ending: "passed" };
+    if (spec.step === 'review') return { ending: 'passed' }
     // **Which step ran it decides what a `failed` verdict means** (0058 §2).
     // At one of the four it is a refusal, with everything a refusal buys. At
     // the other five an action saying no is an ordinary plugin verdict and not
@@ -1812,14 +1799,14 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
     // not let refuse, nothing the action said is dropped, and it does not reach
     // the router, because *a step that may not refuse has not refused* and
     // there is no judgement to route.
-    return spec.refuses ? { ending: "refused", ...said } : { ending: "did-not-finish", ...said };
+    return spec.refuses ? { ending: 'refused', ...said } : { ending: 'did-not-finish', ...said }
   }
-  if (result.ok) return { ending: "passed" };
+  if (result.ok) return { ending: 'passed' }
   throw new Error(
-    "runActionPipeline returned `ok: false` with no failed, held, never-ran, did-not-finish or " +
-      "asked action. That is a pipeline that stopped for a reason it did not name, and a pass " +
-      "cannot report it — see `PipelineResult` in packages/actions/src/action.ts.",
-  );
+    'runActionPipeline returned `ok: false` with no failed, held, never-ran, did-not-finish or ' +
+      'asked action. That is a pipeline that stopped for a reason it did not name, and a pass ' +
+      'cannot report it — see `PipelineResult` in packages/actions/src/action.ts.',
+  )
 }
 
 /**
@@ -1842,8 +1829,8 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
  * the visit reports.
  */
 function headFrom(result: PipelineResult): { head?: string } {
-  const moved = result.results.filter((each) => each.head !== undefined).at(-1);
-  return moved?.head === undefined ? {} : { head: moved.head };
+  const moved = result.results.filter((each) => each.head !== undefined).at(-1)
+  return moved?.head === undefined ? {} : { head: moved.head }
 }
 
 /**
@@ -1869,8 +1856,8 @@ function headFrom(result: PipelineResult): { head?: string } {
  * that is the whole of the rule.
  */
 function designFrom(result: PipelineResult): { design?: TheDesign } {
-  const drafted = result.results.filter((each) => each.document !== undefined).at(-1);
-  if (drafted?.document === undefined) return {};
+  const drafted = result.results.filter((each) => each.document !== undefined).at(-1)
+  if (drafted?.document === undefined) return {}
   return {
     design: {
       document: drafted.document,
@@ -1879,7 +1866,7 @@ function designFrom(result: PipelineResult): { design?: TheDesign } {
       // explicit `undefined` from a destination that said nothing.
       ...(drafted.locator === undefined ? {} : { locator: drafted.locator }),
     },
-  };
+  }
 }
 
 /**
@@ -1897,7 +1884,7 @@ function designFrom(result: PipelineResult): { design?: TheDesign } {
  * out of prose (`ActionResult.because`).
  */
 function becauseFrom(result: PipelineResult): string | null {
-  return result.results.filter((r) => r.verdict === "failed").at(-1)?.because ?? null;
+  return result.results.filter((r) => r.verdict === 'failed').at(-1)?.because ?? null
 }
 
 /**
@@ -1919,7 +1906,7 @@ function becauseFrom(result: PipelineResult): string | null {
  * the last result — and asking for the verdict says what is meant.*
  */
 function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
-  return result.results.filter((r) => r.verdict === verdict).at(-1)?.evidence ?? "";
+  return result.results.filter((r) => r.verdict === verdict).at(-1)?.evidence ?? ''
 }
 
 /**
@@ -1954,7 +1941,7 @@ function evidenceFrom(result: PipelineResult, verdict: ActionVerdict): string {
  * person reads on `detail`; what it no longer does is take the pass with it.
  */
 function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reaching): StepEnding {
-  if (reaching.arriving !== null && ending.ending !== "routed") {
+  if (reaching.arriving !== null && ending.ending !== 'routed') {
     // **A visit the loop routed into must answer with a route.** There is no
     // spine under it: the step before it did not pass, so `passed` would carry a
     // refused change onward and any report would be a second reason on top of
@@ -1964,37 +1951,37 @@ function theWorkflowsToSay(spec: StepSpec, ending: StepEnding, reaching: Reachin
       `\`proposed\` was handed the \`${reaching.arriving.step}\` step's ` +
         `${reaching.arriving.ending.ending} and answered \`${ending.ending}\` rather than a route. ` +
         `A step that did not pass is routed, not reported on again: choose one of ` +
-        `${reaching.offering.affordable.join(", ")} (0058 §3b, 0061 §3).`,
-    );
+        `${reaching.offering.affordable.join(', ')} (0058 §3b, 0061 §3).`,
+    )
   }
-  if (ending.ending === "refused" && !spec.refuses) {
+  if (ending.ending === 'refused' && !spec.refuses) {
     throw new Error(
-      `the \`${spec.step}\` step refused, and only ${REFUSING_STEPS.join(", ")} may refuse ` +
+      `the \`${spec.step}\` step refused, and only ${REFUSING_STEPS.join(', ')} may refuse ` +
         `(0058 §2): "${ending.because}" — ${ending.detail}. A step that may not refuse reports ` +
-        "`did-not-finish` instead, which buys no fix round (0057) and is not routed.",
-    );
+        '`did-not-finish` instead, which buys no fix round (0057) and is not routed.',
+    )
   }
-  if (ending.ending === "routed") {
+  if (ending.ending === 'routed') {
     if (!spec.routes) {
       throw new Error(
         `the \`${spec.step}\` step routed the pass to \`${ending.to}\`, and \`proposed\` is the ` +
-          "only step that routes (0058 §3). A step that did not pass reports its reason and the " +
-          "loop takes it to `proposed`, which is what keeps `waiting` to one way in.",
-      );
+          'only step that routes (0058 §3). A step that did not pass reports its reason and the ' +
+          'loop takes it to `proposed`, which is what keeps `waiting` to one way in.',
+      )
     }
     if (!reaching.offering.affordable.includes(ending.to)) {
       // **And the refusal says which half it failed** (0064 §7): a ceiling is a
       // number somebody can raise, and a destination the arrival never reached
       // is not — so the two cannot read as one absence.
-      const ceiling = ceilingFor(ending.to, reaching.offering);
+      const ceiling = ceilingFor(ending.to, reaching.offering)
       throw new Error(
         `\`proposed\` routed the pass to \`${ending.to}\`, which was not on offer — ` +
-          `${reaching.offering.affordable.join(", ") || "nothing was"}` +
-          `${ceiling === null ? "" : `, and \`${ceiling}\` is spent`} (0061 §3). A judge answers ` +
-          "*which of these*, never *what is legal*: the workflow counts the rounds and restarts " +
-          "spent and hands it the set, so a destination outside the set is refused by name (0061 §8).",
-      );
+          `${reaching.offering.affordable.join(', ') || 'nothing was'}` +
+          `${ceiling === null ? '' : `, and \`${ceiling}\` is spent`} (0061 §3). A judge answers ` +
+          '*which of these*, never *what is legal*: the workflow counts the rounds and restarts ' +
+          'spent and hands it the set, so a destination outside the set is refused by name (0061 §8).',
+      )
     }
   }
-  return ending;
+  return ending
 }

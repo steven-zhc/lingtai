@@ -1,3 +1,4 @@
+import { integrationStream } from '@lingtai/domain'
 /**
  * `task_view`, against the real store.
  *
@@ -14,11 +15,12 @@
  * **Retention is a query.** A landed task falling out of the window must still
  * be a row. Deleting it would make the projection depend on when it last ran.
  */
-import { directPostgresUrl } from "@lingtai/env";
-import { createDb, createEventStore, type Db, type EventStore } from "@lingtai/event-store";
-import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { integrationStream } from "@lingtai/domain";
+import { directPostgresUrl } from '@lingtai/env'
+import { createDb, createEventStore, type Db, type EventStore } from '@lingtai/event-store'
+import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import pg from 'pg'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
 import {
   createProjectionRunner,
   describeArm,
@@ -26,37 +28,36 @@ import {
   describeWait,
   readTasks,
   taskViewProjection,
-} from "../src/index.ts";
-import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
+} from '../src/index.ts'
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
-const created = new Set<string>();
-let client: Db;
-let store: EventStore;
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
+const created = new Set<string>()
+let client: Db
+let store: EventStore
 
 const wi = (n: number) => {
-  const id = `wi-${PROJECT}-${n}`;
-  created.add(id);
-  return id;
-};
+  const id = `wi-${PROJECT}-${n}`
+  created.add(id)
+  return id
+}
 const run = (n: number) => {
-  const id = `run-${PROJECT}-${n}`;
-  created.add(id);
-  return id;
-};
+  const id = `run-${PROJECT}-${n}`
+  created.add(id)
+  return id
+}
 
-const discovered = (n: number, title: string, kind = "bug") => ({
-  type: "WorkItemDiscovered",
-  actor: "github",
+const discovered = (n: number, title: string, kind = 'bug') => ({
+  type: 'WorkItemDiscovered',
+  actor: 'github',
   data: {
     project: PROJECT,
-    source: "github-issue" as const,
+    source: 'github-issue' as const,
     externalRef: String(n),
     title,
     kind,
     labels: [],
   },
-});
+})
 
 /**
  * A second run id for the same issue, so two attempts can be told apart.
@@ -65,47 +66,47 @@ const discovered = (n: number, title: string, kind = "bug") => ({
  * — and the whole of #78 is what happens when it is not.
  */
 const attempt = (n: number, which: string) => {
-  const id = `run-${PROJECT}-${n}${which}`;
-  created.add(id);
-  return id;
-};
+  const id = `run-${PROJECT}-${n}${which}`
+  created.add(id)
+  return id
+}
 
 const claimedWith = (runId: string) => ({
-  type: "WorkItemClaimed",
-  actor: "conductor",
-  data: { runId, worker: "w", title: null, kind: null },
-});
+  type: 'WorkItemClaimed',
+  actor: 'conductor',
+  data: { runId, worker: 'w', title: null, kind: null },
+})
 
-const claimed = (n: number) => claimedWith(run(n));
+const claimed = (n: number) => claimedWith(run(n))
 
 const released = (runId: string, reason: string) => ({
-  type: "WorkItemReleased",
-  actor: "conductor",
+  type: 'WorkItemReleased',
+  actor: 'conductor',
   data: { runId, reason },
-});
+})
 
-const KILLED = "the run was killed by an operator timeout before it produced anything";
+const KILLED = 'the run was killed by an operator timeout before it produced anything'
 
 const passed = (runId: string, step: string, action: string, onSha: string) => ({
-  type: "StepPassed",
-  actor: "conductor",
-  data: { step: step, action, runId, onSha, evidence: "exit 0", findings: [] },
-});
+  type: 'StepPassed',
+  actor: 'conductor',
+  data: { step: step, action, runId, onSha, evidence: 'exit 0', findings: [] },
+})
 
 const started = (n: number) => ({
-  type: "RunStarted",
-  actor: "conductor",
+  type: 'RunStarted',
+  actor: 'conductor',
   data: {
     workItemId: wi(n),
-    runtime: "claude-code",
-    model: "m",
-    promptVersion: "p",
-    baseSha: "base000",
-    configHash: "c",
-    worktree: "/tmp/wt",
+    runtime: 'claude-code',
+    model: 'm',
+    promptVersion: 'p',
+    baseSha: 'base000',
+    configHash: 'c',
+    worktree: '/tmp/wt',
     invocation: null,
   },
-});
+})
 
 /**
  * An event this build refuses to append, written the way an older build did.
@@ -117,91 +118,121 @@ const started = (n: number) => ({
  * exactly as it reads a real one.
  */
 async function appendRetired(streamId: string, version: number, type: string, data: object): Promise<void> {
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
+  const c = new pg.Client({ connectionString: directPostgresUrl() })
+  await c.connect()
   try {
     await c.query(
       "insert into events (stream_id, version, type, data, actor) values ($1, $2, $3, $4::jsonb, 'conductor')",
       [streamId, version, type, JSON.stringify(data)],
-    );
+    )
   } finally {
-    await c.end();
+    await c.end()
   }
 }
 
 async function seed(): Promise<void> {
   // 1 — queued and nothing else.
-  await store.append(wi(1), 0, [discovered(1, "still waiting")]);
+  await store.append(wi(1), 0, [discovered(1, 'still waiting')])
 
   // 2 — running, guard tripped twice, cost recorded.
-  await store.append(wi(2), 0, [discovered(2, "a race in the importer"), claimed(2)]);
+  await store.append(wi(2), 0, [discovered(2, 'a race in the importer'), claimed(2)])
   await store.append(run(2), 0, [
     started(2),
-    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 63, durationMs: 100, costUsd: 5.42 } },
-  ]);
+    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 63, durationMs: 100, costUsd: 5.42 } },
+  ])
 
   // 3 — at the gates, one passed and one failed.
-  await store.append(wi(3), 0, [discovered(3, "gates in progress", "feature"), claimed(3)]);
+  await store.append(wi(3), 0, [discovered(3, 'gates in progress', 'feature'), claimed(3)])
   await store.append(run(3), 0, [
     started(3),
-    { type: "RunProducedDiff", actor: "conductor", data: { branch: "agent/3", headSha: "sha-a", files: 3, insertions: 40, deletions: 2 } },
-    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-a" } },
-    { type: "StepPassed", actor: "conductor", data: { step: "proposed", action: "build", runId: run(3), onSha: "sha-a", evidence: "exit 0", findings: [] } },
-    { type: "StepFailed", actor: "conductor", data: { step: "proposed", action: "review", runId: run(3), onSha: "sha-a", evidence: "two findings", findings: [] } },
-  ]);
+    {
+      type: 'RunProducedDiff',
+      actor: 'conductor',
+      data: { branch: 'agent/3', headSha: 'sha-a', files: 3, insertions: 40, deletions: 2 },
+    },
+    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-a' } },
+    {
+      type: 'StepPassed',
+      actor: 'conductor',
+      data: { step: 'proposed', action: 'build', runId: run(3), onSha: 'sha-a', evidence: 'exit 0', findings: [] },
+    },
+    {
+      type: 'StepFailed',
+      actor: 'conductor',
+      data: {
+        step: 'proposed',
+        action: 'review',
+        runId: run(3),
+        onSha: 'sha-a',
+        evidence: 'two findings',
+        findings: [],
+      },
+    },
+  ])
 
   // 4 — refused by the integrator.
-  await store.append(wi(4), 0, [discovered(4, "will not merge")]);
-  const lane = integrationStream(PROJECT, "develop");
-  created.add(lane);
+  await store.append(wi(4), 0, [discovered(4, 'will not merge')])
+  const lane = integrationStream(PROJECT, 'develop')
+  created.add(lane)
   await store.append(lane, 0, [
-    { type: "IntegrationAttempted", actor: "conductor", data: { workItemId: wi(4), branch: "agent/4", headSha: "sha" } },
     {
-      type: "IntegrationRefused",
-      actor: "conductor",
-      data: { workItemId: wi(4), branch: "agent/4", reason: "dirty-base", detail: "uncommitted changes" },
+      type: 'IntegrationAttempted',
+      actor: 'conductor',
+      data: { workItemId: wi(4), branch: 'agent/4', headSha: 'sha' },
     },
-  ]);
+    {
+      type: 'IntegrationRefused',
+      actor: 'conductor',
+      data: { workItemId: wi(4), branch: 'agent/4', reason: 'dirty-base', detail: 'uncommitted changes' },
+    },
+  ])
 
   // 5 — landed.
   await store.append(wi(5), 0, [
-    discovered(5, "landed a while ago"),
-    { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "abc1234def", base: "develop" } },
-  ]);
+    discovered(5, 'landed a while ago'),
+    { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234def', base: 'develop' } },
+  ])
 
   // 6 — attempt 1 passed a gate and was then killed from outside. Attempt 2
   //     arrives in `secondAttempt`, after the rebuild, so the window this is
   //     about is folded the way production folds it.
-  await store.append(wi(6), 0, [discovered(6, "killed, then run again"), claimedWith(attempt(6, "a"))]);
-  await store.append(attempt(6, "a"), 0, [started(6), passed(attempt(6, "a"), "prepared", "install", "sha-6a")]);
+  await store.append(wi(6), 0, [discovered(6, 'killed, then run again'), claimedWith(attempt(6, 'a'))])
+  await store.append(attempt(6, 'a'), 0, [started(6), passed(attempt(6, 'a'), 'prepared', 'install', 'sha-6a')])
 
   // 7 — the same kill, with nothing after it: still in the queue, and the only
   //     thing it has to show for the attempt is the sentence the release gave.
-  await store.append(wi(7), 0, [discovered(7, "killed and not picked up again"), claimedWith(attempt(7, "a"))]);
-  await store.append(attempt(7, "a"), 0, [started(7), passed(attempt(7, "a"), "prepared", "install", "sha-7")]);
-  await store.append(wi(7), 2, [released(attempt(7, "a"), KILLED)]);
+  await store.append(wi(7), 0, [discovered(7, 'killed and not picked up again'), claimedWith(attempt(7, 'a'))])
+  await store.append(attempt(7, 'a'), 0, [started(7), passed(attempt(7, 'a'), 'prepared', 'install', 'sha-7')])
+  await store.append(wi(7), 2, [released(attempt(7, 'a'), KILLED)])
 
   // 8 — a person's word, twice: a red build waived, and the merge approved.
-  await store.append(wi(8), 0, [discovered(8, "overridden by a person"), claimed(8)]);
+  await store.append(wi(8), 0, [discovered(8, 'overridden by a person'), claimed(8)])
   await store.append(run(8), 0, [
     started(8),
-    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-8" } },
+    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-8' } },
     {
-      type: "StepFailed",
-      actor: "conductor",
-      data: { step: "proposed", action: "build", runId: run(8), onSha: "sha-8", evidence: "exit 1", findings: [] },
+      type: 'StepFailed',
+      actor: 'conductor',
+      data: { step: 'proposed', action: 'build', runId: run(8), onSha: 'sha-8', evidence: 'exit 1', findings: [] },
     },
     {
-      type: "StepWaived",
-      actor: "human:steven",
-      data: { step: "proposed", action: "build", runId: run(8), onSha: "sha-8", by: "human:steven", reason: "known flake" },
+      type: 'StepWaived',
+      actor: 'human:steven',
+      data: {
+        step: 'proposed',
+        action: 'build',
+        runId: run(8),
+        onSha: 'sha-8',
+        by: 'human:steven',
+        reason: 'known flake',
+      },
     },
     {
-      type: "ApprovalGranted",
-      actor: "human:steven",
-      data: { step: "merge", action: "human", runId: run(8), onSha: "sha-8", by: "human:steven", note: "" },
+      type: 'ApprovalGranted',
+      actor: 'human:steven',
+      data: { step: 'merge', action: 'human', runId: run(8), onSha: 'sha-8', by: 'human:steven', note: '' },
     },
-  ]);
+  ])
 
   // 9 — approved, and the merge hit a conflict anyway. The whole of #84 in one
   //     stream: the approval is spent, `approve()` refuses every further click,
@@ -211,301 +242,344 @@ async function seed(): Promise<void> {
   //     attempt that agent was. `#143` takes the purchase away — and takes
   //     `RepairRequested` with it, which `store.append` now refuses as retired,
   //     so this could not be seeded even if it were still meant.
-  await store.append(wi(9), 0, [discovered(9, "approved, then conflicted"), claimedWith(attempt(9, "a"))]);
-  await store.append(attempt(9, "a"), 0, [
+  await store.append(wi(9), 0, [discovered(9, 'approved, then conflicted'), claimedWith(attempt(9, 'a'))])
+  await store.append(attempt(9, 'a'), 0, [
     started(9),
-    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-9a" } },
+    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-9a' } },
     {
-      type: "ApprovalRequested",
-      actor: "conductor",
-      data: { step: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", question: "Merge?", artifacts: [] },
+      type: 'ApprovalRequested',
+      actor: 'conductor',
+      data: {
+        step: 'merge',
+        action: 'approval',
+        runId: attempt(9, 'a'),
+        onSha: 'sha-9a',
+        question: 'Merge?',
+        artifacts: [],
+      },
     },
-    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
+    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
     {
-      type: "ApprovalGranted",
-      actor: "human:steven",
-      data: { step: "merge", action: "approval", runId: attempt(9, "a"), onSha: "sha-9a", by: "human:steven", note: "" },
+      type: 'ApprovalGranted',
+      actor: 'human:steven',
+      data: {
+        step: 'merge',
+        action: 'approval',
+        runId: attempt(9, 'a'),
+        onSha: 'sha-9a',
+        by: 'human:steven',
+        note: '',
+      },
     },
-  ]);
+  ])
   await store.append(lane, 2, [
     {
-      type: "IntegrationRefused",
-      actor: "conductor",
-      data: { workItemId: wi(9), branch: "agent/9", reason: "conflict", detail: "agent/9 does not merge into develop: page.tsx" },
+      type: 'IntegrationRefused',
+      actor: 'conductor',
+      data: {
+        workItemId: wi(9),
+        branch: 'agent/9',
+        reason: 'conflict',
+        detail: 'agent/9 does not merge into develop: page.tsx',
+      },
     },
-  ]);
+  ])
   await store.append(wi(9), 2, [
     {
-      type: "WorkItemBlocked",
-      actor: "conductor",
+      type: 'WorkItemBlocked',
+      actor: 'conductor',
       data: {
-        question: "conflict: agent/9 does not merge into develop: page.tsx",
-        needsFrom: "human",
-        runId: attempt(9, "a"),
+        question: 'conflict: agent/9 does not merge into develop: page.tsx',
+        needsFrom: 'human',
+        runId: attempt(9, 'a'),
         // A failure to acknowledge and not a judgement: the approval was spent
         // and the merge still refused, so nothing is being asked of anybody's
         // opinion — the diagnosis carries the move that is left.
-        needs: "acknowledgement",
+        needs: 'acknowledgement',
         diagnosis: {
-          what: "agent/9 does not merge into develop.",
+          what: 'agent/9 does not merge into develop.',
           done:
-            "develop was merged in first and it still would not merge. No agent was " +
-            "bought: a refusal is answered inside the pass it happened in.",
-          raw: "agent/9 does not merge into develop: page.tsx",
-          recommendation: { action: "requeue", why: "the base has moved since" },
+            'develop was merged in first and it still would not merge. No agent was ' +
+            'bought: a refusal is answered inside the pass it happened in.',
+          raw: 'agent/9 does not merge into develop: page.tsx',
+          recommendation: { action: 'requeue', why: 'the base has moved since' },
         },
       },
     },
-  ]);
+  ])
 
   // 15 — a ticket from before #143: run-a finished, the lane refused, the old
   //      code bought a repair, and run-b was that repair. The rebuild has to
   //      keep the repair's money apart, exactly as the live projection did and
   //      as the task page's own fold still does.
-  await store.append(wi(15), 0, [discovered(15, "repaired before #143"), claimedWith(attempt(15, "a"))]);
-  await store.append(attempt(15, "a"), 0, [
+  await store.append(wi(15), 0, [discovered(15, 'repaired before #143'), claimedWith(attempt(15, 'a'))])
+  await store.append(attempt(15, 'a'), 0, [
     started(15),
-    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
-  ]);
-  await appendRetired(wi(15), 3, "RepairRequested", {
-    runId: attempt(15, "a"),
-    reason: "verify-failed",
-    detail: "policy: exit 1",
-    fingerprint: "0123456789ab",
+    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 20, durationMs: 10, costUsd: 2.1 } },
+  ])
+  await appendRetired(wi(15), 3, 'RepairRequested', {
+    runId: attempt(15, 'a'),
+    reason: 'verify-failed',
+    detail: 'policy: exit 1',
+    fingerprint: '0123456789ab',
     attempt: 1,
-  });
+  })
   await store.append(wi(15), 3, [
-    released(attempt(15, "a"), "repairing verify-failed (attempt 1)"),
-    claimedWith(attempt(15, "b")),
-  ]);
-  await store.append(attempt(15, "b"), 0, [
+    released(attempt(15, 'a'), 'repairing verify-failed (attempt 1)'),
+    claimedWith(attempt(15, 'b')),
+  ])
+  await store.append(attempt(15, 'b'), 0, [
     started(15),
-    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
-  ]);
+    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 9, durationMs: 10, costUsd: 0.75 } },
+  ])
 
   // 16 — the old code bought a repair and released the item, and then the
   //      daemon restarted onto #143. Nothing has claimed it, so it is still
   //      owed the backoff exemption the repair was bought with.
-  await store.append(wi(16), 0, [discovered(16, "released for a repair, then deployed"), claimed(16)]);
-  await appendRetired(wi(16), 3, "RepairRequested", {
+  await store.append(wi(16), 0, [discovered(16, 'released for a repair, then deployed'), claimed(16)])
+  await appendRetired(wi(16), 3, 'RepairRequested', {
     runId: run(16),
-    reason: "verify-failed",
-    detail: "policy: exit 1",
-    fingerprint: "0123456789ab",
+    reason: 'verify-failed',
+    detail: 'policy: exit 1',
+    fingerprint: '0123456789ab',
     attempt: 1,
-  });
-  await store.append(wi(16), 3, [released(run(16), "repairing verify-failed (attempt 1)")]);
+  })
+  await store.append(wi(16), 3, [released(run(16), 'repairing verify-failed (attempt 1)')])
 
   // 10 — the branch was repaired and approval re-requested on the new head.
   //      The run produced `sha-10a` and is asking about `sha-10b`, which is
   //      the whole of #92: the card held only the first and offered it as the
   //      second, so the board's Approve refused what the CLI accepted.
-  await store.append(wi(10), 0, [discovered(10, "repaired, then re-offered"), claimed(10)]);
+  await store.append(wi(10), 0, [discovered(10, 'repaired, then re-offered'), claimed(10)])
   await store.append(run(10), 0, [
     started(10),
-    { type: "RunProducedDiff", actor: "conductor", data: { branch: "agent/10", headSha: "sha-10a", files: 1, insertions: 2, deletions: 0 } },
-    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-10a" } },
     {
-      type: "ApprovalRequested",
-      actor: "conductor",
-      data: { step: "merge", action: "no-merge", runId: run(10), onSha: "sha-10a", question: "Merge?", artifacts: [] },
+      type: 'RunProducedDiff',
+      actor: 'conductor',
+      data: { branch: 'agent/10', headSha: 'sha-10a', files: 1, insertions: 2, deletions: 0 },
+    },
+    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-10a' } },
+    {
+      type: 'ApprovalRequested',
+      actor: 'conductor',
+      data: { step: 'merge', action: 'no-merge', runId: run(10), onSha: 'sha-10a', question: 'Merge?', artifacts: [] },
     },
     {
-      type: "ApprovalRequested",
-      actor: "conductor",
-      data: { step: "merge", action: "repair", runId: run(10), onSha: "sha-10b", question: "Merge the repair?", artifacts: [] },
+      type: 'ApprovalRequested',
+      actor: 'conductor',
+      data: {
+        step: 'merge',
+        action: 'repair',
+        runId: run(10),
+        onSha: 'sha-10b',
+        question: 'Merge the repair?',
+        artifacts: [],
+      },
     },
-  ]);
+  ])
   await store.append(wi(10), 2, [
     {
-      type: "WorkItemBlocked",
+      type: 'WorkItemBlocked',
       // Deliberately the shape every block on the log had before #83: a
       // question and nothing else. The assertions below are what "a block with
       // no diagnosis still renders exactly as it does today" is checked by.
-      actor: "conductor",
+      actor: 'conductor',
       data: {
-        question: "a repair is waiting on you",
-        needsFrom: "human",
+        question: 'a repair is waiting on you',
+        needsFrom: 'human',
         runId: run(10),
         needs: null,
         diagnosis: null,
       },
     },
-  ]);
+  ])
 
   // 11 — a block that carries a diagnosis and a recommended action (#83). 12 is
   //      the same block answered, because the diagnosis has to *go* when the
   //      hold does: one left behind would report last week's failure on a card
   //      nobody is being asked about.
-  await store.append(wi(11), 0, [discovered(11, "diagnosed, with a move"), claimed(11)]);
+  await store.append(wi(11), 0, [discovered(11, 'diagnosed, with a move'), claimed(11)])
   await store.append(wi(11), 2, [
     {
-      type: "WorkItemBlocked",
-      actor: "conductor",
+      type: 'WorkItemBlocked',
+      actor: 'conductor',
       data: {
-        question: "conflict: agent/11 does not merge into develop: page.tsx",
-        needsFrom: "human",
+        question: 'conflict: agent/11 does not merge into develop: page.tsx',
+        needsFrom: 'human',
         runId: run(11),
-        needs: "acknowledgement",
+        needs: 'acknowledgement',
         diagnosis: {
-          what: "agent/11 does not merge into develop.",
-          done: "develop was merged in first and it still would not merge. No agent was bought: the bound is spent",
-          raw: "CONFLICT (content): Merge conflict in apps/web/src/page.tsx",
+          what: 'agent/11 does not merge into develop.',
+          done: 'develop was merged in first and it still would not merge. No agent was bought: the bound is spent',
+          raw: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
           recommendation: {
-            action: "requeue",
-            why: "the next attempt is cut from a base that has since moved",
+            action: 'requeue',
+            why: 'the next attempt is cut from a base that has since moved',
           },
         },
       },
     },
-  ]);
+  ])
 
   // 12 — diagnosed, then unblocked by a person.
-  await store.append(wi(12), 0, [discovered(12, "diagnosed, then answered"), claimed(12)]);
+  await store.append(wi(12), 0, [discovered(12, 'diagnosed, then answered'), claimed(12)])
   await store.append(wi(12), 2, [
     {
-      type: "WorkItemBlocked",
-      actor: "conductor",
+      type: 'WorkItemBlocked',
+      actor: 'conductor',
       data: {
-        question: "conflict: agent/12 does not merge into develop",
-        needsFrom: "human",
+        question: 'conflict: agent/12 does not merge into develop',
+        needsFrom: 'human',
         runId: run(12),
-        needs: "acknowledgement",
+        needs: 'acknowledgement',
         diagnosis: {
-          what: "agent/12 does not merge into develop.",
-          done: "No agent was bought: the bound is spent",
-          raw: "CONFLICT (content): Merge conflict in apps/web/src/other.tsx",
-          recommendation: { action: "requeue", why: "the base has moved" },
+          what: 'agent/12 does not merge into develop.',
+          done: 'No agent was bought: the bound is spent',
+          raw: 'CONFLICT (content): Merge conflict in apps/web/src/other.tsx',
+          recommendation: { action: 'requeue', why: 'the base has moved' },
         },
       },
     },
-    { type: "WorkItemUnblocked", actor: "human:steven", data: { by: "human:steven", note: "requeued" } },
-  ]);
+    { type: 'WorkItemUnblocked', actor: 'human:steven', data: { by: 'human:steven', note: 'requeued' } },
+  ])
 
   // 13 — a round in flight, so the note has to say which round *of how many*.
   //      `FixRequested.of` is what makes that readable off the log: a
   //      projection is a fold and may not read the recipe the ceiling is in.
-  await store.append(wi(13), 0, [discovered(13, "patching, round one"), claimed(13)]);
+  await store.append(wi(13), 0, [discovered(13, 'patching, round one'), claimed(13)])
   await store.append(run(13), 0, [
     started(13),
-    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-13" } },
+    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-13' } },
     {
-      type: "StepFailed",
-      actor: "conductor",
-      data: { step: "proposed", action: "review", runId: run(13), onSha: "sha-13", evidence: "one finding", findings: [] },
+      type: 'StepFailed',
+      actor: 'conductor',
+      data: {
+        step: 'proposed',
+        action: 'review',
+        runId: run(13),
+        onSha: 'sha-13',
+        evidence: 'one finding',
+        findings: [],
+      },
     },
     {
-      type: "FixRequested",
-      actor: "conductor",
-      data: { runId: run(13), round: 1, of: 3, action: "review", onSha: "sha-13", findings: [] },
+      type: 'FixRequested',
+      actor: 'conductor',
+      data: { runId: run(13), round: 1, of: 3, action: 'review', onSha: 'sha-13', findings: [] },
     },
     // What the round cost, which is the only thing `repair_costs` holds since
     // `#143`: a run is never a repair, so a run's money is always the work's
     // and what answering a refusal cost is keyed by the round that bought it.
     {
-      type: "FixApplied",
-      actor: "conductor",
-      data: { runId: run(13), round: 1, headSha: "sha-13b", turns: 7, costUsd: 0.75, failure: null },
+      type: 'FixApplied',
+      actor: 'conductor',
+      data: { runId: run(13), round: 1, headSha: 'sha-13b', turns: 7, costUsd: 0.75, failure: null },
     },
-    { type: "RunFinished", actor: "conductor", data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
-  ]);
+    { type: 'RunFinished', actor: 'conductor', data: { exitCode: 0, turns: 31, durationMs: 10, costUsd: 2.1 } },
+  ])
 
   // 14 — the rounds were spent and the ticket started over
   //      ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
   //      Released rather than blocked, which is the whole of the change, and
   //      carrying which arm it is now on — the thing `attempts` cannot say.
-  await store.append(wi(14), 0, [discovered(14, "started over once"), claimed(14)]);
+  await store.append(wi(14), 0, [discovered(14, 'started over once'), claimed(14)])
   await store.append(run(14), 0, [
     started(14),
-    { type: "RunProposedCompletion", actor: "conductor", data: { headSha: "sha-14" } },
+    { type: 'RunProposedCompletion', actor: 'conductor', data: { headSha: 'sha-14' } },
     {
-      type: "StepFailed",
-      actor: "conductor",
-      data: { step: "proposed", action: "review", runId: run(14), onSha: "sha-14", evidence: "still refused", findings: [] },
+      type: 'StepFailed',
+      actor: 'conductor',
+      data: {
+        step: 'proposed',
+        action: 'review',
+        runId: run(14),
+        onSha: 'sha-14',
+        evidence: 'still refused',
+        findings: [],
+      },
     },
-  ]);
+  ])
   await store.append(wi(14), 2, [
     {
-      type: "PassRestarted",
-      actor: "conductor",
+      type: 'PassRestarted',
+      actor: 'conductor',
       data: {
         runId: run(14),
         restart: 1,
         of: 2,
-        action: "review",
+        action: 'review',
         rounds: 3,
-        branch: "agent/14",
-        headSha: "sha-14",
+        branch: 'agent/14',
+        headSha: 'sha-14',
         findings: [],
       },
     },
-    released(run(14), "the review reviewer still refused after 3 round(s) — restart 1 of 2"),
-  ]);
+    released(run(14), 'the review reviewer still refused after 3 round(s) — restart 1 of 2'),
+  ])
 
   // 17 — a question asked before any run (#147), with nothing before it on the
   //      stream: no discovery, no claim. The block is the task's first event,
   //      so the row has to be made by it or the queue would not see the hold.
   await store.append(wi(17), 0, [
     {
-      type: "WorkItemBlocked",
-      actor: "human:steven",
+      type: 'WorkItemBlocked',
+      actor: 'human:steven',
       data: {
-        question: "Which of the three designs should the tripwire use?",
-        needsFrom: "human",
+        question: 'Which of the three designs should the tripwire use?',
+        needsFrom: 'human',
         runId: null,
-        needs: "judgement",
+        needs: 'judgement',
         diagnosis: null,
       },
     },
-  ]);
+  ])
 
   // 18 — the same question, answered. The answer is what a rebuild has to be
   //      able to say, and it outlives the claim that follows it.
   await store.append(wi(18), 0, [
     {
-      type: "WorkItemBlocked",
-      actor: "human:steven",
+      type: 'WorkItemBlocked',
+      actor: 'human:steven',
       data: {
-        question: "Refuse at the hook, or at the claim?",
-        needsFrom: "human",
+        question: 'Refuse at the hook, or at the claim?',
+        needsFrom: 'human',
         runId: null,
-        needs: "judgement",
+        needs: 'judgement',
         diagnosis: null,
       },
     },
-    { type: "WorkItemUnblocked", actor: "human:steven", data: { by: "human:steven", note: "at the hook" } },
+    { type: 'WorkItemUnblocked', actor: 'human:steven', data: { by: 'human:steven', note: 'at the hook' } },
     claimed(18),
-  ]);
+  ])
 }
 
 /** Appended after the rebuild, so `fold` is what folds it. */
 async function secondAttempt(): Promise<void> {
-  await store.append(wi(6), 2, [released(attempt(6, "a"), KILLED)]);
-  await store.append(wi(6), 3, [claimedWith(attempt(6, "b"))]);
-  await store.append(attempt(6, "b"), 0, [started(6)]);
+  await store.append(wi(6), 2, [released(attempt(6, 'a'), KILLED)])
+  await store.append(wi(6), 3, [claimedWith(attempt(6, 'b'))])
+  await store.append(attempt(6, 'b'), 0, [started(6)])
 }
 
 async function build(): Promise<void> {
-  const runner = createProjectionRunner({ projection: taskViewProjection, store });
+  const runner = createProjectionRunner({ projection: taskViewProjection, store })
   try {
-    await runner.rebuild();
+    await runner.rebuild()
   } finally {
-    await runner.close();
+    await runner.close()
   }
 }
 
 /** Forward from the checkpoint, which is what a live projector does. */
 async function fold(): Promise<void> {
-  const runner = createProjectionRunner({ projection: taskViewProjection, store });
+  const runner = createProjectionRunner({ projection: taskViewProjection, store })
   try {
-    await runner.start();
+    await runner.start()
   } finally {
-    await runner.close();
+    await runner.close()
   }
 }
 
-const card = (tasks: Awaited<ReturnType<typeof readTasks>>, n: number) =>
-  tasks.find((t) => t.issue === String(n));
+const card = (tasks: Awaited<ReturnType<typeof readTasks>>, n: number) => tasks.find((t) => t.issue === String(n))
 
 // #275: `seed()` calls `appendRetired`, a raw insert of a retired event type
 // straight into `events` — the store's own `append` refuses one, which is
@@ -515,413 +589,413 @@ const card = (tasks: Awaited<ReturnType<typeof readTasks>>, n: number) =>
 // below, since all of them read what `seed()` wrote — needs the real thing.
 // Skipped rather than converted where no LINGTAI_TEST_DATABASE_URL is set, so
 // the skip is visible in vitest's own count.
-describe.skipIf(!postgresUnderTest())("against the real store", () => {
-beforeAll(async () => {
-  client = createDb();
-  store = createEventStore(client);
-  await seed();
-  await build();
-  // Half the history is rebuilt and half is folded forward, so the rebuild case
-  // below compares the two paths rather than a rebuild against itself.
-  await secondAttempt();
-  await fold();
-}, 120_000);
+describe.skipIf(!postgresUnderTest())('against the real store', () => {
+  beforeAll(async () => {
+    client = createDb()
+    store = createEventStore(client)
+    await seed()
+    await build()
+    // Half the history is rebuilt and half is folded forward, so the rebuild case
+    // below compares the two paths rather than a rebuild against itself.
+    await secondAttempt()
+    await fold()
+  }, 120_000)
 
-afterAll(async () => {
-  await client.close();
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
-  try {
-    await c.query("alter table events disable rule lingtai_events_no_delete");
-    for (const id of created) await c.query("delete from events where stream_id = $1", [id]);
-  } finally {
-    await c.query("alter table events enable rule lingtai_events_no_delete");
-    await c.end();
-  }
-});
+  afterAll(async () => {
+    await client.close()
+    const c = new pg.Client({ connectionString: directPostgresUrl() })
+    await c.connect()
+    try {
+      await c.query('alter table events disable rule lingtai_events_no_delete')
+      for (const id of created) await c.query('delete from events where stream_id = $1', [id])
+    } finally {
+      await c.query('alter table events enable rule lingtai_events_no_delete')
+      await c.end()
+    }
+  })
 
-describe("task_view", () => {
-  it("puts each task in the state its stream says it is in", async () => {
-    const tasks = await readTasks({ project: PROJECT });
+  describe('task_view', () => {
+    it('puts each task in the state its stream says it is in', async () => {
+      const tasks = await readTasks({ project: PROJECT })
 
-    expect(card(tasks, 1)?.state).toBe("queued");
-    expect(card(tasks, 2)?.state).toBe("running");
-    expect(card(tasks, 3)?.state).toBe("verifying");
-    expect(card(tasks, 4)?.state).toBe("waiting");
-    expect(card(tasks, 5)?.state).toBe("landed");
-  });
+      expect(card(tasks, 1)?.state).toBe('queued')
+      expect(card(tasks, 2)?.state).toBe('running')
+      expect(card(tasks, 3)?.state).toBe('verifying')
+      expect(card(tasks, 4)?.state).toBe('waiting')
+      expect(card(tasks, 5)?.state).toBe('landed')
+    })
 
-  it("carries what a card shows and leaves the rest in the log", async () => {
-    const tasks = await readTasks({ project: PROJECT });
+    it('carries what a card shows and leaves the rest in the log', async () => {
+      const tasks = await readTasks({ project: PROJECT })
 
-    const two = card(tasks, 2)!;
-    expect(two.turns).toBe(63);
-    expect(two.costUsd).toBeCloseTo(5.42);
-    // No tier on the card any more: it is the recipe's (ADR 0016 §7), and the
-    // board does not read recipes.
+      const two = card(tasks, 2)!
+      expect(two.turns).toBe(63)
+      expect(two.costUsd).toBeCloseTo(5.42)
+      // No tier on the card any more: it is the recipe's (ADR 0016 §7), and the
+      // board does not read recipes.
 
-    const three = card(tasks, 3)!;
-    expect(three.passed).toBe(1);
-    expect(three.failed).toBe(1);
-    expect(three.headSha).toBe("sha-a");
-    expect(three.files).toBe(3);
-  });
+      const three = card(tasks, 3)!
+      expect(three.passed).toBe(1)
+      expect(three.failed).toBe(1)
+      expect(three.headSha).toBe('sha-a')
+      expect(three.files).toBe(3)
+    })
 
-  it("records the attempt, which is what a backoff reads", async () => {
-    const tasks = await readTasks({ project: PROJECT });
-    const two = card(tasks, 2)!;
+    it('records the attempt, which is what a backoff reads', async () => {
+      const tasks = await readTasks({ project: PROJECT })
+      const two = card(tasks, 2)!
 
-    // In the table rather than in memory: an in-memory set forgets on restart,
-    // and the loop it prevents cost the old harness roughly $29.
-    expect(two.attempts).toBe(1);
-    expect(two.lastAttemptAt).toBeInstanceOf(Date);
-    expect(card(tasks, 1)!.attempts).toBe(0);
-  });
+      // In the table rather than in memory: an in-memory set forgets on restart,
+      // and the loop it prevents cost the old harness roughly $29.
+      expect(two.attempts).toBe(1)
+      expect(two.lastAttemptAt).toBeInstanceOf(Date)
+      expect(card(tasks, 1)!.attempts).toBe(0)
+    })
 
-  /**
-   * **Which arm, beside how many attempts**
-   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
-   *
-   * `attempts` counts claims, so a claim after a crash, after a backoff and
-   * after an approach was thrown away all read as the same number — which is
-   * why *round 2 of 3, restart 1 of 2* had to become sayable and *attempt 3*
-   * was not enough. The sentence is `describeArm`'s so that the board and
-   * `lingtai status` cannot word it differently (#100).
-   */
-  it("says which arm a ticket is on, and which round of that arm", async () => {
-    const tasks = await readTasks({ project: PROJECT });
+    /**
+     * **Which arm, beside how many attempts**
+     * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
+     *
+     * `attempts` counts claims, so a claim after a crash, after a backoff and
+     * after an approach was thrown away all read as the same number — which is
+     * why *round 2 of 3, restart 1 of 2* had to become sayable and *attempt 3*
+     * was not enough. The sentence is `describeArm`'s so that the board and
+     * `lingtai status` cannot word it differently (#100).
+     */
+    it('says which arm a ticket is on, and which round of that arm', async () => {
+      const tasks = await readTasks({ project: PROJECT })
 
-    // The depth half, while a pass is in flight. `of` is what makes the
-    // denominator readable: a fold cannot open the recipe the ceiling is in.
-    expect(card(tasks, 13)!.note).toBe("fixing round 1 of 3: 0 finding(s) from review");
+      // The depth half, while a pass is in flight. `of` is what makes the
+      // denominator readable: a fold cannot open the recipe the ceiling is in.
+      expect(card(tasks, 13)!.note).toBe('fixing round 1 of 3: 0 finding(s) from review')
 
-    // The breadth half, which outlives the pass that spent it.
-    const over = card(tasks, 14)!;
-    expect(over.restarts).toBe(1);
-    expect(over.restartsOf).toBe(2);
-    expect(describeArm(over)).toBe("restart 1 of 2");
-    // **Released, not waiting.** A question for a person sits in the waiting
-    // lane; a restarted ticket is back in the queue for an ordinary claim.
-    expect(over.state).toBe("queued");
-    expect(over.blocked).toBe(false);
-    expect(over.note).toContain("restart 1 of 2");
+      // The breadth half, which outlives the pass that spent it.
+      const over = card(tasks, 14)!
+      expect(over.restarts).toBe(1)
+      expect(over.restartsOf).toBe(2)
+      expect(describeArm(over)).toBe('restart 1 of 2')
+      // **Released, not waiting.** A question for a person sits in the waiting
+      // lane; a restarted ticket is back in the queue for an ordinary claim.
+      expect(over.state).toBe('queued')
+      expect(over.blocked).toBe(false)
+      expect(over.note).toContain('restart 1 of 2')
 
-    // Nothing on a ticket that has only ever had one approach, so a card on a
-    // project that buys no restart reads exactly as it did.
-    expect(card(tasks, 2)!.restarts).toBe(0);
-    expect(describeArm(card(tasks, 2)!)).toBeNull();
-  });
+      // Nothing on a ticket that has only ever had one approach, so a card on a
+      // project that buys no restart reads exactly as it did.
+      expect(card(tasks, 2)!.restarts).toBe(0)
+      expect(describeArm(card(tasks, 2)!)).toBeNull()
+    })
 
-  it("says why a task is waiting, in one line", async () => {
-    const tasks = await readTasks({ project: PROJECT });
-    expect(card(tasks, 4)!.note).toContain("dirty-base");
-  });
+    it('says why a task is waiting, in one line', async () => {
+      const tasks = await readTasks({ project: PROJECT })
+      expect(card(tasks, 4)!.note).toContain('dirty-base')
+    })
 
-  /**
-   * #78. `wi-lingtai-59` read `1 passed · attempt 2` on the board, and the pass
-   * belonged to attempt 1 — a run an operator had killed eleven hours earlier,
-   * which produced nothing. The verdicts were keyed `point:action` with no run
-   * in the key, so the map was one shared set of cells and nothing ever cleared
-   * it.
-   */
-  it("counts only the gates of the run the card names", async () => {
-    const tasks = await readTasks({ project: PROJECT });
-    const six = card(tasks, 6)!;
+    /**
+     * #78. `wi-lingtai-59` read `1 passed · attempt 2` on the board, and the pass
+     * belonged to attempt 1 — a run an operator had killed eleven hours earlier,
+     * which produced nothing. The verdicts were keyed `point:action` with no run
+     * in the key, so the map was one shared set of cells and nothing ever cleared
+     * it.
+     */
+    it('counts only the gates of the run the card names', async () => {
+      const tasks = await readTasks({ project: PROJECT })
+      const six = card(tasks, 6)!
 
-    expect(six.attempts).toBe(2);
-    expect(six.runId).toBe(`run-${PROJECT}-6b`);
-    // Attempt 2 has reached no gate. Attempt 1's `prepared:install` is still in
-    // the map, against the run that earned it, and is not this card's.
-    expect(six.passed).toBe(0);
-    expect(six.failed).toBe(0);
-  });
+      expect(six.attempts).toBe(2)
+      expect(six.runId).toBe(`run-${PROJECT}-6b`)
+      // Attempt 2 has reached no gate. Attempt 1's `prepared:install` is still in
+      // the map, against the run that earned it, and is not this card's.
+      expect(six.passed).toBe(0)
+      expect(six.failed).toBe(0)
+    })
 
-  /**
-   * A run killed from outside fails no gate, so `failed` stayed 0 and the
-   * card came back to Queued with a green pill and nothing else — a ticket that
-   * had burned money and produced nothing, looking like a fresh one.
-   */
-  it("marks a task whose attempt ended without landing", async () => {
-    const tasks = await readTasks({ project: PROJECT });
-    const seven = card(tasks, 7)!;
+    /**
+     * A run killed from outside fails no gate, so `failed` stayed 0 and the
+     * card came back to Queued with a green pill and nothing else — a ticket that
+     * had burned money and produced nothing, looking like a fresh one.
+     */
+    it('marks a task whose attempt ended without landing', async () => {
+      const tasks = await readTasks({ project: PROJECT })
+      const seven = card(tasks, 7)!
 
-    expect(seven.state).toBe("queued");
-    // No run named, so no verdict is this card's to show.
-    expect(seven.runId).toBeNull();
-    expect(seven.passed).toBe(0);
-    // The sentence the release already carried.
-    expect(seven.note).toBe(KILLED);
-  });
+      expect(seven.state).toBe('queued')
+      // No run named, so no verdict is this card's to show.
+      expect(seven.runId).toBeNull()
+      expect(seven.passed).toBe(0)
+      // The sentence the release already carried.
+      expect(seven.note).toBe(KILLED)
+    })
 
-  /**
-   * A waiver records who and why precisely because it is not a pass. Counting
-   * it as one threw away the distinction the record exists for — and the same
-   * held for a human approval, which is not a build going green either.
-   */
-  it("does not read a person's word as a gate that ran", async () => {
-    const tasks = await readTasks({ project: PROJECT });
-    const eight = card(tasks, 8)!;
+    /**
+     * A waiver records who and why precisely because it is not a pass. Counting
+     * it as one threw away the distinction the record exists for — and the same
+     * held for a human approval, which is not a build going green either.
+     */
+    it("does not read a person's word as a gate that ran", async () => {
+      const tasks = await readTasks({ project: PROJECT })
+      const eight = card(tasks, 8)!
 
-    expect(eight.passed).toBe(0);
-    // The waiver replaced the failure in its own cell: one verdict per point
-    // per run, and the latest one is what stands.
-    expect(eight.failed).toBe(0);
-    expect(eight.waived).toBe(1);
-    expect(eight.approved).toBe(1);
-  });
+      expect(eight.passed).toBe(0)
+      // The waiver replaced the failure in its own cell: one verdict per point
+      // per run, and the latest one is what stands.
+      expect(eight.failed).toBe(0)
+      expect(eight.waived).toBe(1)
+      expect(eight.approved).toBe(1)
+    })
 
-  /**
-   * The dead end `#84` is about, as the card sees it.
-   *
-   * "Waiting, and there is a head sha" was true of this row while `approve()`
-   * would refuse every click — the approval had been spent on the merge that
-   * conflicted, and the run was back to `gating`. Sitting in the column and
-   * being asked a question are two facts, and the card now carries both.
-   *
-   * **And the refusal reaches a person**, which since `#143` is the only place
-   * it can reach: no agent is bought, so the block and its diagnosis are the
-   * whole outcome and the card has to carry a sentence rather than a control
-   * that refuses.
-   */
-  it("stops offering an approval once the merge that consumed it failed", async () => {
-    const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 });
-    const nine = card(tasks, 9)!;
+    /**
+     * The dead end `#84` is about, as the card sees it.
+     *
+     * "Waiting, and there is a head sha" was true of this row while `approve()`
+     * would refuse every click — the approval had been spent on the merge that
+     * conflicted, and the run was back to `gating`. Sitting in the column and
+     * being asked a question are two facts, and the card now carries both.
+     *
+     * **And the refusal reaches a person**, which since `#143` is the only place
+     * it can reach: no agent is bought, so the block and its diagnosis are the
+     * whole outcome and the card has to carry a sentence rather than a control
+     * that refuses.
+     */
+    it('stops offering an approval once the merge that consumed it failed', async () => {
+      const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 })
+      const nine = card(tasks, 9)!
 
-    expect(nine.awaitingApproval).toBe(false);
-    // Somebody's question, with the reason on it.
-    expect(nine.state).toBe("waiting");
-    expect(nine.blocked).toBe(true);
-    expect(nine.needs).toBe("acknowledgement");
-    expect(nine.diagnosis?.done).toContain("No agent was bought");
-    expect(nine.diagnosis?.recommendation?.action).toBe("requeue");
+      expect(nine.awaitingApproval).toBe(false)
+      // Somebody's question, with the reason on it.
+      expect(nine.state).toBe('waiting')
+      expect(nine.blocked).toBe(true)
+      expect(nine.needs).toBe('acknowledgement')
+      expect(nine.diagnosis?.done).toContain('No agent was bought')
+      expect(nine.diagnosis?.recommendation?.action).toBe('requeue')
 
-    // The lane holds more than questions: a refused dispatch is `waiting` and
-    // is not an item anybody can hand back, so the card must not offer to.
-    expect(card(tasks, 4)!.state).toBe("waiting");
-    expect(card(tasks, 4)!.blocked).toBe(false);
-  });
+      // The lane holds more than questions: a refused dispatch is `waiting` and
+      // is not an item anybody can hand back, so the card must not offer to.
+      expect(card(tasks, 4)!.state).toBe('waiting')
+      expect(card(tasks, 4)!.blocked).toBe(false)
+    })
 
-  /**
-   * #92. The card sent `head_sha` to `approve()`, which compares against what
-   * the run is *asking* about — so an item whose branch had been repaired and
-   * re-offered refused every click on the board while `lingtai approve`, which
-   * sends no sha and falls through to the run's own, landed it.
-   *
-   * Two facts, so the row carries both, and the one a control has to send is
-   * the one the question is bound to.
-   */
-  it("carries the sha the run is asking about, apart from the one it produced", async () => {
-    const tasks = await readTasks({ project: PROJECT });
-    const ten = card(tasks, 10)!;
+    /**
+     * #92. The card sent `head_sha` to `approve()`, which compares against what
+     * the run is *asking* about — so an item whose branch had been repaired and
+     * re-offered refused every click on the board while `lingtai approve`, which
+     * sends no sha and falls through to the run's own, landed it.
+     *
+     * Two facts, so the row carries both, and the one a control has to send is
+     * the one the question is bound to.
+     */
+    it('carries the sha the run is asking about, apart from the one it produced', async () => {
+      const tasks = await readTasks({ project: PROJECT })
+      const ten = card(tasks, 10)!
 
-    expect(ten.headSha).toBe("sha-10a");
-    expect(ten.awaitingSha).toBe("sha-10b");
-    // And a question is open exactly when there is a sha it is about, so the
-    // card cannot offer Approve without the value Approve needs.
-    expect(ten.awaitingApproval).toBe(true);
-    expect(ten.blocked).toBe(true);
+      expect(ten.headSha).toBe('sha-10a')
+      expect(ten.awaitingSha).toBe('sha-10b')
+      // And a question is open exactly when there is a sha it is about, so the
+      // card cannot offer Approve without the value Approve needs.
+      expect(ten.awaitingApproval).toBe(true)
+      expect(ten.blocked).toBe(true)
 
-    // Granted spends it: #84's row is asking nothing and carries nothing.
-    expect(card(tasks, 9)!.awaitingSha).toBeNull();
-    expect(card(tasks, 9)!.awaitingApproval).toBe(false);
-  });
+      // Granted spends it: #84's row is asking nothing and carries nothing.
+      expect(card(tasks, 9)!.awaitingSha).toBeNull()
+      expect(card(tasks, 9)!.awaitingApproval).toBe(false)
+    })
 
-  /**
-   * A block carries what was worked out about it, or says it carries nothing.
-   *
-   * #83: the whole vocabulary was `question`, so a conflict reached a person as
-   * a git message with a colon in it and a `human:` gate reached them as the
-   * same event — no diagnosis, no recommendation, and the card's only honest
-   * control was one that could not act. The projection is where the card and
-   * `lingtai status` both read it from, which is what stops the two of them
-   * describing one block differently.
-   */
-  it("surfaces a block's diagnosis and its recommended action", async () => {
-    const eleven = card(await readTasks({ project: PROJECT }), 11)!;
+    /**
+     * A block carries what was worked out about it, or says it carries nothing.
+     *
+     * #83: the whole vocabulary was `question`, so a conflict reached a person as
+     * a git message with a colon in it and a `human:` gate reached them as the
+     * same event — no diagnosis, no recommendation, and the card's only honest
+     * control was one that could not act. The projection is where the card and
+     * `lingtai status` both read it from, which is what stops the two of them
+     * describing one block differently.
+     */
+    it("surfaces a block's diagnosis and its recommended action", async () => {
+      const eleven = card(await readTasks({ project: PROJECT }), 11)!
 
-    expect(eleven.blocked).toBe(true);
-    expect(eleven.needs).toBe("acknowledgement");
-    expect(eleven.diagnosis?.what).toBe("agent/11 does not merge into develop.");
-    expect(eleven.diagnosis?.done).toContain("No agent was bought");
-    // The raw failure is still reachable: a summary that hides the git output is
-    // worse than the git output.
-    expect(eleven.diagnosis?.raw).toContain("CONFLICT (content)");
-    expect(eleven.diagnosis?.recommendation?.action).toBe("requeue");
-    // And the question is untouched — the widening added to the block rather
-    // than replacing what it always said.
-    expect(eleven.note).toContain("conflict: agent/11 does not merge into develop");
-    // The same four facts, as the sentences the card and `status` share.
-    expect(describeHold(eleven).map((l) => l.part)).toEqual(["needs", "what", "did", "rec"]);
-  });
+      expect(eleven.blocked).toBe(true)
+      expect(eleven.needs).toBe('acknowledgement')
+      expect(eleven.diagnosis?.what).toBe('agent/11 does not merge into develop.')
+      expect(eleven.diagnosis?.done).toContain('No agent was bought')
+      // The raw failure is still reachable: a summary that hides the git output is
+      // worse than the git output.
+      expect(eleven.diagnosis?.raw).toContain('CONFLICT (content)')
+      expect(eleven.diagnosis?.recommendation?.action).toBe('requeue')
+      // And the question is untouched — the widening added to the block rather
+      // than replacing what it always said.
+      expect(eleven.note).toContain('conflict: agent/11 does not merge into develop')
+      // The same four facts, as the sentences the card and `status` share.
+      expect(describeHold(eleven).map((l) => l.part)).toEqual(['needs', 'what', 'did', 'rec'])
+    })
 
-  /**
-   * The degradation case, which is most of the log: **every** block written
-   * before #83 carries only a question, and one of those has to render exactly
-   * as it did — no kind, no diagnosis, and the controls it always had.
-   */
-  it("leaves a block that carries only a question exactly as it was", async () => {
-    const ten = card(await readTasks({ project: PROJECT }), 10)!;
+    /**
+     * The degradation case, which is most of the log: **every** block written
+     * before #83 carries only a question, and one of those has to render exactly
+     * as it did — no kind, no diagnosis, and the controls it always had.
+     */
+    it('leaves a block that carries only a question exactly as it was', async () => {
+      const ten = card(await readTasks({ project: PROJECT }), 10)!
 
-    expect(ten.blocked).toBe(true);
-    expect(ten.note).toBe("a repair is waiting on you");
-    expect(ten.needs).toBeNull();
-    expect(ten.diagnosis).toBeNull();
-    // Nothing to say about the hold, so nothing is said about it.
-    expect(describeHold(ten)).toEqual([]);
-  });
+      expect(ten.blocked).toBe(true)
+      expect(ten.note).toBe('a repair is waiting on you')
+      expect(ten.needs).toBeNull()
+      expect(ten.diagnosis).toBeNull()
+      // Nothing to say about the hold, so nothing is said about it.
+      expect(describeHold(ten)).toEqual([])
+    })
 
-  /** And the diagnosis goes when the hold is answered, not one lap later. */
-  it("drops the diagnosis when the block is answered", async () => {
-    const twelve = card(await readTasks({ project: PROJECT }), 12)!;
+    /** And the diagnosis goes when the hold is answered, not one lap later. */
+    it('drops the diagnosis when the block is answered', async () => {
+      const twelve = card(await readTasks({ project: PROJECT }), 12)!
 
-    expect(twelve.state).toBe("queued");
-    expect(twelve.blocked).toBe(false);
-    expect(twelve.needs).toBeNull();
-    expect(twelve.diagnosis).toBeNull();
-  });
+      expect(twelve.state).toBe('queued')
+      expect(twelve.blocked).toBe(false)
+      expect(twelve.needs).toBeNull()
+      expect(twelve.diagnosis).toBeNull()
+    })
 
-  /**
-   * A question asked before any run, and its answer (#147).
-   *
-   * The block is 17's first event, so it has to *make* the row: `selectRunnable`
-   * passes over an issue only when the log has a row saying so, and with no
-   * row the item would be offered and claimed straight past the question.
-   */
-  it("holds a question asked before any run, and keeps the answer through a rebuild", async () => {
-    const tasks = await readTasks({ project: PROJECT });
+    /**
+     * A question asked before any run, and its answer (#147).
+     *
+     * The block is 17's first event, so it has to *make* the row: `selectRunnable`
+     * passes over an issue only when the log has a row saying so, and with no
+     * row the item would be offered and claimed straight past the question.
+     */
+    it('holds a question asked before any run, and keeps the answer through a rebuild', async () => {
+      const tasks = await readTasks({ project: PROJECT })
 
-    const seventeen = card(tasks, 17)!;
-    expect(seventeen.state).toBe("waiting");
-    expect(seventeen.blocked).toBe(true);
-    expect(seventeen.asked).toBe(true);
-    expect(seventeen.note).toBe("Which of the three designs should the tripwire use?");
-    expect(describeWait(seventeen)).toBe("waiting for your answer");
+      const seventeen = card(tasks, 17)!
+      expect(seventeen.state).toBe('waiting')
+      expect(seventeen.blocked).toBe(true)
+      expect(seventeen.asked).toBe(true)
+      expect(seventeen.note).toBe('Which of the three designs should the tripwire use?')
+      expect(describeWait(seventeen)).toBe('waiting for your answer')
 
-    const eighteen = card(tasks, 18)!;
-    expect(eighteen.state).toBe("running");
-    expect(eighteen.asked).toBe(false);
-    expect(eighteen.answer).toEqual({
-      question: "Refuse at the hook, or at the claim?",
-      answer: "at the hook",
-      by: "human:steven",
-    });
+      const eighteen = card(tasks, 18)!
+      expect(eighteen.state).toBe('running')
+      expect(eighteen.asked).toBe(false)
+      expect(eighteen.answer).toEqual({
+        question: 'Refuse at the hook, or at the claim?',
+        answer: 'at the hook',
+        by: 'human:steven',
+      })
 
-    // And a review is not an answer: 10 is a run holding a sha.
-    expect(describeWait(card(tasks, 10)!)).toBe("waiting for your review");
-    // A failure needing acknowledgement is neither, and stays `describeHold`'s.
-    expect(describeWait(card(tasks, 11)!)).toBeNull();
-  });
+      // And a review is not an answer: 10 is a run holding a sha.
+      expect(describeWait(card(tasks, 10)!)).toBe('waiting for your review')
+      // A failure needing acknowledgement is neither, and stays `describeHold`'s.
+      expect(describeWait(card(tasks, 11)!)).toBeNull()
+    })
 
-  /**
-   * **A block can be both, and only one of them is a question to the person**
-   * (`#197`).
-   *
-   * The rule above held by accident for as long as it was documented: the only
-   * blocks written `acknowledgement` — the merge lane's, the out-of-turns one,
-   * a spent approval's — left no open `ApprovalRequested`, so `awaitingSha` was
-   * null and this returned null without ever asking `needs`. A fixing agent
-   * killed mid-round now writes `acknowledgement` on a block that *does* hold a
-   * sha, and the chip read *waiting for your review* — whose move is approve or
-   * reject what is there (#147) — beside a headline reading *this is
-   * infrastructure and not your call: send it again*. Two chips on one card
-   * prescribing opposite moves is the failure #147 split the chip to end, so
-   * the rule is asserted rather than inherited from which blocks happen to
-   * exist.
-   */
-  it("does not call an acknowledgement a review, even when it holds a sha", () => {
-    const stopped = {
-      blocked: true,
-      asked: false,
-      awaitingSha: "a7663f9000000000",
-      needs: "acknowledgement" as const,
-    };
+    /**
+     * **A block can be both, and only one of them is a question to the person**
+     * (`#197`).
+     *
+     * The rule above held by accident for as long as it was documented: the only
+     * blocks written `acknowledgement` — the merge lane's, the out-of-turns one,
+     * a spent approval's — left no open `ApprovalRequested`, so `awaitingSha` was
+     * null and this returned null without ever asking `needs`. A fixing agent
+     * killed mid-round now writes `acknowledgement` on a block that *does* hold a
+     * sha, and the chip read *waiting for your review* — whose move is approve or
+     * reject what is there (#147) — beside a headline reading *this is
+     * infrastructure and not your call: send it again*. Two chips on one card
+     * prescribing opposite moves is the failure #147 split the chip to end, so
+     * the rule is asserted rather than inherited from which blocks happen to
+     * exist.
+     */
+    it('does not call an acknowledgement a review, even when it holds a sha', () => {
+      const stopped = {
+        blocked: true,
+        asked: false,
+        awaitingSha: 'a7663f9000000000',
+        needs: 'acknowledgement' as const,
+      }
 
-    expect(describeWait(stopped)).toBeNull();
-    // And the sha still means a review where the block is somebody's call —
-    // the common case must not be lost to fix the combination.
-    expect(describeWait({ ...stopped, needs: "judgement" })).toBe("waiting for your review");
-    expect(describeWait({ ...stopped, needs: null })).toBe("waiting for your review");
-    // An answer is still an answer: a question asked before any run outranks
-    // both, because there is no diff for a review to be about.
-    expect(describeWait({ ...stopped, asked: true })).toBe("waiting for your answer");
-  });
+      expect(describeWait(stopped)).toBeNull()
+      // And the sha still means a review where the block is somebody's call —
+      // the common case must not be lost to fix the combination.
+      expect(describeWait({ ...stopped, needs: 'judgement' })).toBe('waiting for your review')
+      expect(describeWait({ ...stopped, needs: null })).toBe('waiting for your review')
+      // An answer is still an answer: a question asked before any run outranks
+      // both, because there is no diff for a review to be about.
+      expect(describeWait({ ...stopped, asked: true })).toBe('waiting for your answer')
+    })
 
-  /**
-   * What diagnosis costs, apart from the work.
-   *
-   * Answering a refusal is on by default and spends an agent without being
-   * asked again, so folding its cost into the number beside it would make it an
-   * invisible bill (#84).
-   *
-   * **It is a round's cost and nothing else since `#143`.** The bill used to be
-   * a whole *run* the merge lane bought, told which column to land in by the
-   * row's own `repair_run_id`; nothing buys a run now, so a run's money is
-   * always the work's and this figure is exactly the rounds a pass spent.
-   */
-  it("counts what answering a refusal cost separately from the work's", async () => {
-    const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 });
-    const thirteen = card(tasks, 13)!;
+    /**
+     * What diagnosis costs, apart from the work.
+     *
+     * Answering a refusal is on by default and spends an agent without being
+     * asked again, so folding its cost into the number beside it would make it an
+     * invisible bill (#84).
+     *
+     * **It is a round's cost and nothing else since `#143`.** The bill used to be
+     * a whole *run* the merge lane bought, told which column to land in by the
+     * row's own `repair_run_id`; nothing buys a run now, so a run's money is
+     * always the work's and this figure is exactly the rounds a pass spent.
+     */
+    it("counts what answering a refusal cost separately from the work's", async () => {
+      const tasks = await readTasks({ project: PROJECT, retentionDays: 3650 })
+      const thirteen = card(tasks, 13)!
 
-    expect(thirteen.costUsd).toBe(2.1);
-    expect(thirteen.repairCostUsd).toBe(0.75);
-    // A ticket from before #143 keeps its repair's money apart on a rebuild:
-    // the second attempt *was* a repair, and the task page still says so.
-    const fifteen = card(tasks, 15)!;
-    expect(fifteen.costUsd).toBe(2.1);
-    expect(fifteen.repairCostUsd).toBe(0.75);
-    expect(fifteen.repairPending).toBe(false);
-    // And an item released for one and not yet claimed is still owed the
-    // exemption from the backoff.
-    expect(card(tasks, 16)!.repairPending).toBe(true);
+      expect(thirteen.costUsd).toBe(2.1)
+      expect(thirteen.repairCostUsd).toBe(0.75)
+      // A ticket from before #143 keeps its repair's money apart on a rebuild:
+      // the second attempt *was* a repair, and the task page still says so.
+      const fifteen = card(tasks, 15)!
+      expect(fifteen.costUsd).toBe(2.1)
+      expect(fifteen.repairCostUsd).toBe(0.75)
+      expect(fifteen.repairPending).toBe(false)
+      // And an item released for one and not yet claimed is still owed the
+      // exemption from the backoff.
+      expect(card(tasks, 16)!.repairPending).toBe(true)
 
-    // And a card that never bought a round says nothing rather than zero:
-    // nothing bought and something bought for free are different facts.
-    expect(card(tasks, 2)!.repairCostUsd).toBeNull();
-  });
+      // And a card that never bought a round says nothing rather than zero:
+      // nothing bought and something bought for free are different facts.
+      expect(card(tasks, 2)!.repairCostUsd).toBeNull()
+    })
 
-  /**
-   * The property that makes this table's shape free to change. It only holds
-   * because every timestamp comes from `event.at` — a projection that read the
-   * clock would produce different rows on every rebuild, and the workflow for
-   * changing a projection would stop being "rebuild it".
-   *
-   * `before` is genuinely the two paths mixed: `beforeAll` rebuilds most of the
-   * history and then folds the rest forward from the checkpoint. That is what
-   * makes this a claim about the incremental path and not a rebuild compared
-   * with itself — and it is the claim the run-scoped gate keys have to survive,
-   * since assignment into a keyed map is the only reason a replay lands on the
-   * same numbers.
-   *
-   * **Its own deadline, the same one `beforeAll` gives the same call.** A
-   * rebuild costs a round trip per event in the *log*, not per row in this
-   * table (`projection.ts`), so what it takes is decided by how much history the
-   * shared test database is carrying and not by anything this file seeded. The
-   * file's 60s default was the one number here that assumed otherwise, and on
-   * 2026-09-11 a swept-up test log of 2,688 events walked past it — the same
-   * rebuild two lines above, under 120s, passed. Two limits on one call was the
-   * bug; the log's length is kept in hand by `test-support/teardown.ts`.
-   */
-  it("rebuilds to exactly what the incremental path produced", async () => {
-    const before = await readTasks({ project: PROJECT });
-    await build();
-    const after = await readTasks({ project: PROJECT });
+    /**
+     * The property that makes this table's shape free to change. It only holds
+     * because every timestamp comes from `event.at` — a projection that read the
+     * clock would produce different rows on every rebuild, and the workflow for
+     * changing a projection would stop being "rebuild it".
+     *
+     * `before` is genuinely the two paths mixed: `beforeAll` rebuilds most of the
+     * history and then folds the rest forward from the checkpoint. That is what
+     * makes this a claim about the incremental path and not a rebuild compared
+     * with itself — and it is the claim the run-scoped gate keys have to survive,
+     * since assignment into a keyed map is the only reason a replay lands on the
+     * same numbers.
+     *
+     * **Its own deadline, the same one `beforeAll` gives the same call.** A
+     * rebuild costs a round trip per event in the *log*, not per row in this
+     * table (`projection.ts`), so what it takes is decided by how much history the
+     * shared test database is carrying and not by anything this file seeded. The
+     * file's 60s default was the one number here that assumed otherwise, and on
+     * 2026-09-11 a swept-up test log of 2,688 events walked past it — the same
+     * rebuild two lines above, under 120s, passed. Two limits on one call was the
+     * bug; the log's length is kept in hand by `test-support/teardown.ts`.
+     */
+    it('rebuilds to exactly what the incremental path produced', async () => {
+      const before = await readTasks({ project: PROJECT })
+      await build()
+      const after = await readTasks({ project: PROJECT })
 
-    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
-  }, 120_000);
+      expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+    }, 120_000)
 
-  /**
-   * Retention filters, it does not delete. If the projection dropped old rows
-   * its contents would depend on when it last ran, and a rebuild would no longer
-   * reproduce itself.
-   */
-  it("filters a landed task out of the window while keeping its row", async () => {
-    const visible = await readTasks({ project: PROJECT, retentionDays: 0 });
-    expect(card(visible, 5)).toBeUndefined();
-    // Still queued and running tasks — the filter is about closed ones only.
-    expect(card(visible, 1)).toBeDefined();
+    /**
+     * Retention filters, it does not delete. If the projection dropped old rows
+     * its contents would depend on when it last ran, and a rebuild would no longer
+     * reproduce itself.
+     */
+    it('filters a landed task out of the window while keeping its row', async () => {
+      const visible = await readTasks({ project: PROJECT, retentionDays: 0 })
+      expect(card(visible, 5)).toBeUndefined()
+      // Still queued and running tasks — the filter is about closed ones only.
+      expect(card(visible, 1)).toBeDefined()
 
-    const kept = await readTasks({ project: PROJECT, retentionDays: 3650 });
-    expect(card(kept, 5)?.note).toBe("abc1234def");
-  });
-});
-});
+      const kept = await readTasks({ project: PROJECT, retentionDays: 3650 })
+      expect(card(kept, 5)?.note).toBe('abc1234def')
+    })
+  })
+})

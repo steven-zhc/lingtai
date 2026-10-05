@@ -24,98 +24,96 @@
  * (§8); the ledger row this sits inside already carries the outcome, folded
  * from `events`. What the `end` frame reports is that the writer let go.
  */
-import { stat } from "node:fs/promises";
-import { findRunLog, followRunLog, RUN_LOG_POLL_MS, runLogQuiet } from "@lingtai/conductor/run-log";
+import { stat } from 'node:fs/promises'
 
-export const dynamic = "force-dynamic";
+import { findRunLog, followRunLog, RUN_LOG_POLL_MS, runLogQuiet } from '@lingtai/conductor/run-log'
 
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ runId: string }> },
-): Promise<Response> {
-  const { runId } = await context.params;
-  const found = await findRunLog(decodeURIComponent(runId));
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: Request, context: { params: Promise<{ runId: string }> }): Promise<Response> {
+  const { runId } = await context.params
+  const found = await findRunLog(decodeURIComponent(runId))
 
   if (!found) {
     // 404 and not an empty stream: a landed run has no log (0034 §4) and an
     // `EventSource` given an empty one would reconnect for ever asking for it.
     // The client turns this into a sentence and stops.
-    return new Response(`no run log for ${runId}`, { status: 404 });
+    return new Response(`no run log for ${runId}`, { status: 404 })
   }
 
-  const encoder = new TextEncoder();
+  const encoder = new TextEncoder()
   // `EventSource` has no way to say "stop"; closing the tab aborts the request,
   // and this is what the follow is watching.
-  const detach = new AbortController();
-  request.signal.addEventListener("abort", () => detach.abort(), { once: true });
+  const detach = new AbortController()
+  request.signal.addEventListener('abort', () => detach.abort(), { once: true })
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let open = true;
+      let open = true
       const send = (text: string) => {
-        if (!open) return;
+        if (!open) return
         try {
-          controller.enqueue(encoder.encode(text));
+          controller.enqueue(encoder.encode(text))
         } catch {
           // The client went away between the check and the write.
-          open = false;
+          open = false
         }
-      };
+      }
 
-      send(`event: at\ndata: ${JSON.stringify({ project: found.project, path: found.path })}\n\n`);
+      send(`event: at\ndata: ${JSON.stringify({ project: found.project, path: found.path })}\n\n`)
 
       // Whether anything is still writing the file, off its mtime, said when it
       // changes (`RUN_LOG_BEAT_MS`). The contents cannot say it (0034 §8), and
       // the page's own read of the beacon is a render old and blind to a
       // daemon that answers nothing — so a trace a dead daemon left behind read
       // as one being written for as long as the page stayed open (#132).
-      let writing: boolean | null = null;
+      let writing: boolean | null = null
       const look = async () => {
-        const seen = await stat(found.path).catch(() => null);
-        if (seen === null) return;
-        const now = !runLogQuiet(seen.mtimeMs);
-        if (now === writing) return;
-        writing = now;
-        send(`event: writer\ndata: ${JSON.stringify({ writing })}\n\n`);
-      };
-      await look();
-      const looking = setInterval(() => void look(), RUN_LOG_POLL_MS * 4);
+        const seen = await stat(found.path).catch(() => null)
+        if (seen === null) return
+        const now = !runLogQuiet(seen.mtimeMs)
+        if (now === writing) return
+        writing = now
+        send(`event: writer\ndata: ${JSON.stringify({ writing })}\n\n`)
+      }
+      await look()
+      const looking = setInterval(() => void look(), RUN_LOG_POLL_MS * 4)
 
       try {
         for await (const seen of followRunLog({ path: found.path, signal: detach.signal })) {
-          if ("line" in seen) {
+          if ('line' in seen) {
             // JSON, so a line carrying anything at all — the agent printed it —
             // cannot break the frame it is inside.
-            send(`event: line\ndata: ${JSON.stringify(seen.line)}\n\n`);
+            send(`event: line\ndata: ${JSON.stringify(seen.line)}\n\n`)
           } else {
-            send(`event: end\ndata: ${JSON.stringify({ ended: seen.ended })}\n\n`);
+            send(`event: end\ndata: ${JSON.stringify({ ended: seen.ended })}\n\n`)
           }
         }
       } catch (err) {
-        send(`event: trouble\ndata: ${JSON.stringify({ message: String(err) })}\n\n`);
+        send(`event: trouble\ndata: ${JSON.stringify({ message: String(err) })}\n\n`)
       } finally {
-        clearInterval(looking);
+        clearInterval(looking)
       }
 
-      open = false;
+      open = false
       try {
-        controller.close();
+        controller.close()
       } catch {
         // Already closed.
       }
     },
 
     cancel() {
-      detach.abort();
+      detach.abort()
     },
-  });
+  })
 
   return new Response(stream, {
     headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
     },
-  });
+  })
 }

@@ -26,26 +26,28 @@
  * it (0016 §4), and `steps` in the machine file is the one that matters: a step
  * that reads as declared and holds nothing is a way to weaken a gate quietly.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { isDeepStrictEqual } from "node:util";
-import { Document, isMap, parse as parseYaml, parseDocument } from "yaml";
-import { z } from "zod";
-import { RuntimeId } from "@lingtai/domain";
-import { stateDir } from "@lingtai/env";
-import { PRESETS } from "./presets.ts";
-import { LIMIT_DEFAULTS, type Recipe } from "./recipe.ts";
-import { RecipeMissingError, type ResolvedRecipe, resolveSource } from "./resolve.ts";
-import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from "./settings.ts";
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
+
+import { RuntimeId } from '@lingtai/domain'
+import { stateDir } from '@lingtai/env'
+import { Document, isMap, parse as parseYaml, parseDocument } from 'yaml'
+import { z } from 'zod'
+
+import { PRESETS } from './presets.ts'
+import { LIMIT_DEFAULTS, type Recipe } from './recipe.ts'
+import { RecipeMissingError, type ResolvedRecipe, resolveSource } from './resolve.ts'
+import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from './settings.ts'
 
 /** A project's recipe, under `stateDir()`. */
 export function recipePath(project: string, home: string = stateDir()): string {
-  return join(home, project, "recipe.yml");
+  return join(home, project, 'recipe.yml')
 }
 
 /** This machine's own settings, under `stateDir()`. */
 export function machinePath(home: string = stateDir()): string {
-  return join(home, "config.yml");
+  return join(home, 'config.yml')
 }
 
 /**
@@ -56,7 +58,7 @@ export function machinePath(home: string = stateDir()): string {
  */
 const MachineRuntime = z.strictObject({
   agent: RuntimeId.optional(),
-});
+})
 
 /**
  * `~/.lingtai/config.yml`.
@@ -73,25 +75,25 @@ export const MachineConfig = z.object({
   runtime: MachineRuntime.optional(),
   /** Per project, over the machine-wide `runtime`: a person may want a different agent for one repository. */
   projects: z.record(z.string(), z.strictObject({ runtime: MachineRuntime.optional() })).optional(),
-});
-export type MachineConfig = z.infer<typeof MachineConfig>;
+})
+export type MachineConfig = z.infer<typeof MachineConfig>
 
 /** Which runtimes are signed in on this machine. Asked only when no file names one. */
-export type SignedIn = () => Promise<readonly RuntimeId[]>;
+export type SignedIn = () => Promise<readonly RuntimeId[]>
 
 export class MachineConfigInvalidError extends Error {
-  override readonly name = "MachineConfigInvalidError";
-  readonly problems: readonly string[];
+  override readonly name = 'MachineConfigInvalidError'
+  readonly problems: readonly string[]
 
   constructor(path: string, problems: readonly string[]) {
-    super(`${path} is not valid:\n  ${problems.join("\n  ")}`);
-    this.problems = problems;
+    super(`${path} is not valid:\n  ${problems.join('\n  ')}`)
+    this.problems = problems
   }
 }
 
 /** The runtime could not be decided without guessing. */
 export class AgentUnresolvedError extends Error {
-  override readonly name = "AgentUnresolvedError";
+  override readonly name = 'AgentUnresolvedError'
 }
 
 /**
@@ -110,8 +112,8 @@ function stepsRefusal(at: string, project: string, home: string): string {
   return (
     `${at}: a pass is not configured in the machine file — it is configured in the recipe, ` +
     `${recipePath(project, home)}, under \`steps:\`. Nothing here was applied; ` +
-    "move the block there if it is meant to run"
-  );
+    'move the block there if it is meant to run'
+  )
 }
 
 /**
@@ -125,8 +127,8 @@ function assigneeRefusal(at: string, project: string, home: string): string {
   return (
     `${at}: whose tickets this project takes is not configured in the machine file — it is configured ` +
     `in the recipe, ${recipePath(project, home)}, under \`runtime.assignee\`, or \`assignee\` in \`claim\`'s ` +
-    "`queue:`. Nothing here was applied; move it there if it is meant to apply"
-  );
+    '`queue:`. Nothing here was applied; move it there if it is meant to apply'
+  )
 }
 
 /**
@@ -140,63 +142,59 @@ function limitsRefusal(at: string, project: string, home: string): string {
   return (
     `${at}: what a pass may spend is not configured in the machine file — it is configured in the recipe, ` +
     `${recipePath(project, home)}, under \`runtime.limits\`. Nothing here was applied; ` +
-    "move it there if it is meant to apply"
-  );
+    'move it there if it is meant to apply'
+  )
 }
 
 /** Whether `runtime.<key>` is written under `scope`, which is `top` or one `top.projects` entry. */
 function hasRuntimeKey(scope: Record<string, unknown>, key: string): boolean {
-  const runtime = scope["runtime"];
-  return runtime !== null && typeof runtime === "object" && !Array.isArray(runtime) && key in runtime;
+  const runtime = scope['runtime']
+  return runtime !== null && typeof runtime === 'object' && !Array.isArray(runtime) && key in runtime
 }
 
 /**
  * Parses the machine file's text. `null` is a machine with no file, which is a
  * machine that has set nothing.
  */
-export function parseMachineConfig(
-  text: string | null,
-  path: string,
-  project: string,
-  home: string,
-): MachineConfig {
-  if (text === null) return {};
-  let raw: unknown;
+export function parseMachineConfig(text: string | null, path: string, project: string, home: string): MachineConfig {
+  if (text === null) return {}
+  let raw: unknown
   try {
-    raw = parseYaml(text);
+    raw = parseYaml(text)
   } catch (err) {
-    throw new MachineConfigInvalidError(path, [`could not be parsed as YAML: ${(err as Error).message}`]);
+    throw new MachineConfigInvalidError(path, [`could not be parsed as YAML: ${(err as Error).message}`])
   }
-  if (raw === null || raw === undefined) return {};
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new MachineConfigInvalidError(path, ["(root): expected a mapping"]);
+  if (raw === null || raw === undefined) return {}
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new MachineConfigInvalidError(path, ['(root): expected a mapping'])
   }
 
-  const problems: string[] = [];
-  const top = raw as Record<string, unknown>;
-  if ("steps" in top) problems.push(stepsRefusal("steps", project, home));
-  if (hasRuntimeKey(top, "assignee")) problems.push(assigneeRefusal("runtime.assignee", project, home));
-  if (hasRuntimeKey(top, "limits")) problems.push(limitsRefusal("runtime.limits", project, home));
-  const projects = top["projects"];
-  if (projects !== null && typeof projects === "object" && !Array.isArray(projects)) {
+  const problems: string[] = []
+  const top = raw as Record<string, unknown>
+  if ('steps' in top) problems.push(stepsRefusal('steps', project, home))
+  if (hasRuntimeKey(top, 'assignee')) problems.push(assigneeRefusal('runtime.assignee', project, home))
+  if (hasRuntimeKey(top, 'limits')) problems.push(limitsRefusal('runtime.limits', project, home))
+  const projects = top['projects']
+  if (projects !== null && typeof projects === 'object' && !Array.isArray(projects)) {
     for (const [name, scope] of Object.entries(projects as Record<string, unknown>)) {
-      if (scope === null || typeof scope !== "object") continue;
-      const scoped = scope as Record<string, unknown>;
-      if ("steps" in scoped) problems.push(stepsRefusal(`projects.${name}.steps`, name, home));
-      if (hasRuntimeKey(scoped, "assignee")) problems.push(assigneeRefusal(`projects.${name}.runtime.assignee`, name, home));
-      if (hasRuntimeKey(scoped, "limits")) problems.push(limitsRefusal(`projects.${name}.runtime.limits`, name, home));
+      if (scope === null || typeof scope !== 'object') continue
+      const scoped = scope as Record<string, unknown>
+      if ('steps' in scoped) problems.push(stepsRefusal(`projects.${name}.steps`, name, home))
+      if (hasRuntimeKey(scoped, 'assignee'))
+        problems.push(assigneeRefusal(`projects.${name}.runtime.assignee`, name, home))
+      if (hasRuntimeKey(scoped, 'limits')) problems.push(limitsRefusal(`projects.${name}.runtime.limits`, name, home))
     }
   }
-  if (problems.length > 0) throw new MachineConfigInvalidError(path, problems);
+  if (problems.length > 0) throw new MachineConfigInvalidError(path, problems)
 
-  const parsed = MachineConfig.safeParse(raw);
+  const parsed = MachineConfig.safeParse(raw)
   if (!parsed.success) {
     throw new MachineConfigInvalidError(
       path,
-      parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
-    );
+      parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
+    )
   }
-  return parsed.data;
+  return parsed.data
 }
 
 /**
@@ -217,20 +215,20 @@ export async function resolveAgent(
   signedIn: SignedIn,
   path: string,
 ): Promise<{ agent: RuntimeId; from: string }> {
-  if (named) return named;
-  const detected = [...new Set(await signedIn())];
-  if (detected.length === 1) return { agent: detected[0]!, from: "detected — the only runtime signed in" };
+  if (named) return named
+  const detected = [...new Set(await signedIn())]
+  if (detected.length === 1) return { agent: detected[0]!, from: 'detected — the only runtime signed in' }
   if (detected.length > 1) {
     throw new AgentUnresolvedError(
-      `${detected.join(" and ")} are all signed in on this machine, and ${path} names no runtime.agent — ` +
-        `which one should run? Write \`runtime:\\n  agent: <${detected.join("|")}>\` in ${path}; ` +
-        "Lingtai does not pick one silently",
-    );
+      `${detected.join(' and ')} are all signed in on this machine, and ${path} names no runtime.agent — ` +
+        `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path}; ` +
+        'Lingtai does not pick one silently',
+    )
   }
   throw new AgentUnresolvedError(
     `no agent runtime is signed in on this machine, and ${path} names no runtime.agent — ` +
       "`lingtai doctor`'s `runtime: signed in` says what is missing",
-  );
+  )
 }
 
 /**
@@ -240,7 +238,7 @@ export async function resolveAgent(
  * whole entry, and the board's recipe page prints the two halves in two columns
  * (#218). A separator spelled out in both places is one nobody can change.
  */
-export const PROVENANCE_ARROW = " ← ";
+export const PROVENANCE_ARROW = ' ← '
 
 /**
  * The `where` half of a provenance entry — `value ← where` — or null when the
@@ -251,9 +249,9 @@ export const PROVENANCE_ARROW = " ← ";
  * to be its origin.
  */
 export function provenanceSource(entry: string | undefined): string | null {
-  if (entry === undefined) return null;
-  const at = entry.indexOf(PROVENANCE_ARROW);
-  return at === -1 ? null : entry.slice(at + PROVENANCE_ARROW.length);
+  if (entry === undefined) return null
+  const at = entry.indexOf(PROVENANCE_ARROW)
+  return at === -1 ? null : entry.slice(at + PROVENANCE_ARROW.length)
 }
 
 /**
@@ -267,13 +265,13 @@ export function provenanceSource(entry: string | undefined): string | null {
  * intermediate segments have always read it this way; only the leaf did not.
  */
 function carries(value: unknown, path: string): boolean {
-  let at = value;
-  for (const segment of path.split(".")) {
-    if (at === null || typeof at !== "object" || Array.isArray(at)) return false;
-    if (!(segment in (at as Record<string, unknown>))) return false;
-    at = (at as Record<string, unknown>)[segment];
+  let at = value
+  for (const segment of path.split('.')) {
+    if (at === null || typeof at !== 'object' || Array.isArray(at)) return false
+    if (!(segment in (at as Record<string, unknown>))) return false
+    at = (at as Record<string, unknown>)[segment]
   }
-  return at !== undefined && at !== null;
+  return at !== undefined && at !== null
 }
 
 /**
@@ -295,44 +293,40 @@ function carries(value: unknown, path: string): boolean {
  * Hence the section — the first two segments — settles *who*, and only then
  * does the leaf inside it settle file-or-default.
  */
-function originIn(
-  wrote: unknown,
-  preset: string | null,
-  path: string,
-): (key: string) => string {
+function originIn(wrote: unknown, preset: string | null, path: string): (key: string) => string {
   return (key) => {
-    const section = key.split(".").slice(0, 2).join(".");
+    const section = key.split('.').slice(0, 2).join('.')
     const carrier = carries(wrote, section)
       ? { at: path, held: wrote }
       : preset !== null && carries(PRESETS[preset], section)
         ? { at: `preset ${preset}`, held: PRESETS[preset] }
-        : null;
-    if (carrier === null) return "default";
-    return section === key || carries(carrier.held, key) ? carrier.at : "default";
-  };
+        : null
+    if (carrier === null) return 'default'
+    return section === key || carries(carrier.held, key) ? carrier.at : 'default'
+  }
 }
 
 export interface LocalRecipeOptions {
   /** `stateDir()` unless a test says otherwise. */
-  home?: string;
+  home?: string
   /** Asked only when neither the project's nor the machine's section names an agent. */
-  signedIn: SignedIn;
+  signedIn: SignedIn
   /**
    * The branch this project was registered against, which becomes `ref`. The
    * file has no branch of its own, so the recipe's `repo.base` stands in when
    * nothing was recorded — and `baseDivergence` still compares the two.
    */
-  base?: string | null;
+  base?: string | null
   /** Reads a file; null when it is not there. */
-  read?: (path: string) => Promise<string | null>;
+  read?: (path: string) => Promise<string | null>
 }
 
 async function readIfThere(path: string): Promise<string | null> {
   try {
-    return await readFile(path, "utf8");
+    return await readFile(path, 'utf8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
   }
 }
 
@@ -342,39 +336,36 @@ async function readIfThere(path: string): Promise<string | null> {
  * Throws, like `resolveRecipe`, for the same reason: every caller's correct
  * response to an unreadable recipe is to stop.
  */
-export async function resolveLocalRecipe(
-  project: string,
-  options: LocalRecipeOptions,
-): Promise<ResolvedRecipe> {
-  const home = options.home ?? stateDir();
-  const read = options.read ?? readIfThere;
-  const path = recipePath(project, home);
-  const machineFile = machinePath(home);
+export async function resolveLocalRecipe(project: string, options: LocalRecipeOptions): Promise<ResolvedRecipe> {
+  const home = options.home ?? stateDir()
+  const read = options.read ?? readIfThere
+  const path = recipePath(project, home)
+  const machineFile = machinePath(home)
 
-  const source = await read(path);
+  const source = await read(path)
   if (source === null) {
     throw new RecipeMissingError(
       options.base ?? path,
       `no recipe at ${path}. The recipe is yours and lives on this machine (0046 §3) — ` +
-        "nothing is read from the repository, and nothing needs committing to it",
-    );
+        'nothing is read from the repository, and nothing needs committing to it',
+    )
   }
 
-  const machine = parseMachineConfig(await read(machineFile), machineFile, project, home);
-  const scoped = machine.projects?.[project]?.runtime;
-  const shared = machine.runtime;
-  const scopedAt = `${machineFile} (projects.${project})`;
+  const machine = parseMachineConfig(await read(machineFile), machineFile, project, home)
+  const scoped = machine.projects?.[project]?.runtime
+  const shared = machine.runtime
+  const scopedAt = `${machineFile} (projects.${project})`
 
   const named = scoped?.agent
     ? { agent: scoped.agent, from: scopedAt }
     : shared?.agent
       ? { agent: shared.agent, from: machineFile }
-      : null;
-  const agent = await resolveAgent(named, options.signedIn, machineFile);
+      : null
+  const agent = await resolveAgent(named, options.signedIn, machineFile)
 
   const provenance: Record<string, string> = {
-    "runtime.agent": `${agent.agent}${PROVENANCE_ARROW}${agent.from}`,
-  };
+    'runtime.agent': `${agent.agent}${PROVENANCE_ARROW}${agent.from}`,
+  }
 
   // What the *file itself* carries, kept before anything is merged into it.
   // This is the only place the difference survives: `recipe.source.exclude`
@@ -384,74 +375,73 @@ export async function resolveLocalRecipe(
   //
   // A copy, and not the object: the callback below sets `raw.runtime.agent`
   // to the machine's choice, and the preset merges underneath afterwards.
-  let wrote: unknown = {};
+  let wrote: unknown = {}
 
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
-    wrote = structuredClone(raw);
-    const refused: string[] = [];
-    const runtime = raw["runtime"];
+    wrote = structuredClone(raw)
+    const refused: string[] = []
+    const runtime = raw['runtime']
     const own =
-      runtime !== null && typeof runtime === "object" && !Array.isArray(runtime)
+      runtime !== null && typeof runtime === 'object' && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
-        : {};
-    if ("agent" in own) {
+        : {}
+    if ('agent' in own) {
       refused.push(
         `runtime.agent: moved to this machine (0046 §3) — write it in ${machineFile}, ` +
           `under \`runtime:\` or \`projects.${project}.runtime:\`. Nothing here was applied`,
-      );
+      )
     }
-    if (refused.length > 0) return refused;
-    raw["runtime"] = { ...own, agent: agent.agent };
-    return [];
-  });
+    if (refused.length > 0) return refused
+    raw['runtime'] = { ...own, agent: agent.agent }
+    return []
+  })
 
   // What stays the repository's facts, from the recipe file — said with its
   // value, so the doctor prints the resolved recipe rather than a list of names.
-  const { recipe } = resolved;
-  const from = originIn(wrote, resolved.preset, path);
+  const { recipe } = resolved
+  const from = originIn(wrote, resolved.preset, path)
 
   // `limits` is the recipe's own now (`#375`): read off the resolved recipe
   // through `ceilingOf`, named by `originIn` exactly as every other recipe
   // fact is, kept immediately after `runtime.agent` so a reading's row order
   // does not move.
-  const ceiling = ceilingOf(recipe);
+  const ceiling = ceilingOf(recipe)
   for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
-    provenance[`runtime.limits.${key}`] = `${ceiling[key]}${PROVENANCE_ARROW}${from(`runtime.limits.${key}`)}`;
+    provenance[`runtime.limits.${key}`] = `${ceiling[key]}${PROVENANCE_ARROW}${from(`runtime.limits.${key}`)}`
   }
   // `usd` has no entry in `LIMIT_DEFAULTS` — it has no default to fall back to
   // (recipe.ts), so the loop above never sees it as a key. Read explicitly, and
   // absent reads as "(none)", never as a vanished key.
-  const limitsUsd = ceiling.usd;
-  provenance["runtime.limits.usd"] =
-    `${limitsUsd ?? "(none)"}${PROVENANCE_ARROW}${limitsUsd === undefined ? "default" : from("runtime.limits.usd")}`;
+  const limitsUsd = ceiling.usd
+  provenance['runtime.limits.usd'] =
+    `${limitsUsd ?? '(none)'}${PROVENANCE_ARROW}${limitsUsd === undefined ? 'default' : from('runtime.limits.usd')}`
 
-  const list = (items: readonly string[]) => (items.length > 0 ? items.join(", ") : "(none)");
+  const list = (items: readonly string[]) => (items.length > 0 ? items.join(', ') : '(none)')
   const recipeValues: Record<string, string> = {
-    "repo.base": baseOf(recipe),
-    "source.kinds": kindsOf(recipe).join(" > "),
-    "source.exclude": list(excludeOf(recipe)),
+    'repo.base': baseOf(recipe),
+    'source.kinds': kindsOf(recipe).join(' > '),
+    'source.exclude': list(excludeOf(recipe)),
     // Said out loud by a reading, and not carried here until now — so that
     // every row of one has a source beside it (#218).
-    "source.backoff": backoffOf(recipe),
-    "env.required": list(recipe.env.required),
+    'source.backoff': backoffOf(recipe),
+    'env.required': list(recipe.env.required),
     steps: Object.entries(recipe.steps)
       .map(([step, actions]) => `${step} ${actions.length}`)
-      .join(", "),
-  };
+      .join(', '),
+  }
   // Per field, as `runtime.limits` is: a recipe that sets `attempts` and
   // nothing else must not put this file's name against the three numbers it
   // does not contain.
   for (const [key, value] of Object.entries(recipe.runtime.budget)) {
-    recipeValues[`runtime.budget.${key}`] = String(value);
+    recipeValues[`runtime.budget.${key}`] = String(value)
   }
   // Beside `runtime.budget`: a discussion's own agent and spend, not asked of
   // the file until #243 gave `discuss:` a place to be written (0061 §6).
-  recipeValues["discuss.agent"] = recipe.discuss.agent;
-  recipeValues["discuss.model"] = recipe.discuss.model ?? "(none)";
-  recipeValues["discuss.limits.turns"] = String(recipe.discuss.limits.turns);
-  recipeValues["discuss.limits.wall"] = recipe.discuss.limits.wall;
-  for (const [key, value] of Object.entries(recipeValues))
-    provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`;
+  recipeValues['discuss.agent'] = recipe.discuss.agent
+  recipeValues['discuss.model'] = recipe.discuss.model ?? '(none)'
+  recipeValues['discuss.limits.turns'] = String(recipe.discuss.limits.turns)
+  recipeValues['discuss.limits.wall'] = recipe.discuss.limits.wall
+  for (const [key, value] of Object.entries(recipeValues)) provenance[key] = `${value}${PROVENANCE_ARROW}${from(key)}`
 
   // `assignee` is the recipe's now (`#373`), under either spelling — read
   // only once the recipe has resolved, because which spelling it used is a
@@ -459,29 +449,31 @@ export async function resolveLocalRecipe(
   // that names it is the source for both halves, whichever one it wrote;
   // otherwise each half asks `runtime.assignee.<key>` on its own, so a file
   // that wrote only `login` still reads `take: both ← default`.
-  const rule = assigneeOf(recipe);
-  const atStep = recipe.steps.claim.some((action) => "queue" in action) ? from("steps.claim") : null;
-  provenance["runtime.assignee.take"] = `${rule?.take ?? "both"}${PROVENANCE_ARROW}${atStep ?? from("runtime.assignee.take")}`;
-  provenance["runtime.assignee.login"] = `${rule?.login ?? "(none)"}${PROVENANCE_ARROW}${atStep ?? from("runtime.assignee.login")}`;
+  const rule = assigneeOf(recipe)
+  const atStep = recipe.steps.claim.some((action) => 'queue' in action) ? from('steps.claim') : null
+  provenance['runtime.assignee.take'] =
+    `${rule?.take ?? 'both'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
+  provenance['runtime.assignee.login'] =
+    `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.login')}`
 
-  return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance };
+  return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance }
 }
 
 /** The two files a recipe built elsewhere becomes on this machine, or why it cannot. */
 export type MachineFiles =
   | {
-      ok: true;
+      ok: true
       /**
        * `recipePath(project)`'s text: the recipe without `runtime.agent`,
        * which is carried to `machine`. `runtime.assignee` and
        * `runtime.limits` are left exactly as the recipe wrote them
        * (`#373`, `#375`) — neither is one this file moves.
        */
-      recipe: string;
+      recipe: string
       /** `machinePath()`'s new text, or null when it already says this and needs no write. */
-      machine: string | null;
+      machine: string | null
     }
-  | { ok: false; refusal: string };
+  | { ok: false; refusal: string }
 
 /**
  * A whole recipe — the wizard's, with its agent in it — split into the files
@@ -499,58 +491,58 @@ export type MachineFiles =
  */
 export function machineFiles(input: {
   /** The recipe as emitted, comments and all. */
-  file: string;
-  recipe: Recipe;
-  project: string;
+  file: string
+  recipe: Recipe
+  project: string
   /** The machine file's current text, or null when there is none. */
-  machine: string | null;
-  home?: string;
+  machine: string | null
+  home?: string
   /**
    * Set the project's section even when it already says something else. For
    * an edit a person made to that very section on a page showing its current
    * value — never for a first onboarding, which must not overwrite a choice.
    */
-  replace?: boolean;
+  replace?: boolean
 }): MachineFiles {
-  const home = input.home ?? stateDir();
-  const doc = parseDocument(input.file);
+  const home = input.home ?? stateDir()
+  const doc = parseDocument(input.file)
   const toJSON = (node: unknown) =>
-    node !== null && typeof node === "object" && "toJSON" in node ? (node as { toJSON: () => unknown }).toJSON() : node;
+    node !== null && typeof node === 'object' && 'toJSON' in node ? (node as { toJSON: () => unknown }).toJSON() : node
   // A file already without it — the machine's own, being edited — has no `runtime` to delete from.
-  if (doc.hasIn(["runtime", "agent"])) doc.deleteIn(["runtime", "agent"]);
-  const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  if (doc.hasIn(['runtime', 'agent'])) doc.deleteIn(['runtime', 'agent'])
+  const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false })
 
-  const at = ["projects", input.project, "runtime"];
-  const path = machinePath(home);
-  const choose = () => ({ agent: input.recipe.runtime.agent });
+  const at = ['projects', input.project, 'runtime']
+  const path = machinePath(home)
+  const choose = () => ({ agent: input.recipe.runtime.agent })
 
-  if (input.machine === null || input.machine.trim() === "") {
-    const created = new Document({ projects: { [input.project]: { runtime: choose() } } });
-    return { ok: true, recipe, machine: created.toString() };
+  if (input.machine === null || input.machine.trim() === '') {
+    const created = new Document({ projects: { [input.project]: { runtime: choose() } } })
+    return { ok: true, recipe, machine: created.toString() }
   }
 
-  const machine = parseDocument(input.machine);
+  const machine = parseDocument(input.machine)
   if (machine.errors.length > 0 || !isMap(machine.contents)) {
     return {
       ok: false,
       refusal: `${path} does not parse as a mapping, so ${input.project}'s agent cannot be added to it — fix it and press this again`,
-    };
+    }
   }
-  const chosen = choose();
+  const chosen = choose()
   if (machine.hasIn(at)) {
-    const json = toJSON(machine.getIn(at));
-    if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null };
+    const json = toJSON(machine.getIn(at))
+    if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null }
     if (input.replace) {
-      machine.setIn(at, chosen);
-      return { ok: true, recipe, machine: machine.toString() };
+      machine.setIn(at, chosen)
+      return { ok: true, recipe, machine: machine.toString() }
     }
     return {
       ok: false,
       refusal:
         `${path} already sets projects.${input.project}.runtime to ${JSON.stringify(json)}, and this page chose ` +
         `${JSON.stringify(chosen)}. Nothing was written — edit that section, or remove it and press this again`,
-    };
+    }
   }
-  machine.setIn(at, chosen);
-  return { ok: true, recipe, machine: machine.toString() };
+  machine.setIn(at, chosen)
+  return { ok: true, recipe, machine: machine.toString() }
 }

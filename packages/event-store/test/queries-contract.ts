@@ -21,29 +21,30 @@
  * so every case here seeds both an offender and a near-miss and checks that the
  * offender comes back and the near-miss does not.
  */
-import { STEPS, parsePayload, workItemStream } from "@lingtai/domain";
-import { describe, expect, it } from "vitest";
-import type { EventStore } from "../src/event-store.ts";
-import type { LogQueries } from "../src/queries.ts";
+import { STEPS, parsePayload, workItemStream } from '@lingtai/domain'
+import { describe, expect, it } from 'vitest'
+
+import type { EventStore } from '../src/event-store.ts'
+import type { LogQueries } from '../src/queries.ts'
 
 /** What a caller of this contract supplies: one log, read two ways. */
 export interface LogQueriesHarness {
   /** Where the events go in. */
-  store: EventStore;
+  store: EventStore
   /** The same log, asked. */
-  queries: LogQueries;
+  queries: LogQueries
   /** A project name nothing else in the test database is using. */
-  project: string;
+  project: string
   /**
    * Told about every stream this contract creates, so a shared database can be
    * cleaned up by name afterwards. Nothing to do where the log is a file the
    * test throws away.
    */
-  note?: (streamId: string) => void;
+  note?: (streamId: string) => void
 }
 
-const SHA = "a".repeat(40);
-const MERGE = "b".repeat(40);
+const SHA = 'a'.repeat(40)
+const MERGE = 'b'.repeat(40)
 
 /**
  * All ten steps, with actions only where a case asks for them.
@@ -52,8 +53,7 @@ const MERGE = "b".repeat(40);
  * so a fixture with its own copy of the names would be a schema failure the
  * day the set changes rather than a test that moved with it.
  */
-const plan = (steps: Record<string, string[]>) =>
-  STEPS.map((step) => ({ step: step, actions: steps[step] ?? [] }));
+const plan = (steps: Record<string, string[]>) => STEPS.map((step) => ({ step: step, actions: steps[step] ?? [] }))
 
 export function describeLogQueriesContract(
   name: string,
@@ -63,112 +63,108 @@ export function describeLogQueriesContract(
    * A run for `workItemId` that planned `points`. Written as events, because
    * that is what the questions read.
    */
-  async function run(
-    h: LogQueriesHarness,
-    workItemId: string,
-    steps: Record<string, string[]>,
-  ): Promise<string> {
-    const runId = `run-${h.project}-${crypto.randomUUID().slice(0, 8)}`;
-    h.note?.(runId);
+  async function run(h: LogQueriesHarness, workItemId: string, steps: Record<string, string[]>): Promise<string> {
+    const runId = `run-${h.project}-${crypto.randomUUID().slice(0, 8)}`
+    h.note?.(runId)
     await h.store.append(runId, 0, [
       {
-        type: "RunStarted",
-        actor: "conductor",
-        data: parsePayload("RunStarted", {
+        type: 'RunStarted',
+        actor: 'conductor',
+        data: parsePayload('RunStarted', {
           workItemId,
-          runtime: "claude-code",
-          model: "",
-          promptVersion: "ticket@1",
+          runtime: 'claude-code',
+          model: '',
+          promptVersion: 'ticket@1',
           baseSha: SHA,
-          configHash: "seeded",
-          worktree: "/tmp/none",
+          configHash: 'seeded',
+          worktree: '/tmp/none',
           invocation: null,
         }),
       },
       {
-        type: "StepsResolved",
-        actor: "conductor",
-        data: parsePayload("StepsResolved", { runId, configHash: "seeded", steps: plan(steps) }),
+        type: 'StepsResolved',
+        actor: 'conductor',
+        data: parsePayload('StepsResolved', { runId, configHash: 'seeded', steps: plan(steps) }),
       },
-    ]);
-    return runId;
+    ])
+    return runId
   }
 
   const landed = () => ({
-    type: "WorkItemLanded",
-    actor: "conductor",
-    data: parsePayload("WorkItemLanded", { mergeCommit: MERGE, base: "main" }),
-  });
+    type: 'WorkItemLanded',
+    actor: 'conductor',
+    data: parsePayload('WorkItemLanded', { mergeCommit: MERGE, base: 'main' }),
+  })
 
   const closed = () => ({
-    type: "WorkItemClosed",
-    actor: "human:test",
-    data: parsePayload("WorkItemClosed", { by: "human:test", reason: "done elsewhere" }),
-  });
+    type: 'WorkItemClosed',
+    actor: 'human:test',
+    data: parsePayload('WorkItemClosed', { by: 'human:test', reason: 'done elsewhere' }),
+  })
 
-  const resolved = (outcome: "landed" | "closed" | "blocked") => ({
-    type: "EndActionsResolved",
-    actor: "conductor",
-    data: parsePayload("EndActionsResolved", { outcome, actions: [{ name: "close", close: true }] }),
-  });
+  const resolved = (outcome: 'landed' | 'closed' | 'blocked') => ({
+    type: 'EndActionsResolved',
+    actor: 'conductor',
+    data: parsePayload('EndActionsResolved', { outcome, actions: [{ name: 'close', close: true }] }),
+  })
 
   describe(`${name}: the log queries contract`, () => {
     // ------------------------------------------------------ projectStreams ----
 
-    it("lists the streams under a prefix, in id order, once each", async () => {
-      const h = await make();
-      const one = `prj-${h.project}-one`;
-      const two = `prj-${h.project}-two`;
-      h.note?.(one);
-      h.note?.(two);
+    it('lists the streams under a prefix, in id order, once each', async () => {
+      const h = await make()
+      const one = `prj-${h.project}-one`
+      const two = `prj-${h.project}-two`
+      h.note?.(one)
+      h.note?.(two)
       const configured = (project: string) => ({
-        type: "ProjectConfigured" as const,
-        actor: "conductor",
-        data: parsePayload("ProjectConfigured", {
+        type: 'ProjectConfigured' as const,
+        actor: 'conductor',
+        data: parsePayload('ProjectConfigured', {
           project,
-          owner: "steven-zhc",
-          base: "main",
-          configHash: "h",
-          fromSha: "s",
+          owner: 'steven-zhc',
+          base: 'main',
+          configHash: 'h',
+          fromSha: 's',
         }),
-      });
+      })
       // Two events on `two`, so a query that forgot `distinct` says so.
-      await h.store.append(two, 0, [configured(`${h.project}-two`), configured(`${h.project}-two`)]);
-      await h.store.append(one, 0, [configured(`${h.project}-one`)]);
+      await h.store.append(two, 0, [configured(`${h.project}-two`), configured(`${h.project}-two`)])
+      await h.store.append(one, 0, [configured(`${h.project}-one`)])
 
-      const found = await h.queries.projectStreams(`prj-${h.project}-`);
+      const found = await h.queries.projectStreams(`prj-${h.project}-`)
 
-      expect(found).toEqual([one, two]);
-    });
+      expect(found).toEqual([one, two])
+    })
 
-    it("answers nothing, rather than everything, for a prefix nothing matches", async () => {
-      const h = await make();
-      expect(await h.queries.projectStreams(`prj-${h.project}-absent-`)).toEqual([]);
-    });
+    it('answers nothing, rather than everything, for a prefix nothing matches', async () => {
+      const h = await make()
+      expect(await h.queries.projectStreams(`prj-${h.project}-absent-`)).toEqual([])
+    })
 
     // ------------------------------------------------ endedWithoutEndActions ----
 
-    it("finds a landed item whose run planned end actions and resolved none", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 301);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
-      await h.store.append(item, 0, [landed()]);
+    it('finds a landed item whose run planned end actions and resolved none', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 301)
+      h.note?.(item)
+      await run(h, item, { end: ['close the ticket'] })
+      await h.store.append(item, 0, [landed()])
 
-      const found = await h.queries.endedWithoutEndActions();
+      const found = await h.queries.endedWithoutEndActions()
 
-      expect(found).toContainEqual({ streamId: item, outcome: "landed" });
-    });
+      expect(found).toContainEqual({ streamId: item, outcome: 'landed' })
+    })
 
-    it("says nothing about an item that resolved the point for the outcome it reached", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 302);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
-      await h.store.append(item, 0, [landed(), resolved("landed")]);
+    it('says nothing about an item that resolved the point for the outcome it reached', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 302)
+      h.note?.(item)
+      await run(h, item, { end: ['close the ticket'] })
+      await h.store.append(item, 0, [landed(), resolved('landed')])
 
-      expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item);
-    });
+      expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item)
+    })
 
     /**
      * The widening 0044 and the resolver's own per-outcome dedupe make
@@ -176,68 +172,68 @@ export function describeLogQueriesContract(
      * and it is not this one. An implementation that asked only *whether* an
      * `EndActionsResolved` exists passes every other case here and misses this.
      */
-    it("is not satisfied by a resolution for a different outcome", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 303);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
-      await h.store.append(item, 0, [resolved("blocked"), landed()]);
+    it('is not satisfied by a resolution for a different outcome', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 303)
+      h.note?.(item)
+      await run(h, item, { end: ['close the ticket'] })
+      await h.store.append(item, 0, [resolved('blocked'), landed()])
 
       expect(await h.queries.endedWithoutEndActions()).toContainEqual({
         streamId: item,
-        outcome: "landed",
-      });
-    });
+        outcome: 'landed',
+      })
+    })
 
     /** A close is a terminal outcome too (0044), and it reaches `end` as one. */
-    it("reports a closed item as closed, not as landed", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 304);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
-      await h.store.append(item, 0, [closed()]);
+    it('reports a closed item as closed, not as landed', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 304)
+      h.note?.(item)
+      await run(h, item, { end: ['close the ticket'] })
+      await h.store.append(item, 0, [closed()])
 
       expect(await h.queries.endedWithoutEndActions()).toContainEqual({
         streamId: item,
-        outcome: "closed",
-      });
-    });
+        outcome: 'closed',
+      })
+    })
 
     /** The last ending, not the first: an item that landed and was then closed ended closed. */
-    it("takes the ending the item actually reached last", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 305);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
-      await h.store.append(item, 0, [landed(), closed()]);
+    it('takes the ending the item actually reached last', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 305)
+      h.note?.(item)
+      await run(h, item, { end: ['close the ticket'] })
+      await h.store.append(item, 0, [landed(), closed()])
 
-      const found = (await h.queries.endedWithoutEndActions()).filter((f) => f.streamId === item);
+      const found = (await h.queries.endedWithoutEndActions()).filter((f) => f.streamId === item)
 
-      expect(found).toEqual([{ streamId: item, outcome: "closed" }]);
-    });
+      expect(found).toEqual([{ streamId: item, outcome: 'closed' }])
+    })
 
     /**
      * The distinction the whole model rests on: *nothing was configured* and
      * *something was configured and did not run* must not look the same.
      */
-    it("says nothing about an item whose run planned nothing at end", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 306);
-      h.note?.(item);
-      await run(h, item, { proposed: ["build"] });
-      await h.store.append(item, 0, [landed()]);
+    it('says nothing about an item whose run planned nothing at end', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 306)
+      h.note?.(item)
+      await run(h, item, { proposed: ['build'] })
+      await h.store.append(item, 0, [landed()])
 
-      expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item);
-    });
+      expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item)
+    })
 
-    it("says nothing about an item that has not ended", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 307);
-      h.note?.(item);
-      await run(h, item, { end: ["close the ticket"] });
+    it('says nothing about an item that has not ended', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 307)
+      h.note?.(item)
+      await run(h, item, { end: ['close the ticket'] })
 
-      expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item);
-    });
+      expect((await h.queries.endedWithoutEndActions()).map((f) => f.streamId)).not.toContain(item)
+    })
 
     // ---------------------------------------------------------- typeCounts ----
 
@@ -253,171 +249,167 @@ export function describeLogQueriesContract(
      * store by accident, and red on the Postgres run whenever some other test
      * had left the pair in the shared database.
      */
-    it("counts the rows of each type it holds, in byte order of the type", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 501);
-      h.note?.(item);
+    it('counts the rows of each type it holds, in byte order of the type', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 501)
+      h.note?.(item)
       // Failed then updated, on one change: converged, so `unconvergedUpdates`
       // below goes on saying nothing about this item.
-      const update = (type: "IssueUpdated" | "IssueUpdateFailed") => ({
+      const update = (type: 'IssueUpdated' | 'IssueUpdateFailed') => ({
         type,
-        actor: "conductor",
+        actor: 'conductor',
         data: parsePayload(
           type,
-          type === "IssueUpdated"
-            ? { project: h.project, issue: "501", change: "labels", detail: "set" }
-            : { project: h.project, issue: "501", change: "labels", error: "403" },
+          type === 'IssueUpdated'
+            ? { project: h.project, issue: '501', change: 'labels', detail: 'set' }
+            : { project: h.project, issue: '501', change: 'labels', error: '403' },
         ),
-      });
+      })
       await h.store.append(item, 0, [
         landed(),
-        resolved("landed"),
-        resolved("closed"),
-        update("IssueUpdateFailed"),
-        update("IssueUpdated"),
-      ]);
+        resolved('landed'),
+        resolved('closed'),
+        update('IssueUpdateFailed'),
+        update('IssueUpdated'),
+      ])
 
-      const counts = await h.queries.typeCounts();
-      const byType = new Map(counts.map((c) => [c.type, c.rows]));
+      const counts = await h.queries.typeCounts()
+      const byType = new Map(counts.map((c) => [c.type, c.rows]))
 
       // A shared database holds other tests' rows too, so the assertion is on
       // this log holding *at least* what was just put in it — and on the shape,
       // which is what a caller reads.
-      expect(byType.get("WorkItemLanded") ?? 0).toBeGreaterThanOrEqual(1);
-      expect(byType.get("EndActionsResolved") ?? 0).toBeGreaterThanOrEqual(2);
-      expect(counts.map((c) => c.type)).toEqual([...counts.map((c) => c.type)].sort());
+      expect(byType.get('WorkItemLanded') ?? 0).toBeGreaterThanOrEqual(1)
+      expect(byType.get('EndActionsResolved') ?? 0).toBeGreaterThanOrEqual(2)
+      expect(counts.map((c) => c.type)).toEqual([...counts.map((c) => c.type)].sort())
       // And the pair, named: one order for both stores, or this contract means
       // two different things by the same word.
-      const names = counts.map((c) => c.type);
-      expect(names.indexOf("IssueUpdateFailed")).toBeGreaterThanOrEqual(0);
-      expect(names.indexOf("IssueUpdateFailed")).toBeLessThan(names.indexOf("IssueUpdated"));
-      for (const c of counts) expect(Number.isInteger(c.rows)).toBe(true);
-    });
+      const names = counts.map((c) => c.type)
+      expect(names.indexOf('IssueUpdateFailed')).toBeGreaterThanOrEqual(0)
+      expect(names.indexOf('IssueUpdateFailed')).toBeLessThan(names.indexOf('IssueUpdated'))
+      for (const c of counts) expect(Number.isInteger(c.rows)).toBe(true)
+    })
 
     // ------------------------------------------------- unconvergedUpdates ----
 
-    const said = (type: "IssueUpdated" | "IssueUpdateFailed", project: string, issue: string, change: string) => ({
+    const said = (type: 'IssueUpdated' | 'IssueUpdateFailed', project: string, issue: string, change: string) => ({
       type,
-      actor: "conductor",
+      actor: 'conductor',
       data: parsePayload(
         type,
-        type === "IssueUpdated"
-          ? { project, issue, change, detail: "set" }
-          : { project, issue, change, error: "403" },
+        type === 'IssueUpdated' ? { project, issue, change, detail: 'set' } : { project, issue, change, error: '403' },
       ),
-    });
+    })
 
-    it("finds an issue whose last word about a change was a failure", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 502);
-      h.note?.(item);
-      await h.store.append(item, 0, [said("IssueUpdateFailed", h.project, "502", "labels")]);
+    it('finds an issue whose last word about a change was a failure', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 502)
+      h.note?.(item)
+      await h.store.append(item, 0, [said('IssueUpdateFailed', h.project, '502', 'labels')])
 
       expect(await h.queries.unconvergedUpdates()).toContainEqual({
         project: h.project,
-        issue: "502",
-        change: "labels",
-      });
-    });
+        issue: '502',
+        change: 'labels',
+      })
+    })
 
     /** Only the last one is the state of the world: the log keeps both. */
-    it("says nothing about a failure a later attempt fixed", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 503);
-      h.note?.(item);
+    it('says nothing about a failure a later attempt fixed', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 503)
+      h.note?.(item)
       await h.store.append(item, 0, [
-        said("IssueUpdateFailed", h.project, "503", "labels"),
-        said("IssueUpdated", h.project, "503", "labels"),
-      ]);
+        said('IssueUpdateFailed', h.project, '503', 'labels'),
+        said('IssueUpdated', h.project, '503', 'labels'),
+      ])
 
       expect(await h.queries.unconvergedUpdates()).not.toContainEqual({
         project: h.project,
-        issue: "503",
-        change: "labels",
-      });
-    });
+        issue: '503',
+        change: 'labels',
+      })
+    })
 
     /**
      * The near-miss that a join on the issue alone would swallow: the same
      * issue converged on one change and not on another.
      */
-    it("is per change, not per issue", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 504);
-      h.note?.(item);
+    it('is per change, not per issue', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 504)
+      h.note?.(item)
       await h.store.append(item, 0, [
-        said("IssueUpdateFailed", h.project, "504", "comment"),
-        said("IssueUpdated", h.project, "504", "labels"),
-      ]);
+        said('IssueUpdateFailed', h.project, '504', 'comment'),
+        said('IssueUpdated', h.project, '504', 'labels'),
+      ])
 
-      const found = (await h.queries.unconvergedUpdates()).filter((u) => u.issue === "504");
-      expect(found).toEqual([{ project: h.project, issue: "504", change: "comment" }]);
-    });
+      const found = (await h.queries.unconvergedUpdates()).filter((u) => u.issue === '504')
+      expect(found).toEqual([{ project: h.project, issue: '504', change: 'comment' }])
+    })
 
     /** A success that came *before* the failure converges nothing. */
-    it("is not satisfied by a success older than the failure", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 505);
-      h.note?.(item);
+    it('is not satisfied by a success older than the failure', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 505)
+      h.note?.(item)
       await h.store.append(item, 0, [
-        said("IssueUpdated", h.project, "505", "closed"),
-        said("IssueUpdateFailed", h.project, "505", "closed"),
-      ]);
+        said('IssueUpdated', h.project, '505', 'closed'),
+        said('IssueUpdateFailed', h.project, '505', 'closed'),
+      ])
 
       expect(await h.queries.unconvergedUpdates()).toContainEqual({
         project: h.project,
-        issue: "505",
-        change: "closed",
-      });
-    });
+        issue: '505',
+        change: 'closed',
+      })
+    })
 
     // ------------------------------------------------- subscriberFailures ----
 
     const failed = (name: string, reason: string) => ({
-      type: "PluginFailed" as const,
-      actor: "conductor",
-      data: parsePayload("PluginFailed", {
+      type: 'PluginFailed' as const,
+      actor: 'conductor',
+      data: parsePayload('PluginFailed', {
         name,
-        eventType: "WorkItemLanded",
+        eventType: 'WorkItemLanded',
         project: null,
         reason,
       }),
-    });
+    })
 
     it("counts a subscriber's failures all-time and since the cutoff, with the latest reason", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 506);
-      h.note?.(item);
-      const name = `sub-${h.project}`;
-      await h.store.append(item, 0, [failed(name, "first"), failed(name, "second")]);
+      const h = await make()
+      const item = workItemStream(h.project, 506)
+      h.note?.(item)
+      const name = `sub-${h.project}`
+      await h.store.append(item, 0, [failed(name, 'first'), failed(name, 'second')])
 
-      const [row] = (await h.queries.subscriberFailures(new Date(0))).filter((r) => r.name === name);
+      const [row] = (await h.queries.subscriberFailures(new Date(0))).filter((r) => r.name === name)
 
-      expect(row).toEqual({ name, total: 2, recent: 2, lastReason: "second" });
-    });
+      expect(row).toEqual({ name, total: 2, recent: 2, lastReason: 'second' })
+    })
 
     /**
      * The cutoff is the whole of what `since` means, and the reason travels
      * with it: past the cutoff there is no *latest recent reason* to give.
      */
-    it("keeps the all-time count and drops the recent one past the cutoff", async () => {
-      const h = await make();
-      const item = workItemStream(h.project, 507);
-      h.note?.(item);
-      const name = `sub-${h.project}-later`;
-      await h.store.append(item, 0, [failed(name, "only")]);
+    it('keeps the all-time count and drops the recent one past the cutoff', async () => {
+      const h = await make()
+      const item = workItemStream(h.project, 507)
+      h.note?.(item)
+      const name = `sub-${h.project}-later`
+      await h.store.append(item, 0, [failed(name, 'only')])
 
-      const [row] = (await h.queries.subscriberFailures(new Date(Date.now() + 60_000))).filter(
-        (r) => r.name === name,
-      );
+      const [row] = (await h.queries.subscriberFailures(new Date(Date.now() + 60_000))).filter((r) => r.name === name)
 
-      expect(row).toEqual({ name, total: 1, recent: 0, lastReason: null });
-    });
+      expect(row).toEqual({ name, total: 1, recent: 0, lastReason: null })
+    })
 
-    it("says nothing about a subscriber that never failed", async () => {
-      const h = await make();
-      const names = (await h.queries.subscriberFailures(new Date(0))).map((r) => r.name);
-      expect(names).not.toContain(`sub-${h.project}-never`);
-    });
-  });
+    it('says nothing about a subscriber that never failed', async () => {
+      const h = await make()
+      const names = (await h.queries.subscriberFailures(new Date(0))).map((r) => r.name)
+      expect(names).not.toContain(`sub-${h.project}-never`)
+    })
+  })
 }

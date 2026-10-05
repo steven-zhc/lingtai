@@ -1,19 +1,21 @@
-import type { ReactNode } from "react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { inWords } from "@lingtai/conductor/queue";
-import { describeHold } from "@lingtai/projector/task-view";
-import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from "@/lib/task";
-import { elapsed } from "@/lib/progress";
-import { describeAction, readRecipe, type FromHead } from "@/lib/recipe";
-import { Evidence } from "../../evidence.tsx";
-import { HistoryRow } from "../../history-row.tsx";
-import { DocumentBody } from "../../markdown.tsx";
-import { Latch, Reveal } from "../../latch.tsx";
-import { Segs } from "../../rail.tsx";
-import { Follow, Following } from "../../live.tsx";
-import { RunLog } from "../../run-log.tsx";
-import { Coords, Standing } from "../../standing.tsx";
+import { inWords } from '@lingtai/conductor/queue'
+import { describeHold } from '@lingtai/projector/task-view'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import type { ReactNode } from 'react'
+
+import { elapsed } from '@/lib/progress'
+import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
+import { loadTask, totalsFact, type RunView, type TaskDetail, type TicketView } from '@/lib/task'
+
+import { Evidence } from '../../evidence.tsx'
+import { HistoryRow } from '../../history-row.tsx'
+import { Latch, Reveal } from '../../latch.tsx'
+import { Follow, Following } from '../../live.tsx'
+import { DocumentBody } from '../../markdown.tsx'
+import { Segs } from '../../rail.tsx'
+import { RunLog } from '../../run-log.tsx'
+import { Coords, Standing } from '../../standing.tsx'
 
 /**
  * One task, in full.
@@ -45,7 +47,7 @@ import { Coords, Standing } from "../../standing.tsx";
  * what actually happened, in order, with who did it. Every row of it opens on
  * the payload; see `history-row.tsx`.
  */
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 /**
  * What was asked for, in the record's prompt row.
@@ -84,7 +86,7 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
         ) : null}
       </p>
 
-      <h3 className="ttitle">{ticket.title ?? "(no title was recorded)"}</h3>
+      <h3 className="ttitle">{ticket.title ?? '(no title was recorded)'}</h3>
 
       {ticket.body ? (
         <details className="tbody">
@@ -103,14 +105,14 @@ export function Ticket({ ticket }: { ticket: TicketView }) {
         <p className="empty">This issue has no body.</p>
       )}
     </>
-  );
+  )
 }
 
 /** Green is a run that ended well; red is one that did not; amber is neither yet. */
-function outcomeClass(state: RunView["outcome"]["state"]): string {
-  if (state === "failed") return "fail";
-  if (state === "finished") return "pass";
-  return "hold";
+function outcomeClass(state: RunView['outcome']['state']): string {
+  if (state === 'failed') return 'fail'
+  if (state === 'finished') return 'pass'
+  return 'hold'
 }
 
 /**
@@ -131,8 +133,8 @@ export function Attempt({
   deciding,
   followed = false,
 }: {
-  run: RunView;
-  alone: boolean;
+  run: RunView
+  alone: boolean
   /**
    * True when the block at the top points here.
    *
@@ -143,13 +145,13 @@ export function Attempt({
    * a hash change and on a load at the hash (#152). Without JavaScript that is
    * left to the browser, and not every browser does it.
    */
-  deciding: boolean;
+  deciding: boolean
   /**
    * True when this attempt's log is already being followed at rank 2 of the
    * page, which is where a running item's log is (#152). The row says where it
    * went rather than opening a second follower on the same file.
    */
-  followed?: boolean;
+  followed?: boolean
 }) {
   /**
    * The one attempt that is producing output while you read the page.
@@ -166,10 +168,10 @@ export function Attempt({
    * it* the moment the run finished, which is the one second they were there
    * for. Opening is a signal, closing is the reader's — see `latch.tsx`.
    */
-  const running = run.outcome.state === "running";
+  const running = run.outcome.state === 'running'
   return (
     <Latch
-      className={deciding ? "attempt deciding" : "attempt"}
+      className={deciding ? 'attempt deciding' : 'attempt'}
       id={`attempt-${run.attempt}`}
       initial={alone || deciding || running}
       openWhen={running}
@@ -179,7 +181,7 @@ export function Attempt({
             every disclosure on the board. In a grid it is the row's first cell,
             which is why the column template opens with one for it. */}
         <span className="aname">
-          <span className="anum">{alone ? "the run" : `attempt ${run.attempt}`}</span>
+          <span className="anum">{alone ? 'the run' : `attempt ${run.attempt}`}</span>
           <span className={`pill ${outcomeClass(run.outcome.state)}`}>{run.outcome.state}</span>
           {/* Named, because a repair was an ordinary run with no vocabulary of
               its own (0025) and its spend is counted apart from the work's
@@ -188,10 +190,7 @@ export function Attempt({
               it stays because an old ticket's second attempt really was one,
               and dropping the chip would fold that money into the work's. */}
           {run.repair ? (
-            <span
-              className="pill hold"
-              title="this attempt is the one a failure bought — a purchase retired by #143"
-            >
+            <span className="pill hold" title="this attempt is the one a failure bought — a purchase retired by #143">
               repair
             </span>
           ) : null}
@@ -207,15 +206,11 @@ export function Attempt({
             an em dash is a different fact from a shorter row: this run recorded
             no cost, rather than this row being narrower. Same rule as 0016 §4,
             one page along. */}
-        <span className="afig">{run.turns === null ? "—" : `${run.turns} turns`}</span>
+        <span className="afig">{run.turns === null ? '—' : `${run.turns} turns`}</span>
+        <span className="afig">{run.durationMs === null ? '—' : elapsed(run.durationMs)}</span>
+        <span className="afig">{run.costUsd === null ? '—' : `$${run.costUsd.toFixed(2)}`}</span>
         <span className="afig">
-          {run.durationMs === null ? "—" : elapsed(run.durationMs)}
-        </span>
-        <span className="afig">{run.costUsd === null ? "—" : `$${run.costUsd.toFixed(2)}`}</span>
-        <span className="afig">
-          {run.diff === null
-            ? "—"
-            : `${run.diff.files}f +${run.diff.insertions} −${run.diff.deletions}`}
+          {run.diff === null ? '—' : `${run.diff.files}f +${run.diff.insertions} −${run.diff.deletions}`}
         </span>
         {/* Dated *and* relative. `04:12:15` alone cannot tell a run from three
             days ago apart from one ten minutes old (#102). */}
@@ -267,7 +262,7 @@ export function Attempt({
 
       <RecipeGiven run={run} />
     </Latch>
-  );
+  )
 }
 
 /**
@@ -293,26 +288,26 @@ export function Attempt({
  * rather than borrowing a command from a different action.
  */
 export function RecipeGiven({ run }: { run: RunView }) {
-  const recipe = run.recipe;
-  if (recipe === undefined) return null;
-  if (recipe.of === "none") {
-    return <p className="empty arecipe">No recipe to show for this attempt: {recipe.why}.</p>;
+  const recipe = run.recipe
+  if (recipe === undefined) return null
+  if (recipe.of === 'none') {
+    return <p className="empty arecipe">No recipe to show for this attempt: {recipe.why}.</p>
   }
 
-  const hash = <span className="mono">recipe {recipe.configHash.slice(0, 12)}</span>;
+  const hash = <span className="mono">recipe {recipe.configHash.slice(0, 12)}</span>
   return (
     <div className="arecipe">
-      {recipe.of === "run" ? (
+      {recipe.of === 'run' ? (
         <p className="rprov">
           {hash} — this run&apos;s own, proved by the hash it recorded
-          {"base" in recipe.at
+          {'base' in recipe.at
             ? `, read at base ${recipe.at.base.slice(0, 7)}`
             : `, and the same document as the head of ${recipe.at.head}`}
         </p>
       ) : (
         <p className="rprov refusal">
-          Not this run&apos;s recipe: {hash} is the head of {recipe.ref}, which is what the next
-          run gets. Shown because {recipe.why}.
+          Not this run&apos;s recipe: {hash} is the head of {recipe.ref}, which is what the next run gets. Shown because{' '}
+          {recipe.why}.
         </p>
       )}
 
@@ -335,21 +330,20 @@ export function RecipeGiven({ run }: { run: RunView }) {
           exact input `configHash` was taken over, and comments are not in it —
           so the page says it rather than letting the omission speak. */}
       <p className="rnote">
-        Values only. What the log records is the canonical recipe — parsed, keys sorted, comments
-        discarded (0047 §2) — so the reasoning behind a number here is in the recipe file and its
-        history, not in the record.
+        Values only. What the log records is the canonical recipe — parsed, keys sorted, comments discarded (0047 §2) —
+        so the reasoning behind a number here is in the recipe file and its history, not in the record.
       </p>
 
       {/* **Never `same` for a recipe that *is* head's.** "Nothing differs" is a
           claim about the attempt — it ran under what you have now — and that is
           exactly what the line above says could not be established. Shown as
           the absence of a comparison rather than as the result of one. */}
-      {recipe.of === "run" ? (
+      {recipe.of === 'run' ? (
         <FromHeadSays from={recipe.from} />
       ) : (
         <p className="rdiff empty">
-          This is the recipe at the head of {recipe.ref}, so there is nothing to compare it with:
-          what this attempt was given could not be had.
+          This is the recipe at the head of {recipe.ref}, so there is nothing to compare it with: what this attempt was
+          given could not be had.
         </p>
       )}
 
@@ -363,16 +357,15 @@ export function RecipeGiven({ run }: { run: RunView }) {
               ) : (
                 <span className="actlist">
                   {p.planned.map((name) => {
-                    const action = recipe.recipe.steps[p.step].find((a) => a.name === name);
+                    const action = recipe.recipe.steps[p.step].find((a) => a.name === name)
                     if (!action) {
                       return (
                         <span key={name} className="act">
-                          <span className="mono">{name}</span>{" "}
-                          <span className="empty">not in this recipe</span>
+                          <span className="mono">{name}</span> <span className="empty">not in this recipe</span>
                         </span>
-                      );
+                      )
                     }
-                    const { does, bound } = describeAction(action, undefined, p.step);
+                    const { does, bound } = describeAction(action, undefined, p.step)
                     return (
                       <details key={name} className="act">
                         <summary>
@@ -380,7 +373,7 @@ export function RecipeGiven({ run }: { run: RunView }) {
                         </summary>
                         <pre className="actcmd">{does}</pre>
                       </details>
-                    );
+                    )
                   })}
                 </span>
               )}
@@ -392,12 +385,12 @@ export function RecipeGiven({ run }: { run: RunView }) {
       <details className="aprompt">
         <summary>
           <span className="hdocname">the whole recipe</span>
-          <span className="hdocsize">{recipe.of === "run" ? "this run's" : `head of ${recipe.ref}`}</span>
+          <span className="hdocsize">{recipe.of === 'run' ? "this run's" : `head of ${recipe.ref}`}</span>
         </summary>
         <pre className="hdoctext">{recipe.source}</pre>
       </details>
     </div>
-  );
+  )
 }
 
 /**
@@ -414,20 +407,19 @@ export function RecipeGiven({ run }: { run: RunView }) {
  * block is already two disclosures down.
  */
 function FromHeadSays({ from }: { from: FromHead }) {
-  if (from.of === "unknown") {
+  if (from.of === 'unknown') {
     return (
       <p className="rdiff empty">
         What differs from the recipe at head is not known: it could not be read — {from.why}.
       </p>
-    );
+    )
   }
-  if (from.of === "same") {
+  if (from.of === 'same') {
     return (
       <p className="rdiff">
-        Nothing differs from the recipe at the head of {from.ref}: this attempt ran under what you
-        have now.
+        Nothing differs from the recipe at the head of {from.ref}: this attempt ran under what you have now.
       </p>
-    );
+    )
   }
   // **Never *0 values differ*.** The hash says these are two documents and the
   // walk is what names which values; where the walk can name none — two leaves
@@ -437,29 +429,28 @@ function FromHeadSays({ from }: { from: FromHead }) {
   if (from.changes.length === 0) {
     return (
       <p className="rdiff refusal">
-        This is not the recipe at the head of {from.ref}, and what differs is not a value this page
-        can name: the two documents hash differently, so read the whole recipe below against
-        head&apos;s.
+        This is not the recipe at the head of {from.ref}, and what differs is not a value this page can name: the two
+        documents hash differently, so read the whole recipe below against head&apos;s.
       </p>
-    );
+    )
   }
   return (
     <>
       <p className="rdiff refusal">
-        This is not the recipe at the head of {from.ref} — {plural(from.changes.length, "value")}{" "}
-        differ{from.changes.length === 1 ? "s" : ""}:
+        This is not the recipe at the head of {from.ref} — {plural(from.changes.length, 'value')} differ
+        {from.changes.length === 1 ? 's' : ''}:
       </p>
       <ul className="rchanges">
         {from.changes.map((c) => (
           <li key={c.path}>
             <span className="mono rpath">{c.path}</span>
-            <span className="rran">{c.run ?? "(not set)"}</span>
-            <span className="rhead">head: {c.head ?? "(not set)"}</span>
+            <span className="rran">{c.run ?? '(not set)'}</span>
+            <span className="rhead">head: {c.head ?? '(not set)'}</span>
           </li>
         ))}
       </ul>
     </>
-  );
+  )
 }
 
 /**
@@ -476,7 +467,7 @@ function FromHeadSays({ from }: { from: FromHead }) {
  * page holding *what was asked* announced itself as the agent's input, and
  * #87's work sat behind a word that did not name it.
  */
-export const RECORD_ROWS = ["findings", "files", "attempts", "ticket"] as const;
+export const RECORD_ROWS = ['findings', 'files', 'attempts', 'ticket'] as const
 
 /** One row of the record: a name, its one fact, and closed until asked. */
 function Row({
@@ -484,9 +475,9 @@ function Row({
   fact,
   children,
 }: {
-  name: (typeof RECORD_ROWS)[number];
-  fact: string | null;
-  children: ReactNode;
+  name: (typeof RECORD_ROWS)[number]
+  fact: string | null
+  children: ReactNode
 }) {
   return (
     <details className="rrow" id={`record-${name}`}>
@@ -496,16 +487,16 @@ function Row({
       </summary>
       <div className="rbody">{children}</div>
     </details>
-  );
+  )
 }
 
 /** `attempt 2`, above an attempt's share of a row — only where there is more than one to tell apart. */
 function Of({ run, many }: { run: RunView; many: boolean }) {
-  return many ? <p className="rof">attempt {run.attempt}</p> : null;
+  return many ? <p className="rof">attempt {run.attempt}</p> : null
 }
 
 function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+  return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
 /**
@@ -515,30 +506,27 @@ function plural(n: number, word: string): string {
  * one a decision is about, and an older one is still one line down.
  */
 export function Record({ task }: { task: TaskDetail }) {
-  const newest = [...task.runs].reverse();
-  const many = task.runs.length > 1;
-  const project = task.ticket?.project ?? "";
+  const newest = [...task.runs].reverse()
+  const many = task.runs.length > 1
+  const project = task.ticket?.project ?? ''
 
-  const verdicts = task.runs.reduce((n, r) => n + r.steps.length, 0);
-  const findings = task.runs.reduce(
-    (n, r) => n + r.steps.reduce((m, g) => m + g.findings.length, 0),
-    0,
-  );
-  const paths = new Set(task.runs.flatMap((r) => r.files.map((f) => f.path))).size;
-  const events = task.history.reduce((n, g) => n + g.lines.length, 0);
+  const verdicts = task.runs.reduce((n, r) => n + r.steps.length, 0)
+  const findings = task.runs.reduce((n, r) => n + r.steps.reduce((m, g) => m + g.findings.length, 0), 0)
+  const paths = new Set(task.runs.flatMap((r) => r.files.map((f) => f.path))).size
+  const events = task.history.reduce((n, g) => n + g.lines.length, 0)
 
   // What the diagnosis said beyond rank 3's sentence: what was already done, and
   // the recommendation with the whole of its why. These were the block's rank 3
   // until #152 made that one sentence; they are true and they are record.
   const beyond = describeHold({ needs: null, diagnosis: task.standing.diagnosis }).filter(
-    (line) => line.part === "did" || line.part === "rec",
-  );
+    (line) => line.part === 'did' || line.part === 'rec',
+  )
 
   return (
     <section className="record" data-rank="record">
       <Row
         name="findings"
-        fact={verdicts === 0 ? "no step reported" : `${plural(verdicts, "verdict")} · ${plural(findings, "finding")}`}
+        fact={verdicts === 0 ? 'no step reported' : `${plural(verdicts, 'verdict')} · ${plural(findings, 'finding')}`}
       >
         {/* The gate that refused, what it said, the findings with their failure
             scenarios, and that attempt's diff. If you have to open GitHub to
@@ -556,7 +544,7 @@ export function Record({ task }: { task: TaskDetail }) {
                   // is what `parseWorkItemStream` exists to stop.
                   project={project}
                   baseSha={run.baseSha}
-                  headSha={run.headSha ?? ""}
+                  headSha={run.headSha ?? ''}
                   steps={run.steps}
                 />
               </div>
@@ -564,7 +552,7 @@ export function Record({ task }: { task: TaskDetail }) {
         )}
       </Row>
 
-      <Row name="files" fact={paths === 0 ? "none touched" : plural(paths, "path")}>
+      <Row name="files" fact={paths === 0 ? 'none touched' : plural(paths, 'path')}>
         {paths === 0 ? (
           <p className="empty">No attempt has touched a file.</p>
         ) : (
@@ -603,7 +591,7 @@ export function Record({ task }: { task: TaskDetail }) {
                 run={run}
                 alone={task.runs.length === 1}
                 deciding={task.standing.deciding?.attempt === run.attempt}
-                followed={task.standing.state === "running" && task.standing.runId === run.runId}
+                followed={task.standing.state === 'running' && task.standing.runId === run.runId}
               />
             ))}
           </div>
@@ -611,15 +599,14 @@ export function Record({ task }: { task: TaskDetail }) {
 
         {/* The history, under the ledger it is the whole of. Still the question
             a summary did not anticipate, and still last. */}
-        <p className="rof">{events === 0 ? "history" : `history · ${events} events · grouped by run`}</p>
+        <p className="rof">{events === 0 ? 'history' : `history · ${events} events · grouped by run`}</p>
         {/* Stated, not omitted. ADR 0016 §4's rule reaches here too: a list that
             renders nothing looks exactly like a list whose events failed to
             load, and only one of those is our bug. A ticket nothing has run has
             an empty log *and that is the whole of its story* (#113). */}
         {task.history.length === 0 ? (
           <p className="empty">
-            Nothing yet — this ticket has no events, and this is where the log will record what
-            happens to it.
+            Nothing yet — this ticket has no events, and this is where the log will record what happens to it.
           </p>
         ) : null}
         {task.history.map((group) => (
@@ -662,15 +649,14 @@ export function Record({ task }: { task: TaskDetail }) {
             // document the agent was given; `markdown.tsx` offers the reading.
             <details key={run.runId} className="aprompt">
               <summary>
-                <span className="hdocname">{many ? `attempt ${run.attempt}'s prompt` : "prompt"}</span>
+                <span className="hdocname">{many ? `attempt ${run.attempt}'s prompt` : 'prompt'}</span>
                 <span className="hdocsize">
                   {run.prompt!.version} · {run.prompt!.bytes} bytes
                 </span>
               </summary>
               {run.prompt!.text === null ? (
                 <p className="empty">
-                  This run predates the prompt being recorded, so the log has its length and not the
-                  document (#88).
+                  This run predates the prompt being recorded, so the log has its length and not the document (#88).
                 </p>
               ) : (
                 <DocumentBody source="prompt" text={run.prompt!.text} rawClass="hdoctext" />
@@ -679,7 +665,7 @@ export function Record({ task }: { task: TaskDetail }) {
           ))}
       </Row>
     </section>
-  );
+  )
 }
 
 /**
@@ -689,8 +675,8 @@ export function Record({ task }: { task: TaskDetail }) {
 export function TaskBody({ task }: { task: TaskDetail }) {
   // The issue the controls would act on. `ref` is GitHub's own number, so
   // anything that does not parse is an id that was never one.
-  const ref = Number(task.ticket?.ref);
-  const issueNumber = Number.isSafeInteger(ref) && ref > 0 ? ref : null;
+  const ref = Number(task.ticket?.ref)
+  const issueNumber = Number.isSafeInteger(ref) && ref > 0 ? ref : null
 
   return (
     <main className="detail">
@@ -716,11 +702,7 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // What is being decided about, named where the decision is. The log
           // carries the ref and the title; GitHub carries the URL, and a null
           // one is a page that still says which ticket this is.
-          subject={
-            task.ticket
-              ? { ref: task.ticket.ref, title: task.ticket.title, url: task.ticket.url }
-              : null
-          }
+          subject={task.ticket ? { ref: task.ticket.ref, title: task.ticket.title, url: task.ticket.url } : null}
           taskId={task.taskId}
           discussions={task.discussions}
           outgoing={task.outgoing}
@@ -737,21 +719,19 @@ export function TaskBody({ task }: { task: TaskDetail }) {
           // "it does not exist" was making a claim Lingtai is not in a position
           // to make (#113). Only when the log has nothing at all — an item it
           // has touched is a page whatever GitHub says today.
-          unknown={
-            task.history.length === 0 && task.ticket?.found === null ? task.ticket.problem : null
-          }
+          unknown={task.history.length === 0 && task.ticket?.found === null ? task.ticket.problem : null}
         />
 
         <Record task={task} />
       </div>
     </main>
-  );
+  )
 }
 
 export default async function TaskPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const task = await loadTask(decodeURIComponent(id));
-  if (!task) notFound();
+  const { id } = await params
+  const task = await loadTask(decodeURIComponent(id))
+  if (!task) notFound()
   return (
     <>
       {/* Subscribed to the log, so an append re-renders this page and not only
@@ -764,5 +744,5 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
         <TaskBody task={task} />
       </Follow>
     </>
-  );
+  )
 }

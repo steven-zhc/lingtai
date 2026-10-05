@@ -1,3 +1,5 @@
+import type { BlockDiagnosis } from '@lingtai/domain'
+import { postgresUrl } from '@lingtai/env'
 /**
  * The projections in Postgres — the implementation that was already here.
  *
@@ -13,19 +15,12 @@
  * know about has no ORM surface, and a projection needs DDL, `drop` and its own
  * upserts regardless. The same deliberate split as the subscriber.
  */
-import pg from "pg";
-import { postgresUrl } from "@lingtai/env";
-import type { BacklogEntry } from "./backlog.ts";
-import { columnOf } from "./store.ts";
-import type {
-  BacklogQuery,
-  ProjectionContext,
-  ProjectionLag,
-  ProjectionStore,
-  TaskQuery,
-} from "./store.ts";
-import type { BlockDiagnosis } from "@lingtai/domain";
-import type { TaskCard, TaskState } from "./task-view.ts";
+import pg from 'pg'
+
+import type { BacklogEntry } from './backlog.ts'
+import { columnOf } from './store.ts'
+import type { BacklogQuery, ProjectionContext, ProjectionLag, ProjectionStore, TaskQuery } from './store.ts'
+import type { TaskCard, TaskState } from './task-view.ts'
 
 /**
  * `checkpoints.updated_at` is `NOT NULL` with no database default —
@@ -37,26 +32,26 @@ const ADVANCE_CHECKPOINT = `
   insert into checkpoints (name, last_seq, updated_at)
   values ($1, $2, now())
   on conflict (name) do update
-    set last_seq = excluded.last_seq, updated_at = now()`;
+    set last_seq = excluded.last_seq, updated_at = now()`
 
 const REGISTER_CHECKPOINT = `
   insert into checkpoints (name, last_seq, updated_at)
   values ($1, 0, now())
-  on conflict (name) do nothing`;
+  on conflict (name) do nothing`
 
 const RESET_CHECKPOINT = `
   insert into checkpoints (name, last_seq, updated_at)
   values ($1, 0, now())
   on conflict (name) do update
-    set last_seq = 0, updated_at = now()`;
+    set last_seq = 0, updated_at = now()`
 
 function ctxFor(client: pg.PoolClient | pg.Client): ProjectionContext {
   return {
     async query(text, values) {
-      const r = await client.query(text, values ? [...values] : undefined);
-      return r.rows;
+      const r = await client.query(text, values ? [...values] : undefined)
+      return r.rows
     },
-  };
+  }
 }
 
 /** A `task_view` row → the card the board renders. Unchanged from `readTasks`. */
@@ -65,41 +60,41 @@ function toCard(row: pg.QueryResultRow): TaskCard {
   // before the column was renamed hands back no `verdicts` at all, and
   // `row.verdicts ?? {}` would count that as a run with no verdicts rather
   // than as the drift it is.
-  const recorded = (columnOf(row, "task_view", "verdicts") ?? {}) as Record<string, string>;
+  const recorded = (columnOf(row, 'task_view', 'verdicts') ?? {}) as Record<string, string>
   // Only the run the row names. A released row names none, so it counts
   // nothing — which is the point: between a release and the next attempt
   // reaching the same point there is no live verdict to report, and the
   // card used to report the dead one anyway (#78).
-  const mine = row.run_id ? `${row.run_id as string}:` : null;
+  const mine = row.run_id ? `${row.run_id as string}:` : null
   const verdicts = mine
     ? Object.entries(recorded)
         .filter(([key]) => key.startsWith(mine))
         .map(([, verdict]) => verdict)
-    : [];
-  const count = (v: string) => verdicts.filter((x) => x === v).length;
+    : []
+  const count = (v: string) => verdicts.filter((x) => x === v).length
   // Summed on read, for the reason the map exists: one pass may buy more
   // than one round, and an operator asking what diagnosis cost means all of
   // it. Null rather than 0 when nothing was spent — nothing bought and
   // something bought for free are different facts, and only one of them has
   // ever happened.
   const spent = Object.values((row.repair_costs ?? {}) as Record<string, number | null>).filter(
-    (v): v is number => typeof v === "number",
-  );
+    (v): v is number => typeof v === 'number',
+  )
   return {
     taskId: row.task_id,
     project: row.project,
     issue: row.issue,
     title: row.title ?? `#${row.issue}`,
-    kind: row.kind ?? "unknown",
+    kind: row.kind ?? 'unknown',
     state: row.state as TaskState,
     tier: row.tier,
     runId: row.run_id,
     turns: row.turns,
     costUsd: row.cost_usd,
-    passed: count("passed"),
-    failed: count("failed"),
-    waived: count("waived"),
-    approved: count("approved"),
+    passed: count('passed'),
+    failed: count('failed'),
+    waived: count('waived'),
+    approved: count('approved'),
     baseSha: row.base_sha,
     headSha: row.head_sha,
     files: row.files,
@@ -118,12 +113,12 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     // shape is the event's rather than this reader's guess about it.
     diagnosis: (row.diagnosis as BlockDiagnosis | null) ?? null,
     asked: row.asked === true,
-    answer: (row.answer as TaskCard["answer"]) ?? null,
+    answer: (row.answer as TaskCard['answer']) ?? null,
     awaitingSha: row.awaiting_sha,
     awaitingApproval: row.awaiting_sha !== null,
     repairPending: row.repair_pending === true,
     repairCostUsd: spent.length > 0 ? spent.reduce((a, b) => a + b, 0) : null,
-  };
+  }
 }
 
 /**
@@ -162,73 +157,71 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
     proposedRef: row.proposed_ref,
     proposedUrl: row.proposed_url,
     reason: row.reason,
-  };
+  }
 }
 
 export interface PostgresProjectionStoreOptions {
   /** Pooled connection. Transaction mode is fine: a transaction is one checkout. */
-  url?: string;
+  url?: string
   /** Connections. Two is enough for a runner: one transaction and one read. */
-  max?: number;
+  max?: number
 }
 
-export function createPostgresProjectionStore(
-  options: PostgresProjectionStoreOptions = {},
-): ProjectionStore {
-  const pool = new pg.Pool({ connectionString: options.url ?? postgresUrl(), max: options.max ?? 2 });
+export function createPostgresProjectionStore(options: PostgresProjectionStoreOptions = {}): ProjectionStore {
+  const pool = new pg.Pool({ connectionString: options.url ?? postgresUrl(), max: options.max ?? 2 })
 
   return {
     async transact(fn) {
-      const client = await pool.connect();
+      const client = await pool.connect()
       try {
-        await client.query("begin");
-        const result = await fn(ctxFor(client));
-        await client.query("commit");
-        return result;
+        await client.query('begin')
+        const result = await fn(ctxFor(client))
+        await client.query('commit')
+        return result
       } catch (err) {
-        await client.query("rollback").catch(() => {
+        await client.query('rollback').catch(() => {
           // The connection is already gone; the transaction died with it.
-        });
-        throw err;
+        })
+        throw err
       } finally {
-        client.release();
+        client.release()
       }
     },
 
     async checkpoint(name) {
       const r = await pool.query<{ last_seq: string }>(
-        "select last_seq::text as last_seq from checkpoints where name = $1",
+        'select last_seq::text as last_seq from checkpoints where name = $1',
         [name],
-      );
-      return BigInt(r.rows[0]?.last_seq ?? "0");
+      )
+      return BigInt(r.rows[0]?.last_seq ?? '0')
     },
 
     async advance(ctx, name, seq) {
-      await ctx.query(ADVANCE_CHECKPOINT, [name, seq.toString()]);
+      await ctx.query(ADVANCE_CHECKPOINT, [name, seq.toString()])
     },
 
     async register(ctx, name) {
-      await ctx.query(REGISTER_CHECKPOINT, [name]);
+      await ctx.query(REGISTER_CHECKPOINT, [name])
     },
 
     async rewind(ctx, name) {
-      await ctx.query(RESET_CHECKPOINT, [name]);
+      await ctx.query(RESET_CHECKPOINT, [name])
     },
 
     async columnsOf(tables) {
-      const live = new Map<string, ReadonlySet<string>>();
-      if (tables.length === 0) return live;
+      const live = new Map<string, ReadonlySet<string>>()
+      if (tables.length === 0) return live
       const r = await pool.query<{ table_name: string; column_name: string }>(
         `select table_name, column_name from information_schema.columns
          where table_schema = current_schema() and table_name = any($1::text[])`,
         [[...tables]],
-      );
+      )
       for (const row of r.rows) {
-        const set = (live.get(row.table_name) as Set<string> | undefined) ?? new Set<string>();
-        set.add(row.column_name);
-        live.set(row.table_name, set);
+        const set = (live.get(row.table_name) as Set<string> | undefined) ?? new Set<string>()
+        set.add(row.column_name)
+        live.set(row.table_name, set)
       }
-      return live;
+      return live
     },
 
     async lag(name) {
@@ -239,19 +232,19 @@ export function createPostgresProjectionStore(
          from (select 1) one
          left join checkpoints c on c.name = $1`,
         [name],
-      );
-      const row = r.rows[0];
-      const lastSeq = BigInt(row?.last_seq ?? "0");
-      const headSeq = BigInt(row?.head_seq ?? "0");
-      return { name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row?.updated_at ?? null };
+      )
+      const row = r.rows[0]
+      const lastSeq = BigInt(row?.last_seq ?? '0')
+      const headSeq = BigInt(row?.head_seq ?? '0')
+      return { name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row?.updated_at ?? null }
     },
 
     async lags(): Promise<ProjectionLag[]> {
       const r = await pool.query<{
-        name: string;
-        last_seq: string;
-        head_seq: string;
-        updated_at: Date | null;
+        name: string
+        last_seq: string
+        head_seq: string
+        updated_at: Date | null
       }>(
         `select c.name,
                 c.last_seq::text as last_seq,
@@ -259,20 +252,20 @@ export function createPostgresProjectionStore(
                 c.updated_at
          from checkpoints c
          order by c.name`,
-      );
+      )
       return r.rows.map((row) => {
-        const lastSeq = BigInt(row.last_seq);
-        const headSeq = BigInt(row.head_seq);
-        return { name: row.name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row.updated_at };
-      });
+        const lastSeq = BigInt(row.last_seq)
+        const headSeq = BigInt(row.head_seq)
+        return { name: row.name, lastSeq, headSeq, lag: headSeq - lastSeq, updatedAt: row.updated_at }
+      })
     },
 
     async tasks(query: TaskQuery) {
-      const args: unknown[] = [query.retentionDays];
-      let where = `where (t.closed_at is null or t.closed_at > now() - ($1 || ' days')::interval)`;
+      const args: unknown[] = [query.retentionDays]
+      let where = `where (t.closed_at is null or t.closed_at > now() - ($1 || ' days')::interval)`
       if (query.project) {
-        args.push(query.project);
-        where += ` and t.project = $2`;
+        args.push(query.project)
+        where += ` and t.project = $2`
       }
 
       const r = await pool.query(
@@ -286,8 +279,8 @@ export function createPostgresProjectionStore(
            case when t.state = 'waiting' then t.updated_at end asc nulls last,
            nullif(regexp_replace(t.issue, '\\D', '', 'g'), '')::bigint`,
         args,
-      );
-      return r.rows.map(toCard);
+      )
+      return r.rows.map(toCard)
     },
 
     async taskProjects(query) {
@@ -297,40 +290,40 @@ export function createPostgresProjectionStore(
          where (closed_at is null or closed_at > now() - ($1 || ' days')::interval)
          order by project`,
         [query.retentionDays],
-      );
-      return r.rows.map((row) => row.project);
+      )
+      return r.rows.map((row) => row.project)
     },
 
     async backlog(query: BacklogQuery) {
-      const where: string[] = [];
-      const args: unknown[] = [];
+      const where: string[] = []
+      const args: unknown[] = []
       for (const [column, value] of [
-        ["project", query.project],
-        ["status", query.status],
-        ["key", query.key],
+        ['project', query.project],
+        ['status', query.status],
+        ['key', query.key],
       ] as const) {
-        if (value === undefined) continue;
-        args.push(value);
-        where.push(`${column} = $${args.length}`);
+        if (value === undefined) continue
+        args.push(value)
+        where.push(`${column} = $${args.length}`)
       }
       try {
         const r = await pool.query(
           `select * from finding_backlog
-           ${where.length > 0 ? `where ${where.join(" and ")}` : ""}
+           ${where.length > 0 ? `where ${where.join(' and ')}` : ''}
            order by project, raised_seq`,
           args,
-        );
-        return r.rows.map(toEntry);
+        )
+        return r.rows.map(toEntry)
       } catch (err) {
         // A database no projector has ever started has no table, and that is an
         // empty backlog rather than a failure.
-        if ((err as { code?: string }).code === "42P01") return [];
-        throw err;
+        if ((err as { code?: string }).code === '42P01') return []
+        throw err
       }
     },
 
     async close() {
-      await pool.end();
+      await pool.end()
     },
-  };
+  }
 }

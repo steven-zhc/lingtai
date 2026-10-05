@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 /**
  * The Claude Code adapter.
  *
@@ -37,39 +38,32 @@
  * seventh: a run the runtime stopped retrying to fit `--json-schema` is
  * `no-structured-answer`, which is Lingtai's own, not the ticket's.
  */
-import { createHash, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
-import { StringDecoder } from "node:string_decoder";
-import type { RunFailureKind, TokenCounts, Usage } from "@lingtai/domain";
-import type {
-  AuthStatus,
-  Invocable,
-  RunOutcome,
-  RunRequest,
-  Runtime,
-  RuntimeCapabilities,
-  Spawned,
-} from "./runtime.ts";
-import { claudeCodeAuth } from "./auth.ts";
-import { neverStarted } from "./runtime.ts";
-import { observedCall } from "./hook-socket.ts";
-import { NO_RUN_LOG } from "./run-log.ts";
+import { createHash, randomUUID } from 'node:crypto'
+import { StringDecoder } from 'node:string_decoder'
+
+import type { RunFailureKind, TokenCounts, Usage } from '@lingtai/domain'
+
+import { claudeCodeAuth } from './auth.ts'
+import { observedCall } from './hook-socket.ts'
+import { NO_RUN_LOG } from './run-log.ts'
+import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
+import { neverStarted } from './runtime.ts'
 
 export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
-  id: "claude-code",
+  id: 'claude-code',
   hooks: [
     // The intersection both runtimes have.
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "Stop",
+    'SessionStart',
+    'UserPromptSubmit',
+    'PreToolUse',
+    'PostToolUse',
+    'Stop',
     // Claude Code's extras. Bonus signal: `PreCompact` reveals a work item that
     // was scoped too large, `Notification` lights the board up instead of the
     // run burning to the wall clock.
-    "SessionEnd",
-    "PreCompact",
-    "Notification",
+    'SessionEnd',
+    'PreCompact',
+    'Notification',
   ],
   canFailClosed: true,
   // Codex can rewrite a call; Claude Code refuses or allows.
@@ -78,14 +72,14 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // whose refusal (exit 2) stops the run, so the record fails closed; no hook
   // runs before a tool use. Containment is the worktree
   // and the filtered environment. It is what carried the old loop's 73 runs.
-  providesTier: "guarded",
+  providesTier: 'guarded',
   /**
    * All three. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns`
    * and `usd` is `--max-budget-usd`, both in `argsFor`, both applied by the
    * binary itself and answered with a receipt (`#370`).
    */
-  enforces: ["turns", "wall", "usd"],
-};
+  enforces: ['turns', 'wall', 'usd'],
+}
 
 /**
  * A stable UUID for a run.
@@ -95,13 +89,13 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
  * a v4 UUID because `--session-id` requires a valid one.
  */
 export function sessionIdFor(runId: string): string {
-  const h = createHash("sha256").update(`lingtai:session:${runId}`).digest("hex");
-  const bytes = h.slice(0, 32).split("");
+  const h = createHash('sha256').update(`lingtai:session:${runId}`).digest('hex')
+  const bytes = h.slice(0, 32).split('')
   // Version and variant nibbles, so it parses as a UUID rather than 32 hex.
-  bytes[12] = "4";
-  bytes[16] = "8";
-  const s = bytes.join("");
-  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`;
+  bytes[12] = '4'
+  bytes[16] = '8'
+  const s = bytes.join('')
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`
 }
 
 /**
@@ -123,14 +117,14 @@ export function sessionIdFor(runId: string): string {
  */
 interface ClaudeResult {
   /** Absent on the single object `--output-format json` prints; `"result"` in a stream. */
-  type?: string;
-  is_error?: boolean;
-  num_turns?: number;
-  duration_ms?: number;
-  total_cost_usd?: number;
-  session_id?: string;
-  subtype?: string;
-  result?: string;
+  type?: string
+  is_error?: boolean
+  num_turns?: number
+  duration_ms?: number
+  total_cost_usd?: number
+  session_id?: string
+  subtype?: string
+  result?: string
   /**
    * Per-model spend, keyed by the runtime's own model id — measured on a real
    * receipt (`claude -p "reply ok" --output-format json`, 2.1.285):
@@ -141,22 +135,22 @@ interface ClaudeResult {
    * key under the model the recipe asked for would price a smaller model's
    * tokens at a larger one's rates.
    */
-  modelUsage?: Record<string, ClaudeModelUsage>;
+  modelUsage?: Record<string, ClaudeModelUsage>
   /**
    * The object a `--json-schema` answer parsed to — present only where that
    * flag was sent and the forced tool call completed, absent otherwise
    * (`#369`). This is the binary's own parse, handed back on the receipt
    * rather than recovered from `result` a second time.
    */
-  structured_output?: unknown;
+  structured_output?: unknown
 }
 
 /** One model's line in `modelUsage`. Extra fields the receipt carries are not read. */
 interface ClaudeModelUsage {
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadInputTokens?: number;
-  cacheCreationInputTokens?: number;
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadInputTokens?: number
+  cacheCreationInputTokens?: number
 }
 
 /**
@@ -174,18 +168,18 @@ interface ClaudeModelUsage {
  * `codexUsage`'s `hasTokens` guard exists to refuse.
  */
 export function usageFromModelUsage(modelUsage: Record<string, ClaudeModelUsage> | undefined): Usage | undefined {
-  if (!modelUsage) return undefined;
+  if (!modelUsage) return undefined
   const entries = Object.entries(modelUsage)
     .map(([model, u]) => {
-      const tokens: TokenCounts = {};
-      if (u.inputTokens !== undefined) tokens.fresh = u.inputTokens;
-      if (u.cacheReadInputTokens !== undefined) tokens.cacheRead = u.cacheReadInputTokens;
-      if (u.cacheCreationInputTokens !== undefined) tokens.cacheWrite = u.cacheCreationInputTokens;
-      if (u.outputTokens !== undefined) tokens.output = u.outputTokens;
-      return { model, tokens };
+      const tokens: TokenCounts = {}
+      if (u.inputTokens !== undefined) tokens.fresh = u.inputTokens
+      if (u.cacheReadInputTokens !== undefined) tokens.cacheRead = u.cacheReadInputTokens
+      if (u.cacheCreationInputTokens !== undefined) tokens.cacheWrite = u.cacheCreationInputTokens
+      if (u.outputTokens !== undefined) tokens.output = u.outputTokens
+      return { model, tokens }
     })
-    .filter((entry) => Object.values(entry.tokens).some((value) => value !== undefined));
-  return entries.length > 0 ? entries : undefined;
+    .filter((entry) => Object.values(entry.tokens).some((value) => value !== undefined))
+  return entries.length > 0 ? entries : undefined
 }
 
 /**
@@ -196,7 +190,7 @@ export function usageFromModelUsage(modelUsage: Record<string, ClaudeModelUsage>
  * put 4.6 KB in front of the fields somebody opened `RunStarted` to read, and
  * the two copies could then disagree.
  */
-export const PROMPT_ELIDED = "<prompt: recorded as RunPrompted>";
+export const PROMPT_ELIDED = '<prompt: recorded as RunPrompted>'
 
 /**
  * argv, in one place.
@@ -211,16 +205,16 @@ function argsFor(
   permissionMode: PermissionMode,
 ): string[] {
   return [
-    "-p",
+    '-p',
     prompt,
     // Parsed, not scraped, and arriving as it happens. See the module header.
-    "--output-format",
-    "stream-json",
+    '--output-format',
+    'stream-json',
     // Not optional and not a preference: `--print` with
     // `--output-format=stream-json` refuses to start without it —
     // *"When using --print, --output-format=stream-json requires --verbose"*,
     // 2.1.263, which is a failure at spawn rather than a quieter stream.
-    "--verbose",
+    '--verbose',
     // `--include-partial-messages` is the other half of the pair and is
     // deliberately not here. It repeats each message as token deltas *and*
     // whole, which multiplies the largest thing in the run log to say the same
@@ -229,7 +223,7 @@ function argsFor(
     //
     // Outside the worktree: an agent that can edit its own hook
     // configuration has no hook configuration.
-    "--settings",
+    '--settings',
     request.settingsPath,
     // Lingtai refuses no tool call (ADR 0016 §6) and the hook does not stand
     // in for this permission layer: nothing Lingtai installs runs before a
@@ -245,9 +239,9 @@ function argsFor(
     // the worktree is not stopped by lingtai-hook. Containment is the
     // filtered environment and the disposable worktree (see `providesTier`
     // above, and ADR 0007), and the hook only makes the record fail closed.
-    "--permission-mode",
+    '--permission-mode',
     permissionMode,
-    "--session-id",
+    '--session-id',
     sessionIdFor(request.runId),
     // The recipe's turn bound, applied by the binary (`#89`). For weeks this
     // was carried on the request and passed nowhere, and `#84` ran 172 against
@@ -262,20 +256,20 @@ function argsFor(
     // and it stops by *ending the session*, so the run still prints a receipt
     // with its cost. A SIGTERM from here would record exactly the runs that
     // overspent as costing nothing.
-    "--max-turns",
+    '--max-turns',
     String(request.limits.turns),
     // The dollar twin of `--max-turns`, applied the same way: the binary
     // stops the session itself and still prints a receipt, this time with
     // `subtype: "error_max_budget_usd"` (`#370`). Absent unless the recipe
     // declared `runtime.limits.usd` — there is no default to fall back to.
-    ...(request.limits.usd === undefined ? [] : ["--max-budget-usd", String(request.limits.usd)]),
-    ...(request.model ? ["--model", request.model] : []),
+    ...(request.limits.usd === undefined ? [] : ['--max-budget-usd', String(request.limits.usd)]),
+    ...(request.model ? ['--model', request.model] : []),
     // A forced tool call, measured against 2.1.285: every run that carried
     // this flag answered `stop_reason: "tool_use"`, so the prose the prompt
     // asks for is not a thing the model can produce instead (`#369`).
-    ...(request.outputSchema ? ["--json-schema", JSON.stringify(request.outputSchema)] : []),
+    ...(request.outputSchema ? ['--json-schema', JSON.stringify(request.outputSchema)] : []),
     ...extraArgs,
-  ];
+  ]
 }
 
 /**
@@ -293,22 +287,22 @@ function argsFor(
  * haven't granted it yet"* and there is no prompt to answer. What ruins a run
  * agent is exactly what contains a reader.
  */
-export type PermissionMode = "bypassPermissions" | "default";
+export type PermissionMode = 'bypassPermissions' | 'default'
 
 export interface ClaudeCodeOptions {
   /** The `claude` executable. Overridable so a test can use a stand-in. */
-  binary?: string;
+  binary?: string
   /** Extra arguments, for a project that needs one. Never used to add tools. */
-  extraArgs?: readonly string[];
+  extraArgs?: readonly string[]
   /** Defaults to `bypassPermissions`. See `PermissionMode`. */
-  permissionMode?: PermissionMode;
+  permissionMode?: PermissionMode
 }
 
 /** What a closed Claude Code process said, for `claudeClose` to read. */
 export interface ClaudeClosed {
-  exitCode: number | null;
-  stderr: string;
-  stdout: string;
+  exitCode: number | null
+  stderr: string
+  stdout: string
 }
 
 /**
@@ -330,12 +324,12 @@ export function claudeClose(
   closed: ClaudeClosed,
   limits: { turns: number; usd?: number },
 ): { kind: RunFailureKind; detail: string } | null {
-  const turns = parsed?.num_turns ?? 0;
-  const costUsd = parsed?.total_cost_usd ?? null;
-  const cost = costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`;
+  const turns = parsed?.num_turns ?? 0
+  const costUsd = parsed?.total_cost_usd ?? null
+  const cost = costUsd === null ? 'cost unrecorded' : `$${costUsd.toFixed(2)}`
 
-  if (parsed?.subtype === "error_max_turns") {
-    return { kind: "out-of-turns", detail: `${turns} turns, and the recipe allows ${limits.turns} · ${cost}` };
+  if (parsed?.subtype === 'error_max_turns') {
+    return { kind: 'out-of-turns', detail: `${turns} turns, and the recipe allows ${limits.turns} · ${cost}` }
   }
 
   // The dollar twin of the branch above, and here for the same reason it is:
@@ -343,21 +337,21 @@ export function claudeClose(
   // falling over (`#370` — `error_max_budget_usd` was pinned to `crash` before
   // it). Inline in `run` until `#369` made this decision a pure function; it
   // belongs beside its twin rather than beside the spawn.
-  if (parsed?.subtype === "error_max_budget_usd") {
+  if (parsed?.subtype === 'error_max_budget_usd') {
     return {
-      kind: "out-of-usd",
+      kind: 'out-of-usd',
       detail: `${cost}, and the recipe allows $${limits.usd} · ${turns} turns`,
-    };
+    }
   }
 
-  if (parsed?.subtype === "error_max_structured_output_retries") {
+  if (parsed?.subtype === 'error_max_structured_output_retries') {
     return {
-      kind: "no-structured-answer",
+      kind: 'no-structured-answer',
       detail: `the runtime could not make its answer fit the schema after retrying · ${turns} turns · ${cost}`,
-    };
+    }
   }
 
-  if (parsed && closed.exitCode === 0 && parsed.is_error !== true) return null;
+  if (parsed && closed.exitCode === 0 && parsed.is_error !== true) return null
 
   return {
     kind:
@@ -367,24 +361,24 @@ export function claudeClose(
         costUsd,
         isError: parsed.is_error === true || (closed.exitCode !== null && closed.exitCode !== 0),
       })
-        ? "never-started"
-        : "crash",
+        ? 'never-started'
+        : 'crash',
     detail:
       parsed?.result?.slice(0, 500) ??
       ((closed.stderr.trim() || closed.stdout.trim()).slice(-500) || `exited ${closed.exitCode}`),
-  };
+  }
 }
 
 export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtime {
-  const binary = options.binary ?? "claude";
-  const permissionMode: PermissionMode = options.permissionMode ?? "bypassPermissions";
+  const binary = options.binary ?? 'claude'
+  const permissionMode: PermissionMode = options.permissionMode ?? 'bypassPermissions'
 
   return {
     capabilities: CLAUDE_CODE_CAPABILITIES,
 
     /** `claude auth status` — `auth.ts`, which loads nothing but `node:child_process`. */
     checkAuth(env: Record<string, string>): Promise<AuthStatus> {
-      return claudeCodeAuth(binary, env);
+      return claudeCodeAuth(binary, env)
     },
 
     /** The same list `run` spawns, with the prompt standing in. */
@@ -392,17 +386,17 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
       return {
         command: binary,
         args: argsFor(request, PROMPT_ELIDED, options.extraArgs ?? [], permissionMode),
-      };
+      }
     },
 
     async run(request: RunRequest): Promise<RunOutcome> {
-      const sessionId = sessionIdFor(request.runId);
-      const started = Date.now();
+      const sessionId = sessionIdFor(request.runId)
+      const started = Date.now()
       // A run with no log writes to the one that is not there, so there is no
       // `?.` on the hot path (0034 §1).
-      const trace = request.log ?? NO_RUN_LOG;
+      const trace = request.log ?? NO_RUN_LOG
 
-      const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode);
+      const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode)
 
       return new Promise<RunOutcome>((resolve) => {
         const child = spawn(binary, args, {
@@ -411,7 +405,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           // the hook's wiring, and nothing else — one of the three real
           // boundaries (doc/decisions-archive/0007).
           env: request.env as NodeJS.ProcessEnv,
-          stdio: ["ignore", "pipe", "pipe"],
+          stdio: ['ignore', 'pipe', 'pipe'],
           // Its own process group
           // ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §3).
           //
@@ -426,7 +420,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
           // leaves the agent alive, which is why recovery kills the process a
           // claim names before it releases it (§5, `daemon/reconcile.ts`).
           detached: true,
-        });
+        })
 
         /**
          * The **end** of stdout, not all of it.
@@ -438,9 +432,9 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
          * What the ending needs is the last line, so that is what is kept —
          * bounded, and cut from the front, which never touches it.
          */
-        let stdout = "";
-        let stderr = "";
-        let settled = false;
+        let stdout = ''
+        let stderr = ''
+        let settled = false
 
         // Whole lines only. A chunk boundary falls anywhere, and half a JSON
         // object traced as prose would be both unreadable and a lie about what
@@ -448,44 +442,44 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
         // dropped: it is the partial-stream case, and a fragment is not a fact.
         const stream = lineReader((line) => {
           for (const [label, detail] of traceOf(line, { tools: request.traceTools === true })) {
-            trace.note(label, detail);
+            trace.note(label, detail)
           }
-        });
-        const errors = lineReader((line) => trace.note("stderr", line));
+        })
+        const errors = lineReader((line) => trace.note('stderr', line))
 
         // A chunk boundary can also fall inside a character. `c.toString()`
         // would turn the halves into two replacement characters, which under
         // `json` corrupted a receipt nobody read closely and now corrupts a
         // sentence somebody does. The decoder holds the first half back until
         // the second arrives.
-        const outText = new StringDecoder("utf8");
-        const errText = new StringDecoder("utf8");
+        const outText = new StringDecoder('utf8')
+        const errText = new StringDecoder('utf8')
 
-        child.stdout.on("data", (c: Buffer) => {
-          const text = outText.write(c);
-          stdout = (stdout + text).slice(-RECEIPT_TAIL_CHARS);
-          stream(text);
-        });
-        child.stderr.on("data", (c: Buffer) => {
-          const text = errText.write(c);
-          stderr += text;
-          errors(text);
-        });
+        child.stdout.on('data', (c: Buffer) => {
+          const text = outText.write(c)
+          stdout = (stdout + text).slice(-RECEIPT_TAIL_CHARS)
+          stream(text)
+        })
+        child.stderr.on('data', (c: Buffer) => {
+          const text = errText.write(c)
+          stderr += text
+          errors(text)
+        })
 
         const finish = (outcome: RunOutcome) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(wall);
-          request.signal?.removeEventListener("abort", onAbort);
-          resolve(outcome);
-        };
+          if (settled) return
+          settled = true
+          clearTimeout(wall)
+          request.signal?.removeEventListener('abort', onAbort)
+          resolve(outcome)
+        }
 
-        const kill = (kind: "timeout" | "aborted", detail: string) => {
-          child.kill("SIGTERM");
+        const kill = (kind: 'timeout' | 'aborted', detail: string) => {
+          child.kill('SIGTERM')
           // A SIGTERM the agent ignores must not become a hang. The event is the
           // point; a process that will not die is a detail for the next line.
-          const hard = setTimeout(() => child.kill("SIGKILL"), 5_000);
-          hard.unref?.();
+          const hard = setTimeout(() => child.kill('SIGKILL'), 5_000)
+          hard.unref?.()
           finish({
             exitCode: null,
             turns: 0,
@@ -494,17 +488,17 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             text: null,
             failure: { kind, detail },
             sessionId,
-          });
-        };
+          })
+        }
 
         const wall = setTimeout(
-          () => kill("timeout", `no result within ${request.limits.wallMs}ms`),
+          () => kill('timeout', `no result within ${request.limits.wallMs}ms`),
           request.limits.wallMs,
-        );
-        const onAbort = () => kill("aborted", "the conductor aborted the run");
-        request.signal?.addEventListener("abort", onAbort, { once: true });
+        )
+        const onAbort = () => kill('aborted', 'the conductor aborted the run')
+        request.signal?.addEventListener('abort', onAbort, { once: true })
 
-        child.on("error", (err) =>
+        child.on('error', (err) =>
           finish({
             exitCode: null,
             turns: 0,
@@ -513,35 +507,35 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             text: null,
             // Includes "claude is not installed", which must be an event and not
             // a stack trace nobody sees.
-            failure: { kind: "crash", detail: err.message },
+            failure: { kind: 'crash', detail: err.message },
             sessionId,
           }),
-        );
+        )
 
-        child.on("close", (code) => {
-          const parsed = parseResult(stdout);
-          const durationMs = parsed?.duration_ms ?? Date.now() - started;
-          const turns = parsed?.num_turns ?? 0;
-          const costUsd = parsed?.total_cost_usd ?? null;
-          const usage = usageFromModelUsage(parsed?.modelUsage);
+        child.on('close', (code) => {
+          const parsed = parseResult(stdout)
+          const durationMs = parsed?.duration_ms ?? Date.now() - started
+          const turns = parsed?.num_turns ?? 0
+          const costUsd = parsed?.total_cost_usd ?? null
+          const usage = usageFromModelUsage(parsed?.modelUsage)
 
           // The last line of the log is how it ended, in the runtime's own
           // words — `subtype` included, which only `claudeClose` reads out of
           // (below). A log kept because the run did not land opens on what it
           // was for and closes on this.
           trace.note(
-            "receipt",
+            'receipt',
             parsed
-              ? `${parsed.subtype ?? (parsed.is_error === true ? "error" : "result")} · ` +
-                  `${turns} turns · ${costUsd === null ? "cost unrecorded" : `$${costUsd.toFixed(2)}`} · ` +
+              ? `${parsed.subtype ?? (parsed.is_error === true ? 'error' : 'result')} · ` +
+                  `${turns} turns · ${costUsd === null ? 'cost unrecorded' : `$${costUsd.toFixed(2)}`} · ` +
                   `exit ${code}`
               : `no receipt on the stream · exit ${code}`,
-          );
+          )
 
           // The decision, made once and pure — `claudeClose`. Before this it
           // was three branches inline here, where no unit test could reach any
           // of them (`pnpm test` runs no process).
-          const failure = claudeClose(parsed, { exitCode: code, stderr, stdout }, request.limits);
+          const failure = claudeClose(parsed, { exitCode: code, stderr, stdout }, request.limits)
 
           finish({
             exitCode: code,
@@ -559,11 +553,11 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
             ...(failure === null && parsed?.structured_output !== undefined
               ? { structured: parsed.structured_output }
               : {}),
-          });
-        });
-      });
+          })
+        })
+      })
     },
-  };
+  }
 }
 
 /**
@@ -582,15 +576,15 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
  * misreads one.
  */
 function receiptIn(line: string): ClaudeResult | null {
-  const t = line.trim();
-  if (!t.startsWith("{")) return null;
-  let parsed: ClaudeResult;
+  const t = line.trim()
+  if (!t.startsWith('{')) return null
+  let parsed: ClaudeResult
   try {
-    parsed = JSON.parse(t) as ClaudeResult;
+    parsed = JSON.parse(t) as ClaudeResult
   } catch {
-    return null;
+    return null
   }
-  return parsed.type === undefined || parsed.type === "result" ? parsed : null;
+  return parsed.type === undefined || parsed.type === 'result' ? parsed : null
 }
 
 /**
@@ -603,15 +597,15 @@ function receiptIn(line: string): ClaudeResult | null {
  * ending rather than the first one's.
  */
 export function parseResult(stdout: string): ClaudeResult | null {
-  const trimmed = stdout.trim();
-  if (!trimmed) return null;
-  const whole = receiptIn(trimmed);
-  if (whole) return whole;
-  for (const line of trimmed.split("\n").reverse()) {
-    const found = receiptIn(line);
-    if (found) return found;
+  const trimmed = stdout.trim()
+  if (!trimmed) return null
+  const whole = receiptIn(trimmed)
+  if (whole) return whole
+  for (const line of trimmed.split('\n').reverse()) {
+    const found = receiptIn(line)
+    if (found) return found
   }
-  return null;
+  return null
 }
 
 /**
@@ -623,7 +617,7 @@ export function parseResult(stdout: string): ClaudeResult | null {
  * a run's stdout is now the transcript, and holding all of it to read the last
  * line of it would be tens of megabytes in the daemon's heap per run.
  */
-export const RECEIPT_TAIL_CHARS = 262_144;
+export const RECEIPT_TAIL_CHARS = 262_144
 
 /**
  * Where one traced line stops.
@@ -636,7 +630,7 @@ export const RECEIPT_TAIL_CHARS = 262_144;
  * what keeps a single runaway one from spending the whole of 0034 §7's file
  * cap in one go.
  */
-export const TRACE_LINE_CHARS = 4_000;
+export const TRACE_LINE_CHARS = 4_000
 
 /**
  * `…` and the count, so a clipped line says it was clipped.
@@ -646,10 +640,10 @@ export const TRACE_LINE_CHARS = 4_000;
  * second file cap.
  */
 export function clip(text: string): string {
-  const t = text.trim();
+  const t = text.trim()
   return t.length <= TRACE_LINE_CHARS
     ? t
-    : `${t.slice(0, TRACE_LINE_CHARS)} … (${t.length - TRACE_LINE_CHARS} more characters; the transcript has all of it)`;
+    : `${t.slice(0, TRACE_LINE_CHARS)} … (${t.length - TRACE_LINE_CHARS} more characters; the transcript has all of it)`
 }
 
 /**
@@ -675,45 +669,42 @@ export function clip(text: string): string {
  * `observedCall`, so a redacted command stays redacted. There is no verdict on
  * the line because there was no decision.
  */
-export function traceOf(
-  line: string,
-  options: { tools?: boolean } = {},
-): readonly (readonly [string, string])[] {
-  const t = line.trim();
-  if (!t) return [];
-  if (!t.startsWith("{")) return [["stdout", clip(t)]];
+export function traceOf(line: string, options: { tools?: boolean } = {}): readonly (readonly [string, string])[] {
+  const t = line.trim()
+  if (!t) return []
+  if (!t.startsWith('{')) return [['stdout', clip(t)]]
 
   let event: {
-    type?: string;
+    type?: string
     message?: {
       content?: readonly {
-        type?: string;
-        text?: string;
-        thinking?: string;
-        name?: string;
-        input?: Record<string, unknown>;
-      }[];
-    };
-  };
-  try {
-    event = JSON.parse(t) as typeof event;
-  } catch {
-    return [["stdout", clip(t)]];
-  }
-
-  if (event.type !== "assistant") return [];
-  const said: (readonly [string, string])[] = [];
-  for (const block of event.message?.content ?? []) {
-    if (block.type === "text" && block.text?.trim()) said.push(["agent", clip(block.text)]);
-    // Its reasoning, which is often the only account of why it did the thing
-    // the tool trace shows it doing.
-    if (block.type === "thinking" && block.thinking?.trim()) said.push(["think", clip(block.thinking)]);
-    if (options.tools && block.type === "tool_use" && block.name) {
-      const call = observedCall({ tool: block.name, input: block.input ?? {} });
-      said.push([call.tool, call.target.replace(/\s*\r?\n\s*/g, " ")]);
+        type?: string
+        text?: string
+        thinking?: string
+        name?: string
+        input?: Record<string, unknown>
+      }[]
     }
   }
-  return said;
+  try {
+    event = JSON.parse(t) as typeof event
+  } catch {
+    return [['stdout', clip(t)]]
+  }
+
+  if (event.type !== 'assistant') return []
+  const said: (readonly [string, string])[] = []
+  for (const block of event.message?.content ?? []) {
+    if (block.type === 'text' && block.text?.trim()) said.push(['agent', clip(block.text)])
+    // Its reasoning, which is often the only account of why it did the thing
+    // the tool trace shows it doing.
+    if (block.type === 'thinking' && block.thinking?.trim()) said.push(['think', clip(block.thinking)])
+    if (options.tools && block.type === 'tool_use' && block.name) {
+      const call = observedCall({ tool: block.name, input: block.input ?? {} })
+      said.push([call.tool, call.target.replace(/\s*\r?\n\s*/g, ' ')])
+    }
+  }
+  return said
 }
 
 /**
@@ -729,19 +720,19 @@ export function traceOf(
  * same hazard one adapter along, and the fix is not worth writing twice.
  */
 export function lineReader(onLine: (line: string) => void): (chunk: string) => void {
-  let pending = "";
+  let pending = ''
   return (chunk: string) => {
-    pending += chunk;
-    let nl = pending.indexOf("\n");
+    pending += chunk
+    let nl = pending.indexOf('\n')
     while (nl >= 0) {
-      onLine(pending.slice(0, nl));
-      pending = pending.slice(nl + 1);
-      nl = pending.indexOf("\n");
+      onLine(pending.slice(0, nl))
+      pending = pending.slice(nl + 1)
+      nl = pending.indexOf('\n')
     }
-  };
+  }
 }
 
 /** A run id. ULIDs are not in the dependency budget; a UUID sorts well enough. */
 export function newRunId(): string {
-  return `run-${randomUUID()}`;
+  return `run-${randomUUID()}`
 }

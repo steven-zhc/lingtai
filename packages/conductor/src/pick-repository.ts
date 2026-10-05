@@ -26,8 +26,9 @@
  * the screen after any return, with or without `state`, is `listRepositories`,
  * which asks the App what it can see now.
  */
-import { randomBytes } from "node:crypto";
-import { type ProjectState } from "@lingtai/domain";
+import { randomBytes } from 'node:crypto'
+
+import { type ProjectState } from '@lingtai/domain'
 import {
   type AppReader,
   GitHubError,
@@ -38,11 +39,11 @@ import {
   installationRepositories,
   parseSlug,
   permissionGaps,
-} from "@lingtai/github";
+} from '@lingtai/github'
 
 /** One repository on the list, and whether the log already has it. */
 export interface ListedRepository extends VisibleRepository {
-  slug: string;
+  slug: string
   /**
    * `registered` has a recipe, `pending` is recorded and waiting for `Recheck` on
    * the board's pending card (#163, #182) — its recipe is already on this machine,
@@ -62,29 +63,29 @@ export interface ListedRepository extends VisibleRepository {
    * `takenBy`. It is not this repository, and it is not offered either: `add`
    * would write this repository onto that project's stream.
    */
-  onboarded: "registered" | "pending" | "unrecorded" | "taken" | null;
+  onboarded: 'registered' | 'pending' | 'unrecorded' | 'taken' | null
   /** The owner of the project that already has this name, when `onboarded` is `taken`. */
-  takenBy?: string;
+  takenBy?: string
 }
 
 export interface ListedInstallation {
-  installation: Installation;
+  installation: Installation
   /**
    * Why GitHub would not list this installation's repositories — a suspended
    * installation refuses its token — or null. One installation that will not
    * answer is a sentence under its own account, never the whole picker.
    */
-  unanswered: string | null;
+  unanswered: string | null
   /** `permissionGaps`, named one by one — a gap here is a 403 in the middle of a merge. */
-  gaps: PermissionGap[];
-  repositories: ListedRepository[];
+  gaps: PermissionGap[]
+  repositories: ListedRepository[]
 }
 
 export interface Picker {
   /** Empty is the first-class *not installed yet* screen, not an error. */
-  installations: ListedInstallation[];
+  installations: ListedInstallation[]
   /** Where to install the App, with a `state` on it — null when the App's slug is not known. */
-  installUrl: string | null;
+  installUrl: string | null
 }
 
 /**
@@ -95,60 +96,64 @@ export interface Picker {
  * resumable without it (see the module comment), so a `state` is a courtesy to
  * whoever reads the setup URL's query and not a check anything depends on.
  */
-export function installLink(installUrl: string | null, state = randomBytes(16).toString("base64url")): string | null {
-  if (installUrl === null) return null;
-  const url = new URL(installUrl);
-  url.searchParams.set("state", state);
-  return url.toString();
+export function installLink(installUrl: string | null, state = randomBytes(16).toString('base64url')): string | null {
+  if (installUrl === null) return null
+  const url = new URL(installUrl)
+  url.searchParams.set('state', state)
+  return url.toString()
 }
 
-const same = (a: string | null, b: string) => a !== null && a.toLowerCase() === b.toLowerCase();
+const same = (a: string | null, b: string) => a !== null && a.toLowerCase() === b.toLowerCase()
 
 function onboardedAs(
   projects: readonly ProjectState[],
   repo: VisibleRepository,
   owners: ReadonlySet<string>,
   everyAnswered: boolean,
-): Pick<ListedRepository, "onboarded" | "takenBy"> {
+): Pick<ListedRepository, 'onboarded' | 'takenBy'> {
   // A project is keyed by the repository's name, whoever owns it — so the
   // match is on the name, and the owner only decides whether it is this one.
-  const found = projects.find((p) => same(p.project, repo.repo));
-  if (found === undefined) return { onboarded: null };
-  if (found.owner !== null && !same(found.owner, repo.owner)) return { onboarded: "taken", takenBy: found.owner };
+  const found = projects.find((p) => same(p.project, repo.repo))
+  if (found === undefined) return { onboarded: null }
+  if (found.owner !== null && !same(found.owner, repo.owner)) return { onboarded: 'taken', takenBy: found.owner }
   // `owner` is null on one registered before it was recorded, and then it only
   // says which repository it is when every installation answered and one
   // account has that name.
-  if (found.owner === null && (owners.size > 1 || !everyAnswered)) return { onboarded: "unrecorded" };
-  return { onboarded: found.configHash !== null ? "registered" : "pending" };
+  if (found.owner === null && (owners.size > 1 || !everyAnswered)) return { onboarded: 'unrecorded' }
+  return { onboarded: found.configHash !== null ? 'registered' : 'pending' }
 }
 
 /** Every repository the App can see, installation by installation. */
 export async function listRepositories(options: {
-  reader: AppReader;
+  reader: AppReader
   /** Every project stream folded — registered and pending alike (`loadAllProjects`). */
-  projects: readonly ProjectState[];
+  projects: readonly ProjectState[]
   /** `offerCreation().installUrl` — the App's own install page, or null. */
-  installUrl: string | null;
+  installUrl: string | null
 }): Promise<Picker> {
-  const installations = await appInstallations(options.reader);
+  const installations = await appInstallations(options.reader)
   const fetched = await Promise.all(
     installations.map(async (installation) => {
       try {
-        return { installation, repositories: await installationRepositories(options.reader, installation.id), unanswered: null };
+        return {
+          installation,
+          repositories: await installationRepositories(options.reader, installation.id),
+          unanswered: null,
+        }
       } catch (err) {
-        return { installation, repositories: [], unanswered: (err as Error).message };
+        return { installation, repositories: [], unanswered: (err as Error).message }
       }
     }),
-  );
+  )
   // Which accounts the App can see each repository name under.
-  const owners = new Map<string, Set<string>>();
+  const owners = new Map<string, Set<string>>()
   for (const { repositories } of fetched) {
     for (const r of repositories) {
-      const name = r.repo.toLowerCase();
-      owners.set(name, (owners.get(name) ?? new Set()).add(r.owner.toLowerCase()));
+      const name = r.repo.toLowerCase()
+      owners.set(name, (owners.get(name) ?? new Set()).add(r.owner.toLowerCase()))
     }
   }
-  const everyAnswered = fetched.every((f) => f.unanswered === null);
+  const everyAnswered = fetched.every((f) => f.unanswered === null)
   const listed = fetched.map(({ installation, repositories, unanswered }) => ({
     installation,
     unanswered,
@@ -158,27 +163,27 @@ export async function listRepositories(options: {
       slug: `${r.owner}/${r.repo}`,
       ...onboardedAs(options.projects, r, owners.get(r.repo.toLowerCase())!, everyAnswered),
     })),
-  }));
-  return { installations: listed, installUrl: installLink(options.installUrl) };
+  }))
+  return { installations: listed, installUrl: installLink(options.installUrl) }
 }
 
 /** A link that fixes the thing, and what to call it. */
 export interface Fix {
-  href: string;
-  label: string;
+  href: string
+  label: string
 }
 
 export type Choice =
   | { ok: true; owner: string; repo: string; slug: string; installation: Installation }
   | {
-      ok: false;
+      ok: false
       /** One sentence: why this repository cannot be taken from here. */
-      why: string;
+      why: string
       /** The page that fixes it, when there is one. */
-      fix: Fix | null;
+      fix: Fix | null
       /** Missing scopes, one by one, when that is the reason. */
-      gaps: PermissionGap[];
-    };
+      gaps: PermissionGap[]
+    }
 
 /**
  * A repository, named by a click or by a pasted link, checked against the list.
@@ -192,32 +197,32 @@ export type Choice =
  * GitHub repository* does not give.
  */
 export function choose(picker: Picker, input: string): Choice {
-  let owner: string;
-  let repo: string;
+  let owner: string
+  let repo: string
   try {
-    ({ owner, repo } = parseSlug(input));
+    ;({ owner, repo } = parseSlug(input))
   } catch (err) {
-    return { ok: false, why: (err as Error).message, fix: null, gaps: [] };
+    return { ok: false, why: (err as Error).message, fix: null, gaps: [] }
   }
-  const slug = `${owner}/${repo}`;
+  const slug = `${owner}/${repo}`
 
   for (const listed of picker.installations) {
-    const found = listed.repositories.find((r) => same(r.owner, owner) && same(r.repo, repo));
-    if (found === undefined) continue;
+    const found = listed.repositories.find((r) => same(r.owner, owner) && same(r.repo, repo))
+    if (found === undefined) continue
     if (found.onboarded !== null) {
       return {
         ok: false,
         why:
-          found.onboarded === "registered"
+          found.onboarded === 'registered'
             ? `${found.slug} is already onboarded.`
-            : found.onboarded === "pending"
+            : found.onboarded === 'pending'
               ? `${found.slug} is already on its way in — its recipe is on this machine, and it is waiting for Recheck on the board's pending card to register it.`
-              : found.onboarded === "taken"
+              : found.onboarded === 'taken'
                 ? taken(found)
                 : unrecorded(found),
         fix: null,
         gaps: [],
-      };
+      }
     }
     if (listed.gaps.length > 0) {
       return {
@@ -225,19 +230,19 @@ export function choose(picker: Picker, input: string): Choice {
         why: `The App can see ${found.slug}, but its installation on ${listed.installation.account} is missing permissions.`,
         fix: settings(listed.installation, "Grant them on the installation's page"),
         gaps: listed.gaps,
-      };
+      }
     }
-    return { ok: true, owner: found.owner, repo: found.repo, slug: found.slug, installation: listed.installation };
+    return { ok: true, owner: found.owner, repo: found.repo, slug: found.slug, installation: listed.installation }
   }
 
-  const onOwner = picker.installations.find((l) => same(l.installation.account, owner));
+  const onOwner = picker.installations.find((l) => same(l.installation.account, owner))
   if (onOwner === undefined) {
     return {
       ok: false,
       why: `The App is not installed on ${owner}, so it cannot see ${slug}.`,
       fix: picker.installUrl === null ? null : { href: picker.installUrl, label: `Install it on ${owner}` },
       gaps: [],
-    };
+    }
   }
   if (onOwner.unanswered !== null) {
     return {
@@ -245,18 +250,18 @@ export function choose(picker: Picker, input: string): Choice {
       why: `GitHub would not say what the App can see on ${onOwner.installation.account} — ${onOwner.unanswered}.`,
       fix: settings(onOwner.installation, `Check the installation on ${onOwner.installation.account}`),
       gaps: [],
-    };
+    }
   }
   return {
     ok: false,
     why:
-      onOwner.installation.repositorySelection === "selected"
+      onOwner.installation.repositorySelection === 'selected'
         ? `The App is installed on ${onOwner.installation.account} for selected repositories, and ${slug} is not one of them.`
         : `The App can see every repository on ${onOwner.installation.account}, and ${slug} is not among them — ` +
-          "check the name, or whether it has moved.",
+          'check the name, or whether it has moved.',
     fix: settings(onOwner.installation, `Add ${repo} on the installation's page`),
     gaps: onOwner.gaps,
-  };
+  }
 }
 
 /** What a name registered before owners were can and cannot say, and how to settle it. */
@@ -265,7 +270,7 @@ export function unrecorded(repo: { repo: string }): string {
     `A project called ${repo.repo} was registered before owners were recorded, and the App cannot see ${repo.repo} ` +
     `under exactly one account with every installation answering, so Lingtai cannot tell which it is. ` +
     `Run pnpm lingtai add <owner>/${repo.repo} for the one it is, and that owner is recorded.`
-  );
+  )
 }
 
 /** Why a repository whose name another owner's project already has is not offered. */
@@ -273,11 +278,11 @@ export function taken(repo: { slug: string; repo: string; takenBy?: string }): s
   return (
     `A project called ${repo.repo} is already ${repo.takenBy}/${repo.repo}, and a project is keyed by its name, ` +
     `so onboarding ${repo.slug} would write onto that project's stream.`
-  );
+  )
 }
 
 function settings(installation: Installation, label: string): Fix | null {
-  return installation.htmlUrl === null ? null : { href: installation.htmlUrl, label };
+  return installation.htmlUrl === null ? null : { href: installation.htmlUrl, label }
 }
 
 /**
@@ -296,13 +301,13 @@ function settings(installation: Installation, label: string): Fix | null {
  * on a screen that lists every one of them anyway.
  */
 export async function verifiedInstallation(reader: AppReader, raw: string | null): Promise<number | null> {
-  if (raw === null || !/^\d+$/.test(raw)) return null;
+  if (raw === null || !/^\d+$/.test(raw)) return null
   try {
-    const installation = await reader.request<{ id: number }>("GET", `/app/installations/${raw}`, "app");
-    return installation.id;
+    const installation = await reader.request<{ id: number }>('GET', `/app/installations/${raw}`, 'app')
+    return installation.id
   } catch (err) {
-    if (err instanceof GitHubError && err.status === 404) return null;
-    throw err;
+    if (err instanceof GitHubError && err.status === 404) return null
+    throw err
   }
 }
 
@@ -316,19 +321,19 @@ export async function verifiedInstallation(reader: AppReader, raw: string | null
  * `setup_action=request` with no installation to name.
  */
 export async function setupReturn(reader: AppReader, query: URLSearchParams): Promise<string> {
-  const target = new URLSearchParams();
-  if (query.get("setup_action") === "request") {
-    target.set("requested", "1");
+  const target = new URLSearchParams()
+  if (query.get('setup_action') === 'request') {
+    target.set('requested', '1')
   } else {
-    let id: number | null = null;
+    let id: number | null = null
     try {
-      id = await verifiedInstallation(reader, query.get("installation_id"));
+      id = await verifiedInstallation(reader, query.get('installation_id'))
     } catch {
       // GitHub would not answer. The picker asks it again and says so there;
       // a hint is not worth failing the return for.
     }
-    if (id !== null) target.set("installed", String(id));
+    if (id !== null) target.set('installed', String(id))
   }
-  const q = target.toString();
-  return `/setup/repository${q === "" ? "" : `?${q}`}`;
+  const q = target.toString()
+  return `/setup/repository${q === '' ? '' : `?${q}`}`
 }

@@ -16,7 +16,9 @@
  * which carries no `turn.completed` at all and is the shape an account-wide
  * refusal takes.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest'
+
+import { PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from '../src/claude-code.ts'
 import {
   CODEX_CAPABILITIES,
   codexAccount,
@@ -26,32 +28,32 @@ import {
   codexOutcome,
   codexTrace,
   codexUsage,
-} from "../src/codex.ts";
-import { renderSettings } from "../src/hook-config.ts";
-import { meetsTier, missingForTier, RUN_LIMITS } from "../src/runtime.ts";
-import { PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from "../src/claude-code.ts";
+} from '../src/codex.ts'
+import { renderSettings } from '../src/hook-config.ts'
+import { meetsTier, missingForTier, RUN_LIMITS } from '../src/runtime.ts'
 
-const jsonl = (...events: readonly unknown[]): string[] => events.map((e) => JSON.stringify(e));
+const jsonl = (...events: readonly unknown[]): string[] => events.map((e) => JSON.stringify(e))
 
 /** A run that answered. `usage` carries tokens and no dollars, which is the point. */
 const clean = () =>
   jsonl(
-    { type: "thread.started", thread_id: "01a0ee8f-64cc-7532-abcd-096ecaa6d997" },
+    { type: 'thread.started', thread_id: '01a0ee8f-64cc-7532-abcd-096ecaa6d997' },
     {
-      type: "item.completed",
+      type: 'item.completed',
       item: {
-        id: "item_0",
-        type: "error",
-        message: "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.",
+        id: 'item_0',
+        type: 'error',
+        message:
+          '`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.',
       },
     },
-    { type: "turn.started" },
-    { type: "item.completed", item: { id: "item_1", type: "agent_message", text: "ok" } },
+    { type: 'turn.started' },
+    { type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: 'ok' } },
     {
-      type: "turn.completed",
+      type: 'turn.completed',
       usage: { input_tokens: 17018, cached_input_tokens: 7680, output_tokens: 5 },
     },
-  );
+  )
 
 /**
  * The measured hook refusal: `UserPromptSubmit` exited 2, so nothing reached a
@@ -59,14 +61,13 @@ const clean = () =>
  */
 const blocked = () =>
   jsonl(
-    { type: "thread.started", thread_id: "01a0ee90-02cd-70c1-a793-b4d970d03ad2" },
-    { type: "turn.started" },
-    { type: "turn.completed", usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 } },
-  );
+    { type: 'thread.started', thread_id: '01a0ee90-02cd-70c1-a793-b4d970d03ad2' },
+    { type: 'turn.started' },
+    { type: 'turn.completed', usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 } },
+  )
 
 /** The notice `--dangerously-bypass-hook-trust` emits on every hooked run — twice. */
-const BYPASS =
-  "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.";
+const BYPASS = '`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.'
 
 /**
  * **A turn that ended in failure**, which is the shape an account-wide refusal
@@ -81,24 +82,24 @@ const BYPASS =
  */
 const failedTurn = (message: string, ...before: readonly unknown[]) =>
   jsonl(
-    { type: "thread.started", thread_id: "01a0eecc-89a1-7940-81b6-e33dbebbd82d" },
-    { type: "item.completed", item: { id: "item_0", type: "error", message: BYPASS } },
-    { type: "item.completed", item: { id: "item_1", type: "error", message: BYPASS } },
-    { type: "turn.started" },
+    { type: 'thread.started', thread_id: '01a0eecc-89a1-7940-81b6-e33dbebbd82d' },
+    { type: 'item.completed', item: { id: 'item_0', type: 'error', message: BYPASS } },
+    { type: 'item.completed', item: { id: 'item_1', type: 'error', message: BYPASS } },
+    { type: 'turn.started' },
     ...before,
-    { type: "error", message },
-    { type: "turn.failed", error: { message } },
-  );
+    { type: 'error', message },
+    { type: 'turn.failed', error: { message } },
+  )
 
 /** The notices and nothing else: a stream that stopped after them. */
 const failedTurnless = () =>
   jsonl(
-    { type: "thread.started", thread_id: "01a0eecc-0000-7940-81b6-e33dbebbd82d" },
-    { type: "item.completed", item: { id: "item_0", type: "error", message: BYPASS } },
-  );
+    { type: 'thread.started', thread_id: '01a0eecc-0000-7940-81b6-e33dbebbd82d' },
+    { type: 'item.completed', item: { id: 'item_0', type: 'error', message: BYPASS } },
+  )
 
 /** What the wall says, and the sentence `parseResetAt` is handed (0031 §4). */
-const QUOTA = "You have hit your usage limit. Try again in 3 hours.";
+const QUOTA = 'You have hit your usage limit. Try again in 3 hours.'
 
 /**
  * What `codex exec` writes to stderr about **being called**, on every invocation.
@@ -109,67 +110,67 @@ const QUOTA = "You have hit your usage limit. Try again in 3 hours.";
  * is a process no Codex run is — which is how a notice about the invocation came
  * to be recorded as why every hook-blocked run failed.
  */
-const STDIN_NOTICE = "Reading additional input from stdin...";
+const STDIN_NOTICE = 'Reading additional input from stdin...'
 
 /** Nothing else came back from the process — and stderr is never empty. */
-const closed = (exitCode: number | null, stderr = "", stdoutTail = "") => ({
+const closed = (exitCode: number | null, stderr = '', stdoutTail = '') => ({
   exitCode,
-  stderr: stderr === "" ? `${STDIN_NOTICE}\n` : `${STDIN_NOTICE}\n${stderr}\n`,
+  stderr: stderr === '' ? `${STDIN_NOTICE}\n` : `${STDIN_NOTICE}\n${stderr}\n`,
   stdoutTail,
-});
+})
 
-describe("the receipt, as a fold over the stream", () => {
-  it("reads the session id off thread.started, because nothing supplies one", () => {
+describe('the receipt, as a fold over the stream', () => {
+  it('reads the session id off thread.started, because nothing supplies one', () => {
     // `sessionIdFor`'s derive-from-the-run-id trick is deliberately not reused:
     // `codex exec` takes no `--session-id`, and a computable UUID naming no
     // transcript is a worse answer than the empty string.
-    expect(codexOutcome(clean()).sessionId).toBe("01a0ee8f-64cc-7532-abcd-096ecaa6d997");
-    expect(codexOutcome([]).sessionId).toBe("");
-  });
+    expect(codexOutcome(clean()).sessionId).toBe('01a0ee8f-64cc-7532-abcd-096ecaa6d997')
+    expect(codexOutcome([]).sessionId).toBe('')
+  })
 
-  it("counts turns as agent messages and keeps the last one as the text", () => {
+  it('counts turns as agent messages and keeps the last one as the text', () => {
     const two = [
       ...clean().slice(0, -1),
-      JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "and this" } }),
-      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } }),
-    ];
-    const receipt = codexOutcome(two);
-    expect(receipt.turns).toBe(2);
-    expect(receipt.text).toBe("and this");
-  });
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'and this' } }),
+      JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 10, output_tokens: 2 } }),
+    ]
+    const receipt = codexOutcome(two)
+    expect(receipt.turns).toBe(2)
+    expect(receipt.text).toBe('and this')
+  })
 
   /** An `error` item is not a failure: the bypass notice is one on every hooked run. */
-  it("collects error items as detail without making the run a failed one", () => {
-    const receipt = codexOutcome(clean());
-    expect(receipt.errors).toHaveLength(1);
-    expect(receipt.errors[0]).toMatch(/bypass-hook-trust/);
-    expect(receipt.completed).toBe(true);
-    expect(receipt.turns).toBe(1);
-  });
+  it('collects error items as detail without making the run a failed one', () => {
+    const receipt = codexOutcome(clean())
+    expect(receipt.errors).toHaveLength(1)
+    expect(receipt.errors[0]).toMatch(/bypass-hook-trust/)
+    expect(receipt.completed).toBe(true)
+    expect(receipt.turns).toBe(1)
+  })
 
-  it("has no receipt at all where the stream never reached turn.completed", () => {
-    expect(codexOutcome(clean().slice(0, -1)).completed).toBe(false);
+  it('has no receipt at all where the stream never reached turn.completed', () => {
+    expect(codexOutcome(clean().slice(0, -1)).completed).toBe(false)
     // A line cut mid-object is a fragment and not a fact.
-    expect(codexOutcome(['{"type":"turn.compl']).completed).toBe(false);
-    expect(codexOutcome(["not json at all", ""]).completed).toBe(false);
-  });
+    expect(codexOutcome(['{"type":"turn.compl']).completed).toBe(false)
+    expect(codexOutcome(['not json at all', '']).completed).toBe(false)
+  })
 
   /**
    * The measurement `canFailClosed` rests on, read as a receipt: zero billed
    * tokens and no message, beside a `turn.completed` that did arrive.
    */
-  it("says a hook-blocked run reached no model, though it completed and exited 0", () => {
-    const receipt = codexOutcome(blocked());
-    expect(receipt.completed).toBe(true);
-    expect(receipt.billedTokens).toBe(0);
-    expect(receipt.turns).toBe(0);
-  });
+  it('says a hook-blocked run reached no model, though it completed and exited 0', () => {
+    const receipt = codexOutcome(blocked())
+    expect(receipt.completed).toBe(true)
+    expect(receipt.billedTokens).toBe(0)
+    expect(receipt.turns).toBe(0)
+  })
 
-  it("counts input and output tokens as the evidence of spend", () => {
+  it('counts input and output tokens as the evidence of spend', () => {
     // Not `cached_input_tokens`, which is a discount on the input and not a
     // second charge; what is being asked is only *whether* a model was reached.
-    expect(codexOutcome(clean()).billedTokens).toBe(17018 + 5);
-  });
+    expect(codexOutcome(clean()).billedTokens).toBe(17018 + 5)
+  })
 
   /**
    * The five counts (#316, 0110 §3) are **disjoint**, never Codex's own
@@ -179,9 +180,9 @@ describe("the receipt, as a fold over the stream", () => {
    * `billedTokens` above is untouched, carrying on as the sum it always was.
    */
   it("keeps the five counts disjoint rather than Codex's own overlapping pair", () => {
-    const { tokens } = codexOutcome(clean());
-    expect(tokens).toEqual({ fresh: 9338, cacheRead: 7680, output: 5 });
-  });
+    const { tokens } = codexOutcome(clean())
+    expect(tokens).toEqual({ fresh: 9338, cacheRead: 7680, output: 5 })
+  })
 
   /**
    * **Accumulated across turns, never assigned** — the defect `billedTokens`
@@ -189,20 +190,20 @@ describe("the receipt, as a fold over the stream", () => {
    * (`codex.ts`'s module header), so no stream this reads carries two turns
    * today, and the measured real streams all have exactly one `turn.completed`.
    */
-  it("accumulates tokens across more than one turn.completed", () => {
+  it('accumulates tokens across more than one turn.completed', () => {
     const two = [
       ...clean(),
-      JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "and this" } }),
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'and this' } }),
       JSON.stringify({
-        type: "turn.completed",
+        type: 'turn.completed',
         usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 8, reasoning_output_tokens: 3 },
       }),
-    ];
-    const { tokens } = codexOutcome(two);
+    ]
+    const { tokens } = codexOutcome(two)
     // First turn: fresh 9338, cacheRead 7680, output 5. Second turn: fresh
     // 60, cacheRead 40, output 5, reasoning 3 (8 - 3).
-    expect(tokens).toEqual({ fresh: 9398, cacheRead: 7720, output: 10, reasoning: 3 });
-  });
+    expect(tokens).toEqual({ fresh: 9398, cacheRead: 7720, output: 10, reasoning: 3 })
+  })
 
   /**
    * **A difference below zero is the runtime saying something incoherent, and
@@ -214,22 +215,22 @@ describe("the receipt, as a fold over the stream", () => {
   it("leaves a pair absent rather than negative when the runtime's own counts disagree", () => {
     const said = codexOutcome(
       jsonl({
-        type: "turn.completed",
+        type: 'turn.completed',
         usage: { input_tokens: 5, cached_input_tokens: 10, output_tokens: 2, reasoning_output_tokens: 9 },
       }),
-    );
-    expect(said.tokens).toEqual({});
-  });
+    )
+    expect(said.tokens).toEqual({})
+  })
 
   /**
    * `cached_input_tokens` reported with no `input_tokens` beside it: `fresh`
    * cannot be computed, but the cache figure itself is still real and is kept
    * rather than discarded along with it.
    */
-  it("keeps cacheRead on its own when input_tokens is the one missing", () => {
-    const said = codexOutcome(jsonl({ type: "turn.completed", usage: { cached_input_tokens: 500 } }));
-    expect(said.tokens).toEqual({ cacheRead: 500 });
-  });
+  it('keeps cacheRead on its own when input_tokens is the one missing', () => {
+    const said = codexOutcome(jsonl({ type: 'turn.completed', usage: { cached_input_tokens: 500 } }))
+    expect(said.tokens).toEqual({ cacheRead: 500 })
+  })
 
   /**
    * **`input_tokens` with no `cached_input_tokens` beside it must keep the
@@ -240,11 +241,11 @@ describe("the receipt, as a fold over the stream", () => {
    * that only ever reports `input_tokens` and `output_tokens` must still have
    * its input tokens land in a bucket, or they are charged nowhere at all.
    */
-  it("keeps fresh whole when cached_input_tokens is the one missing", () => {
-    const said = codexOutcome(jsonl({ type: "turn.completed", usage: { input_tokens: 10000, output_tokens: 500 } }));
-    expect(said.tokens).toEqual({ fresh: 10000, output: 500 });
-  });
-});
+  it('keeps fresh whole when cached_input_tokens is the one missing', () => {
+    const said = codexOutcome(jsonl({ type: 'turn.completed', usage: { input_tokens: 10000, output_tokens: 500 } }))
+    expect(said.tokens).toEqual({ fresh: 10000, output: 500 })
+  })
+})
 
 describe("codexUsage, the run's tokens turned into one Usage entry", () => {
   /**
@@ -255,24 +256,24 @@ describe("codexUsage, the run's tokens turned into one Usage entry", () => {
    * for a call that reached a model — the exact inversion the docblock above
    * `codexUsage` promises never happens.
    */
-  it("is undefined when no tokens were ever reported, even with a model set", () => {
-    expect(codexUsage({}, "gpt-5.6-sol")).toBeUndefined();
-  });
+  it('is undefined when no tokens were ever reported, even with a model set', () => {
+    expect(codexUsage({}, 'gpt-5.6-sol')).toBeUndefined()
+  })
 
-  it("is undefined when neither tokens nor a model were reported", () => {
-    expect(codexUsage({}, undefined)).toBeUndefined();
-  });
+  it('is undefined when neither tokens nor a model were reported', () => {
+    expect(codexUsage({}, undefined)).toBeUndefined()
+  })
 
-  it("carries the model alongside real tokens", () => {
-    expect(codexUsage({ fresh: 10, output: 2 }, "gpt-5.6-sol")).toEqual([
-      { model: "gpt-5.6-sol", tokens: { fresh: 10, output: 2 } },
-    ]);
-  });
+  it('carries the model alongside real tokens', () => {
+    expect(codexUsage({ fresh: 10, output: 2 }, 'gpt-5.6-sol')).toEqual([
+      { model: 'gpt-5.6-sol', tokens: { fresh: 10, output: 2 } },
+    ])
+  })
 
-  it("carries real tokens with no model when the recipe set none", () => {
-    expect(codexUsage({ fresh: 10, output: 2 }, undefined)).toEqual([{ tokens: { fresh: 10, output: 2 } }]);
-  });
-});
+  it('carries real tokens with no model when the recipe set none', () => {
+    expect(codexUsage({ fresh: 10, output: 2 }, undefined)).toEqual([{ tokens: { fresh: 10, output: 2 } }])
+  })
+})
 
 describe("the receipt's failed turn", () => {
   /**
@@ -280,35 +281,33 @@ describe("the receipt's failed turn", () => {
    * only place that sentence appears: the exit code says nothing, and the `error`
    * items are notices about the invocation.
    */
-  it("reads why the turn ended off turn.failed, which no completed turn carries", () => {
-    const receipt = codexOutcome(failedTurn(QUOTA));
-    expect(receipt.failed).toBe(QUOTA);
-    expect(receipt.completed).toBe(false);
-    expect(receipt.turns).toBe(0);
+  it('reads why the turn ended off turn.failed, which no completed turn carries', () => {
+    const receipt = codexOutcome(failedTurn(QUOTA))
+    expect(receipt.failed).toBe(QUOTA)
+    expect(receipt.completed).toBe(false)
+    expect(receipt.turns).toBe(0)
     // A run that answered said nothing of the kind.
-    expect(codexOutcome(clean()).failed).toBeNull();
-  });
+    expect(codexOutcome(clean()).failed).toBeNull()
+  })
 
-  it("lets the turn-ending statement win over the top-level error before it", () => {
+  it('lets the turn-ending statement win over the top-level error before it', () => {
     // Both carry the same message on a real stream; where they differ, the one
     // about *the turn* is the one that ended it.
     const said = codexOutcome([
-      JSON.stringify({ type: "error", message: "stream hiccup" }),
-      JSON.stringify({ type: "turn.failed", error: { message: QUOTA } }),
-    ]);
-    expect(said.failed).toBe(QUOTA);
+      JSON.stringify({ type: 'error', message: 'stream hiccup' }),
+      JSON.stringify({ type: 'turn.failed', error: { message: QUOTA } }),
+    ])
+    expect(said.failed).toBe(QUOTA)
     // And a top-level error on its own is still a statement.
-    expect(codexOutcome([JSON.stringify({ type: "error", message: "stream hiccup" })]).failed).toBe(
-      "stream hiccup",
-    );
-  });
-});
+    expect(codexOutcome([JSON.stringify({ type: 'error', message: 'stream hiccup' })]).failed).toBe('stream hiccup')
+  })
+})
 
 /**
  * **How the run ended** — the two classifications this adapter got wrong, both of
  * them provable here because `codexClose` is pure.
  */
-describe("what a closed run is", () => {
+describe('what a closed run is', () => {
   /**
    * The wall, and the whole of 0031 §3: a run that met something *account-wide*
    * stops the conductor rather than the item, because every other item in the
@@ -320,11 +319,11 @@ describe("what a closed run is", () => {
    * the next ticket, cut a worktree, spawned codex and met the same wall, all the
    * way through the queue.
    */
-  it("calls a turn that failed having produced nothing never-started", () => {
-    const said = codexClose(codexOutcome(failedTurn(QUOTA)), closed(1));
+  it('calls a turn that failed having produced nothing never-started', () => {
+    const said = codexClose(codexOutcome(failedTurn(QUOTA)), closed(1))
 
-    expect(said?.kind).toBe("never-started");
-  });
+    expect(said?.kind).toBe('never-started')
+  })
 
   /**
    * **The reset time reaches `standDown`, and the bypass notice does not
@@ -335,12 +334,12 @@ describe("what a closed run is", () => {
    * every failed Codex run: on the board, in `attempts.ts`, and handed to
    * `parseResetAt` in place of the sentence with the time in it.
    */
-  it("records why it failed, and not the notice every hooked run carries", () => {
-    const said = codexClose(codexOutcome(failedTurn(QUOTA)), closed(1, "some stderr"));
+  it('records why it failed, and not the notice every hooked run carries', () => {
+    const said = codexClose(codexOutcome(failedTurn(QUOTA)), closed(1, 'some stderr'))
 
-    expect(said?.detail).toBe(QUOTA);
-    expect(said?.detail).not.toMatch(/bypass-hook-trust/);
-  });
+    expect(said?.detail).toBe(QUOTA)
+    expect(said?.detail).not.toMatch(/bypass-hook-trust/)
+  })
 
   /**
    * **A hook refusing the prompt is not account-wide**, and it was the *only*
@@ -349,12 +348,12 @@ describe("what a closed run is", () => {
    * problem, and sent `parseResetAt` looking for a reset time in a run that had
    * none.
    */
-  it("calls the hook-blocked run a crash, since nothing about it is the account", () => {
-    const said = codexClose(codexOutcome(blocked()), closed(0));
+  it('calls the hook-blocked run a crash, since nothing about it is the account', () => {
+    const said = codexClose(codexOutcome(blocked()), closed(0))
 
-    expect(said).not.toBeNull();
-    expect(said?.kind).toBe("crash");
-  });
+    expect(said).not.toBeNull()
+    expect(said?.kind).toBe('crash')
+  })
 
   /**
    * **And says so, which the record did not.**
@@ -366,68 +365,68 @@ describe("what a closed run is", () => {
    * *"Reading additional input from stdin..."* as why the run failed, on the case
    * `canFailClosed: true` exists for.
    */
-  it("says a hook refused the prompt, and not what codex says about being called", () => {
-    const said = codexClose(codexOutcome(blocked()), closed(0));
+  it('says a hook refused the prompt, and not what codex says about being called', () => {
+    const said = codexClose(codexOutcome(blocked()), closed(0))
 
-    expect(said?.detail).toMatch(/hook refusing the prompt/);
-    expect(said?.detail).toMatch(/UserPromptSubmit/);
-    expect(said?.detail).not.toMatch(/stdin/);
-    expect(said?.detail).not.toMatch(/bypass-hook-trust/);
-  });
+    expect(said?.detail).toMatch(/hook refusing the prompt/)
+    expect(said?.detail).toMatch(/UserPromptSubmit/)
+    expect(said?.detail).not.toMatch(/stdin/)
+    expect(said?.detail).not.toMatch(/bypass-hook-trust/)
+  })
 
   /**
    * The notice is filtered and stderr is not discarded: on a run that really did
    * fail at the process, stderr is the only account there is, and the same probe
    * printed the notice and the reason one line each.
    */
-  it("keeps what the process said beside the notice, having dropped the notice", () => {
+  it('keeps what the process said beside the notice, having dropped the notice', () => {
     const said = codexClose(
       codexOutcome([]),
-      closed(1, "Not inside a trusted directory and --skip-git-repo-check was not specified."),
-    );
+      closed(1, 'Not inside a trusted directory and --skip-git-repo-check was not specified.'),
+    )
 
-    expect(said?.detail).toBe("Not inside a trusted directory and --skip-git-repo-check was not specified.");
-  });
+    expect(said?.detail).toBe('Not inside a trusted directory and --skip-git-repo-check was not specified.')
+  })
 
   /**
    * **`turns` is the spend leg and `billedTokens` cannot be**: usage arrives only
    * on `turn.completed`, so on a failed turn zero tokens is ignorance. A wall met
    * after the agent had been talking is a pass that spent, which is a `crash`.
    */
-  it("calls a wall met after the agent produced work a crash, not never-started", () => {
+  it('calls a wall met after the agent produced work a crash, not never-started', () => {
     const after = failedTurn(
       QUOTA,
-      { type: "item.completed", item: { type: "agent_message", text: "first" } },
-      { type: "item.completed", item: { type: "agent_message", text: "second" } },
-    );
-    const receipt = codexOutcome(after);
+      { type: 'item.completed', item: { type: 'agent_message', text: 'first' } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'second' } },
+    )
+    const receipt = codexOutcome(after)
 
-    expect(receipt.billedTokens).toBe(0);
-    expect(receipt.turns).toBe(2);
-    expect(codexClose(receipt, closed(1))?.kind).toBe("crash");
-  });
+    expect(receipt.billedTokens).toBe(0)
+    expect(receipt.turns).toBe(2)
+    expect(codexClose(receipt, closed(1))?.kind).toBe('crash')
+  })
 
-  it("is null for a run that answered, which is the one case with no failure", () => {
-    expect(codexClose(codexOutcome(clean()), closed(0))).toBeNull();
+  it('is null for a run that answered, which is the one case with no failure', () => {
+    expect(codexClose(codexOutcome(clean()), closed(0))).toBeNull()
     // Exit code, receipt, spend and a message: all four, or it is a failure.
-    expect(codexClose(codexOutcome(clean()), closed(1))?.kind).toBe("crash");
-  });
+    expect(codexClose(codexOutcome(clean()), closed(1))?.kind).toBe('crash')
+  })
 
-  it("falls back through stderr and the notices to the exit code, in that order", () => {
+  it('falls back through stderr and the notices to the exit code, in that order', () => {
     // Nothing on the stream at all: a crash, because zeros from a stream that
     // never started are ignorance and not evidence.
-    const nothing = codexClose(codexOutcome([]), closed(127, "codex: command not found"));
-    expect(nothing?.kind).toBe("crash");
-    expect(nothing?.detail).toBe("codex: command not found");
+    const nothing = codexClose(codexOutcome([]), closed(127, 'codex: command not found'))
+    expect(nothing?.kind).toBe('crash')
+    expect(nothing?.detail).toBe('codex: command not found')
 
     // The notices are the last thing said before the exit code, and never the
     // first.
-    const onlyNotices = codexClose(codexOutcome(failedTurnless()), closed(3));
-    expect(onlyNotices?.detail).toContain("bypass-hook-trust");
+    const onlyNotices = codexClose(codexOutcome(failedTurnless()), closed(3))
+    expect(onlyNotices?.detail).toContain('bypass-hook-trust')
 
-    expect(codexClose(codexOutcome([]), closed(3))?.detail).toBe("exited 3");
-  });
-});
+    expect(codexClose(codexOutcome([]), closed(3))?.detail).toBe('exited 3')
+  })
+})
 
 /**
  * **The fold is over the stream and not over a window of it** — the one thing
@@ -442,125 +441,125 @@ describe("what a closed run is", () => {
  * passes 256 KB, the head goes over the side, and `RunFinished.turns` records a
  * spend that did not happen.
  */
-describe("the receipt, over a stream longer than any window", () => {
+describe('the receipt, over a stream longer than any window', () => {
   /** `command_execution` output, which is the volume in a real stream. */
   const noise = (bytes: number): string =>
     JSON.stringify({
-      type: "item.completed",
-      item: { id: "item_n", type: "command_execution", command: "pnpm test", aggregated_output: "x".repeat(bytes) },
-    });
+      type: 'item.completed',
+      item: { id: 'item_n', type: 'command_execution', command: 'pnpm test', aggregated_output: 'x'.repeat(bytes) },
+    })
 
-  it("keeps every turn and the session id past RECEIPT_TAIL_CHARS", () => {
-    const account = codexAccount();
-    account.chunk(`${JSON.stringify({ type: "thread.started", thread_id: "01a0-head" })}\n`);
+  it('keeps every turn and the session id past RECEIPT_TAIL_CHARS', () => {
+    const account = codexAccount()
+    account.chunk(`${JSON.stringify({ type: 'thread.started', thread_id: '01a0-head' })}\n`)
     for (let i = 0; i < 37; i += 1) {
       // 20 KB of tool output per turn: thirty-seven of them is ~740 KB, so the
       // head — and all but the last few turns — would be outside a 256 KB tail.
-      account.chunk(`${noise(20_000)}\n`);
+      account.chunk(`${noise(20_000)}\n`)
       account.chunk(
-        `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: `turn ${i}` } })}\n`,
-      );
+        `${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: `turn ${i}` } })}\n`,
+      )
     }
-    account.chunk(`${JSON.stringify({ type: "turn.completed", usage: { input_tokens: 9, output_tokens: 1 } })}\n`);
-    account.end();
+    account.chunk(`${JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 9, output_tokens: 1 } })}\n`)
+    account.end()
 
-    expect(account.receipt.turns).toBe(37);
-    expect(account.receipt.sessionId).toBe("01a0-head");
-    expect(account.receipt.text).toBe("turn 36");
-    expect(account.receipt.completed).toBe(true);
+    expect(account.receipt.turns).toBe(37)
+    expect(account.receipt.sessionId).toBe('01a0-head')
+    expect(account.receipt.text).toBe('turn 36')
+    expect(account.receipt.completed).toBe(true)
 
     // The window this replaces, for contrast: the same stream read off a tail
     // loses the head and most of the count. This is the failure, written down.
     const whole = [
-      JSON.stringify({ type: "thread.started", thread_id: "01a0-head" }),
+      JSON.stringify({ type: 'thread.started', thread_id: '01a0-head' }),
       ...Array.from({ length: 37 }, (_, i) => [
         noise(20_000),
-        JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: `turn ${i}` } }),
+        JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: `turn ${i}` } }),
       ]).flat(),
-      JSON.stringify({ type: "turn.completed", usage: { input_tokens: 9, output_tokens: 1 } }),
-    ].join("\n");
-    const tailed = codexOutcome(whole.slice(-RECEIPT_TAIL_CHARS).split("\n"));
-    expect(tailed.turns).toBeLessThan(37);
-    expect(tailed.sessionId).toBe("");
-  });
+      JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 9, output_tokens: 1 } }),
+    ].join('\n')
+    const tailed = codexOutcome(whole.slice(-RECEIPT_TAIL_CHARS).split('\n'))
+    expect(tailed.turns).toBeLessThan(37)
+    expect(tailed.sessionId).toBe('')
+  })
 
-  it("folds a line that arrived in pieces, and never half of one", () => {
-    const account = codexAccount();
-    const line = JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "split" } });
-    account.chunk(line.slice(0, 20));
+  it('folds a line that arrived in pieces, and never half of one', () => {
+    const account = codexAccount()
+    const line = JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'split' } })
+    account.chunk(line.slice(0, 20))
     // Half an object is a fragment of a fact and is not folded yet.
-    expect(account.receipt.turns).toBe(0);
-    account.chunk(`${line.slice(20)}\n`);
-    expect(account.receipt.turns).toBe(1);
-    expect(account.receipt.text).toBe("split");
-  });
+    expect(account.receipt.turns).toBe(0)
+    account.chunk(`${line.slice(20)}\n`)
+    expect(account.receipt.turns).toBe(1)
+    expect(account.receipt.text).toBe('split')
+  })
 
   /**
    * At close the last line is the runtime's final word rather than a fragment —
    * a `turn.completed` with no trailing newline is a receipt, and dropping it
    * would answer `crash` for a run that finished.
    */
-  it("folds an unterminated final line at end(), and not before", () => {
-    const account = codexAccount();
-    account.chunk(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 7, output_tokens: 2 } }));
-    expect(account.receipt.completed).toBe(false);
-    account.end();
-    expect(account.receipt.completed).toBe(true);
-    expect(account.receipt.billedTokens).toBe(9);
-  });
+  it('folds an unterminated final line at end(), and not before', () => {
+    const account = codexAccount()
+    account.chunk(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 2 } }))
+    expect(account.receipt.completed).toBe(false)
+    account.end()
+    expect(account.receipt.completed).toBe(true)
+    expect(account.receipt.billedTokens).toBe(9)
+  })
 
-  it("agrees with codexOutcome line for line, so one fold is tested twice", () => {
-    const account = codexAccount();
-    account.chunk(clean().join("\n"));
-    account.end();
-    expect(account.receipt).toEqual(codexOutcome(clean()));
-  });
-});
+  it('agrees with codexOutcome line for line, so one fold is tested twice', () => {
+    const account = codexAccount()
+    account.chunk(clean().join('\n'))
+    account.end()
+    expect(account.receipt).toEqual(codexOutcome(clean()))
+  })
+})
 
-describe("what one line is worth saying in the log", () => {
+describe('what one line is worth saying in the log', () => {
   it("keeps the agent's prose and its reasoning", () => {
-    expect(codexTrace(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "hi" } }))).toEqual([
-      ["agent", "hi"],
-    ]);
-    expect(codexTrace(JSON.stringify({ type: "item.completed", item: { type: "reasoning", text: "why" } }))).toEqual([
-      ["think", "why"],
-    ]);
-  });
+    expect(codexTrace(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'hi' } }))).toEqual(
+      [['agent', 'hi']],
+    )
+    expect(codexTrace(JSON.stringify({ type: 'item.completed', item: { type: 'reasoning', text: 'why' } }))).toEqual([
+      ['think', 'why'],
+    ])
+  })
 
   /**
    * A tool *call*, from `item.started` — never the completed item, which carries
    * `aggregated_output`. That is the tool result, and tool results are the volume
    * in a stream and the least the agent's own (`traceOf`'s rule).
    */
-  it("traces a command from item.started and never its output from item.completed", () => {
+  it('traces a command from item.started and never its output from item.completed', () => {
     const start = JSON.stringify({
-      type: "item.started",
-      item: { type: "command_execution", command: "/bin/zsh -lc 'cat a.txt'" },
-    });
+      type: 'item.started',
+      item: { type: 'command_execution', command: "/bin/zsh -lc 'cat a.txt'" },
+    })
     const done = JSON.stringify({
-      type: "item.completed",
-      item: { type: "command_execution", command: "/bin/zsh -lc 'cat a.txt'", aggregated_output: "hello" },
-    });
-    expect(codexTrace(start, { tools: true })).toEqual([["Bash", "/bin/zsh -lc 'cat a.txt'"]]);
+      type: 'item.completed',
+      item: { type: 'command_execution', command: "/bin/zsh -lc 'cat a.txt'", aggregated_output: 'hello' },
+    })
+    expect(codexTrace(start, { tools: true })).toEqual([['Bash', "/bin/zsh -lc 'cat a.txt'"]])
     // Off by default: for an implementer the hook socket already wrote the call.
-    expect(codexTrace(start)).toEqual([]);
-    expect(codexTrace(done, { tools: true })).toEqual([]);
-  });
+    expect(codexTrace(start)).toEqual([])
+    expect(codexTrace(done, { tools: true })).toEqual([])
+  })
 
-  it("keeps a line that is not a stream event at all, because nothing else would", () => {
-    expect(codexTrace("Reading additional input from stdin...")).toEqual([
-      ["stdout", "Reading additional input from stdin..."],
-    ]);
-  });
-});
+  it('keeps a line that is not a stream event at all, because nothing else would', () => {
+    expect(codexTrace('Reading additional input from stdin...')).toEqual([
+      ['stdout', 'Reading additional input from stdin...'],
+    ])
+  })
+})
 
-describe("the hook wiring, translated", () => {
+describe('the hook wiring, translated', () => {
   const settings = (includeClaudeOnly: boolean) =>
     renderSettings({
-      runId: "run-1",
-      hookBinary: "/opt/lingtai/lingtai-hook",
+      runId: 'run-1',
+      hookBinary: '/opt/lingtai/lingtai-hook',
       includeClaudeOnly,
-    });
+    })
 
   /**
    * `codex exec` takes no `--settings`, and `-c hooks=<path>` is refused —
@@ -569,18 +568,18 @@ describe("the hook wiring, translated", () => {
    * `renderSettings` output rather than a hand-written object.
    */
   it("re-emits Claude Code's settings.json as -c overrides Codex parses", () => {
-    const args = codexHookArgs(settings(false));
-    expect(args).toContain("--dangerously-bypass-hook-trust");
+    const args = codexHookArgs(settings(false))
+    expect(args).toContain('--dangerously-bypass-hook-trust')
     expect(args).toContain(
       'hooks.UserPromptSubmit=[{matcher="*",hooks=[{type="command",command="/opt/lingtai/lingtai-hook"}]}]',
-    );
+    )
     // Every override is a value `-c` immediately precedes — `-c` takes one
     // `key=value`, so a list that drifted out of pairs would hand Codex a flag
     // where it wanted a value.
     for (const [i, arg] of args.entries()) {
-      if (arg.startsWith("hooks.")) expect(args[i - 1]).toBe("-c");
+      if (arg.startsWith('hooks.')) expect(args[i - 1]).toBe('-c')
     }
-  });
+  })
 
   /**
    * **What filtering buys is that nothing claims a hook is wired when it is
@@ -595,15 +594,15 @@ describe("the hook wiring, translated", () => {
    * So `renderSettings`'s `Notification` is dropped because Codex would never
    * dispatch it, not because the run would refuse to start.
    */
-  it("passes over a hook Codex does not serve, so nothing believes it is wired", () => {
-    const args = codexHookArgs(settings(true));
-    expect(args.join(" ")).not.toContain("Notification");
-    expect(args.join(" ")).toContain("hooks.SessionStart=");
-    for (const arg of args.filter((a) => a.startsWith("hooks."))) {
-      const event = arg.slice("hooks.".length, arg.indexOf("="));
-      expect(CODEX_CAPABILITIES.hooks).toContain(event);
+  it('passes over a hook Codex does not serve, so nothing believes it is wired', () => {
+    const args = codexHookArgs(settings(true))
+    expect(args.join(' ')).not.toContain('Notification')
+    expect(args.join(' ')).toContain('hooks.SessionStart=')
+    for (const arg of args.filter((a) => a.startsWith('hooks.'))) {
+      const event = arg.slice('hooks.'.length, arg.indexOf('='))
+      expect(CODEX_CAPABILITIES.hooks).toContain(event)
     }
-  });
+  })
 
   /**
    * `writeUnhookedSettings` writes `{}` for a reviewer or a fixer, which is not a
@@ -611,57 +610,57 @@ describe("the hook wiring, translated", () => {
    * buys nothing** — one of those is how a flag stops being read.
    */
   it("wires nothing for the unhooked reviewer's empty settings", () => {
-    expect(codexHookArgs({})).toEqual([]);
-    expect(codexHookArgs(null)).toEqual([]);
-    expect(codexHookArgs({ hooks: {} })).toEqual([]);
-  });
+    expect(codexHookArgs({})).toEqual([])
+    expect(codexHookArgs(null)).toEqual([])
+    expect(codexHookArgs({ hooks: {} })).toEqual([])
+  })
 
-  it("quotes a path as TOML rather than interpolating it", () => {
+  it('quotes a path as TOML rather than interpolating it', () => {
     const odd = codexHookArgs({
-      hooks: { Stop: [{ matcher: "*", hooks: [{ type: "command", command: '/a "b"/hook' }] }] },
-    });
-    expect(odd.join(" ")).toContain('command="/a \\"b\\"/hook"');
-  });
-});
+      hooks: { Stop: [{ matcher: '*', hooks: [{ type: 'command', command: '/a "b"/hook' }] }] },
+    })
+    expect(odd.join(' ')).toContain('command="/a \\"b\\"/hook"')
+  })
+})
 
-describe("the invocation", () => {
+describe('the invocation', () => {
   /**
    * The parsed wiring, not a path: `codexArgv` is pure, so the whole command line
    * is a claim `pnpm test` can settle. The `readFileSync` behind it is the
    * adapter's own and belongs to the integration half (0060 §1).
    */
-  const wiring = () => renderSettings({ runId: "run-1", hookBinary: "/opt/lingtai/lingtai-hook" });
+  const wiring = () => renderSettings({ runId: 'run-1', hookBinary: '/opt/lingtai/lingtai-hook' })
 
   const invocable = {
-    runId: "run-1",
-    cwd: "/tmp/tree",
-    settingsPath: "/state/runs/run-1/settings.json",
+    runId: 'run-1',
+    cwd: '/tmp/tree',
+    settingsPath: '/state/runs/run-1/settings.json',
     env: {},
     limits: { turns: 150, wallMs: 3_600_000 },
-  };
+  }
 
   const argv = (
     over: {
-      sandbox?: "workspace-write" | "read-only";
-      settings?: unknown;
-      writable?: readonly string[];
+      sandbox?: 'workspace-write' | 'read-only'
+      settings?: unknown
+      writable?: readonly string[]
     } = {},
   ) =>
     codexArgv(invocable, PROMPT_ELIDED, {
       // `"settings" in over` rather than `??`: `null` is the case being tested.
-      settings: "settings" in over ? over.settings : wiring(),
-      sandbox: over.sandbox ?? "workspace-write",
+      settings: 'settings' in over ? over.settings : wiring(),
+      sandbox: over.sandbox ?? 'workspace-write',
       ...(over.writable === undefined ? {} : { writable: over.writable }),
-    });
+    })
 
-  it("spawns `codex exec` in the worktree, sandboxed, with the prompt behind --", () => {
-    const args = argv();
-    expect(args.slice(0, 2)).toEqual(["exec", "--json"]);
-    expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
-    expect(args[args.indexOf("--cd") + 1]).toBe("/tmp/tree");
+  it('spawns `codex exec` in the worktree, sandboxed, with the prompt behind --', () => {
+    const args = argv()
+    expect(args.slice(0, 2)).toEqual(['exec', '--json'])
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write')
+    expect(args[args.indexOf('--cd') + 1]).toBe('/tmp/tree')
     // Nothing is watching to approve anything; a run that waits for an approval
     // burns the wall clock.
-    expect(args).toContain("approval_policy=never");
+    expect(args).toContain('approval_policy=never')
 
     /**
      * **`--` is load-bearing.** Measured at 0.155.1: `codex exec review` runs the
@@ -669,9 +668,9 @@ describe("the invocation", () => {
      * prompt is a document somebody wrote, so the day one begins with a bare
      * subcommand name is the day a run silently does something else.
      */
-    expect(args.at(-2)).toBe("--");
-    expect(args.at(-1)).toBe(PROMPT_ELIDED);
-  });
+    expect(args.at(-2)).toBe('--')
+    expect(args.at(-1)).toBe(PROMPT_ELIDED)
+  })
 
   /**
    * **The git directory is outside `--cd`, and without this the agent cannot
@@ -691,47 +690,47 @@ describe("the invocation", () => {
    * with the `danger-full-access` one.
    */
   it("names the git directory as writable, since a worktree's is outside --cd", () => {
-    const args = argv({ writable: ["/state/repos/p.git/worktrees/run-1", "/state/repos/p.git"] });
-    const at = args.indexOf("--add-dir");
-    expect(at).toBeGreaterThan(-1);
-    expect(args[at + 1]).toBe("/state/repos/p.git/worktrees/run-1");
-    expect(args[at + 2]).toBe("--add-dir");
-    expect(args[at + 3]).toBe("/state/repos/p.git");
+    const args = argv({ writable: ['/state/repos/p.git/worktrees/run-1', '/state/repos/p.git'] })
+    const at = args.indexOf('--add-dir')
+    expect(at).toBeGreaterThan(-1)
+    expect(args[at + 1]).toBe('/state/repos/p.git/worktrees/run-1')
+    expect(args[at + 2]).toBe('--add-dir')
+    expect(args[at + 3]).toBe('/state/repos/p.git')
     // Still the sandbox, one directory wider.
-    expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
-    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
-  });
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write')
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+  })
 
-  it("names nothing writable where there is nothing to commit", () => {
+  it('names nothing writable where there is nothing to commit', () => {
     // An ordinary checkout, whose `.git` is already under `--cd`, and a reader.
-    expect(argv({ writable: [] })).not.toContain("--add-dir");
-    expect(argv()).not.toContain("--add-dir");
-  });
+    expect(argv({ writable: [] })).not.toContain('--add-dir')
+    expect(argv()).not.toContain('--add-dir')
+  })
 
   /** The flag that would make `providesTier: "sandboxed"` a lie. */
-  it("never passes the flag that turns the sandbox off", () => {
-    expect(argv()).not.toContain("--dangerously-bypass-approvals-and-sandbox");
-    expect(argv().join(" ")).not.toContain("danger-full-access");
-  });
+  it('never passes the flag that turns the sandbox off', () => {
+    expect(argv()).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+    expect(argv().join(' ')).not.toContain('danger-full-access')
+  })
 
-  it("reads the worktree only, for an agent that may answer and not act", () => {
-    expect(argv({ sandbox: "read-only" })[argv({ sandbox: "read-only" }).indexOf("--sandbox") + 1]).toBe(
-      "read-only",
-    );
-  });
+  it('reads the worktree only, for an agent that may answer and not act', () => {
+    expect(argv({ sandbox: 'read-only' })[argv({ sandbox: 'read-only' }).indexOf('--sandbox') + 1]).toBe('read-only')
+  })
 
-  it("names a model only where the recipe named one", () => {
-    expect(argv()).not.toContain("--model");
-    expect(codexArgv({ ...invocable, model: "gpt-5.6-sol" }, "p", {
-      settings: wiring(),
-      sandbox: "workspace-write",
-    })[
-      codexArgv({ ...invocable, model: "gpt-5.6-sol" }, "p", {
+  it('names a model only where the recipe named one', () => {
+    expect(argv()).not.toContain('--model')
+    expect(
+      codexArgv({ ...invocable, model: 'gpt-5.6-sol' }, 'p', {
         settings: wiring(),
-        sandbox: "workspace-write",
-      }).indexOf("--model") + 1
-    ]).toBe("gpt-5.6-sol");
-  });
+        sandbox: 'workspace-write',
+      })[
+        codexArgv({ ...invocable, model: 'gpt-5.6-sol' }, 'p', {
+          settings: wiring(),
+          sandbox: 'workspace-write',
+        }).indexOf('--model') + 1
+      ],
+    ).toBe('gpt-5.6-sol')
+  })
 
   /**
    * An argv with no hook flags in it is what would actually have been spawned, so
@@ -739,13 +738,13 @@ describe("the invocation", () => {
    * before `RunStarted` is appended, so a throw there would take out the run
    * rather than record it. `run()` is the one that refuses.
    */
-  it("carries no hook flags where there was no wiring to read", () => {
-    const args = argv({ settings: null });
-    expect(args.join(" ")).not.toContain("hooks.");
-    expect(args).not.toContain("--dangerously-bypass-hook-trust");
+  it('carries no hook flags where there was no wiring to read', () => {
+    const args = argv({ settings: null })
+    expect(args.join(' ')).not.toContain('hooks.')
+    expect(args).not.toContain('--dangerously-bypass-hook-trust')
     // Still a runnable command line, and still sandboxed.
-    expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
-  });
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write')
+  })
 
   /**
    * **The cold reviewer's own flag, before `--`** (`#369`). Measured at
@@ -753,20 +752,20 @@ describe("the invocation", () => {
    * thing worth pinning here is that it is absent without a path and that it
    * still lands ahead of the prompt when there is one.
    */
-  it("names the output schema file only where one was given, ahead of the prompt", () => {
+  it('names the output schema file only where one was given, ahead of the prompt', () => {
     const withSchema = codexArgv(invocable, PROMPT_ELIDED, {
       settings: wiring(),
-      sandbox: "workspace-write",
-      outputSchemaPath: "/tmp/lingtai-output-schema-run-1.json",
-    });
-    const at = withSchema.indexOf("--output-schema");
-    expect(at).toBeGreaterThan(-1);
-    expect(withSchema[at + 1]).toBe("/tmp/lingtai-output-schema-run-1.json");
-    expect(at).toBeLessThan(withSchema.indexOf("--"));
+      sandbox: 'workspace-write',
+      outputSchemaPath: '/tmp/lingtai-output-schema-run-1.json',
+    })
+    const at = withSchema.indexOf('--output-schema')
+    expect(at).toBeGreaterThan(-1)
+    expect(withSchema[at + 1]).toBe('/tmp/lingtai-output-schema-run-1.json')
+    expect(at).toBeLessThan(withSchema.indexOf('--'))
 
-    expect(argv()).not.toContain("--output-schema");
-  });
-});
+    expect(argv()).not.toContain('--output-schema')
+  })
+})
 
 describe("Codex's capabilities, each measured against the binary", () => {
   /**
@@ -777,34 +776,34 @@ describe("Codex's capabilities, each measured against the binary", () => {
    * always present and no spelling for *unbounded*. See that function for why the
    * `warn` it was for one round put `#89`'s own state past `lingtai restart`.
    */
-  it("applies the wall and says so, and claims nothing about turns", () => {
-    expect(CODEX_CAPABILITIES.enforces).toEqual(["wall"]);
-    expect(CODEX_CAPABILITIES.enforces).not.toContain("turns");
+  it('applies the wall and says so, and claims nothing about turns', () => {
+    expect(CODEX_CAPABILITIES.enforces).toEqual(['wall'])
+    expect(CODEX_CAPABILITIES.enforces).not.toContain('turns')
     // Every name in `enforces` is one `RUN_LIMITS` knows, or doctor cannot walk it.
-    for (const limit of CODEX_CAPABILITIES.enforces) expect(RUN_LIMITS).toContain(limit);
-  });
+    for (const limit of CODEX_CAPABILITIES.enforces) expect(RUN_LIMITS).toContain(limit)
+  })
 
   /**
    * Proved, not read off documentation: a `UserPromptSubmit` hook exiting 2
    * stopped the run before the model — `input_tokens: 0`, no `agent_message`.
    */
-  it("fails closed at the hook Lingtai installs", () => {
-    expect(CODEX_CAPABILITIES.canFailClosed).toBe(true);
-    expect(CODEX_CAPABILITIES.hooks).toContain("UserPromptSubmit");
-  });
+  it('fails closed at the hook Lingtai installs', () => {
+    expect(CODEX_CAPABILITIES.canFailClosed).toBe(true)
+    expect(CODEX_CAPABILITIES.hooks).toContain('UserPromptSubmit')
+  })
 
   /**
    * Proved with `codex sandbox`: `read-only` refused a write inside the working
    * root, and `workspace-write` refused `$HOME` and `~/.lingtai` — Lingtai's own
    * state directory, where the hook wiring and the run logs live.
    */
-  it("carries sandboxed, and carries guarded because it also fails closed", () => {
-    expect(CODEX_CAPABILITIES.providesTier).toBe("sandboxed");
-    expect(meetsTier(CODEX_CAPABILITIES, "sandboxed")).toBe(true);
-    expect(meetsTier(CODEX_CAPABILITIES, "guarded")).toBe(true);
-    expect(missingForTier(CODEX_CAPABILITIES, "sandboxed")).toEqual([]);
-  });
-});
+  it('carries sandboxed, and carries guarded because it also fails closed', () => {
+    expect(CODEX_CAPABILITIES.providesTier).toBe('sandboxed')
+    expect(meetsTier(CODEX_CAPABILITIES, 'sandboxed')).toBe(true)
+    expect(meetsTier(CODEX_CAPABILITIES, 'guarded')).toBe(true)
+    expect(missingForTier(CODEX_CAPABILITIES, 'sandboxed')).toEqual([])
+  })
+})
 
 /**
  * The correction the ticket's *Watch out* named: `meetsTier` returned on rank
@@ -812,21 +811,21 @@ describe("Codex's capabilities, each measured against the binary", () => {
  * read**. A rank that grants `guarded` to a runtime that cannot fail closed is
  * the silent downgrade 0007 forbids by name.
  */
-describe("guarded is an axis, not a rung", () => {
-  const sandboxedButOpenLoop = { ...CODEX_CAPABILITIES, canFailClosed: false };
+describe('guarded is an axis, not a rung', () => {
+  const sandboxedButOpenLoop = { ...CODEX_CAPABILITIES, canFailClosed: false }
 
-  it("refuses guarded to a sandboxed runtime that cannot fail closed", () => {
-    expect(meetsTier(sandboxedButOpenLoop, "guarded")).toBe(false);
-    expect(missingForTier(sandboxedButOpenLoop, "guarded")).toEqual(["pre-tool-use-interception"]);
-  });
+  it('refuses guarded to a sandboxed runtime that cannot fail closed', () => {
+    expect(meetsTier(sandboxedButOpenLoop, 'guarded')).toBe(false)
+    expect(missingForTier(sandboxedButOpenLoop, 'guarded')).toEqual(['pre-tool-use-interception'])
+  })
 
-  it("names the promise that is missing, not the one that is kept", () => {
+  it('names the promise that is missing, not the one that is kept', () => {
     // It has a filesystem sandbox; what it lacks is failing closed. A refusal
     // saying `filesystem-sandbox` would send an operator to fix the wrong thing.
-    expect(missingForTier(sandboxedButOpenLoop, "sandboxed")).toEqual(["pre-tool-use-interception"]);
-  });
+    expect(missingForTier(sandboxedButOpenLoop, 'sandboxed')).toEqual(['pre-tool-use-interception'])
+  })
 
-  it("still lets `open` through, which asks for neither promise", () => {
-    expect(meetsTier({ ...sandboxedButOpenLoop, providesTier: "open" }, "open")).toBe(true);
-  });
-});
+  it('still lets `open` through, which asks for neither promise', () => {
+    expect(meetsTier({ ...sandboxedButOpenLoop, providesTier: 'open' }, 'open')).toBe(true)
+  })
+})

@@ -1,4 +1,4 @@
-export { telegramCommand, type TelegramCommandDeps } from "./cli.ts";
+export { telegramCommand, type TelegramCommandDeps } from './cli.ts'
 export {
   DEFAULT_API_ROOT,
   MAX_TEXT,
@@ -6,4 +6,4 @@ export {
   messageText,
   sendMessage,
   type TelegramTarget,
-} from "./telegram.ts";
+} from './telegram.ts'

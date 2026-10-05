@@ -137,12 +137,13 @@
  * declaration instead of from a convention, and `unit/plugin.test.ts` drives it
  * over a plugin of its own rather than over an empty set.
  */
-import { createHash } from "node:crypto";
-import { z } from "zod";
-import { type Step, STEPS } from "@lingtai/domain";
+import { createHash } from 'node:crypto'
+
+import { type Step, STEPS } from '@lingtai/domain'
+import { z } from 'zod'
 
 /** A plugin's own fields, by the name a recipe writes them under. */
-export type PluginFields = Readonly<Record<string, z.ZodType>>;
+export type PluginFields = Readonly<Record<string, z.ZodType>>
 
 /**
  * **The key that says *every step***: one body, wherever a recipe puts it
@@ -152,8 +153,8 @@ export type PluginFields = Readonly<Record<string, z.ZodType>>;
  * thing. A `run:` at `build` and a `run:` at `proposed` are the same work with
  * the same inputs, and ten identical bodies would be a worse lie than one.
  */
-export const ANY_STEP = "*";
-export type AnyStep = typeof ANY_STEP;
+export const ANY_STEP = '*'
+export type AnyStep = typeof ANY_STEP
 
 /**
  * **What a plugin's `at` carries until the bodies move** (0064 §3, `#261`).
@@ -171,8 +172,8 @@ export type AnyStep = typeof ANY_STEP;
  * empty stay different* is the rule it would break. This one cannot be called
  * at all, by the type and by the runtime.
  */
-export const notBuiltYet = Symbol("the step body 0064 §3 will put here; nothing calls it yet");
-export type NotBuiltYet = typeof notBuiltYet;
+export const notBuiltYet = Symbol('the step body 0064 §3 will put here; nothing calls it yet')
+export type NotBuiltYet = typeof notBuiltYet
 
 /**
  * **The steps a plugin serves**, and the whole of what makes it legal at one
@@ -185,11 +186,11 @@ export type NotBuiltYet = typeof notBuiltYet;
  * well, because a declaration reaching here from JavaScript has had no
  * compiler.
  */
-export type PluginSteps = Partial<Record<Step | AnyStep, NotBuiltYet>>;
+export type PluginSteps = Partial<Record<Step | AnyStep, NotBuiltYet>>
 
 /** Whether this plugin serves this step — the one question legality asks. */
 export function servesStep(plugin: { readonly at: PluginSteps }, step: string): boolean {
-  return ANY_STEP in plugin.at || step in plugin.at;
+  return ANY_STEP in plugin.at || step in plugin.at
 }
 
 /**
@@ -203,11 +204,11 @@ export function servesStep(plugin: { readonly at: PluginSteps }, step: string): 
  * accepts and ignores.
  */
 export function noLog<Field extends z.ZodType>(field: Field): Field {
-  return field.meta({ no_log: true });
+  return field.meta({ no_log: true })
 }
 
 /** What a withheld value reads as, and the only string `withheld` ever writes. */
-const WITHHELD = "no_log:sha256:";
+const WITHHELD = 'no_log:sha256:'
 
 /**
  * A withheld value's **stand-in**: a digest of it, and never any part of it.
@@ -229,9 +230,9 @@ const WITHHELD = "no_log:sha256:";
  * itself — and that is the third limit at the head of this file.
  */
 export function withheld(value: unknown): string {
-  if (typeof value === "string" && value.startsWith(WITHHELD)) return value;
-  const of = JSON.stringify(value) ?? "undefined";
-  return WITHHELD + createHash("sha256").update(of).digest("hex").slice(0, 12);
+  if (typeof value === 'string' && value.startsWith(WITHHELD)) return value
+  const of = JSON.stringify(value) ?? 'undefined'
+  return WITHHELD + createHash('sha256').update(of).digest('hex').slice(0, 12)
 }
 
 /**
@@ -244,8 +245,8 @@ export function withheld(value: unknown): string {
  * read.
  */
 export interface PluginSecrets {
-  readonly key: string;
-  readonly secrets: readonly string[];
+  readonly key: string
+  readonly secrets: readonly string[]
 }
 
 /**
@@ -258,20 +259,20 @@ export interface PluginSecrets {
  */
 export interface Plugin extends PluginSecrets {
   /** The key that names it in a recipe. Exactly one per action, and it is the discriminator. */
-  readonly key: string;
+  readonly key: string
   /** Everything it accepts, and nothing else: strict, so an undeclared field is refused. */
-  readonly schema: z.ZodType;
+  readonly schema: z.ZodType
   /** The fields it declares, `name` included, for a refusal that has to list them. */
-  readonly declares: readonly string[];
+  readonly declares: readonly string[]
   /** Those of them marked `noLog`. */
-  readonly secrets: readonly string[];
+  readonly secrets: readonly string[]
   /**
    * **The steps it serves**, keyed by step name or `"*"` — and legality is read
    * off these keys and written nowhere else (0064 §4).
    */
-  readonly at: PluginSteps;
+  readonly at: PluginSteps
   /** Those keys, as written, for a refusal that has to say where it does live. */
-  readonly serves: readonly string[];
+  readonly serves: readonly string[]
 }
 
 /**
@@ -285,17 +286,17 @@ export interface Plugin extends PluginSecrets {
  * that have no schema for the first to have checked.
  */
 function whyItCannotBeWithheld(key: string, field: string): string | null {
-  if (field === key) return "that key is the one word saying which plugin an action is";
-  if (field === "name") return "that is the name every verdict, waiver and reading addresses it by";
-  return null;
+  if (field === key) return 'that key is the one word saying which plugin an action is'
+  if (field === 'name') return 'that is the name every verdict, waiver and reading addresses it by'
+  return null
 }
 
 /** The refusal a mark that cannot be honoured gets, in the one wording both raise. */
 function markRefused(key: string, field: string, why: string): Error {
   return new Error(
     `"${key}" marks its own "${field}" field no_log, and ${why}. A no_log field goes beside the key ` +
-      "rather than on it, so that what ran is still on the log and only the value is not (0061 §9)",
-  );
+      'rather than on it, so that what ran is still on the log and only the value is not (0061 §9)',
+  )
 }
 
 /**
@@ -312,22 +313,22 @@ function markRefused(key: string, field: string, why: string): Error {
  * declaration, not a proof about every schema zod can build.
  */
 function markedBelow(schema: z.ZodType): boolean {
-  const seen = new Set<object>();
+  const seen = new Set<object>()
   const walk = (value: unknown, own: boolean): boolean => {
-    if (typeof value !== "object" || value === null || seen.has(value)) return false;
-    seen.add(value);
+    if (typeof value !== 'object' || value === null || seen.has(value)) return false
+    seen.add(value)
     if (isSchema(value)) {
-      if (!own && value.meta()?.["no_log"] === true) return true;
-      return walk(value._zod.def, false);
+      if (!own && value.meta()?.['no_log'] === true) return true
+      return walk(value._zod.def, false)
     }
-    return Object.values(value).some((each) => walk(each, false));
-  };
-  return walk(schema, true);
+    return Object.values(value).some((each) => walk(each, false))
+  }
+  return walk(schema, true)
 }
 
 /** A schema, told apart from the defs and checks the walk above also meets. */
 function isSchema(value: object): value is z.ZodType {
-  return "_zod" in value && typeof (value as { meta?: unknown }).meta === "function";
+  return '_zod' in value && typeof (value as { meta?: unknown }).meta === 'function'
 }
 
 /**
@@ -353,34 +354,34 @@ export function definePlugin<Key extends string, Fields extends PluginFields>(
   key: Key,
   declaration: { readonly fields: Fields; readonly at: PluginSteps },
 ) {
-  const { fields, at } = declaration;
-  const shape = { name: z.string(), ...fields };
-  const serves = Object.keys(at);
+  const { fields, at } = declaration
+  const shape = { name: z.string(), ...fields }
+  const serves = Object.keys(at)
   for (const step of serves) {
-    if (step === ANY_STEP || (STEPS as readonly string[]).includes(step)) continue;
+    if (step === ANY_STEP || (STEPS as readonly string[]).includes(step)) continue
     throw new Error(
       `"${key}" declares itself at "${step}", which is not a step — the ten are ` +
-        `${STEPS.map((s) => `"${s}"`).join(", ")}, and "${ANY_STEP}" is every one of them. A plugin's ` +
-        "`at` is what makes it legal at a step (0064 §4), so a key nothing matches is a plugin no " +
-        "recipe can ever declare and no refusal can ever explain",
-    );
+        `${STEPS.map((s) => `"${s}"`).join(', ')}, and "${ANY_STEP}" is every one of them. A plugin's ` +
+        '`at` is what makes it legal at a step (0064 §4), so a key nothing matches is a plugin no ' +
+        'recipe can ever declare and no refusal can ever explain',
+    )
   }
-  const secrets: string[] = [];
+  const secrets: string[] = []
   for (const [field, schema] of Object.entries(fields)) {
-    if (schema.meta()?.["no_log"] !== true) {
+    if (schema.meta()?.['no_log'] !== true) {
       if (markedBelow(schema))
         throw new Error(
           `"${key}" marks no_log below its "${field}" field, where nothing reads it: zod keeps the mark ` +
-            "on the schema noLog was called on, and disclose withholds whole fields. Mark the field " +
-            "itself, and mark it last — noLog(z.string().optional()), never noLog(z.string()).optional()",
-        );
-      continue;
+            'on the schema noLog was called on, and disclose withholds whole fields. Mark the field ' +
+            'itself, and mark it last — noLog(z.string().optional()), never noLog(z.string()).optional()',
+        )
+      continue
     }
-    const why = whyItCannotBeWithheld(key, field);
-    if (why !== null) throw markRefused(key, field, why);
-    secrets.push(field);
+    const why = whyItCannotBeWithheld(key, field)
+    if (why !== null) throw markRefused(key, field, why)
+    secrets.push(field)
   }
-  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets, at, serves };
+  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets, at, serves }
 }
 
 /**
@@ -391,31 +392,25 @@ export function definePlugin<Key extends string, Fields extends PluginFields>(
  * can be reported against the plugin that owns it rather than as a union's
  * "invalid input".
  */
-export function pluginNaming<Known extends { key: string }>(
-  action: unknown,
-  plugins: readonly Known[],
-): Known | null {
-  const named = pluginsNamed(action, plugins);
-  return named.length === 1 ? named[0]! : null;
+export function pluginNaming<Known extends { key: string }>(action: unknown, plugins: readonly Known[]): Known | null {
+  const named = pluginsNamed(action, plugins)
+  return named.length === 1 ? named[0]! : null
 }
 
 /** Every plugin an action names, for a refusal that has to say which two. */
-export function pluginsNamed<Known extends { key: string }>(
-  action: unknown,
-  plugins: readonly Known[],
-): Known[] {
-  if (action === null || typeof action !== "object") return [];
-  return plugins.filter((plugin) => plugin.key in action);
+export function pluginsNamed<Known extends { key: string }>(action: unknown, plugins: readonly Known[]): Known[] {
+  if (action === null || typeof action !== 'object') return []
+  return plugins.filter((plugin) => plugin.key in action)
 }
 
 /** One thing wrong with one action's fields. */
 export interface FieldProblem {
   /** The field it is about, or `null` where the problem is the action's shape. */
-  readonly field: string | null;
+  readonly field: string | null
   /** Where it sits under the action, so an issue's path reads `proposed.0.env`. */
-  readonly at: readonly PropertyKey[];
+  readonly at: readonly PropertyKey[]
   /** What is wrong, in the plugin's own words — and never the value. */
-  readonly why: string;
+  readonly why: string
 }
 
 /**
@@ -432,10 +427,10 @@ export function readFields(
   plugin: Plugin,
   action: unknown,
 ): { value: unknown; problems?: undefined } | { value?: undefined; problems: FieldProblem[] } {
-  const parsed = plugin.schema.safeParse(action);
-  if (parsed.success) return { value: parsed.data };
+  const parsed = plugin.schema.safeParse(action)
+  if (parsed.success) return { value: parsed.data }
 
-  const problems: FieldProblem[] = [];
+  const problems: FieldProblem[] = []
   for (const issue of parsed.error.issues) {
     // `path` is empty for the plugin's own fields and not for a key inside one
     // of them — `worktree: { bse: main }` is an unrecognized key at
@@ -444,7 +439,7 @@ export function readFields(
     // is in; listing `declares` there would name the plugin's fields at a depth
     // where none of them is legal, which is a refusal that sends a reader to
     // the wrong line.
-    if (issue.code === "unrecognized_keys" && issue.path.length === 0) {
+    if (issue.code === 'unrecognized_keys' && issue.path.length === 0) {
       // The `env:` case 0061 §9 is written about, and the one a union could
       // never give: the field is named, the plugin is named, and what the
       // plugin does declare is listed beside it.
@@ -454,13 +449,13 @@ export function readFields(
           at: [key],
           why:
             `"${plugin.key}" declares no "${key}" field — what it declares is ` +
-            `${plugin.declares.map((field) => `"${field}"`).join(", ")}. A plugin refuses a field it does ` +
-            "not understand, rather than accepting it and ignoring it (0061 §9)",
-        });
+            `${plugin.declares.map((field) => `"${field}"`).join(', ')}. A plugin refuses a field it does ` +
+            'not understand, rather than accepting it and ignoring it (0061 §9)',
+        })
       }
-      continue;
+      continue
     }
-    const field = typeof issue.path[0] === "string" ? issue.path[0] : null;
+    const field = typeof issue.path[0] === 'string' ? issue.path[0] : null
     problems.push({
       field,
       at: issue.path,
@@ -469,11 +464,11 @@ export function readFields(
       why:
         field !== null && plugin.secrets.includes(field)
           ? `its "${field}" field is not what "${plugin.key}" accepts, and this refusal does not say ` +
-            "what was written there: the field is declared no_log"
-          : `${field === null ? "it" : `its "${field}" field`} is not what "${plugin.key}" accepts: ${issue.message}`,
-    });
+            'what was written there: the field is declared no_log'
+          : `${field === null ? 'it' : `its "${field}" field`} is not what "${plugin.key}" accepts: ${issue.message}`,
+    })
   }
-  return { problems };
+  return { problems }
 }
 
 /**
@@ -498,14 +493,14 @@ export function readFields(
  * exists to remove, one layer further down.
  */
 export function disclose<Action>(action: Action, plugins: readonly PluginSecrets[]): Action {
-  const plugin = pluginNaming(action, plugins);
-  if (plugin === null || plugin.secrets.length === 0) return action;
-  const shown = { ...(action as object) } as Record<string, unknown>;
+  const plugin = pluginNaming(action, plugins)
+  if (plugin === null || plugin.secrets.length === 0) return action
+  const shown = { ...(action as object) } as Record<string, unknown>
   for (const field of plugin.secrets) {
-    const why = whyItCannotBeWithheld(plugin.key, field);
-    if (why !== null) throw markRefused(plugin.key, field, why);
-    if (!(field in shown)) continue;
-    shown[field] = withheld(shown[field]);
+    const why = whyItCannotBeWithheld(plugin.key, field)
+    if (why !== null) throw markRefused(plugin.key, field, why)
+    if (!(field in shown)) continue
+    shown[field] = withheld(shown[field])
   }
-  return shown as Action;
+  return shown as Action
 }

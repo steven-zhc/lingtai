@@ -1,9 +1,10 @@
-import { config, parse } from "dotenv";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { parse as parseYaml } from "yaml";
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { config, parse } from 'dotenv'
+import { parse as parseYaml } from 'yaml'
 
 /**
  * Where configuration values come from, for every package that needs one.
@@ -26,14 +27,14 @@ import { parse as parseYaml } from "yaml";
  * environment nor an env file names one — see `machineDatabaseUrl` — so a
  * command that connects with no variable and no env file is reading that file.
  */
-const here = dirname(fileURLToPath(import.meta.url));
+const here = dirname(fileURLToPath(import.meta.url))
 /**
  * `packages/env/src` → the repository root. Bundled, `import.meta.url` is
  * `dist/lingtai.cjs`'s, and the root is one directory up (#183):
  * `apps/release/src/build.ts` defines `LINGTAI_BUNDLED`, and the source never does.
  */
-declare const LINGTAI_BUNDLED: boolean | undefined;
-const root = resolve(here, typeof LINGTAI_BUNDLED === "undefined" ? "../../.." : "..");
+declare const LINGTAI_BUNDLED: boolean | undefined
+const root = resolve(here, typeof LINGTAI_BUNDLED === 'undefined' ? '../../..' : '..')
 
 /**
  * What was really exported into this process, taken **before** any env file is
@@ -51,12 +52,12 @@ const root = resolve(here, typeof LINGTAI_BUNDLED === "undefined" ? "../../.." :
  * Every other reader here still asks the merged environment, which is what
  * makes `.env.local` a convenience for everything else.
  */
-const exported: NodeJS.ProcessEnv = { ...process.env };
+const exported: NodeJS.ProcessEnv = { ...process.env }
 
 const loaded = config({
-  path: [resolve(root, ".env.local"), resolve(root, ".env")],
+  path: [resolve(root, '.env.local'), resolve(root, '.env')],
   quiet: true,
-});
+})
 
 /**
  * What the machine's own env **file** holds — not the whole process environment.
@@ -72,7 +73,7 @@ const loaded = config({
  * is to say what the file holds, and whose it is, is somebody else's question.
  */
 export function machineEnvFile(): Record<string, string> {
-  return { ...(loaded.parsed ?? {}) };
+  return { ...(loaded.parsed ?? {}) }
 }
 
 /**
@@ -82,7 +83,7 @@ export function machineEnvFile(): Record<string, string> {
  * suite by another name.
  */
 function inTest(from: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(from["VITEST"] || from["LINGTAI_TEST"]);
+  return Boolean(from['VITEST'] || from['LINGTAI_TEST'])
 }
 
 /**
@@ -121,8 +122,8 @@ function inTest(from: NodeJS.ProcessEnv = process.env): boolean {
  *
  * is how the test database gets its schema.
  */
-export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL", from: NodeJS.ProcessEnv = process.env): string {
-  return inTest(from) ? `${PREFIX}TEST_${name}` : `${PREFIX}${name}`;
+export function dbVar(name: 'DATABASE_URL' | 'DIRECT_DATABASE_URL', from: NodeJS.ProcessEnv = process.env): string {
+  return inTest(from) ? `${PREFIX}TEST_${name}` : `${PREFIX}${name}`
 }
 
 /**
@@ -155,7 +156,7 @@ export function dbVar(name: "DATABASE_URL" | "DIRECT_DATABASE_URL", from: NodeJS
  * `nextloom-ai-admin.env` stays `DATABASE_URL`, because that is what admin's
  * application reads. This is only about the names Lingtai uses for itself.
  */
-export const PREFIX = "LINGTAI_";
+export const PREFIX = 'LINGTAI_'
 
 /**
  * The old, unprefixed name, when it is set and the new one is not.
@@ -173,41 +174,41 @@ export const PREFIX = "LINGTAI_";
 function renamedFrom(name: string, from: NodeJS.ProcessEnv): string | null {
   const old = name.startsWith(`${PREFIX}TEST_`)
     ? `TEST_${name.slice(`${PREFIX}TEST_`.length)}`
-    : name.slice(PREFIX.length);
-  return from[old] ? old : null;
+    : name.slice(PREFIX.length)
+  return from[old] ? old : null
 }
 
 function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
-  const full = `${PREFIX}TEST_${name}`;
-  const value = optional(full, from);
+  const full = `${PREFIX}TEST_${name}`
+  const value = optional(full, from)
   if (!value) {
-    const was = renamedFrom(full, from);
+    const was = renamedFrom(full, from)
     throw new Error(
       `${full} is not set, and this caller needs Postgres. ` +
-        (was ? `${was} is set — it was renamed to ${full} (#63). ` : "") +
-        "Since #275 the suite runs on a SQLite file of its own without it — only the files on " +
+        (was ? `${was} is set — it was renamed to ${full} (#63). ` : '') +
+        'Since #275 the suite runs on a SQLite file of its own without it — only the files on ' +
         "@lingtai/event-store/test/postgres's list, which assert Postgres itself, need " +
         `${full} and ${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own — see .env.example.`,
-    );
+    )
   }
-  return value;
+  return value
 }
 
 function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
-  const v = from[name];
+  const v = from[name]
   if (!v) {
-    const was = renamedFrom(name, from);
+    const was = renamedFrom(name, from)
     throw new Error(
       `${name} is not set. ` +
         (was
           ? `${was} is set — it was renamed to ${name} (#63), so that a project's own ` +
             `${was} can never be confused with Lingtai's. Rename the line.`
-          : name.includes("DATABASE_URL")
-            ? "lingtai init asks for one and writes it to ~/.lingtai/config.yml; from a checkout, .env.local at the repo root works too."
-            : "Copy .env.example to .env.local at the repo root and fill it in."),
-    );
+          : name.includes('DATABASE_URL')
+            ? 'lingtai init asks for one and writes it to ~/.lingtai/config.yml; from a checkout, .env.local at the repo root works too.'
+            : 'Copy .env.example to .env.local at the repo root and fill it in.'),
+    )
   }
-  return v;
+  return v
 }
 
 /**
@@ -226,16 +227,16 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
  * where somebody plainly set one.
  */
 export function machineDatabaseUrl(from: NodeJS.ProcessEnv = process.env): string | undefined {
-  const machine = machineDatabase(from);
-  if (machine.unreadable !== undefined) throw new Error(machine.unreadable);
-  return machine.url;
+  const machine = machineDatabase(from)
+  if (machine.unreadable !== undefined) throw new Error(machine.unreadable)
+  return machine.url
 }
 
 interface MachineDatabase {
   /** `database.url`, where the file has one. */
-  url?: string;
+  url?: string
   /** Why the file could not be read at all — never *it names no URL*. */
-  unreadable?: string;
+  unreadable?: string
 }
 
 /**
@@ -248,29 +249,31 @@ interface MachineDatabase {
  * that only look.
  */
 function machineDatabase(from: NodeJS.ProcessEnv): MachineDatabase {
-  const path = join(stateDir(from), "config.yml");
-  let text: string;
+  const path = join(stateDir(from), 'config.yml')
+  let text: string
   try {
-    text = readFileSync(path, "utf8");
+    text = readFileSync(path, 'utf8')
   } catch {
-    return {};
+    return {}
   }
-  let parsed: unknown;
+  let parsed: unknown
   try {
-    parsed = parseYaml(text);
+    parsed = parseYaml(text)
   } catch (err) {
     return {
       unreadable: `${path} could not be parsed as YAML, so its database.url could not be read: ${(err as Error).message}`,
-    };
+    }
   }
-  const database = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["database"] : undefined;
-  const url = database !== null && typeof database === "object" ? (database as Record<string, unknown>)["url"] : undefined;
-  return typeof url === "string" && url !== "" ? { url } : {};
+  const database =
+    parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>)['database'] : undefined
+  const url =
+    database !== null && typeof database === 'object' ? (database as Record<string, unknown>)['url'] : undefined
+  return typeof url === 'string' && url !== '' ? { url } : {}
 }
 
 /** The machine file's URL, asked only of this process's own environment and never in a test. */
 function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
-  return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined;
+  return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined
 }
 
 /**
@@ -286,21 +289,21 @@ function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
  * and a half-written `config.yml` must not be what stops them.
  */
 function machineUrlIfReadable(from: NodeJS.ProcessEnv): string | undefined {
-  return from === process.env && !inTest(from) ? machineDatabase(from).url : undefined;
+  return from === process.env && !inTest(from) ? machineDatabase(from).url : undefined
 }
 
 // --------------------------------------------------------------- the store --
 
 /** The two stores a machine can run (0055). */
-export type Store = "postgres" | "sqlite";
+export type Store = 'postgres' | 'sqlite'
 
 /** Where a choice was read: this process's real environment, or the machine file. */
-export type StoreSource = "environment" | "config.yml";
+export type StoreSource = 'environment' | 'config.yml'
 
 export type StoreChosen =
   | {
-      store: "postgres";
-      url: string;
+      store: 'postgres'
+      url: string
       /**
        * The session-mode connection **to the database `url` names**, for the
        * one thing that cannot go through a transaction pooler: `LISTEN`/
@@ -329,11 +332,11 @@ export type StoreChosen =
        * ignored. A `config.yml` carries one URL and it stands in for both
        * names, which is what `machineDatabaseUrl` already says.
        */
-      directUrl: string;
-      where: StoreSource;
-      from: string;
+      directUrl: string
+      where: StoreSource
+      from: string
     }
-  | { store: "sqlite"; path: string; where: StoreSource; from: string };
+  | { store: 'sqlite'; path: string; where: StoreSource; from: string }
 
 /**
  * Which refusal it is.
@@ -343,17 +346,17 @@ export type StoreChosen =
  * nothing chosen is the question it is about to ask anyway, while the other two
  * are a file it is fixing and says so first.
  */
-export type StoreUnchosen = "nothing chosen" | "no url" | "two keys" | "unreadable";
+export type StoreUnchosen = 'nothing chosen' | 'no url' | 'two keys' | 'unreadable'
 
 export interface StoreRefused {
-  refused: string;
-  because: StoreUnchosen;
+  refused: string
+  because: StoreUnchosen
 }
 
-export type StoreChoice = StoreChosen | StoreRefused;
+export type StoreChoice = StoreChosen | StoreRefused
 
 /** The log's file when a machine chose SQLite, under `stateDir()` (doc/design/1.0.md). */
-export const SQLITE_LOG = "lingtai.db";
+export const SQLITE_LOG = 'lingtai.db'
 
 /**
  * **The one sentence anything operator-facing says about a SQLite machine.**
@@ -385,8 +388,8 @@ export const SQLITE_LOG = "lingtai.db";
  * obvious: the log is that one file, and no second reader can reach it.
  */
 export const SQLITE_MACHINE =
-  "SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one " +
-  "can read it, and switching stores later is a new log rather than the same one somewhere else (0055 §3)";
+  'SQLite is the whole log, in one file under ~/.lingtai — no server, and no second machine: nothing outside this one ' +
+  'can read it, and switching stores later is a new log rather than the same one somewhere else (0055 §3)'
 
 /**
  * The variables really exported into this process.
@@ -396,7 +399,7 @@ export const SQLITE_MACHINE =
  * drive this function with an environment of their own.
  */
 function realEnvironment(from: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return from === process.env ? exported : from;
+  return from === process.env ? exported : from
 }
 
 /**
@@ -409,8 +412,8 @@ function realEnvironment(from: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * without touching any machine at all.
  */
 function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
-  if (from === process.env) return inTest(from) ? null : join(stateDir(from), "config.yml");
-  return from["LINGTAI_HOME"] ? join(stateDir(from), "config.yml") : null;
+  if (from === process.env) return inTest(from) ? null : join(stateDir(from), 'config.yml')
+  return from['LINGTAI_HOME'] ? join(stateDir(from), 'config.yml') : null
 }
 
 /**
@@ -452,8 +455,8 @@ function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
  * stands.
  */
 function sessionUrlFor(url: string, from: NodeJS.ProcessEnv): string {
-  const named = optional(dbVar("DIRECT_DATABASE_URL", from), from);
-  return named !== undefined && sameDatabase(named, url) ? named : url;
+  const named = optional(dbVar('DIRECT_DATABASE_URL', from), from)
+  return named !== undefined && sameDatabase(named, url) ? named : url
 }
 
 /**
@@ -472,23 +475,25 @@ function sessionUrlFor(url: string, from: NodeJS.ProcessEnv): string {
  */
 function sameDatabase(a: string, b: string): boolean {
   try {
-    const x = new URL(a);
-    const y = new URL(b);
-    return x.hostname === y.hostname && x.pathname === y.pathname;
+    const x = new URL(a)
+    const y = new URL(b)
+    return x.hostname === y.hostname && x.pathname === y.pathname
   } catch {
-    return false;
+    return false
   }
 }
 
 function notSetUp(name: string, path: string | null, url?: string): StoreRefused {
   return {
-    because: "nothing chosen",
+    because: 'nothing chosen',
     refused:
-      "nothing on this machine says which store it runs" +
-      (path === null ? "" : `: ${path} names no database.store`) +
-      (url === undefined ? "" : ", though it names a database.url — which store that URL is for was never written down") +
+      'nothing on this machine says which store it runs' +
+      (path === null ? '' : `: ${path} names no database.store`) +
+      (url === undefined
+        ? ''
+        : ', though it names a database.url — which store that URL is for was never written down') +
       ` — lingtai init asks and writes the choice. An exported ${name} also decides, and supplies the URL with it.`,
-  };
+  }
 }
 
 /**
@@ -529,7 +534,7 @@ function notSetUp(name: string, path: string | null, url?: string): StoreRefused
 export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice {
   // The test side for a test, as every other read here does — so a suite that
   // exists to assert Postgres can never be answered by the operator's machine.
-  const name = dbVar("DATABASE_URL", from);
+  const name = dbVar('DATABASE_URL', from)
   // **`realEnvironment` is how 0056 §4 is kept**, and it is kept for the
   // machine's name only. The snapshot predates dotenv, so a checkout's
   // `.env.local` cannot decide, for a machine, which store that machine runs.
@@ -541,18 +546,19 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
   // suite is told to put it in, while `postgresUrl()` beside it answered.
   // What 0046 forbids is a *fallback*, and there is none: with no test URL
   // anywhere this still refuses, by name.
-  const url = optional(name, inTest(from) ? from : realEnvironment(from));
+  const url = optional(name, inTest(from) ? from : realEnvironment(from))
   if (url !== undefined) {
     // Said as it is: a machine's name was really exported, and a test's may
     // have come from the env files. A line somebody reads must not claim the
     // stronger of the two.
-    const said = inTest(from) && optional(name, realEnvironment(from)) === undefined
-      ? `${name}, in this process's environment`
-      : `${name}, exported into this process`;
-    return { store: "postgres", url, directUrl: sessionUrlFor(url, from), where: "environment", from: said };
+    const said =
+      inTest(from) && optional(name, realEnvironment(from)) === undefined
+        ? `${name}, in this process's environment`
+        : `${name}, exported into this process`
+    return { store: 'postgres', url, directUrl: sessionUrlFor(url, from), where: 'environment', from: said }
   }
 
-  const path = machineChoiceFile(from);
+  const path = machineChoiceFile(from)
   if (path === null) {
     // **The test side, since #275.** `machineChoiceFile` answers null here in
     // the two cases that matter: this process's own environment under
@@ -571,80 +577,80 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
     // a machine that chose SQLite is the operator's own log (0055 §2, 0056 §4;
     // see 0074).
     if (inTest(from)) {
-      const sqlitePath = optional(`${PREFIX}TEST_SQLITE_PATH`, from);
+      const sqlitePath = optional(`${PREFIX}TEST_SQLITE_PATH`, from)
       if (sqlitePath !== undefined) {
         return {
-          store: "sqlite",
+          store: 'sqlite',
           path: sqlitePath,
-          where: "environment",
+          where: 'environment',
           from: `${PREFIX}TEST_SQLITE_PATH, exported into this process`,
-        };
+        }
       }
-      return notSetUp(`${name} or ${PREFIX}TEST_SQLITE_PATH`, null);
+      return notSetUp(`${name} or ${PREFIX}TEST_SQLITE_PATH`, null)
     }
-    return notSetUp(name, null);
+    return notSetUp(name, null)
   }
-  let text: string;
+  let text: string
   try {
-    text = readFileSync(path, "utf8");
+    text = readFileSync(path, 'utf8')
   } catch {
     // No file is no choice, and it is the same sentence: a machine that has not
     // been set up is not a machine that chose SQLite.
-    return notSetUp(name, path);
+    return notSetUp(name, path)
   }
-  let parsed: unknown;
+  let parsed: unknown
   try {
-    parsed = parseYaml(text);
+    parsed = parseYaml(text)
   } catch (err) {
     return {
-      because: "unreadable",
+      because: 'unreadable',
       refused:
         `${path} could not be parsed as YAML, so which store this machine runs went unanswered: ` +
         `${(err as Error).message} — fix that file, or lingtai init writes it again`,
-    };
+    }
   }
   const database =
-    parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["database"] : undefined;
-  const at = database !== null && typeof database === "object" ? (database as Record<string, unknown>) : {};
-  const written = typeof at["url"] === "string" && at["url"] !== "" ? (at["url"] as string) : undefined;
-  const store = at["store"];
-  if (store === undefined || store === null || store === "") return notSetUp(name, path, written);
-  if (store !== "postgres" && store !== "sqlite") {
+    parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>)['database'] : undefined
+  const at = database !== null && typeof database === 'object' ? (database as Record<string, unknown>) : {}
+  const written = typeof at['url'] === 'string' && at['url'] !== '' ? (at['url'] as string) : undefined
+  const store = at['store']
+  if (store === undefined || store === null || store === '') return notSetUp(name, path, written)
+  if (store !== 'postgres' && store !== 'sqlite') {
     return {
-      because: "nothing chosen",
+      because: 'nothing chosen',
       refused:
         `${path} sets database.store to ${JSON.stringify(store)}, which is neither postgres nor sqlite, so which ` +
-        "store this machine runs went unanswered — lingtai init writes one of the two",
-    };
+        'store this machine runs went unanswered — lingtai init writes one of the two',
+    }
   }
-  if (store === "sqlite") {
+  if (store === 'sqlite') {
     if (written !== undefined) {
       return {
-        because: "two keys",
+        because: 'two keys',
         refused:
           `${path} says database.store: sqlite and names database.url: ${redactUrl(written)} — two keys disagreeing ` +
-          "about which store this machine runs, and neither is guessed at. lingtai init writes the one you choose and " +
-          "removes the other",
-      };
+          'about which store this machine runs, and neither is guessed at. lingtai init writes the one you choose and ' +
+          'removes the other',
+      }
     }
-    return { store: "sqlite", path: join(stateDir(from), SQLITE_LOG), where: "config.yml", from: path };
+    return { store: 'sqlite', path: join(stateDir(from), SQLITE_LOG), where: 'config.yml', from: path }
   }
   if (written === undefined) {
     return {
-      because: "no url",
+      because: 'no url',
       refused:
         `${path} says database.store: postgres and names no database.url — a URL is looked for in ${name} exported ` +
         `into this process, then in database.url in that file, and nowhere else: a checkout's .env.local does not ` +
-        "decide this (0056 §4). lingtai init asks for one and writes it",
-    };
+        'decide this (0056 §4). lingtai init asks for one and writes it',
+    }
   }
   return {
-    store: "postgres",
+    store: 'postgres',
     url: written,
     directUrl: sessionUrlFor(written, from),
-    where: "config.yml",
+    where: 'config.yml',
     from: `${path} database.url`,
-  };
+  }
 }
 
 /**
@@ -672,9 +678,9 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
  * first moment a process needs the answer.
  */
 export function chosenStore(from: NodeJS.ProcessEnv = process.env): StoreChosen {
-  const choice = storeChoice(from);
-  if ("refused" in choice) throw new Error(choice.refused);
-  return choice;
+  const choice = storeChoice(from)
+  if ('refused' in choice) throw new Error(choice.refused)
+  return choice
 }
 
 /**
@@ -688,10 +694,10 @@ export function chosenStore(from: NodeJS.ProcessEnv = process.env): StoreChosen 
  * selecting Postgres (#215).
  */
 export function describeStore(choice: StoreChoice): string {
-  if ("refused" in choice) return choice.refused;
-  return choice.store === "postgres"
+  if ('refused' in choice) return choice.refused
+  return choice.store === 'postgres'
     ? `Postgres, ${redactUrl(choice.url)} ← ${choice.from}`
-    : `SQLite, ${choice.path} ← ${choice.from}`;
+    : `SQLite, ${choice.path} ← ${choice.from}`
 }
 
 /**
@@ -704,11 +710,11 @@ export function describeStore(choice: StoreChoice): string {
  */
 export function redactUrl(url: string): string {
   try {
-    const parsed = new URL(url);
-    if (parsed.password) parsed.password = "***";
-    return parsed.toString();
+    const parsed = new URL(url)
+    if (parsed.password) parsed.password = '***'
+    return parsed.toString()
   } catch {
-    return "(a URL that does not parse)";
+    return '(a URL that does not parse)'
   }
 }
 
@@ -725,7 +731,7 @@ export function redactUrl(url: string): string {
  * other processes — it would collide at random, intermittently, and mostly not
  * at all, which is harder to find than a fixed clash. `10000–32767` is the band.
  */
-export const BOARD_PORT = 17820;
+export const BOARD_PORT = 17820
 
 /**
  * Reserved, and **bound by nothing**.
@@ -744,7 +750,7 @@ export const BOARD_PORT = 17820;
  * import of `RESERVED_PORT` included, since importing it is the only way to
  * bind the port without writing the digits.
  */
-export const RESERVED_PORT = 17821;
+export const RESERVED_PORT = 17821
 
 /**
  * `board.port` in `~/.lingtai/config.yml`, or undefined where the file names
@@ -755,23 +761,25 @@ export const RESERVED_PORT = 17821;
  * about the number somebody plainly wrote down.
  */
 export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number | undefined {
-  const path = join(stateDir(from), "config.yml");
-  let text: string;
+  const path = join(stateDir(from), 'config.yml')
+  let text: string
   try {
-    text = readFileSync(path, "utf8");
+    text = readFileSync(path, 'utf8')
   } catch {
-    return undefined;
+    return undefined
   }
-  let parsed: unknown;
+  let parsed: unknown
   try {
-    parsed = parseYaml(text);
+    parsed = parseYaml(text)
   } catch (err) {
-    throw new Error(`${path} could not be parsed as YAML, so its board.port could not be read: ${(err as Error).message}`);
+    throw new Error(
+      `${path} could not be parsed as YAML, so its board.port could not be read: ${(err as Error).message}`,
+    )
   }
-  const board = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>)["board"] : undefined;
-  const port = board !== null && typeof board === "object" ? (board as Record<string, unknown>)["port"] : undefined;
-  if (port === undefined || port === null) return undefined;
-  const n = typeof port === "number" ? port : Number(port);
+  const board = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>)['board'] : undefined
+  const port = board !== null && typeof board === 'object' ? (board as Record<string, unknown>)['port'] : undefined
+  if (port === undefined || port === null) return undefined
+  const n = typeof port === 'number' ? port : Number(port)
   if (!Number.isInteger(n) || n <= 0 || n > 65535) {
     // Not "17820 is the default": nothing fell back to it, and a sentence that
     // named the default beside the refusal read as though the value had been
@@ -779,19 +787,19 @@ export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number 
     throw new Error(
       `${path} sets board.port to ${JSON.stringify(port)}, which is not a port number, so no port was read — ` +
         `take that line out to have the default, ${BOARD_PORT}`,
-    );
+    )
   }
-  return n;
+  return n
 }
 
 /** The port the board is served on and linked to: the file's, else `BOARD_PORT`. */
 export function boardPort(from: NodeJS.ProcessEnv = process.env): number {
-  return machineBoardPort(from) ?? BOARD_PORT;
+  return machineBoardPort(from) ?? BOARD_PORT
 }
 
 /** Where the board answers, for a link somebody clicks. Loopback: 0008 gave it no authentication. */
 export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
-  return `http://127.0.0.1:${boardPort(from)}`;
+  return `http://127.0.0.1:${boardPort(from)}`
 }
 
 /**
@@ -845,7 +853,7 @@ export function boardUrl(from: NodeJS.ProcessEnv = process.env): string {
  * `uninstall` — that exist to repair a broken install.
  */
 export function logConfigured(from: NodeJS.ProcessEnv = process.env): boolean {
-  return postgresUrlIfSet(from) !== undefined;
+  return postgresUrlIfSet(from) !== undefined
 }
 
 /**
@@ -861,7 +869,7 @@ export function logConfigured(from: NodeJS.ProcessEnv = process.env): boolean {
  * drift apart: wherever this is undefined, `postgresUrl()` refuses.
  */
 export function postgresUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | undefined {
-  return optional(dbVar("DATABASE_URL", from), from) ?? machineUrlIfReadable(from);
+  return optional(dbVar('DATABASE_URL', from), from) ?? machineUrlIfReadable(from)
 }
 
 /**
@@ -878,8 +886,8 @@ export function postgresUrl(from: NodeJS.ProcessEnv = process.env): string {
     // connect — so the file is named here (#186) rather than reported as *not
     // set* on a machine where somebody plainly set one.
     machineUrl(from) ??
-    (inTest(from) ? testUrl("DATABASE_URL", from) : required(`${PREFIX}DATABASE_URL`, from))
-  );
+    (inTest(from) ? testUrl('DATABASE_URL', from) : required(`${PREFIX}DATABASE_URL`, from))
+  )
 }
 
 /**
@@ -908,8 +916,8 @@ export function directPostgresUrl(from: NodeJS.ProcessEnv = process.env): string
     // As `postgresUrl`: the reader is silent about a `config.yml` it could not
     // parse, and a caller that is about to connect is told which file it is.
     machineUrl(from) ??
-    (inTest(from) ? testUrl("DIRECT_DATABASE_URL", from) : required(`${PREFIX}DIRECT_DATABASE_URL`, from))
-  );
+    (inTest(from) ? testUrl('DIRECT_DATABASE_URL', from) : required(`${PREFIX}DIRECT_DATABASE_URL`, from))
+  )
 }
 
 /**
@@ -934,18 +942,18 @@ export function directPostgresUrl(from: NodeJS.ProcessEnv = process.env): string
  */
 export function directUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | undefined {
   return (
-    optional(dbVar("DIRECT_DATABASE_URL", from), from) ??
-    optional(dbVar("DATABASE_URL", from), from) ??
+    optional(dbVar('DIRECT_DATABASE_URL', from), from) ??
+    optional(dbVar('DATABASE_URL', from), from) ??
     // Total, as `postgresUrlIfSet` is: `lingtai doctor` reads this one to
     // report on an environment, and must not be the command a broken
     // `config.yml` stops.
     machineUrlIfReadable(from)
-  );
+  )
 }
 
 /** Set, or undefined. For values whose absence is a legitimate state. */
 export function optional(name: string, from: NodeJS.ProcessEnv = process.env): string | undefined {
-  return from[name] || undefined;
+  return from[name] || undefined
 }
 
 /**
@@ -962,10 +970,10 @@ export function optional(name: string, from: NodeJS.ProcessEnv = process.env): s
  * caller that needs to show configuration shows `keySource`, not the key.
  */
 export interface GitHubAppCredentials {
-  appId: string;
-  privateKey: string;
+  appId: string
+  privateKey: string
   /** Where the key came from, for diagnostics. Never the key itself. */
-  keySource: string;
+  keySource: string
 }
 
 /**
@@ -993,13 +1001,13 @@ export interface GitHubAppCredentials {
  * fell back when `HOME` was unset.
  */
 export function stateDir(from: NodeJS.ProcessEnv = process.env): string {
-  return from["LINGTAI_HOME"] ?? join(from["HOME"] ?? homedir(), ".lingtai");
+  return from['LINGTAI_HOME'] ?? join(from['HOME'] ?? homedir(), '.lingtai')
 }
 
 export function resolvePath(path: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/")) return resolve(homedir(), path.slice(2));
-  return resolve(root, path);
+  if (path === '~') return homedir()
+  if (path.startsWith('~/')) return resolve(homedir(), path.slice(2))
+  return resolve(root, path)
 }
 
 /**
@@ -1017,7 +1025,7 @@ export function resolvePath(path: string): string {
  * runs unbuilt.
  */
 export function repoRoot(): string {
-  return root;
+  return root
 }
 
 /**
@@ -1028,7 +1036,7 @@ export function repoRoot(): string {
  * below and no others.
  */
 export function envFiles(): string[] {
-  return [resolve(root, ".env.local"), resolve(root, ".env")];
+  return [resolve(root, '.env.local'), resolve(root, '.env')]
 }
 
 /**
@@ -1058,25 +1066,25 @@ export function envFiles(): string[] {
  * says nothing.
  */
 function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): (name: string) => string | undefined {
-  const sources: ((name: string) => string | undefined)[] = [(name) => optional(name, from)];
+  const sources: ((name: string) => string | undefined)[] = [(name) => optional(name, from)]
   for (const file of files) {
-    let parsed: Record<string, string>;
+    let parsed: Record<string, string>
     try {
-      parsed = parse(readFileSync(file, "utf8"));
+      parsed = parse(readFileSync(file, 'utf8'))
     } catch {
-      continue;
+      continue
     }
-    sources.push((name) => parsed[name] || undefined);
+    sources.push((name) => parsed[name] || undefined)
   }
-  const owner = sources.find((source) => source(`${PREFIX}GITHUB_APP_ID`) !== undefined);
-  const ordered = owner === undefined ? sources : [owner, ...sources.filter((s) => s !== owner)];
+  const owner = sources.find((source) => source(`${PREFIX}GITHUB_APP_ID`) !== undefined)
+  const ordered = owner === undefined ? sources : [owner, ...sources.filter((s) => s !== owner)]
   return (name) => {
     for (const source of ordered) {
-      const value = source(name);
-      if (value) return value;
+      const value = source(name)
+      if (value) return value
     }
-    return undefined;
-  };
+    return undefined
+  }
 }
 
 /**
@@ -1091,7 +1099,7 @@ export function githubWebhookSecret(
   from: NodeJS.ProcessEnv = process.env,
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): string | undefined {
-  return appValues(from, files)(`${PREFIX}GITHUB_WEBHOOK_SECRET`);
+  return appValues(from, files)(`${PREFIX}GITHUB_WEBHOOK_SECRET`)
 }
 
 /**
@@ -1111,30 +1119,30 @@ export function githubApp(
   from: NodeJS.ProcessEnv = process.env,
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): GitHubAppCredentials {
-  const value = appValues(from, files);
-  const appId = value(`${PREFIX}GITHUB_APP_ID`);
+  const value = appValues(from, files)
+  const appId = value(`${PREFIX}GITHUB_APP_ID`)
   if (!appId) {
     throw new Error(
       `${PREFIX}GITHUB_APP_ID is not set. ` +
         (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
           ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
-          : "Copy .env.example to .env.local at the repo root and fill it in."),
-    );
+          : 'Copy .env.example to .env.local at the repo root and fill it in.'),
+    )
   }
-  const path = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`);
-  const inline = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`);
+  const path = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`)
+  const inline = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)
 
   if (path) {
-    return { appId, privateKey: readFileSync(resolvePath(path), "utf8"), keySource: path };
+    return { appId, privateKey: readFileSync(resolvePath(path), 'utf8'), keySource: path }
   }
   if (inline) {
     // Some hosts can only carry the key as one line; \n restores the PEM.
-    return { appId, privateKey: inline.replace(/\\n/g, "\n"), keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY` };
+    return { appId, privateKey: inline.replace(/\\n/g, '\n'), keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY` }
   }
   throw new Error(
     `Neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ${PREFIX}GITHUB_APP_PRIVATE_KEY is set. ` +
-      "See doc/decisions-archive/0006-github-app.md for creating the App.",
-  );
+      'See doc/decisions-archive/0006-github-app.md for creating the App.',
+  )
 }
 
 /**
@@ -1145,9 +1153,9 @@ export function hasGitHubApp(
   from: NodeJS.ProcessEnv = process.env,
   files: readonly string[] = from === process.env ? envFiles() : [],
 ): boolean {
-  const value = appValues(from, files);
+  const value = appValues(from, files)
   return Boolean(
     value(`${PREFIX}GITHUB_APP_ID`) &&
-      (value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
-  );
+    (value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
+  )
 }

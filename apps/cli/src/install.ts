@@ -23,8 +23,8 @@
  * question *which release is newest*, and it is asked by `lingtai upgrade` and
  * `lingtai doctor` — never by any other command.
  */
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
@@ -38,84 +38,86 @@ import {
   symlinkSync,
   unlinkSync,
   writeFileSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
-import { paint } from "@lingtai/env/colour";
+} from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { basename, dirname, join, resolve, sep } from 'node:path'
+
 // The one sentence anything operator-facing says about a machine whose log is a
 // file — quoted, never restated (`SQLITE_MACHINE`, #215). The barrel and not a
 // subpath, and it costs this module nothing: `entry.ts` imports `world.ts`
 // beside this one, which has loaded it already. It reaches no store; what this
 // file may not import is `@lingtai/event-store`, and it does not.
-import { SQLITE_MACHINE } from "@lingtai/env";
-import workspace from "../../../package.json" with { type: "json" };
-import { platformName, versionLine } from "./version.ts";
+import { SQLITE_MACHINE } from '@lingtai/env'
+import { paint } from '@lingtai/env/colour'
 
-export const INSTALL_COMMANDS = ["version", "upgrade", "rollback", "uninstall"] as const;
+import workspace from '../../../package.json' with { type: 'json' }
+import { platformName, versionLine } from './version.ts'
+
+export const INSTALL_COMMANDS = ['version', 'upgrade', 'rollback', 'uninstall'] as const
 
 /** Where releases are asked about. `LINGTAI_RELEASES_API` points it at a mirror, or a test. */
-export const RELEASES_API = "https://api.github.com/repos/steven-zhc/lingtai/releases";
+export const RELEASES_API = 'https://api.github.com/repos/steven-zhc/lingtai/releases'
 
 /** The four binaries `.github/workflows/release.yml` builds. Nothing else is built, so nothing else installs. */
-export const PLATFORMS = ["macos-arm64", "macos-x64", "linux-x64", "linux-arm64"] as const;
+export const PLATFORMS = ['macos-arm64', 'macos-x64', 'linux-x64', 'linux-arm64'] as const
 
 /** One per platform, holding `lingtai`; the workflow's `pack` step names them. */
 export function artifactName(platform: string): string {
-  return `lingtai-${platform}.tar.gz`;
+  return `lingtai-${platform}.tar.gz`
 }
 
 /** `board/`, published once because it is the same on every platform. */
-export const BOARD = "board.tar.gz";
+export const BOARD = 'board.tar.gz'
 
-export const CHECKSUMS = "SHA256SUMS";
+export const CHECKSUMS = 'SHA256SUMS'
 
 // -------------------------------------------------------------- the world --
 
 export interface Paths {
   /** `~/.lingtai`, or `LINGTAI_HOME`. */
-  home: string;
-  versions: string;
+  home: string
+  versions: string
   /** `~/.local/bin/lingtai`, or `LINGTAI_BIN_DIR/lingtai`. */
-  shim: string;
+  shim: string
 }
 
 export function installPaths(env: NodeJS.ProcessEnv = process.env): Paths {
-  const user = env["HOME"] ?? homedir();
-  const home = env["LINGTAI_HOME"] ?? join(user, ".lingtai");
+  const user = env['HOME'] ?? homedir()
+  const home = env['LINGTAI_HOME'] ?? join(user, '.lingtai')
   return {
     home,
-    versions: join(home, "versions"),
-    shim: join(env["LINGTAI_BIN_DIR"] ?? join(user, ".local", "bin"), "lingtai"),
-  };
+    versions: join(home, 'versions'),
+    shim: join(env['LINGTAI_BIN_DIR'] ?? join(user, '.local', 'bin'), 'lingtai'),
+  }
 }
 
 /** What the drain decided: go on, with what to do once the shim has moved — or stop, with this exit code. */
-export type Drained = { ok: true; after: () => Promise<void> } | { ok: false; code: number };
+export type Drained = { ok: true; after: () => Promise<void> } | { ok: false; code: number }
 
 export interface AppFacts {
-  slug: string;
-  owner: string;
-  organisation: boolean;
-  installations: number;
-  repositories: number;
+  slug: string
+  owner: string
+  organisation: boolean
+  installations: number
+  repositories: number
   /**
    * Where the private key was read from: a file, or a variable together with the
    * env files that set it — none where only the environment carries it.
    */
-  key: { path: string } | { variable: string; files: string[] };
+  key: { path: string } | { variable: string; files: string[] }
 }
 
 /** Everything these commands reach outside themselves. Replaceable, so a test needs no database, network or GitHub. */
 export interface World {
-  env: NodeJS.ProcessEnv;
+  env: NodeJS.ProcessEnv
   /** The file this process was started from — `versions/<v>/lingtai` when installed. */
-  self: string;
-  fetch: typeof fetch;
-  log: (line: string) => void;
+  self: string
+  fetch: typeof fetch
+  log: (line: string) => void
   /** One yes-or-no question. False when there is nobody to ask. */
-  ask: (question: string) => Promise<boolean>;
+  ask: (question: string) => Promise<boolean>
   /** Processes whose command line names one of `paths`, or whose working directory is under one, other than this one. */
-  running: (paths: readonly string[]) => { pid: number; command: string }[];
+  running: (paths: readonly string[]) => { pid: number; command: string }[]
   /**
    * Who holds the conductor lock — null where nothing does, and **asked whether
    * or not a log is configured**: the lock is a file under `~/.lingtai/locks/`
@@ -124,11 +126,11 @@ export interface World {
    *
    * A read that fails throws, and is never a null (`daemon/src/lock.ts`).
    */
-  conducting: () => Promise<string | null>;
+  conducting: () => Promise<string | null>
   /** Drain whatever conducts before the shim moves. `despiteDoctor` waives a red doctor and nothing else. */
-  drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
+  drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>
   /** The GitHub App this machine is configured with, asked before anything is removed. */
-  app: () => Promise<AppFacts | null | { unread: string }>;
+  app: () => Promise<AppFacts | null | { unread: string }>
   /**
    * **Where this machine's log is**, so an uninstall can say what it is about
    * to destroy and what it is leaving behind.
@@ -143,7 +145,7 @@ export interface World {
    * what it can*; that was the reverse of it, in the one command where it costs
    * the log.
    */
-  logWhere: () => LogLocation;
+  logWhere: () => LogLocation
 }
 
 /**
@@ -167,7 +169,7 @@ export type LogLocation =
    * is a noun phrase — *LINGTAI_DATABASE_URL names*, *at postgresql://…* —
    * because the sentence around it is one sentence either way.
    */
-  | { kind: "elsewhere"; named: string }
+  | { kind: 'elsewhere'; named: string }
   /**
    * A file under `~/.lingtai` **that is there**. It goes with the directory,
    * and there is no copy.
@@ -179,9 +181,9 @@ export type LogLocation =
    * survives, and 0055 §3 is why the surviving one holds none of what the file
    * held ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
    */
-  | { kind: "file"; path: string; alsoElsewhere: boolean }
+  | { kind: 'file'; path: string; alsoElsewhere: boolean }
   /** No log is there to say anything about: nothing configured, or a store chosen and never opened. */
-  | { kind: "none" };
+  | { kind: 'none' }
 
 // ------------------------------------------------------------- versions --
 
@@ -189,18 +191,25 @@ export type LogLocation =
  * `macos-arm64` and the rest — `lingtai version`'s own name for a platform —
  * or the sentence that refuses this machine by name.
  */
-export function installPlatform(os: string = process.platform, arch: string = process.arch): string | { refused: string } {
-  const o = os === "darwin" || os === "Darwin" ? "darwin" : os === "linux" || os === "Linux" ? "linux" : null;
+export function installPlatform(
+  os: string = process.platform,
+  arch: string = process.arch,
+): string | { refused: string } {
+  const o = os === 'darwin' || os === 'Darwin' ? 'darwin' : os === 'linux' || os === 'Linux' ? 'linux' : null
   const a =
-    arch === "arm64" || arch === "aarch64" ? "arm64" : arch === "x64" || arch === "x86_64" || arch === "amd64" ? "x64" : null;
+    arch === 'arm64' || arch === 'aarch64'
+      ? 'arm64'
+      : arch === 'x64' || arch === 'x86_64' || arch === 'amd64'
+        ? 'x64'
+        : null
   if (o === null || a === null) {
     return {
       refused:
-        `no Lingtai is built for ${os} ${arch} — only ${PLATFORMS.join(", ")}. ` +
+        `no Lingtai is built for ${os} ${arch} — only ${PLATFORMS.join(', ')}. ` +
         `Nothing was installed rather than something that will not run`,
-    };
+    }
   }
-  return platformName(o, a);
+  return platformName(o, a)
 }
 
 /**
@@ -210,46 +219,46 @@ export function installPlatform(os: string = process.platform, arch: string = pr
  */
 export function compareVersions(a: string, b: string): number {
   const split = (v: string): [string, string | undefined] => {
-    const dash = v.indexOf("-");
-    return dash === -1 ? [v, undefined] : [v.slice(0, dash), v.slice(dash + 1)];
-  };
-  const [coreA, preA] = split(a);
-  const [coreB, preB] = split(b);
-  const na = coreA.split(".").map(Number);
-  const nb = coreB.split(".").map(Number);
+    const dash = v.indexOf('-')
+    return dash === -1 ? [v, undefined] : [v.slice(0, dash), v.slice(dash + 1)]
+  }
+  const [coreA, preA] = split(a)
+  const [coreB, preB] = split(b)
+  const na = coreA.split('.').map(Number)
+  const nb = coreB.split('.').map(Number)
   for (let i = 0; i < Math.max(na.length, nb.length); i++) {
-    const d = (na[i] ?? 0) - (nb[i] ?? 0);
-    if (d !== 0) return d;
+    const d = (na[i] ?? 0) - (nb[i] ?? 0)
+    if (d !== 0) return d
   }
-  if (preA === undefined || preB === undefined) return preA === preB ? 0 : preA === undefined ? 1 : -1;
-  const fa = preA.split(".");
-  const fb = preB.split(".");
+  if (preA === undefined || preB === undefined) return preA === preB ? 0 : preA === undefined ? 1 : -1
+  const fa = preA.split('.')
+  const fb = preB.split('.')
   for (let i = 0; i < Math.min(fa.length, fb.length); i++) {
-    const x = fa[i]!;
-    const y = fb[i]!;
-    if (x === y) continue;
-    const xn = /^\d+$/.test(x);
-    const yn = /^\d+$/.test(y);
-    if (xn && yn) return Number(x) - Number(y);
-    if (xn !== yn) return xn ? -1 : 1;
-    return x < y ? -1 : 1;
+    const x = fa[i]!
+    const y = fb[i]!
+    if (x === y) continue
+    const xn = /^\d+$/.test(x)
+    const yn = /^\d+$/.test(y)
+    if (xn && yn) return Number(x) - Number(y)
+    if (xn !== yn) return xn ? -1 : 1
+    return x < y ? -1 : 1
   }
-  return fa.length - fb.length;
+  return fa.length - fb.length
 }
 
 /** The version directory this process runs from, or null for a checkout. */
 export function installedVersion(self: string, paths: Paths): string | null {
-  if (!existsSync(paths.versions)) return null;
-  const dir = dirname(realpath(self));
-  return dirname(dir) === realpath(paths.versions) ? basename(dir) : null;
+  if (!existsSync(paths.versions)) return null
+  const dir = dirname(realpath(self))
+  return dirname(dir) === realpath(paths.versions) ? basename(dir) : null
 }
 
 /** Every complete version under `versions/`, oldest first. A `.partial` directory is not one. */
 export function installedVersions(paths: Paths): string[] {
-  if (!existsSync(paths.versions)) return [];
+  if (!existsSync(paths.versions)) return []
   return readdirSync(paths.versions)
-    .filter((name) => !name.startsWith(".") && existsSync(join(paths.versions, name, "lingtai")))
-    .sort(compareVersions);
+    .filter((name) => !name.startsWith('.') && existsSync(join(paths.versions, name, 'lingtai')))
+    .sort(compareVersions)
 }
 
 /**
@@ -257,21 +266,25 @@ export function installedVersions(paths: Paths): string[] {
  * where there is one that is not Lingtai's to move.
  */
 export function shimVersion(paths: Paths): string | null | { refused: string } {
-  let stat;
+  let stat
   try {
-    stat = lstatSync(paths.shim);
+    stat = lstatSync(paths.shim)
   } catch {
-    return null;
+    return null
   }
   if (!stat.isSymbolicLink()) {
-    return { refused: `${paths.shim} is a file and not a link into ${paths.versions} — not Lingtai's to replace. Move it and run this again` };
+    return {
+      refused: `${paths.shim} is a file and not a link into ${paths.versions} — not Lingtai's to replace. Move it and run this again`,
+    }
   }
-  const target = resolve(dirname(paths.shim), readlinkSync(paths.shim));
-  const dir = dirname(target);
+  const target = resolve(dirname(paths.shim), readlinkSync(paths.shim))
+  const dir = dirname(target)
   if (dirname(dir) !== paths.versions && (!existsSync(paths.versions) || dirname(dir) !== realpath(paths.versions))) {
-    return { refused: `${paths.shim} resolves to ${target}, which is not under ${paths.versions} — not Lingtai's to replace. Move it and run this again` };
+    return {
+      refused: `${paths.shim} resolves to ${target}, which is not under ${paths.versions} — not Lingtai's to replace. Move it and run this again`,
+    }
   }
-  return basename(dir);
+  return basename(dir)
 }
 
 /**
@@ -280,11 +293,11 @@ export function shimVersion(paths: Paths): string | null | { refused: string } {
  * no `lingtai`.
  */
 export function pointShim(paths: Paths, version: string): void {
-  mkdirSync(dirname(paths.shim), { recursive: true });
-  const next = `${paths.shim}.${process.pid}.new`;
-  rmSync(next, { force: true });
-  symlinkSync(join(paths.versions, version, "lingtai"), next);
-  renameSync(next, paths.shim);
+  mkdirSync(dirname(paths.shim), { recursive: true })
+  const next = `${paths.shim}.${process.pid}.new`
+  rmSync(next, { force: true })
+  symlinkSync(join(paths.versions, version, 'lingtai'), next)
+  renameSync(next, paths.shim)
 }
 
 /**
@@ -292,49 +305,52 @@ export function pointShim(paths: Paths, version: string): void {
  * `lingtai 1.0.1 macos-arm64 (binary, node v26.5.0)`, whose second word is it.
  */
 export function versionRuns(dir: string, version: string): { ok: true } | { ok: false; said: string } {
-  const ran = spawnSync(join(dir, "lingtai"), ["version"], { encoding: "utf8", timeout: 30_000 });
-  const said = `${ran.stdout ?? ""}${ran.stderr ?? ""}${ran.error ? ran.error.message : ""}`.trim();
-  const [word, named] = (ran.stdout ?? "").trim().split(/\s+/);
-  return ran.status === 0 && word === "lingtai" && named === version ? { ok: true } : { ok: false, said };
+  const ran = spawnSync(join(dir, 'lingtai'), ['version'], { encoding: 'utf8', timeout: 30_000 })
+  const said = `${ran.stdout ?? ''}${ran.stderr ?? ''}${ran.error ? ran.error.message : ''}`.trim()
+  const [word, named] = (ran.stdout ?? '').trim().split(/\s+/)
+  return ran.status === 0 && word === 'lingtai' && named === version ? { ok: true } : { ok: false, said }
 }
 
 // --------------------------------------------------------------- releases --
 
 export interface Release {
-  version: string;
-  assets: { name: string; url: string }[];
+  version: string
+  assets: { name: string; url: string }[]
 }
 
 /** The newest release, from the GitHub Releases API — the one outbound request. */
-export async function newestRelease(world: Pick<World, "fetch" | "env" | "self">, timeoutMs = 30_000): Promise<Release> {
-  const api = world.env["LINGTAI_RELEASES_API"] ?? RELEASES_API;
+export async function newestRelease(
+  world: Pick<World, 'fetch' | 'env' | 'self'>,
+  timeoutMs = 30_000,
+): Promise<Release> {
+  const api = world.env['LINGTAI_RELEASES_API'] ?? RELEASES_API
   const res = await world.fetch(`${api}/latest`, {
-    headers: { accept: "application/vnd.github+json", "user-agent": `lingtai/${workspace.version}` },
+    headers: { accept: 'application/vnd.github+json', 'user-agent': `lingtai/${workspace.version}` },
     signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) throw new Error(`${api}/latest answered ${res.status}`);
-  const body = (await res.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] };
-  if (!body.tag_name) throw new Error(`${api}/latest named no tag`);
+  })
+  if (!res.ok) throw new Error(`${api}/latest answered ${res.status}`)
+  const body = (await res.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] }
+  if (!body.tag_name) throw new Error(`${api}/latest named no tag`)
   return {
-    version: body.tag_name.replace(/^v/, ""),
+    version: body.tag_name.replace(/^v/, ''),
     assets: (body.assets ?? []).map((a) => ({ name: a.name, url: a.browser_download_url })),
-  };
+  }
 }
 
 /** `<hex>  <name>` per line, as `shasum -a 256` and `sha256sum` both write. */
 export function parseChecksums(text: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const line of text.split("\n")) {
-    const m = line.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/i);
-    if (m) out.set(m[2]!, m[1]!.toLowerCase());
+  const out = new Map<string, string>()
+  for (const line of text.split('\n')) {
+    const m = line.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/i)
+    if (m) out.set(m[2]!, m[1]!.toLowerCase())
   }
-  return out;
+  return out
 }
 
-async function download(world: Pick<World, "fetch">, url: string): Promise<Buffer> {
-  const res = await world.fetch(url, { signal: AbortSignal.timeout(600_000) });
-  if (!res.ok) throw new Error(`${url} answered ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+async function download(world: Pick<World, 'fetch'>, url: string): Promise<Buffer> {
+  const res = await world.fetch(url, { signal: AbortSignal.timeout(600_000) })
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`)
+  return Buffer.from(await res.arrayBuffer())
 }
 
 /**
@@ -348,85 +364,88 @@ async function download(world: Pick<World, "fetch">, url: string): Promise<Buffe
  * first uses that one.
  */
 export async function unpackRelease(
-  world: Pick<World, "fetch" | "log">,
+  world: Pick<World, 'fetch' | 'log'>,
   paths: Paths,
   release: Release,
   platform: string,
-): Promise<"unpacked" | "present"> {
-  const dir = join(paths.versions, release.version);
-  if (existsSync(join(dir, "lingtai"))) return "present";
+): Promise<'unpacked' | 'present'> {
+  const dir = join(paths.versions, release.version)
+  if (existsSync(join(dir, 'lingtai'))) return 'present'
 
-  const names = [artifactName(platform), BOARD];
-  const sums = release.assets.find((a) => a.name === CHECKSUMS);
-  if (!sums) throw new Error(`release ${release.version} has no ${CHECKSUMS}, so nothing in it can be checked — not installed`);
+  const names = [artifactName(platform), BOARD]
+  const sums = release.assets.find((a) => a.name === CHECKSUMS)
+  if (!sums)
+    throw new Error(`release ${release.version} has no ${CHECKSUMS}, so nothing in it can be checked — not installed`)
   for (const name of names) {
-    if (!release.assets.some((a) => a.name === name)) throw new Error(`release ${release.version} has no ${name}`);
+    if (!release.assets.some((a) => a.name === name)) throw new Error(`release ${release.version} has no ${name}`)
   }
 
-  world.log(paint.muted(`fetching ${names.join(" and ")}`));
-  const expected = parseChecksums((await download(world, sums.url)).toString("utf8"));
-  const fetched = new Map<string, Buffer>();
+  world.log(paint.muted(`fetching ${names.join(' and ')}`))
+  const expected = parseChecksums((await download(world, sums.url)).toString('utf8'))
+  const fetched = new Map<string, Buffer>()
   for (const name of names) {
-    const want = expected.get(name);
-    if (!want) throw new Error(`${CHECKSUMS} for ${release.version} does not list ${name} — not installed`);
-    const bytes = await download(world, release.assets.find((a) => a.name === name)!.url);
-    const actual = createHash("sha256").update(bytes).digest("hex");
+    const want = expected.get(name)
+    if (!want) throw new Error(`${CHECKSUMS} for ${release.version} does not list ${name} — not installed`)
+    const bytes = await download(world, release.assets.find((a) => a.name === name)!.url)
+    const actual = createHash('sha256').update(bytes).digest('hex')
     if (actual !== want) {
-      throw new Error(`${name} does not match its checksum — expected ${want}, got ${actual}. Nothing was unpacked`);
+      throw new Error(`${name} does not match its checksum — expected ${want}, got ${actual}. Nothing was unpacked`)
     }
-    fetched.set(name, bytes);
+    fetched.set(name, bytes)
   }
 
-  mkdirSync(paths.versions, { recursive: true });
-  const scratch = mkdtempSync(join(tmpdir(), "lingtai-upgrade-"));
-  const partial = mkdtempSync(join(paths.versions, `.${release.version}.partial-`));
+  mkdirSync(paths.versions, { recursive: true })
+  const scratch = mkdtempSync(join(tmpdir(), 'lingtai-upgrade-'))
+  const partial = mkdtempSync(join(paths.versions, `.${release.version}.partial-`))
   try {
     for (const [name, bytes] of fetched) {
-      const tarball = join(scratch, name);
-      writeFileSync(tarball, bytes);
-      const tar = spawnSync("tar", ["-xzf", tarball, "-C", partial], { encoding: "utf8" });
-      if (tar.status !== 0) throw new Error(`tar could not unpack ${name}: ${tar.stderr.trim()}`);
+      const tarball = join(scratch, name)
+      writeFileSync(tarball, bytes)
+      const tar = spawnSync('tar', ['-xzf', tarball, '-C', partial], { encoding: 'utf8' })
+      if (tar.status !== 0) throw new Error(`tar could not unpack ${name}: ${tar.stderr.trim()}`)
     }
-    const runs = versionRuns(partial, release.version);
+    const runs = versionRuns(partial, release.version)
     if (!runs.ok) {
-      throw new Error(`the unpacked lingtai does not run here as ${release.version}, so it was not installed — it said: ${runs.said || "nothing"}`);
+      throw new Error(
+        `the unpacked lingtai does not run here as ${release.version}, so it was not installed — it said: ${runs.said || 'nothing'}`,
+      )
     }
     try {
-      renameSync(partial, dir);
+      renameSync(partial, dir)
     } catch (err) {
       // Another unpack renamed its whole directory into place first.
-      if (existsSync(join(dir, "lingtai"))) return "present";
-      throw err;
+      if (existsSync(join(dir, 'lingtai'))) return 'present'
+      throw err
     }
-    return "unpacked";
+    return 'unpacked'
   } finally {
-    rmSync(partial, { recursive: true, force: true });
-    rmSync(scratch, { recursive: true, force: true });
+    rmSync(partial, { recursive: true, force: true })
+    rmSync(scratch, { recursive: true, force: true })
   }
 }
 
 // --------------------------------------------------------------- commands --
 
 export async function installCommand(argv: readonly string[], world: World): Promise<number> {
-  const [command, ...rest] = argv;
+  const [command, ...rest] = argv
   switch (command) {
-    case "version":
-      world.log(versionLine());
-      return 0;
-    case "upgrade":
-      return upgrade(rest, world);
-    case "rollback":
-      return rollback(rest, world);
-    case "uninstall":
-      return uninstall(rest, world);
+    case 'version':
+      world.log(versionLine())
+      return 0
+    case 'upgrade':
+      return upgrade(rest, world)
+    case 'rollback':
+      return rollback(rest, world)
+    case 'uninstall':
+      return uninstall(rest, world)
     default:
-      throw new Error(`not an install command: ${command}`);
+      throw new Error(`not an install command: ${command}`)
   }
 }
 
-function refuse(world: Pick<World, "log">, line: string, code = 1): number {
-  world.log(paint.fail(line));
-  return code;
+function refuse(world: Pick<World, 'log'>, line: string, code = 1): number {
+  world.log(paint.fail(line))
+  return code
 }
 
 /**
@@ -440,91 +459,101 @@ function refuse(world: Pick<World, "log">, line: string, code = 1): number {
  * terminal to hold a daemon in.
  */
 async function upgrade(argv: readonly string[], world: World): Promise<number> {
-  const unknown = argv.find((a) => a !== "--despite-doctor");
-  if (unknown !== undefined) return refuse(world, `lingtai upgrade [--despite-doctor] — no ${unknown}`, 2);
-  const paths = installPaths(world.env);
-  const current = installedVersion(world.self, paths);
+  const unknown = argv.find((a) => a !== '--despite-doctor')
+  if (unknown !== undefined) return refuse(world, `lingtai upgrade [--despite-doctor] — no ${unknown}`, 2)
+  const paths = installPaths(world.env)
+  const current = installedVersion(world.self, paths)
   if (current === null) {
     return refuse(
       world,
       `this lingtai is not under ${paths.versions} — a checkout upgrades with git pull and lingtai restart, and nothing was fetched`,
-    );
+    )
   }
-  const shim = shimVersion(paths);
-  if (typeof shim === "object" && shim !== null) return refuse(world, `not upgrading: ${shim.refused}`);
+  const shim = shimVersion(paths)
+  if (typeof shim === 'object' && shim !== null) return refuse(world, `not upgrading: ${shim.refused}`)
 
-  const platform = installPlatform();
-  if (typeof platform !== "string") return refuse(world, `not upgrading: ${platform.refused}`);
+  const platform = installPlatform()
+  if (typeof platform !== 'string') return refuse(world, `not upgrading: ${platform.refused}`)
 
-  let release: Release;
+  let release: Release
   try {
-    release = await newestRelease(world);
+    release = await newestRelease(world)
   } catch (err) {
-    return refuse(world, `could not ask GitHub Releases which version is newest — ${(err as Error).message}. Nothing changed`);
+    return refuse(
+      world,
+      `could not ask GitHub Releases which version is newest — ${(err as Error).message}. Nothing changed`,
+    )
   }
-  const pointed = shim ?? current;
+  const pointed = shim ?? current
   if (compareVersions(release.version, pointed) <= 0) {
-    world.log(paint.pass(`lingtai ${pointed} is current — the newest release is ${release.version}. Nothing changed`));
-    return 0;
+    world.log(paint.pass(`lingtai ${pointed} is current — the newest release is ${release.version}. Nothing changed`))
+    return 0
   }
 
   try {
-    const unpacked = await unpackRelease(world, paths, release, platform);
+    const unpacked = await unpackRelease(world, paths, release, platform)
     world.log(
-      unpacked === "present"
-        ? paint.muted(`${release.version} is already unpacked in ${join(paths.versions, release.version)} — used as it is`)
+      unpacked === 'present'
+        ? paint.muted(
+            `${release.version} is already unpacked in ${join(paths.versions, release.version)} — used as it is`,
+          )
         : `unpacked ${release.version} into ${join(paths.versions, release.version)}, checksum verified`,
-    );
+    )
   } catch (err) {
-    return refuse(world, `not upgrading: ${(err as Error).message}`);
+    return refuse(world, `not upgrading: ${(err as Error).message}`)
   }
 
-  const drained = await world.drain(`upgrading ${pointed} to ${release.version}`, argv.includes("--despite-doctor"));
+  const drained = await world.drain(`upgrading ${pointed} to ${release.version}`, argv.includes('--despite-doctor'))
   if (!drained.ok) {
-    world.log(paint.held(`the shim still runs ${pointed}. lingtai upgrade again picks up where this stopped`));
-    return drained.code;
+    world.log(paint.held(`the shim still runs ${pointed}. lingtai upgrade again picks up where this stopped`))
+    return drained.code
   }
 
-  pointShim(paths, release.version);
-  await drained.after();
-  world.log(paint.pass(`${paths.shim} now runs ${release.version} (was ${pointed})`));
+  pointShim(paths, release.version)
+  await drained.after()
+  world.log(paint.pass(`${paths.shim} now runs ${release.version} (was ${pointed})`))
   world.log(
     paint.muted(
       `${join(paths.versions, pointed)} is kept: lingtai rollback returns to it. Nothing was started — lingtai start runs ${release.version}`,
     ),
-  );
-  return 0;
+  )
+  return 0
 }
 
 /** `lingtai rollback [<version>]`: the shim, pointed at an older directory. Nothing is fetched and nothing removed. */
 function rollback(argv: readonly string[], world: World): number {
-  if (argv.length > 1 || argv.some((a) => a.startsWith("--"))) return refuse(world, "lingtai rollback [<version>]", 2);
-  const paths = installPaths(world.env);
-  const shim = shimVersion(paths);
-  if (shim === null) return refuse(world, `there is no ${paths.shim} to move — nothing is installed here`);
-  if (typeof shim === "object") return refuse(world, `not rolling back: ${shim.refused}`);
+  if (argv.length > 1 || argv.some((a) => a.startsWith('--'))) return refuse(world, 'lingtai rollback [<version>]', 2)
+  const paths = installPaths(world.env)
+  const shim = shimVersion(paths)
+  if (shim === null) return refuse(world, `there is no ${paths.shim} to move — nothing is installed here`)
+  if (typeof shim === 'object') return refuse(world, `not rolling back: ${shim.refused}`)
 
-  const versions = installedVersions(paths);
-  const target = argv[0] ?? versions.filter((v) => compareVersions(v, shim) < 0).at(-1);
+  const versions = installedVersions(paths)
+  const target = argv[0] ?? versions.filter((v) => compareVersions(v, shim) < 0).at(-1)
   if (target === undefined) {
-    return refuse(world, `nothing older than ${shim} is under ${paths.versions} — installed: ${versions.join(", ") || "none"}`);
+    return refuse(
+      world,
+      `nothing older than ${shim} is under ${paths.versions} — installed: ${versions.join(', ') || 'none'}`,
+    )
   }
   if (!versions.includes(target)) {
-    return refuse(world, `${target} is not under ${paths.versions} — installed: ${versions.join(", ") || "none"}`);
+    return refuse(world, `${target} is not under ${paths.versions} — installed: ${versions.join(', ') || 'none'}`)
   }
   if (target === shim) {
-    world.log(paint.pass(`${paths.shim} already runs ${target}. Nothing changed`));
-    return 0;
+    world.log(paint.pass(`${paths.shim} already runs ${target}. Nothing changed`))
+    return 0
   }
-  const runs = versionRuns(join(paths.versions, target), target);
-  if (!runs.ok) return refuse(world, `not rolling back: ${target} does not run — it said: ${runs.said || "nothing"}`);
+  const runs = versionRuns(join(paths.versions, target), target)
+  if (!runs.ok) return refuse(world, `not rolling back: ${target} does not run — it said: ${runs.said || 'nothing'}`)
 
-  pointShim(paths, target);
-  world.log(paint.pass(`${paths.shim} runs ${target} again (was ${shim})`));
+  pointShim(paths, target)
+  world.log(paint.pass(`${paths.shim} runs ${target} again (was ${shim})`))
   world.log(
-    paint.muted(`a daemon started from ${shim} keeps running it — lingtai shutdown, then lingtai start, runs ${target}`),
-  );
-  return 0;
+    paint.muted(
+      `a daemon started from ${shim} keeps running it — lingtai shutdown, then lingtai start, runs ${target}`,
+    ),
+  )
+  return 0
 }
 
 /**
@@ -536,66 +565,73 @@ function rollback(argv: readonly string[], world: World): number {
  * goes, and after that nothing can ask GitHub anything as the App.
  */
 async function uninstall(argv: readonly string[], world: World): Promise<number> {
-  const unknown = argv.find((a) => a !== "--yes" && a !== "--nothing-conducts");
-  if (unknown !== undefined) return refuse(world, `lingtai uninstall [--yes] [--nothing-conducts] — no ${unknown}`, 2);
-  const paths = installPaths(world.env);
-  const user = world.env["HOME"] ?? homedir();
+  const unknown = argv.find((a) => a !== '--yes' && a !== '--nothing-conducts')
+  if (unknown !== undefined) return refuse(world, `lingtai uninstall [--yes] [--nothing-conducts] — no ${unknown}`, 2)
+  const paths = installPaths(world.env)
+  const user = world.env['HOME'] ?? homedir()
   if (resolve(paths.home) === resolve(user) || resolve(paths.home) === sep) {
-    return refuse(world, `not uninstalling: LINGTAI_HOME is ${paths.home}, and removing everything under it is not something to do by accident`);
+    return refuse(
+      world,
+      `not uninstalling: LINGTAI_HOME is ${paths.home}, and removing everything under it is not something to do by accident`,
+    )
   }
-  const shim = shimVersion(paths);
-  const ownShim = typeof shim === "string";
+  const shim = shimVersion(paths)
+  const ownShim = typeof shim === 'string'
   if (!existsSync(paths.home) && !ownShim) {
-    world.log(`nothing is installed: there is no ${paths.home} and no ${paths.shim}`);
-    return 0;
+    world.log(`nothing is installed: there is no ${paths.home} and no ${paths.shim}`)
+    return 0
   }
 
   // The rule the layout rests on: nothing is removed while a process runs from
   // it. A daemon started through the shim names the shim, not the directory, and
   // an agent in `worktrees/` may name neither but works in it — so the shim, and
   // anything under the home by command line or working directory, are looked for.
-  const running = world.running([paths.home + sep, paths.shim]);
+  const running = world.running([paths.home + sep, paths.shim])
   if (running.length > 0) {
-    world.log(paint.fail("not uninstalling — these are running from what would be removed:"));
-    for (const p of running) world.log(paint.fail(`  · pid ${p.pid}  ${p.command}`));
-    world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
-    return 1;
+    world.log(paint.fail('not uninstalling — these are running from what would be removed:'))
+    for (const p of running) world.log(paint.fail(`  · pid ${p.pid}  ${p.command}`))
+    world.log(paint.muted('lingtai shutdown stops a daemon after its pass; then lingtai uninstall again'))
+    return 1
   }
   // A daemon from a checkout is none of those, and its agents' worktrees,
   // recipes and run logs are here all the same. The lock says it conducts —
   // and it is a file under `<home>/locks` (#193), so it is asked and answered
   // on a machine with no log configured at all. That is why there is no second
   // question below about a lock nobody could ask: this one is the question.
-  let holder: string | null;
+  let holder: string | null
   try {
-    holder = await world.conducting();
+    holder = await world.conducting()
   } catch (err) {
     // A read that failed is not a no (`daemon/src/lock.ts`), and nothing an
     // operator can set makes an unreadable file readable — so the remedy
     // offered is the one that works: fix the file, or answer for it.
-    if (!argv.includes("--nothing-conducts")) {
+    if (!argv.includes('--nothing-conducts')) {
       return refuse(
         world,
-        `not uninstalling: the conductor lock under ${join(paths.home, "locks")} could not be read ` +
+        `not uninstalling: the conductor lock under ${join(paths.home, 'locks')} could not be read ` +
           `(${(err as Error).message}), so whether anything conducts went unanswered — a daemon's worktrees, ` +
           `recipe and run logs are under ${paths.home}. Make that readable, or --nothing-conducts answers for it, once you know`,
-      );
+      )
     }
-    holder = null;
+    holder = null
   }
   if (holder !== null) {
-    world.log(paint.fail(`not uninstalling — ${holder} holds the conductor lock, and its worktrees, recipe and run logs are under ${paths.home}`));
-    world.log(paint.muted("lingtai shutdown stops a daemon after its pass; then lingtai uninstall again"));
-    return 1;
+    world.log(
+      paint.fail(
+        `not uninstalling — ${holder} holds the conductor lock, and its worktrees, recipe and run logs are under ${paths.home}`,
+      ),
+    )
+    world.log(paint.muted('lingtai shutdown stops a daemon after its pass; then lingtai uninstall again'))
+    return 1
   }
   // Whether the log this copy reads survives the removal — read before
   // anything goes, because on a machine whose store is a file the answer is
   // *no* and that has to be said before the question, not after the `rmSync`.
-  const where = world.logWhere();
+  const where = world.logWhere()
 
-  const app = await world.app().catch((err: unknown) => ({ unread: (err as Error).message }));
+  const app = await world.app().catch((err: unknown) => ({ unread: (err as Error).message }))
 
-  const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`;
+  const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`
   // **Before the question, and before `--yes` can answer it.** On a machine
   // whose store is a file the log is inside `what`, and "this cannot be undone"
   // is a sentence about a directory unless somebody says which file it is.
@@ -604,109 +640,123 @@ async function uninstall(argv: readonly string[], world: World): Promise<number>
   // warning too, and it is the one that most needs it: what the removal takes
   // is every event recorded before the switch, which the database it reads now
   // never held (#214).
-  if (where.kind === "file") {
+  if (where.kind === 'file') {
     world.log(
       paint.fail(
         where.alsoElsewhere
           ? `The event log ${where.path} is under ${paths.home} and the removal takes it: this machine reads a ` +
-            `Postgres database now, and every event in that file was recorded before it did. ${SQLITE_MACHINE}`
+              `Postgres database now, and every event in that file was recorded before it did. ${SQLITE_MACHINE}`
           : `The event log is ${where.path}, which is under ${paths.home}: removing it destroys every event this ` +
-            `machine recorded, and it cannot be recovered. ${SQLITE_MACHINE}`,
+              `machine recorded, and it cannot be recovered. ${SQLITE_MACHINE}`,
       ),
-    );
+    )
   }
-  if (!argv.includes("--yes") && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
-    world.log("nothing was removed");
-    return 1;
+  if (!argv.includes('--yes') && !(await world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
+    world.log('nothing was removed')
+    return 1
   }
 
   // Decided before the removal, while the path it compares with still exists.
   const keyKept =
     app !== null &&
-    !("unread" in app) &&
-    ("path" in app.key ? !isUnder(app.key.path, paths.home) : !app.key.files.some((f) => isUnder(f, paths.home)));
+    !('unread' in app) &&
+    ('path' in app.key ? !isUnder(app.key.path, paths.home) : !app.key.files.some((f) => isUnder(f, paths.home)))
 
-  rmSync(paths.home, { recursive: true, force: true });
-  if (ownShim) unlinkSync(paths.shim);
-  world.log(paint.pass(`Removed ${what}.`));
+  rmSync(paths.home, { recursive: true, force: true })
+  if (ownShim) unlinkSync(paths.shim)
+  world.log(paint.pass(`Removed ${what}.`))
 
   if (app === null) {
-    world.log("No GitHub App was configured here, so none is left behind.");
-  } else if ("unread" in app) {
+    world.log('No GitHub App was configured here, so none is left behind.')
+  } else if ('unread' in app) {
     world.log(
       paint.signal(
         `A GitHub App may still exist and be installed on your repositories — it could not be asked (${app.unread}). ` +
           `Look for it at https://github.com/settings/apps and remove it there.`,
       ),
-    );
+    )
   } else {
     const key =
-      "path" in app.key
+      'path' in app.key
         ? keyKept
           ? `Its private key at ${app.key.path} was not under ${paths.home} and is still there.`
-          : "Its private key is gone and cannot be recovered — if you reinstall, create a new App."
+          : 'Its private key is gone and cannot be recovered — if you reinstall, create a new App.'
         : keyKept
-          ? `Its private key is in ${app.key.variable}${app.key.files.length > 0 ? ` in ${app.key.files.join(", ")}` : " in your environment"}, which nothing here removed.`
-          : `Its private key was in ${app.key.variable} in ${app.key.files.join(", ")}, which is gone — unless your shell exports ${app.key.variable} too, if you reinstall, create a new App.`;
+          ? `Its private key is in ${app.key.variable}${app.key.files.length > 0 ? ` in ${app.key.files.join(', ')}` : ' in your environment'}, which nothing here removed.`
+          : `Its private key was in ${app.key.variable} in ${app.key.files.join(', ')}, which is gone — unless your shell exports ${app.key.variable} too, if you reinstall, create a new App.`
     world.log(
       paint.signal(
         `The GitHub App ${app.slug} still exists and is still installed on ${app.repositories} ` +
-          `${app.repositories === 1 ? "repository" : "repositories"} (${app.installations} ` +
-          `${app.installations === 1 ? "installation" : "installations"}).`,
+          `${app.repositories === 1 ? 'repository' : 'repositories'} (${app.installations} ` +
+          `${app.installations === 1 ? 'installation' : 'installations'}).`,
       ),
-    );
-    world.log(key);
+    )
+    world.log(key)
     world.log(
       `Remove it: ${
         app.organisation
           ? `https://github.com/organizations/${app.owner}/settings/apps/${app.slug}`
           : `https://github.com/settings/apps/${app.slug}`
       }`,
-    );
+    )
   }
-  if (where.kind === "elsewhere") {
+  if (where.kind === 'elsewhere') {
     // `where.named` and not `LINGTAI_DATABASE_URL`: on a machine whose URL was
     // only in the `config.yml` the `rmSync` above just took, that variable was
     // never set, and a line naming it would point at nothing after destroying
     // the one local record of the real answer (#214).
-    world.log(`The log is not under ~/.lingtai: the database ${where.named} is untouched, and its tables are yours to drop.`);
-  } else if (where.kind === "file") {
+    world.log(
+      `The log is not under ~/.lingtai: the database ${where.named} is untouched, and its tables are yours to drop.`,
+    )
+  } else if (where.kind === 'file') {
     world.log(
       paint.fail(
         where.alsoElsewhere
           ? `The SQLite log at ${where.path} went with it, and cannot be recovered.`
           : `The event log at ${where.path} went with it, and cannot be recovered.`,
       ),
-    );
+    )
     // Never *the log is not under ~/.lingtai*: one was, and it is gone. What
     // survives is the database this machine reads now, and it is a different
     // log rather than the same one somewhere else (0055 §3).
     if (where.alsoElsewhere) {
-      world.log("The Postgres database this machine reads is untouched, and its tables are yours to drop.");
+      world.log('The Postgres database this machine reads is untouched, and its tables are yours to drop.')
     }
   }
-  return 0;
+  return 0
 }
 
 // ---------------------------------------------------------------- doctor --
 
 /** `lingtai doctor`'s row: whether a newer release exists. Asked only of an installed copy. */
 export async function releaseCheck(
-  world: Pick<World, "fetch" | "env" | "self">,
-): Promise<{ name: string; status: "ok" | "warn" | "skip"; detail: string }> {
-  const name = "release: newest";
-  const paths = installPaths(world.env);
-  const current = installedVersion(world.self, paths);
+  world: Pick<World, 'fetch' | 'env' | 'self'>,
+): Promise<{ name: string; status: 'ok' | 'warn' | 'skip'; detail: string }> {
+  const name = 'release: newest'
+  const paths = installPaths(world.env)
+  const current = installedVersion(world.self, paths)
   if (current === null) {
-    return { name, status: "skip", detail: "a checkout, not an installed copy — git pull is its upgrade, and GitHub was not asked" };
+    return {
+      name,
+      status: 'skip',
+      detail: 'a checkout, not an installed copy — git pull is its upgrade, and GitHub was not asked',
+    }
   }
   try {
-    const release = await newestRelease(world, 5_000);
+    const release = await newestRelease(world, 5_000)
     return compareVersions(release.version, current) > 0
-      ? { name, status: "warn", detail: `running ${current}, and ${release.version} is out — lingtai upgrade fetches it` }
-      : { name, status: "ok", detail: `running ${current}, the newest release` };
+      ? {
+          name,
+          status: 'warn',
+          detail: `running ${current}, and ${release.version} is out — lingtai upgrade fetches it`,
+        }
+      : { name, status: 'ok', detail: `running ${current}, the newest release` }
   } catch (err) {
-    return { name, status: "warn", detail: `running ${current} — GitHub Releases could not be asked: ${(err as Error).message}` };
+    return {
+      name,
+      status: 'warn',
+      detail: `running ${current} — GitHub Releases could not be asked: ${(err as Error).message}`,
+    }
   }
 }
 
@@ -717,44 +767,49 @@ export async function releaseCheck(
  * directories under one, without this process or the shell that started it.
  */
 export function runningFrom(needles: readonly string[]): { pid: number; command: string }[] {
-  const ps = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" });
-  if (ps.status !== 0) throw new Error(`ps could not list processes: ${ps.stderr.trim()}`);
-  const dirs = needles.filter((n) => n.endsWith(sep)).flatMap((n) => [n, realpath(n) + sep]);
-  const cwds = workingDirectories();
+  const ps = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' })
+  if (ps.status !== 0) throw new Error(`ps could not list processes: ${ps.stderr.trim()}`)
+  const dirs = needles.filter((n) => n.endsWith(sep)).flatMap((n) => [n, realpath(n) + sep])
+  const cwds = workingDirectories()
   return ps.stdout
-    .split("\n")
+    .split('\n')
     .map((line) => line.trim().match(/^(\d+)\s+(.*)$/))
     .filter((m): m is RegExpMatchArray => m !== null)
     .map((m) => ({ pid: Number(m[1]), command: m[2]! }))
     .filter((p) => p.pid !== process.pid && p.pid !== process.ppid)
     .filter((p) => {
-      const cwd = cwds.get(p.pid);
-      return needles.some((n) => p.command.includes(n)) || (cwd !== undefined && dirs.some((d) => (cwd + sep).startsWith(d)));
-    });
+      const cwd = cwds.get(p.pid)
+      return (
+        needles.some((n) => p.command.includes(n)) || (cwd !== undefined && dirs.some((d) => (cwd + sep).startsWith(d)))
+      )
+    })
 }
 
 /** Every process's working directory this user may read: `/proc` on Linux, `lsof` elsewhere. */
 function workingDirectories(): Map<number, string> {
-  const out = new Map<number, string>();
-  if (existsSync("/proc/self/cwd")) {
-    for (const name of readdirSync("/proc")) {
-      if (!/^\d+$/.test(name)) continue;
+  const out = new Map<number, string>()
+  if (existsSync('/proc/self/cwd')) {
+    for (const name of readdirSync('/proc')) {
+      if (!/^\d+$/.test(name)) continue
       try {
-        out.set(Number(name), readlinkSync(`/proc/${name}/cwd`));
+        out.set(Number(name), readlinkSync(`/proc/${name}/cwd`))
       } catch {
         // Gone, or not ours to read.
       }
     }
-    return out;
+    return out
   }
-  const lsof = spawnSync("lsof", ["-w", "-a", "-d", "cwd", "-F", "pn"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (lsof.error) throw new Error(`lsof could not list working directories: ${lsof.error.message}`);
-  let pid = 0;
-  for (const line of lsof.stdout.split("\n")) {
-    if (line.startsWith("p")) pid = Number(line.slice(1));
-    else if (line.startsWith("n") && pid > 0) out.set(pid, line.slice(1));
+  const lsof = spawnSync('lsof', ['-w', '-a', '-d', 'cwd', '-F', 'pn'], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  if (lsof.error) throw new Error(`lsof could not list working directories: ${lsof.error.message}`)
+  let pid = 0
+  for (const line of lsof.stdout.split('\n')) {
+    if (line.startsWith('p')) pid = Number(line.slice(1))
+    else if (line.startsWith('n') && pid > 0) out.set(pid, line.slice(1))
   }
-  return out;
+  return out
 }
 
 /**
@@ -763,17 +818,17 @@ function workingDirectories(): Map<number, string> {
  * `/private/var` on macOS).
  */
 function realpath(path: string): string {
-  const full = resolve(path);
+  const full = resolve(path)
   try {
-    return realpathSync(full);
+    return realpathSync(full)
   } catch {
-    const up = dirname(full);
-    return up === full ? full : join(realpath(up), basename(full));
+    const up = dirname(full)
+    return up === full ? full : join(realpath(up), basename(full))
   }
 }
 
 function isUnder(path: string, dir: string): boolean {
-  const p = realpath(path);
-  const d = realpath(dir);
-  return p === d || p.startsWith(d + sep);
+  const p = realpath(path)
+  const d = realpath(dir)
+  return p === d || p.startsWith(d + sep)
 }

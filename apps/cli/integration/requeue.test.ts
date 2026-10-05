@@ -1,3 +1,6 @@
+import { userInfo } from 'node:os'
+
+import { requeue } from '@lingtai/conductor'
 /**
  * `lingtai requeue`, against the real log.
  *
@@ -11,100 +14,93 @@
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
-import { requeue } from "@lingtai/conductor";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { userInfo } from "node:os";
-import { beforeAll, describe, expect, it } from "vitest";
-import { requeueCommand } from "../src/requeue.ts";
+import { projectStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
+import { requeueCommand } from '../src/requeue.ts'
+
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 
 /** Blocked, answered from the terminal. */
-const FROM_CLI = 123;
+const FROM_CLI = 123
 /** Blocked, answered from the board — the same decision, for comparison. */
-const FROM_BOARD = 124;
+const FROM_BOARD = 124
 /** Claimed, so there is nothing to hand back. */
-const RUNNING = 125;
+const RUNNING = 125
 
-const wi = (n: number) => workItemStream(PROJECT, n);
-const run = (n: number) => `run-${PROJECT}-${n}`;
+const wi = (n: number) => workItemStream(PROJECT, n)
+const run = (n: number) => `run-${PROJECT}-${n}`
 
 /** What the board's `requeueCard` records, which is the local account (0007). */
-const ACTOR = `human:${userInfo().username}`;
-const NOTE = "the agent gate refused every review; the block is the harness, not the diff";
+const ACTOR = `human:${userInfo().username}`
+const NOTE = 'the agent gate refused every review; the block is the harness, not the diff'
 
-let store: EventStore;
+let store: EventStore
 
 const discovered = (n: number) => ({
-  type: "WorkItemDiscovered",
-  actor: "github",
+  type: 'WorkItemDiscovered',
+  actor: 'github',
   data: {
     project: PROJECT,
-    source: "github-issue" as const,
+    source: 'github-issue' as const,
     externalRef: String(n),
     title: `a review that never ran (${n})`,
-    kind: "bug",
+    kind: 'bug',
     labels: [],
   },
-});
+})
 
 const claimed = (n: number) => ({
-  type: "WorkItemClaimed",
-  actor: "conductor",
-  data: { runId: run(n), worker: "w", title: null, kind: null },
-});
+  type: 'WorkItemClaimed',
+  actor: 'conductor',
+  data: { runId: run(n), worker: 'w', title: null, kind: null },
+})
 
 const blocked = (n: number) => ({
-  type: "WorkItemBlocked",
-  actor: "conductor",
+  type: 'WorkItemBlocked',
+  actor: 'conductor',
   data: {
-    question: "the agent gate returned a refusal instead of findings",
-    needsFrom: "human" as const,
+    question: 'the agent gate returned a refusal instead of findings',
+    needsFrom: 'human' as const,
     runId: run(n),
-    needs: "acknowledgement" as const,
+    needs: 'acknowledgement' as const,
     diagnosis: null,
   },
-});
+})
 
 beforeAll(async () => {
-  store = await processEventStore();
+  store = await processEventStore()
 
   // Registered, because the command refuses a project it has never heard of
   // before it goes looking for a work item.
   await store.append(projectStream(PROJECT), 0, [
     {
-      type: "ProjectConfigured",
-      actor: "conductor",
-      data: { project: PROJECT, owner: "steven-zhc", base: "develop", configHash: "h", fromSha: "s" },
+      type: 'ProjectConfigured',
+      actor: 'conductor',
+      data: { project: PROJECT, owner: 'steven-zhc', base: 'develop', configHash: 'h', fromSha: 's' },
     },
-  ]);
+  ])
 
-  await store.append(wi(FROM_CLI), 0, [discovered(FROM_CLI), claimed(FROM_CLI), blocked(FROM_CLI)]);
-  await store.append(wi(FROM_BOARD), 0, [
-    discovered(FROM_BOARD),
-    claimed(FROM_BOARD),
-    blocked(FROM_BOARD),
-  ]);
-  await store.append(wi(RUNNING), 0, [discovered(RUNNING), claimed(RUNNING)]);
-}, 120_000);
+  await store.append(wi(FROM_CLI), 0, [discovered(FROM_CLI), claimed(FROM_CLI), blocked(FROM_CLI)])
+  await store.append(wi(FROM_BOARD), 0, [discovered(FROM_BOARD), claimed(FROM_BOARD), blocked(FROM_BOARD)])
+  await store.append(wi(RUNNING), 0, [discovered(RUNNING), claimed(RUNNING)])
+}, 120_000)
 
-describe("lingtai requeue", () => {
-  it("puts a blocked item back in the queue, carrying the note", async () => {
-    const said: string[] = [];
-    const code = await requeueCommand({ project: PROJECT, issue: FROM_CLI, note: NOTE }, (l) =>
-      said.push(l),
-    );
+describe('lingtai requeue', () => {
+  it('puts a blocked item back in the queue, carrying the note', async () => {
+    const said: string[] = []
+    const code = await requeueCommand({ project: PROJECT, issue: FROM_CLI, note: NOTE }, (l) => said.push(l))
 
-    expect(code).toBe(0);
-    expect(said.join("\n")).toContain("back in the queue");
+    expect(code).toBe(0)
+    expect(said.join('\n')).toContain('back in the queue')
 
-    const events = await store.read(wi(FROM_CLI));
-    const last = events[events.length - 1]!;
-    expect(last.type).toBe("WorkItemUnblocked");
-    expect(last.data).toEqual({ by: ACTOR, note: NOTE });
-    expect(reduceWorkItem(events).lifecycle.status).toBe("backlog");
-  });
+    const events = await store.read(wi(FROM_CLI))
+    const last = events[events.length - 1]!
+    expect(last.type).toBe('WorkItemUnblocked')
+    expect(last.data).toEqual({ by: ACTOR, note: NOTE })
+    expect(reduceWorkItem(events).lifecycle.status).toBe('backlog')
+  })
 
   /**
    * `#130`'s last requirement, and the reason the command is a wrapper rather
@@ -115,61 +111,54 @@ describe("lingtai requeue", () => {
    * Everything but the envelope's own bookkeeping: `seq`, `streamId` and `at`
    * differ between any two events and say nothing about who decided.
    */
-  it("appends what the board appends, and nothing that says which side asked", async () => {
+  it('appends what the board appends, and nothing that says which side asked', async () => {
     const board = await requeue({
       project: PROJECT,
       issue: FROM_BOARD,
       by: ACTOR,
       note: NOTE,
       store,
-    });
-    expect(board.ok).toBe(true);
+    })
+    expect(board.ok).toBe(true)
 
     const decided = async (n: number) => {
-      const events = await store.read(wi(n));
-      const { seq, streamId, at, ...rest } = events[events.length - 1]!;
-      return rest;
-    };
+      const events = await store.read(wi(n))
+      const { seq, streamId, at, ...rest } = events[events.length - 1]!
+      return rest
+    }
 
-    expect(await decided(FROM_CLI)).toEqual(await decided(FROM_BOARD));
-  });
+    expect(await decided(FROM_CLI)).toEqual(await decided(FROM_BOARD))
+  })
 
-  it("refuses by naming the state the item is actually in", async () => {
-    const said: string[] = [];
-    const code = await requeueCommand({ project: PROJECT, issue: RUNNING, note: NOTE }, (l) =>
-      said.push(l),
-    );
+  it('refuses by naming the state the item is actually in', async () => {
+    const said: string[] = []
+    const code = await requeueCommand({ project: PROJECT, issue: RUNNING, note: NOTE }, (l) => said.push(l))
 
-    expect(code).toBe(1);
+    expect(code).toBe(1)
     // "not blocked" on its own sends nobody anywhere; the state it *is* in does.
-    expect(said.join("\n")).toContain("claimed");
-    expect(said.join("\n")).toContain(wi(RUNNING));
-    expect((await store.read(wi(RUNNING))).some((e) => e.type === "WorkItemUnblocked")).toBe(false);
-  });
+    expect(said.join('\n')).toContain('claimed')
+    expect(said.join('\n')).toContain(wi(RUNNING))
+    expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WorkItemUnblocked')).toBe(false)
+  })
 
   /**
    * `--note` left off and `--note` with nothing after it arrive here the same
    * way, and both are refused before anything is read. A person overruling a
    * block is not anonymous and is not silent.
    */
-  it("refuses an empty note rather than defaulting one", async () => {
-    const said: string[] = [];
-    const code = await requeueCommand({ project: PROJECT, issue: FROM_CLI, note: "  " }, (l) =>
-      said.push(l),
-    );
+  it('refuses an empty note rather than defaulting one', async () => {
+    const said: string[] = []
+    const code = await requeueCommand({ project: PROJECT, issue: FROM_CLI, note: '  ' }, (l) => said.push(l))
 
-    expect(code).toBe(2);
-    expect(said.join("\n")).toContain("--note");
-  });
+    expect(code).toBe(2)
+    expect(said.join('\n')).toContain('--note')
+  })
 
-  it("says so when the project was never added", async () => {
-    const said: string[] = [];
-    const code = await requeueCommand(
-      { project: `${PROJECT}-typo`, issue: FROM_CLI, note: NOTE },
-      (l) => said.push(l),
-    );
+  it('says so when the project was never added', async () => {
+    const said: string[] = []
+    const code = await requeueCommand({ project: `${PROJECT}-typo`, issue: FROM_CLI, note: NOTE }, (l) => said.push(l))
 
-    expect(code).toBe(1);
-    expect(said.join("\n")).toContain("no project named");
-  });
-});
+    expect(code).toBe(1)
+    expect(said.join('\n')).toContain('no project named')
+  })
+})

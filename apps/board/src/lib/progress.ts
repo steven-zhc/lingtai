@@ -1,3 +1,4 @@
+import type { StepPlan } from '@lingtai/conductor/filter'
 /**
  * Where a run has got to *now*, folded from its own stream.
  *
@@ -30,8 +31,7 @@
  * argued that way and the `COLUMNS` entry beside it says 45 items — but *what
  * cuts it*, and the answer has to be a number in `railCandidates`.
  */
-import { STEPS, type Envelope, type Step } from "@lingtai/domain";
-import type { StepPlan } from "@lingtai/conductor/filter";
+import { STEPS, type Envelope, type Step } from '@lingtai/domain'
 
 /**
  * What a point has come to on *this* run.
@@ -76,11 +76,11 @@ import type { StepPlan } from "@lingtai/conductor/filter";
  * what this comment used to say was impossible.
  */
 export type StepState =
-  | "skipped"
-  | "pending"
-  | "running"
-  | "passed"
-  | "failed"
+  | 'skipped'
+  | 'pending'
+  | 'running'
+  | 'passed'
+  | 'failed'
   /**
    * **Nothing judged this diff here**, which this fold now reaches two ways.
    * One state, because it is one sentence to a reader and one bug to an
@@ -99,7 +99,7 @@ export type StepState =
    * Not `failed` — a refusal is a sentence about the diff — and not `running`,
    * which is what a point with no verdict line used to read as.
    */
-  | "never-ran"
+  | 'never-ran'
   /**
    * **Nothing judged this diff here either, and for a reason that is ours and
    * not the account's** ([0057](../../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md)).
@@ -113,7 +113,7 @@ export type StepState =
    * walled* and this one says *this machine, this action*. Not `failed`, for
    * the reason `never-ran` is not: a refusal is a sentence about the diff.
    */
-  | "did-not-finish"
+  | 'did-not-finish'
   /**
    * **Nothing judged this diff here either, and this one is a question rather
    * than a fault** (`#296`, 0058 §3c).
@@ -128,8 +128,8 @@ export type StepState =
    * against *answer this*. Both were `did-not-finish` until the ending split, so
    * a rail put the fail hatch over a pass that was working and waiting.
    */
-  | "asked"
-  | "waived";
+  | 'asked'
+  | 'waived'
 
 /**
  * One action's own verdict, so a point holding more than one can be drawn as
@@ -141,15 +141,15 @@ export type StepState =
  * were the same fact at two granularities, and only one of them has a shape.
  */
 export interface ActionProgress {
-  name: string;
-  state: StepState;
+  name: string
+  state: StepState
 }
 
 export interface StepProgress {
-  step: Step;
+  step: Step
   /** What the recipe put here. Empty is what makes the point `skipped`. */
-  planned: readonly string[];
-  state: StepState;
+  planned: readonly string[]
+  state: StepState
   /**
    * The planned actions in recipe order, each with its own verdict, followed by
    * anything the log recorded here that the plan did not name — an approval at
@@ -157,7 +157,7 @@ export interface StepProgress {
    *
    * Empty only where the point is: a `skipped` point has no cells to draw.
    */
-  actions: readonly ActionProgress[];
+  actions: readonly ActionProgress[]
 }
 
 /**
@@ -177,10 +177,10 @@ export interface Phase {
    * reader that splits on the colon and believes the head is a point will
    * print `2 of 3` for the third of those.
    */
-  label: string;
+  label: string
   /** When this phase began, ISO. */
-  since: string;
-  budgetMs: number | null;
+  since: string
+  budgetMs: number | null
 }
 
 export interface RunProgress {
@@ -189,22 +189,22 @@ export interface RunProgress {
    * before the agent starts. This is the elapsed the card shows, and it is the
    * whole run rather than the phase.
    */
-  since: string;
+  since: string
   /** Null between phases: the agent has finished and no gate has started yet. */
-  now: Phase | null;
+  now: Phase | null
   /** All ten, in pass order. */
-  steps: readonly StepProgress[];
+  steps: readonly StepProgress[]
 }
 
 /** The label the agent phase carries. Not a gate point, and not spelled like one. */
-export const AGENT = "agent";
+export const AGENT = 'agent'
 
 /**
  * The word a bought round wears, and the word `task_view`'s note opens with —
  * `fixing round 2 of 3` there, and here, so the card and the note agree about
  * what the pass is doing (`task-view.ts:559`).
  */
-const FIXING = "fixing";
+const FIXING = 'fixing'
 
 /**
  * The point a phase is at, or null where the phase names no point.
@@ -215,8 +215,8 @@ const FIXING = "fixing";
  * `2 of 3`, which is how a fixing agent came to be described as a point.
  */
 export function stepOf(label: string): Step | null {
-  const head = label.split(":")[0] ?? "";
-  return (STEPS as readonly string[]).includes(head) ? (head as Step) : null;
+  const head = label.split(':')[0] ?? ''
+  return (STEPS as readonly string[]).includes(head) ? (head as Step) : null
 }
 
 /**
@@ -229,21 +229,21 @@ export function stepOf(label: string): Step | null {
  * number *is* the recipe's word.
  */
 export function elapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m${String(seconds % 60).padStart(2, "0")}s`;
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m${String(seconds % 60).padStart(2, '0')}s`
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
 }
 
 /** `point:action`, the key both the log and `task_view` use for a verdict. */
 function keyOf(data: Record<string, unknown>): string {
-  return `${String(data["step"])}:${String(data["action"])}`;
+  return `${String(data['step'])}:${String(data['action'])}`
 }
 
 function budgetOf(plan: StepPlan, data: Record<string, unknown>): number | null {
-  const step = plan.get(String(data["step"]) as Step);
-  return step?.find((a) => a.name === String(data["action"]))?.budgetMs ?? null;
+  const step = plan.get(String(data['step']) as Step)
+  return step?.find((a) => a.name === String(data['action']))?.budgetMs ?? null
 }
 
 /**
@@ -269,15 +269,15 @@ function stateOf(
    */
   onRecord: boolean,
 ): StepState {
-  if (planned.length === 0 && seen.length === 0) return "skipped";
+  if (planned.length === 0 && seen.length === 0) return 'skipped'
   // Above `failed`, because it is always the ending: the pipeline and the pass
   // both stop there (0041 §4), so a `failed` beside it on the same point is a
   // refusal from an earlier round, about a commit that is no longer the head.
-  if (seen.includes("never-ran")) return "never-ran";
+  if (seen.includes('never-ran')) return 'never-ran'
   // Above `failed` for the same reason and with the same ordering argument: the
   // pipeline and the pass both stop here (0057 §4), so a `failed` beside it on
   // the same point came from an earlier round and a commit that has moved.
-  if (seen.includes("did-not-finish")) return "did-not-finish";
+  if (seen.includes('did-not-finish')) return 'did-not-finish'
   // Above `failed` for the third time and with a reason of its own (`#296`): the
   // pipeline stops here too, and a step that asked and was then sent round again
   // has a *later* verdict on the same action key, which `close` has already
@@ -285,7 +285,7 @@ function stateOf(
   //
   // Below the two above it, because those two are faults and this is a question:
   // where a point somehow carries both, the fault is the more urgent reading.
-  if (seen.includes("asked")) return "asked";
+  if (seen.includes('asked')) return 'asked'
   // **The comparison, made where a person is already looking.**
   // The log's own plan named actions here, the run recorded nothing at all — no
   // request, no verdict, no approval, no waiver — and the item landed, so there
@@ -315,15 +315,15 @@ function stateOf(
   // reached by the line above rather than by this one: its `planned` is empty,
   // so it is `skipped` before this rule is asked, and an empty `actions` list
   // is never an accusation.
-  if (onRecord && step !== "end" && seen.length === 0) return "never-ran";
-  if (seen.includes("failed")) return "failed";
-  if (seen.includes("running")) return "running";
-  const settled = seen.filter((s) => s === "passed" || s === "waived");
+  if (onRecord && step !== 'end' && seen.length === 0) return 'never-ran'
+  if (seen.includes('failed')) return 'failed'
+  if (seen.includes('running')) return 'running'
+  const settled = seen.filter((s) => s === 'passed' || s === 'waived')
   // Fewer verdicts than actions means the point is part-way through, which is
   // not the same as done — the pipeline stops at the first refusal, so a point
   // can also end here having never reached its later actions.
-  if (settled.length < planned.length || settled.length === 0) return "pending";
-  return seen.includes("waived") ? "waived" : "passed";
+  if (settled.length < planned.length || settled.length === 0) return 'pending'
+  return seen.includes('waived') ? 'waived' : 'passed'
 }
 
 /**
@@ -353,14 +353,14 @@ export function foldProgress(
    */
   over = false,
 ): RunProgress | null {
-  const first = events[0];
-  if (!first) return null;
+  const first = events[0]
+  if (!first) return null
 
   /** `point:action` → where that action got to. */
-  const verdicts = new Map<string, StepState>();
-  let now: Phase | null = null;
+  const verdicts = new Map<string, StepState>()
+  let now: Phase | null = null
   /** The plan as the log recorded it, once `StepsResolved` has landed. */
-  let resolved: Map<string, readonly string[]> | null = null;
+  let resolved: Map<string, readonly string[]> | null = null
   /**
    * The wall clock this run's agents are launched under, as `RunStarted`
    * recorded it applied.
@@ -370,28 +370,28 @@ export function foldProgress(
    * recipe, read once, inside one pass (`conduct.ts`). Null for
    * a v1 `RunStarted`, and null renders as no denominator.
    */
-  let wallMs: number | null = null;
+  let wallMs: number | null = null
   /** The round in flight, if the pass bought one and it has not come back. */
-  let fixing: string | null = null;
+  let fixing: string | null = null
 
   const close = (data: Record<string, unknown>, state: StepState) => {
-    const key = keyOf(data);
-    verdicts.set(key, state);
+    const key = keyOf(data)
+    verdicts.set(key, state)
     // Only the phase this verdict is about. A verdict for something else means
     // the log is out of order, and clearing on it would blank a live gate.
-    if (now?.label === key) now = null;
-  };
+    if (now?.label === key) now = null
+  }
 
   for (const event of events) {
-    const data = (event.data ?? {}) as Record<string, unknown>;
+    const data = (event.data ?? {}) as Record<string, unknown>
     switch (event.type) {
-      case "RunStarted": {
+      case 'RunStarted': {
         // The wall clock as *applied*, which is what the run will actually be
         // killed at. Null for a v1 `RunStarted`, which recorded no limits (#88).
-        const limits = (data["invocation"] as { limits?: { wallMs?: number } } | null)?.limits;
-        wallMs = limits?.wallMs ?? null;
-        now = { label: AGENT, since: event.at.toISOString(), budgetMs: wallMs };
-        break;
+        const limits = (data['invocation'] as { limits?: { wallMs?: number } } | null)?.limits
+        wallMs = limits?.wallMs ?? null
+        now = { label: AGENT, since: event.at.toISOString(), budgetMs: wallMs }
+        break
       }
 
       /**
@@ -407,100 +407,100 @@ export function foldProgress(
        * came to and that a person was being waited on. `task_view` has said
        * `running` on this event since the day it was added (`task-view.ts:554`).
        */
-      case "FixRequested": {
+      case 'FixRequested': {
         // `of` is zero on every event written before the field existed, and the
         // reading of zero is *not recorded* — the same reading, and the same
         // sentence, as the note `task_view` writes from it.
-        const of = Number(data["of"] ?? 0);
-        fixing = `${FIXING} round ${String(data["round"])}${of > 0 ? ` of ${of}` : ""}`;
-        now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs };
-        break;
+        const of = Number(data['of'] ?? 0)
+        fixing = `${FIXING} round ${String(data['round'])}${of > 0 ? ` of ${of}` : ''}`
+        now = { label: fixing, since: event.at.toISOString(), budgetMs: wallMs }
+        break
       }
 
-      case "FixApplied":
+      case 'FixApplied':
         // Guarded on the label for the reason `RunFinished` is: only the phase
         // this event is about. What follows is the point being asked again, or
         // the refusal standing — both announce themselves.
-        if (fixing !== null && now?.label === fixing) now = null;
-        break;
+        if (fixing !== null && now?.label === fixing) now = null
+        break
 
-      case "RunFinished":
-      case "RunFailed":
+      case 'RunFinished':
+      case 'RunFailed':
         // The agent phase is over; the next one announces itself. Guarded on the
         // label because a `proposed` gate can outlive the event that ended the
         // agent, and clearing unconditionally would lose it.
-        if (now?.label === AGENT) now = null;
-        break;
+        if (now?.label === AGENT) now = null
+        break
 
-      case "StepsResolved": {
-        const steps = (data["steps"] ?? []) as { step: string; actions: string[] }[];
-        resolved = new Map(steps.map((p) => [p.step, p.actions]));
-        break;
+      case 'StepsResolved': {
+        const steps = (data['steps'] ?? []) as { step: string; actions: string[] }[]
+        resolved = new Map(steps.map((p) => [p.step, p.actions]))
+        break
       }
 
-      case "StepRequested": {
-        const key = keyOf(data);
+      case 'StepRequested': {
+        const key = keyOf(data)
         // Never over a verdict: requested and started are appended back to back,
         // and a re-request after a force-push carries its own start.
-        if (!verdicts.has(key)) verdicts.set(key, "pending");
-        break;
+        if (!verdicts.has(key)) verdicts.set(key, 'pending')
+        break
       }
 
-      case "StepStarted": {
-        const key = keyOf(data);
-        verdicts.set(key, "running");
-        now = { label: key, since: event.at.toISOString(), budgetMs: budgetOf(plan, data) };
-        break;
+      case 'StepStarted': {
+        const key = keyOf(data)
+        verdicts.set(key, 'running')
+        now = { label: key, since: event.at.toISOString(), budgetMs: budgetOf(plan, data) }
+        break
       }
 
-      case "StepPassed":
-        close(data, "passed");
-        break;
+      case 'StepPassed':
+        close(data, 'passed')
+        break
 
-      case "StepFailed":
-        close(data, "failed");
-        break;
+      case 'StepFailed':
+        close(data, 'failed')
+        break
 
-      case "StepNeverRan":
-        close(data, "never-ran");
-        break;
+      case 'StepNeverRan':
+        close(data, 'never-ran')
+        break
 
-      case "StepDidNotFinish":
+      case 'StepDidNotFinish':
         // One of these per action, because the action is run once (`#234`). A
         // point that ends here is one whose last word was this, which is what
         // the pass stopped on.
-        close(data, "did-not-finish");
-        break;
+        close(data, 'did-not-finish')
+        break
 
-      case "StepAsked":
+      case 'StepAsked':
         // One per action for the same reason, and its own state rather than the
         // one above: the pass may well have gone on from here — a judge can send
         // the asking step round again — so this is not always the ending.
-        close(data, "asked");
-        break;
+        close(data, 'asked')
+        break
 
-      case "StepWaived":
-        close(data, "waived");
-        break;
+      case 'StepWaived':
+        close(data, 'waived')
+        break
 
-      case "ApprovalRequested":
+      case 'ApprovalRequested':
         // A person is what this is waiting on, and a person has no timeout. The
         // phase is still named, because "waiting, on the merge point" is the
         // answer somebody opened the card for.
-        verdicts.set(keyOf(data), "pending");
-        now = { label: keyOf(data), since: event.at.toISOString(), budgetMs: null };
-        break;
+        verdicts.set(keyOf(data), 'pending')
+        now = { label: keyOf(data), since: event.at.toISOString(), budgetMs: null }
+        break
 
-      case "ApprovalGranted":
-        close(data, "passed");
-        break;
+      case 'ApprovalGranted':
+        close(data, 'passed')
+        break
 
-      case "ApprovalRevoked":
-        verdicts.set(keyOf(data), "pending");
-        break;
+      case 'ApprovalRevoked':
+        verdicts.set(keyOf(data), 'pending')
+        break
 
       default:
-        break;
+        break
     }
   }
 
@@ -509,11 +509,11 @@ export function foldProgress(
     // `prepared` gates have already run, so for the first seconds of a run it
     // is the only thing that can say a point exists — and once it lands it is
     // the record, because a recipe read now may not be the one this run got.
-    const recorded = resolved?.get(step);
-    const planned = recorded ?? (plan.get(step) ?? []).map((a) => a.name);
+    const recorded = resolved?.get(step)
+    const planned = recorded ?? (plan.get(step) ?? []).map((a) => a.name)
     const mine = [...verdicts]
       .filter(([k]) => k.startsWith(`${step}:`))
-      .map(([k, v]) => [k.slice(step.length + 1), v] as const);
+      .map(([k, v]) => [k.slice(step.length + 1), v] as const)
     const state = stateOf(
       step,
       planned,
@@ -523,22 +523,22 @@ export function foldProgress(
       // predating the event — falls back to today's recipe above, and today's
       // recipe cannot accuse a run of skipping a point it was never given.
       over && recorded !== undefined,
-    );
-    const byAction = new Map(mine);
+    )
+    const byAction = new Map(mine)
     // The plan's order first, because that is the order they run in; then
     // anything the log has that the plan does not name. An approval at a point
     // the recipe leaves empty is that case, and dropping it would draw a point
     // a person is being asked about as having nothing in it.
-    const extra = mine.map(([name]) => name).filter((name) => !planned.includes(name));
+    const extra = mine.map(([name]) => name).filter((name) => !planned.includes(name))
     const actions = [...planned, ...extra].map((name) => ({
       name,
       // A point that ran nothing at all says so in every cell rather than
       // leaving them reading as *not reached yet*, which is the distinction
       // the point's own state was just made to carry.
-      state: byAction.get(name) ?? (state === "never-ran" ? "never-ran" : "pending"),
-    }));
-    return { step, planned, state, actions };
-  });
+      state: byAction.get(name) ?? (state === 'never-ran' ? 'never-ran' : 'pending'),
+    }))
+    return { step, planned, state, actions }
+  })
 
-  return { since: first.at.toISOString(), now, steps };
+  return { since: first.at.toISOString(), now, steps }
 }

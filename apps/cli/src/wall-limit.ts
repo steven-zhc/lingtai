@@ -1,5 +1,5 @@
-import { passCeiling } from "@lingtai/conductor";
-import { LIMIT_DEFAULTS, parseDuration } from "@lingtai/recipe";
+import { passCeiling } from '@lingtai/conductor'
+import { LIMIT_DEFAULTS, parseDuration } from '@lingtai/recipe'
 
 /**
  * What a drain may cost, said before the waiting starts.
@@ -24,4 +24,4 @@ import { LIMIT_DEFAULTS, parseDuration } from "@lingtai/recipe";
 export const WALL_LIMIT = `the recipe's runtime.limits — by default, ${passCeiling({
   ...LIMIT_DEFAULTS,
   wallMs: parseDuration(LIMIT_DEFAULTS.wall),
-})}`;
+})}`

@@ -25,9 +25,10 @@
  * lock being asked anyway. That is the assertion the three `catch` blocks never
  * had.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createInterface } from 'node:readline/promises'
+
 // Only the loader, which reads `.env.local` and connects to nothing.
 import {
   dbVar,
@@ -39,17 +40,18 @@ import {
   stateDir,
   storeChoice,
   type StoreChoice,
-} from "@lingtai/env";
-import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from "./install.ts";
+} from '@lingtai/env'
+
+import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from './install.ts'
 
 /** Everything the live world reaches that a test must not: the log, and what is behind it. */
 export interface Live {
-  env: NodeJS.ProcessEnv;
-  log: (line: string) => void;
+  env: NodeJS.ProcessEnv
+  log: (line: string) => void
   /** Who holds the conductor lock. Asked whether or not a log is configured — it is a file (#193). */
-  holder: () => Promise<string | null>;
+  holder: () => Promise<string | null>
   /** The drain proper — the doctor gate, the request and the wait. Reached unless nothing conducts and no store is written. */
-  drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>;
+  drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>
 }
 
 /** The real one: `process.env`, the terminal, and the daemon behind a dynamic import. */
@@ -65,11 +67,11 @@ export function live(): Live {
       // reason a machine with no log could not ask who conducts, and closed by
       // #179. The subpath stays: this asks about a file and should load a
       // file's worth of code.
-      const lock = await import("@lingtai/daemon/lock");
-      return lock.conductorLockHolder();
+      const lock = await import('@lingtai/daemon/lock')
+      return lock.conductorLockHolder()
     },
     drain: drainWithTheLog,
-  };
+  }
 }
 
 /**
@@ -85,14 +87,14 @@ export function liveWorld(self: string, outside: Live = live()): World {
     log: outside.log,
     ask: async (question) => {
       if (!process.stdin.isTTY) {
-        outside.log("there is nobody at a terminal to ask — --yes answers for you, once you have read what it removes");
-        return false;
+        outside.log('there is nobody at a terminal to ask — --yes answers for you, once you have read what it removes')
+        return false
       }
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const rl = createInterface({ input: process.stdin, output: process.stdout })
       try {
-        return /^y(es)?$/i.test((await rl.question(question)).trim());
+        return /^y(es)?$/i.test((await rl.question(question)).trim())
       } finally {
-        rl.close();
+        rl.close()
       }
     },
     running: runningFrom,
@@ -106,7 +108,7 @@ export function liveWorld(self: string, outside: Live = live()): World {
     drain: (reason, despiteDoctor) => liveDrain(reason, despiteDoctor, outside),
     app: liveApp,
     logWhere: () => logLocation(outside.env),
-  };
+  }
 }
 
 /**
@@ -150,18 +152,18 @@ export function liveWorld(self: string, outside: Live = live()): World {
  * `existsSync` answers false rather than throwing.
  */
 export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
-  const choice = storeChoice(env);
+  const choice = storeChoice(env)
   // Under a refusal, `logConfigured` under the name it always meant: *is
   // Postgres configured*. `two keys` and `no url` are machines that name a URL
   // and chose nothing, and a log somewhere else is still a log this removal
   // leaves standing.
-  const elsewhere = "refused" in choice ? logConfigured(env) : choice.store === "postgres";
+  const elsewhere = 'refused' in choice ? logConfigured(env) : choice.store === 'postgres'
   // A chosen SQLite names its own file, so the two reads cannot drift apart;
   // everywhere else it is where one would be, or null for an environment that
   // names no machine.
-  const file = !("refused" in choice) && choice.store === "sqlite" ? choice.path : sqliteLogIn(env);
-  if (file !== null && existsSync(file)) return { kind: "file", path: file, alsoElsewhere: elsewhere };
-  return elsewhere ? { kind: "elsewhere", named: namedDatabase(env, choice) } : { kind: "none" };
+  const file = !('refused' in choice) && choice.store === 'sqlite' ? choice.path : sqliteLogIn(env)
+  if (file !== null && existsSync(file)) return { kind: 'file', path: file, alsoElsewhere: elsewhere }
+  return elsewhere ? { kind: 'elsewhere', named: namedDatabase(env, choice) } : { kind: 'none' }
 }
 
 /**
@@ -184,13 +186,13 @@ export function logLocation(env: NodeJS.ProcessEnv): LogLocation {
  * set beside it, and there the variable does name it.
  */
 function namedDatabase(env: NodeJS.ProcessEnv, choice: StoreChoice): string {
-  const name = dbVar("DATABASE_URL", env);
-  if (optional(name, env) !== undefined) return `${name} names`;
-  const url = "refused" in choice ? postgresUrlIfSet(env) : choice.store === "postgres" ? choice.url : undefined;
+  const name = dbVar('DATABASE_URL', env)
+  if (optional(name, env) !== undefined) return `${name} names`
+  const url = 'refused' in choice ? postgresUrlIfSet(env) : choice.store === 'postgres' ? choice.url : undefined
   // Not a third case: with no URL found anywhere, `elsewhere` above is false
   // and this is never asked. It is the sentence's old words, so that the
   // expression is total rather than `?`-ing a string into the line.
-  return url === undefined ? `${name} names` : `at ${redactUrl(url)}`;
+  return url === undefined ? `${name} names` : `at ${redactUrl(url)}`
 }
 
 /**
@@ -207,9 +209,8 @@ function namedDatabase(env: NodeJS.ProcessEnv, choice: StoreChoice): string {
  * would report the operator's own log to a test that configured nothing.
  */
 function sqliteLogIn(env: NodeJS.ProcessEnv): string | null {
-  const machine =
-    env === process.env ? !env["VITEST"] && !env["LINGTAI_TEST"] : Boolean(env["LINGTAI_HOME"]);
-  return machine ? join(stateDir(env), SQLITE_LOG) : null;
+  const machine = env === process.env ? !env['VITEST'] && !env['LINGTAI_TEST'] : Boolean(env['LINGTAI_HOME'])
+  return machine ? join(stateDir(env), SQLITE_LOG) : null
 }
 
 /**
@@ -222,7 +223,7 @@ function sqliteLogIn(env: NodeJS.ProcessEnv): string | null {
  * no events to lose, and is a configured system here.
  */
 function storeWritten(env: NodeJS.ProcessEnv): boolean {
-  return !("refused" in storeChoice(env)) || logLocation(env).kind !== "none";
+  return !('refused' in storeChoice(env)) || logLocation(env).kind !== 'none'
 }
 
 /**
@@ -263,12 +264,12 @@ function storeWritten(env: NodeJS.ProcessEnv): boolean {
  * left standing are still its own.
  */
 export async function liveDrain(reason: string, despiteDoctor: boolean, outside: Live = live()): Promise<Drained> {
-  const holder = await outside.holder();
+  const holder = await outside.holder()
   if (holder === null && !storeWritten(outside.env)) {
-    outside.log("nothing holds the conductor lock and this machine has written no store — nothing to drain");
-    return { ok: true, after: async () => {} };
+    outside.log('nothing holds the conductor lock and this machine has written no store — nothing to drain')
+    return { ok: true, after: async () => {} }
   }
-  return outside.drain(reason, despiteDoctor);
+  return outside.drain(reason, despiteDoctor)
 }
 
 /**
@@ -279,21 +280,21 @@ export async function liveDrain(reason: string, despiteDoctor: boolean, outside:
  * a daemon in this terminal, which an upgrade has no business holding.
  */
 async function drainWithTheLog(reason: string, despiteDoctor: boolean): Promise<Drained> {
-  const daemon = await import("@lingtai/daemon");
-  const { doctorReport } = await import("./doctor.ts");
-  const { formatFailures, gatingFailures, waitForTheLock } = await import("./restart.ts");
-  const by = `human:${process.env["USER"] ?? "operator"}`;
+  const daemon = await import('@lingtai/daemon')
+  const { doctorReport } = await import('./doctor.ts')
+  const { formatFailures, gatingFailures, waitForTheLock } = await import('./restart.ts')
+  const by = `human:${process.env['USER'] ?? 'operator'}`
 
-  const { drainForUpgrade } = await import("./upgrade-drain.ts");
+  const { drainForUpgrade } = await import('./upgrade-drain.ts')
   return drainForUpgrade({
     by,
     reason,
     despiteDoctor,
     doctor: async () => {
-      const report = await doctorReport();
-      const failed = gatingFailures(report.results);
-      console.log(formatFailures(report.results, failed));
-      return failed;
+      const report = await doctorReport()
+      const failed = gatingFailures(report.results)
+      console.log(formatFailures(report.results, failed))
+      return failed
     },
     holder: () => daemon.conductorLockHolder(),
     control: () => daemon.readControl(),
@@ -301,45 +302,48 @@ async function drainWithTheLog(reason: string, despiteDoctor: boolean): Promise<
     withdraw: (who, version, why) => daemon.withdrawShutdown(who, version, why),
     inFlight: async () => daemon.describeInFlight(await daemon.inFlight().catch(() => [])),
     wait: () =>
-      waitForTheLock("draining", null, (line) => console.log(line), {
+      waitForTheLock('draining', null, (line) => console.log(line), {
         ctrlC:
-          "ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again asks for it afresh, and lingtai resume lifts it.",
+          'ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again asks for it afresh, and lingtai resume lifts it.',
       }),
     log: (line) => console.log(line),
-  });
+  })
 }
 
 /** The App this machine is configured with, as GitHub reports it — null where none is. */
 async function liveApp(): Promise<AppFacts | null> {
-  const env = await import("@lingtai/env");
-  if (!env.hasGitHubApp()) return null;
-  const credentials = env.githubApp();
-  const github = await import("@lingtai/github");
-  const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey });
-  const app = await reader.request<{ slug: string; owner: { login: string; type: string } }>("GET", "/app", "app");
-  const installations = await github.appInstallations(reader);
-  let repositories = 0;
+  const env = await import('@lingtai/env')
+  if (!env.hasGitHubApp()) return null
+  const credentials = env.githubApp()
+  const github = await import('@lingtai/github')
+  const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
+  const app = await reader.request<{ slug: string; owner: { login: string; type: string } }>('GET', '/app', 'app')
+  const installations = await github.appInstallations(reader)
+  let repositories = 0
   for (const installation of installations) {
-    repositories += (await github.installationRepositories(reader, installation.id)).length;
+    repositories += (await github.installationRepositories(reader, installation.id)).length
   }
   return {
     slug: app.slug,
     owner: app.owner.login,
-    organisation: app.owner.type === "Organization",
+    organisation: app.owner.type === 'Organization',
     installations: installations.length,
     repositories,
-    key: credentials.keySource.startsWith("LINGTAI_")
-      ? { variable: credentials.keySource, files: env.envFiles().filter((file) => envFileSets(file, credentials.keySource)) }
+    key: credentials.keySource.startsWith('LINGTAI_')
+      ? {
+          variable: credentials.keySource,
+          files: env.envFiles().filter((file) => envFileSets(file, credentials.keySource)),
+        }
       : { path: env.resolvePath(credentials.keySource) },
-  };
+  }
 }
 
 /** Whether an env file names `variable` — so an uninstall can say whether removing the file removed the key. */
 function envFileSets(file: string, variable: string): boolean {
   try {
     // dotenv's own shape, `NAME=value` with an optional `export`, and not empty.
-    return new RegExp(`^\\s*(export\\s+)?${variable}\\s*=\\s*[^\\s#]`, "m").test(readFileSync(file, "utf8"));
+    return new RegExp(`^\\s*(export\\s+)?${variable}\\s*=\\s*[^\\s#]`, 'm').test(readFileSync(file, 'utf8'))
   } catch {
-    return false;
+    return false
   }
 }

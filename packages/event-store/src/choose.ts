@@ -37,15 +37,16 @@
  * opens all three stores in one Postgres process and reads
  * `process.moduleLoadList` back.
  */
-import { chosenStore } from "@lingtai/env";
-import { createDb } from "./db.ts";
-import { createEventStore, type EventStore } from "./event-store.ts";
-import { createPostgresLog, type Log } from "./log.ts";
-import type { LogQueries } from "./queries.ts";
-import type { WakeListener, Waker, WakeSession } from "./wake.ts";
+import { chosenStore } from '@lingtai/env'
+
+import { createDb } from './db.ts'
+import { createEventStore, type EventStore } from './event-store.ts'
+import { createPostgresLog, type Log } from './log.ts'
+import type { LogQueries } from './queries.ts'
+import type { WakeListener, Waker, WakeSession } from './wake.ts'
 
 /** The log this process opened, or the open in flight. Null until something asks. */
-let opening: Promise<Log> | null = null;
+let opening: Promise<Log> | null = null
 
 /**
  * The log this process runs: the store, the questions beside it and the waker
@@ -55,17 +56,17 @@ let opening: Promise<Log> | null = null;
  * use open one log between them.
  */
 export function processLog(): Promise<Log> {
-  return (opening ??= open());
+  return (opening ??= open())
 }
 
 /** Just the store, for the callers that append and read and ask nothing else. */
 export async function processEventStore(): Promise<EventStore> {
-  return (await processLog()).store;
+  return (await processLog()).store
 }
 
 async function open(): Promise<Log> {
-  const choice = chosenStore();
-  if (choice.store === "postgres") {
+  const choice = chosenStore()
+  if (choice.store === 'postgres') {
     // **Both connections come out of the choice**, and the waker's is the one
     // that matters here: left out, `createPostgresWaker` resolves
     // `directPostgresUrl()`, which reads this process's *merged* environment —
@@ -84,10 +85,10 @@ async function open(): Promise<Log> {
       store: createEventStore(createDb(choice.url)),
       url: choice.url,
       wakeUrl: choice.directUrl,
-    });
+    })
   }
-  const sqlite = await import("./sqlite.ts");
-  return sqlite.createSqliteLog({ db: sqlite.openSqliteLog(choice.path), path: choice.path });
+  const sqlite = await import('./sqlite.ts')
+  return sqlite.createSqliteLog({ db: sqlite.openSqliteLog(choice.path), path: choice.path })
 }
 
 // ------------------------------------------------------------- deferred ----
@@ -109,11 +110,10 @@ async function open(): Promise<Log> {
  */
 export function deferredEventStore(resolve: () => Promise<EventStore>): EventStore {
   return {
-    append: async (streamId, expectedVersion, events) =>
-      (await resolve()).append(streamId, expectedVersion, events),
+    append: async (streamId, expectedVersion, events) => (await resolve()).append(streamId, expectedVersion, events),
     read: async (streamId, fromVersion) => (await resolve()).read(streamId, fromVersion),
     readAll: async (fromSeq, limit) => (await resolve()).readAll(fromSeq, limit),
-  };
+  }
 }
 
 function deferredQueries(resolve: () => Promise<LogQueries>): LogQueries {
@@ -123,7 +123,7 @@ function deferredQueries(resolve: () => Promise<LogQueries>): LogQueries {
     typeCounts: async () => (await resolve()).typeCounts(),
     unconvergedUpdates: async () => (await resolve()).unconvergedUpdates(),
     subscriberFailures: async (since) => (await resolve()).subscriberFailures(since),
-  };
+  }
 }
 
 /**
@@ -139,24 +139,24 @@ function deferredQueries(resolve: () => Promise<LogQueries>): LogQueries {
 function deferredWaker(resolve: () => Promise<Waker>): Waker {
   return {
     open(listener: WakeListener): WakeSession {
-      let session: WakeSession | null = null;
-      let closed = false;
+      let session: WakeSession | null = null
+      let closed = false
       const ready = (async () => {
-        const waker = await resolve();
-        if (closed) return;
-        session = waker.open(listener);
-        await session.ready;
-      })();
+        const waker = await resolve()
+        if (closed) return
+        session = waker.open(listener)
+        await session.ready
+      })()
       return {
         ready,
         close() {
-          closed = true;
-          session?.close();
-          session = null;
+          closed = true
+          session?.close()
+          session = null
         },
-      };
+      }
     },
-  };
+  }
 }
 
 /** The whole log, deferred: the store, the questions and the waker (#221). */
@@ -165,5 +165,5 @@ export function deferredLog(resolve: () => Promise<Log>): Log {
     store: deferredEventStore(async () => (await resolve()).store),
     queries: deferredQueries(async () => (await resolve()).queries),
     waker: (name) => deferredWaker(async () => (await resolve()).waker(name)),
-  };
+  }
 }

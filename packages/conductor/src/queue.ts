@@ -10,19 +10,19 @@
  * It reads the projector's view and decides — which is why it is here and not
  * there. A projection folds; it does not choose what to run next.
  */
-import { workItemStream } from "@lingtai/domain";
-import { readTasks } from "@lingtai/projector";
+import { workItemStream } from '@lingtai/domain'
+import { readTasks } from '@lingtai/projector'
 
 /** What a caller needs to run one: enough to nominate it, and nothing more. */
 export interface Runnable {
-  taskId: string;
-  issue: string;
-  title: string;
-  kind: string;
+  taskId: string
+  issue: string
+  title: string
+  kind: string
 }
 
 export interface RunnableOptions {
-  project: string;
+  project: string
   /**
    * What GitHub offers right now, from `runnableNow`.
    *
@@ -30,9 +30,9 @@ export interface RunnableOptions {
    * bugs were both cache invalidation (#56, #57). Its own consumer refreshed it
    * immediately before every read, so it was a holding place inside one pass.
    */
-  offered: readonly { ref: string; title: string; kind: string }[];
+  offered: readonly { ref: string; title: string; kind: string }[]
   /** The recipe's priority order. Priority is asked, not stored. */
-  kinds: readonly string[];
+  kinds: readonly string[]
   /**
    * Skip anything attempted inside this window.
    *
@@ -54,10 +54,10 @@ export interface RunnableOptions {
    * makes the recipe the only place it is decided; `0` is a caller saying *this
    * one is not blind*, and `lingtai now` is the caller that says it.
    */
-  backoffMs: number;
+  backoffMs: number
   /** Injectable so a test does not have to wait an hour. */
-  now?: Date;
-  url?: string;
+  now?: Date
+  url?: string
 }
 
 /**
@@ -69,7 +69,7 @@ export interface RunnableOptions {
  * side is this table, which is now nothing but a fold.
  */
 export async function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
-  const kinds = options.kinds.length > 0 ? [...options.kinds] : ["bug"];
+  const kinds = options.kinds.length > 0 ? [...options.kinds] : ['bug']
   // Every row, not just the queued ones: a row's *existence* is what says the
   // log has an opinion about this issue, and its state is that opinion.
   const seen = new Map(
@@ -80,40 +80,40 @@ export async function selectRunnable(options: RunnableOptions): Promise<Runnable
         ...(options.url === undefined ? {} : { url: options.url }),
       })
     ).map((t) => [t.issue, t]),
-  );
+  )
 
-  const now = (options.now ?? new Date()).getTime();
-  const backoff = options.backoffMs;
+  const now = (options.now ?? new Date()).getTime()
+  const backoff = options.backoffMs
 
   return options.offered
     .filter((o) => kinds.includes(o.kind))
     .filter((o) => {
-      const row = seen.get(o.ref);
+      const row = seen.get(o.ref)
       // No row: Lingtai has never touched it, and GitHub is offering it.
-      if (!row) return true;
+      if (!row) return true
       // A row that is not `queued` is one the log says is claimed, waiting on a
       // person, or finished. GitHub still listing the issue does not overrule
       // the log about what Lingtai is doing with it.
-      if (row.state !== "queued") return false;
-      return heldUntil(row, backoff, now) === null;
+      if (row.state !== 'queued') return false
+      return heldUntil(row, backoff, now) === null
     })
     .map((o) => ({ taskId: workItemStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
     .sort((a, b) => {
-      const byKind = kinds.indexOf(a.kind) - kinds.indexOf(b.kind);
-      if (byKind !== 0) return byKind;
+      const byKind = kinds.indexOf(a.kind) - kinds.indexOf(b.kind)
+      if (byKind !== 0) return byKind
       // Numerically, not lexically: #402 comes before #409 and both before #4100.
-      return Number(a.issue) - Number(b.issue);
-    });
+      return Number(a.issue) - Number(b.issue)
+    })
 }
 
 /** The bit of a `task_view` row the backoff reads, and nothing more. */
 export interface BackoffInput {
-  lastAttemptAt: Date | null;
+  lastAttemptAt: Date | null
   /**
    * A repair bought and not yet claimed. Only a retired `RepairRequested` sets
    * it (`#143`), so it is false on every new ticket.
    */
-  repairPending: boolean;
+  repairPending: boolean
 }
 
 /**
@@ -137,10 +137,10 @@ export interface BackoffInput {
  * `lingtai now` is what a person uses to jump it.
  */
 export function heldUntil(row: BackoffInput, backoffMs: number, now: number = Date.now()): Date | null {
-  if (row.repairPending) return null;
-  if (row.lastAttemptAt === null) return null;
-  const until = row.lastAttemptAt.getTime() + backoffMs;
-  return until > now ? new Date(until) : null;
+  if (row.repairPending) return null
+  if (row.lastAttemptAt === null) return null
+  const until = row.lastAttemptAt.getTime() + backoffMs
+  return until > now ? new Date(until) : null
 }
 
 /**
@@ -154,18 +154,18 @@ export function heldUntil(row: BackoffInput, backoffMs: number, now: number = Da
  * day changes wording, so a backoff still reads exactly as it did.
  */
 export function inWords(ms: number): string {
-  if (ms <= 0) return "now";
-  if (ms < 60_000) return "under a minute";
-  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  if (ms <= 0) return 'now'
+  if (ms < 60_000) return 'under a minute'
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`
   if (ms < 86_400_000) {
-    const hours = Math.floor(ms / 3_600_000);
+    const hours = Math.floor(ms / 3_600_000)
     // Floored, not rounded: `Math.round` turns 1h 59m 40s into "1h 60m".
-    const minutes = Math.floor((ms % 3_600_000) / 60_000);
-    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+    const minutes = Math.floor((ms % 3_600_000) / 60_000)
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`
   }
-  const days = Math.floor(ms / 86_400_000);
-  const hours = Math.floor((ms % 86_400_000) / 3_600_000);
-  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
+  const days = Math.floor(ms / 86_400_000)
+  const hours = Math.floor((ms % 86_400_000) / 3_600_000)
+  return hours === 0 ? `${days}d` : `${days}d ${hours}h`
 }
 
 /**
@@ -184,5 +184,5 @@ export function inWords(ms: number): string {
  * a phrase for a state that is not one.
  */
 export function backingOff(until: Date, now: number = Date.now()): string {
-  return `backing off — runnable in ${inWords(until.getTime() - now)}`;
+  return `backing off — runnable in ${inWords(until.getTime() - now)}`
 }

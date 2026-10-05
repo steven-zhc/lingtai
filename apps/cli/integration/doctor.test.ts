@@ -1,3 +1,12 @@
+import { existsSync, mkdtempSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { CLAUDE_CODE_CAPABILITIES } from '@lingtai/agent'
+import { beat, createStatusTable } from '@lingtai/daemon'
+import { SUBSCRIBER_STREAM, emptyProject } from '@lingtai/domain'
+import type { StoreChoice } from '@lingtai/env'
 /**
  * Most of these need no database: a doctor whose environment check fails must
  * not go on to open connections, so the failure paths are pure.
@@ -5,14 +14,14 @@
  * The last one does need it, and it is the one that matters — it is Phase 0's
  * exit criterion written as an assertion.
  */
-import { createDb, createEventStore, directPostgresUrl, postgresUrl } from "@lingtai/event-store";
-import { beat, createStatusTable } from "@lingtai/daemon";
-import { SUBSCRIBER_STREAM, emptyProject } from "@lingtai/domain";
-import pg from "pg";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
-import { CLAUDE_CODE_CAPABILITIES } from "@lingtai/agent";
-import type { StoreChoice } from "@lingtai/env";
+import { createDb, createEventStore, directPostgresUrl, postgresUrl } from '@lingtai/event-store'
+import type { LogQueries } from '@lingtai/event-store'
+import { createSqliteLogQueries, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
+import pg from 'pg'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import {
   daemonLiveness,
   declaredExtensions,
@@ -23,25 +32,18 @@ import {
   logReachable,
   postgresOnlyRows,
   runDoctor,
-} from "../src/doctor.ts";
-import { createSqliteLogQueries, openSqliteLog } from "@lingtai/event-store/sqlite";
-import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
-import type { LogQueries } from "@lingtai/event-store";
-import { existsSync, mkdtempSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+} from '../src/doctor.ts'
 // The count `lingtai restart` gates on, asked of this report rather than
 // restated: a row that stops a restart is the half of #179's refusal a status
 // alone does not show (0042).
-import { gatingFailures } from "../src/restart.ts";
+import { gatingFailures } from '../src/restart.ts'
 
-const POOLED = "postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true";
-const DIRECT = "postgresql://u:p@db.example.com:5432/postgres";
+const POOLED = 'postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true'
+const DIRECT = 'postgresql://u:p@db.example.com:5432/postgres'
 
 /** Only the two variables matter; the rest of the environment is noise here. */
 const env = (over: Record<string, string | undefined>): NodeJS.ProcessEnv =>
-  Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv;
+  Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv
 
 /**
  * What `runDoctor`'s default `store` argument, `() => storeChoice()`, used to
@@ -54,9 +56,9 @@ const env = (over: Record<string, string | undefined>): NodeJS.ProcessEnv =>
  * directly, the same way `wroteSqlite` below hands in a sqlite one.
  */
 const notSetUp = (): StoreChoice => ({
-  because: "nothing chosen",
-  refused: "nothing on this machine says which store it runs",
-});
+  because: 'nothing chosen',
+  refused: 'nothing on this machine says which store it runs',
+})
 
 /**
  * Generic, so the check's own type survives the lookup.
@@ -67,125 +69,125 @@ const notSetUp = (): StoreChoice => ({
  * away on the way past.
  */
 function find<T extends { name: string }>(results: readonly T[], name: string): T {
-  const r = results.find((x) => x.name === name);
-  expect(r, `no check named ${name}`).toBeDefined();
-  return r!;
+  const r = results.find((x) => x.name === name)
+  expect(r, `no check named ${name}`).toBeDefined()
+  return r!
 }
 
-describe("lingtai doctor — environment", () => {
-  it("fails, and names which variable, when one is missing", async () => {
+describe('lingtai doctor — environment', () => {
+  it('fails, and names which variable, when one is missing', async () => {
     // The pooled one: the direct one has a stand-in (#176), the pooled one has none.
-    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }), () => undefined, notSetUp);
-    const e = find(report.results, "environment");
+    const report = await runDoctor(env({ LINGTAI_DIRECT_DATABASE_URL: DIRECT }), () => undefined, notSetUp)
+    const e = find(report.results, 'environment')
 
-    expect(e.status).toBe("fail");
-    expect(e.detail).toContain("LINGTAI_DATABASE_URL");
-    expect(e.detail).not.toContain("LINGTAI_DIRECT_DATABASE_URL");
-    expect(report.failed).toBeGreaterThan(0);
-  });
+    expect(e.status).toBe('fail')
+    expect(e.detail).toContain('LINGTAI_DATABASE_URL')
+    expect(e.detail).not.toContain('LINGTAI_DIRECT_DATABASE_URL')
+    expect(report.failed).toBeGreaterThan(0)
+  })
 
-  it("names both when neither is set", async () => {
-    const e = find((await runDoctor(env({}), () => undefined, notSetUp)).results, "environment");
-    expect(e.detail).toContain("LINGTAI_DATABASE_URL and LINGTAI_DIRECT_DATABASE_URL");
-  });
+  it('names both when neither is set', async () => {
+    const e = find((await runDoctor(env({}), () => undefined, notSetUp)).results, 'environment')
+    expect(e.detail).toContain('LINGTAI_DATABASE_URL and LINGTAI_DIRECT_DATABASE_URL')
+  })
 
-  it("refuses a pooled URL standing in for the direct one, and says to set it", async () => {
+  it('refuses a pooled URL standing in for the direct one, and says to set it', async () => {
     // #176's trap: the fallback only fills a gap, and on Supabase the gap it
     // fills with the pooler is the connection that loses a NOTIFY silently.
-    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }), () => undefined, notSetUp);
-    const e = find(report.results, "environment");
+    const report = await runDoctor(env({ LINGTAI_DATABASE_URL: POOLED }), () => undefined, notSetUp)
+    const e = find(report.results, 'environment')
 
-    expect(e.status).toBe("fail");
-    expect(e.detail).toContain("cannot stand in");
-    expect(e.detail).toContain("set LINGTAI_DIRECT_DATABASE_URL");
-    expect(find(report.results, "postgres").status).toBe("skip");
-  });
+    expect(e.status).toBe('fail')
+    expect(e.detail).toContain('cannot stand in')
+    expect(e.detail).toContain('set LINGTAI_DIRECT_DATABASE_URL')
+    expect(find(report.results, 'postgres').status).toBe('skip')
+  })
 
   it("reads ~/.lingtai/config.yml's database.url when neither variable is set, as postgresUrl does (#186)", async () => {
     // A pooler URL, so the check fails on its shape and nothing is connected to.
-    const report = await runDoctor(env({}), () => POOLED, notSetUp);
-    const e = find(report.results, "environment");
-    expect(e.detail).toContain("~/.lingtai/config.yml database.url :6543");
-    expect(e.detail).toContain("cannot stand in");
+    const report = await runDoctor(env({}), () => POOLED, notSetUp)
+    const e = find(report.results, 'environment')
+    expect(e.detail).toContain('~/.lingtai/config.yml database.url :6543')
+    expect(e.detail).toContain('cannot stand in')
 
     // The variable wins, and the file is not asked.
     const set = await runDoctor(
       env({ LINGTAI_DATABASE_URL: POOLED }),
       () => {
-        throw new Error("asked");
+        throw new Error('asked')
       },
       notSetUp,
-    );
-    expect(find(set.results, "environment").detail).toContain("LINGTAI_DATABASE_URL :6543");
-  });
+    )
+    expect(find(set.results, 'environment').detail).toContain('LINGTAI_DATABASE_URL :6543')
+  })
 
   it("fails by the file's own complaint when config.yml does not parse", async () => {
     const report = await runDoctor(
       env({}),
       () => {
-        throw new Error("/home/me/.lingtai/config.yml could not be parsed as YAML");
+        throw new Error('/home/me/.lingtai/config.yml could not be parsed as YAML')
       },
       notSetUp,
-    );
-    const e = find(report.results, "environment");
-    expect(e.status).toBe("fail");
-    expect(e.detail).toContain("could not be parsed");
-  });
+    )
+    const e = find(report.results, 'environment')
+    expect(e.status).toBe('fail')
+    expect(e.detail).toContain('could not be parsed')
+  })
 
-  it("does not attempt Postgres once the environment is wrong", async () => {
-    const report = await runDoctor(env({}), () => undefined, notSetUp);
-    expect(find(report.results, "postgres").status).toBe("skip");
-  });
+  it('does not attempt Postgres once the environment is wrong', async () => {
+    const report = await runDoctor(env({}), () => undefined, notSetUp)
+    expect(find(report.results, 'postgres').status).toBe('skip')
+  })
 
-  it("reports the two URLs separately, and never prints either", async () => {
+  it('reports the two URLs separately, and never prints either', async () => {
     const report = await runDoctor(
       env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: DIRECT }),
       () => undefined,
       notSetUp,
-    );
-    const detail = find(report.results, "environment").detail;
+    )
+    const detail = find(report.results, 'environment').detail
 
-    expect(detail).toContain(":6543");
-    expect(detail).toContain(":5432");
+    expect(detail).toContain(':6543')
+    expect(detail).toContain(':5432')
     // Not the credentials, and not the host — on a hosted Postgres the project
     // identifier lives in the hostname.
-    expect(detail).not.toContain("p@");
-    expect(detail).not.toContain("db.example.com");
-    expect(detail).not.toContain("postgresql://");
-  });
+    expect(detail).not.toContain('p@')
+    expect(detail).not.toContain('db.example.com')
+    expect(detail).not.toContain('postgresql://')
+  })
 
   /**
    * The cheap half of the 0009 check. The expensive half — holding a listener
    * open and notifying from a second connection — cannot run without a database,
    * and is exercised in `lingtai doctor` itself against the real one.
    */
-  it("fails when the direct URL still carries pgbouncer=true", async () => {
+  it('fails when the direct URL still carries pgbouncer=true', async () => {
     const report = await runDoctor(
       env({ LINGTAI_DATABASE_URL: POOLED, LINGTAI_DIRECT_DATABASE_URL: `${DIRECT}?pgbouncer=true` }),
       () => undefined,
       notSetUp,
-    );
-    const e = find(report.results, "environment");
+    )
+    const e = find(report.results, 'environment')
 
-    expect(e.status).toBe("fail");
-    expect(e.detail).toContain("pgbouncer=true");
-  });
+    expect(e.status).toBe('fail')
+    expect(e.detail).toContain('pgbouncer=true')
+  })
 
-  it("fails when the two URLs are not the same database", async () => {
+  it('fails when the two URLs are not the same database', async () => {
     const report = await runDoctor(
       env({
         LINGTAI_DATABASE_URL: POOLED,
-        LINGTAI_DIRECT_DATABASE_URL: "postgresql://u:p@other.example.com:5432/postgres",
+        LINGTAI_DIRECT_DATABASE_URL: 'postgresql://u:p@other.example.com:5432/postgres',
       }),
       () => undefined,
       notSetUp,
-    );
+    )
     // A subscriber listening to one log while the writer appends to another is
     // not a configuration with a meaning.
-    expect(find(report.results, "environment").status).toBe("fail");
-    expect(find(report.results, "environment").detail).toContain("one database");
-  });
-});
+    expect(find(report.results, 'environment').status).toBe('fail')
+    expect(find(report.results, 'environment').detail).toContain('one database')
+  })
+})
 
 /**
  * **A machine that wrote `store: sqlite` is set up, and doctor has to say so**
@@ -208,15 +210,15 @@ describe("lingtai doctor — environment", () => {
  * open the store *this process* chose, which in this suite is the test
  * Postgres; what is asserted about them is that they are asked at all.
  */
-describe("lingtai doctor — a machine whose log is a file", () => {
-  const home = mkdtempSync(join(tmpdir(), "lingtai-doctor-"));
-  const dbPath = join(home, "lingtai.db");
+describe('lingtai doctor — a machine whose log is a file', () => {
+  const home = mkdtempSync(join(tmpdir(), 'lingtai-doctor-'))
+  const dbPath = join(home, 'lingtai.db')
   const wroteSqlite = (): StoreChoice => ({
-    store: "sqlite",
+    store: 'sqlite',
     path: dbPath,
-    where: "config.yml",
-    from: join(home, "config.yml"),
-  });
+    where: 'config.yml',
+    from: join(home, 'config.yml'),
+  })
 
   /**
    * **A real SQLite log, so the rows below are answered rather than merely
@@ -225,48 +227,48 @@ describe("lingtai doctor — a machine whose log is a file", () => {
    * `init` writes the choice and never the file.
    */
   const openFile = (): { queries: LogQueries; close: () => void } => {
-    const db = openSqliteLog(dbPath);
-    return { queries: createSqliteLogQueries(db), close: () => db.close() };
-  };
+    const db = openSqliteLog(dbPath)
+    return { queries: createSqliteLogQueries(db), close: () => db.close() }
+  }
 
   /** The rows this fork decides. Everything after them is GitHub and the operator's own projects. */
   const OF_THIS_FORK = [
     "store: the machine's written choice",
-    "environment",
-    "log: reachable",
+    'environment',
+    'log: reachable',
     ...postgresOnlyRows().map((r) => r.name),
-  ];
+  ]
 
-  it("asks it for no connection string, and fails it for nothing", async () => {
-    const file = openFile();
+  it('asks it for no connection string, and fails it for nothing', async () => {
+    const file = openFile()
     try {
       const report = await runDoctor(
         env({}),
         () => {
-          throw new Error("the machine file was asked for a database.url");
+          throw new Error('the machine file was asked for a database.url')
         },
         wroteSqlite,
         file.queries,
-      );
+      )
 
-      const e = find(report.results, "environment");
-      expect(e.status).toBe("skip");
+      const e = find(report.results, 'environment')
+      expect(e.status).toBe('skip')
       // Never the sentence that sent the operator back to `lingtai init` with a
       // Postgres URL: there is nothing here to set.
-      expect(e.detail).not.toContain("lingtai init writes one");
-      expect(e.detail).not.toContain(".env.local");
+      expect(e.detail).not.toContain('lingtai init writes one')
+      expect(e.detail).not.toContain('.env.local')
       // The row that does speak about this machine is green, and it is the only
       // one that decides anything.
-      expect(find(report.results, "store: the machine's written choice").status).toBe("ok");
+      expect(find(report.results, "store: the machine's written choice").status).toBe('ok')
       // The whole of the refusal, counted the way the command it blocked counts
       // it.
-      const thisFork = report.results.filter((r) => OF_THIS_FORK.includes(r.name));
-      expect(thisFork).toHaveLength(OF_THIS_FORK.length);
-      expect(gatingFailures(thisFork)).toBe(0);
+      const thisFork = report.results.filter((r) => OF_THIS_FORK.includes(r.name))
+      expect(thisFork).toHaveLength(OF_THIS_FORK.length)
+      expect(gatingFailures(thisFork)).toBe(0)
     } finally {
-      file.close();
+      file.close()
     }
-  });
+  })
 
   /**
    * **The row that answers the one question anybody runs this command for**
@@ -276,65 +278,65 @@ describe("lingtai doctor — a machine whose log is a file", () => {
    * so on a machine with no Postgres nothing asked it and the summary said
    * `0 failed` anyway.
    */
-  it("says whether the log is reachable, and opens it rather than looking for the file", async () => {
+  it('says whether the log is reachable, and opens it rather than looking for the file', async () => {
     // Deliberately not opened first: this is the machine `lingtai init` leaves
     // behind, whose `config.yml` names a path with no file at it yet. A row
     // that stat()ed the path would fail it for ever — `init` never writes the
     // file — and that failure gates `lingtai restart`.
-    const fresh = join(mkdtempSync(join(tmpdir(), "lingtai-fresh-")), "lingtai.db");
-    expect(existsSync(fresh)).toBe(false);
-    const db = openSqliteLog(fresh);
+    const fresh = join(mkdtempSync(join(tmpdir(), 'lingtai-fresh-')), 'lingtai.db')
+    expect(existsSync(fresh)).toBe(false)
+    const db = openSqliteLog(fresh)
     try {
-      const row = await logReachable(fresh, createSqliteLogQueries(db));
-      expect(row.status).toBe("ok");
-      expect(row.detail).toContain(fresh);
+      const row = await logReachable(fresh, createSqliteLogQueries(db))
+      expect(row.status).toBe('ok')
+      expect(row.detail).toContain(fresh)
     } finally {
-      db.close();
+      db.close()
     }
-    expect(existsSync(fresh)).toBe(true);
-  });
+    expect(existsSync(fresh)).toBe(true)
+  })
 
-  it("fails, rather than skipping, where the log cannot be opened", async () => {
-    const row = await logReachable("/var/empty/nowhere/lingtai.db", {
+  it('fails, rather than skipping, where the log cannot be opened', async () => {
+    const row = await logReachable('/var/empty/nowhere/lingtai.db', {
       projectStreams: async () => {
-        throw new Error("SQLITE_CANTOPEN: unable to open database file");
+        throw new Error('SQLITE_CANTOPEN: unable to open database file')
       },
-    } as unknown as LogQueries);
+    } as unknown as LogQueries)
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toContain("SQLITE_CANTOPEN");
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('SQLITE_CANTOPEN')
     // No `restartAnswers`: restarting a daemon does not make a log openable,
     // and this is a failure `lingtai restart` is right to stop for.
-    expect(gatingFailures([row])).toBe(1);
-  });
+    expect(gatingFailures([row])).toBe(1)
+  })
 
-  it("still gets every row that is about a log rather than about Postgres", async () => {
-    const file = openFile();
+  it('still gets every row that is about a log rather than about Postgres', async () => {
+    const file = openFile()
     try {
-      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
+      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries)
 
       // Each of these asks the store this machine chose, so each answers on a
       // file too — and losing them along with the connection rows was the same
       // defect's other half.
       for (const name of [
-        "log: reachable",
-        "projections: lag",
-        "projections: shape",
-        "daemon: liveness",
-        "daemon: currency",
-        "conductor: lock",
-        "worktrees: reconciliation",
-        "log: every type is readable",
-        "github: what we said and did not manage",
-        "subscribers: failures",
-        "steps: end ran on what landed",
+        'log: reachable',
+        'projections: lag',
+        'projections: shape',
+        'daemon: liveness',
+        'daemon: currency',
+        'conductor: lock',
+        'worktrees: reconciliation',
+        'log: every type is readable',
+        'github: what we said and did not manage',
+        'subscribers: failures',
+        'steps: end ran on what landed',
       ]) {
-        expect(find(report.results, name).status, `${name} did not run`).not.toBe("skip");
+        expect(find(report.results, name).status, `${name} did not run`).not.toBe('skip')
       }
     } finally {
-      file.close();
+      file.close()
     }
-  });
+  })
 
   /**
    * **Twelve rows used to vanish into one line** saying `postgres: not
@@ -353,30 +355,30 @@ describe("lingtai doctor — a machine whose log is a file", () => {
    * enough to look like a reason is not a reason.
    */
   it("gives every Postgres row its own line, its own reason, and the store's name", async () => {
-    const file = openFile();
+    const file = openFile()
     try {
-      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
+      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries)
 
       for (const expected of postgresOnlyRows()) {
-        const row = find(report.results, expected.name);
-        expect(row.status, `${expected.name} is not a skip`).toBe("skip");
-        expect(row.detail, `${expected.name} does not name the store`).toContain("store: sqlite");
-        expect(row.detail, `${expected.name} gives no reason`).toContain(expected.because);
+        const row = find(report.results, expected.name)
+        expect(row.status, `${expected.name} is not a skip`).toBe('skip')
+        expect(row.detail, `${expected.name} does not name the store`).toContain('store: sqlite')
+        expect(row.detail, `${expected.name} gives no reason`).toContain(expected.because)
         // Not deferred: this is a fact about this machine, not about what
         // Lingtai has not built.
-        expect(row.deferred).toBeUndefined();
+        expect(row.deferred).toBeUndefined()
       }
       // And `environment`, the eighth skip this fork produces, on the same
       // terms: a reason that names the store, not a bare skip.
-      const e = find(report.results, "environment");
-      expect(e.status).toBe("skip");
-      expect(e.detail).toContain("store: sqlite");
+      const e = find(report.results, 'environment')
+      expect(e.status).toBe('skip')
+      expect(e.detail).toContain('store: sqlite')
       // And the single collapsed row is gone.
-      expect(report.results.some((r) => r.name === "postgres")).toBe(false);
+      expect(report.results.some((r) => r.name === 'postgres')).toBe(false)
     } finally {
-      file.close();
+      file.close()
     }
-  });
+  })
 
   /**
    * The ticket's third box, as a structural claim rather than a string match:
@@ -396,36 +398,35 @@ describe("lingtai doctor — a machine whose log is a file", () => {
    * pushed no reachability row at all — which is the one thing it exists to
    * catch, and CI is the obvious machine it would have been silent on.
    */
-  it("never prints 0 failed without a row that reached the log", async () => {
-    const file = openFile();
+  it('never prints 0 failed without a row that reached the log', async () => {
+    const file = openFile()
     try {
-      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries);
+      const report = await runDoctor(env({}), () => undefined, wroteSqlite, file.queries)
       // `postgres: pooled connection` is here too, as the `skip` saying why it
       // does not apply — and a skip reached nothing, which is the distinction
       // the whole ticket is about.
       const reached = report.results.filter(
-        (r) =>
-          (r.name === "log: reachable" || r.name === "postgres: pooled connection") && r.status !== "skip",
-      );
+        (r) => (r.name === 'log: reachable' || r.name === 'postgres: pooled connection') && r.status !== 'skip',
+      )
 
       // The row is there and it reached the log, whatever else on this machine
       // did or did not pass — so `0 failed`, printed or not, is never printed
       // without it.
-      expect(reached.map((r) => r.name)).toEqual(["log: reachable"]);
-      expect(reached[0]?.status).toBe("ok");
-      if (report.failed === 0) expect(formatReport(report)).toContain("0 failed");
+      expect(reached.map((r) => r.name)).toEqual(['log: reachable'])
+      expect(reached[0]?.status).toBe('ok')
+      if (report.failed === 0) expect(formatReport(report)).toContain('0 failed')
       // And the summary distinguishes what was not checked here from what is
       // not implemented anywhere: one number for each.
-      expect(report.notChecked).toBeGreaterThanOrEqual(postgresOnlyRows().length);
-      expect(report.deferred).toBe(report.results.filter((r) => r.deferred).length);
-      expect(report.notChecked + report.deferred).toBe(report.skipped);
-      expect(formatReport(report)).toContain(`${report.notChecked} not checked here`);
-      expect(formatReport(report)).toContain(`${report.deferred} not implemented yet`);
+      expect(report.notChecked).toBeGreaterThanOrEqual(postgresOnlyRows().length)
+      expect(report.deferred).toBe(report.results.filter((r) => r.deferred).length)
+      expect(report.notChecked + report.deferred).toBe(report.skipped)
+      expect(formatReport(report)).toContain(`${report.notChecked} not checked here`)
+      expect(formatReport(report)).toContain(`${report.deferred} not implemented yet`)
     } finally {
-      file.close();
+      file.close()
     }
-  });
-});
+  })
+})
 
 describe("lingtai doctor — the runtime's own login", () => {
   /**
@@ -438,24 +439,24 @@ describe("lingtai doctor — the runtime's own login", () => {
    * This asserts the check is present and reports on the *run's* environment.
    * Whether this machine happens to be signed in is not the test's business.
    */
-  it("asks the runtime, and says which environment it asked in", async () => {
-    const report = await runDoctor(env({}));
-    const check = report.results.find((r) => r.name === "runtime: signed in");
+  it('asks the runtime, and says which environment it asked in', async () => {
+    const report = await runDoctor(env({}))
+    const check = report.results.find((r) => r.name === 'runtime: signed in')
 
-    expect(check).toBeDefined();
-    if (check?.status === "fail") {
+    expect(check).toBeDefined()
+    if (check?.status === 'fail') {
       // A failure has to name the environment it probed, because "not signed
       // in" without that sends the reader to `/login` — which is the one thing
       // that would not have helped.
-      expect(check.detail).toMatch(/filtered environment a run gets/);
-      expect(check.detail).toContain("USER");
+      expect(check.detail).toMatch(/filtered environment a run gets/)
+      expect(check.detail).toContain('USER')
     } else {
-      expect(check?.status).toBe("ok");
+      expect(check?.status).toBe('ok')
     }
-  }, 60_000);
-});
+  }, 60_000)
+})
 
-describe("lingtai doctor — the declared environment", () => {
+describe('lingtai doctor — the declared environment', () => {
   /**
    * The half of [ADR 0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)
    * that costs nothing: the same question a run asks, answered before any money
@@ -464,16 +465,16 @@ describe("lingtai doctor — the declared environment", () => {
    * project, or one saying there is none — rather than skipping for a reason
    * that is no longer true. `integration/doctor-recipe.test.ts` pins the per-project row.
    */
-  it("is listed, and runs with no App configured", async () => {
-    const report = await runDoctor(env({}));
-    const rows = report.results.filter((r) => r.name.startsWith("env:"));
+  it('is listed, and runs with no App configured', async () => {
+    const report = await runDoctor(env({}))
+    const rows = report.results.filter((r) => r.name.startsWith('env:'))
 
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) expect(row.detail).not.toContain("no App configured");
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) expect(row.detail).not.toContain('no App configured')
     // Not deferred: it runs whenever a project exists.
-    for (const row of rows) expect(row.deferred).toBeUndefined();
-  });
-});
+    for (const row of rows) expect(row.deferred).toBeUndefined()
+  })
+})
 
 /**
  * An extension's declared variable, reported **before** a run rather than during
@@ -510,39 +511,34 @@ subscribers:
     on: [WorkItemLanded]
     run: npx @lingtai/telegram
     env: [TELEGRAM_BOT_TOKEN]
-`;
+`
 
   const recipeOf = async () =>
-    (await resolveRecipe(async (path, ref) => (ref === "main" && path === RECIPE_PATH ? RECIPE : null), "main"))
-      .recipe;
+    (await resolveRecipe(async (path, ref) => (ref === 'main' && path === RECIPE_PATH ? RECIPE : null), 'main')).recipe
 
   /** A `run:` at any point and every subscriber — the whole extension mechanism. */
-  it("finds every extension, at a gate point or subscribed", async () => {
+  it('finds every extension, at a gate point or subscribed', async () => {
     expect(declaredExtensions(await recipeOf())).toEqual([
-      { name: "install", env: [], where: "step" },
-      { name: "scan", env: ["SCANNER_TOKEN"], where: "step" },
-      { name: "telegram", env: ["TELEGRAM_BOT_TOKEN"], where: "subscriber" },
-    ]);
-  });
+      { name: 'install', env: [], where: 'step' },
+      { name: 'scan', env: ['SCANNER_TOKEN'], where: 'step' },
+      { name: 'telegram', env: ['TELEGRAM_BOT_TOKEN'], where: 'subscriber' },
+    ])
+  })
 
   const agentEnv = (merged: Record<string, string>) => ({
     merged,
-    names: Object.keys(merged).map((name) => ({ name, layer: "project file" })),
-    file: "/home/x/.lingtai/env/demo.env",
-  });
+    names: Object.keys(merged).map((name) => ({ name, layer: 'project file' })),
+    file: '/home/x/.lingtai/env/demo.env',
+  })
 
-  it("is green when this machine holds every declared name", async () => {
-    const row = extensionRow(
-      "demo",
-      await recipeOf(),
-      agentEnv({ SCANNER_TOKEN: "s", TELEGRAM_BOT_TOKEN: "t" }),
-    );
+  it('is green when this machine holds every declared name', async () => {
+    const row = extensionRow('demo', await recipeOf(), agentEnv({ SCANNER_TOKEN: 's', TELEGRAM_BOT_TOKEN: 't' }))
 
-    expect(row.status).toBe("ok");
-    expect(row.detail).toContain("telegram: TELEGRAM_BOT_TOKEN ← demo.env");
+    expect(row.status).toBe('ok')
+    expect(row.detail).toContain('telegram: TELEGRAM_BOT_TOKEN ← demo.env')
     // Names only, never values — the whole point of the file it came from.
-    expect(row.detail).not.toContain("token");
-  });
+    expect(row.detail).not.toContain('token')
+  })
 
   /**
    * The failure this exists for. An extension gets *only* what it declares, so a
@@ -555,14 +551,14 @@ subscribers:
    * thing that decides how red this row goes. Both name the command.
    */
   it("is red when a gate action's declared name is not set — the loop waits for its verdict", async () => {
-    const row = extensionRow("demo", await recipeOf(), agentEnv({ TELEGRAM_BOT_TOKEN: "t" }));
+    const row = extensionRow('demo', await recipeOf(), agentEnv({ TELEGRAM_BOT_TOKEN: 't' }))
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toContain("SCANNER_TOKEN");
-    expect(row.detail).toContain("not set");
-    expect(row.detail).toContain("every pass is refused");
-    expect(row.detail).toContain("lingtai env set demo SCANNER_TOKEN");
-  });
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('SCANNER_TOKEN')
+    expect(row.detail).toContain('not set')
+    expect(row.detail).toContain('every pass is refused')
+    expect(row.detail).toContain('lingtai env set demo SCANNER_TOKEN')
+  })
 
   /**
    * `lingtai doctor` on this machine, before this: red for weeks over a
@@ -572,59 +568,59 @@ subscribers:
    * outcome, so what a missing name costs is the notification.
    */
   it("is a note, not a failure, when only a subscriber's declared name is not set", async () => {
-    const row = extensionRow("demo", await recipeOf(), agentEnv({ SCANNER_TOKEN: "s" }));
+    const row = extensionRow('demo', await recipeOf(), agentEnv({ SCANNER_TOKEN: 's' }))
 
-    expect(row.status).toBe("warn");
-    expect(row.detail).toContain("TELEGRAM_BOT_TOKEN");
-    expect(row.detail).toContain("not set");
-    expect(row.detail).toContain("changes no outcome");
+    expect(row.status).toBe('warn')
+    expect(row.detail).toContain('TELEGRAM_BOT_TOKEN')
+    expect(row.detail).toContain('not set')
+    expect(row.detail).toContain('changes no outcome')
     // A note that names the command that clears it, exactly as the red does.
-    expect(row.detail).toContain("lingtai env set demo TELEGRAM_BOT_TOKEN");
-  });
+    expect(row.detail).toContain('lingtai env set demo TELEGRAM_BOT_TOKEN')
+  })
 
   /** Both short: the gate action decides the row, because it decides the pass. */
-  it("is red when a gate action and a subscriber are both short", async () => {
-    const row = extensionRow("demo", await recipeOf(), agentEnv({}));
+  it('is red when a gate action and a subscriber are both short', async () => {
+    const row = extensionRow('demo', await recipeOf(), agentEnv({}))
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toContain("SCANNER_TOKEN, TELEGRAM_BOT_TOKEN");
-  });
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('SCANNER_TOKEN, TELEGRAM_BOT_TOKEN')
+  })
 
   /**
    * `#51`. The agent's row checks what survives `deny`; an extension reads its
    * names from the merged files, so a denied production value it declares is
    * only caught here — before a run, not at `steps.prepared` after the claim.
    */
-  it("is red before a run when an extension declares a denied production value, wherever it runs", async () => {
+  it('is red before a run when an extension declares a denied production value, wherever it runs', async () => {
     const recipe = await resolveRecipe(
       async () =>
-        RECIPE.replace("  required: []", "  required: []\n  deny: [SCANNER_TOKEN]\n  refuseHosts: [eliwlauokdzgsqfgczkv]"),
-      "main",
-    );
+        RECIPE.replace(
+          '  required: []',
+          '  required: []\n  deny: [SCANNER_TOKEN]\n  refuseHosts: [eliwlauokdzgsqfgczkv]',
+        ),
+      'main',
+    )
     const row = extensionRow(
-      "demo",
+      'demo',
       recipe.recipe,
       agentEnv({
-        SCANNER_TOKEN: "postgresql://postgres:s3cr3t@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres",
-        TELEGRAM_BOT_TOKEN: "t",
+        SCANNER_TOKEN: 'postgresql://postgres:s3cr3t@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres',
+        TELEGRAM_BOT_TOKEN: 't',
       }),
-    );
+    )
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toMatch(/scan: SCANNER_TOKEN looks like production.*"eliwlauokdzgsqfgczkv"/);
-    expect(row.detail).not.toContain("s3cr3t");
-  });
+    expect(row.status).toBe('fail')
+    expect(row.detail).toMatch(/scan: SCANNER_TOKEN looks like production.*"eliwlauokdzgsqfgczkv"/)
+    expect(row.detail).not.toContain('s3cr3t')
+  })
 
-  it("says so plainly when no extension asks for anything", async () => {
-    const bare = await resolveRecipe(
-      async () => RECIPE.replace(/\n +env: \[[A-Z_]+\]/g, ""),
-      "main",
-    );
-    const row = extensionRow("demo", bare.recipe, agentEnv({}));
+  it('says so plainly when no extension asks for anything', async () => {
+    const bare = await resolveRecipe(async () => RECIPE.replace(/\n +env: \[[A-Z_]+\]/g, ''), 'main')
+    const row = extensionRow('demo', bare.recipe, agentEnv({}))
 
-    expect(row.status).toBe("ok");
-    expect(row.detail).toContain("none asking for a variable");
-  });
+    expect(row.status).toBe('ok')
+    expect(row.detail).toContain('none asking for a variable')
+  })
 
   /**
    * `#89`'s last box: doctor says whether a declared limit is one the runtime
@@ -634,15 +630,15 @@ subscribers:
    * since one that is right for one project and silently wrong for the next is
    * how `#89` was possible.
    */
-  it("says which declared limits the runtime that runs applies", async () => {
-    const row = limitsRow("demo", await recipeOf(), CLAUDE_CODE_CAPABILITIES);
+  it('says which declared limits the runtime that runs applies', async () => {
+    const row = limitsRow('demo', await recipeOf(), CLAUDE_CODE_CAPABILITIES)
 
-    expect(row.name).toBe("runtime: demo limits");
-    expect(row.status).toBe("ok");
+    expect(row.name).toBe('runtime: demo limits')
+    expect(row.status).toBe('ok')
     expect(row.detail).toBe(
-      "turns 300 ← applied by claude-code · wall 2h ← applied by claude-code · usd — none declared",
-    );
-  });
+      'turns 300 ← applied by claude-code · wall 2h ← applied by claude-code · usd — none declared',
+    )
+  })
 
   /**
    * **This is `#89`, and it is red** — the adapter as it was before `#89`, and
@@ -661,38 +657,38 @@ subscribers:
    * write *unbounded* in a recipe, and that is a decision for a person rather than
    * a status this row should soften.
    */
-  it("is red when the runtime carries a declared limit and bounds nothing with it", async () => {
-    const row = limitsRow("demo", await recipeOf(), {
+  it('is red when the runtime carries a declared limit and bounds nothing with it', async () => {
+    const row = limitsRow('demo', await recipeOf(), {
       ...CLAUDE_CODE_CAPABILITIES,
-      enforces: ["wall"],
-    });
+      enforces: ['wall'],
+    })
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toContain("turns 300 ← not applied");
-    expect(row.detail).toContain("wall 2h ← applied by claude-code");
-    expect(row.detail).toContain("claude-code carries turns and bounds nothing with it");
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('turns 300 ← not applied')
+    expect(row.detail).toContain('wall 2h ← applied by claude-code')
+    expect(row.detail).toContain('claude-code carries turns and bounds nothing with it')
     // The size of it: this run is still stopped by something, which the one below
     // is not — said in the sentence, because both are the same status.
-    expect(row.detail).toContain("What still stops one is wall");
+    expect(row.detail).toContain('What still stops one is wall')
     // What an operator can actually do about it, which is not in the recipe.
-    expect(row.detail).toContain("runtime.agent");
-  });
+    expect(row.detail).toContain('runtime.agent')
+  })
 
   /**
    * The other size, and the same red: a runtime that applies *none* of them is a
    * run nothing will ever stop.
    */
-  it("is red when the runtime bounds a run with nothing at all", async () => {
-    const row = limitsRow("demo", await recipeOf(), {
+  it('is red when the runtime bounds a run with nothing at all', async () => {
+    const row = limitsRow('demo', await recipeOf(), {
       ...CLAUDE_CODE_CAPABILITIES,
       enforces: [],
-    });
+    })
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toContain("turns 300 ← not applied");
-    expect(row.detail).toContain("wall 2h ← not applied");
-    expect(row.detail).toContain("Nothing will stop a run of this project at all");
-  });
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('turns 300 ← not applied')
+    expect(row.detail).toContain('wall 2h ← not applied')
+    expect(row.detail).toContain('Nothing will stop a run of this project at all')
+  })
 
   /**
    * `usd` has no schema default (recipe.ts) — unlike `turns`, which is why a
@@ -700,40 +696,44 @@ subscribers:
    * `turns`: nothing is declared, so there is nothing for a runtime to fail at
    * holding (`#370`).
    */
-  it("is ok on usd where the recipe declares no dollar ceiling, whatever the runtime enforces", async () => {
-    const row = limitsRow("demo", await recipeOf(), { ...CLAUDE_CODE_CAPABILITIES, enforces: [] });
+  it('is ok on usd where the recipe declares no dollar ceiling, whatever the runtime enforces', async () => {
+    const row = limitsRow('demo', await recipeOf(), { ...CLAUDE_CODE_CAPABILITIES, enforces: [] })
 
-    expect(row.detail).toContain("usd — none declared");
-    expect(row.detail).not.toContain("usd 0");
-  });
+    expect(row.detail).toContain('usd — none declared')
+    expect(row.detail).not.toContain('usd 0')
+  })
 
-  it("is red on usd where the recipe declares one and the runtime does not apply it", async () => {
+  it('is red on usd where the recipe declares one and the runtime does not apply it', async () => {
     const withUsd = await resolveRecipe(
       async (path, ref) =>
-        ref === "main" && path === RECIPE_PATH ? RECIPE.replace("  agent: claude-code", "  agent: claude-code\n  limits:\n    usd: 12") : null,
-      "main",
-    );
-    const row = limitsRow("demo", withUsd.recipe, { ...CLAUDE_CODE_CAPABILITIES, enforces: ["wall"] });
+        ref === 'main' && path === RECIPE_PATH
+          ? RECIPE.replace('  agent: claude-code', '  agent: claude-code\n  limits:\n    usd: 12')
+          : null,
+      'main',
+    )
+    const row = limitsRow('demo', withUsd.recipe, { ...CLAUDE_CODE_CAPABILITIES, enforces: ['wall'] })
 
-    expect(row.status).toBe("fail");
-    expect(row.detail).toContain("usd $12 ← not applied");
-    expect(row.detail).toContain("claude-code carries turns and usd and bounds nothing with them");
-  });
+    expect(row.status).toBe('fail')
+    expect(row.detail).toContain('usd $12 ← not applied')
+    expect(row.detail).toContain('claude-code carries turns and usd and bounds nothing with them')
+  })
 
-  it("is ok on usd where the recipe declares one and the runtime applies it", async () => {
+  it('is ok on usd where the recipe declares one and the runtime applies it', async () => {
     const withUsd = await resolveRecipe(
       async (path, ref) =>
-        ref === "main" && path === RECIPE_PATH ? RECIPE.replace("  agent: claude-code", "  agent: claude-code\n  limits:\n    usd: 12") : null,
-      "main",
-    );
-    const row = limitsRow("demo", withUsd.recipe, CLAUDE_CODE_CAPABILITIES);
+        ref === 'main' && path === RECIPE_PATH
+          ? RECIPE.replace('  agent: claude-code', '  agent: claude-code\n  limits:\n    usd: 12')
+          : null,
+      'main',
+    )
+    const row = limitsRow('demo', withUsd.recipe, CLAUDE_CODE_CAPABILITIES)
 
-    expect(row.status).toBe("ok");
-    expect(row.detail).toContain("usd $12 ← applied by claude-code");
-  });
-});
+    expect(row.status).toBe('ok')
+    expect(row.detail).toContain('usd $12 ← applied by claude-code')
+  })
+})
 
-describe("lingtai doctor — the recipes", () => {
+describe('lingtai doctor — the recipes', () => {
   /**
    * This check was in `DEFERRED` — a permanent skip, on the argument that a
    * recipe read here would be a different commit's. Both read the same file —
@@ -742,32 +742,34 @@ describe("lingtai doctor — the recipes", () => {
    * `main`, for long enough that every issue in the project sat unpicked with
    * doctor green throughout (#76).
    */
-  it("runs, rather than being deferred forever", async () => {
-    const report = await runDoctor(env({}));
-    const rows = report.results.filter((r) => r.name.startsWith("recipe: ") && r.name !== "recipe: the rules and the merge target are one branch");
+  it('runs, rather than being deferred forever', async () => {
+    const report = await runDoctor(env({}))
+    const rows = report.results.filter(
+      (r) => r.name.startsWith('recipe: ') && r.name !== 'recipe: the rules and the merge target are one branch',
+    )
 
     // The recipe is this machine's file, so no App is needed to read it: the
     // row runs with none configured rather than skipping for one.
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) expect(row.detail).not.toContain("no App configured");
-    for (const row of rows) expect(row.deferred).toBeUndefined();
-    expect(report.results.some((r) => r.name === "recipe: schema")).toBe(false);
-  });
-});
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) expect(row.detail).not.toContain('no App configured')
+    for (const row of rows) expect(row.deferred).toBeUndefined()
+    expect(report.results.some((r) => r.name === 'recipe: schema')).toBe(false)
+  })
+})
 
-describe("lingtai doctor — reporting", () => {
-  it("lists the checks that cannot run yet, rather than omitting them", async () => {
+describe('lingtai doctor — reporting', () => {
+  it('lists the checks that cannot run yet, rather than omitting them', async () => {
     // With no LINGTAI_GITHUB_APP_ID in this environment, the credentials check is itself
     // a skip rather than a failure — not being onboarded is a legitimate state.
-    const report = await runDoctor(env({}));
-    const skipped = report.results.filter((r) => r.status === "skip").map((r) => r.name);
+    const report = await runDoctor(env({}))
+    const skipped = report.results.filter((r) => r.status === 'skip').map((r) => r.name)
 
-    expect(skipped).toContain("github: app credentials");
+    expect(skipped).toContain('github: app credentials')
 
     // A check you cannot see is a check you will forget you never had.
-    expect(skipped).toContain("hook: fail closed");
-    expect(skipped).toContain("github: installation and labels");
-  });
+    expect(skipped).toContain('hook: fail closed')
+    expect(skipped).toContain('github: installation and labels')
+  })
 
   /**
    * The reason is the whole value of a skip, and a deferred reason is a literal
@@ -780,71 +782,71 @@ describe("lingtai doctor — reporting", () => {
    * reason (the environment failed first) is a different thing: that one is
    * *about* the state of this run, and has to be.
    */
-  it("gives deferred checks a reason that cannot go stale", async () => {
-    const report = await runDoctor(env({}));
-    const deferred = report.results.filter((r) => r.deferred);
-    expect(deferred.length).toBeGreaterThan(0);
+  it('gives deferred checks a reason that cannot go stale', async () => {
+    const report = await runDoctor(env({}))
+    const deferred = report.results.filter((r) => r.deferred)
+    expect(deferred.length).toBeGreaterThan(0)
 
     // The vocabulary of "what is installed right now". A fixed sentence that
     // reaches for one of these is claiming something it never looked at.
-    const stateOfTheMachine = /onboard|registered|not yet|no project|is empty/i;
+    const stateOfTheMachine = /onboard|registered|not yet|no project|is empty/i
     for (const r of deferred) {
-      expect(r.detail, `${r.name} claims a fact about this installation`).not.toMatch(stateOfTheMachine);
+      expect(r.detail, `${r.name} claims a fact about this installation`).not.toMatch(stateOfTheMachine)
       // A reason, not a shrug.
-      expect(r.detail.length, `${r.name} gives no reason`).toBeGreaterThan(40);
+      expect(r.detail.length, `${r.name} gives no reason`).toBeGreaterThan(40)
     }
-  });
+  })
 
-  it("says how many failed, and every check says what it found", async () => {
-    const report = await runDoctor(env({}), () => undefined, notSetUp);
-    expect(formatReport(report)).toContain("FAILED");
-    expect(report.results.every((r) => r.detail.length > 0)).toBe(true);
-  });
-});
+  it('says how many failed, and every check says what it found', async () => {
+    const report = await runDoctor(env({}), () => undefined, notSetUp)
+    expect(formatReport(report)).toContain('FAILED')
+    expect(report.results.every((r) => r.detail.length > 0)).toBe(true)
+  })
+})
 
 /**
  * `#148`: a daemon at `cc6e856` refused every sweep of a recipe that a `doctor`
  * run from a newer checkout resolved cleanly. What the log says is read beside
  * which code this report's own recipe rows run.
  */
-describe("lingtai doctor — refusals on the log", () => {
-  const OLD = "cc6e856".padEnd(40, "0");
-  const NEW = "be9fd26".padEnd(40, "0");
+describe('lingtai doctor — refusals on the log', () => {
+  const OLD = 'cc6e856'.padEnd(40, '0')
+  const NEW = 'be9fd26'.padEnd(40, '0')
   const refusal = {
-    project: "lingtai",
+    project: 'lingtai',
     detail: 'env: Unrecognized key: "refuseHosts"',
-    ref: "main",
+    ref: 'main',
     codeSha: OLD,
     seq: 4242n,
-    at: new Date("2026-09-12T10:00:00.000Z"),
-  };
+    at: new Date('2026-09-12T10:00:00.000Z'),
+  }
 
   it("fails while a daemon is up, and says this checkout's recipe rows read with newer code", () => {
-    const read = describeRefusal("lingtai", refusal, { daemonUp: true, here: NEW });
-    expect(read.status).toBe("fail");
-    expect(read.detail).toContain("seq 4242");
-    expect(read.detail).toContain("cc6e856");
-    expect(read.detail).toContain("reading main");
-    expect(read.detail).toContain("refuseHosts");
-    expect(read.detail).toContain("This checkout is at be9fd26");
-    expect(read.detail).toContain("too old");
-  });
+    const read = describeRefusal('lingtai', refusal, { daemonUp: true, here: NEW })
+    expect(read.status).toBe('fail')
+    expect(read.detail).toContain('seq 4242')
+    expect(read.detail).toContain('cc6e856')
+    expect(read.detail).toContain('reading main')
+    expect(read.detail).toContain('refuseHosts')
+    expect(read.detail).toContain('This checkout is at be9fd26')
+    expect(read.detail).toContain('too old')
+  })
 
-  it("says the rows read with the refusing code when the commits agree", () => {
-    const read = describeRefusal("lingtai", refusal, { daemonUp: true, here: OLD });
-    expect(read.status).toBe("fail");
-    expect(read.detail).toContain("read with the code that refused");
-    expect(read.detail).not.toContain("too old");
-  });
+  it('says the rows read with the refusing code when the commits agree', () => {
+    const read = describeRefusal('lingtai', refusal, { daemonUp: true, here: OLD })
+    expect(read.status).toBe('fail')
+    expect(read.detail).toContain('read with the code that refused')
+    expect(read.detail).not.toContain('too old')
+  })
 
-  it("warns, rather than fails, when no daemon is up", () => {
-    const read = describeRefusal("lingtai", { ...refusal, codeSha: null, ref: null }, { daemonUp: false, here: NEW });
-    expect(read.status).toBe("warn");
-    expect(read.detail).toContain("an unrecorded commit");
-    expect(read.detail).toContain("a branch it never reached");
-    expect(read.detail).toContain("No daemon is up");
-  });
-});
+  it('warns, rather than fails, when no daemon is up', () => {
+    const read = describeRefusal('lingtai', { ...refusal, codeSha: null, ref: null }, { daemonUp: false, here: NEW })
+    expect(read.status).toBe('warn')
+    expect(read.detail).toContain('an unrecorded commit')
+    expect(read.detail).toContain('a branch it never reached')
+    expect(read.detail).toContain('No daemon is up')
+  })
+})
 
 // #275: this describe is the one part of the file the header above means by
 // "the last one does need it" — `is green` opens a real connection and checks
@@ -852,7 +854,7 @@ describe("lingtai doctor — refusals on the log", () => {
 // the same to leave a clean daemon_status row and a clean events row. Skipped
 // rather than converted where no LINGTAI_TEST_DATABASE_URL is set, so the skip
 // is visible in vitest's own count. Every other describe in this file is pure.
-describe.skipIf(!postgresUnderTest())("against the real database", () => {
+describe.skipIf(!postgresUnderTest())('against the real database', () => {
   /**
    * Phase 0's exit criterion, as an assertion: *`lingtai doctor` is green*.
    *
@@ -872,8 +874,8 @@ describe.skipIf(!postgresUnderTest())("against the real database", () => {
    * nothing is deleted. "Green" means nothing failed; the deferred checks are
    * skips and stay visible in the output.
    */
-  describe("on a machine this test owns", () => {
-    const OWN = "esctestdoctorsown";
+  describe('on a machine this test owns', () => {
+    const OWN = 'esctestdoctorsown'
     const RECIPE = `
 version: 2
 repo: { base: main }
@@ -882,7 +884,7 @@ env: { plantAt: .env.local }
 steps:
   proposed:
     - { name: build, run: "true" }
-`;
+`
     // Registered against `main`, which is what the recipe above says governs it
     // — so `base:` compares two branches that agree. Never appended: the report
     // is told which projects it is about, and the log is left as it was.
@@ -891,25 +893,25 @@ steps:
     // leaves `refused` `undefined`, which is not a state the fold can produce —
     // `refused !== null` then reads as *refusing* and the refusals row throws on
     // `codeSha`. A field added to `ProjectState` later stays covered here.
-    const load = async () => [{ ...emptyProject, project: OWN, owner: "me", base: "main" }];
+    const load = async () => [{ ...emptyProject, project: OWN, owner: 'me', base: 'main' }]
 
-    let home: string;
-    let saved: string | undefined;
+    let home: string
+    let saved: string | undefined
 
     beforeEach(async () => {
-      home = await mkdtemp(join(tmpdir(), "lingtai-doctor-green-"));
-      await mkdir(join(home, OWN));
-      await writeFile(join(home, OWN, "recipe.yml"), RECIPE);
-      await writeFile(join(home, "config.yml"), "runtime:\n  agent: claude-code\n");
-      saved = process.env["LINGTAI_HOME"];
-      process.env["LINGTAI_HOME"] = home;
-    });
+      home = await mkdtemp(join(tmpdir(), 'lingtai-doctor-green-'))
+      await mkdir(join(home, OWN))
+      await writeFile(join(home, OWN, 'recipe.yml'), RECIPE)
+      await writeFile(join(home, 'config.yml'), 'runtime:\n  agent: claude-code\n')
+      saved = process.env['LINGTAI_HOME']
+      process.env['LINGTAI_HOME'] = home
+    })
 
     afterEach(async () => {
-      if (saved === undefined) delete process.env["LINGTAI_HOME"];
-      else process.env["LINGTAI_HOME"] = saved;
-      await rm(home, { recursive: true, force: true });
-    });
+      if (saved === undefined) delete process.env['LINGTAI_HOME']
+      else process.env['LINGTAI_HOME'] = saved
+      await rm(home, { recursive: true, force: true })
+    })
 
     const reportOf = () =>
       runDoctor(
@@ -921,41 +923,41 @@ steps:
         undefined,
         undefined,
         load,
-      );
+      )
 
-    it("is green", async () => {
-      const report = await reportOf();
+    it('is green', async () => {
+      const report = await reportOf()
 
-      const failures = report.results.filter((r) => r.status === "fail");
-      expect(failures.map((f) => `${f.name}: ${f.detail}`)).toEqual([]);
+      const failures = report.results.filter((r) => r.status === 'fail')
+      expect(failures.map((f) => `${f.name}: ${f.detail}`)).toEqual([])
 
       // And the checks that carry the weight actually ran, rather than being
       // skipped into a green that means nothing.
-      expect(find(report.results, "postgres: direct connection is session mode").status).toBe("ok");
-      expect(find(report.results, "schema: optimistic concurrency").status).toBe("ok");
-      expect(find(report.results, "schema: append-only").status).toBe("ok");
-      expect(find(report.results, "schema: notify trigger").status).toBe("ok");
+      expect(find(report.results, 'postgres: direct connection is session mode').status).toBe('ok')
+      expect(find(report.results, 'schema: optimistic concurrency').status).toBe('ok')
+      expect(find(report.results, 'schema: append-only').status).toBe('ok')
+      expect(find(report.results, 'schema: notify trigger').status).toBe('ok')
 
       // Lag is not the instrument for a shape that has drifted — it read zero
       // right up to the append that needed the column #84 added (#90). Both
       // checks are listed, so neither can stand in for the other.
-      expect(find(report.results, "projections: lag").status).toBe("ok");
-      expect(find(report.results, "projections: shape").status).toBe("ok");
+      expect(find(report.results, 'projections: lag').status).toBe('ok')
+      expect(find(report.results, 'projections: shape').status).toBe('ok')
 
       // Up and current are two facts, and folding them into one is the whole of
       // #98: a daemon beat happily for thirty-nine minutes while holding code
       // that could not produce the event the log had been fixed to record, and
       // `up, last beat 2s ago` was the only thing anything said about it. Both
       // are listed here so neither can be quietly absorbed into the other.
-      expect(find(report.results, "daemon: liveness").detail.length).toBeGreaterThan(0);
-      expect(find(report.results, "daemon: currency").detail.length).toBeGreaterThan(0);
+      expect(find(report.results, 'daemon: liveness').detail.length).toBeGreaterThan(0)
+      expect(find(report.results, 'daemon: currency').detail.length).toBeGreaterThan(0)
 
       // And the project rows ran against the recipe this test wrote, rather
       // than being green because there was nothing to check.
-      expect(find(report.results, `recipe: ${OWN}`).status).toBe("ok");
-      expect(find(report.results, `env: ${OWN}`).status).toBe("ok");
-      expect(find(report.results, `base: ${OWN}`).status).toBe("ok");
-    }, 60_000);
+      expect(find(report.results, `recipe: ${OWN}`).status).toBe('ok')
+      expect(find(report.results, `env: ${OWN}`).status).toBe('ok')
+      expect(find(report.results, `base: ${OWN}`).status).toBe('ok')
+    }, 60_000)
 
     /**
      * **The green above is worth nothing unless this red exists.** It is the
@@ -963,19 +965,19 @@ steps:
      * away — the exact failure `is green` used to carry for four projects at
      * once, now arranged rather than inherited.
      */
-    it("is red when the machine holds no recipe for a project the log has", async () => {
-      await rm(join(home, OWN, "recipe.yml"));
+    it('is red when the machine holds no recipe for a project the log has', async () => {
+      await rm(join(home, OWN, 'recipe.yml'))
 
-      const report = await reportOf();
-      const failures = report.results.filter((r) => r.status === "fail");
+      const report = await reportOf()
+      const failures = report.results.filter((r) => r.status === 'fail')
 
-      expect(failures.map((f) => f.name)).toContain(`recipe: ${OWN}`);
-      expect(find(report.results, `recipe: ${OWN}`).detail).toContain(join(home, OWN, "recipe.yml"));
+      expect(failures.map((f) => f.name)).toContain(`recipe: ${OWN}`)
+      expect(find(report.results, `recipe: ${OWN}`).detail).toContain(join(home, OWN, 'recipe.yml'))
       // Both rows, because both read that file — which is why one missing
       // recipe used to print two problems per project.
-      expect(failures.map((f) => f.name)).toContain(`env: ${OWN}`);
-    }, 60_000);
-  });
+      expect(failures.map((f) => f.name)).toContain(`env: ${OWN}`)
+    }, 60_000)
+  })
 
   /**
    * `#144`, as the row somebody reads in the one window they are most likely to
@@ -991,32 +993,32 @@ steps:
    * staying fresh. This end asserts the sentence: a beacon that says `starting`
    * reads as starting, and never as a daemon to restart.
    */
-  it("does not call a daemon that is still starting `not running`", async () => {
-    await createStatusTable();
+  it('does not call a daemon that is still starting `not running`', async () => {
+    await createStatusTable()
     // What startup now writes before it begins the slow half — a fresh row
     // whose word is `starting`.
-    await beat("starting");
+    await beat('starting')
 
     try {
       const report = await runDoctor(
         env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
-      );
-      const liveness = find(report.results, "daemon: liveness");
+      )
+      const liveness = find(report.results, 'daemon: liveness')
 
-      expect(liveness.detail).toContain("starting");
-      expect(liveness.detail).not.toContain("not running");
+      expect(liveness.detail).toContain('starting')
+      expect(liveness.detail).not.toContain('not running')
       // And the row says what it is doing, so `starting` is not read as an
       // invitation to start a second one — which `#93` would turn away anyway.
-      expect(liveness.detail).toContain("takes no work");
+      expect(liveness.detail).toContain('takes no work')
     } finally {
       // One row for the whole installation: left behind, it tells every later
       // test in the suite that a daemon is up.
-      const client = new pg.Client({ connectionString: directPostgresUrl() });
-      await client.connect();
-      await client.query("delete from daemon_status where id = 1").catch(() => {});
-      await client.end();
+      const client = new pg.Client({ connectionString: directPostgresUrl() })
+      await client.connect()
+      await client.query('delete from daemon_status where id = 1').catch(() => {})
+      await client.end()
     }
-  }, 60_000);
+  }, 60_000)
 
   /**
    * The other half of `#120`: appending `PluginFailed` is only worth doing if
@@ -1027,58 +1029,58 @@ steps:
    * Against the real log, with real appends, because the check is a query and a
    * query is not tested by a fake.
    */
-  it("names a subscriber that has been failing", async () => {
-    const client = createDb();
-    const store = createEventStore(client);
-    const at = (await store.read(SUBSCRIBER_STREAM)).length;
+  it('names a subscriber that has been failing', async () => {
+    const client = createDb()
+    const store = createEventStore(client)
+    const at = (await store.read(SUBSCRIBER_STREAM)).length
     await store.append(SUBSCRIBER_STREAM, at, [
       {
-        type: "PluginFailed",
-        actor: "conductor",
+        type: 'PluginFailed',
+        actor: 'conductor',
         data: {
-          name: "notify",
-          eventType: "WorkItemLanded",
-          project: "esctest-doctor",
-          reason: "terminal-notifier exited 127",
+          name: 'notify',
+          eventType: 'WorkItemLanded',
+          project: 'esctest-doctor',
+          reason: 'terminal-notifier exited 127',
         },
       },
-    ]);
-    await client.close();
+    ])
+    await client.close()
 
     try {
       const report = await runDoctor(
         env({ LINGTAI_DATABASE_URL: postgresUrl(), LINGTAI_DIRECT_DATABASE_URL: directPostgresUrl() }),
-      );
-      const check = find(report.results, "subscribers: failures");
+      )
+      const check = find(report.results, 'subscribers: failures')
 
       // `warn` and never `fail`: nothing converges a subscriber failure — a
       // subscriber is never retried — so a red doctor here would be red for
       // ever, and a check that is always red is a check nobody reads.
-      expect(check.status).toBe("warn");
-      expect(check.detail).toContain("notify");
-      expect(check.detail).toContain("terminal-notifier exited 127");
+      expect(check.status).toBe('warn')
+      expect(check.detail).toContain('notify')
+      expect(check.detail).toContain('terminal-notifier exited 127')
     } finally {
-      const c = new pg.Client({ connectionString: directPostgresUrl() });
-      await c.connect();
+      const c = new pg.Client({ connectionString: directPostgresUrl() })
+      await c.connect()
       try {
-        await c.query("alter table events disable rule lingtai_events_no_delete");
-        await c.query("delete from events where stream_id = $1", [SUBSCRIBER_STREAM]);
+        await c.query('alter table events disable rule lingtai_events_no_delete')
+        await c.query('delete from events where stream_id = $1', [SUBSCRIBER_STREAM])
       } finally {
-        await c.query("alter table events enable rule lingtai_events_no_delete");
-        await c.end();
+        await c.query('alter table events enable rule lingtai_events_no_delete')
+        await c.end()
       }
     }
-  }, 60_000);
-});
+  }, 60_000)
+})
 
-describe("daemon: liveness, given the read to report", () => {
-  it("lets a beacon read that failed fail, rather than calling it no daemon having run", async () => {
+describe('daemon: liveness, given the read to report', () => {
+  it('lets a beacon read that failed fail, rather than calling it no daemon having run', async () => {
     // What `lingtai service status` passes: the read it reports is the read
     // that failed, not a second one on another connection that might.
     await expect(
       daemonLiveness(async () => {
-        throw new Error("sorry, too many clients already");
+        throw new Error('sorry, too many clients already')
       }),
-    ).rejects.toThrow("sorry, too many clients already");
-  });
-});
+    ).rejects.toThrow('sorry, too many clients already')
+  })
+})

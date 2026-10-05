@@ -13,94 +13,95 @@
  * There is no document in this suite, so each is asserted at the seam it has:
  * the walk over a structural `<details>`, and the choice of run as a function.
  */
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import { fragmentId, openTo, type Disclosing } from "../src/app/latch.tsx";
-import { FollowedLog, heldRun, logBelow } from "../src/app/run-log.tsx";
+import { readFileSync } from 'node:fs'
+
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { fragmentId, openTo, type Disclosing } from '../src/app/latch.tsx'
+import { FollowedLog, heldRun, logBelow } from '../src/app/run-log.tsx'
 
 /** A chain of elements, innermost first; `details` marks which are disclosures. */
-function chain(...kinds: ("details" | "div")[]): { target: Disclosing; nodes: Disclosing[] } {
+function chain(...kinds: ('details' | 'div')[]): { target: Disclosing; nodes: Disclosing[] } {
   const nodes: (Disclosing & { kind: string })[] = kinds.map((kind) => ({
     kind,
-    open: kind === "details" ? false : undefined,
+    open: kind === 'details' ? false : undefined,
     parentElement: null,
-  }));
+  }))
   // `parentElement.closest` starts at the parent itself, as the DOM's does.
   nodes.forEach((node, i) => {
-    const above = nodes.slice(i + 1);
-    node.parentElement =
-      above.length > 0 ? { closest: () => above.find((n) => n.kind === "details") ?? null } : null;
-  });
-  return { target: nodes[0]!, nodes };
+    const above = nodes.slice(i + 1)
+    node.parentElement = above.length > 0 ? { closest: () => above.find((n) => n.kind === 'details') ?? null } : null
+  })
+  return { target: nodes[0]!, nodes }
 }
 
-describe("following a pointer into the record", () => {
-  it("opens the closed row the attempt is in", () => {
+describe('following a pointer into the record', () => {
+  it('opens the closed row the attempt is in', () => {
     // attempt-2 <details> ← .ledger ← .rbody ← .rrow <details> ← .record
-    const { target, nodes } = chain("details", "div", "div", "details", "div");
-    expect(openTo(target)).toBe(1);
-    expect(nodes[3]!.open).toBe(true);
+    const { target, nodes } = chain('details', 'div', 'div', 'details', 'div')
+    expect(openTo(target)).toBe(1)
+    expect(nodes[3]!.open).toBe(true)
     // The attempt itself is the target, and its summary is what is landed on.
-    expect(nodes[0]!.open).toBe(false);
-  });
+    expect(nodes[0]!.open).toBe(false)
+  })
 
-  it("opens every closed disclosure on the way, and nothing already open is counted", () => {
-    const { target, nodes } = chain("div", "details", "details", "div", "details");
-    nodes[2]!.open = true;
-    expect(openTo(target)).toBe(2);
-    expect([nodes[1]!.open, nodes[2]!.open, nodes[4]!.open]).toEqual([true, true, true]);
-    expect(openTo(target)).toBe(0);
-  });
+  it('opens every closed disclosure on the way, and nothing already open is counted', () => {
+    const { target, nodes } = chain('div', 'details', 'details', 'div', 'details')
+    nodes[2]!.open = true
+    expect(openTo(target)).toBe(2)
+    expect([nodes[1]!.open, nodes[2]!.open, nodes[4]!.open]).toEqual([true, true, true])
+    expect(openTo(target)).toBe(0)
+  })
 
-  it("takes a fragment with a malformed escape as written, rather than throwing", () => {
-    expect(fragmentId("#attempt-2")).toBe("attempt-2");
-    expect(fragmentId("#a%20b")).toBe("a b");
-    expect(() => fragmentId("#100%")).not.toThrow();
-    expect(fragmentId("#100%")).toBe("100%");
-    expect(fragmentId("#%E0")).toBe("%E0");
-  });
-});
+  it('takes a fragment with a malformed escape as written, rather than throwing', () => {
+    expect(fragmentId('#attempt-2')).toBe('attempt-2')
+    expect(fragmentId('#a%20b')).toBe('a b')
+    expect(() => fragmentId('#100%')).not.toThrow()
+    expect(fragmentId('#100%')).toBe('100%')
+    expect(fragmentId('#%E0')).toBe('%E0')
+  })
+})
 
 describe("rank 2's log, when its run ends", () => {
-  const RUN = "run-52feebd1-0000-0000-0000-000000000000";
-  const NEXT = "run-6a000000-0000-0000-0000-000000000000";
+  const RUN = 'run-52feebd1-0000-0000-0000-000000000000'
+  const NEXT = 'run-6a000000-0000-0000-0000-000000000000'
 
-  it("keeps the run it was showing when nothing is running any more", () => {
-    expect(heldRun(null, RUN)).toBe(RUN);
-    expect(heldRun(RUN, null)).toBe(RUN);
-  });
+  it('keeps the run it was showing when nothing is running any more', () => {
+    expect(heldRun(null, RUN)).toBe(RUN)
+    expect(heldRun(RUN, null)).toBe(RUN)
+  })
 
-  it("moves to a different run that starts, and shows nothing it was never shown", () => {
-    expect(heldRun(RUN, NEXT)).toBe(NEXT);
-    expect(heldRun(null, null)).toBeNull();
-  });
+  it('moves to a different run that starts, and shows nothing it was never shown', () => {
+    expect(heldRun(RUN, NEXT)).toBe(NEXT)
+    expect(heldRun(null, null)).toBeNull()
+  })
 
-  it("renders nothing on a page loaded after the run, and the open follower while it runs", () => {
-    expect(renderToStaticMarkup(<FollowedLog running={null} className="alog slog" />)).toBe("");
+  it('renders nothing on a page loaded after the run, and the open follower while it runs', () => {
+    expect(renderToStaticMarkup(<FollowedLog running={null} className="alog slog" />)).toBe('')
     expect(renderToStaticMarkup(<FollowedLog running={RUN} className="alog slog" />)).toContain(
       '<details class="alog slog" open=""',
-    );
-  });
+    )
+  })
 
   /**
    * The render that ends the run carries the refusal, and a finished log above
    * it pushed the quote, the sentence and the moves off the first screen.
    */
   it("goes under rank 2's other lines once its run has ended, and stays above them while it runs", () => {
-    expect(logBelow(RUN, null)).toBe(true);
-    expect(logBelow(RUN, RUN)).toBe(false);
-    expect(logBelow(null, null)).toBe(false);
+    expect(logBelow(RUN, null)).toBe(true)
+    expect(logBelow(RUN, RUN)).toBe(false)
+    expect(logBelow(null, null)).toBe(false)
     const html = renderToStaticMarkup(
       <FollowedLog running={RUN} className="alog slog">
         <p className="sreason">refused</p>
       </FollowedLog>,
-    );
-    expect(html.indexOf('class="alog slog"')).toBeLessThan(html.indexOf('class="sreason"'));
-  });
+    )
+    expect(html.indexOf('class="alog slog"')).toBeLessThan(html.indexOf('class="sreason"'))
+  })
 
-  it("marks an ended log for the shorter frame, under the refusal", () => {
-    const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
-    expect(css).toMatch(/\.slog\.ended \.alogbody\s*\{[^}]*height:\s*auto/);
-  });
-});
+  it('marks an ended log for the shorter frame, under the refusal', () => {
+    const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
+    expect(css).toMatch(/\.slog\.ended \.alogbody\s*\{[^}]*height:\s*auto/)
+  })
+})

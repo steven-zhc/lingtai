@@ -1,5 +1,6 @@
-import Link from "next/link";
-import type { TreeGroup } from "@/lib/docs";
+import Link from 'next/link'
+
+import type { TreeGroup } from '@/lib/docs'
 
 /**
  * Every published page, beside the page — so that going from `agent:` to `run:`
@@ -14,25 +15,22 @@ export function DocTree({ groups, current }: { groups: TreeGroup[]; current: str
   return (
     <nav className="doctree" aria-label="Documentation">
       {groups.map((group) => {
-        const holdsCurrent = group.entries.some((entry) => entry.slug === current);
+        const holdsCurrent = group.entries.some((entry) => entry.slug === current)
         return (
           <details key={group.id} open={holdsCurrent || groups.length === 1}>
             <summary>{group.label}</summary>
             <ul>
               {group.entries.map((entry) => (
                 <li key={entry.slug}>
-                  <Link
-                    href={`/docs/${entry.slug}/`}
-                    aria-current={entry.slug === current ? "page" : undefined}
-                  >
+                  <Link href={`/docs/${entry.slug}/`} aria-current={entry.slug === current ? 'page' : undefined}>
                     {entry.title}
                   </Link>
                 </li>
               ))}
             </ul>
           </details>
-        );
+        )
       })}
     </nav>
-  );
+  )
 }

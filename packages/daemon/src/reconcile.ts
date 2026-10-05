@@ -64,25 +64,27 @@
  * agent is between tool calls, and deleting a live worktree is a worse outcome
  * than leaving a dead one.
  */
-import { execFile as execFileCb } from "node:child_process";
-import { readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import { execFile as execFileCb } from 'node:child_process'
+import { readdir, rm, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
+
 // A subpath, never the barrel — the rule `converge.ts` states and for the same
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
-import { conductorWorker } from "@lingtai/conductor/claim";
-import { reduceWorkItem, parsePayload, type ProjectState } from "@lingtai/domain";
-import { paint } from "@lingtai/env/colour";
-import { type EventStore, eventStore } from "@lingtai/event-store";
-import { projectionLag } from "@lingtai/projector";
-import { type ConvergeOptions, convergeIssues } from "./converge.ts";
-import { CONTROL_STREAM } from "./control.ts";
-import { DAEMON_LOCK_KEY } from "./lock.ts";
-import { withDaemonStore } from "./choose.ts";
-import type { DaemonStore } from "./store.ts";
+import { conductorWorker } from '@lingtai/conductor/claim'
+import { reduceWorkItem, parsePayload, type ProjectState } from '@lingtai/domain'
+import { paint } from '@lingtai/env/colour'
+import { type EventStore, eventStore } from '@lingtai/event-store'
+import { projectionLag } from '@lingtai/projector'
 
-const execFile = promisify(execFileCb);
+import { withDaemonStore } from './choose.ts'
+import { CONTROL_STREAM } from './control.ts'
+import { type ConvergeOptions, convergeIssues } from './converge.ts'
+import { DAEMON_LOCK_KEY } from './lock.ts'
+import type { DaemonStore } from './store.ts'
+
+const execFile = promisify(execFileCb)
 
 /**
  * The store a pass reads the log's streams through, opened for the read and
@@ -94,7 +96,7 @@ const execFile = promisify(execFileCb);
  * the reason a pool passed in is the caller's to end.
  */
 function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Promise<T> {
-  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn);
+  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn)
 }
 
 /**
@@ -111,7 +113,7 @@ function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => P
  * circulation for ever, which is #87 with the repair for #87 installed.
  */
 function logOf(options: ReconcileOptions): EventStore {
-  return options.store ?? options.daemonStore?.events ?? eventStore;
+  return options.store ?? options.daemonStore?.events ?? eventStore
 }
 
 /**
@@ -121,27 +123,27 @@ function logOf(options: ReconcileOptions): EventStore {
  * list grows without a schema change — which is the point, because each of the
  * four checks repairs a different kind of thing.
  */
-export type Action = "removed" | "released" | "converged" | "reported";
+export type Action = 'removed' | 'released' | 'converged' | 'reported'
 
 export interface Finding {
   /** The stream the divergence is about — a run, a work item, or a projection. */
-  stream: string;
-  expected: string;
-  actual: string;
-  action: Action;
+  stream: string
+  expected: string
+  actual: string
+  action: Action
   /** Absolute path for a worktree finding; empty for the others. */
-  path: string;
+  path: string
 }
 
 export interface ReconcileOptions {
   /** Defaults to `LINGTAI_HOME`, as the conductor uses it. */
-  home?: string;
+  home?: string
   /**
    * True reports without touching anything. `lingtai doctor` uses this — a check
    * that changed the thing it was checking would be a bad check.
    */
-  dryRun?: boolean;
-  store?: EventStore;
+  dryRun?: boolean
+  store?: EventStore
   /**
    * What this conductor calls itself, as `claim.ts` would write it.
    *
@@ -150,7 +152,7 @@ export interface ReconcileOptions {
    * naming anyone else is dead. Injected so a test can be somebody, and so the
    * comparison is against a value rather than against a clock.
    */
-  worker?: string;
+  worker?: string
   /**
    * Work items this pass has already found to be held by a dead conductor.
    *
@@ -160,9 +162,9 @@ export interface ReconcileOptions {
    * so that freeing a ticket and removing the directory holding its branch
    * happen together.
    */
-  abandoned?: ReadonlySet<string>;
-  log?: (line: string) => void;
-  url?: string;
+  abandoned?: ReadonlySet<string>
+  log?: (line: string) => void
+  url?: string
   /**
    * Where the claimed work items are looked up. Defaults to the store this
    * machine wrote down, at `url` where Postgres is what it wrote (#179).
@@ -175,7 +177,7 @@ export interface ReconcileOptions {
    * it is handed on to `convergeIssues` so that both halves of a pass ask the
    * same store.
    */
-  daemonStore?: DaemonStore;
+  daemonStore?: DaemonStore
   /**
    * Which projections this system runs, so lag can be judged.
    *
@@ -186,7 +188,7 @@ export interface ReconcileOptions {
    * whose projection 0022 deleted — and `#72` removed it; this stays because
    * the next deleted projection will leave another.
    */
-  projections?: readonly string[];
+  projections?: readonly string[]
   /**
    * The registered projects, which bound the claim scan.
    *
@@ -195,13 +197,13 @@ export interface ReconcileOptions {
    * every `wi-` stream would release fixtures belonging to tests that are not
    * running. Production passes every registered project, which is the same set.
    */
-  projects?: readonly ProjectState[];
+  projects?: readonly ProjectState[]
   /**
    * Everything the GitHub check needs, injected. Omit it and that check is
    * skipped rather than guessed at — a reconcile that cannot reach GitHub
    * should still clean worktrees and return claims.
    */
-  github?: ConvergeOptions;
+  github?: ConvergeOptions
 }
 
 /**
@@ -211,81 +213,78 @@ export interface ReconcileOptions {
  * so it can say what would happen without making it happen.
  */
 export async function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = logOf(options);
-  const abandoned = options.abandoned ?? new Set<string>();
-  const home = options.home ?? defaultHome();
-  const root = join(home, "worktrees");
+  const store = logOf(options)
+  const abandoned = options.abandoned ?? new Set<string>()
+  const home = options.home ?? defaultHome()
+  const root = join(home, 'worktrees')
 
-  let projects: string[];
+  let projects: string[]
   try {
-    projects = (await readdir(root, { withFileTypes: true }))
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    projects = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name)
   } catch {
     // No worktrees directory means nothing has ever run here, which is not a
     // divergence.
-    return [];
+    return []
   }
 
-  const findings: Finding[] = [];
+  const findings: Finding[] = []
 
   for (const project of projects) {
-    let runs: string[];
+    let runs: string[]
     try {
       runs = (await readdir(join(root, project), { withFileTypes: true }))
         .filter((e) => e.isDirectory())
-        .map((e) => e.name);
+        .map((e) => e.name)
     } catch {
-      continue;
+      continue
     }
 
     for (const runId of runs) {
-      const path = join(root, project, runId);
+      const path = join(root, project, runId)
 
       // Which task does this run belong to? The run's own stream says, at
       // `PreparationStarted` or `RunStarted`. Read from the log rather than a
       // projection: reconciliation has to work when a projection is the thing
       // that is broken.
-      const run = await store.read(runId).catch(() => []);
+      const run = await store.read(runId).catch(() => [])
       const taskId = run
         .map((e) => (e.data as { workItemId?: string } | undefined)?.workItemId)
-        .find((id): id is string => typeof id === "string");
+        .find((id): id is string => typeof id === 'string')
 
       if (!taskId) {
         findings.push({
           stream: runId,
-          expected: "a run that named its task",
+          expected: 'a run that named its task',
           actual: `worktree at ${path} for a run with no RunStarted`,
           // Not removed. A worktree whose run never got as far as saying what
           // it was for is a mystery, and deleting mysteries is how you stop
           // being able to explain them.
-          action: "reported",
+          action: 'reported',
           path,
-        });
-        continue;
+        })
+        continue
       }
 
-      const task = reduceWorkItem(await store.read(taskId).catch(() => []));
-      const life = task.lifecycle;
-      const live =
-        life.status === "claimed" && life.runId === runId && !abandoned.has(taskId);
+      const task = reduceWorkItem(await store.read(taskId).catch(() => []))
+      const life = task.lifecycle
+      const live = life.status === 'claimed' && life.runId === runId && !abandoned.has(taskId)
 
-      if (live) continue;
+      if (live) continue
 
       findings.push({
         stream: runId,
         expected:
-          life.status === "claimed" && abandoned.has(taskId)
+          life.status === 'claimed' && abandoned.has(taskId)
             ? `no worktree — ${taskId} is claimed by ${life.worker}, who is not conducting`
             : `no worktree — ${taskId} is ${life.status}`,
         actual: `worktree at ${path}`,
-        action: options.dryRun ? "reported" : "removed",
+        action: options.dryRun ? 'reported' : 'removed',
         path,
-      });
+      })
     }
   }
 
-  return findings;
+  return findings
 }
 
 /**
@@ -328,70 +327,68 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * asked of one is whether it is still owed an explanation.
  */
 export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = logOf(options);
-  const home = options.home ?? defaultHome();
-  const root = join(home, "runs");
+  const store = logOf(options)
+  const home = options.home ?? defaultHome()
+  const root = join(home, 'runs')
 
-  let projects: string[];
+  let projects: string[]
   try {
-    projects = (await readdir(root, { withFileTypes: true }))
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    projects = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name)
   } catch {
-    return [];
+    return []
   }
 
-  const findings: Finding[] = [];
+  const findings: Finding[] = []
 
   for (const project of projects) {
-    let logs: string[];
+    let logs: string[]
     try {
       // Only `<runId>.log`. `runs/` also holds `settingsPathFor`'s
       // `runs/<runId>/settings.json`, which is a directory named for a run —
       // the two shapes share a parent and never each other's names.
       logs = (await readdir(join(root, project), { withFileTypes: true }))
-        .filter((e) => e.isFile() && e.name.endsWith(".log"))
-        .map((e) => e.name);
+        .filter((e) => e.isFile() && e.name.endsWith('.log'))
+        .map((e) => e.name)
     } catch {
-      continue;
+      continue
     }
 
     for (const name of logs) {
-      const path = join(root, project, name);
-      const runId = name.slice(0, -".log".length);
+      const path = join(root, project, name)
+      const runId = name.slice(0, -'.log'.length)
 
-      const run = await store.read(runId).catch(() => []);
+      const run = await store.read(runId).catch(() => [])
       const taskId = run
         .map((e) => (e.data as { workItemId?: string } | undefined)?.workItemId)
-        .find((id): id is string => typeof id === "string");
+        .find((id): id is string => typeof id === 'string')
 
       if (!taskId) {
         findings.push({
           stream: runId,
-          expected: "a run that named its task",
+          expected: 'a run that named its task',
           actual: `a log at ${path} for a run with no RunStarted`,
-          action: "reported",
+          action: 'reported',
           path,
-        });
-        continue;
+        })
+        continue
       }
 
-      const task = reduceWorkItem(await store.read(taskId).catch(() => []));
+      const task = reduceWorkItem(await store.read(taskId).catch(() => []))
       // Landed and nothing else. `blocked` is a question somebody has to
       // answer, and the log is half of what they answer it with.
-      if (task.lifecycle.status !== "landed") continue;
+      if (task.lifecycle.status !== 'landed') continue
 
       findings.push({
         stream: runId,
         expected: `no log — ${taskId} landed on ${task.lifecycle.base}`,
         actual: `a log at ${path}`,
-        action: options.dryRun ? "reported" : "removed",
+        action: options.dryRun ? 'reported' : 'removed',
         path,
-      });
+      })
     }
   }
 
-  return findings;
+  return findings
 }
 
 /**
@@ -404,21 +401,21 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
  * projector look like a working one.
  */
 export async function findLaggingProjections(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const known = new Set(options.projections ?? []);
-  if (known.size === 0) return [];
-  const lags = await projectionLag(options.url).catch(() => null);
+  const known = new Set(options.projections ?? [])
+  if (known.size === 0) return []
+  const lags = await projectionLag(options.url).catch(() => null)
   // No checkpoints table yet is a system that has never run, not a divergence.
-  if (lags === null) return [];
+  if (lags === null) return []
   return lags
     .filter((l) => known.has(l.name))
     .filter((l) => l.lag > 0n)
     .map((l) => ({
       stream: l.name,
       expected: `at the head — ${l.headSeq}`,
-      actual: `${l.lastSeq}, ${l.lag} behind since ${l.updatedAt?.toISOString() ?? "never"}`,
-      action: "reported" as const,
-      path: "",
-    }));
+      actual: `${l.lastSeq}, ${l.lag} behind since ${l.updatedAt?.toISOString() ?? 'never'}`,
+      action: 'reported' as const,
+      path: '',
+    }))
 }
 
 /**
@@ -453,34 +450,34 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
  * its conductor. See `killWorker`.
  */
 export async function releaseForeignClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const store = logOf(options);
-  const worker = options.worker ?? conductorWorker();
-  const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n);
-  if (names.length === 0) return [];
+  const store = logOf(options)
+  const worker = options.worker ?? conductorWorker()
+  const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n)
+  if (names.length === 0) return []
 
   const streams = await withStreams(options, (it) =>
-    it.streams({ prefixes: names.map((n) => `wi-${n}-%`), types: ["WorkItemClaimed"] }),
+    it.streams({ prefixes: names.map((n) => `wi-${n}-%`), types: ['WorkItemClaimed'] }),
   )
     // No log to read is not a divergence — and on a machine that has written no
     // choice, `chosenStore()`'s refusal lands here too, which is the same
     // answer: nothing to compare against.
-    .catch(() => [] as string[]);
+    .catch(() => [] as string[])
 
-  const findings: Finding[] = [];
+  const findings: Finding[] = []
   for (const workItemId of streams) {
-    const item = reduceWorkItem(await store.read(workItemId).catch(() => []));
-    const life = item.lifecycle;
-    if (life.status !== "claimed") continue;
-    if (life.worker === worker) continue;
+    const item = reduceWorkItem(await store.read(workItemId).catch(() => []))
+    const life = item.lifecycle
+    if (life.status !== 'claimed') continue
+    if (life.worker === worker) continue
     findings.push({
       stream: workItemId,
       expected: `queued — ${worker} holds ${DAEMON_LOCK_KEY}, so ${life.worker} is not conducting`,
       actual: `still claimed by ${life.worker} for ${life.runId}`,
-      action: options.dryRun ? "reported" : "released",
-      path: "",
-    });
+      action: options.dryRun ? 'reported' : 'released',
+      path: '',
+    })
   }
-  return findings;
+  return findings
 }
 
 /**
@@ -512,65 +509,65 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
  * refuse to start because a process could not be read.
  */
 export async function killWorker(worker: string): Promise<string> {
-  const named = parseWorker(worker);
-  if (!named) return `"${worker}" names no process`;
+  const named = parseWorker(worker)
+  if (!named) return `"${worker}" names no process`
   if (named.host !== thisHost()) {
-    return `pid ${named.pid} is on ${named.host}, not this machine — reported, not killed`;
+    return `pid ${named.pid} is on ${named.host}, not this machine — reported, not killed`
   }
   // Cannot happen through `reconcile`, which has already established this is
   // somebody else's claim. Kept because the guard is cheap and the mistake is
   // not survivable.
-  if (named.pid === process.pid) return `pid ${named.pid} is this process`;
+  if (named.pid === process.pid) return `pid ${named.pid} is this process`
 
   try {
     // Signal 0 asks whether it exists without touching it. The ordinary answer
     // is that it does not: the conductor died, which is why we are here.
-    process.kill(named.pid, 0);
+    process.kill(named.pid, 0)
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return `pid ${named.pid} is gone`;
-    return `pid ${named.pid} is alive and not ours to signal (${code ?? "unknown"}) — reported, not killed`;
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ESRCH') return `pid ${named.pid} is gone`
+    return `pid ${named.pid} is alive and not ours to signal (${code ?? 'unknown'}) — reported, not killed`
   }
 
-  const command = await commandOf(named.pid);
+  const command = await commandOf(named.pid)
   if (command === null) {
-    return `pid ${named.pid} is alive and its command could not be read — reported, not killed`;
+    return `pid ${named.pid} is alive and its command could not be read — reported, not killed`
   }
   if (!isOurs(command)) {
-    return `pid ${named.pid} is alive and is not ours — "${command}" — reported, not killed`;
+    return `pid ${named.pid} is alive and is not ours — "${command}" — reported, not killed`
   }
 
   try {
-    process.kill(named.pid, "SIGKILL");
-    return `killed pid ${named.pid} — "${command}"`;
+    process.kill(named.pid, 'SIGKILL')
+    return `killed pid ${named.pid} — "${command}"`
   } catch (err) {
-    return `pid ${named.pid} could not be killed: ${(err as Error).message}`;
+    return `pid ${named.pid} could not be killed: ${(err as Error).message}`
   }
 }
 
 /** Host and pid, as `conductorWorker` writes them. Null when it is not that. */
 function parseWorker(worker: string): { host: string; pid: number } | null {
-  const at = worker.lastIndexOf(":");
-  if (at < 1) return null;
-  const pid = Number(worker.slice(at + 1));
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  return { host: worker.slice(0, at), pid };
+  const at = worker.lastIndexOf(':')
+  if (at < 1) return null
+  const pid = Number(worker.slice(at + 1))
+  if (!Number.isInteger(pid) || pid <= 0) return null
+  return { host: worker.slice(0, at), pid }
 }
 
 /** Spelled exactly as `conductorWorker` spells it, or the guard is not one. */
 function thisHost(): string {
-  return process.env["HOSTNAME"] ?? "local";
+  return process.env['HOSTNAME'] ?? 'local'
 }
 
 /** The process's command line, or null when it could not be read. */
 async function commandOf(pid: number): Promise<string | null> {
   try {
-    const { stdout } = await execFile("ps", ["-o", "command=", "-p", String(pid)]);
-    const line = stdout.trim();
-    return line === "" ? null : line;
+    const { stdout } = await execFile('ps', ['-o', 'command=', '-p', String(pid)])
+    const line = stdout.trim()
+    return line === '' ? null : line
   } catch {
     // `ps` exits non-zero for a pid that has gone between the check and here.
-    return null;
+    return null
   }
 }
 
@@ -584,12 +581,12 @@ async function commandOf(pid: number): Promise<string | null> {
  * has this pid now".
  */
 function isOurs(command: string): boolean {
-  return /\bnode\b/.test(command) && /lingtai/i.test(command);
+  return /\bnode\b/.test(command) && /lingtai/i.test(command)
 }
 
 export async function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const log = options.log ?? (() => {});
-  const store = logOf(options);
+  const log = options.log ?? (() => {})
+  const store = logOf(options)
 
   // Read all four before acting on any. A pass that repaired as it discovered
   // would report a world that no longer existed by the time it finished.
@@ -597,14 +594,14 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
   // The claim check reads first so the worktree scan can be told what it found.
   // Still read-before-act: nothing has been appended at this point, and the
   // findings are reported in the old order.
-  const foreign = await releaseForeignClaims(options);
-  const abandoned = new Set(foreign.map((f) => f.stream));
+  const foreign = await releaseForeignClaims(options)
+  const abandoned = new Set(foreign.map((f) => f.stream))
   const findings = [
     ...(await findLaggingProjections(options)),
     ...(await findOrphans({ ...options, abandoned })),
     ...(await findOrphanLogs(options)),
     ...foreign,
-  ];
+  ]
 
   // 4. GitHub, which repairs as it reads because the read *is* the comparison
   // — see `converge.ts`. Skipped entirely when nothing was injected to reach
@@ -622,35 +619,35 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
       // one's findings are about.
       ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
       log,
-    });
-    const done = new Set(converged.map((d) => `${d.workItemId}:${d.change}`));
+    })
+    const done = new Set(converged.map((d) => `${d.workItemId}:${d.change}`))
     for (const d of divergences) {
       findings.push({
         stream: d.workItemId,
         expected: `${d.change}: ${d.expected}`,
         actual: d.actual,
-        action: done.has(`${d.workItemId}:${d.change}`) ? "converged" : "reported",
-        path: "",
-      });
+        action: done.has(`${d.workItemId}:${d.change}`) ? 'converged' : 'reported',
+        path: '',
+      })
     }
   }
 
-  if (findings.length === 0) return [];
+  if (findings.length === 0) return []
 
   for (const f of findings) {
-    if (f.action === "released") {
+    if (f.action === 'released') {
       try {
         // Re-read rather than trust the finding. Between the scan and here this
         // conductor could have claimed the item itself, and releasing a live
         // claim is a far worse outcome than leaving a dead one — the same rule
         // the worktree check follows for the same reason.
-        const events = await store.read(f.stream);
-        const life = reduceWorkItem(events).lifecycle;
-        const mine = options.worker ?? conductorWorker();
-        if (life.status !== "claimed" || life.worker === mine) {
-          f.action = "reported";
-          f.actual = `${f.actual} (claimed again before it could be released)`;
-          continue;
+        const events = await store.read(f.stream)
+        const life = reduceWorkItem(events).lifecycle
+        const mine = options.worker ?? conductorWorker()
+        if (life.status !== 'claimed' || life.worker === mine) {
+          f.action = 'reported'
+          f.actual = `${f.actual} (claimed again before it could be released)`
+          continue
         }
         // The process, before the claim (0030 §5). A detached agent outlives
         // the conductor that started it, so a claim whose worker is still alive
@@ -659,14 +656,14 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         //
         // Whichever way it goes, the claim is released: what changes is whether
         // the sentence says `killed` or names a process nobody dared touch.
-        const fate = await killWorker(life.worker);
-        f.actual = `${f.actual} — ${fate}`;
-        log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`));
+        const fate = await killWorker(life.worker)
+        f.actual = `${f.actual} — ${fate}`
+        log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`))
         await store.append(f.stream, events.length, [
           {
-            type: "WorkItemReleased",
-            actor: "conductor",
-            data: parsePayload("WorkItemReleased", {
+            type: 'WorkItemReleased',
+            actor: 'conductor',
+            data: parsePayload('WorkItemReleased', {
               runId: life.runId,
               // The lock, not a timestamp. Whoever reads this back should be
               // able to check the claim: `life.worker` is not `mine`, and there
@@ -674,34 +671,34 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
               reason: `${mine} holds ${DAEMON_LOCK_KEY}, so ${life.worker} was not coming back`,
             }),
           },
-        ]);
-        log(paint.pass(`reconciled: released ${f.stream}`));
+        ])
+        log(paint.pass(`reconciled: released ${f.stream}`))
       } catch (err) {
-        f.action = "reported";
-        f.actual = `${f.actual} (could not release: ${(err as Error).message})`;
+        f.action = 'reported'
+        f.actual = `${f.actual} (could not release: ${(err as Error).message})`
       }
-      continue;
+      continue
     }
-    if (f.action !== "removed") continue;
+    if (f.action !== 'removed') continue
     try {
-      await rm(f.path, { recursive: true, force: true });
-      log(paint.pass(`reconciled: removed ${f.path}`));
+      await rm(f.path, { recursive: true, force: true })
+      log(paint.pass(`reconciled: removed ${f.path}`))
     } catch (err) {
       // Report the failure rather than the intention. An event saying
       // "removed" about a directory that is still there is worse than no
       // event, because it is the kind of wrong you only find by going to look.
-      f.action = "reported";
-      f.actual = `${f.actual} (could not remove: ${(err as Error).message})`;
-      log(`reconcile could not remove ${f.path}: ${(err as Error).message}`);
+      f.action = 'reported'
+      f.actual = `${f.actual} (could not remove: ${(err as Error).message})`
+      log(`reconcile could not remove ${f.path}: ${(err as Error).message}`)
     }
   }
 
-  const at = (await store.read(CONTROL_STREAM)).length;
+  const at = (await store.read(CONTROL_STREAM)).length
   await store.append(CONTROL_STREAM, at, [
     {
-      type: "Reconciled",
-      actor: "conductor",
-      data: parsePayload("Reconciled", {
+      type: 'Reconciled',
+      actor: 'conductor',
+      data: parsePayload('Reconciled', {
         findings: findings.map((f) => ({
           stream: f.stream,
           expected: f.expected,
@@ -710,21 +707,21 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
         })),
       }),
     },
-  ]);
+  ])
 
-  return findings;
+  return findings
 }
 
 function defaultHome(): string {
-  return process.env["LINGTAI_HOME"] ?? join(process.env["HOME"] ?? ".", ".lingtai");
+  return process.env['LINGTAI_HOME'] ?? join(process.env['HOME'] ?? '.', '.lingtai')
 }
 
 /** Exported for a test that wants to know the directory really went. */
 export async function exists(path: string): Promise<boolean> {
   try {
-    await stat(path);
-    return true;
+    await stat(path)
+    return true
   } catch {
-    return false;
+    return false
   }
 }

@@ -1,7 +1,9 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import type { TaskCard, TaskState } from "@lingtai/projector/task-view";
-import { repoRoot } from "./docs.ts";
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+
+import type { TaskCard, TaskState } from '@lingtai/projector/task-view'
+
+import { repoRoot } from './docs.ts'
 
 /**
  * The board on the front page, as a file.
@@ -29,10 +31,10 @@ import { repoRoot } from "./docs.ts";
  */
 
 /** The four lanes, as the board has them. Not five: `verifying` folds into `running`. */
-export type Lane = "queued" | "running" | "waiting" | "landed";
+export type Lane = 'queued' | 'running' | 'waiting' | 'landed'
 
 export interface SnapshotCard {
-  lane: Lane;
+  lane: Lane
   /**
    * The repository, or null when it is withheld.
    *
@@ -43,16 +45,16 @@ export interface SnapshotCard {
    * how long it has been there and what it cost, because none of that names
    * anything. See `scripts/snapshot.ts` for how a project becomes publishable.
    */
-  project: string | null;
+  project: string | null
   /** `#114`, or null when withheld. */
-  ref: string | null;
-  title: string | null;
-  kind: string;
+  ref: string | null
+  title: string | null
+  kind: string
   /** What it is waiting on, or what it merged as. Null when withheld or absent. */
-  note: string | null;
-  attempts: number;
-  turns: number | null;
-  costUsd: number | null;
+  note: string | null
+  attempts: number
+  turns: number | null
+  costUsd: number | null
   /**
    * Hours since the log last moved this card, **as at `capturedAt`**.
    *
@@ -62,14 +64,14 @@ export interface SnapshotCard {
    * photograph and read "412 hours" a fortnight later; this one is a fact about
    * a moment, and the moment is printed beside it.
    */
-  hoursSinceUpdate: number | null;
+  hoursSinceUpdate: number | null
   /** Whether a person is holding a question on it. The lane says where; this says whether. */
-  blocked: boolean;
+  blocked: boolean
 }
 
 export interface SnapshotLane {
-  id: Lane;
-  label: string;
+  id: Lane
+  label: string
   /**
    * How many cards are in this lane — **all of them**, not how many are drawn.
    *
@@ -80,16 +82,16 @@ export interface SnapshotLane {
    * five. The difference is drawn as "and N more" rather than left to be
    * inferred from a number that does not match the cards under it.
    */
-  count: number;
-  cards: SnapshotCard[];
+  count: number
+  cards: SnapshotCard[]
 }
 
 export interface Snapshot {
   /** ISO, and printed on the page. */
-  capturedAt: string;
+  capturedAt: string
   /** The commit the log was read at, when the working tree was a repository. */
-  commit: string | null;
-  lanes: SnapshotLane[];
+  commit: string | null
+  lanes: SnapshotLane[]
   /**
    * What the board has cost, added up — over every card in it, and not over
    * the handful each lane publishes. The head of the board prints these, so
@@ -97,9 +99,9 @@ export interface Snapshot {
    * would make the claim smaller than the truth and, worse, make it depend on
    * `LANE_CARDS`.
    */
-  totals: { costUsd: number; turns: number; cards: number };
+  totals: { costUsd: number; turns: number; cards: number }
   /** How many cards on the whole board had their identity withheld, so the page can say. */
-  withheld: number;
+  withheld: number
 }
 
 /**
@@ -120,7 +122,7 @@ export interface Snapshot {
  * it under all three. `import.meta.url` is not the anchor for the reason
  * `docs.ts` gives: Next compiles this module into a chunk under `.next/`.
  */
-export const SNAPSHOT_FILE = path.join(repoRoot, "apps", "site", "snapshot.json");
+export const SNAPSHOT_FILE = path.join(repoRoot, 'apps', 'site', 'snapshot.json')
 
 /**
  * How many cards a lane publishes.
@@ -134,7 +136,7 @@ export const SNAPSHOT_FILE = path.join(repoRoot, "apps", "site", "snapshot.json"
  * every card, so the page says how much work there is and shows a sample of it,
  * which is a different claim from showing all of a small board.
  */
-export const LANE_CARDS = 5;
+export const LANE_CARDS = 5
 
 /**
  * Which lane a state is shown in. Four lanes, not five — `verifying` is a task
@@ -148,22 +150,22 @@ export const LANE_CARDS = 5;
  * whole of its gate run.
  */
 export const LANE_OF: Record<TaskState, Lane> = {
-  queued: "queued",
-  running: "running",
-  verifying: "running",
-  waiting: "waiting",
-  landed: "landed",
+  queued: 'queued',
+  running: 'running',
+  verifying: 'running',
+  waiting: 'waiting',
+  landed: 'landed',
   // Closed shares Landed's lane, as it does on the board: both are over, and
   // the public snapshot has no room for a lane that says so twice.
-  closed: "landed",
-};
+  closed: 'landed',
+}
 
 const LANES: { id: Lane; label: string }[] = [
-  { id: "queued", label: "Queued" },
-  { id: "running", label: "Running" },
-  { id: "waiting", label: "Waiting on you" },
-  { id: "landed", label: "Landed" },
-];
+  { id: 'queued', label: 'Queued' },
+  { id: 'running', label: 'Running' },
+  { id: 'waiting', label: 'Waiting on you' },
+  { id: 'landed', label: 'Landed' },
+]
 
 export interface TakeOptions {
   /**
@@ -171,10 +173,10 @@ export interface TakeOptions {
    * an allowlist, so a project that has never been considered is invisible
    * rather than published by default.
    */
-  open: Set<string>;
-  capturedAt: Date;
+  open: Set<string>
+  capturedAt: Date
   /** The commit the log was read at, or null outside a repository. */
-  commit: string | null;
+  commit: string | null
 }
 
 /**
@@ -186,16 +188,16 @@ export interface TakeOptions {
  * drawn, what the totals are over — and each of them is a test.
  */
 export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit }: TakeOptions): Snapshot {
-  const now = capturedAt.getTime();
+  const now = capturedAt.getTime()
   const lanes: SnapshotLane[] = LANES.map(({ id, label }) => {
-    const inLane = tasks.filter((t) => LANE_OF[t.state] === id);
+    const inLane = tasks.filter((t) => LANE_OF[t.state] === id)
     return {
       id,
       label,
       count: inLane.length,
       cards: publish(id, inLane).map((t) => reduce(t, open.has(t.project), now)),
-    };
-  });
+    }
+  })
 
   return {
     capturedAt: capturedAt.toISOString(),
@@ -207,7 +209,7 @@ export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit }: TakeO
       cards: tasks.length,
     },
     withheld: tasks.filter((t) => !open.has(t.project)).length,
-  };
+  }
 }
 
 /**
@@ -224,12 +226,12 @@ export function takeBoard(tasks: TaskCard[], { open, capturedAt, commit }: TakeO
  * quietly shows its nicest cards is the board this page is trying not to be.
  */
 function publish(lane: Lane, cards: TaskCard[]): TaskCard[] {
-  const moved = (t: TaskCard) => t.updatedAt.getTime();
+  const moved = (t: TaskCard) => t.updatedAt.getTime()
   const order =
-    lane === "waiting"
+    lane === 'waiting'
       ? (a: TaskCard, b: TaskCard) => moved(a) - moved(b)
-      : (a: TaskCard, b: TaskCard) => moved(b) - moved(a);
-  return [...cards].sort(order).slice(0, LANE_CARDS);
+      : (a: TaskCard, b: TaskCard) => moved(b) - moved(a)
+  return [...cards].sort(order).slice(0, LANE_CARDS)
 }
 
 /**
@@ -241,7 +243,7 @@ function publish(lane: Lane, cards: TaskCard[]): TaskCard[] {
  * quietly omits some of its work is the board nobody should believe.
  */
 function reduce(t: TaskCard, open: boolean, now: number): SnapshotCard {
-  const hours = (now - t.updatedAt.getTime()) / 3_600_000;
+  const hours = (now - t.updatedAt.getTime()) / 3_600_000
   return {
     lane: LANE_OF[t.state],
     project: open ? t.project : null,
@@ -256,11 +258,11 @@ function reduce(t: TaskCard, open: boolean, now: number): SnapshotCard {
     costUsd: t.costUsd,
     hoursSinceUpdate: Number.isFinite(hours) ? Math.max(0, Math.round(hours * 10) / 10) : null,
     blocked: t.blocked,
-  };
+  }
 }
 
 function round(usd: number): number {
-  return Math.round(usd * 100) / 100;
+  return Math.round(usd * 100) / 100
 }
 
 /**
@@ -274,30 +276,26 @@ function round(usd: number): number {
  * would print an excerpt's size where the lane's size belongs.
  */
 export async function readSnapshot(): Promise<Snapshot | null> {
-  let raw: string;
+  let raw: string
   try {
-    raw = await readFile(SNAPSHOT_FILE, "utf8");
+    raw = await readFile(SNAPSHOT_FILE, 'utf8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
   }
-  const parsed = JSON.parse(raw) as Snapshot;
-  const lanes = Array.isArray(parsed.lanes) ? parsed.lanes : null;
-  if (
-    typeof parsed.capturedAt !== "string" ||
-    lanes === null ||
-    lanes.some((l) => typeof l.count !== "number")
-  ) {
+  const parsed = JSON.parse(raw) as Snapshot
+  const lanes = Array.isArray(parsed.lanes) ? parsed.lanes : null
+  if (typeof parsed.capturedAt !== 'string' || lanes === null || lanes.some((l) => typeof l.count !== 'number')) {
     throw new Error(
       `${SNAPSHOT_FILE} is not a board snapshot — regenerate it with \`pnpm --filter @lingtai/site snapshot\``,
-    );
+    )
   }
-  return parsed;
+  return parsed
 }
 
 /** `2026-09-09`, in UTC, which is the only zone a static page can claim. */
 export function stamp(iso: string): string {
-  return new Date(iso).toISOString().slice(0, 10);
+  return new Date(iso).toISOString().slice(0, 10)
 }
 
 /**
@@ -307,13 +305,13 @@ export function stamp(iso: string): string {
  * the number is already as old as the build.
  */
 export function elapsed(hours: number | null): string | null {
-  if (hours === null) return null;
-  if (hours < 1) return "under an hour";
-  if (hours < 48) return `${Math.round(hours)} hours`;
-  return `${Math.round(hours / 24)} days`;
+  if (hours === null) return null
+  if (hours < 1) return 'under an hour'
+  if (hours < 48) return `${Math.round(hours)} hours`
+  return `${Math.round(hours / 24)} days`
 }
 
 /** `$13.04`. Cents, because at these amounts the cents are the persuasive part. */
 export function money(usd: number | null): string | null {
-  return usd === null ? null : `$${usd.toFixed(2)}`;
+  return usd === null ? null : `$${usd.toFixed(2)}`
 }

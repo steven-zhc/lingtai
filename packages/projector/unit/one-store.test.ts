@@ -13,55 +13,55 @@
  * database — the same shape `packages/env/integration/two-questions.test.ts` gives its
  * own.
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+import { describe, expect, it } from 'vitest'
+
+const SRC = fileURLToPath(new URL('../src', import.meta.url))
 
 /** The one file allowed to know what a driver is. Its twin knows `node:sqlite`. */
-const POSTGRES = "postgres.ts";
-const SQLITE = "sqlite.ts";
+const POSTGRES = 'postgres.ts'
+const SQLITE = 'sqlite.ts'
 /** And the one allowed to know there are two. #179 put it there; nothing else may. */
-const CHOICE = "choose.ts";
+const CHOICE = 'choose.ts'
 
 const sources = readdirSync(SRC)
-  .filter((f) => f.endsWith(".ts"))
-  .map((file) => ({ file, text: readFileSync(join(SRC, file), "utf8") }));
+  .filter((f) => f.endsWith('.ts'))
+  .map((file) => ({ file, text: readFileSync(join(SRC, file), 'utf8') }))
 
 /** Ignores the prose. Every file here documents what it does not do. */
-const code = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-describe("one store, and one place that knows which", () => {
-  it("finds the files it is about", () => {
+describe('one store, and one place that knows which', () => {
+  it('finds the files it is about', () => {
     // A rename that emptied this list would leave every assertion below
     // vacuously true, which is the failure mode a source-reading test has.
     expect(sources.map((s) => s.file)).toEqual(
-      expect.arrayContaining(["projection.ts", "shape.ts", "task-view.ts", "backlog.ts", POSTGRES, SQLITE, CHOICE]),
-    );
-  });
+      expect.arrayContaining(['projection.ts', 'shape.ts', 'task-view.ts', 'backlog.ts', POSTGRES, SQLITE, CHOICE]),
+    )
+  })
 
-  it("constructs a pg client in the Postgres implementation and nowhere else", () => {
+  it('constructs a pg client in the Postgres implementation and nowhere else', () => {
     const offenders = sources
       .filter((s) => s.file !== POSTGRES)
       .filter((s) => /\bnew pg\.|from "pg"/.test(code(s.text)))
-      .map((s) => s.file);
+      .map((s) => s.file)
 
-    expect(offenders).toEqual([]);
-  });
+    expect(offenders).toEqual([])
+  })
 
-  it("reaches for node:sqlite in the SQLite implementation and nowhere else", () => {
+  it('reaches for node:sqlite in the SQLite implementation and nowhere else', () => {
     const offenders = sources
       .filter((s) => s.file !== SQLITE)
       .filter((s) => /node:sqlite/.test(code(s.text)))
-      .map((s) => s.file);
+      .map((s) => s.file)
 
-    expect(offenders).toEqual([]);
-  });
+    expect(offenders).toEqual([])
+  })
 
-  it("names both implementations in choose.ts and nowhere else", () => {
+  it('names both implementations in choose.ts and nowhere else', () => {
     // The rule #179 inherited and did not delete. Before it, no file under
     // `src/` mentioned both stores, so there was nowhere a selection could have
     // been written — which is what "nothing chooses between them" meant while
@@ -79,11 +79,11 @@ describe("one store, and one place that knows which", () => {
     // exists to remove.
     const both = sources
       .filter((s) => {
-        const c = code(s.text);
-        return c.includes("createPostgresProjectionStore") && c.includes("createSqliteProjectionStore");
+        const c = code(s.text)
+        return c.includes('createPostgresProjectionStore') && c.includes('createSqliteProjectionStore')
       })
-      .map((s) => s.file);
+      .map((s) => s.file)
 
-    expect(both).toEqual([CHOICE]);
-  });
-});
+    expect(both).toEqual([CHOICE])
+  })
+})

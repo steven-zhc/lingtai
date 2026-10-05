@@ -1,5 +1,6 @@
-import { isSea } from "node:sea";
-import workspace from "../../../package.json" with { type: "json" };
+import { isSea } from 'node:sea'
+
+import workspace from '../../../package.json' with { type: 'json' }
 
 /**
  * What `lingtai version` says (#185): the version, and which of the four
@@ -11,10 +12,10 @@ import workspace from "../../../package.json" with { type: "json" };
  * reports the version it was built at.
  */
 export function platformName(platform: string = process.platform, arch: string = process.arch): string {
-  return `${platform === "darwin" ? "macos" : platform}-${arch}`;
+  return `${platform === 'darwin' ? 'macos' : platform}-${arch}`
 }
 
 export function versionLine(): string {
-  const form = isSea() ? "binary" : "script";
-  return `lingtai ${workspace.version} ${platformName()} (${form}, node ${process.version})`;
+  const form = isSea() ? 'binary' : 'script'
+  return `lingtai ${workspace.version} ${platformName()} (${form}, node ${process.version})`
 }

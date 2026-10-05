@@ -23,11 +23,12 @@
  * satisfies it with four functions and no network — which is the whole point of
  * a caller naming its own requirement.
  */
-import { parseWorkItemStream } from "@lingtai/domain";
-import { type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
-import type { EventStore } from "@lingtai/event-store";
-import { foreignLabels } from "./labels.ts";
-import { agentBranch, armPrefix } from "./branches.ts";
+import { parseWorkItemStream } from '@lingtai/domain'
+import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
+import type { EventStore } from '@lingtai/event-store'
+
+import { agentBranch, armPrefix } from './branches.ts'
+import { foreignLabels } from './labels.ts'
 
 /** What this needs of GitHub, and nothing more. */
 export interface IssueChannel {
@@ -37,16 +38,16 @@ export interface IssueChannel {
    * names, and a repository's colour is a fact for the board to read (#85), not
    * one a write has any business carrying.
    */
-  getIssue(number: number): Promise<{ labels: readonly { name: string }[] }>;
-  comment(issue: number, body: string): Promise<{ id: number }>;
-  setLabels(issue: number, labels: readonly string[]): Promise<void>;
-  closeIssue(issue: number): Promise<void>;
+  getIssue(number: number): Promise<{ labels: readonly { name: string }[] }>
+  comment(issue: number, body: string): Promise<{ id: number }>
+  setLabels(issue: number, labels: readonly string[]): Promise<void>
+  closeIssue(issue: number): Promise<void>
   /**
    * Replaces the whole issue body. Read-modify-write, like `setLabels`, and
    * for the same reason: GitHub offers a replace and nothing else, so whoever
    * composes the new body has to have read the old one.
    */
-  updateBody(issue: number, body: string): Promise<void>;
+  updateBody(issue: number, body: string): Promise<void>
 }
 
 /**
@@ -66,9 +67,9 @@ export interface RefChannel {
    * prefix, so `heads/agent/24` answers `heads/agent/240`'s refs too and the
    * caller filters.
    */
-  matchingRefs(prefix: string): Promise<readonly string[]>;
+  matchingRefs(prefix: string): Promise<readonly string[]>
   /** Deletes one, named as `matchingRefs` names it. */
-  deleteRef(ref: string): Promise<void>;
+  deleteRef(ref: string): Promise<void>
 }
 
 /**
@@ -95,11 +96,11 @@ export interface RefChannel {
  * function that only knows how to send one.
  */
 export type IssueChange =
-  | { kind: "comment"; body: string }
-  | { kind: "labels"; labels: readonly string[] }
-  | { kind: "closed" }
-  | { kind: "body"; body: string }
-  | { kind: "refs"; andTheBranch: boolean };
+  | { kind: 'comment'; body: string }
+  | { kind: 'labels'; labels: readonly string[] }
+  | { kind: 'closed' }
+  | { kind: 'body'; body: string }
+  | { kind: 'refs'; andTheBranch: boolean }
 
 /**
  * The four of them `tellGitHub` takes — every change that is a write to the
@@ -111,24 +112,24 @@ export type IssueChange =
  * object with four methods on it, and widening the parameter would make them
  * supply two they never call.
  */
-export type IssueWrite = Exclude<IssueChange, { kind: "refs" }>;
+export type IssueWrite = Exclude<IssueChange, { kind: 'refs' }>
 
 export interface TellOptions {
-  store: EventStore;
-  github: IssueChannel;
+  store: EventStore
+  github: IssueChannel
   /** `wi-<project>-<issue>`. */
-  workItemId: string;
-  change: IssueWrite;
+  workItemId: string
+  change: IssueWrite
 }
 
 /** `wi-project-155` → project and issue. Split at the *last* hyphen: a project name may contain one. */
 function split(workItemId: string): { project: string; issue: number } | null {
-  const parsed = parseWorkItemStream(workItemId);
-  if (!parsed) return null;
+  const parsed = parseWorkItemStream(workItemId)
+  if (!parsed) return null
   // This path nominates issues by number; a non-numeric ref is not one it can
   // tell GitHub about.
-  const issue = Number(parsed.issue);
-  return Number.isInteger(issue) ? { project: parsed.project, issue } : null;
+  const issue = Number(parsed.issue)
+  return Number.isInteger(issue) ? { project: parsed.project, issue } : null
 }
 
 /**
@@ -144,53 +145,53 @@ function split(workItemId: string): { project: string; issue: number } | null {
  * that is a far smaller wrong than deleting all of them.
  */
 export async function tellGitHub(options: TellOptions): Promise<void> {
-  const { store, github, workItemId, change } = options;
-  const target = split(workItemId);
-  if (target === null) return;
-  const { project, issue } = target;
+  const { store, github, workItemId, change } = options
+  const target = split(workItemId)
+  if (target === null) return
+  const { project, issue } = target
 
-  let detail = "";
+  let detail = ''
   try {
     switch (change.kind) {
-      case "comment": {
-        const { id } = await github.comment(issue, change.body);
-        detail = String(id);
-        break;
+      case 'comment': {
+        const { id } = await github.comment(issue, change.body)
+        detail = String(id)
+        break
       }
-      case "labels": {
-        const current = await github.getIssue(issue);
-        const carried = current.labels.map((l) => l.name);
-        const whole = [...new Set([...foreignLabels(carried), ...change.labels])];
-        await github.setLabels(issue, whole);
-        detail = change.labels.join(",");
-        break;
+      case 'labels': {
+        const current = await github.getIssue(issue)
+        const carried = current.labels.map((l) => l.name)
+        const whole = [...new Set([...foreignLabels(carried), ...change.labels])]
+        await github.setLabels(issue, whole)
+        detail = change.labels.join(',')
+        break
       }
-      case "closed":
-        await github.closeIssue(issue);
-        break;
-      case "body":
-        await github.updateBody(issue, change.body);
+      case 'closed':
+        await github.closeIssue(issue)
+        break
+      case 'body':
+        await github.updateBody(issue, change.body)
         // The size, not the text. The body is on GitHub and the sentence that
         // was added is on the log already — `PromptEdited` or the discussion
         // that proposed it — and a third copy here is one that can disagree.
-        detail = `${change.body.length} bytes`;
-        break;
+        detail = `${change.body.length} bytes`
+        break
     }
   } catch (err) {
-    await record(store, workItemId, "IssueUpdateFailed", {
+    await record(store, workItemId, 'IssueUpdateFailed', {
       project,
       issue: String(issue),
       change: change.kind,
       error: (err as Error).message,
-    });
-    return;
+    })
+    return
   }
-  await record(store, workItemId, "IssueUpdated", {
+  await record(store, workItemId, 'IssueUpdated', {
     project,
     issue: String(issue),
     change: change.kind,
     detail,
-  });
+  })
 }
 
 /**
@@ -236,51 +237,50 @@ export async function tellGitHub(options: TellOptions): Promise<void> {
  * (`end-step.ts`) and nothing ever runs this function again for the same item.
  */
 export async function sweepRefs(options: {
-  store: EventStore;
-  github: RefChannel;
+  store: EventStore
+  github: RefChannel
   /** `wi-<project>-<issue>`. */
-  workItemId: string;
+  workItemId: string
   /** `agent/<n>` itself, on top of its arms. */
-  andTheBranch: boolean;
+  andTheBranch: boolean
 }): Promise<void> {
-  const { store, github, workItemId } = options;
-  const target = split(workItemId);
-  if (target === null) return;
-  const { project, issue } = target;
+  const { store, github, workItemId } = options
+  const target = split(workItemId)
+  if (target === null) return
+  const { project, issue } = target
 
-  const branch = agentBranch(issue);
-  const arms = armPrefix(branch);
+  const branch = agentBranch(issue)
+  const arms = armPrefix(branch)
   // Appended to as each delete comes back, so both endings can name it: the
   // row is written *after* the loop either way, and a `doomed` the loop did not
   // finish would describe refs that are still on `origin`.
-  const gone: string[] = [];
+  const gone: string[] = []
   try {
-    const found = await github.matchingRefs(`heads/${branch}`);
+    const found = await github.matchingRefs(`heads/${branch}`)
     const doomed = found.filter(
-      (ref) =>
-        ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
-    );
+      (ref) => ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
+    )
     for (const ref of doomed) {
-      await github.deleteRef(ref);
-      gone.push(ref);
+      await github.deleteRef(ref)
+      gone.push(ref)
     }
   } catch (err) {
-    await record(store, workItemId, "IssueUpdateFailed", {
+    await record(store, workItemId, 'IssueUpdateFailed', {
       project,
       issue: String(issue),
-      change: "refs",
+      change: 'refs',
       error: sweepFailure(err, gone),
-    });
-    return;
+    })
+    return
   }
-  await record(store, workItemId, "IssueUpdated", {
+  await record(store, workItemId, 'IssueUpdated', {
     project,
     issue: String(issue),
-    change: "refs",
+    change: 'refs',
     // The names and not the count, because *which* arms went is the only thing
     // a reader coming back to this row can no longer get from the remote.
-    detail: gone.length === 0 ? "none" : gone.join(","),
-  });
+    detail: gone.length === 0 ? 'none' : gone.join(','),
+  })
 }
 
 /**
@@ -294,8 +294,8 @@ export async function sweepRefs(options: {
  * same reason.
  */
 export function sweepFailure(err: unknown, gone: readonly string[]): string {
-  const why = (err as Error).message;
-  return gone.length === 0 ? why : `${why} — after deleting ${gone.join(",")}`;
+  const why = (err as Error).message
+  return gone.length === 0 ? why : `${why} — after deleting ${gone.join(',')}`
 }
 
 /**
@@ -315,14 +315,12 @@ export function sweepFailure(err: unknown, gone: readonly string[]): string {
 async function record(
   store: EventStore,
   workItemId: string,
-  type: "IssueUpdated" | "IssueUpdateFailed",
+  type: 'IssueUpdated' | 'IssueUpdateFailed',
   data: Record<string, string>,
 ): Promise<void> {
   try {
-    const at = (await store.read(workItemId)).length;
-    await store.append(workItemId, at, [
-      { type, actor: "conductor", data: parsePayload(type, data) },
-    ]);
+    const at = (await store.read(workItemId)).length
+    await store.append(workItemId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
   } catch {
     // Deliberately silent: see above.
   }
@@ -351,38 +349,38 @@ async function record(
  * a recipe must be able to overrule a default.
  */
 export async function tellGitHubAbout(options: {
-  store: EventStore;
+  store: EventStore
   /**
    * Both ports, because this is the one function that carries out an
    * `EndActionsResolved` and `refs:` is one of the three things it may hold
    * (`#240`). Required rather than optional: a channel that silently cannot
    * delete is a recipe that resolved an effect nothing ran, which is `#61`.
    */
-  github: IssueChannel & RefChannel;
-  workItemId: string;
+  github: IssueChannel & RefChannel
+  workItemId: string
   /** Lingtai's own labels for this state, or `null` to leave them alone. */
-  labels?: readonly string[] | null;
+  labels?: readonly string[] | null
   /** The question, when a person is now the thing being waited on. */
-  question?: string;
+  question?: string
   /** The events just appended; any `EndActionsResolved` among them is carried out. */
-  appended?: readonly ToAppend[];
+  appended?: readonly ToAppend[]
 }): Promise<void> {
-  const { store, github, workItemId } = options;
+  const { store, github, workItemId } = options
   // `IssueWrite` and not `IssueChange`: the `refs` member is `sweepRefs`'s, and
   // a helper that took the wider union would let one reach `tellGitHub`, whose
   // `switch` has a case for each of the four issue writes and no default — so a
   // `refs` change there falls straight through and records an `IssueUpdated`
   // for a sweep that never ran. That is `#61`'s failure inside one function.
-  const tell = (change: IssueWrite) => tellGitHub({ store, github, workItemId, change });
+  const tell = (change: IssueWrite) => tellGitHub({ store, github, workItemId, change })
 
   if (options.question !== undefined) {
-    await tell({ kind: "comment", body: `**Lingtai is waiting on you.**\n\n${options.question}` });
+    await tell({ kind: 'comment', body: `**Lingtai is waiting on you.**\n\n${options.question}` })
   }
-  if (options.labels != null) await tell({ kind: "labels", labels: options.labels });
+  if (options.labels != null) await tell({ kind: 'labels', labels: options.labels })
 
   for (const e of options.appended ?? []) {
-    if (e.type !== "EndActionsResolved") continue;
-    const d = e.data as PayloadOf<"EndActionsResolved">;
+    if (e.type !== 'EndActionsResolved') continue
+    const d = e.data as PayloadOf<'EndActionsResolved'>
     // **The sweep goes last within the item, and this line is what makes that
     // true** rather than what a recipe happened to declare. It is the only
     // irreversible effect, and a failure anywhere before it must not have
@@ -391,12 +389,12 @@ export async function tellGitHubAbout(options: {
     // `end: [{labels}, {refs}]` does. Order *among* the writes is still the
     // recipe's, because close-then-label and label-then-close differ: an issue
     // closed and then labelled can come back open.
-    const writes = d.actions.filter((a) => !("refs" in a));
-    const sweeps = d.actions.filter((a) => "refs" in a);
+    const writes = d.actions.filter((a) => !('refs' in a))
+    const sweeps = d.actions.filter((a) => 'refs' in a)
     for (const action of [...writes, ...sweeps]) {
-      if ("close" in action) await tell({ kind: "closed" });
-      else if ("labels" in action) await tell({ kind: "labels", labels: action.labels });
-      else await sweepRefs({ store, github, workItemId, andTheBranch: action.branch });
+      if ('close' in action) await tell({ kind: 'closed' })
+      else if ('labels' in action) await tell({ kind: 'labels', labels: action.labels })
+      else await sweepRefs({ store, github, workItemId, andTheBranch: action.branch })
     }
   }
 }

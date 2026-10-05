@@ -23,8 +23,10 @@
  * conductor makes them minutes apart. What matters is that neither of them
  * writes its own version of either.
  */
-import { reduceWorkItem, retiredRepairPending, type Envelope } from "@lingtai/domain";
-import type { StepAction } from "@lingtai/recipe";
+import { reduceWorkItem, retiredRepairPending, type Envelope } from '@lingtai/domain'
+import type { StepAction } from '@lingtai/recipe'
+
+import type { ArmsOnOrigin } from './arms.ts'
 import {
   attemptBrief,
   answersBrief,
@@ -33,25 +35,24 @@ import {
   priorAttempts,
   promptVersionFor,
   type PromptBudget,
-} from "./attempts.ts";
-import type { ArmsOnOrigin } from "./arms.ts";
+} from './attempts.ts'
 
 /**
  * Re-exported so that everything about *the document an attempt is handed* has
  * one door. The board writes `PromptEdited.hash` with it and never reaches past
  * this module into the fold that quotes earlier attempts.
  */
-export { editHash } from "./attempts.ts";
+export { editHash } from './attempts.ts'
 
 /** A sentence a person added for one attempt. `WorkItemState.pendingPrompt`. */
 export interface PromptEdit {
-  text: string;
-  by: string;
+  text: string
+  by: string
 }
 
 export interface NextPrompt {
   /** 1-based. This prompt is for attempt `n`, and the page says `attempt 3 only`. */
-  attempt: number;
+  attempt: number
   /**
    * `{{failure}}`, whole: the decisions answered before any run, the history of
    * the earlier attempts and the human's sentence. Empty on a first attempt with
@@ -64,11 +65,11 @@ export interface NextPrompt {
    * (`repairBrief`). Nothing buys one since `#143`, so what an attempt is told
    * about an earlier failure is `attemptBrief`'s history and only that.
    */
-  failure: string;
+  failure: string
   /** `ticket@1924+failure@1c5708ba+human@a91f2e`. */
-  version: string;
+  version: string
   /** The edit standing on the item, and null when nobody has made one. */
-  edit: PromptEdit | null;
+  edit: PromptEdit | null
   /**
    * The same two values with the human's sentence taken out — **what Lingtai
    * composed on its own**.
@@ -79,7 +80,7 @@ export interface NextPrompt {
    * person was looking at when they typed. Identical to the pair above when
    * nobody has edited, which is the ordinary case.
    */
-  composed: { failure: string; version: string };
+  composed: { failure: string; version: string }
 }
 
 /**
@@ -96,25 +97,25 @@ export interface NextPrompt {
  */
 export function nextPrompt(input: {
   /** The template's own version, `ticket@1924`. */
-  base: string;
-  budget: PromptBudget;
+  base: string
+  budget: PromptBudget
   /** The work item's own events, before the claim this prompt is for. */
-  item: readonly Envelope[];
+  item: readonly Envelope[]
   /** The previous attempt's stream, or null when there is no previous attempt. */
-  lastRun: readonly Envelope[] | null;
+  lastRun: readonly Envelope[] | null
   /**
    * The ticket's arms `origin` holds (`armsOnOrigin`), so a row can name where
    * that attempt's commits are (#315). Null is *nobody asked*, and names none.
    */
-  arms?: ArmsOnOrigin | null;
+  arms?: ArmsOnOrigin | null
 }): NextPrompt {
-  const attempts = priorAttempts(input.item);
-  const state = reduceWorkItem(input.item);
-  const edit = state.pendingPrompt;
+  const attempts = priorAttempts(input.item)
+  const state = reduceWorkItem(input.item)
+  const edit = state.pendingPrompt
 
-  const previous = attempts[attempts.length - 1];
+  const previous = attempts[attempts.length - 1]
   if (previous && input.lastRun !== null) {
-    previous.outcome = attemptOutcome(input.lastRun, input.budget);
+    previous.outcome = attemptOutcome(input.lastRun, input.budget)
   }
 
   // Two blocks and not one. The history is what every second attempt has; the
@@ -128,8 +129,8 @@ export function nextPrompt(input: {
   // run would be an ordinary pass that was never told to commit a fix. The
   // history defers to it for the refusal it quotes, so the output does not
   // appear twice.
-  const repair = retiredRepairPending(input.item);
-  if (previous && repair?.after === previous.runId) previous.refusal = null;
+  const repair = retiredRepairPending(input.item)
+  if (previous && repair?.after === previous.runId) previous.refusal = null
   //
   // **And the decisions, first** (#147): what a person answered before any run
   // is about the ticket rather than about an attempt, so it leads, and it is
@@ -138,9 +139,9 @@ export function nextPrompt(input: {
   const history = join([
     answersBrief(state.answers),
     attemptBrief(attempts, input.budget, input.arms ?? null),
-    repair ? repairBrief(repair) : "",
-  ]);
-  const failure = join([history, humanBrief(edit)]);
+    repair ? repairBrief(repair) : '',
+  ])
+  const failure = join([history, humanBrief(edit)])
 
   return {
     attempt: attempts.length + 1,
@@ -148,10 +149,10 @@ export function nextPrompt(input: {
     // `human` is named apart from `failure` even though both are inside the one
     // block: an attempt told a different sentence is a different attempt, and
     // the version has to say which of the two kinds moved (0032 §5).
-    version: promptVersionFor(input.base, failure, edit?.text ?? ""),
+    version: promptVersionFor(input.base, failure, edit?.text ?? ''),
     edit,
     composed: { failure: history, version: promptVersionFor(input.base, history) },
-  };
+  }
 }
 
 /**
@@ -165,29 +166,29 @@ export function nextPrompt(input: {
  */
 function repairBrief(record: { reason: string; detail: string; attempt: number }): string {
   return [
-    "## The last attempt failed, and this one is the repair",
-    "",
+    '## The last attempt failed, and this one is the repair',
+    '',
     `Lingtai could not land the previous run's branch. This is repair attempt ${record.attempt};`,
-    "the mechanical remedy has already been tried and did not work — for a conflict",
-    "that means the integrator merged the base branch in, and it still would not merge.",
-    "",
+    'the mechanical remedy has already been tried and did not work — for a conflict',
+    'that means the integrator merged the base branch in, and it still would not merge.',
+    '',
     `The refusal was **${record.reason}**, verbatim:`,
-    "",
-    "```",
+    '',
+    '```',
     record.detail.trim(),
-    "```",
-    "",
-    "Fix it and **commit**. A recommendation is not enough: what a person is asked to",
-    "approve is a diff, so an attempt that ends with advice and no commit produces",
-    "nothing they can act on. If it cannot be fixed from here, say so plainly in your",
-    "final message and do not commit something you have not verified — the item is",
-    "handed back with your reason rather than merged.",
-  ].join("\n");
+    '```',
+    '',
+    'Fix it and **commit**. A recommendation is not enough: what a person is asked to',
+    'approve is a diff, so an attempt that ends with advice and no commit produces',
+    'nothing they can act on. If it cannot be fixed from here, say so plainly in your',
+    'final message and do not commit something you have not verified — the item is',
+    'handed back with your reason rather than merged.',
+  ].join('\n')
 }
 
 /** The blocks that said something, in order, one blank line apart. */
 function join(blocks: readonly string[]): string {
-  return blocks.filter((block) => block !== "").join("\n\n");
+  return blocks.filter((block) => block !== '').join('\n\n')
 }
 
 /**
@@ -263,30 +264,30 @@ export function renderPrompt(
   template: string,
   ticket: { number: number; title: string; body: string },
   checks: readonly string[],
-  failure = "",
-  design = "",
+  failure = '',
+  design = '',
 ): string {
-  const drafted = design.trim() === "" ? "" : designBrief(design);
-  const checked = checksBrief(checks);
+  const drafted = design.trim() === '' ? '' : designBrief(design)
+  const checked = checksBrief(checks)
   const filled = template
-    .replaceAll("{{issue}}", String(ticket.number))
-    .replaceAll("{{title}}", ticket.title)
-    .replaceAll("{{body}}", ticket.body)
-    .replaceAll("{{design}}", drafted)
-    .replaceAll("{{checks}}", checked)
-    .replaceAll("{{failure}}", failure);
+    .replaceAll('{{issue}}', String(ticket.number))
+    .replaceAll('{{title}}', ticket.title)
+    .replaceAll('{{body}}', ticket.body)
+    .replaceAll('{{design}}', drafted)
+    .replaceAll('{{checks}}', checked)
+    .replaceAll('{{failure}}', failure)
   // The design first, the checks second and the history third: the design is
   // about the change, the checks are about the bar it is held to, and the
   // history is about the attempts at it. `join` drops whichever said nothing,
   // so a template that carries a slot appends nothing for it — which keeps the
   // rule above one rule rather than two.
   const appended = join([
-    drafted !== "" && !template.includes("{{design}}") ? drafted : "",
-    !template.includes("{{checks}}") ? checked : "",
-    failure !== "" && !template.includes("{{failure}}") ? failure : "",
-  ]);
-  if (appended === "") return filled;
-  return `${filled}\n\n${appended}\n`;
+    drafted !== '' && !template.includes('{{design}}') ? drafted : '',
+    !template.includes('{{checks}}') ? checked : '',
+    failure !== '' && !template.includes('{{failure}}') ? failure : '',
+  ])
+  if (appended === '') return filled
+  return `${filled}\n\n${appended}\n`
 }
 
 /**
@@ -309,13 +310,13 @@ export function renderPrompt(
  * something that reads like a command and is not one.
  */
 export function buildCommands(steps: {
-  build: readonly StepAction[];
-  proposed: readonly StepAction[];
-  merge: readonly StepAction[];
+  build: readonly StepAction[]
+  proposed: readonly StepAction[]
+  merge: readonly StepAction[]
 }): string[] {
   const commandsAt = (actions: readonly StepAction[]) =>
-    actions.filter((action): action is StepAction & { run: string } => "run" in action).map((a) => a.run);
-  return [...commandsAt(steps.build), ...commandsAt(steps.proposed), ...commandsAt(steps.merge)];
+    actions.filter((action): action is StepAction & { run: string } => 'run' in action).map((a) => a.run)
+  return [...commandsAt(steps.build), ...commandsAt(steps.proposed), ...commandsAt(steps.merge)]
 }
 
 /**
@@ -345,36 +346,36 @@ export function checksBrief(commands: readonly string[]): string {
   const bar =
     commands.length === 0
       ? "This project's recipe declares no command at `build:`, `proposed:` or `merge:`. " +
-        "That names no single bar here — it is not license to skip verification, so run " +
-        "what the project ordinarily runs before you finish."
+        'That names no single bar here — it is not license to skip verification, so run ' +
+        'what the project ordinarily runs before you finish.'
       : [
-          "Run this before you finish:",
-          "",
-          "```",
-          commands.join("\n"),
-          "```",
-          "",
-          "Those are every command this pass runs against your change — at `build`, " +
-            "`proposed` and `merge` — and it is the whole of what this pass asks you to " +
-            "run. A cold review and a judge check the result too, but neither is a " +
-            "command you run — anything slower or wider you might run yourself, another " +
+          'Run this before you finish:',
+          '',
+          '```',
+          commands.join('\n'),
+          '```',
+          '',
+          'Those are every command this pass runs against your change — at `build`, ' +
+            '`proposed` and `merge` — and it is the whole of what this pass asks you to ' +
+            'run. A cold review and a judge check the result too, but neither is a ' +
+            'command you run — anything slower or wider you might run yourself, another ' +
             'app\'s build, a suite this project calls "integration," anything that reaches a ' +
             "network, a database or another process, is not this pass's to run, and its " +
-            "result is not something this pass owes.",
-        ].join("\n");
+            'result is not something this pass owes.',
+        ].join('\n')
 
   return [
-    "## What this pass checks, and what it does not",
-    "",
+    '## What this pass checks, and what it does not',
+    '',
     bar,
-    "",
-    "**Once you have changed anything, commit it before you verify something this turn " +
-      "cannot finish.** There is no later turn: the run ends with your final message, and " +
-      "nothing you start in the background or schedule wakes you up to see how it went. The " +
-      "worktree is released with whatever is uncommitted in it — a commit is cheap and can be " +
-      "amended, and an uncommitted change is gone with the worktree. Never wait on a " +
-      "background task before there is a commit.",
-  ].join("\n");
+    '',
+    '**Once you have changed anything, commit it before you verify something this turn ' +
+      'cannot finish.** There is no later turn: the run ends with your final message, and ' +
+      'nothing you start in the background or schedule wakes you up to see how it went. The ' +
+      'worktree is released with whatever is uncommitted in it — a commit is cheap and can be ' +
+      'amended, and an uncommitted change is gone with the worktree. Never wait on a ' +
+      'background task before there is a commit.',
+  ].join('\n')
 }
 
 /**
@@ -392,14 +393,14 @@ export function checksBrief(commands: readonly string[]): string {
  */
 function designBrief(design: string): string {
   return [
-    "## The design, written for this run before any code",
-    "",
-    "An agent was asked for the shape of this change before you started, and this is",
-    "what it answered. It had the ticket and this worktree and nothing else — no more",
-    "than you have — so it is where to start rather than an instruction: where it",
-    "disagrees with the ticket, the ticket is what was asked for. Say so in your final",
-    "message if you departed from it, and why.",
-    "",
+    '## The design, written for this run before any code',
+    '',
+    'An agent was asked for the shape of this change before you started, and this is',
+    'what it answered. It had the ticket and this worktree and nothing else — no more',
+    'than you have — so it is where to start rather than an instruction: where it',
+    'disagrees with the ticket, the ticket is what was asked for. Say so in your final',
+    'message if you departed from it, and why.',
+    '',
     design.trim(),
-  ].join("\n");
+  ].join('\n')
 }

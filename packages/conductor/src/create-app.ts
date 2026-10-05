@@ -46,15 +46,16 @@
  * that question, asked of the file, of the environment and of the log, each for
  * the one thing it knows.
  */
-import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
-import { readFile } from "node:fs/promises";
-import { userInfo } from "node:os";
-import { basename, dirname, extname, join } from "node:path";
-import { ENV_FILE_MODE, parseEnvFile, setEnvLine } from "@lingtai/agent-env";
-import { GITHUB_APP_STREAM, parsePayload } from "@lingtai/domain";
-import { PREFIX, hasGitHubApp, optional, repoRoot, resolvePath } from "@lingtai/env";
-import { type EventStore, eventStore } from "@lingtai/event-store";
+import { randomBytes, randomUUID } from 'node:crypto'
+import { chmod, mkdir, stat, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
+import { userInfo } from 'node:os'
+import { basename, dirname, extname, join } from 'node:path'
+
+import { ENV_FILE_MODE, parseEnvFile, setEnvLine } from '@lingtai/agent-env'
+import { GITHUB_APP_STREAM, parsePayload } from '@lingtai/domain'
+import { PREFIX, hasGitHubApp, optional, repoRoot, resolvePath } from '@lingtai/env'
+import { type EventStore, eventStore } from '@lingtai/event-store'
 import {
   type AppManifest,
   GitHubError,
@@ -62,11 +63,11 @@ import {
   buildManifest,
   convertManifest,
   manifestFormAction,
-} from "@lingtai/github";
+} from '@lingtai/github'
 
-export const APP_ID_VAR = `${PREFIX}GITHUB_APP_ID`;
-export const KEY_PATH_VAR = `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`;
-export const WEBHOOK_SECRET_VAR = `${PREFIX}GITHUB_WEBHOOK_SECRET`;
+export const APP_ID_VAR = `${PREFIX}GITHUB_APP_ID`
+export const KEY_PATH_VAR = `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`
+export const WEBHOOK_SECRET_VAR = `${PREFIX}GITHUB_WEBHOOK_SECRET`
 
 /**
  * Where the key goes by default — `.env.example`'s own line, not a new place.
@@ -74,12 +75,12 @@ export const WEBHOOK_SECRET_VAR = `${PREFIX}GITHUB_WEBHOOK_SECRET`;
  * Outside the repository, which is the half of 0006's last consequence that a
  * `.gitignore` cannot be trusted with.
  */
-export const KEY_PATH_DEFAULT = "~/.ssh/lingtai-agent.private-key.pem";
+export const KEY_PATH_DEFAULT = '~/.ssh/lingtai-agent.private-key.pem'
 
 /** `~/.ssh`'s own mode, for a directory this may have to create. */
-const KEY_DIR_MODE = 0o700;
+const KEY_DIR_MODE = 0o700
 /** The mode the key is written with, and asked for outright — see `writeKey`. */
-const KEY_FILE_MODE = 0o600;
+const KEY_FILE_MODE = 0o600
 
 /**
  * How long an attempt is this process's.
@@ -90,46 +91,46 @@ const KEY_FILE_MODE = 0o600;
  * that really was created — and that code is the only copy of the key there
  * will ever be.
  */
-export const ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
+export const ATTEMPT_WINDOW_MS = 60 * 60 * 1000
 
 /** One posted form, remembered only for as long as GitHub will honour its code. */
 interface Attempt {
-  state: string;
-  name: string;
-  org: string | null;
-  webhookUrl: string | null;
-  startedAtMs: number;
+  state: string
+  name: string
+  org: string | null
+  webhookUrl: string | null
+  startedAtMs: number
 }
 
 /** What the screen says about a form that was posted and has not come back. */
 export interface Outstanding {
-  name: string;
-  org: string | null;
-  startedAt: Date;
+  name: string
+  org: string | null
+  startedAt: Date
   /** `waiting` while GitHub may still honour the code; `lapsed` after. */
-  state: "waiting" | "lapsed";
+  state: 'waiting' | 'lapsed'
 }
 
 /** What happened when the person came back, in the words the screen shows. */
 export type Outcome =
   | {
-      ok: true;
-      appId: string;
-      slug: string;
-      name: string;
+      ok: true
+      appId: string
+      slug: string
+      name: string
       /** The file the PEM is in. **The path, never the key.** */
-      keyPath: string;
+      keyPath: string
       /** The file the three names were written to. */
-      envFile: string;
+      envFile: string
       /** False when the hook was declared inactive, which is the ordinary case. */
-      webhookActive: boolean;
+      webhookActive: boolean
       /** Something true that is not a failure — the log, when it would not take the record. */
-      warning: string | null;
-      at: Date;
+      warning: string | null
+      at: Date
     }
   | {
-      ok: false;
-      refusal: string;
+      ok: false
+      refusal: string
       /**
        * The App this refusal left behind on GitHub, when there is one.
        *
@@ -148,22 +149,22 @@ export type Outcome =
        * App — nothing was created, and starting again is exactly the right
        * advice.
        */
-      minted: { appId: string; slug: string } | null;
-      at: Date;
-    };
+      minted: { appId: string; slug: string } | null
+      at: Date
+    }
 
 export interface BeginOptions {
   /** Where the redirect comes back to, absolute — the board's own origin. */
-  redirectUrl: string;
+  redirectUrl: string
   /** What the App will be called. The person may change it on GitHub's screen. */
-  name: string;
+  name: string
   /** An organisation's App, or null for the person's own account. */
-  org?: string | null;
+  org?: string | null
   /** A public address GitHub can reach, or null for an inactive hook. */
-  webhookUrl?: string | null;
+  webhookUrl?: string | null
   /** Where GitHub returns a person who has installed the App — the picker (#168). */
-  setupUrl?: string | null;
-  now?: Date;
+  setupUrl?: string | null
+  now?: Date
 }
 
 /** The auto-submitting form's three values, and nothing a caller has to compose. */
@@ -172,27 +173,27 @@ export interface Begun {
    * Where the form posts — GitHub's personal or organisation page, **carrying
    * `state` in its query string**, which is where GitHub takes it from.
    */
-  action: string;
-  manifest: AppManifest;
+  action: string
+  manifest: AppManifest
   /** The CSRF value, echoed back by GitHub and checked by `finish`. */
-  state: string;
+  state: string
 }
 
 export interface FinishOptions {
   /** GitHub's temporary code. Good for one hour and one exchange. */
-  code: string | null;
+  code: string | null
   /** The `state` GitHub echoed, which must be one this process issued. */
-  state: string | null;
+  state: string | null
   /** Who pressed it — `human:<id>`. */
-  by: string;
-  now?: Date;
-  store?: EventStore;
+  by: string
+  now?: Date
+  store?: EventStore
   /** The environment the App ID and the key path are read from and written for. */
-  env?: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv
   /** Overridable for a test that must not write into a real `.env.local`. */
-  envFile?: string;
-  keyPath?: string;
-  fetch?: typeof fetch;
+  envFile?: string
+  keyPath?: string
+  fetch?: typeof fetch
 }
 
 /**
@@ -209,12 +210,12 @@ export interface FinishOptions {
  * mean anything at all.
  */
 export interface CreationSession {
-  begin(options: BeginOptions): Begun;
-  finish(options: FinishOptions): Promise<Outcome>;
+  begin(options: BeginOptions): Begun
+  finish(options: FinishOptions): Promise<Outcome>
   /** The posted form nobody has come back from, or null. */
-  outstanding(now?: Date): Outstanding | null;
+  outstanding(now?: Date): Outstanding | null
   /** What the last return from GitHub came to, or null. */
-  outcome(): Outcome | null;
+  outcome(): Outcome | null
   /**
    * The App this process minted whose credentials did not all land, or null.
    *
@@ -222,7 +223,7 @@ export interface CreationSession {
    * the stranded App's name and presses Create again has chosen to, and the
    * screen should still name the App they left behind.
    */
-  unfinished(): { appId: string; slug: string } | null;
+  unfinished(): { appId: string; slug: string } | null
 }
 
 /**
@@ -230,15 +231,15 @@ export interface CreationSession {
  * credentials landed. What the in-flight guard reads.
  */
 interface Mint {
-  appId: string;
-  slug: string;
-  atMs: number;
-  finished: boolean;
+  appId: string
+  slug: string
+  atMs: number
+  finished: boolean
 }
 
 export function createCreationSession(): CreationSession {
   /** Every state this process issued and has not seen back, by its value. */
-  const issued = new Map<string, Attempt>();
+  const issued = new Map<string, Attempt>()
   /**
    * Every state that has been returned, and the one answer it was given.
    *
@@ -251,7 +252,7 @@ export function createCreationSession(): CreationSession {
    * state is already being settled joins that settlement rather than starting a
    * second one, and is given its answer.
    */
-  const answered = new Map<string, { startedAtMs: number; outcome: Promise<Outcome> }>();
+  const answered = new Map<string, { startedAtMs: number; outcome: Promise<Outcome> }>()
   /**
    * The conversions, one at a time.
    *
@@ -261,10 +262,10 @@ export function createCreationSession(): CreationSession {
    * twenty milliseconds. Serialising them is what makes that re-read mean
    * something.
    */
-  let converting: Promise<unknown> = Promise.resolve();
-  let latest: Attempt | null = null;
-  let last: Outcome | null = null;
-  let mint: Mint | null = null;
+  let converting: Promise<unknown> = Promise.resolve()
+  let latest: Attempt | null = null
+  let last: Outcome | null = null
+  let mint: Mint | null = null
 
   /**
    * Two, because `finish` may only forget one of them.
@@ -276,32 +277,32 @@ export function createCreationSession(): CreationSession {
    */
   const forgetLapsedAnswers = (nowMs: number) => {
     for (const [state, settled] of answered) {
-      if (nowMs - settled.startedAtMs > ATTEMPT_WINDOW_MS) answered.delete(state);
+      if (nowMs - settled.startedAtMs > ATTEMPT_WINDOW_MS) answered.delete(state)
     }
-  };
+  }
 
   const prune = (nowMs: number) => {
     for (const [state, attempt] of issued) {
-      if (nowMs - attempt.startedAtMs > ATTEMPT_WINDOW_MS) issued.delete(state);
+      if (nowMs - attempt.startedAtMs > ATTEMPT_WINDOW_MS) issued.delete(state)
     }
-    forgetLapsedAnswers(nowMs);
-  };
+    forgetLapsedAnswers(nowMs)
+  }
 
   return {
     begin(options) {
-      const now = options.now ?? new Date();
-      prune(now.getTime());
-      const state = randomBytes(24).toString("base64url");
+      const now = options.now ?? new Date()
+      prune(now.getTime())
+      const state = randomBytes(24).toString('base64url')
       const attempt: Attempt = {
         state,
         name: options.name,
         org: options.org ?? null,
         webhookUrl: options.webhookUrl ?? null,
         startedAtMs: now.getTime(),
-      };
-      issued.set(state, attempt);
-      latest = attempt;
-      last = null;
+      }
+      issued.set(state, attempt)
+      latest = attempt
+      last = null
       return {
         // **The `state` is on the action URL**, because that is the one place
         // GitHub reads it from — the query string of `/settings/apps/new`, not
@@ -317,70 +318,70 @@ export function createCreationSession(): CreationSession {
           setupUrl: options.setupUrl ?? null,
         }),
         state,
-      };
+      }
     },
 
     async finish(options) {
-      const now = options.now ?? new Date();
-      forgetLapsedAnswers(now.getTime());
-      const state = options.state;
+      const now = options.now ?? new Date()
+      forgetLapsedAnswers(now.getTime())
+      const state = options.state
 
       // A return carrying a state that is already being settled — a reload, or
       // a browser retrying — is handed the first one's answer. It is the same
       // code, and there is one exchange in it.
-      const settling = state === null ? undefined : answered.get(state);
-      if (settling !== undefined) return await settling.outcome;
+      const settling = state === null ? undefined : answered.get(state)
+      if (settling !== undefined) return await settling.outcome
 
-      const attempt = state === null ? undefined : issued.get(state);
+      const attempt = state === null ? undefined : issued.get(state)
       // Everything that reads or writes this session's memory happens inside
       // the queued section, so what `convertAndWrite` is told about the last
       // outcome is what is true when it runs rather than when it was queued.
       const outcome = converting.then(async () => {
-        const settled = await convertAndWrite(options, now, issued, mint);
+        const settled = await convertAndWrite(options, now, issued, mint)
         // Either way this attempt is done with: a code is good for one
         // exchange, and a refused one is not worth a second press against the
         // same state.
-        if (state !== null) issued.delete(state);
-        if (latest !== null && latest.state === state) latest = null;
-        last = settled;
+        if (state !== null) issued.delete(state)
+        if (latest !== null && latest.state === state) latest = null
+        last = settled
         // A refusal before the conversion carries the earlier App forward in
         // `minted`; only a new id is a new mint, and only a new mint moves the
         // time a form has to postdate.
         if (settled.ok) {
-          mint = { appId: settled.appId, slug: settled.slug, atMs: now.getTime(), finished: true };
+          mint = { appId: settled.appId, slug: settled.slug, atMs: now.getTime(), finished: true }
         } else if (settled.minted !== null && settled.minted.appId !== mint?.appId) {
-          mint = { ...settled.minted, atMs: now.getTime(), finished: false };
+          mint = { ...settled.minted, atMs: now.getTime(), finished: false }
         }
-        return settled;
-      });
+        return settled
+      })
       converting = outcome.then(
         () => undefined,
         () => undefined,
-      );
+      )
       if (state !== null && attempt !== undefined) {
-        answered.set(state, { startedAtMs: attempt.startedAtMs, outcome });
+        answered.set(state, { startedAtMs: attempt.startedAtMs, outcome })
       }
-      return await outcome;
+      return await outcome
     },
 
     outstanding(now = new Date()) {
-      if (latest === null) return null;
+      if (latest === null) return null
       return {
         name: latest.name,
         org: latest.org,
         startedAt: new Date(latest.startedAtMs),
-        state: now.getTime() - latest.startedAtMs > ATTEMPT_WINDOW_MS ? "lapsed" : "waiting",
-      };
+        state: now.getTime() - latest.startedAtMs > ATTEMPT_WINDOW_MS ? 'lapsed' : 'waiting',
+      }
     },
 
     outcome() {
-      return last;
+      return last
     },
 
     unfinished() {
-      return mint === null || mint.finished ? null : { appId: mint.appId, slug: mint.slug };
+      return mint === null || mint.finished ? null : { appId: mint.appId, slug: mint.slug }
     },
-  };
+  }
 }
 
 /**
@@ -393,14 +394,13 @@ export function createCreationSession(): CreationSession {
  * session and the redirect a `state` nobody issued. A symbol on the global is
  * the one name that is the process's.
  */
-const SESSION = Symbol.for("lingtai.github-app-creation");
+const SESSION = Symbol.for('lingtai.github-app-creation')
 
 interface WithSession {
-  [SESSION]?: CreationSession;
+  [SESSION]?: CreationSession
 }
 
-export const creation: CreationSession =
-  ((globalThis as WithSession)[SESSION] ??= createCreationSession());
+export const creation: CreationSession = ((globalThis as WithSession)[SESSION] ??= createCreationSession())
 
 /**
  * Step 4 and everything after it, as one function that cannot lose the key.
@@ -423,38 +423,37 @@ async function convertAndWrite(
     refusal,
     minted,
     at: now,
-  });
+  })
 
   if (!options.code) {
     return refuse(
-      "GitHub sent no code back, so there is nothing to exchange — the App was not created. " +
-        "Start again.",
-    );
+      'GitHub sent no code back, so there is nothing to exchange — the App was not created. ' + 'Start again.',
+    )
   }
   if (!options.state) {
-    return refuse("that link carries no state, so it did not come from this page. Start again.");
+    return refuse('that link carries no state, so it did not come from this page. Start again.')
   }
 
-  const attempt = issued.get(options.state);
+  const attempt = issued.get(options.state)
   if (attempt === undefined) {
     // Deliberately one sentence for "never issued" and "issued by a board that
     // has since restarted": both mean this process cannot vouch for the code,
     // and neither is a thing to press through.
     return refuse(
-      "that state is not one this page issued, so the code was not accepted. Nothing was " +
-        "written. If GitHub did create an App, it is listed under Settings → Developer settings " +
-        "→ GitHub Apps, and doc/operating.md finishes it by hand.",
-    );
+      'that state is not one this page issued, so the code was not accepted. Nothing was ' +
+        'written. If GitHub did create an App, it is listed under Settings → Developer settings ' +
+        '→ GitHub Apps, and doc/operating.md finishes it by hand.',
+    )
   }
   if (now.getTime() - attempt.startedAtMs > ATTEMPT_WINDOW_MS) {
     return refuse(
       `the hour lapsed — the form was posted at ${new Date(attempt.startedAtMs).toISOString()}, ` +
         "and GitHub's code is good for one hour. Nothing was written — start again.",
-    );
+    )
   }
 
-  const env = options.env ?? process.env;
-  const envFile = options.envFile ?? join(repoRoot(), ".env.local");
+  const env = options.env ?? process.env
+  const envFile = options.envFile ?? join(repoRoot(), '.env.local')
   // **The question the page and `start/route.ts` asked, asked again where the
   // writing happens.** A `state` is good for a whole hour and neither of those
   // two checks is one this path makes, so a first tab left on GitHub's naming
@@ -483,47 +482,47 @@ async function convertAndWrite(
   // close the door*), so pressing it was a choice made knowing; a form posted
   // before it is a tab nobody has looked at since.
   if (previous !== null && (previous.finished || attempt.startedAtMs <= previous.atMs)) {
-    const minted = { appId: previous.appId, slug: previous.slug };
-    const at = new Date(previous.atMs).toISOString();
+    const minted = { appId: previous.appId, slug: previous.slug }
+    const at = new Date(previous.atMs).toISOString()
     return refuse(
       previous.finished
         ? `app ${previous.appId} was created here at ${at}, and is what this ` +
-            "Lingtai is configured with. This return was not applied: nothing was written, and that " +
-            "configuration is untouched. GitHub did create the App this tab named — it is under " +
-            "Settings → Developer settings → GitHub Apps, and can be deleted there."
+            'Lingtai is configured with. This return was not applied: nothing was written, and that ' +
+            'configuration is untouched. GitHub did create the App this tab named — it is under ' +
+            'Settings → Developer settings → GitHub Apps, and can be deleted there.'
         : `app ${previous.appId} was created here at ${at} and its credentials ` +
             "did not all land — and this tab's form was posted before that, so it was never shown " +
-            "that App. This return was not applied and nothing was written. GitHub did create the " +
-            "App this tab named as well — it is under Settings → Developer settings → GitHub Apps, " +
-            "and can be deleted there. The setup page names the unfinished App and how to finish it.",
+            'that App. This return was not applied and nothing was written. GitHub did create the ' +
+            'App this tab named as well — it is under Settings → Developer settings → GitHub Apps, ' +
+            'and can be deleted there. The setup page names the unfinished App and how to finish it.',
       // Carried, not dropped: this refusal becomes the session's last outcome,
       // and the page reads `minted` off it to name the App.
       previous.finished ? null : minted,
-    );
+    )
   }
-  const already = await configuration({ env, envFile, store: options.store ?? eventStore });
+  const already = await configuration({ env, envFile, store: options.store ?? eventStore })
   if (already.configured !== null) {
     return refuse(
       `a GitHub App is already configured here — app ${already.configured.appId}, ${
-        already.configured.where === "environment" ? "in this process's environment" : `in ${already.configured.file}`
+        already.configured.where === 'environment' ? "in this process's environment" : `in ${already.configured.file}`
       }. This return was not applied: nothing was written, and that App's id, key path and webhook ` +
-        "secret are untouched. GitHub did create the App this tab named — it is under Settings → " +
-        "Developer settings → GitHub Apps, and can be deleted there. A second App is one nothing " +
-        "is installed on.",
-    );
+        'secret are untouched. GitHub did create the App this tab named — it is under Settings → ' +
+        'Developer settings → GitHub Apps, and can be deleted there. A second App is one nothing ' +
+        'is installed on.',
+    )
   }
   if (already.minted !== null && attempt.startedAtMs <= already.minted.at.getTime()) {
     // The same rule on the log, for a board restarted between the two: an App
     // minted here after this form was posted is one this tab was never shown.
     // One minted *before* it was on the page that offered this form, by name.
-    const { appId, slug } = already.minted;
+    const { appId, slug } = already.minted
     return refuse(
       `app ${appId} was created here at ${already.minted.at.toISOString()}, after this tab's form ` +
         `was posted, and this Lingtai is not configured with it — ${envFile} does not name it. This ` +
-        "return was not applied and nothing was written. GitHub did create the App this tab named " +
-        "as well — it is under Settings → Developer settings → GitHub Apps, and can be deleted there.",
+        'return was not applied and nothing was written. GitHub did create the App this tab named ' +
+        'as well — it is under Settings → Developer settings → GitHub Apps, and can be deleted there.',
       { appId, slug },
-    );
+    )
   }
   if (already.unanswered !== null) {
     // **Unknown is not no, here as on the page and in `start`.** The log is what
@@ -531,27 +530,27 @@ async function convertAndWrite(
     // fails cannot be read as *nothing was created* — that is a second App
     // minted on a few minutes of unreachable Postgres.
     return refuse(
-      "Lingtai cannot tell whether an App was already created here: the log could not be read " +
+      'Lingtai cannot tell whether an App was already created here: the log could not be read ' +
         `(${already.unanswered}). This return was not applied and nothing was written, because ` +
-        "writing it over an App this process cannot see would leave .env.local naming an id no " +
-        "repository has installed. GitHub did create the App this tab named — it is under Settings " +
-        "→ Developer settings → GitHub Apps, where it can be deleted, or kept and finished by hand " +
-        "once pnpm lingtai doctor passes (doc/operating.md from step 2, with a private key " +
-        "generated on its own page — the one from this exchange was not fetched).",
-    );
+        'writing it over an App this process cannot see would leave .env.local naming an id no ' +
+        'repository has installed. GitHub did create the App this tab named — it is under Settings ' +
+        '→ Developer settings → GitHub Apps, where it can be deleted, or kept and finished by hand ' +
+        'once pnpm lingtai doctor passes (doc/operating.md from step 2, with a private key ' +
+        'generated on its own page — the one from this exchange was not fetched).',
+    )
   }
 
-  let created;
+  let created
   try {
-    created = await convertManifest(options.code, options.fetch ? { fetch: options.fetch } : {});
+    created = await convertManifest(options.code, options.fetch ? { fetch: options.fetch } : {})
   } catch (err) {
     if (err instanceof GitHubError && (err.status === 404 || err.status === 422)) {
       return refuse(
-        "GitHub would not exchange that code: it is good for one hour and for one exchange, and " +
-          "this one is spent or lapsed. Nothing was written — start again.",
-      );
+        'GitHub would not exchange that code: it is good for one hour and for one exchange, and ' +
+          'this one is spent or lapsed. Nothing was written — start again.',
+      )
     }
-    return refuse(`GitHub would not exchange the code: ${(err as Error).message}. Nothing was written.`);
+    return refuse(`GitHub would not exchange the code: ${(err as Error).message}. Nothing was written.`)
   }
 
   // **The record goes down the moment the App exists, and before either write
@@ -571,30 +570,30 @@ async function convertAndWrite(
   // configured is what `.env.local` and the environment say — `configuration()`
   // asks them and does not ask this — and this says an App of Lingtai's is out
   // there on GitHub, which is the fact that makes minting a second one wrong.
-  let notRecorded: string | null = null;
+  let notRecorded: string | null = null
   try {
-    const store = options.store ?? eventStore;
-    const existing = await store.read(GITHUB_APP_STREAM);
+    const store = options.store ?? eventStore
+    const existing = await store.read(GITHUB_APP_STREAM)
     await store.append(GITHUB_APP_STREAM, existing.length, [
       {
-        type: "GitHubAppCreated",
+        type: 'GitHubAppCreated',
         actor: options.by,
         // The id and the slug and nothing else. The log is permanent and
         // `projection rebuild` replays it, so a secret here would be read aloud
         // for ever — and two of the six values that arrived are secrets.
-        data: parsePayload("GitHubAppCreated", { appId: String(created.id), slug: created.slug }),
+        data: parsePayload('GitHubAppCreated', { appId: String(created.id), slug: created.slug }),
       },
-    ]);
+    ])
   } catch (err) {
     // Not a refusal on its own: the App is real and the credentials may yet
     // land. What is missing is the record, and the record is what stops this
     // page offering to mint a second App before a restart — so every sentence
     // below says which of the two is true.
-    notRecorded = (err as Error).message;
+    notRecorded = (err as Error).message
   }
 
   /** The App this exchange put on GitHub, carried by every refusal below. */
-  const minted = { appId: String(created.id), slug: created.slug };
+  const minted = { appId: String(created.id), slug: created.slug }
 
   /**
    * What a refusal after this point can promise about pressing Create again.
@@ -608,15 +607,15 @@ async function convertAndWrite(
   const andTheLog =
     notRecorded === null
       ? " It is on Lingtai's log, so the setup page keeps naming it. Creating another is still offered, " +
-        "and this App stays on GitHub either way until it is deleted there."
+        'and this App stays on GitHub either way until it is deleted there.'
       : ` The log did not record it either (${notRecorded}), so the setup page names it only while ` +
-        `this board keeps running — note app ${created.id} now: it exists on GitHub whatever this page says later.`;
+        `this board keeps running — note app ${created.id} now: it exists on GitHub whatever this page says later.`
 
-  const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT;
+  const wanted = options.keyPath ?? optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT
 
-  let keyPath: string;
+  let keyPath: string
   try {
-    keyPath = await writeKey(wanted, created.pem, String(created.id));
+    keyPath = await writeKey(wanted, created.pem, String(created.id))
   } catch (err) {
     // The one failure with nothing to hand back: the key exists only in this
     // function's memory and is about to leave it.
@@ -624,10 +623,10 @@ async function convertAndWrite(
       `the App was created on GitHub — ${created.name} (app ${created.id}) — and its private key ` +
         `could not be written to ${wanted}: ${(err as Error).message}. The key cannot be fetched ` +
         "again; generate a new one on the App's own page (Settings → Developer settings → GitHub " +
-        "Apps → General → Private keys) and follow doc/operating.md from step 2." +
+        'Apps → General → Private keys) and follow doc/operating.md from step 2.' +
         andTheLog,
       minted,
-    );
+    )
   }
 
   try {
@@ -639,7 +638,7 @@ async function convertAndWrite(
         [WEBHOOK_SECRET_VAR]: created.webhookSecret,
       },
       APP_ID_VAR,
-    );
+    )
   } catch (err) {
     // Two of the three values can be written by hand from this sentence. The
     // third cannot: GitHub generates the webhook secret during the conversion
@@ -655,11 +654,11 @@ async function convertAndWrite(
         `lost: ${WEBHOOK_SECRET_VAR} was generated by GitHub during this exchange and is handed ` +
         "back once, so it is not in that file and cannot be read off the App's page — and without " +
         "it every delivery to /api/webhook is refused. Set a new webhook secret on the App's own " +
-        "page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write " +
+        'page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write ' +
         `that one here as ${WEBHOOK_SECRET_VAR}.` +
         andTheLog,
       minted,
-    );
+    )
   }
 
   // The credentials are on disk and they work; if the log would not take the
@@ -670,7 +669,7 @@ async function convertAndWrite(
     notRecorded === null
       ? null
       : `the log did not record it (${notRecorded}), so this page may offer to create ` +
-        "another App once this board process stops. Do not — the App exists.";
+        'another App once this board process stops. Do not — the App exists.'
 
   return {
     ok: true,
@@ -682,7 +681,7 @@ async function convertAndWrite(
     webhookActive: attempt.webhookUrl !== null,
     warning,
     at: now,
-  };
+  }
 }
 
 /**
@@ -699,29 +698,29 @@ async function convertAndWrite(
  * is 0600* is a fact here rather than a hope.
  */
 async function writeKey(wanted: string, pem: string, distinguish: string): Promise<string> {
-  const absolute = resolvePath(wanted);
-  await mkdir(dirname(absolute), { recursive: true, mode: KEY_DIR_MODE });
+  const absolute = resolvePath(wanted)
+  await mkdir(dirname(absolute), { recursive: true, mode: KEY_DIR_MODE })
 
-  let path = wanted;
-  let target = absolute;
+  let path = wanted
+  let target = absolute
   if (await exists(absolute)) {
-    const ext = extname(absolute);
-    const aside = `${basename(absolute, ext)}.${distinguish}${ext}`;
-    path = `${wanted.slice(0, wanted.length - basename(wanted).length)}${aside}`;
-    target = join(dirname(absolute), aside);
+    const ext = extname(absolute)
+    const aside = `${basename(absolute, ext)}.${distinguish}${ext}`
+    path = `${wanted.slice(0, wanted.length - basename(wanted).length)}${aside}`
+    target = join(dirname(absolute), aside)
   }
 
-  await writeFile(target, pem, { mode: KEY_FILE_MODE });
-  await chmod(target, KEY_FILE_MODE);
-  return path;
+  await writeFile(target, pem, { mode: KEY_FILE_MODE })
+  await chmod(target, KEY_FILE_MODE)
+  return path
 }
 
 async function exists(path: string): Promise<boolean> {
   try {
-    await stat(path);
-    return true;
+    await stat(path)
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -760,36 +759,36 @@ async function exists(path: string): Promise<boolean> {
  * own. That serialisation is load-bearing and nothing here makes it redundant.
  */
 async function writeEnv(file: string, values: Record<string, string>, keep: string): Promise<void> {
-  const before = await readOrNull(file);
-  const created = before === null;
+  const before = await readOrNull(file)
+  const created = before === null
   const refuseKept = (text: string) => {
     if (named(parseEnvFile(text).values, keep) !== null) {
       throw new Error(
         `${keep} is already set in ${file} — it was written between this page's check and this write, ` +
-          "and replacing it would send Lingtai to a different App",
-      );
+          'and replacing it would send Lingtai to a different App',
+      )
     }
-  };
-  if (before !== null) refuseKept(before);
+  }
+  if (before !== null) refuseKept(before)
 
-  let text = before ?? header();
-  for (const [name, value] of Object.entries(values)) text = setEnvLine(text, name, value);
+  let text = before ?? header()
+  for (const [name, value] of Object.entries(values)) text = setEnvLine(text, name, value)
 
-  await mkdir(dirname(file), { recursive: true });
+  await mkdir(dirname(file), { recursive: true })
   // As late as there is anywhere to put it. What arrived in between is
   // somebody else's line, and rewriting the whole file is how it is lost.
-  const nowOnDisk = await readOrNull(file);
+  const nowOnDisk = await readOrNull(file)
   if (nowOnDisk !== before) {
-    if (nowOnDisk !== null) refuseKept(nowOnDisk);
+    if (nowOnDisk !== null) refuseKept(nowOnDisk)
     throw new Error(
       `${file} changed between this write's own read of it and the write itself — nothing was ` +
-        "written, because rewriting the whole file would have lost that change",
-    );
+        'written, because rewriting the whole file would have lost that change',
+    )
   }
   // `wx` on a file that was not there: two creators race and the second is
   // refused by the kernel rather than by a check it can outrun.
-  await writeFile(file, text, created ? { mode: ENV_FILE_MODE, flag: "wx" } : { mode: ENV_FILE_MODE });
-  if (created) await chmod(file, ENV_FILE_MODE);
+  await writeFile(file, text, created ? { mode: ENV_FILE_MODE, flag: 'wx' } : { mode: ENV_FILE_MODE })
+  if (created) await chmod(file, ENV_FILE_MODE)
 }
 
 /**
@@ -802,15 +801,15 @@ async function writeEnv(file: string, values: Record<string, string>, keep: stri
  * a configuration would refuse them the one screen they came for.
  */
 function named(values: Record<string, string>, name: string): string | null {
-  const value = values[name];
-  return value === undefined || value === "" ? null : value;
+  const value = values[name]
+  return value === undefined || value === '' ? null : value
 }
 
 async function readOrNull(file: string): Promise<string | null> {
   try {
-    return await readFile(file, "utf8");
+    return await readFile(file, 'utf8')
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -818,7 +817,7 @@ function header(): string {
   return (
     "# Lingtai's own values. Copy .env.example beside it for everything else.\n" +
     "# The GitHub App lines below were written by the board's setup page (#169).\n"
-  );
+  )
 }
 
 // ------------------------------------------------------- what to offer ----
@@ -827,30 +826,30 @@ function header(): string {
 export async function recordedApp(
   store: EventStore = eventStore,
 ): Promise<{ appId: string; slug: string; at: Date } | null> {
-  const events = await store.read(GITHUB_APP_STREAM);
+  const events = await store.read(GITHUB_APP_STREAM)
   for (let i = events.length - 1; i >= 0; i -= 1) {
-    const event = events[i]!;
-    if (event.type === "GitHubAppCreated") {
-      const data = event.data as { appId: string; slug: string };
-      return { appId: data.appId, slug: data.slug, at: event.at };
+    const event = events[i]!
+    if (event.type === 'GitHubAppCreated') {
+      const data = event.data as { appId: string; slug: string }
+      return { appId: data.appId, slug: data.slug, at: event.at }
     }
   }
-  return null;
+  return null
 }
 
 /** An App this installation has the credentials of, and where they are. */
 export interface Configured {
   /** Never null: an id is what *being* configured means, in both branches. */
-  appId: string;
+  appId: string
   /** The App's name on GitHub, when the log agrees this is that App. */
-  slug: string | null;
+  slug: string | null
   /**
    * Which source named it: the process environment, or an env file on disk.
    * Both are read per call by `githubApp()`, so either is usable as it stands.
    */
-  where: "environment" | "file";
+  where: 'environment' | 'file'
   /** The env file, when that is what says so — the page names it. */
-  file: string | null;
+  file: string | null
 }
 
 /**
@@ -885,21 +884,17 @@ export interface Configured {
  * would be written. A guard the last of those does not share is a guard a
  * `state` from a forgotten tab walks straight past an hour later.
  */
-async function configuration(options: {
-  env: NodeJS.ProcessEnv;
-  envFile: string;
-  store: EventStore;
-}): Promise<{
-  configured: Configured | null;
-  minted: { appId: string; slug: string; at: Date } | null;
-  unanswered: string | null;
+async function configuration(options: { env: NodeJS.ProcessEnv; envFile: string; store: EventStore }): Promise<{
+  configured: Configured | null
+  minted: { appId: string; slug: string; at: Date } | null
+  unanswered: string | null
 }> {
-  let minted: { appId: string; slug: string; at: Date } | null = null;
-  let unanswered: string | null = null;
+  let minted: { appId: string; slug: string; at: Date } | null = null
+  let unanswered: string | null = null
   try {
-    minted = await recordedApp(options.store);
+    minted = await recordedApp(options.store)
   } catch (err) {
-    unanswered = (err as Error).message;
+    unanswered = (err as Error).message
   }
 
   // **Both files `@lingtai/env` reads, and in its order.** It loads
@@ -908,16 +903,16 @@ async function configuration(options: {
   // that this process's environment cannot see, and writing `.env.local` would
   // shadow it rather than replace it: the same accident with an extra file in
   // it. The write target is still only the first.
-  const inTarget = await namedIn(options.envFile, APP_ID_VAR);
-  const inFiles = inTarget ?? (await namedIn(join(dirname(options.envFile), ".env"), APP_ID_VAR));
-  const envAppId = optional(APP_ID_VAR, options.env) ?? null;
+  const inTarget = await namedIn(options.envFile, APP_ID_VAR)
+  const inFiles = inTarget ?? (await namedIn(join(dirname(options.envFile), '.env'), APP_ID_VAR))
+  const envAppId = optional(APP_ID_VAR, options.env) ?? null
   // **The environment alone**, with no files. Handed `process.env`,
   // `hasGitHubApp` reads the env files as well, so an App named only in
   // `.env.local` answered *the environment has one* while the environment's own
   // id was null — and the id, the slug and the install link all went with it.
-  const inEnvironment = envAppId !== null && hasGitHubApp(options.env, []);
+  const inEnvironment = envAppId !== null && hasGitHubApp(options.env, [])
 
-  const appId = inEnvironment ? envAppId : (inFiles?.value ?? null);
+  const appId = inEnvironment ? envAppId : (inFiles?.value ?? null)
   // **The id is the configuration's and the slug is the log's**, so the slug
   // describes this App only when the log is about this App. An operator who
   // minted 111 here and then created 222 by hand, pointing `.env.local` at it,
@@ -925,15 +920,15 @@ async function configuration(options: {
   // 111, and `lingtai add` answers *not installed* for 222 with nothing saying
   // the link was for a different App. A name Lingtai does not know is the
   // honest answer, and `Configured` already has that sentence.
-  const slug = minted !== null && appId !== null && minted.appId === appId ? minted.slug : null;
+  const slug = minted !== null && appId !== null && minted.appId === appId ? minted.slug : null
 
   const configured: Configured | null =
     inEnvironment && envAppId !== null
-      ? { appId: envAppId, slug, where: "environment", file: null }
+      ? { appId: envAppId, slug, where: 'environment', file: null }
       : inFiles !== null
-        ? { appId: inFiles.value, slug, where: "file", file: inFiles.file }
-        : null;
-  return { configured, minted, unanswered };
+        ? { appId: inFiles.value, slug, where: 'file', file: inFiles.file }
+        : null
+  return { configured, minted, unanswered }
 }
 
 /**
@@ -946,41 +941,41 @@ async function configuration(options: {
  * App's.
  */
 async function namedIn(file: string, name: string): Promise<{ value: string; file: string } | null> {
-  const text = await readOrNull(file);
-  if (text === null) return null;
-  const value = named(parseEnvFile(text).values, name);
-  return value === null ? null : { value, file };
+  const text = await readOrNull(file)
+  if (text === null) return null
+  const value = named(parseEnvFile(text).values, name)
+  return value === null ? null : { value, file }
 }
 
 export interface Offer {
   /** Whether the page offers to create an App at all. */
-  offered: boolean;
+  offered: boolean
   /** The credentials this installation has, when it has them. */
-  configured: Configured | null;
+  configured: Configured | null
   /**
    * An App minted here that nothing is configured with — the creation that did
    * not finish. **Never rendered as "configured"**: it says the App is on
    * GitHub, not that its key reached this machine.
    */
-  minted: { appId: string; slug: string } | null;
+  minted: { appId: string; slug: string } | null
   /**
    * Why the question could not be answered, when it could not — the store's own
    * message. **Not the same as `minted: null`**, which says *no App was created
    * here*; this says *nobody knows*, and nothing is offered on it.
    */
-  unanswered: string | null;
+  unanswered: string | null
   /** #168's first screen, when there is a slug to build it from. */
-  installUrl: string | null;
+  installUrl: string | null
   /** Where the key would go, as it would be written into the env file. */
-  keyPath: string;
+  keyPath: string
   /** A name unlikely to collide. GitHub requires one unique across all of it. */
-  suggestedName: string;
+  suggestedName: string
   /** 0006's table, to be shown rather than asked about. */
-  permissions: typeof REQUIRED_PERMISSIONS;
+  permissions: typeof REQUIRED_PERMISSIONS
   /** The posted form nobody has come back from. */
-  outstanding: Outstanding | null;
+  outstanding: Outstanding | null
   /** What the last return from GitHub came to. */
-  outcome: Outcome | null;
+  outcome: Outcome | null
 }
 
 /**
@@ -1014,25 +1009,24 @@ export interface Offer {
  */
 export async function offerCreation(
   options: {
-    env?: NodeJS.ProcessEnv;
+    env?: NodeJS.ProcessEnv
     /** The write target, which is also what `configured` is read from. */
-    envFile?: string;
-    store?: EventStore;
-    session?: CreationSession;
-    now?: Date;
+    envFile?: string
+    store?: EventStore
+    session?: CreationSession
+    now?: Date
   } = {},
 ): Promise<Offer> {
-  const env = options.env ?? process.env;
-  const envFile = options.envFile ?? join(repoRoot(), ".env.local");
-  const session = options.session ?? creation;
+  const env = options.env ?? process.env
+  const envFile = options.envFile ?? join(repoRoot(), '.env.local')
+  const session = options.session ?? creation
   const { configured, minted, unanswered } = await configuration({
     env,
     envFile,
     store: options.store ?? eventStore,
-  });
-  const outcome = session.outcome();
-  const mintedHere =
-    session.unfinished() ?? (minted === null ? null : { appId: minted.appId, slug: minted.slug });
+  })
+  const outcome = session.outcome()
+  const mintedHere = session.unfinished() ?? (minted === null ? null : { appId: minted.appId, slug: minted.slug })
 
   return {
     offered: unanswered === null && configured === null && outcome?.ok !== true,
@@ -1042,15 +1036,13 @@ export async function offerCreation(
     // The App the person is being sent to install is the one they are
     // configured with, and the slug is null unless the log agrees it is that
     // App — so an unfinished creation's slug is never offered as this one's.
-    installUrl: configured?.slug
-      ? `https://github.com/apps/${configured.slug}/installations/new`
-      : null,
+    installUrl: configured?.slug ? `https://github.com/apps/${configured.slug}/installations/new` : null,
     keyPath: optional(KEY_PATH_VAR, env) ?? KEY_PATH_DEFAULT,
     suggestedName: suggestedName(),
     permissions: REQUIRED_PERMISSIONS,
     outstanding: session.outstanding(options.now),
     outcome,
-  };
+  }
 }
 
 /**
@@ -1058,14 +1050,17 @@ export async function offerCreation(
  * where Lingtai cannot see it — and reaches this system as a silence.
  */
 export function suggestedName(who: string = safeUser()): string {
-  return `lingtai-${who}`;
+  return `lingtai-${who}`
 }
 
 function safeUser(): string {
   try {
-    const name = userInfo().username.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-    return name === "" ? randomUUID().slice(0, 8) : name;
+    const name = userInfo()
+      .username.toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    return name === '' ? randomUUID().slice(0, 8) : name
   } catch {
-    return randomUUID().slice(0, 8);
+    return randomUUID().slice(0, 8)
   }
 }

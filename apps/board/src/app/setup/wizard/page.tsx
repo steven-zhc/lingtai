@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises'
+
+import { currentRecipe } from '@lingtai/conductor/projects'
 /**
  * The onboarding wizard's page (#164): two speeds, and the collapse that makes
  * it work. What the rows are and how a line moves is
@@ -16,49 +19,48 @@
  * **Nothing is written by loading it.** Every request here is a `GET`; the
  * page's button is what writes, and only on this machine (`finish.ts`).
  */
-import { onboardState, updateState } from "@lingtai/conductor/wizard-page";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient, parseSlug } from "@lingtai/github";
-import type { ProjectState } from "@lingtai/domain";
-import { currentRecipe } from "@lingtai/conductor/projects";
+import { onboardState, updateState } from '@lingtai/conductor/wizard-page'
+import type { ProjectState } from '@lingtai/domain'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { createGitHubClient, parseSlug } from '@lingtai/github'
 import {
   AgentUnresolvedError,
   MachineConfigInvalidError,
   RecipeInvalidError,
   proposeRecipe,
   recipePath,
-} from "@lingtai/recipe";
-import { readFile } from "node:fs/promises";
-import { type Loaded, WizardScreen } from "./wizard.tsx";
+} from '@lingtai/recipe'
 
-export const dynamic = "force-dynamic";
+import { type Loaded, WizardScreen } from './wizard.tsx'
+
+export const dynamic = 'force-dynamic'
 
 export default async function Wizard({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
-  const params = await searchParams;
-  return <WizardScreen loaded={await load(params.repo ?? "")} />;
+  const params = await searchParams
+  return <WizardScreen loaded={await load(params.repo ?? '')} />
 }
 
 async function load(input: string): Promise<Loaded> {
-  if (!hasGitHubApp()) return { state: "no-app" };
-  let owner: string;
-  let repo: string;
+  if (!hasGitHubApp()) return { state: 'no-app' }
+  let owner: string
+  let repo: string
   try {
-    ({ owner, repo } = parseSlug(input));
+    ;({ owner, repo } = parseSlug(input))
   } catch (err) {
-    return { state: "unreadable", why: (err as Error).message };
+    return { state: 'unreadable', why: (err as Error).message }
   }
-  const slug = `${owner}/${repo}`;
+  const slug = `${owner}/${repo}`
   try {
-    const client = await createGitHubClient({ auth: githubApp(), owner, repo });
-    const existing = await readFile(recipePath(repo), "utf8").catch((err: NodeJS.ErrnoException) => {
-      if (err.code === "ENOENT") return null;
-      throw err;
-    });
+    const client = await createGitHubClient({ auth: githubApp(), owner, repo })
+    const existing = await readFile(recipePath(repo), 'utf8').catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return null
+      throw err
+    })
     if (existing !== null) {
-      let resolved;
+      let resolved
       try {
         // The read a run makes, so the page shows the agent and limits a run gets.
-        resolved = await currentRecipe({ project: repo, owner } as ProjectState);
+        resolved = await currentRecipe({ project: repo, owner } as ProjectState)
       } catch (err) {
         // The files on this machine are what is wrong, and picking another repository does not fix it.
         if (
@@ -66,16 +68,16 @@ async function load(input: string): Promise<Loaded> {
           err instanceof MachineConfigInvalidError ||
           err instanceof AgentUnresolvedError
         ) {
-          return { state: "invalid", slug, why: err.message };
+          return { state: 'invalid', slug, why: err.message }
         }
-        throw err;
+        throw err
       }
-      const { recipe } = resolved;
-      return { state: "ready", initial: updateState({ slug, recipe }), recipe, existing };
+      const { recipe } = resolved
+      return { state: 'ready', initial: updateState({ slug, recipe }), recipe, existing }
     }
-    const proposal = await proposeRecipe(slug, client);
+    const proposal = await proposeRecipe(slug, client)
     return {
-      state: "ready",
+      state: 'ready',
       initial: onboardState({
         slug,
         recipe: proposal.recipe,
@@ -85,8 +87,8 @@ async function load(input: string): Promise<Loaded> {
       }),
       recipe: proposal.recipe,
       existing: null,
-    };
+    }
   } catch (err) {
-    return { state: "unreadable", why: (err as Error).message };
+    return { state: 'unreadable', why: (err as Error).message }
   }
 }

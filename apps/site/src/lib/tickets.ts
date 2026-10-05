@@ -19,48 +19,48 @@
  */
 
 /** Where a reference on this site goes. Lingtai's own issues, and no others. */
-export const ISSUES = "https://github.com/steven-zhc/lingtai/issues/";
+export const ISSUES = 'https://github.com/steven-zhc/lingtai/issues/'
 
 export interface Ticket {
   /** The issue number in this repository. */
-  ref: number;
+  ref: number
   /** Its kind label, which is what makes it visible to the queue at all. */
-  kind: string;
+  kind: string
   /** Whether it reached `main`. Half the point is that one of them did not. */
-  landed: boolean;
+  landed: boolean
   /** What the whole ticket cost, across every attempt it took. */
-  costUsd: number;
+  costUsd: number
   /** How many times an agent was given it, when the record says. */
-  attempts: number | null;
+  attempts: number | null
   /** What the ticket asked for. */
-  what: string;
+  what: string
   /** What happened to it, and what that cost a person as well as a card. */
-  story: string;
+  story: string
   /** The file under `doc/` that records the figure, checked by the test. */
-  source: string;
+  source: string
 }
 
 export const TICKETS: Ticket[] = [
   {
     ref: 89,
-    kind: "bug",
+    kind: 'bug',
     landed: false,
     costUsd: 13.04,
     attempts: 2,
-    what: "A bug, given to an agent twice, and it never merged.",
+    what: 'A bug, given to an agent twice, and it never merged.',
     story:
       "Both attempts concluded that the runtime had no --max-turns flag, because it is absent from the binary's own --help — and it is present in the binary. Two agents in a row turned a missing line of documentation into a fact. It ended in “waiting on you”, and working out why took a person an hour: the events, then one source file, then one test fixture.",
-    source: "decisions-archive/0033-the-third-kind-of-agent.md",
+    source: 'decisions-archive/0033-the-third-kind-of-agent.md',
   },
   {
     ref: 84,
-    kind: "feature",
+    kind: 'feature',
     landed: true,
     costUsd: 26.53,
     attempts: null,
-    what: "The repair agent — a failed run buys one attempt to fix itself.",
+    what: 'The repair agent — a failed run buys one attempt to fix itself.',
     story:
-      "It landed, and the moment it did, the log of what the agent was thinking was deleted. That is the rule and not an accident: those files exist to explain why something is not done, so a run that landed has nothing left to explain. What survives is the diff and the events.",
-    source: "decisions-archive/0034-the-run-log.md",
+      'It landed, and the moment it did, the log of what the agent was thinking was deleted. That is the rule and not an accident: those files exist to explain why something is not done, so a run that landed has nothing left to explain. What survives is the diff and the events.',
+    source: 'decisions-archive/0034-the-run-log.md',
   },
-];
+]

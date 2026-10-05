@@ -26,7 +26,7 @@ export {
   projectionLag,
   type ProjectionRunner,
   type ProjectionRunnerOptions,
-} from "./projection.ts";
+} from './projection.ts'
 export {
   type BacklogQuery,
   type Projection,
@@ -35,12 +35,8 @@ export {
   type ProjectionRow,
   type ProjectionStore,
   type TaskQuery,
-} from "./store.ts";
-export {
-  projectionStore,
-  withProjectionStore,
-  type ProjectionStoreOptions,
-} from "./choose.ts";
+} from './store.ts'
+export { projectionStore, withProjectionStore, type ProjectionStoreOptions } from './choose.ts'
 export {
   ProjectionShapeError,
   declaredColumns,
@@ -50,7 +46,7 @@ export {
   projectionShape,
   type ProjectionDrift,
   type ProjectionShape,
-} from "./shape.ts";
+} from './shape.ts'
 export {
   BACKLOG_TABLE,
   backlogProjection,
@@ -58,7 +54,7 @@ export {
   type BacklogEntry,
   type BacklogStatus,
   type ReadBacklogOptions,
-} from "./backlog.ts";
+} from './backlog.ts'
 export {
   DEFAULT_RETENTION_DAYS,
   TASK_VIEW_TABLE,
@@ -72,4 +68,4 @@ export {
   type ReadTasksOptions,
   type TaskCard,
   type TaskState,
-} from "./task-view.ts";
+} from './task-view.ts'

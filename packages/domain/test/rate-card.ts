@@ -13,19 +13,19 @@
  * test proving the arithmetic; see `doc/rate-card.md` for the rows themselves
  * and the rule that nothing here is ever edited, only appended to.
  */
-import type { TokenCounts } from "../src/spend.ts";
+import type { TokenCounts } from '../src/spend.ts'
 
 export interface RateRow {
   /** The date this rate came into force, `YYYY-MM-DD`. */
-  from: string;
-  model: string;
+  from: string
+  model: string
   /** `""` for the ordinary rate. A premium speed names itself here. */
-  mode: string;
+  mode: string
   /** Dollars per million tokens. */
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
 }
 
 /**
@@ -34,13 +34,13 @@ export interface RateRow {
  * the header row itself — does not match and is skipped.
  */
 const ROW =
-  /^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*`([^`]+)`\s*\|\s*([^|]*)\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*$/;
+  /^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*`([^`]+)`\s*\|\s*([^|]*)\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*$/
 
 export function parseRateCard(markdown: string): RateRow[] {
-  const rows: RateRow[] = [];
-  for (const line of markdown.split("\n")) {
-    const m = ROW.exec(line.trim());
-    if (!m) continue;
+  const rows: RateRow[] = []
+  for (const line of markdown.split('\n')) {
+    const m = ROW.exec(line.trim())
+    if (!m) continue
     rows.push({
       from: m[1]!,
       model: m[2]!,
@@ -49,9 +49,9 @@ export function parseRateCard(markdown: string): RateRow[] {
       output: Number(m[5]),
       cacheRead: Number(m[6]),
       cacheWrite: Number(m[7]),
-    });
+    })
   }
-  return rows;
+  return rows
 }
 
 /**
@@ -65,10 +65,10 @@ export function parseRateCard(markdown: string): RateRow[] {
 export function rateFor(rows: readonly RateRow[], model: string, mode: string, at: Date): RateRow | undefined {
   return rows
     .filter((r) => r.model === model && r.mode === mode && new Date(r.from).getTime() <= at.getTime())
-    .sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0];
+    .sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : 0))[0]
 }
 
-const PER_MILLION = 1_000_000;
+const PER_MILLION = 1_000_000
 
 /**
  * One entry's tokens, priced at one row.
@@ -83,5 +83,5 @@ export function priceTokens(tokens: TokenCounts, row: RateRow): number {
     ((tokens.output ?? 0) + (tokens.reasoning ?? 0)) * (row.output / PER_MILLION) +
     (tokens.cacheRead ?? 0) * (row.cacheRead / PER_MILLION) +
     (tokens.cacheWrite ?? 0) * (row.cacheWrite / PER_MILLION)
-  );
+  )
 }

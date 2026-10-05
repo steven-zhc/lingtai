@@ -12,7 +12,7 @@
 
 /** `wi-{project}-{n}`, the work item's own stream. */
 export function workItemStream(project: string, externalRef: string | number): string {
-  return `wi-${project}-${externalRef}`;
+  return `wi-${project}-${externalRef}`
 }
 
 /**
@@ -24,16 +24,16 @@ export function workItemStream(project: string, externalRef: string | number): s
  * a fourth.
  */
 export function parseWorkItemStream(id: string): { project: string; issue: string } | null {
-  const body = id.startsWith("wi-") ? id.slice(3) : id;
-  const cut = body.lastIndexOf("-");
-  if (cut < 0) return null;
-  const project = body.slice(0, cut);
-  const issue = body.slice(cut + 1);
-  if (!project || !issue) return null;
-  return { project, issue };
+  const body = id.startsWith('wi-') ? id.slice(3) : id
+  const cut = body.lastIndexOf('-')
+  if (cut < 0) return null
+  const project = body.slice(0, cut)
+  const issue = body.slice(cut + 1)
+  if (!project || !issue) return null
+  return { project, issue }
 }
 
-export const CHAT_STREAM_PREFIX = "chat-";
+export const CHAT_STREAM_PREFIX = 'chat-'
 
 /**
  * `chat-{id}` — one discussion about one work item, whole.
@@ -48,14 +48,14 @@ export const CHAT_STREAM_PREFIX = "chat-";
  * names it, and a follow-up question is another request carrying the same name.
  */
 export function chatStream(id: string): string {
-  return id.startsWith(CHAT_STREAM_PREFIX) ? id : `${CHAT_STREAM_PREFIX}${id}`;
+  return id.startsWith(CHAT_STREAM_PREFIX) ? id : `${CHAT_STREAM_PREFIX}${id}`
 }
 
-export const PROJECT_STREAM_PREFIX = "prj-";
+export const PROJECT_STREAM_PREFIX = 'prj-'
 
 /** `prj-{project}` — everything Lingtai was told about a repository. */
 export function projectStream(project: string): string {
-  return `${PROJECT_STREAM_PREFIX}${project}`;
+  return `${PROJECT_STREAM_PREFIX}${project}`
 }
 
 /**
@@ -70,7 +70,7 @@ export function projectStream(project: string): string {
  * write back to it would race the run and turn a notifier's bad day into a
  * `ConcurrencyError` in the middle of one.
  */
-export const SUBSCRIBER_STREAM = "ext-subscribers";
+export const SUBSCRIBER_STREAM = 'ext-subscribers'
 
 /**
  * `ctl-github-app` — the team's own App, and there is one of it (`#169`).
@@ -85,11 +85,11 @@ export const SUBSCRIBER_STREAM = "ext-subscribers";
  * created* into a `ConcurrencyError` in the middle of a pass — the argument
  * `SUBSCRIBER_STREAM` above makes about the same collision.
  */
-export const GITHUB_APP_STREAM = "ctl-github-app";
+export const GITHUB_APP_STREAM = 'ctl-github-app'
 
 /** `int-{project}-{base}` — one lane per base branch, forever. */
 export function integrationStream(project: string, base: string): string {
-  return `int-${project}-${base.replace(/\//g, ".")}`;
+  return `int-${project}-${base.replace(/\//g, '.')}`
 }
 
 /**
@@ -105,9 +105,9 @@ export function integrationStream(project: string, base: string): string {
  * lands on a column (#59) instead of asserting it about the five a test
  * happened to think of.
  */
-export const LABEL_STATES = ["queued", "running", "verifying", "waiting", "landed", "closed"] as const;
+export const LABEL_STATES = ['queued', 'running', 'verifying', 'waiting', 'landed', 'closed'] as const
 
-export type LabelState = (typeof LABEL_STATES)[number];
+export type LabelState = (typeof LABEL_STATES)[number]
 
 /**
  * The work item an event is about, when the event says so **on its own**.
@@ -132,11 +132,11 @@ export type LabelState = (typeof LABEL_STATES)[number];
  * installation and to no repository.
  */
 export function workItemOf(event: { streamId: string; data?: unknown }): {
-  project: string;
-  issue: string;
+  project: string
+  issue: string
 } | null {
-  if (event.streamId.startsWith("wi-")) return parseWorkItemStream(event.streamId);
-  const named = (event.data as { workItemId?: unknown } | null | undefined)?.workItemId;
-  if (typeof named !== "string" || !named.startsWith("wi-")) return null;
-  return parseWorkItemStream(named);
+  if (event.streamId.startsWith('wi-')) return parseWorkItemStream(event.streamId)
+  const named = (event.data as { workItemId?: unknown } | null | undefined)?.workItemId
+  if (typeof named !== 'string' || !named.startsWith('wi-')) return null
+  return parseWorkItemStream(named)
 }

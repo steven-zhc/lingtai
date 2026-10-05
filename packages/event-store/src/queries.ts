@@ -50,40 +50,41 @@
  * ([#214](https://github.com/steven-zhc/lingtai/issues/214)) instead of
  * vanishing from a report that then printed `0 failed`.
  */
-import pg from "pg";
-import { postgresUrl } from "./env.ts";
+import pg from 'pg'
+
+import { postgresUrl } from './env.ts'
 
 /** Which ending an item reached. The recipe's `when:` at `end` names one of these. */
-export type EndedOutcome = "landed" | "closed";
+export type EndedOutcome = 'landed' | 'closed'
 
 /** An item that ended with a plan at `end` and no record of it running, as a store finds it. */
 export interface EndedWithoutEnd {
-  streamId: string;
-  outcome: EndedOutcome;
+  streamId: string
+  outcome: EndedOutcome
 }
 
 /** One event type the log holds, and how many rows carry it. */
 export interface TypeCount {
-  type: string;
-  rows: number;
+  type: string
+  rows: number
 }
 
 /** One issue whose last word from Lingtai about one change was a failure. */
 export interface UnconvergedUpdate {
-  project: string;
-  issue: string;
-  change: string;
+  project: string
+  issue: string
+  change: string
 }
 
 /** One subscriber's failures: all of them, and the ones since a cutoff. */
 export interface SubscriberFailures {
-  name: string;
+  name: string
   /** Every failure the log holds for this subscriber. */
-  total: number;
+  total: number
   /** Of those, the ones after the cutoff the caller gave. */
-  recent: number;
+  recent: number
   /** The latest reason after that cutoff — null where nothing is recent. */
-  lastReason: string | null;
+  lastReason: string | null
 }
 
 export interface LogQueries {
@@ -94,7 +95,7 @@ export interface LogQueries {
    * events each is a stream to fold rather than a projection to maintain, and
    * the only thing missing from `EventStore` is being told which ones exist.
    */
-  projectStreams(prefix: string): Promise<string[]>;
+  projectStreams(prefix: string): Promise<string[]>
 
   /**
    * Every item that ended whose `end` point was configured and did not run —
@@ -107,7 +108,7 @@ export interface LogQueries {
    * that resolved `end` while it was blocked, came back and then landed has one
    * of each and is not settled by the first.
    */
-  endedWithoutEndActions(): Promise<EndedWithoutEnd[]>;
+  endedWithoutEndActions(): Promise<EndedWithoutEnd[]>
 
   /**
    * Every type in the log with its row count, in **byte order of the type** —
@@ -129,7 +130,7 @@ export interface LogQueries {
    * row, which asked it as Postgres SQL and so asked it of no other store
    * ([#214](https://github.com/steven-zhc/lingtai/issues/214)).
    */
-  typeCounts(): Promise<TypeCount[]>;
+  typeCounts(): Promise<TypeCount[]>
 
   /**
    * Every issue whose last word about one change was an `IssueUpdateFailed`
@@ -140,7 +141,7 @@ export interface LogQueries {
    * is the state of the world — which is a comparison of two `max(seq)` per
    * (issue, change) and therefore the store's, not the caller's.
    */
-  unconvergedUpdates(): Promise<UnconvergedUpdate[]>;
+  unconvergedUpdates(): Promise<UnconvergedUpdate[]>
 
   /**
    * Every subscriber the log records a `PluginFailed` for, with the count since
@@ -152,12 +153,12 @@ export interface LogQueries {
    * over a notifier that broke once in March), and a rule about what to report
    * does not belong in a store.
    */
-  subscriberFailures(since: Date): Promise<SubscriberFailures[]>;
+  subscriberFailures(since: Date): Promise<SubscriberFailures[]>
 }
 
 export interface PostgresLogQueriesOptions {
   /** Defaults to `postgresUrl()`, which is what every caller read before this existed. */
-  url?: string;
+  url?: string
 }
 
 /**
@@ -173,28 +174,25 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
   // never throws: `postgresUrl()` refuses when nothing is configured, and a
   // caller that is about to hand this to something else should not be the one
   // to find out.
-  const url = () => options.url ?? postgresUrl();
+  const url = () => options.url ?? postgresUrl()
 
-  async function ask<T extends Record<string, unknown>>(
-    text: string,
-    values: readonly unknown[] = [],
-  ): Promise<T[]> {
-    const client = new pg.Client({ connectionString: url() });
-    await client.connect();
+  async function ask<T extends Record<string, unknown>>(text: string, values: readonly unknown[] = []): Promise<T[]> {
+    const client = new pg.Client({ connectionString: url() })
+    await client.connect()
     try {
-      return (await client.query<T>(text, [...values])).rows;
+      return (await client.query<T>(text, [...values])).rows
     } finally {
-      await client.end();
+      await client.end()
     }
   }
 
   return {
     async projectStreams(prefix) {
       const rows = await ask<{ stream_id: string }>(
-        "select distinct stream_id from events where stream_id like $1 order by stream_id",
+        'select distinct stream_id from events where stream_id like $1 order by stream_id',
         [`${prefix}%`],
-      );
-      return rows.map((r) => r.stream_id);
+      )
+      return rows.map((r) => r.stream_id)
     },
 
     async endedWithoutEndActions() {
@@ -227,11 +225,11 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
              and resolved.data->>'outcome' = over.outcome
          )
          order by over.stream_id`,
-      );
+      )
       return rows.map((r) => ({
         streamId: r.stream_id,
-        outcome: r.outcome === "closed" ? ("closed" as const) : ("landed" as const),
-      }));
+        outcome: r.outcome === 'closed' ? ('closed' as const) : ('landed' as const),
+      }))
     },
 
     async typeCounts() {
@@ -245,8 +243,8 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
       // can give: it is built into every Postgres and it is what BINARY means.
       const rows = await ask<{ type: string; n: number }>(
         `select type, count(*)::int as n from events group by type order by type collate "C"`,
-      );
-      return rows.map((r) => ({ type: r.type, rows: r.n }));
+      )
+      return rows.map((r) => ({ type: r.type, rows: r.n }))
     },
 
     async unconvergedUpdates() {
@@ -269,8 +267,8 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
            on ok.project = failed.project and ok.issue = failed.issue and ok.change = failed.change
          where ok.seq is null or ok.seq < failed.seq
          order by failed.project, failed.issue, failed.change`,
-      );
-      return rows.map((r) => ({ project: r.project, issue: r.issue, change: r.change }));
+      )
+      return rows.map((r) => ({ project: r.project, issue: r.issue, change: r.change }))
     },
 
     async subscriberFailures(since) {
@@ -288,13 +286,13 @@ export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}
          group by 1
          order by recent desc, total desc, name`,
         [since],
-      );
+      )
       return rows.map((r) => ({
         name: r.name,
         total: r.total,
         recent: r.recent,
         lastReason: r.last,
-      }));
+      }))
     },
-  };
+  }
 }

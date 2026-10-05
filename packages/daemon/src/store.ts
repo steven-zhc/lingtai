@@ -49,7 +49,7 @@
  * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)). This
  * interface is what made that a single edit rather than five.
  */
-import type { EventStore } from "@lingtai/event-store/store";
+import type { EventStore } from '@lingtai/event-store/store'
 
 /**
  * The beacon's row, as a store hands it back.
@@ -59,12 +59,12 @@ import type { EventStore } from "@lingtai/event-store/store";
  * be a lie.
  */
 export interface DaemonStatus {
-  pid: number;
-  host: string;
-  startedAt: Date;
-  lastSeenAt: Date;
-  state: string;
-  currentRunId: string | null;
+  pid: number
+  host: string
+  startedAt: Date
+  lastSeenAt: Date
+  state: string
+  currentRunId: string | null
   /**
    * The commit `HEAD` pointed at when this process started, and whether its
    * worktree was dirty.
@@ -75,8 +75,8 @@ export interface DaemonStatus {
    * thirty-nine minutes a daemon beat happily while holding code that could not
    * produce the event the log had been fixed to record.
    */
-  codeSha: string | null;
-  codeDirty: boolean;
+  codeSha: string | null
+  codeDirty: boolean
 }
 
 /**
@@ -89,12 +89,12 @@ export interface DaemonStatus {
  * beat an update of a running daemon's row rather than a new life for it.
  */
 export interface Beat {
-  pid: number;
-  host: string;
-  state: string;
-  currentRunId: string | null;
-  codeSha: string | null;
-  codeDirty: boolean;
+  pid: number
+  host: string
+  state: string
+  currentRunId: string | null
+  codeSha: string | null
+  codeDirty: boolean
 }
 
 /**
@@ -107,9 +107,9 @@ export interface Beat {
  */
 export interface StreamQuery {
   /** `wi-lingtai-%` — matched as SQL `like`, so `%` is the wildcard. */
-  prefixes: readonly string[];
+  prefixes: readonly string[]
   /** A stream qualifies if it holds at least one event of one of these types. */
-  types: readonly string[];
+  types: readonly string[]
 }
 
 /**
@@ -123,7 +123,7 @@ export interface DaemonStore {
    * go through this, which is what makes the beacon and the control stream one
    * interface rather than two.
    */
-  readonly events: EventStore;
+  readonly events: EventStore
 
   /**
    * Idempotent DDL for the beacon's row. Called at every daemon start, so a
@@ -133,7 +133,7 @@ export interface DaemonStore {
    * migration rules: `daemon_status` is the one mutable operational row, and it
    * is created and widened where it is read.
    */
-  create(): Promise<void>;
+  create(): Promise<void>
 
   /**
    * Says "still here", overwriting whatever the row said before.
@@ -143,10 +143,10 @@ export interface DaemonStore {
    * conductor lock it is holding while it conducts nothing. A row that cannot
    * be written reports itself by going stale.
    */
-  beat(beat: Beat): Promise<void>;
+  beat(beat: Beat): Promise<void>
 
   /** Null when no daemon has ever run. Stale is reported, never hidden. */
-  status(): Promise<DaemonStatus | null>;
+  status(): Promise<DaemonStatus | null>
 
   /**
    * The log's current end.
@@ -156,13 +156,13 @@ export interface DaemonStore {
    * answer is a single number, and reading it by paging would make starting the
    * daemon slower the longer it has been useful.
    */
-  head(): Promise<bigint>;
+  head(): Promise<bigint>
 
   /** The stream ids matching `query`, in `stream_id` order. */
-  streams(query: StreamQuery): Promise<string[]>;
+  streams(query: StreamQuery): Promise<string[]>
 
   /** Releases whatever this store holds open. */
-  close(): Promise<void>;
+  close(): Promise<void>
 }
 
 /**
@@ -171,10 +171,10 @@ export interface DaemonStore {
  * The one timer in the system, and it is not driving any decision — it says
  * "still here". Everything that *decides* still wakes on an append.
  */
-export const HEARTBEAT_MS = 5_000;
+export const HEARTBEAT_MS = 5_000
 
 /** Considered down after this long without a beat. Three missed beats. */
-export const STALE_AFTER_MS = HEARTBEAT_MS * 3;
+export const STALE_AFTER_MS = HEARTBEAT_MS * 3
 
 /**
  * What the beacon says, read from **both** of its fields.
@@ -195,11 +195,11 @@ export const STALE_AFTER_MS = HEARTBEAT_MS * 3;
  */
 export interface Beating {
   /** Something is beating: a beat landed within `STALE_AFTER_MS`. */
-  up: boolean;
+  up: boolean
   /** The word the beacon carries — `starting`, `up`, `draining`, `stopping`. */
-  state: string;
+  state: string
   /** Since the last beat. */
-  ageMs: number;
+  ageMs: number
 }
 
 /**
@@ -208,6 +208,6 @@ export interface Beating {
  * `null` is the second, and this is how the first is recognised.
  */
 export function lastBeat(status: DaemonStatus, now: number = Date.now()): Beating {
-  const ageMs = now - status.lastSeenAt.getTime();
-  return { up: ageMs <= STALE_AFTER_MS, state: status.state, ageMs };
+  const ageMs = now - status.lastSeenAt.getTime()
+  return { up: ageMs <= STALE_AFTER_MS, state: status.state, ageMs }
 }

@@ -18,44 +18,45 @@
  * over `events`, and the thing under test is the whole road from a row to a
  * state.
  */
-import { isPending, projectStream } from "@lingtai/domain";
-import { processLog, type EventStore, type Log } from "@lingtai/event-store";
-import { beforeAll, describe, expect, it } from "vitest";
-import { loadAllProjects, loadProject, loadProjects } from "../src/projects.ts";
+import { isPending, projectStream } from '@lingtai/domain'
+import { processLog, type EventStore, type Log } from '@lingtai/event-store'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const PENDING = `esctest${crypto.randomUUID().slice(0, 6)}`;
-const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`;
+import { loadAllProjects, loadProject, loadProjects } from '../src/projects.ts'
 
-let store: EventStore;
+const PENDING = `esctest${crypto.randomUUID().slice(0, 6)}`
+const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`
+
+let store: EventStore
 /** The store above and the questions beside it, as one log (#221). */
-let log: Log;
+let log: Log
 
 beforeAll(async () => {
-  log = await processLog();
-  store = log.store;
+  log = await processLog()
+  store = log.store
   await store.append(projectStream(PENDING), 0, [
     {
-      type: "ProjectOnboardingStarted",
-      actor: "human:esctest",
-      data: { slug: `steven-zhc/${PENDING}`, base: "develop", by: "human:esctest" },
+      type: 'ProjectOnboardingStarted',
+      actor: 'human:esctest',
+      data: { slug: `steven-zhc/${PENDING}`, base: 'develop', by: 'human:esctest' },
     },
-  ]);
+  ])
   await store.append(projectStream(LIVE), 0, [
     {
-      type: "ProjectConfigured",
-      actor: "conductor",
-      data: { project: LIVE, owner: "steven-zhc", base: "main", configHash: "h", fromSha: "s" },
+      type: 'ProjectConfigured',
+      actor: 'conductor',
+      data: { project: LIVE, owner: 'steven-zhc', base: 'main', configHash: 'h', fromSha: 's' },
     },
-  ]);
-});
+  ])
+})
 
-describe("the projects a conductor may take work from", () => {
-  it("does not include one whose recipe has not landed", async () => {
-    const names = (await loadProjects(log)).map((p) => p.project);
+describe('the projects a conductor may take work from', () => {
+  it('does not include one whose recipe has not landed', async () => {
+    const names = (await loadProjects(log)).map((p) => p.project)
 
-    expect(names).not.toContain(PENDING);
-    expect(names).toContain(LIVE);
-  });
+    expect(names).not.toContain(PENDING)
+    expect(names).toContain(LIVE)
+  })
 
   /**
    * The other half, and the reason the first is not simply "it is missing":
@@ -69,29 +70,29 @@ describe("the projects a conductor may take work from", () => {
    * `apps/board/unit/pending.test.tsx`. A test here named for the board would
    * pass while the board dropped it.
    */
-  it("still comes back from the whole register, with the owner and branch on it", async () => {
-    const all = await loadAllProjects(log);
-    const pending = all.find((p) => p.project === PENDING);
+  it('still comes back from the whole register, with the owner and branch on it', async () => {
+    const all = await loadAllProjects(log)
+    const pending = all.find((p) => p.project === PENDING)
 
-    expect(pending).toBeDefined();
-    expect(pending?.owner).toBe("steven-zhc");
-    expect(pending?.base).toBe("develop");
-    expect(isPending(pending!)).toBe(true);
-  });
+    expect(pending).toBeDefined()
+    expect(pending?.owner).toBe('steven-zhc')
+    expect(pending?.base).toBe('develop')
+    expect(isPending(pending!)).toBe(true)
+  })
 
   /** Every stream is on exactly one of the two sides, which is what makes them a line. */
-  it("splits the register in two, with nothing on both sides and nothing lost", async () => {
-    const [all, live] = await Promise.all([loadAllProjects(log), loadProjects(log)]);
-    const named = all.filter((p) => p.project !== null);
-    const pending = all.filter(isPending);
+  it('splits the register in two, with nothing on both sides and nothing lost', async () => {
+    const [all, live] = await Promise.all([loadAllProjects(log), loadProjects(log)])
+    const named = all.filter((p) => p.project !== null)
+    const pending = all.filter(isPending)
 
-    expect(live.length + pending.length).toBe(named.length);
-    expect(live.map((p) => p.project).filter((n) => pending.some((p) => p.project === n))).toEqual([]);
-  });
+    expect(live.length + pending.length).toBe(named.length)
+    expect(live.map((p) => p.project).filter((n) => pending.some((p) => p.project === n))).toEqual([])
+  })
 
   /** `loadProject` is the same line asked about one name — the board's actions read through it. */
-  it("gives no single project back for a pending name either", async () => {
-    expect(await loadProject(PENDING, store)).toBeNull();
-    expect((await loadProject(LIVE, store))?.project).toBe(LIVE);
-  });
-});
+  it('gives no single project back for a pending name either', async () => {
+    expect(await loadProject(PENDING, store)).toBeNull()
+    expect((await loadProject(LIVE, store))?.project).toBe(LIVE)
+  })
+})

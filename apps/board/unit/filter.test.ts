@@ -10,26 +10,24 @@
  * whose only work is queued, because nothing of a project reaches `task_view`
  * until it has run.
  */
-import { describe, expect, it } from "vitest";
-import { filterOptions } from "../src/lib/board.ts";
+import { describe, expect, it } from 'vitest'
 
-describe("the projects the filter offers", () => {
-  it("keeps a project whose cards outlived its registration", () => {
-    expect(filterOptions(["lingtai"], ["esctest", "lingtai"])).toEqual(["lingtai", "esctest"]);
-  });
+import { filterOptions } from '../src/lib/board.ts'
 
-  it("offers a registered project that has never run", () => {
-    expect(filterOptions(["lingtai", "esctest"], [])).toEqual(["lingtai", "esctest"]);
-  });
+describe('the projects the filter offers', () => {
+  it('keeps a project whose cards outlived its registration', () => {
+    expect(filterOptions(['lingtai'], ['esctest', 'lingtai'])).toEqual(['lingtai', 'esctest'])
+  })
+
+  it('offers a registered project that has never run', () => {
+    expect(filterOptions(['lingtai', 'esctest'], [])).toEqual(['lingtai', 'esctest'])
+  })
 
   it("names each project once, in the register's order", () => {
-    expect(filterOptions(["lingtai", "esctest"], ["esctest", "lingtai"])).toEqual([
-      "lingtai",
-      "esctest",
-    ]);
-  });
+    expect(filterOptions(['lingtai', 'esctest'], ['esctest', 'lingtai'])).toEqual(['lingtai', 'esctest'])
+  })
 
-  it("offers nothing when nothing is registered and nothing has run", () => {
-    expect(filterOptions([], [])).toEqual([]);
-  });
-});
+  it('offers nothing when nothing is registered and nothing has run', () => {
+    expect(filterOptions([], [])).toEqual([])
+  })
+})

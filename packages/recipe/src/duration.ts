@@ -11,11 +11,11 @@
  * nobody could see.
  */
 export function parseDuration(text: string): number {
-  const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/.exec(text.trim());
-  if (!m) throw new Error(`"${text}" is not a duration like 30s, 15m or 2h`);
-  const n = Number(m[1]);
-  const unit = m[2] as "ms" | "s" | "m" | "h";
-  return n * { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[unit];
+  const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/.exec(text.trim())
+  if (!m) throw new Error(`"${text}" is not a duration like 30s, 15m or 2h`)
+  const n = Number(m[1])
+  const unit = m[2] as 'ms' | 's' | 'm' | 'h'
+  return n * { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[unit]
 }
 
 /**
@@ -34,11 +34,11 @@ export function parseDuration(text: string): number {
  */
 export function formatDuration(ms: number): string {
   for (const [unit, size] of [
-    ["h", 3_600_000],
-    ["m", 60_000],
-    ["s", 1_000],
+    ['h', 3_600_000],
+    ['m', 60_000],
+    ['s', 1_000],
   ] as const) {
-    if (ms >= size && ms % size === 0) return `${ms / size}${unit}`;
+    if (ms >= size && ms % size === 0) return `${ms / size}${unit}`
   }
-  return `${ms}ms`;
+  return `${ms}ms`
 }

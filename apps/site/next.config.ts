@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 /**
  * A static export, and that is the load-bearing line in this file.
@@ -23,7 +23,7 @@ const config: NextConfig = {
   // becomes an instruction nobody wrote. Every agent in this repository
   // commits with `git add -A`, which is how they get in.
   agentRules: false,
-  output: "export",
+  output: 'export',
   // The whole point of an export is a directory of files; `/docs/tutorial/`
   // wants to be a directory with an `index.html` in it so any static host
   // serves it without rewrite rules.
@@ -31,6 +31,6 @@ const config: NextConfig = {
   // No image optimiser exists in an export. The only images here are the mark,
   // which is drawn from CSS anyway.
   images: { unoptimized: true },
-};
+}
 
-export default config;
+export default config

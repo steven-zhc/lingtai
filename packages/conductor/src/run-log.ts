@@ -15,9 +15,10 @@
  * a path it is handed and still does not know where `~/.lingtai` is; this file
  * is where that knowledge lives, on the conductor's side of the line.
  */
-import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { stateDir } from "@lingtai/env";
+import { readdir, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+
+import { stateDir } from '@lingtai/env'
 
 export {
   RUN_LOG_END,
@@ -31,7 +32,7 @@ export {
   type FollowRunLogOptions,
   type RunLogEnding,
   type RunLogFollowed,
-} from "@lingtai/agent/run-log";
+} from '@lingtai/agent/run-log'
 
 /**
  * Where a run's log lives, and it is the worktree's shape on purpose.
@@ -53,14 +54,14 @@ export {
  * `~/.lingtai` is would have crossed 0022's seam.
  */
 export function runLogPath(home: string, project: string, runId: string): string {
-  return join(home, "runs", project, `${runId}.log`);
+  return join(home, 'runs', project, `${runId}.log`)
 }
 
 /** A log on disk, and the project directory that says whose run it was. */
 export interface FoundRunLog {
-  project: string;
-  runId: string;
-  path: string;
+  project: string
+  runId: string
+  path: string
 }
 
 /**
@@ -78,19 +79,16 @@ export interface FoundRunLog {
  * log of a run that landed; the caller says which of the two it is looking at,
  * because only the caller knows what it asked for.
  */
-export async function findRunLog(
-  runId: string,
-  home: string = stateDir(),
-): Promise<FoundRunLog | null> {
+export async function findRunLog(runId: string, home: string = stateDir()): Promise<FoundRunLog | null> {
   for (const project of await projectsIn(home)) {
-    const path = runLogPath(home, project, runId);
+    const path = runLogPath(home, project, runId)
     try {
-      if ((await stat(path)).isFile()) return { project, runId, path };
+      if ((await stat(path)).isFile()) return { project, runId, path }
     } catch {
       // Not this project's.
     }
   }
-  return null;
+  return null
 }
 
 /**
@@ -103,35 +101,38 @@ export async function findRunLog(
  * a question about every one of them, which is the half this must not do.
  */
 export async function listRunLogs(home: string = stateDir()): Promise<FoundRunLog[]> {
-  const found: (FoundRunLog & { at: number })[] = [];
+  const found: (FoundRunLog & { at: number })[] = []
   for (const project of await projectsIn(home)) {
-    let names: string[];
+    let names: string[]
     try {
       // Only `<runId>.log`. `runs/` also holds `runs/<runId>/settings.json`,
       // which is a directory named for a run — the two shapes share a parent
       // and never each other's names.
-      names = (await readdir(join(home, "runs", project), { withFileTypes: true }))
-        .filter((e) => e.isFile() && e.name.endsWith(".log"))
-        .map((e) => e.name);
+      names = (await readdir(join(home, 'runs', project), { withFileTypes: true }))
+        .filter((e) => e.isFile() && e.name.endsWith('.log'))
+        .map((e) => e.name)
     } catch {
-      continue;
+      continue
     }
     for (const name of names) {
-      const path = join(home, "runs", project, name);
-      const at = await stat(path).then((s) => s.mtimeMs, () => 0);
-      found.push({ project, runId: name.slice(0, -".log".length), path, at });
+      const path = join(home, 'runs', project, name)
+      const at = await stat(path).then(
+        (s) => s.mtimeMs,
+        () => 0,
+      )
+      found.push({ project, runId: name.slice(0, -'.log'.length), path, at })
     }
   }
-  return found.sort((a, b) => b.at - a.at).map(({ at: _at, ...rest }) => rest);
+  return found.sort((a, b) => b.at - a.at).map(({ at: _at, ...rest }) => rest)
 }
 
 async function projectsIn(home: string): Promise<string[]> {
   try {
-    return (await readdir(join(home, "runs"), { withFileTypes: true }))
+    return (await readdir(join(home, 'runs'), { withFileTypes: true }))
       .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+      .map((e) => e.name)
   } catch {
     // No run has ever left a log on this machine.
-    return [];
+    return []
   }
 }

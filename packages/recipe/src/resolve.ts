@@ -16,46 +16,48 @@
  * judged* — was what made a recipe inside the repository safe; it now holds by
  * location, because an agent's worktree does not contain `~/.lingtai/`.
  */
-import { createHash } from "node:crypto";
-import { parse as parseYaml } from "yaml";
-import { applyPreset } from "./presets.ts";
-import type { Plugin } from "./plugin.ts";
-import { PLUGINS, Recipe, discloseSteps } from "./recipe.ts";
-import { baseOf, baseWrittenAt } from "./settings.ts";
+import { createHash } from 'node:crypto'
+
+import { parse as parseYaml } from 'yaml'
+
+import type { Plugin } from './plugin.ts'
+import { applyPreset } from './presets.ts'
+import { PLUGINS, Recipe, discloseSteps } from './recipe.ts'
+import { baseOf, baseWrittenAt } from './settings.ts'
 
 /** Where a project's recipe lives, by convention and without exception. */
-export const RECIPE_PATH = ".lingtai/config.yaml";
+export const RECIPE_PATH = '.lingtai/config.yaml'
 
 /** Reads a path at a ref. Returns null when the file is not there. */
-export type ReadAtRef = (path: string, ref: string) => Promise<string | null>;
+export type ReadAtRef = (path: string, ref: string) => Promise<string | null>
 
 export class RecipeMissingError extends Error {
-  override readonly name = "RecipeMissingError";
-  readonly ref: string;
+  override readonly name = 'RecipeMissingError'
+  readonly ref: string
 
   constructor(ref: string, message?: string) {
     super(
       message ??
         `no ${RECIPE_PATH} on ${ref}. Add one and commit it to that branch — ` +
           "a recipe on the agent's branch is not read, by design.",
-    );
-    this.ref = ref;
+    )
+    this.ref = ref
   }
 }
 
 export class RecipeInvalidError extends Error {
-  override readonly name = "RecipeInvalidError";
+  override readonly name = 'RecipeInvalidError'
   /** Each problem as `path: message`, so a fix does not need a schema reading. */
-  readonly problems: readonly string[];
+  readonly problems: readonly string[]
 
   constructor(ref: string, problems: readonly string[], where = `${RECIPE_PATH} on ${ref}`) {
-    super(`${where} is not valid:\n  ${problems.join("\n  ")}`);
-    this.problems = problems;
+    super(`${where} is not valid:\n  ${problems.join('\n  ')}`)
+    this.problems = problems
   }
 }
 
 export interface ResolvedRecipe {
-  recipe: Recipe;
+  recipe: Recipe
   /**
    * Hash of the *resolved* recipe, canonically serialised.
    *
@@ -64,31 +66,31 @@ export interface ResolvedRecipe {
    * "did results change after I edited the pipeline?" should say no. Recorded in
    * `ProjectConfigured` and in every `RunStarted`.
    */
-  configHash: string;
+  configHash: string
   /** The ref it was read from — always a base branch, never an agent branch. */
-  ref: string;
+  ref: string
   /** The raw file, kept so a diff against a later version is possible. */
-  source: string;
+  source: string
   /** The tier this run will execute at. The recipe's, and now nobody else's. */
-  tier: Recipe["runtime"]["tier"];
+  tier: Recipe['runtime']['tier']
   /** Which preset it extended, if any. Provenance; not part of the hash. */
-  preset: string | null;
+  preset: string | null
   /**
    * Where each value a person might ask about came from — the recipe file, the
    * machine file, detection or a default — keyed by its path in the recipe.
    * Only a recipe read from this machine has one (`resolveLocalRecipe`).
    */
-  provenance?: Readonly<Record<string, string>>;
+  provenance?: Readonly<Record<string, string>>
 }
 
 /** Stable JSON: keys sorted at every level, so the hash does not depend on order. */
 function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : 1));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`
 }
 
 /**
@@ -118,7 +120,7 @@ function canonical(value: unknown): string {
  * §7's reset ([the-pipeline](../../../doc/design/the-pipeline.md)'s T5) leaves
  * no stored hash to keep faith with, and this list comes down with them.
  */
-const NOT_YET_IN_THE_HASH = ["claim", "design", "implement", "build", "review"] as const;
+const NOT_YET_IN_THE_HASH = ['claim', 'design', 'implement', 'build', 'review'] as const
 
 /**
  * The recipe as it is hashed: the five steps above dropped where they are
@@ -146,11 +148,11 @@ function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unk
   // rotated one document. Above the drop below rather than under it, because
   // the two answer different questions and only this one is about what may be
   // written down.
-  const steps: Record<string, unknown> = { ...discloseSteps(recipe.steps, plugins) };
+  const steps: Record<string, unknown> = { ...discloseSteps(recipe.steps, plugins) }
   for (const step of NOT_YET_IN_THE_HASH) {
-    if ((steps[step] as readonly unknown[] | undefined)?.length === 0) delete steps[step];
+    if ((steps[step] as readonly unknown[] | undefined)?.length === 0) delete steps[step]
   }
-  return { ...recipe, steps };
+  return { ...recipe, steps }
 }
 
 /**
@@ -159,11 +161,8 @@ function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unk
  * one event is what lets a reader verify the body without trusting the writer —
  * `hashRecipe` of this is the `configHash` of the recipe it came from.
  */
-export function canonicalRecipe(
-  recipe: Recipe,
-  plugins: readonly Plugin[] = PLUGINS,
-): Record<string, unknown> {
-  return JSON.parse(canonical(forHash(recipe, plugins))) as Record<string, unknown>;
+export function canonicalRecipe(recipe: Recipe, plugins: readonly Plugin[] = PLUGINS): Record<string, unknown> {
+  return JSON.parse(canonical(forHash(recipe, plugins))) as Record<string, unknown>
 }
 
 /**
@@ -177,7 +176,9 @@ export function canonicalRecipe(
  * they are not is two documents a reader of either can tell the credential of.
  */
 export function hashRecipe(recipe: Recipe, plugins: readonly Plugin[] = PLUGINS): string {
-  return createHash("sha256").update(canonical(forHash(recipe, plugins))).digest("hex");
+  return createHash('sha256')
+    .update(canonical(forHash(recipe, plugins)))
+    .digest('hex')
 }
 
 /**
@@ -187,13 +188,10 @@ export function hashRecipe(recipe: Recipe, plugins: readonly Plugin[] = PLUGINS)
  * an unreadable recipe is to stop, and a project that cannot be configured must
  * not be silently run with a default.
  */
-export async function resolveRecipe(
-  read: ReadAtRef,
-  ref: string,
-): Promise<ResolvedRecipe> {
-  const source = await read(RECIPE_PATH, ref);
-  if (source === null) throw new RecipeMissingError(ref);
-  return resolveSource(source, ref, `${RECIPE_PATH} on ${ref}`);
+export async function resolveRecipe(read: ReadAtRef, ref: string): Promise<ResolvedRecipe> {
+  const source = await read(RECIPE_PATH, ref)
+  if (source === null) throw new RecipeMissingError(ref)
+  return resolveSource(source, ref, `${RECIPE_PATH} on ${ref}`)
 }
 
 /**
@@ -210,37 +208,37 @@ export function resolveSource(
   where: string,
   shape: (raw: Record<string, unknown>) => string[] = () => [],
 ): ResolvedRecipe {
-  let raw: unknown;
+  let raw: unknown
   try {
-    raw = parseYaml(source);
+    raw = parseYaml(source)
   } catch (err) {
-    throw new RecipeInvalidError(ref, [`could not be parsed as YAML: ${(err as Error).message}`], where);
+    throw new RecipeInvalidError(ref, [`could not be parsed as YAML: ${(err as Error).message}`], where)
   }
 
-  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
-    const refused = shape(raw as Record<string, unknown>);
-    if (refused.length > 0) throw new RecipeInvalidError(ref, refused, where);
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const refused = shape(raw as Record<string, unknown>)
+    if (refused.length > 0) throw new RecipeInvalidError(ref, refused, where)
   }
 
   // Preset first, then validation: a preset can satisfy a required field the
   // recipe omits, which is the point of having one.
-  let applied;
+  let applied
   try {
-    applied = applyPreset(raw);
+    applied = applyPreset(raw)
   } catch (err) {
-    throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`], where);
+    throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`], where)
   }
 
-  const unknown = unknownKeys(applied.recipe);
-  if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where);
+  const unknown = unknownKeys(applied.recipe)
+  if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
 
-  const parsed = Recipe.safeParse(applied.recipe);
+  const parsed = Recipe.safeParse(applied.recipe)
   if (!parsed.success) {
     throw new RecipeInvalidError(
       ref,
-      parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
       where,
-    );
+    )
   }
 
   // The resolved form is what gets hashed, so the preset is inside the hash and
@@ -252,7 +250,7 @@ export function resolveSource(
     source,
     tier: parsed.data.runtime.tier,
     preset: applied.preset,
-  };
+  }
 }
 
 /**
@@ -281,21 +279,21 @@ export function resolveSource(
  * five of the ten would leave the other five configured by nobody.
  */
 function unknownKeys(raw: unknown): string[] {
-  if (typeof raw !== "object" || raw === null) return [];
-  const declared = Object.keys(Recipe.shape);
+  if (typeof raw !== 'object' || raw === null) return []
+  const declared = Object.keys(Recipe.shape)
   return Object.keys(raw)
     .filter((key) => !declared.includes(key))
     .map((key) =>
-      key === "repair"
-        ? "repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` " +
-          "are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. " +
-          "`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this " +
-          "repository wants a pass to spend; the two old ceilings do not add up to the new one, " +
-          "so Lingtai will not guess"
+      key === 'repair'
+        ? 'repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` ' +
+          'are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. ' +
+          '`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this ' +
+          'repository wants a pass to spend; the two old ceilings do not add up to the new one, ' +
+          'so Lingtai will not guess'
         : `${key}: a recipe has no such key, and nothing read it — a recipe declares ` +
-          `${declared.join(", ")}. Nothing here was applied; move the block under the key ` +
-          "that does run it, or delete it",
-    );
+          `${declared.join(', ')}. Nothing here was applied; move the block under the key ` +
+          'that does run it, or delete it',
+    )
 }
 
 /**
@@ -321,14 +319,14 @@ function unknownKeys(raw: unknown): string[] {
  * doctor check — and none of them may pick a winner between the two branches.
  */
 export function baseDivergence(resolved: ResolvedRecipe, slug: string): string | null {
-  const declared = baseOf(resolved.recipe);
-  if (declared === resolved.ref) return null;
+  const declared = baseOf(resolved.recipe)
+  if (declared === resolved.ref) return null
   return (
     // The key as this recipe writes it, not as v1 wrote it: a refusal that names
     // `repo.base` at a recipe declaring `worktree:` at `admit` sends a person to
     // the line nothing reads (`#268`).
     `recipe read from ${resolved.ref} declares ${baseWrittenAt(resolved.recipe)}: ${declared} — ` +
-    "the rules and the merge target are different branches. " +
+    'the rules and the merge target are different branches. ' +
     `Re-register: lingtai add ${slug} --base ${declared}`
-  );
+  )
 }

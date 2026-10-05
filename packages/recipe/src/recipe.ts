@@ -1,3 +1,5 @@
+import { SEVERITIES, Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
+import { PREFIX } from '@lingtai/env'
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
  * `runtime.agent` from `~/.lingtai/config.yml`
@@ -15,9 +17,9 @@
  * Lingtai does not second-guess it — what Lingtai owns is *where the file is
  * read from*.
  */
-import { z } from "zod";
-import { SEVERITIES, Tier, RuntimeId, type Step, isEventType, isRetiredEventType } from "@lingtai/domain";
-import { PREFIX } from "@lingtai/env";
+import { z } from 'zod'
+
+import { parseDuration } from './duration.ts'
 import {
   type Plugin,
   type PluginFields,
@@ -29,8 +31,7 @@ import {
   pluginsNamed,
   readFields,
   servesStep,
-} from "./plugin.ts";
-import { parseDuration } from "./duration.ts";
+} from './plugin.ts'
 
 /**
  * The names an **extension** may read, declared beside the extension itself
@@ -79,19 +80,19 @@ export const ExtensionEnvNames = z
   .default([])
   .superRefine((names, ctx) => {
     for (const name of names) {
-      if (!name.startsWith(PREFIX)) continue;
+      if (!name.startsWith(PREFIX)) continue
       ctx.addIssue({
-        code: "custom",
+        code: 'custom',
         message:
           `"${name}" is one of Lingtai's own names and cannot be declared for an extension — ` +
           `every name Lingtai reads for itself begins "${PREFIX}" (#63), and an extension's code ` +
           "is not trusted with them (0037 §1). A project's own variable keeps its own name.",
-      });
+      })
     }
-  });
+  })
 
 /** The outcomes `end` fires on, which is what `close:` and `labels:` filter by. */
-const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
+const WHEN = z.enum(['landed', 'blocked', 'failed', 'closed', 'any'])
 
 /**
  * A command. Its exit code is the verdict, and `env` is every credential it
@@ -105,10 +106,10 @@ const WHEN = z.enum(["landed", "blocked", "failed", "closed", "any"]);
  * under one of them is refused by name (0061 §9) rather than having it accepted
  * and ignored.
  */
-export const runPlugin = definePlugin("run", {
+export const runPlugin = definePlugin('run', {
   fields: {
     run: z.string(),
-    timeout: z.string().default("15m"),
+    timeout: z.string().default('15m'),
     env: ExtensionEnvNames,
   },
   /**
@@ -146,7 +147,7 @@ export const runPlugin = definePlugin("run", {
     proposed: notBuiltYet,
     merge: notBuiltYet,
   },
-});
+})
 
 /**
  * **A number that bounds the pass and not one call**, declared inside a
@@ -163,19 +164,17 @@ export const runPlugin = definePlugin("run", {
  * recipe's own voice, which is 0061 §9's rule — *a plugin refuses a field it
  * does not understand* — applied one level down, to a field of a field.
  */
-function boundsThePass(field: "rounds" | "restarts"): z.ZodType {
+function boundsThePass(field: 'rounds' | 'restarts'): z.ZodType {
   const counts =
-    field === "rounds"
-      ? "how many times a pass sends the agent back"
-      : "how many times a ticket starts the work over";
+    field === 'rounds' ? 'how many times a pass sends the agent back' : 'how many times a ticket starts the work over'
   return z
     .never({
       error:
         `\`${field}\` bounds the pass and not one call (0040): it counts ${counts}, which is a fact ` +
-        "about the pass rather than about one dispatch. Write it at `runtime.limits`, where the " +
-        "ceiling is stated once (0070 §5)",
+        'about the pass rather than about one dispatch. Write it at `runtime.limits`, where the ' +
+        'ceiling is stated once (0070 §5)',
     })
-    .optional();
+    .optional()
 }
 
 /**
@@ -241,13 +240,13 @@ const DISPATCH = {
        */
       wall: z
         .string()
-        .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 30m" })
+        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 30m' })
         .optional(),
-      rounds: boundsThePass("rounds"),
-      restarts: boundsThePass("restarts"),
+      rounds: boundsThePass('rounds'),
+      restarts: boundsThePass('restarts'),
     })
     .optional(),
-} as const;
+} as const
 
 /**
  * A cold reviewer, given the diff: **which runtime runs it**, optionally which
@@ -289,7 +288,7 @@ const DISPATCH = {
  * `runtime.agent` alone. The enum is what a *name* has to be in; the refusal is
  * what makes the name one this machine can run.
  */
-export const agentPlugin = definePlugin("agent", {
+export const agentPlugin = definePlugin('agent', {
   /**
    * **`agent:` is the *which*, and the other three are `DISPATCH`'s** (0070 §3).
    *
@@ -357,7 +356,7 @@ export const agentPlugin = definePlugin("agent", {
     proposed: notBuiltYet,
     merge: notBuiltYet,
   },
-});
+})
 
 /**
  * **Why a path is not inside the worktree, or `null` when it is** — the whole of
@@ -380,21 +379,21 @@ export const agentPlugin = definePlugin("agent", {
  * refusal a schema line could have printed (§6's correction, `#299`).
  */
 export function whyThePathEscapes(written: string): string | null {
-  if (written === "") return "it is empty, and a document has to be written somewhere";
+  if (written === '') return 'it is empty, and a document has to be written somewhere'
   if (/^[\\/]/.test(written) || /^[A-Za-z]:[\\/]/.test(written)) {
-    return "it is absolute, and an absolute path names somewhere outside the tree this pass owns";
+    return 'it is absolute, and an absolute path names somewhere outside the tree this pass owns'
   }
-  if (written.startsWith("~")) {
-    return "it starts at a home directory, which is where Lingtai's own files live and is not the worktree";
+  if (written.startsWith('~')) {
+    return "it starts at a home directory, which is where Lingtai's own files live and is not the worktree"
   }
-  const segments = written.split(/[\\/]/);
-  if (segments.includes("..")) {
-    return 'it contains a ".." segment, so where it lands depends on where the worktree is rather than on what is written here';
+  const segments = written.split(/[\\/]/)
+  if (segments.includes('..')) {
+    return 'it contains a ".." segment, so where it lands depends on where the worktree is rather than on what is written here'
   }
-  if (segments.some((segment) => segment === "")) {
-    return "it has an empty segment, so it names a directory rather than a file to write";
+  if (segments.some((segment) => segment === '')) {
+    return 'it has an empty segment, so it names a directory rather than a file to write'
   }
-  return null;
+  return null
 }
 
 /**
@@ -407,7 +406,7 @@ export function whyThePathEscapes(written: string): string | null {
  * deciding for a path. Widening this is a decision somebody makes on purpose,
  * which is the point of writing the list down rather than matching `{{…}}`.
  */
-const THE_PLACEHOLDER = "{{issue}}";
+const THE_PLACEHOLDER = '{{issue}}'
 
 /**
  * **Why *that* placeholder is not the one** — the second half of the refusal
@@ -426,30 +425,30 @@ const THE_PLACEHOLDER = "{{issue}}";
  * in particular, so it is never a sentence about somebody else's field.
  */
 function whyNotThatPlaceholder(each: string): string {
-  const name = each.slice(2, -2).trim();
-  if (name === "issue") {
+  const name = each.slice(2, -2).trim()
+  if (name === 'issue') {
     return (
-      "The spelling is exact — `{{issue}}`, with no spaces inside the braces — because a path is " +
-      "matched on the whole of what is written between them and never on a name trimmed out of it"
-    );
+      'The spelling is exact — `{{issue}}`, with no spaces inside the braces — because a path is ' +
+      'matched on the whole of what is written between them and never on a name trimmed out of it'
+    )
   }
-  if (name === "title") {
+  if (name === 'title') {
     return (
-      "A `{{title}}` in a filename is a slug problem — spaces, slashes, length, two tickets under " +
-      "one title — so it is left out on purpose rather than forgotten"
-    );
+      'A `{{title}}` in a filename is a slug problem — spaces, slashes, length, two tickets under ' +
+      'one title — so it is left out on purpose rather than forgotten'
+    )
   }
-  if (name === "ref") {
+  if (name === 'ref') {
     return (
       "`{{ref}}` is this one's own later spelling rather than a second placeholder: 0036 names the " +
       "rename and nothing has made it yet, so a ticket's reference is `{{issue}}` until it does"
-    );
+    )
   }
   return (
-    "The list is one name long on purpose — what may go in a filename is a decision somebody makes " +
-    "and writes down — so a second placeholder is a line added beside `{{issue}}` rather than a " +
-    "name a path can ask for"
-  );
+    'The list is one name long on purpose — what may go in a filename is a decision somebody makes ' +
+    'and writes down — so a second placeholder is a line added beside `{{issue}}` rather than a ' +
+    'name a path can ask for'
+  )
 }
 
 /**
@@ -489,12 +488,12 @@ export type ThePathForThisTicket =
   /** Where this pass's document goes, expanded, and already judged. */
   | { readonly path: string }
   /** The clause `whyThePathEscapes` answered about the expansion (0043). */
-  | { readonly escapes: string };
+  | { readonly escapes: string }
 
 export function thePathForThisTicket(written: string, ref: string): ThePathForThisTicket {
-  const path = written.replaceAll(THE_PLACEHOLDER, ref);
-  const why = whyThePathEscapes(path);
-  return why === null ? { path } : { escapes: why };
+  const path = written.replaceAll(THE_PLACEHOLDER, ref)
+  const why = whyThePathEscapes(path)
+  return why === null ? { path } : { escapes: why }
 }
 
 /**
@@ -569,7 +568,7 @@ export function thePathForThisTicket(written: string, ref: string): ThePathForTh
  * refuses what a person wrote, at resolve and before any money (0066 §6), and
  * `thePathForThisTicket` refuses what the ticket made of it, when it runs.
  */
-export const filePlugin = definePlugin("file", {
+export const filePlugin = definePlugin('file', {
   fields: {
     /**
      * Where the document goes, relative to the worktree. `whyThePathEscapes` is
@@ -577,15 +576,15 @@ export const filePlugin = definePlugin("file", {
      * runs, by `thePathForThisTicket`, which asks the same rule about the answer.
      */
     file: z.string().superRefine((written, ctx) => {
-      const why = whyThePathEscapes(written);
+      const why = whyThePathEscapes(written)
       if (why !== null) {
         ctx.addIssue({
-          code: "custom",
+          code: 'custom',
           message:
             `"${written}" is not a path inside the worktree — ${why}. A \`file:\` writes into the tree ` +
-            "this pass owns and nowhere else, so the path is relative to it, with no `..` in it",
-        });
-        return;
+            'this pass owns and nowhere else, so the path is relative to it, with no `..` in it',
+        })
+        return
       }
       // **A placeholder this field does not take is refused rather than
       // written** (`#310`). `doc/design/{{title}}.md` escapes nothing, so the
@@ -602,15 +601,15 @@ export const filePlugin = definePlugin("file", {
       // recipe does not mention.
       const unknown = [...written.matchAll(/\{\{[^{}]*\}\}/g)]
         .map((match) => match[0])
-        .find((each) => each !== THE_PLACEHOLDER);
+        .find((each) => each !== THE_PLACEHOLDER)
       if (unknown !== undefined) {
         ctx.addIssue({
-          code: "custom",
+          code: 'custom',
           message:
             `"${written}" names \`${unknown}\`, which a \`file:\` path does not take — \`${THE_PLACEHOLDER}\` ` +
             "is the one placeholder, and it becomes the ticket's number when the pass runs. " +
             whyNotThatPlaceholder(unknown),
-        });
+        })
       }
     }),
   },
@@ -625,7 +624,7 @@ export const filePlugin = definePlugin("file", {
    * §9 sets for whether §4 held.
    */
   at: { design: notBuiltYet },
-});
+})
 
 /**
  * **Reads the design back from the path a `file:` kept it at, and briefs the
@@ -661,10 +660,10 @@ export const filePlugin = definePlugin("file", {
  * path in this block would be a second answer to *where is the design*, and the
  * one that disagreed with the locator would win silently.
  */
-export const fileBriefPlugin = definePlugin("file-brief", {
+export const fileBriefPlugin = definePlugin('file-brief', {
   fields: {
     /** `true` and nothing else: the locator says where, and the recipe does not. */
-    "file-brief": z.literal(true),
+    'file-brief': z.literal(true),
   },
   /**
    * **`implement`, and it is the one step that works from a design** (0058 §3).
@@ -674,13 +673,13 @@ export const fileBriefPlugin = definePlugin("file-brief", {
    * has no design to be about or has already been briefed.
    */
   at: { implement: notBuiltYet },
-});
+})
 
 /** Globs against the diff's file list; a match holds or fails. */
-export const watchPlugin = definePlugin("watch", {
+export const watchPlugin = definePlugin('watch', {
   fields: {
     watch: z.array(z.string()).min(1),
-    then: z.enum(["request-approval", "fail"]).default("request-approval"),
+    then: z.enum(['request-approval', 'fail']).default('request-approval'),
   },
   /**
    * Not `prepared`: the globs would be matched against no file list.
@@ -693,10 +692,10 @@ export const watchPlugin = definePlugin("watch", {
    * step `whyThatPair` sends every other misplaced `watch:` to.
    */
   at: { proposed: notBuiltYet },
-});
+})
 
 /** Waits for a person. The string is the question they are asked. */
-export const humanPlugin = definePlugin("human", {
+export const humanPlugin = definePlugin('human', {
   fields: { human: z.string() },
   /**
    * Not `prepared`: a hold there is a release, so the question re-asks itself
@@ -721,7 +720,7 @@ export const humanPlugin = definePlugin("human", {
    * (`heldBeforeTheLane`), and `whyNoKindAt` never sees them.
    */
   at: { proposed: notBuiltYet },
-});
+})
 
 /**
  * Closes the issue. Only meaningful at `end`, which is the one point that
@@ -737,23 +736,23 @@ export const humanPlugin = definePlugin("human", {
  * append a terminal and leave the GitHub issue open, so somebody still had
  * to run `gh issue close` by hand afterwards.
  */
-export const closePlugin = definePlugin("close", {
+export const closePlugin = definePlugin('close', {
   fields: {
     close: z.literal(true),
-    when: WHEN.default("landed"),
+    when: WHEN.default('landed'),
   },
   /** An effect, and `end` is the one step that carries out effects. */
   at: { end: notBuiltYet },
-});
+})
 
 /** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
-export const labelsPlugin = definePlugin("labels", {
+export const labelsPlugin = definePlugin('labels', {
   fields: {
     labels: z.array(z.string()),
-    when: WHEN.default("any"),
+    when: WHEN.default('any'),
   },
   at: { end: notBuiltYet },
-});
+})
 
 /**
  * **Deletes the history refs a landed ticket left on `origin`** — the
@@ -792,17 +791,17 @@ export const labelsPlugin = definePlugin("labels", {
  * the default a cleanup ships with should be the one that keeps what somebody
  * might read. `branch: true` takes it too.
  */
-export const refsPlugin = definePlugin("refs", {
+export const refsPlugin = definePlugin('refs', {
   fields: {
     /** `true` and nothing else: what it deletes is decided by `branch:`, not by a value here. */
     refs: z.literal(true),
     /** `agent/<n>` itself, on top of its arms. Off, so the merge commit's ref still resolves. */
     branch: z.boolean().default(false),
     /** `landed`, and only `landed` — see above. Written out, so the file says which ending. */
-    when: z.literal("landed").default("landed"),
+    when: z.literal('landed').default('landed'),
   },
   at: { end: notBuiltYet },
-});
+})
 
 /**
  * **The branch a pass owns, cut** — a name for `provisionWorktree` in
@@ -832,7 +831,7 @@ export const refsPlugin = definePlugin("refs", {
  * somebody configured the step, with `repo.submodules: true` sitting unread two
  * blocks up. A recipe that does not say is refused by name instead (`#268`).
  */
-export const worktreePlugin = definePlugin("worktree", {
+export const worktreePlugin = definePlugin('worktree', {
   fields: {
     worktree: z.strictObject({
       /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
@@ -853,7 +852,7 @@ export const worktreePlugin = definePlugin("worktree", {
    * comment asked for.
    */
   at: { admit: notBuiltYet },
-});
+})
 
 /**
  * **The same branch, landed** — a name for the integrator,
@@ -872,10 +871,10 @@ export const worktreePlugin = definePlugin("worktree", {
  * does not have, declared as though it did — `#61` one level down — so the
  * enum says what the code does and grows when the code does.
  */
-export const mergePlugin = definePlugin("merge", {
+export const mergePlugin = definePlugin('merge', {
   fields: {
     merge: z.strictObject({
-      strategy: z.enum(["merge-commit"]).default("merge-commit"),
+      strategy: z.enum(['merge-commit']).default('merge-commit'),
     }),
   },
   /**
@@ -896,7 +895,7 @@ export const mergePlugin = definePlugin("merge", {
    * answer costs.
    */
   at: { merge: notBuiltYet },
-});
+})
 
 /**
  * **The three of `queue:`'s four fields whose v1 spelling is `source:`** —
@@ -955,7 +954,7 @@ export const mergePlugin = definePlugin("merge", {
  * **Required in both shapes**, and the only one of the three that always was: a
  * recipe that names no kind takes nothing at all.
  */
-const KINDS = z.array(z.string()).min(1);
+const KINDS = z.array(z.string()).min(1)
 
 /**
  * Labels of yours that must keep the agent off a ticket, matched
@@ -977,7 +976,7 @@ const KINDS = z.array(z.string()).min(1);
  * take `[]` here and drop the hold list, which is an `agent:hold` ticket
  * claimed and an agent dispatched on work a person was holding.
  */
-const EXCLUDE = z.array(z.string());
+const EXCLUDE = z.array(z.string())
 
 /**
  * How long a failed attempt keeps its own ticket out of the queue
@@ -1009,7 +1008,7 @@ const BACKOFF = z
   // Checked here rather than left to throw at the point of use: a recipe
   // that will not resolve names the key it failed on, and an exception out
   // of the middle of a queue pass names nothing.
-  .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 1h" });
+  .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 1h' })
 
 const SOURCE_FIELDS = {
   /**
@@ -1022,15 +1021,15 @@ const SOURCE_FIELDS = {
    * How long a failed attempt keeps its own ticket out of the queue — `BACKOFF`,
    * and an hour where a v1 file says nothing, which is what it has always meant.
    */
-  backoff: BACKOFF.default("1h"),
-} satisfies PluginFields;
+  backoff: BACKOFF.default('1h'),
+} satisfies PluginFields
 
 /**
  * `mine`: only issues assigned to `login`. `unassigned`: only issues assigned
  * to nobody. `both`: every issue, whoever it is assigned to — today's queue.
  */
-export const AssigneeTake = z.enum(["mine", "unassigned", "both"]);
-export type AssigneeTake = z.infer<typeof AssigneeTake>;
+export const AssigneeTake = z.enum(['mine', 'unassigned', 'both'])
+export type AssigneeTake = z.infer<typeof AssigneeTake>
 
 /**
  * The machine's GitHub login and what it takes by assignee.
@@ -1042,15 +1041,15 @@ export type AssigneeTake = z.infer<typeof AssigneeTake>;
 export const AssigneeRule = z
   .strictObject({
     login: z.string().min(1).optional(),
-    take: AssigneeTake.default("both"),
+    take: AssigneeTake.default('both'),
   })
   // `mine` with nobody named would match no issue at all, and an empty queue
   // reads exactly like a repository with nothing to do.
-  .refine((rule) => rule.take !== "mine" || rule.login !== undefined, {
+  .refine((rule) => rule.take !== 'mine' || rule.login !== undefined, {
     message: "take: mine needs a login — the GitHub login this machine's issues are assigned to",
-    path: ["login"],
-  });
-export type AssigneeRule = z.infer<typeof AssigneeRule>;
+    path: ['login'],
+  })
+export type AssigneeRule = z.infer<typeof AssigneeRule>
 
 /**
  * **`queue:`'s four fields**: `source:`'s three, and `assignee` beside them
@@ -1086,7 +1085,7 @@ const QUEUE_FIELDS = {
   exclude: EXCLUDE,
   backoff: BACKOFF,
   assignee: AssigneeRule,
-} satisfies PluginFields;
+} satisfies PluginFields
 
 /**
  * **The four values, as one object** — what a `queue:` block is, and what the
@@ -1100,8 +1099,8 @@ const QUEUE_FIELDS = {
  * so a `queue:` declared at `claim` and the `source:`/`runtime:` spelling reach
  * the selection down one path instead of two.
  */
-export const QueueSettings = z.strictObject(QUEUE_FIELDS);
-export type QueueSettings = z.infer<typeof QueueSettings>;
+export const QueueSettings = z.strictObject(QUEUE_FIELDS)
+export type QueueSettings = z.infer<typeof QueueSettings>
 
 /**
  * **Which ticket is taken, and whether this machine may take it** — a name for
@@ -1135,7 +1134,7 @@ export type QueueSettings = z.infer<typeof QueueSettings>;
  *   conductor's own process — so a recipe writing one is refused by name
  *   (0061 §9) rather than having it accepted and ignored.
  */
-export const queuePlugin = definePlugin("queue", {
+export const queuePlugin = definePlugin('queue', {
   fields: { queue: QueueSettings },
   /**
    * **`claim`, and it is the last of 0061 §3's five names to become a key**
@@ -1171,7 +1170,7 @@ export const queuePlugin = definePlugin("queue", {
    * the four answer one question, and the block is the unit).
    */
   at: { claim: notBuiltYet },
-});
+})
 
 /**
  * **The five reasons a pass arrives at `proposed`**, which is what a `judge:`
@@ -1200,8 +1199,8 @@ export const queuePlugin = definePlugin("queue", {
  * what is in doubt, and offering a judge a direction nothing can arrive by is
  * the same mistake as offering it a step nothing can run.
  */
-export const JudgeWhen = z.enum(["red", "verify-failed", "conflict", "needs-input", "findings"]);
-export type JudgeWhen = z.infer<typeof JudgeWhen>;
+export const JudgeWhen = z.enum(['red', 'verify-failed', 'conflict', 'needs-input', 'findings'])
+export type JudgeWhen = z.infer<typeof JudgeWhen>
 
 /**
  * **The judges that spend nothing**, and the list is shorter than 0061 §3's
@@ -1219,8 +1218,8 @@ export type JudgeWhen = z.infer<typeof JudgeWhen>;
  * will not leave open — the same rule that gives `merge:` one `strategy`: the
  * enum says what the code does, and grows when the code does.
  */
-export { BUILT_IN_JUDGES, type BuiltInJudge, isBuiltInJudge } from "./judges.ts";
-import { BUILT_IN_JUDGES, isBuiltInJudge } from "./judges.ts";
+export { BUILT_IN_JUDGES, type BuiltInJudge, isBuiltInJudge } from './judges.ts'
+import { BUILT_IN_JUDGES, isBuiltInJudge } from './judges.ts'
 
 /**
  * Who decides a direction — **the built-ins, and the runtimes beside them**
@@ -1253,8 +1252,8 @@ import { BUILT_IN_JUDGES, isBuiltInJudge } from "./judges.ts";
  * `ask-or-assume` from 0061 §3's example is still out, and for the reason this
  * list has always had: nothing implements it.
  */
-export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options]);
-export type JudgeName = z.infer<typeof JudgeName>;
+export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options])
+export type JudgeName = z.infer<typeof JudgeName>
 
 /**
  * **Which step is next when something refuses** — a name for the decision
@@ -1289,7 +1288,7 @@ export type JudgeName = z.infer<typeof JudgeName>;
  * of steps on offer, and hands the judge that set as a fact. A judge answers
  * *which of these*, never *what is legal*.
  */
-export const judgePlugin = definePlugin("judge", {
+export const judgePlugin = definePlugin('judge', {
   /**
    * **Two of `DISPATCH`'s three, and leaving `prompt:` out is a decision** (0070 §3).
    *
@@ -1335,7 +1334,7 @@ export const judgePlugin = definePlugin("judge", {
    * has not finished deciding what its own ending is.
    */
   at: { proposed: notBuiltYet },
-});
+})
 
 /**
  * **The bar: the severity at or below which a finding is filed instead of
@@ -1346,8 +1345,8 @@ export const judgePlugin = definePlugin("judge", {
  * a copy of the list here would be a second ladder to keep in order. A fourth
  * severity arrives in the enum, the schema and `decideBacklog` at once.
  */
-export const BacklogBar = z.enum(SEVERITIES);
-export type BacklogBar = z.infer<typeof BacklogBar>;
+export const BacklogBar = z.enum(SEVERITIES)
+export type BacklogBar = z.infer<typeof BacklogBar>
 
 /**
  * **Where a severity stops being an opinion and becomes an outcome** — a name
@@ -1391,14 +1390,14 @@ export type BacklogBar = z.infer<typeof BacklogBar>;
  * (`packages/projector/src/backlog.ts:162`). A knob over a property that
  * already holds is a knob whose only reachable value is the one it has.
  */
-export const backlogPlugin = definePlugin("backlog", {
+export const backlogPlugin = definePlugin('backlog', {
   fields: {
     /** At or below this, a finding is filed and buys no round. `minor` today. */
-    backlog: BacklogBar.default("minor"),
+    backlog: BacklogBar.default('minor'),
   },
   /** No step reads it — the bar is a literal in two folds. `CALLED_DIRECTLY.backlog` says where. */
   at: {},
-});
+})
 
 /**
  * **The closed set**, and the only list of plugins anywhere.
@@ -1458,7 +1457,7 @@ export const PLUGINS = [
   queuePlugin,
   judgePlugin,
   backlogPlugin,
-] as const;
+] as const
 
 /**
  * One thing that runs at a step.
@@ -1492,23 +1491,23 @@ export const StepAction = z.union([
   queuePlugin.schema,
   judgePlugin.schema,
   backlogPlugin.schema,
-]);
-export type StepAction = z.infer<typeof StepAction>;
+])
+export type StepAction = z.infer<typeof StepAction>
 
 /** The action's kind, for an event and for dispatch. Exactly one key decides it. */
-export type ActionKind = (typeof PLUGINS)[number]["key"];
+export type ActionKind = (typeof PLUGINS)[number]['key']
 
 /** The plugin an action names, against the closed set. */
 export function pluginOf(action: unknown, plugins: readonly Plugin[] = PLUGINS): Plugin | null {
-  return pluginNaming(action, plugins);
+  return pluginNaming(action, plugins)
 }
 
 export function kindOfAction(action: StepAction): ActionKind {
   // The loop rather than `pluginOf`, which answers `null` for an action naming
   // two plugins: a resolved recipe can hold no such thing, and this is read on
   // the board's path where the first key is a better answer than none.
-  for (const plugin of PLUGINS) if (plugin.key in action) return plugin.key;
-  return "human";
+  for (const plugin of PLUGINS) if (plugin.key in action) return plugin.key
+  return 'human'
 }
 
 /**
@@ -1526,11 +1525,11 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Ste
   steps: Steps,
   plugins: readonly PluginSecrets[] = PLUGINS,
 ): Steps {
-  const shown: Record<string, unknown> = {};
+  const shown: Record<string, unknown> = {}
   for (const [step, actions] of Object.entries(steps)) {
-    shown[step] = actions.map((action) => disclose(action, plugins));
+    shown[step] = actions.map((action) => disclose(action, plugins))
   }
-  return shown as Steps;
+  return shown as Steps
 }
 
 /**
@@ -1551,7 +1550,7 @@ export function discloseSteps<Steps extends Readonly<Record<string, readonly Ste
  * an operator has says it is there.*
  */
 function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
-  return plugins.filter((plugin) => servesStep(plugin, step));
+  return plugins.filter((plugin) => servesStep(plugin, step))
 }
 
 /**
@@ -1594,17 +1593,17 @@ function pluginsAt(step: Step, plugins: readonly Plugin[]): readonly Plugin[] {
  * cannot run* becomes *a step refuses a destination it did not offer*.
  */
 const ONLY_PROPOSED_ROUTES =
-  "`proposed` is the only step that routes (0058 §3b), and a judge is asked there once about " +
-  "wherever the pass got to: a refusal at this step *travels* to it carrying its reason " +
-  "(`ARRIVE_AT_THE_ROUTER` in `packages/conductor/src/pass.ts`), so a `judge:` here would be a " +
-  "second router at a step that has not finished deciding what its own ending is. Written at " +
-  "`proposed` it is read — `proposed` takes the one entry whose `when:` matches the reason the " +
-  "last step gave, one judge per direction, and only the `findings` one is a judgement worth an " +
-  "agent — and **the workflow counts, the judge chooses** (0061 §3): the workflow reads `rounds` " +
-  "and `restarts`, works out which steps are on offer, and hands the judge that set. The set " +
-  "depends on how far the pass got and not only on what is left to spend, so a judge answers " +
-  "which of these and never what is legal, and one that returns a step it was not offered is " +
-  "refused by name";
+  '`proposed` is the only step that routes (0058 §3b), and a judge is asked there once about ' +
+  'wherever the pass got to: a refusal at this step *travels* to it carrying its reason ' +
+  '(`ARRIVE_AT_THE_ROUTER` in `packages/conductor/src/pass.ts`), so a `judge:` here would be a ' +
+  'second router at a step that has not finished deciding what its own ending is. Written at ' +
+  '`proposed` it is read — `proposed` takes the one entry whose `when:` matches the reason the ' +
+  'last step gave, one judge per direction, and only the `findings` one is a judgement worth an ' +
+  'agent — and **the workflow counts, the judge chooses** (0061 §3): the workflow reads `rounds` ' +
+  'and `restarts`, works out which steps are on offer, and hands the judge that set. The set ' +
+  'depends on how far the pass got and not only on what is left to spend, so a judge answers ' +
+  'which of these and never what is legal, and one that returns a step it was not offered is ' +
+  'refused by name'
 
 /**
  * **Why a `merge:` belongs at `merge` and nowhere else**, and what the step does
@@ -1624,16 +1623,16 @@ const ONLY_PROPOSED_ROUTES =
  * on the spine would land a change the steps after it were about to judge.
  */
 const ONLY_THE_LANE_LANDS =
-  "`merge` is the last step before `end` and the only one that changes the base branch (0058 §3), " +
-  "so a `merge:` is read there and a pass lands once: every step before it has passed by the time " +
-  "it runs, which is what makes the merge the one the review was of, and a lane declared earlier on " +
-  "the spine would put a change on `main` while the steps after it were still deciding about it. " +
-  "Written at `merge` it is read — `integrate` in `packages/repo/src/integrate.ts` merges the base " +
-  "in, re-verifies against what landed in the meantime, merges out and pushes — and **it reports a " +
+  '`merge` is the last step before `end` and the only one that changes the base branch (0058 §3), ' +
+  'so a `merge:` is read there and a pass lands once: every step before it has passed by the time ' +
+  'it runs, which is what makes the merge the one the review was of, and a lane declared earlier on ' +
+  'the spine would put a change on `main` while the steps after it were still deciding about it. ' +
+  'Written at `merge` it is read — `integrate` in `packages/repo/src/integrate.ts` merges the base ' +
+  'in, re-verifies against what landed in the meantime, merges out and pushes — and **it reports a ' +
   "reason and decides nothing** (0058 §3c): a refusal carries the lane's own `conflict` or " +
-  "`verify-failed` to `proposed`, which is where a round is bought for it. It declares no `base:` " +
-  "either, and that is deliberate rather than missing (0061 §4): the base is one value that flows, " +
-  "and a second home for it would let what a pass lands disagree with what it was cut from";
+  '`verify-failed` to `proposed`, which is where a round is bought for it. It declares no `base:` ' +
+  'either, and that is deliberate rather than missing (0061 §4): the base is one value that flows, ' +
+  'and a second home for it would let what a pass lands disagree with what it was cut from'
 
 /**
  * **Why a `worktree:` belongs at `admit` and nowhere else** — `ONLY_THE_LANE_LANDS`'s
@@ -1656,15 +1655,15 @@ const ONLY_THE_LANE_LANDS =
  * work already written.
  */
 const ONLY_ADMIT_CUTS =
-  "`worktree:` is what `admit` does, and `admit` is the only step that does it (0058 §3): a pass is " +
-  "cut one branch, before anything has been claimed against it or written in it, and every step " +
-  "after that one works inside what the cut made — so a `worktree:` further down the spine would " +
-  "move the ground under a change already written, and one before `admit` would ask for a tree while " +
-  "the item is still in the queue. Written at `admit` it is read — `createWorktreeAction` in " +
-  "`packages/actions/src/worktree-action.ts` provisions it, and a recipe that declares nothing there " +
-  "runs that same action off `baseOf`/`submodulesOf` (0065 §2) — and **`base:` is written here and " +
-  "nowhere else** (0061 §4): the base is one value that flows to the merge lane rather than a setting " +
-  "with two homes, so what a pass lands cannot disagree with what it was cut from";
+  '`worktree:` is what `admit` does, and `admit` is the only step that does it (0058 §3): a pass is ' +
+  'cut one branch, before anything has been claimed against it or written in it, and every step ' +
+  'after that one works inside what the cut made — so a `worktree:` further down the spine would ' +
+  'move the ground under a change already written, and one before `admit` would ask for a tree while ' +
+  'the item is still in the queue. Written at `admit` it is read — `createWorktreeAction` in ' +
+  '`packages/actions/src/worktree-action.ts` provisions it, and a recipe that declares nothing there ' +
+  'runs that same action off `baseOf`/`submodulesOf` (0065 §2) — and **`base:` is written here and ' +
+  'nowhere else** (0061 §4): the base is one value that flows to the merge lane rather than a setting ' +
+  'with two homes, so what a pass lands cannot disagree with what it was cut from'
 
 /**
  * **Why a `queue:` belongs at `claim` and nowhere else** — `ONLY_ADMIT_CUTS`'s
@@ -1682,17 +1681,17 @@ const ONLY_ADMIT_CUTS =
  * take anywhere later would be a pass working one ticket while holding another.
  */
 const ONLY_CLAIM_TAKES =
-  "`queue:` is what `claim` does, and `claim` is the only step that does it (0058 §3): a pass is " +
-  "about one work item, `claim` is where it is decided which, and every step after it is about that " +
-  "one — so a `queue:` further down the spine would have a pass working one ticket while holding " +
-  "another. Written at `claim` it is read — `createQueueAction` in " +
-  "`packages/actions/src/queue-action.ts` re-reads the offer for the issue the pass was pointed at, " +
-  "and a recipe that declares nothing there runs that same action off `queueOf(recipe)` (0065 §2) — " +
-  "and **it cannot refuse** (0058 §2): a claim that took nothing is holding nothing, so its three " +
-  "declines are reported as `did-not-finish` carrying `passed-over`, `not-claimed` or " +
-  "`claim-unconfirmed`, and never as a refusal that buys a round. What is *not* this plugin is the " +
-  "queue pass — `selectRunnable` in `packages/conductor/src/queue.ts` asks GitHub which issues are " +
-  "on offer before a pass exists to have steps, and `backoff` is only read there";
+  '`queue:` is what `claim` does, and `claim` is the only step that does it (0058 §3): a pass is ' +
+  'about one work item, `claim` is where it is decided which, and every step after it is about that ' +
+  'one — so a `queue:` further down the spine would have a pass working one ticket while holding ' +
+  'another. Written at `claim` it is read — `createQueueAction` in ' +
+  '`packages/actions/src/queue-action.ts` re-reads the offer for the issue the pass was pointed at, ' +
+  'and a recipe that declares nothing there runs that same action off `queueOf(recipe)` (0065 §2) — ' +
+  'and **it cannot refuse** (0058 §2): a claim that took nothing is holding nothing, so its three ' +
+  'declines are reported as `did-not-finish` carrying `passed-over`, `not-claimed` or ' +
+  '`claim-unconfirmed`, and never as a refusal that buys a round. What is *not* this plugin is the ' +
+  'queue pass — `selectRunnable` in `packages/conductor/src/queue.ts` asks GitHub which issues are ' +
+  'on offer before a pass exists to have steps, and `backoff` is only read there'
 
 /**
  * **Why a `file:` belongs at `design` and nowhere else** — `ONLY_CLAIM_TAKES`'s
@@ -1714,16 +1713,16 @@ const ONLY_CLAIM_TAKES =
  * log already and has nowhere to be kept.
  */
 const ONLY_DESIGN_KEEPS =
-  "`file:` keeps what a step *made*, and `design` is the one step that makes something large " +
-  "(0066 §3): the document goes to a path in the worktree and the path comes back as the locator, " +
-  "which is the fact `evidence` carries instead of the whole document. Every other step answers " +
-  "with a verdict — a sentence the log already holds — so there is nothing at one for a destination " +
-  "to keep. Written at `design` it is read — `createFileAction` in " +
-  "`packages/actions/src/file-action.ts` writes the file and commits it to the branch, which is the " +
-  "only way it outlives the worktree — and it is written **after** the action that drafts, because it keeps what an earlier " +
-  "entry in the same list produced and a `file:` written first has nothing to keep. What it returns " +
-  "is a string only this plugin reads (0066 §4): nothing in `packages/conductor` parses a locator, " +
-  "which is what lets a second destination join without the core learning about it";
+  '`file:` keeps what a step *made*, and `design` is the one step that makes something large ' +
+  '(0066 §3): the document goes to a path in the worktree and the path comes back as the locator, ' +
+  'which is the fact `evidence` carries instead of the whole document. Every other step answers ' +
+  'with a verdict — a sentence the log already holds — so there is nothing at one for a destination ' +
+  'to keep. Written at `design` it is read — `createFileAction` in ' +
+  '`packages/actions/src/file-action.ts` writes the file and commits it to the branch, which is the ' +
+  'only way it outlives the worktree — and it is written **after** the action that drafts, because it keeps what an earlier ' +
+  'entry in the same list produced and a `file:` written first has nothing to keep. What it returns ' +
+  'is a string only this plugin reads (0066 §4): nothing in `packages/conductor` parses a locator, ' +
+  'which is what lets a second destination join without the core learning about it'
 
 /**
  * **Why a `file-brief:` belongs at `implement` and nowhere else** —
@@ -1744,17 +1743,17 @@ const ONLY_DESIGN_KEEPS =
  * design to be about or has already been briefed with one.
  */
 const ONLY_IMPLEMENT_READS_IT_BACK =
-  "`file-brief:` reads the design back from wherever a `file:` kept it, and `implement` is the step " +
-  "a design is *for* (0058 §3): `design` writes the document and `implement` is the one step that " +
-  "works from it, so the read belongs beside the agent that is briefed with it and nowhere else — at " +
-  "`design` there is no locator yet, and at every later step the change has already been written. " +
-  "Written at `implement` it is read — `createFileBriefAction` in " +
-  "`packages/actions/src/file-brief-action.ts` resolves the locator, reads the file and answers with " +
-  "the text, which `runActionPipeline` hands to the next action in the same list — and it is written " +
-  "**before** the `agent:` it briefs, because an action written after that one has nothing left to " +
-  "brief. What it reads is a locator only this plugin understands (0066 §4): a design kept somewhere " +
+  '`file-brief:` reads the design back from wherever a `file:` kept it, and `implement` is the step ' +
+  'a design is *for* (0058 §3): `design` writes the document and `implement` is the one step that ' +
+  'works from it, so the read belongs beside the agent that is briefed with it and nowhere else — at ' +
+  '`design` there is no locator yet, and at every later step the change has already been written. ' +
+  'Written at `implement` it is read — `createFileBriefAction` in ' +
+  '`packages/actions/src/file-brief-action.ts` resolves the locator, reads the file and answers with ' +
+  'the text, which `runActionPipeline` hands to the next action in the same list — and it is written ' +
+  '**before** the `agent:` it briefs, because an action written after that one has nothing left to ' +
+  'brief. What it reads is a locator only this plugin understands (0066 §4): a design kept somewhere ' +
   "else is read by that destination's own plugin here, and nothing in `packages/conductor` learns the " +
-  "difference";
+  'difference'
 
 /**
  * **Why a `human:` and a `watch:` are refused at `merge`** — the subtraction
@@ -1782,14 +1781,14 @@ const ONLY_IMPLEMENT_READS_IT_BACK =
  * something a position rule has to catch.
  */
 const ONLY_PROPOSED_ASKS_A_PERSON =
-  "`merge` may not reach a person, and that is the third of its three ways out (0058 §3b): a lane " +
-  "that refuses carries its reason to `proposed`, **and only `proposed` may send it to a person**. " +
-  "So the step where a proposed change is inspected — an approval, a glob over its files, the tamper " +
-  "check — is `proposed:`, and that is the step to write this at. Since `#270` the landing is itself " +
+  '`merge` may not reach a person, and that is the third of its three ways out (0058 §3b): a lane ' +
+  'that refuses carries its reason to `proposed`, **and only `proposed` may send it to a person**. ' +
+  'So the step where a proposed change is inspected — an approval, a glob over its files, the tamper ' +
+  'check — is `proposed:`, and that is the step to write this at. Since `#270` the landing is itself ' +
   "an action in `merge`'s list (`mergePlugin.at.merge`), so a hold written here would be asked about a " +
-  "merge the same list had already made — `#58` with the order reversed. A run that must not merge " +
-  "unattended is held at `proposed:`, which is before the lane, or by `lingtai run --no-merge`, whose " +
-  "hold is the conductor's own and composes ahead of the lane rather than being declared in the file";
+  'merge the same list had already made — `#58` with the order reversed. A run that must not merge ' +
+  'unattended is held at `proposed:`, which is before the lane, or by `lingtai run --no-merge`, whose ' +
+  "hold is the conductor's own and composes ahead of the lane rather than being declared in the file"
 
 /**
  * **What `proposed` will do with the one plugin of its three that decides
@@ -1810,13 +1809,13 @@ const ONLY_PROPOSED_ASKS_A_PERSON =
  * refusal exists for a judge to be asked about and no round is bought.
  */
 const FILES_AND_ROUTES_NOTHING =
-  "When a step does read it, `proposed` files every finding at or below the bar and **buys no " +
-  "round** for one — a finding that did not refuse is not a refusal, so nothing downstream is " +
-  "asked what to do about it. It routes nothing and carries no `when:`: a step may hold plugins " +
-  "that route and plugins that only act, and `judge:` is the one that says which step is next. " +
-  "Filing the same finding twice is not something a recipe can ask for either — `findingKey` in " +
+  'When a step does read it, `proposed` files every finding at or below the bar and **buys no ' +
+  'round** for one — a finding that did not refuse is not a refusal, so nothing downstream is ' +
+  'asked what to do about it. It routes nothing and carries no `when:`: a step may hold plugins ' +
+  'that route and plugins that only act, and `judge:` is the one that says which step is next. ' +
+  'Filing the same finding twice is not something a recipe can ask for either — `findingKey` in ' +
   "`packages/domain/src/backlog.ts` leaves out the run, the round and the sha, so round 2's " +
-  "sighting lands on round 1's entry";
+  "sighting lands on round 1's entry"
 
 /**
  * **The same table read down the other axis**: a plugin the pass calls itself,
@@ -1862,18 +1861,18 @@ const FILES_AND_ROUTES_NOTHING =
  */
 const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
   backlog:
-    "**the bar is in two places and wiring one of them changes nothing.** `verdictFor` in " +
-    "`packages/actions/src/agent-action.ts` decides what **refuses**, off a hard-coded blocker-or-major; " +
-    "`backlogProjection` in `packages/projector/src/backlog.ts` decides what is **filed**, off a literal " +
-    "`minor`. They are one comparison written twice, in two packages that cannot see each other, and " +
-    "`decideBacklog` in `packages/conductor/src/backlog.ts` is that comparison as a function a recipe " +
+    '**the bar is in two places and wiring one of them changes nothing.** `verdictFor` in ' +
+    '`packages/actions/src/agent-action.ts` decides what **refuses**, off a hard-coded blocker-or-major; ' +
+    '`backlogProjection` in `packages/projector/src/backlog.ts` decides what is **filed**, off a literal ' +
+    '`minor`. They are one comparison written twice, in two packages that cannot see each other, and ' +
+    '`decideBacklog` in `packages/conductor/src/backlog.ts` is that comparison as a function a recipe ' +
     "will hand its own value. **Both halves take it or neither does**: a step that replaces the fold's " +
-    "literal alone still gets `failed` out of `verdictFor` for a major, still records a refusal, and the " +
-    "fold files only out of a passing step — so a recipe that said a major costs nothing would buy a fix " +
-    "round exactly as it does today, and read as honoured. What a person then does with a filed one is " +
-    "`acceptFinding` and " +
+    'literal alone still gets `failed` out of `verdictFor` for a major, still records a refusal, and the ' +
+    'fold files only out of a passing step — so a recipe that said a major costs nothing would buy a fix ' +
+    'round exactly as it does today, and read as honoured. What a person then does with a filed one is ' +
+    '`acceptFinding` and ' +
     `\`declineFinding\` in the same module, which \`lingtai backlog\` and the board both call. ${FILES_AND_ROUTES_NOTHING}`,
-};
+}
 
 /**
  * **Where a plugin does live**, for the refusal that has to say so.
@@ -1884,8 +1883,8 @@ const CALLED_DIRECTLY: Partial<Record<ActionKind, string>> = {
  */
 function servedBy(plugin: Plugin): string {
   return plugin.serves.length === 0
-    ? "it serves no step at all"
-    : `it serves ${plugin.serves.map((served) => `\`${served}\``).join(", ")}`;
+    ? 'it serves no step at all'
+    : `it serves ${plugin.serves.map((served) => `\`${served}\``).join(', ')}`
 }
 
 /**
@@ -1915,23 +1914,19 @@ function servedBy(plugin: Plugin): string {
  * - **A step somebody implements and this plugin does not.** Then the useful
  *   thing is where this plugin *does* serve, and the reason is about the pair.
  */
-export function whyNoKindAt(
-  step: Step,
-  kind: ActionKind,
-  plugins: readonly Plugin[] = PLUGINS,
-): string | null {
-  const plugin = plugins.find((each) => each.key === kind) ?? null;
-  if (plugin !== null && servesStep(plugin, step)) return null;
+export function whyNoKindAt(step: Step, kind: ActionKind, plugins: readonly Plugin[] = PLUGINS): string | null {
+  const plugin = plugins.find((each) => each.key === kind) ?? null
+  if (plugin !== null && servesStep(plugin, step)) return null
 
-  const calledDirectly = CALLED_DIRECTLY[kind];
+  const calledDirectly = CALLED_DIRECTLY[kind]
   if (calledDirectly !== undefined) {
     return (
       `no step reads a \`${kind}:\` action from the recipe yet — the plugin is the name ` +
-      "[0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3 gives code the pass already runs, and " +
+      '[0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3 gives code the pass already runs, and ' +
       `it is wired to the recipe by the ticket that makes the file \`steps:\`. Today ${calledDirectly}. ` +
-      "Refused rather than accepted here because an action nothing reads would be resolved, recorded on " +
-      "the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
-    );
+      'Refused rather than accepted here because an action nothing reads would be resolved, recorded on ' +
+      'the log, printed by `lingtai add`, drawn on the board — and never called (`#61`)'
+    )
   }
 
   // **A step nobody has built, said as that and not as *it takes nothing*.**
@@ -1945,11 +1940,11 @@ export function whyNoKindAt(
     // its own.
     return (
       `no plugin implements \`${step}\` — the step is named by ` +
-      "[0058](doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board " +
+      '[0058](doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) §3 so that the log, the recipe and the board ' +
       "have a word for it, and no plugin's `at` carries that key yet. " +
-      "Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded " +
-      "in `StepsResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)"
-    );
+      'Refused rather than accepted here because an action at a step nothing implements would be resolved, recorded ' +
+      'in `StepsResolved`, printed by `lingtai add`, drawn on the board — and never called (`#61`)'
+    )
   }
 
   // Somebody serves this step and this plugin does not, so the answer leads
@@ -1957,8 +1952,8 @@ export function whyNoKindAt(
   const wrongStep =
     plugin === null
       ? `no plugin is named \`${kind}:\``
-      : `\`${kind}:\` does not implement \`${step}\` — ${servedBy(plugin)}`;
-  return `${wrongStep}: ${whyThatPair(step, kind)}`;
+      : `\`${kind}:\` does not implement \`${step}\` — ${servedBy(plugin)}`
+  return `${wrongStep}: ${whyThatPair(step, kind)}`
 }
 
 /**
@@ -2016,101 +2011,101 @@ export function whyNoKindAt(
  * a red test rather than a reviewer's good day.
  */
 function whyThatPair(step: Step, kind: ActionKind): string {
-  if (step === "end") {
+  if (step === 'end') {
     return (
-      "`end` fires on every terminal outcome and produces no verdict, so the only actions it can " +
-      "carry are the three that run for effect — `close:`, `labels:` and `refs:`, whose `when:` is " +
-      "which of those outcomes it was. It is not that they are the plugins with a `when:` field: " +
-      "`judge:` declares one too and reads the reason the last step gave (`#238`), so what picks " +
-      "these three out is the kind and never the shape"
-    );
+      '`end` fires on every terminal outcome and produces no verdict, so the only actions it can ' +
+      'carry are the three that run for effect — `close:`, `labels:` and `refs:`, whose `when:` is ' +
+      'which of those outcomes it was. It is not that they are the plugins with a `when:` field: ' +
+      '`judge:` declares one too and reads the reason the last step gave (`#238`), so what picks ' +
+      'these three out is the kind and never the shape'
+    )
   }
-  if (kind === "judge") return ONLY_PROPOSED_ROUTES;
-  if (kind === "merge") return ONLY_THE_LANE_LANDS;
-  if (kind === "worktree") return ONLY_ADMIT_CUTS;
-  if (kind === "queue") return ONLY_CLAIM_TAKES;
-  if (kind === "file") return ONLY_DESIGN_KEEPS;
-  if (kind === "file-brief") return ONLY_IMPLEMENT_READS_IT_BACK;
+  if (kind === 'judge') return ONLY_PROPOSED_ROUTES
+  if (kind === 'merge') return ONLY_THE_LANE_LANDS
+  if (kind === 'worktree') return ONLY_ADMIT_CUTS
+  if (kind === 'queue') return ONLY_CLAIM_TAKES
+  if (kind === 'file') return ONLY_DESIGN_KEEPS
+  if (kind === 'file-brief') return ONLY_IMPLEMENT_READS_IT_BACK
   // Before the step branches and not after them, for `judge:`'s reason (`#270`):
   // what is wrong with a hold at `merge` is not what `merge` asks of an action but
   // who it may reach, and the sentence below about `prepared` would otherwise be
   // printed at a step where it is false.
-  if (step === "merge" && (kind === "human" || kind === "watch")) return ONLY_PROPOSED_ASKS_A_PERSON;
-  if (kind === "close" || kind === "labels" || kind === "refs") {
-    return "it is an effect rather than a verdict, and only the `end` step carries out effects";
+  if (step === 'merge' && (kind === 'human' || kind === 'watch')) return ONLY_PROPOSED_ASKS_A_PERSON
+  if (kind === 'close' || kind === 'labels' || kind === 'refs') {
+    return 'it is an effect rather than a verdict, and only the `end` step carries out effects'
   }
-  if (step === "review") {
+  if (step === 'review') {
     return (
-      "`review` returns findings and judges nothing (0058 §3b) — `pass.ts` makes its ending `passed` " +
-      "whatever the action said, so a verdict declared here is one the step throws away, and `agent:` " +
-      "is the only plugin that answers with findings rather than with a verdict. A command that decides " +
+      '`review` returns findings and judges nothing (0058 §3b) — `pass.ts` makes its ending `passed` ' +
+      'whatever the action said, so a verdict declared here is one the step throws away, and `agent:` ' +
+      'is the only plugin that answers with findings rather than with a verdict. A command that decides ' +
       "whether the diff stands is a `run:` at `build`; a glob over it or a hold on it is `proposed`'s"
-    );
+    )
   }
-  if (step === "build") {
+  if (step === 'build') {
     return (
-      "`build` is the independent build of what was written (0058 §3), and what it asks of an action is " +
+      '`build` is the independent build of what was written (0058 §3), and what it asks of an action is ' +
       "a command's exit code — `run:` is the one plugin declared there, and none of the other three " +
-      "builds anything. An agent asked to would be paid to read, and a cold read of the diff is " +
+      'builds anything. An agent asked to would be paid to read, and a cold read of the diff is ' +
       "`review`; a glob over the diff's file list and a hold on it are questions about a change already " +
-      "built, which is `proposed`"
-    );
+      'built, which is `proposed`'
+    )
   }
-  if (step === "claim") {
+  if (step === 'claim') {
     return (
-      "`claim` picks the ticket the pass is about and does nothing else (0058 §3), so the only plugin " +
-      "it carries is the one that picks — `queue:`, which is the key `queuePlugin` declares there. " +
-      "Nothing has been claimed, cut or written when this step runs, so a command has no worktree to " +
-      "run in and belongs at `prepared`, an agent has no diff to read and a glob no file list to " +
-      "match. A hold is the one that reads as though it would work: asked here it is asked either " +
-      "about no ticket at all, or about one this run is already holding for the whole of the wait. " +
-      "`lingtai ask` is the question that belongs before a claim — it holds the item in the queue, " +
-      "and it is answered without a run having been paid for"
-    );
+      '`claim` picks the ticket the pass is about and does nothing else (0058 §3), so the only plugin ' +
+      'it carries is the one that picks — `queue:`, which is the key `queuePlugin` declares there. ' +
+      'Nothing has been claimed, cut or written when this step runs, so a command has no worktree to ' +
+      'run in and belongs at `prepared`, an agent has no diff to read and a glob no file list to ' +
+      'match. A hold is the one that reads as though it would work: asked here it is asked either ' +
+      'about no ticket at all, or about one this run is already holding for the whole of the wait. ' +
+      '`lingtai ask` is the question that belongs before a claim — it holds the item in the queue, ' +
+      'and it is answered without a run having been paid for'
+    )
   }
-  if (step === "admit") {
+  if (step === 'admit') {
     return (
-      "`admit` cuts the branch a pass owns and does nothing else (0058 §3), so the only plugin it " +
-      "carries is the one that cuts — `worktree:`, which is the key `worktreePlugin` declares there. " +
-      "There is no worktree until this step has made one, so a command has nowhere to run and belongs " +
-      "at `prepared`, and nothing has been written, so an agent has no diff to read and a glob no file " +
-      "list to match. A question that has to be asked before anything is spent is `lingtai ask`, which " +
-      "holds the item in the queue rather than a run that has already paid for a clone"
-    );
+      '`admit` cuts the branch a pass owns and does nothing else (0058 §3), so the only plugin it ' +
+      'carries is the one that cuts — `worktree:`, which is the key `worktreePlugin` declares there. ' +
+      'There is no worktree until this step has made one, so a command has nowhere to run and belongs ' +
+      'at `prepared`, and nothing has been written, so an agent has no diff to read and a glob no file ' +
+      'list to match. A question that has to be asked before anything is spent is `lingtai ask`, which ' +
+      'holds the item in the queue rather than a run that has already paid for a clone'
+    )
   }
-  if (step === "design") {
+  if (step === 'design') {
     return (
-      "`design` produces a document before any code, or nothing, which is an answer (0058 §3), so the " +
-      "two plugins it carries are the one that can write one — `agent:`, which is the key `agentPlugin` " +
-      "declares there, and at this step it drafts rather than reviews — and the one that keeps it, " +
-      "`file:`, which writes it to a path and returns that path as the locator. No code has been written when " +
-      "this step runs, so a command has no diff to check and belongs at `build`, a cold read of one is " +
-      "`review`, and a glob has no file list to match. A hold is the one that reads as though it would " +
-      "work: a question about a change is a question about a change that exists, and `proposed:` is " +
-      "where there is a diff to ask it about"
-    );
+      '`design` produces a document before any code, or nothing, which is an answer (0058 §3), so the ' +
+      'two plugins it carries are the one that can write one — `agent:`, which is the key `agentPlugin` ' +
+      'declares there, and at this step it drafts rather than reviews — and the one that keeps it, ' +
+      '`file:`, which writes it to a path and returns that path as the locator. No code has been written when ' +
+      'this step runs, so a command has no diff to check and belongs at `build`, a cold read of one is ' +
+      '`review`, and a glob has no file list to match. A hold is the one that reads as though it would ' +
+      'work: a question about a change is a question about a change that exists, and `proposed:` is ' +
+      'where there is a diff to ask it about'
+    )
   }
-  if (step === "implement") {
+  if (step === 'implement') {
     return (
-      "`implement` is the change itself (0058 §3), so the only plugin it carries is the one that " +
-      "writes one — `agent:`, which is the key `agentPlugin` declares there, and at this step it " +
+      '`implement` is the change itself (0058 §3), so the only plugin it carries is the one that ' +
+      'writes one — `agent:`, which is the key `agentPlugin` declares there, and at this step it ' +
       "implements rather than reads. The step's own receipt is a commit (0057 §2), which is what " +
-      "none of the other three can leave: a command that checks what was written is `build`, a " +
-      "cold read of it is `review`, a glob over its file list and a hold on it are questions about " +
-      "a change already made, which is `proposed`"
-    );
+      'none of the other three can leave: a command that checks what was written is `build`, a ' +
+      'cold read of it is `review`, a glob over its file list and a hold on it are questions about ' +
+      'a change already made, which is `proposed`'
+    )
   }
-  if (kind === "agent") {
-    return "nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read";
+  if (kind === 'agent') {
+    return 'nothing has been committed at `prepared`, so a cold reviewer would be given no diff to read'
   }
-  if (kind === "watch") {
-    return "nothing has been committed at `prepared`, so the globs would be matched against no file list";
+  if (kind === 'watch') {
+    return 'nothing has been committed at `prepared`, so the globs would be matched against no file list'
   }
   return (
-    "a hold at `prepared` cannot be answered — the run is released back to the queue and the " +
-    "question goes with it, so the item would re-claim, re-install and ask again on every pass. " +
-    "Ask before the claim with `lingtai ask`, or at `proposed`, where there is a diff to approve"
-  );
+    'a hold at `prepared` cannot be answered — the run is released back to the queue and the ' +
+    'question goes with it, so the item would re-claim, re-install and ask again on every pass. ' +
+    'Ask before the claim with `lingtai ask`, or at `proposed`, where there is a diff to approve'
+  )
 }
 
 /**
@@ -2127,19 +2122,19 @@ export function kindRefusedAt(
   kind: ActionKind,
   action: string,
   why: string,
-  tail = "Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start.",
+  tail = 'Refusing rather than accepting it: an action that is silently absent is worse than a run that will not start.',
 ): string {
-  return `the "${action}" action is a "${kind}" at the "${step}" step, and ${why}. ${tail}`;
+  return `the "${action}" action is a "${kind}" at the "${step}" step, and ${why}. ${tail}`
 }
 
 /** What a plugin's own refusal of a field says after the sentence above. */
 const REFUSED_WHEN_IT_RESOLVED =
-  "Refused when the recipe resolves, before a worktree, before an agent, before any money.";
+  'Refused when the recipe resolves, before a worktree, before an agent, before any money.'
 
 /** What an action naming no plugin, or two, is told — and what the legal names are. */
 function pluginRefusedAt(step: Step, action: unknown, named: readonly Plugin[]): string {
-  const called = nameOf(action);
-  const legal = PLUGINS.map((plugin) => `"${plugin.key}"`).join(", ");
+  const called = nameOf(action)
+  const legal = PLUGINS.map((plugin) => `"${plugin.key}"`).join(', ')
   /**
    * **`discuss:` by name, ahead of the generic *names no plugin* refusal**
    * (0061 §6, `#243`).
@@ -2151,27 +2146,27 @@ function pluginRefusedAt(step: Step, action: unknown, named: readonly Plugin[]):
    * discussion is started by a person, runs while nothing else is, and
    * advances no work item, so there is no step it could be declared at.
    */
-  if (named.length === 0 && typeof action === "object" && action !== null && "discuss" in action) {
+  if (named.length === 0 && typeof action === 'object' && action !== null && 'discuss' in action) {
     return (
       `the "${called}" action at the "${step}" step names \`discuss\`, which is not a plugin any step ` +
-      "runs — a discussion is a top-level node beside `steps:` and `subscribers:` (0061 §6): it is " +
-      "started by a person, runs while nothing else is, and advances no work item. Move it to " +
-      "`discuss:` at the top of the file, beside `steps:`."
-    );
+      'runs — a discussion is a top-level node beside `steps:` and `subscribers:` (0061 §6): it is ' +
+      'started by a person, runs while nothing else is, and advances no work item. Move it to ' +
+      '`discuss:` at the top of the file, beside `steps:`.'
+    )
   }
   return named.length === 0
     ? `the "${called}" action at the "${step}" step names no plugin — an action carries exactly one of ` +
         `${legal}, and that key is what it is. Refusing rather than accepting it: an action that is ` +
-        "silently absent is worse than a run that will not start."
+        'silently absent is worse than a run that will not start.'
     : `the "${called}" action at the "${step}" step names ${named.length} plugins — ` +
-        `${named.map((plugin) => `"${plugin.key}"`).join(" and ")} — and an action carries exactly one. ` +
-        "Which of them was meant is not Lingtai's to guess.";
+        `${named.map((plugin) => `"${plugin.key}"`).join(' and ')} — and an action carries exactly one. ` +
+        "Which of them was meant is not Lingtai's to guess."
 }
 
 /** What a refusal calls an action whose `name` may itself be what is wrong. */
 function nameOf(action: unknown): string {
-  const written = (action as { name?: unknown } | null)?.name;
-  return typeof written === "string" ? written : "(unnamed)";
+  const written = (action as { name?: unknown } | null)?.name
+  return typeof written === 'string' ? written : '(unnamed)'
 }
 
 /**
@@ -2214,36 +2209,36 @@ function actionsAt(step: Step) {
   return z
     .array(z.unknown())
     .transform((written, ctx) => {
-      const resolved: StepAction[] = [];
+      const resolved: StepAction[] = []
       /** Where each accepted `worktree:` was written, for the refusal below. */
-      const cuts: number[] = [];
+      const cuts: number[] = []
       /** Where each accepted `queue:` was written, for the refusal below. */
-      const takes: number[] = [];
+      const takes: number[] = []
       /** Where an accepted `merge:` was written, if one has been — the refusal below. */
-      let landsAt: number | null = null;
+      let landsAt: number | null = null
       written.forEach((action, i) => {
-        const named = pluginsNamed(action, PLUGINS);
-        const plugin = pluginNaming(action, PLUGINS);
+        const named = pluginsNamed(action, PLUGINS)
+        const plugin = pluginNaming(action, PLUGINS)
         if (plugin === null) {
-          ctx.addIssue({ code: "custom", path: [i], message: pluginRefusedAt(step, action, named) });
-          return;
+          ctx.addIssue({ code: 'custom', path: [i], message: pluginRefusedAt(step, action, named) })
+          return
         }
-        const kind = plugin.key as ActionKind;
-        const why = whyNoKindAt(step, kind);
+        const kind = plugin.key as ActionKind
+        const why = whyNoKindAt(step, kind)
         if (why !== null) {
-          ctx.addIssue({ code: "custom", path: [i], message: kindRefusedAt(step, kind, nameOf(action), why) });
-          return;
+          ctx.addIssue({ code: 'custom', path: [i], message: kindRefusedAt(step, kind, nameOf(action), why) })
+          return
         }
-        const read = readFields(plugin, action);
+        const read = readFields(plugin, action)
         if (read.problems !== undefined) {
           for (const problem of read.problems) {
             ctx.addIssue({
-              code: "custom",
+              code: 'custom',
               path: [i, ...problem.at],
               message: kindRefusedAt(step, kind, nameOf(action), problem.why, REFUSED_WHEN_IT_RESOLVED),
-            });
+            })
           }
-          return;
+          return
         }
         /**
          * **The lane is the last action at its step, and anything written after
@@ -2266,20 +2261,20 @@ function actionsAt(step: Step) {
          */
         if (landsAt !== null) {
           ctx.addIssue({
-            code: "custom",
+            code: 'custom',
             path: [i],
             message: kindRefusedAt(
               step,
               kind,
               nameOf(action),
               `the "${step}" step lands the branch at entry ${landsAt}, and the lane is the last action ` +
-                "a step carries. This one is written after it, so it would run on a change already on the " +
-                "base branch — and a verdict it gave there would report the step refused while the merge " +
-                "stood, leaving the diff landed and the ticket blocked. Write it before the lane",
+                'a step carries. This one is written after it, so it would run on a change already on the ' +
+                'base branch — and a verdict it gave there would report the step refused while the merge ' +
+                'stood, leaving the diff landed and the ticket blocked. Write it before the lane',
               REFUSED_WHEN_IT_RESOLVED,
             ),
-          });
-          return;
+          })
+          return
         }
 
         /**
@@ -2300,22 +2295,22 @@ function actionsAt(step: Step) {
          * is that plugin's to know (0031 §1) and a list of them here would be a
          * list to keep true.
          */
-        if (kind === "file" && i === 0) {
+        if (kind === 'file' && i === 0) {
           ctx.addIssue({
-            code: "custom",
+            code: 'custom',
             path: [i],
             message: kindRefusedAt(
               step,
               kind,
               nameOf(action),
-              "it is the first action there, and a `file:` keeps what an earlier " +
-                "action made rather than making anything itself — so written first it has nothing to " +
-                "keep, and would pass having written no file and returned no locator. Write it after " +
-                "the action that drafts the document",
+              'it is the first action there, and a `file:` keeps what an earlier ' +
+                'action made rather than making anything itself — so written first it has nothing to ' +
+                'keep, and would pass having written no file and returned no locator. Write it after ' +
+                'the action that drafts the document',
               REFUSED_WHEN_IT_RESOLVED,
             ),
-          });
-          return;
+          })
+          return
         }
 
         /**
@@ -2334,29 +2329,29 @@ function actionsAt(step: Step) {
          * above is: *which plugin is briefed by a design* is that plugin's to
          * know (0031 §1), and a list of them here would be a list to keep true.
          */
-        if (kind === "file-brief" && i === written.length - 1) {
+        if (kind === 'file-brief' && i === written.length - 1) {
           ctx.addIssue({
-            code: "custom",
+            code: 'custom',
             path: [i],
             message: kindRefusedAt(
               step,
               kind,
               nameOf(action),
-              "it is the last action there, and a `file-brief:` reads the design back *for* the " +
-                "actions written after it rather than doing anything itself — so written last it has " +
-                "nothing to brief, and would pass having read a file no agent was dispatched with. " +
-                "Write it before the action that writes the change",
+              'it is the last action there, and a `file-brief:` reads the design back *for* the ' +
+                'actions written after it rather than doing anything itself — so written last it has ' +
+                'nothing to brief, and would pass having read a file no agent was dispatched with. ' +
+                'Write it before the action that writes the change',
               REFUSED_WHEN_IT_RESOLVED,
             ),
-          });
-          return;
+          })
+          return
         }
 
-        if (kind === "worktree") cuts.push(i);
-        if (kind === "queue") takes.push(i);
-        if (kind === "merge") landsAt = i;
-        resolved.push(read.value as StepAction);
-      });
+        if (kind === 'worktree') cuts.push(i)
+        if (kind === 'queue') takes.push(i)
+        if (kind === 'merge') landsAt = i
+        resolved.push(read.value as StepAction)
+      })
       /**
        * **One cut, and a second `worktree:` is refused rather than merged**
        * (`#268`).
@@ -2373,18 +2368,18 @@ function actionsAt(step: Step) {
        */
       for (const i of cuts.slice(1)) {
         ctx.addIssue({
-          code: "custom",
+          code: 'custom',
           path: [i],
           message: kindRefusedAt(
             step,
-            "worktree",
+            'worktree',
             nameOf(written[i]),
             `the "${step}" step already cuts a worktree at entry ${cuts[0]}, and a step cuts one or ` +
-              "none. Two of them would cut the same path twice, and the base a reading shows would " +
-              "not be the base the pass was cut from",
+              'none. Two of them would cut the same path twice, and the base a reading shows would ' +
+              'not be the base the pass was cut from',
             REFUSED_WHEN_IT_RESOLVED,
           ),
-        });
+        })
       }
       /**
        * **One take, and a second `queue:` is refused rather than ordered**
@@ -2407,19 +2402,19 @@ function actionsAt(step: Step) {
        */
       for (const i of takes.slice(1)) {
         ctx.addIssue({
-          code: "custom",
+          code: 'custom',
           path: [i],
           message: kindRefusedAt(
             step,
-            "queue",
+            'queue',
             nameOf(written[i]),
             `the "${step}" step already takes a ticket at entry ${takes[0]}, and a step takes one or ` +
-              "none. The pipeline stops at the first action that did not pass, so a second one is " +
-              "never reached where the first took the ticket and is *also required* where it did not — " +
-              "which is not the priority order a list reads as",
+              'none. The pipeline stops at the first action that did not pass, so a second one is ' +
+              'never reached where the first took the ticket and is *also required* where it did not — ' +
+              'which is not the priority order a list reads as',
             REFUSED_WHEN_IT_RESOLVED,
           ),
-        });
+        })
       }
       /**
        * **A step that is written and does not land is refused** (`#270`).
@@ -2466,27 +2461,27 @@ function actionsAt(step: Step) {
         written.length > 0 &&
         resolved.length === written.length &&
         landsAt === null &&
-        whyNoKindAt(step, "merge") === null
+        whyNoKindAt(step, 'merge') === null
       ) {
         ctx.addIssue({
-          code: "custom",
+          code: 'custom',
           path: [],
           message:
             `the "${step}" step is written with ${written.length} action` +
-            `${written.length === 1 ? "" : "s"} and none of them is the lane, so the step would ` +
-            "pass having landed nothing — and nothing follows from that: the `WorkItemLanded` " +
+            `${written.length === 1 ? '' : 's'} and none of them is the lane, so the step would ` +
+            'pass having landed nothing — and nothing follows from that: the `WorkItemLanded` ' +
             "append is guarded on the lane's own commit, so the pass falls through to the failed " +
-            "tail, releases the ticket and buys a second agent for the same diff. Write the lane " +
+            'tail, releases the ticket and buys a second agent for the same diff. Write the lane ' +
             `last. An empty "${step}: []" resolves, but it is not the way to land nothing — the ` +
-            "conductor reads it as the omitted key, so the default lane runs and the branch merges " +
-            "(0065 §6 decides otherwise and is not built yet). To hold a pass before anything " +
-            "lands, declare a `human:` action at `proposed:`. " +
+            'conductor reads it as the omitted key, so the default lane runs and the branch merges ' +
+            '(0065 §6 decides otherwise and is not built yet). To hold a pass before anything ' +
+            'lands, declare a `human:` action at `proposed:`. ' +
             REFUSED_WHEN_IT_RESOLVED,
-        });
+        })
       }
-      return resolved;
+      return resolved
     })
-    .default([]);
+    .default([])
 }
 
 /**
@@ -2522,19 +2517,19 @@ function actionsAt(step: Step) {
  * keys parse, and any action in them is refused with the step's own sentence.
  */
 export const StepMap = z.strictObject({
-  claim: actionsAt("claim"),
-  admit: actionsAt("admit"),
-  prepared: actionsAt("prepared"),
-  design: actionsAt("design"),
-  implement: actionsAt("implement"),
-  build: actionsAt("build"),
-  review: actionsAt("review"),
+  claim: actionsAt('claim'),
+  admit: actionsAt('admit'),
+  prepared: actionsAt('prepared'),
+  design: actionsAt('design'),
+  implement: actionsAt('implement'),
+  build: actionsAt('build'),
+  review: actionsAt('review'),
   /** Was `diff` until [0018](../../../doc/decisions-archive/0018-the-proposed-point.md). */
-  proposed: actionsAt("proposed"),
-  merge: actionsAt("merge"),
-  end: actionsAt("end"),
-});
-export type StepMap = z.infer<typeof StepMap>;
+  proposed: actionsAt('proposed'),
+  merge: actionsAt('merge'),
+  end: actionsAt('end'),
+})
+export type StepMap = z.infer<typeof StepMap>
 
 /**
  * An event type the log actually has, as a subscription's `on:` entry.
@@ -2558,18 +2553,18 @@ export type StepMap = z.infer<typeof StepMap>;
 const SubscribedEvent = z.string().superRefine((name, ctx) => {
   if (isRetiredEventType(name)) {
     ctx.addIssue({
-      code: "custom",
+      code: 'custom',
       message: `"${name}" is a retired event type — nothing appends it any more, so this would never fire`,
-    });
-    return;
+    })
+    return
   }
   if (!isEventType(name)) {
     ctx.addIssue({
-      code: "custom",
+      code: 'custom',
       message: `"${name}" is not an event type — the catalogue is EVENTS in packages/domain/src/events.ts`,
-    });
+    })
   }
-});
+})
 
 /**
  * Something told about events, which the loop does not wait for
@@ -2609,8 +2604,8 @@ export const Subscriber = z.strictObject({
    * hands it to every extension at once.
    */
   env: ExtensionEnvNames,
-});
-export type Subscriber = z.infer<typeof Subscriber>;
+})
+export type Subscriber = z.infer<typeof Subscriber>
 
 /**
  * The version this schema is, named in a refusal rather than written twice.
@@ -2621,7 +2616,7 @@ export type Subscriber = z.infer<typeof Subscriber>;
  * cost of rewriting it is minutes — and a migration would have to keep the v1
  * shape readable for ever to save them.
  */
-export const RECIPE_VERSION = 2;
+export const RECIPE_VERSION = 2
 
 /**
  * The version, and **a v1 file refused by name rather than by shape.**
@@ -2631,20 +2626,23 @@ export const RECIPE_VERSION = 2;
  * rule: a key that silently changed meaning and a key that never existed are
  * different facts to whoever wrote it, and only a named refusal can say which.
  */
-const Version = z.number().int().superRefine((written, ctx) => {
-  if (written === RECIPE_VERSION) return;
-  ctx.addIssue({
-    code: "custom",
-    message:
-      written === 1
-        ? "version: 1 is the recipe as it was before 0061 — five of the ten steps " +
-          "could be configured and the other five could not, under a key `steps:` " +
-          "replaced rather than renamed. There is no migration: rewrite this file " +
-          "as `version: 2`, with `steps:` naming the ten steps in pass order, each " +
-          "a list of plugins. A step the file leaves out runs nothing."
-        : `version: ${written} is not a recipe this Lingtai knows — it reads \`version: ${RECIPE_VERSION}\``,
-  });
-});
+const Version = z
+  .number()
+  .int()
+  .superRefine((written, ctx) => {
+    if (written === RECIPE_VERSION) return
+    ctx.addIssue({
+      code: 'custom',
+      message:
+        written === 1
+          ? 'version: 1 is the recipe as it was before 0061 — five of the ten steps ' +
+            'could be configured and the other five could not, under a key `steps:` ' +
+            'replaced rather than renamed. There is no migration: rewrite this file ' +
+            'as `version: 2`, with `steps:` naming the ten steps in pass order, each ' +
+            'a list of plugins. A step the file leaves out runs nothing.'
+          : `version: ${written} is not a recipe this Lingtai knows — it reads \`version: ${RECIPE_VERSION}\``,
+    })
+  })
 
 /**
  * The subset of `RuntimeId` a discussion may name — every runtime that can be
@@ -2669,8 +2667,8 @@ const Version = z.number().int().superRefine((written, ctx) => {
  * given no tools is a test failure there rather than a schema this file
  * forgot to widen.
  */
-export const DiscussAgent = z.enum(["claude-code"]);
-export type DiscussAgent = z.infer<typeof DiscussAgent>;
+export const DiscussAgent = z.enum(['claude-code'])
+export type DiscussAgent = z.infer<typeof DiscussAgent>
 
 /**
  * **`discuss:`, a top-level node beside `steps:` and `subscribers:`, not a
@@ -2721,7 +2719,7 @@ export type DiscussAgent = z.infer<typeof DiscussAgent>;
  */
 export const Discuss = z.strictObject({
   /** Which runtime answers. Enum-refused rather than `RuntimeId` — see `DiscussAgent`. */
-  agent: DiscussAgent.default("claude-code"),
+  agent: DiscussAgent.default('claude-code'),
   /** `DISPATCH.model`'s meaning: absent is the runtime's own default. */
   model: DISPATCH.model,
   /** Appended after the fixed brief, never substituted for it. Absent adds nothing. */
@@ -2732,19 +2730,19 @@ export const Discuss = z.strictObject({
       turns: z.number().int().positive().default(40),
       wall: z
         .string()
-        .default("5m")
-        .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 5m" }),
+        .default('5m')
+        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' }),
     })
-    .default({ turns: 40, wall: "5m" }),
-});
-export type Discuss = z.infer<typeof Discuss>;
+    .default({ turns: 40, wall: '5m' }),
+})
+export type Discuss = z.infer<typeof Discuss>
 
 /**
  * What a recipe that says nothing about `discuss:` gets — `apps/cli/src/discuss.ts`'s
  * fallback for a project nothing has registered, and `Recipe`'s own default
  * below, the same way `LIMIT_DEFAULTS` is `runtime.limits`'s.
  */
-export const DISCUSS_DEFAULTS = Discuss.parse({});
+export const DISCUSS_DEFAULTS = Discuss.parse({})
 
 /**
  * `discuss:`, resolved into what one `ask` call may spend — the one place this
@@ -2757,377 +2755,378 @@ export function callFor(discuss: Discuss): { model?: string; turns: number; wall
     ...(discuss.model === undefined ? {} : { model: discuss.model }),
     turns: discuss.limits.turns,
     wallMs: parseDuration(discuss.limits.wall),
-  };
+  }
 }
 
-export const Recipe = z.object({
-  version: Version,
-  /**
-   * Pulls install/build/test defaults from a preset shipped with Lingtai.
-   *
-   * **Kept at the top level in v2, and the preset table is `steps:`.** This
-   * repository does not use it, so removing it would break nothing here — which
-   * is exactly why removing it is not this ticket's call to make: a project that
-   * does use one would have no way to write a v2 file at all, and that is a
-   * product decision rather than a consequence of renaming a key.
-   */
-  extends: z.string().optional(),
-
-  repo: z.object({
-    base: z.string(),
-    /** `git worktree add` does not populate submodules; not doing so breaks every
-     *  test that imports one, and reads as "the agent broke the tests". */
-    submodules: z.boolean().default(false),
-  }),
-
-  /**
-   * Getting the worktree workable before the agent starts. Ordered, and the
-   * first refusal stops the run.
-   *
-   * Optional because it is genuinely optional: a Go repository may need nothing
-   * at all. But `git worktree add` copies no `node_modules`, so for most of them
-   * the absence of this is the difference between an agent that can run the
-   * tests and one writing blind.
-   *
-   * Not a gate. A gate's verdict is about a commit — `onSha` — and a force-push
-   * invalidates it by arithmetic. A prepare step runs before the agent has
-   * written anything and holds no verdict about anything.
-   */
-  // **Three of the four fields `queue:` declares, and the same schema
-  // objects.** `KINDS`, `EXCLUDE` and `BACKOFF` are where they and their
-  // comments are written; this key is the v1 spelling of them, and the plugin is
-  // the v2 one. One declaration, because two would be two things to keep true —
-  // and what this key adds to them is the two defaults, which `queue:` does not
-  // take (`#269`).
-  //
-  // `claim` reads the plugin since `#269`, and this line is still here: which
-  // spelling a file used is `settings.ts`'s one question, and a recipe that
-  // declares nothing at `claim` is selected on exactly these three.
-  //
-  // The fourth is `assignee`, and it is deliberately not here: its v1 spelling
-  // is `runtime.assignee` below, in this same file, and a `source.assignee`
-  // nothing reads would be a key accepted and dropped.
-  source: z.object(SOURCE_FIELDS),
-
-  /**
-   * What the run cannot proceed without.
-   *
-   * **Strict, for the reason `StepMap` is.** This was `allow` — an allowlist,
-   * meaning "plant these if they happen to exist" — and that meaning cost $0.97
-   * and ten turns against a database the agent could not reach, with one log
-   * line as the only sign. A repository naming a variable is a repository saying
-   * it needs one ([0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)).
-   * A recipe still saying `allow:` must therefore fail to resolve and name the
-   * key, rather than resolve to an empty list and refuse nothing — the same
-   * silent half-move [0018](../../../doc/decisions-archive/0018-the-proposed-point.md)
-   * made zod's default drop.
-   */
-  env: z.strictObject({
+export const Recipe = z
+  .object({
+    version: Version,
     /**
-     * If present, **only** these names reach the agent.
+     * Pulls install/build/test defaults from a preset shipped with Lingtai.
      *
-     * Back in the schema since `#60`, with the meaning it never had before: a
-     * filter over data that already exists, not a list of names to go looking
-     * for in the process environment. Absent and empty are different — absent
-     * means "no allowlist", `[]` means "nothing passes" — which is why this is
-     * `optional` and not `.default([])`.
+     * **Kept at the top level in v2, and the preset table is `steps:`.** This
+     * repository does not use it, so removing it would break nothing here — which
+     * is exactly why removing it is not this ticket's call to make: a project that
+     * does use one would have no way to write a v2 file at all, and that is a
+     * product decision rather than a consequence of renaming a key.
      */
-    allow: z.array(z.string()).optional(),
-    /** If present, these names do not reach the agent, whatever `allow` says. */
-    deny: z.array(z.string()).default([]),
-    /**
-     * Variable NAMES only. Values resolve at runtime from somewhere the agent
-     * cannot see, so this file is safe to commit.
-     *
-     * **A check, not a filter** ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
-     * It is evaluated against the merged data, before `allow`/`deny` apply, so a
-     * name that is both `required` and `deny`ed is legal and says two true
-     * things: this machine must be configured with it, and this run does not
-     * need to see it.
-     */
-    required: z.array(z.string()).default([]),
-    /**
-     * Host segments that refuse a value outright — production host patterns,
-     * and the field `agent-env`'s tripwire said it was waiting for.
-     *
-     * **Added to `prod` and `production`, never in place of them**
-     * (`productionPatterns`): this file is one the governed agent can edit, and
-     * a field that could drop `prod` would let that edit turn the tripwire off.
-     * (0005's "add strictness, never remove it" is not the ground: 0016
-     * withdrew it.) Those two are inert on a managed database named by a random ref
-     * (`#51`), so a repository
-     * whose production host is `db.<ref>.supabase.co` names `<ref>` here. That
-     * puts an identifier — not a credential — in a committed file, and it is
-     * meant to: a reviewer sees the host being refused.
-     *
-     * Checked before the claim against every value that reaches the agent or an
-     * extension, from either file: the agent's by `resolveAgentEnv`, after
-     * `allow`/`deny`, and each extension's declared names by `extensionEnv`,
-     * which reads them before `deny` — both in `runOnce`, at stage `env`, and
-     * both in `lingtai doctor` (`env: <project>`, `env: <project> extensions`).
-     *
-     * An entry is a segment or a run of them — `<ref>`, `prod-db`, or a whole
-     * host — matched segment by segment against a URL's hostname. One that
-     * could never equal a run of a hostname's segments is refused here rather
-     * than shown to a reviewer as a host being refused: an empty segment
-     * (`.supabase.co`), and anything a hostname does not hold — a port
-     * (`db.<ref>.supabase.co:5432`), a scheme (`postgresql://…`), a user, a path.
-     */
-    refuseHosts: z
-      .array(
-        z
-          .string()
-          .regex(
-            /^[a-z0-9_]+(?:[.\-][a-z0-9_]+)*$/i,
-            "a host, or segments of one — no port, scheme, user or path, and no empty segment",
-          ),
-      )
-      .default([]),
-    /** Where the filtered env file is planted inside the worktree. Rarely the
-     *  repo root — Next/Prisma/vitest read it from the app directory. */
-    plantAt: z.string(),
-  }),
+    extends: z.string().optional(),
 
-  // Spelled out rather than `.default({})`: all ten steps exist whether or
-  // not a recipe mentions them, and writing that here says so once. 0061 §5 is
-  // this line — the file may omit a step, the resolved recipe may not.
-  steps: StepMap.default({
-    claim: [],
-    admit: [],
-    prepared: [],
-    design: [],
-    implement: [],
-    build: [],
-    review: [],
-    proposed: [],
-    merge: [],
-    end: [],
-  }),
+    repo: z.object({
+      base: z.string(),
+      /** `git worktree add` does not populate submodules; not doing so breaks every
+       *  test that imports one, and reads as "the agent broke the tests". */
+      submodules: z.boolean().default(false),
+    }),
 
-  /**
-   * The third of 0061 §6's top-level nodes — an agent, paid for a judgement,
-   * that a person rather than the pass starts. See `Discuss`.
-   *
-   * Defaulted rather than optional, like `steps` and `subscribers`: a recipe
-   * that says nothing about `discuss:` has *declared the defaults*, which is a
-   * thing `lingtai add` and the board can read, rather than an absence.
-   */
-  discuss: Discuss.default(DISCUSS_DEFAULTS),
+    /**
+     * Getting the worktree workable before the agent starts. Ordered, and the
+     * first refusal stops the run.
+     *
+     * Optional because it is genuinely optional: a Go repository may need nothing
+     * at all. But `git worktree add` copies no `node_modules`, so for most of them
+     * the absence of this is the difference between an agent that can run the
+     * tests and one writing blind.
+     *
+     * Not a gate. A gate's verdict is about a commit — `onSha` — and a force-push
+     * invalidates it by arithmetic. A prepare step runs before the agent has
+     * written anything and holds no verdict about anything.
+     */
+    // **Three of the four fields `queue:` declares, and the same schema
+    // objects.** `KINDS`, `EXCLUDE` and `BACKOFF` are where they and their
+    // comments are written; this key is the v1 spelling of them, and the plugin is
+    // the v2 one. One declaration, because two would be two things to keep true —
+    // and what this key adds to them is the two defaults, which `queue:` does not
+    // take (`#269`).
+    //
+    // `claim` reads the plugin since `#269`, and this line is still here: which
+    // spelling a file used is `settings.ts`'s one question, and a recipe that
+    // declares nothing at `claim` is selected on exactly these three.
+    //
+    // The fourth is `assignee`, and it is deliberately not here: its v1 spelling
+    // is `runtime.assignee` below, in this same file, and a `source.assignee`
+    // nothing reads would be a key accepted and dropped.
+    source: z.object(SOURCE_FIELDS),
 
-  /**
-   * Who is told what happened, and about which events.
-   *
-   * Here rather than in the daemon because **which events are worth telling
-   * somebody about is a fact about a channel, not about Lingtai.**
-   * `DEFAULT_SUBSCRIPTIONS` was four types in `packages/daemon/src/notify.ts`,
-   * the same for every project, changeable only by editing the daemon — and it
-   * was four *because it was a desktop notification*, which interrupts. A
-   * landed task is not worth interrupting for and is worth a Telegram message,
-   * and only a per-channel list can say both. That is 0016 §7's argument again:
-   * the repository knows which of its outcomes it wants to hear about and the
-   * core cannot see it.
-   *
-   * It is gone since `#123`, and this is the whole of what replaced it: the
-   * desktop notification is `node apps/cli/src/notify.ts` under Lingtai's own
-   * `subscribers:`, started by the same code that starts
-   * `node packages/telegram/src/cli.ts` beside it (`#125`). There is no list in the daemon to fall back to, which
-   * is what makes the paragraph below true rather than decorative.
-   *
-   * Defaulted to empty rather than optional, like `steps`: a project that
-   * declares no subscriber has *declared none*, which is a thing that can be
-   * rendered, rather than an absence.
-   */
-  subscribers: z.array(Subscriber).default([]),
+    /**
+     * What the run cannot proceed without.
+     *
+     * **Strict, for the reason `StepMap` is.** This was `allow` — an allowlist,
+     * meaning "plant these if they happen to exist" — and that meaning cost $0.97
+     * and ten turns against a database the agent could not reach, with one log
+     * line as the only sign. A repository naming a variable is a repository saying
+     * it needs one ([0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)).
+     * A recipe still saying `allow:` must therefore fail to resolve and name the
+     * key, rather than resolve to an empty list and refuse nothing — the same
+     * silent half-move [0018](../../../doc/decisions-archive/0018-the-proposed-point.md)
+     * made zod's default drop.
+     */
+    env: z.strictObject({
+      /**
+       * If present, **only** these names reach the agent.
+       *
+       * Back in the schema since `#60`, with the meaning it never had before: a
+       * filter over data that already exists, not a list of names to go looking
+       * for in the process environment. Absent and empty are different — absent
+       * means "no allowlist", `[]` means "nothing passes" — which is why this is
+       * `optional` and not `.default([])`.
+       */
+      allow: z.array(z.string()).optional(),
+      /** If present, these names do not reach the agent, whatever `allow` says. */
+      deny: z.array(z.string()).default([]),
+      /**
+       * Variable NAMES only. Values resolve at runtime from somewhere the agent
+       * cannot see, so this file is safe to commit.
+       *
+       * **A check, not a filter** ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
+       * It is evaluated against the merged data, before `allow`/`deny` apply, so a
+       * name that is both `required` and `deny`ed is legal and says two true
+       * things: this machine must be configured with it, and this run does not
+       * need to see it.
+       */
+      required: z.array(z.string()).default([]),
+      /**
+       * Host segments that refuse a value outright — production host patterns,
+       * and the field `agent-env`'s tripwire said it was waiting for.
+       *
+       * **Added to `prod` and `production`, never in place of them**
+       * (`productionPatterns`): this file is one the governed agent can edit, and
+       * a field that could drop `prod` would let that edit turn the tripwire off.
+       * (0005's "add strictness, never remove it" is not the ground: 0016
+       * withdrew it.) Those two are inert on a managed database named by a random ref
+       * (`#51`), so a repository
+       * whose production host is `db.<ref>.supabase.co` names `<ref>` here. That
+       * puts an identifier — not a credential — in a committed file, and it is
+       * meant to: a reviewer sees the host being refused.
+       *
+       * Checked before the claim against every value that reaches the agent or an
+       * extension, from either file: the agent's by `resolveAgentEnv`, after
+       * `allow`/`deny`, and each extension's declared names by `extensionEnv`,
+       * which reads them before `deny` — both in `runOnce`, at stage `env`, and
+       * both in `lingtai doctor` (`env: <project>`, `env: <project> extensions`).
+       *
+       * An entry is a segment or a run of them — `<ref>`, `prod-db`, or a whole
+       * host — matched segment by segment against a URL's hostname. One that
+       * could never equal a run of a hostname's segments is refused here rather
+       * than shown to a reviewer as a host being refused: an empty segment
+       * (`.supabase.co`), and anything a hostname does not hold — a port
+       * (`db.<ref>.supabase.co:5432`), a scheme (`postgresql://…`), a user, a path.
+       */
+      refuseHosts: z
+        .array(
+          z
+            .string()
+            .regex(
+              /^[a-z0-9_]+(?:[.\-][a-z0-9_]+)*$/i,
+              'a host, or segments of one — no port, scheme, user or path, and no empty segment',
+            ),
+        )
+        .default([]),
+      /** Where the filtered env file is planted inside the worktree. Rarely the
+       *  repo root — Next/Prisma/vitest read it from the app directory. */
+      plantAt: z.string(),
+    }),
 
-  runtime: z.object({
-    agent: RuntimeId.default("claude-code"),
+    // Spelled out rather than `.default({})`: all ten steps exist whether or
+    // not a recipe mentions them, and writing that here says so once. 0061 §5 is
+    // this line — the file may omit a step, the resolved recipe may not.
+    steps: StepMap.default({
+      claim: [],
+      admit: [],
+      prepared: [],
+      design: [],
+      implement: [],
+      build: [],
+      review: [],
+      proposed: [],
+      merge: [],
+      end: [],
+    }),
+
     /**
-     * How contained the runtime must be. `conduct.ts` refuses to dispatch when the
-     * runtime cannot meet it, which is the whole of the enforcement.
+     * The third of 0061 §6's top-level nodes — an agent, paid for a judgement,
+     * that a person rather than the pass starts. See `Discuss`.
      *
-     * Defaulted rather than optional: nothing sits underneath it to fall back
-     * to, so an absent tier meaning "unspecified" would be a run whose
-     * containment nothing states. `guarded` is what every
-     * run has actually used ([ADR 0007](../../../doc/decisions-archive/0007-dual-runtime.md)).
+     * Defaulted rather than optional, like `steps` and `subscribers`: a recipe
+     * that says nothing about `discuss:` has *declared the defaults*, which is a
+     * thing `lingtai add` and the board can read, rather than an absence.
      */
-    tier: Tier.default("guarded"),
-    prompt: z.string().optional(),
+    discuss: Discuss.default(DISCUSS_DEFAULTS),
+
     /**
-     * What one pass may spend, as one block
-     * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+     * Who is told what happened, and about which events.
      *
-     * `turns` and `wall` bound **one agent run**; `rounds` bounds **how many of
-     * them a pass may buy**; `restarts` bounds **how many passes one ticket may
-     * buy** (0040). Keeping all four here rather than in sections of their own
-     * is the decision, not tidiness: what a ticket costs is then
-     * `(restarts + 1) × (rounds + 1) × wall`, readable without leaving the
-     * block. On 2026-09-10 the drain told an operator it would wait at most one
-     * `wall`, which the fix loop had already made false — a sentence in one file
-     * chasing a number kept in another. Four numbers in one place cannot drift
-     * apart like that, and `passCeiling` is the one function that multiplies
-     * them, so nothing else writes the product down.
+     * Here rather than in the daemon because **which events are worth telling
+     * somebody about is a fact about a channel, not about Lingtai.**
+     * `DEFAULT_SUBSCRIPTIONS` was four types in `packages/daemon/src/notify.ts`,
+     * the same for every project, changeable only by editing the daemon — and it
+     * was four *because it was a desktop notification*, which interrupts. A
+     * landed task is not worth interrupting for and is worth a Telegram message,
+     * and only a per-channel list can say both. That is 0016 §7's argument again:
+     * the repository knows which of its outcomes it wants to hear about and the
+     * core cannot see it.
+     *
+     * It is gone since `#123`, and this is the whole of what replaced it: the
+     * desktop notification is `node apps/cli/src/notify.ts` under Lingtai's own
+     * `subscribers:`, started by the same code that starts
+     * `node packages/telegram/src/cli.ts` beside it (`#125`). There is no list in the daemon to fall back to, which
+     * is what makes the paragraph below true rather than decorative.
+     *
+     * Defaulted to empty rather than optional, like `steps`: a project that
+     * declares no subscriber has *declared none*, which is a thing that can be
+     * rendered, rather than an absence.
      */
-    limits: z
-      .strictObject({
-        turns: z.number().int().positive().default(300),
-        /**
-         * A duration, checked here for the reason `source.backoff` is checked
-         * where it is written: `parseDuration` throws, and a throw out of the
-         * middle of something *reading* the resolved recipe names neither the
-         * key nor the file. `wall: "90"` — the unit forgotten — resolved
-         * cleanly and threw later inside the board's reading of it, where it
-         * was read as *the recipe could not be read* (#218).
-         */
-        wall: z
-          .string()
-          .default("2h")
-          .refine((text) => positiveDuration(text), { message: "must be a positive duration, like 2h" }),
-        /**
-         * How many times a pass sends the agent back, carrying what refused it.
-         *
-         * **Two by default, and the number has an argument.** 0025 §3's rule for
-         * a spending default is *the smallest number that makes the feature
-         * exist*, which would say one — but this key replaces two ceilings that
-         * were one each, and 0038 §4's reason for splitting them was real: a
-         * build going red and a review refusing are different failures, and a
-         * single round shared between them means whichever happens first decides
-         * whether the other gets an attempt at all. That is the race 0038 called
-         * *not a budget*. A pass that fixes a red build and then meets a finding
-         * needs two rounds to do what two purses of one used to do, so two is
-         * the smallest number that does not quietly take the feature away.
-         *
-         * Zero is legal and means **every refusal goes straight to a person** —
-         * what `repair.on: false` used to say, now said in the block where the
-         * other limits are. A boolean beside a count whose zero already means
-         * the same thing is a redundant pair (0039 §4).
-         *
-         * **And it is the only number a refusal spends against** (`#143`). It
-         * was read twice for a while: once here, for a round inside the pass,
-         * and once by `decideRepair` for a whole new run the merge lane bought
-         * — one key naming two extents, which is what `#141` left behind and
-         * 0039 §Consequences says should not exist. The second reading is gone
-         * with the purchase, so `rounds` means one thing: how many times a
-         * **pass** sends the agent back.
-         *
-         * Lingtai's *own* failures never reach it, in code (`whoseFailure`): no
-         * recipe can make an agent able to fix a database it cannot reach.
-         */
-        rounds: z.number().int().nonnegative().default(2),
-        /**
-         * How many times a spent `rounds` ceiling starts the work over instead
-         * of asking a person — a fresh pass, from a worktree cut off the base.
-         *
-         * **The breadth half of the pair `rounds` is the depth half of**
-         * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
-         * A round buys another attempt at *this* approach; a restart buys
-         * another approach. When the approach is the defect, no value of
-         * `rounds` reaches the fix — which is what
-         * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)
-         * measured: `#144` patched across two rounds refused three times, cost
-         * ~$12 and landed nothing, while the same ticket started over carrying
-         * those findings passed first read for $6.56, using none of the ten
-         * rounds it had. Each refusal in the first arm was about the code the
-         * round before it had written.
-         *
-         * **Zero by default, and zero is today's behaviour**: a pass whose
-         * rounds are spent asks a person, exactly as it did before this key
-         * existed. That is 0040 §4 and it is the whole of why this is a key
-         * rather than a change — the evidence is one ticket, and no second
-         * restart has ever been observed.
-         *
-         * 0025 §3's rule for a spending default — *the smallest number that
-         * makes the feature exist* — would say one, and it does not apply here.
-         * That rule is about not taking a feature away by defaulting it too
-         * low; this default takes nothing away, because until a project writes
-         * a number down there is no feature to take. Turning it on for every
-         * project on the strength of n = 1 is the thing being avoided.
-         *
-         * Only a **judgement** is answered this way, in code and not by recipe:
-         * a red build and a conflict stay in the worktree, because for those
-         * *the work is still there* is a fact rather than an assumption
-         * (0039 §2). See `decideRestart`.
-         */
-        restarts: z.number().int().nonnegative().default(0),
-        /**
-         * A dollar ceiling on one agent run, passed to a runtime that can hold
-         * one (`--max-budget-usd` on Claude Code) and reported absent otherwise
-         * (`#370`).
-         *
-         * **No default, unlike the other four.** `turns`'s schema default of
-         * `300` is why Codex reads red forever on that limit
-         * (`apps/cli/src/doctor.ts`'s `limitsRow`) — a default present on every
-         * recipe, whether anyone wrote it or not. `usd` must not do the same
-         * thing on a second axis: absent means "no dollar ceiling", said out
-         * loud, never assumed.
-         */
-        usd: z.number().positive().optional(),
-      })
-      .default({ turns: 300, wall: "2h", rounds: 2, restarts: 0 }),
-    /**
-     * Which issues this project takes, by their assignee
-     * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2, #181).
-     *
-     * **This is `queue:`'s `assignee` field under its v1 name**
-     * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3),
-     * and `assigneeOf` in `settings.ts` is what every reader asks. 0063 §3
-     * settles that it is one of the four settings that decide which ticket is
-     * taken rather than a plugin beside them; §4 is what moves where a person
-     * writes it, and since `#373` it has: this is written here, in the
-     * recipe, rather than on the machine.
-     *
-     * **The recipe's, and refused on the machine file by name** —
-     * `resolveLocalRecipe` reads it from here untouched, and a machine file
-     * that still writes `runtime.assignee` or `projects.<p>.runtime.assignee`
-     * is refused rather than merged in.
-     *
-     * **Optional, and absent is `both`** — every ticket, assigned or not, which
-     * is how the queue behaved before an assignee was read and what somebody
-     * working alone expects. Optional rather than defaulted so that a recipe
-     * that says nothing hashes and emits exactly as it did.
-     */
-    assignee: AssigneeRule.optional(),
-    /**
-     * How much an agent is told, in characters and rows
-     * ([0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).
-     *
-     * `limits` bounds what a run may *spend*; this bounds what it is *given*,
-     * and the two are the same kind of decision — which is why they sit
-     * together. Four numbers decided the answer to "what does an agent know
-     * about why the last attempt failed" (`#82`, `#84`) from four constants in
-     * two packages that nobody reviewed together, and prompt content is the
-     * most expensive lever this system has.
-     *
-     * Here rather than compiled in for the reason `backoff` and `repair` are
-     * (0016 §7): how much of a failure is worth quoting depends on what this
-     * repository's failures look like — a build that prints one line and a
-     * suite that prints two hundred do not want the same budget — and that is a
-     * thing the repository knows and the core cannot see.
-     *
-     * The defaults are the constants they replaced, unchanged, so a recipe that
-     * says nothing renders exactly the prompt it rendered before.
-     */
-    budget: z
-      .object({
-        /** Characters of one earlier failure's output quoted verbatim into the next prompt. */
-        evidence: z.number().int().positive().default(2_000),
-        /** Rows the attempt table names before it says "and N earlier". */
-        attempts: z.number().int().positive().default(5),
-        /** Findings of a review gate carried into the next attempt. */
-        findings: z.number().int().positive().default(5),
-        /**
-         * Bytes of the diff a review agent sees before it is truncated.
-         *
-         * [Experiment 001](../../../doc/experiments/001-cold-review-issue-58.md)'s
-         * diff was 1391 lines across 6 files and fitted comfortably. Far past
-         * that is a work item scoped too large, which the compaction counter
-         * already reports; sending a megabyte produces a worse review, not a
-         * better one.
-         */
-        diff: z.number().int().positive().default(400_000),
-      })
-      .default({ evidence: 2_000, attempts: 5, findings: 5, diff: 400_000 }),
-  }),
-})
+    subscribers: z.array(Subscriber).default([]),
+
+    runtime: z.object({
+      agent: RuntimeId.default('claude-code'),
+      /**
+       * How contained the runtime must be. `conduct.ts` refuses to dispatch when the
+       * runtime cannot meet it, which is the whole of the enforcement.
+       *
+       * Defaulted rather than optional: nothing sits underneath it to fall back
+       * to, so an absent tier meaning "unspecified" would be a run whose
+       * containment nothing states. `guarded` is what every
+       * run has actually used ([ADR 0007](../../../doc/decisions-archive/0007-dual-runtime.md)).
+       */
+      tier: Tier.default('guarded'),
+      prompt: z.string().optional(),
+      /**
+       * What one pass may spend, as one block
+       * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
+       *
+       * `turns` and `wall` bound **one agent run**; `rounds` bounds **how many of
+       * them a pass may buy**; `restarts` bounds **how many passes one ticket may
+       * buy** (0040). Keeping all four here rather than in sections of their own
+       * is the decision, not tidiness: what a ticket costs is then
+       * `(restarts + 1) × (rounds + 1) × wall`, readable without leaving the
+       * block. On 2026-09-10 the drain told an operator it would wait at most one
+       * `wall`, which the fix loop had already made false — a sentence in one file
+       * chasing a number kept in another. Four numbers in one place cannot drift
+       * apart like that, and `passCeiling` is the one function that multiplies
+       * them, so nothing else writes the product down.
+       */
+      limits: z
+        .strictObject({
+          turns: z.number().int().positive().default(300),
+          /**
+           * A duration, checked here for the reason `source.backoff` is checked
+           * where it is written: `parseDuration` throws, and a throw out of the
+           * middle of something *reading* the resolved recipe names neither the
+           * key nor the file. `wall: "90"` — the unit forgotten — resolved
+           * cleanly and threw later inside the board's reading of it, where it
+           * was read as *the recipe could not be read* (#218).
+           */
+          wall: z
+            .string()
+            .default('2h')
+            .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 2h' }),
+          /**
+           * How many times a pass sends the agent back, carrying what refused it.
+           *
+           * **Two by default, and the number has an argument.** 0025 §3's rule for
+           * a spending default is *the smallest number that makes the feature
+           * exist*, which would say one — but this key replaces two ceilings that
+           * were one each, and 0038 §4's reason for splitting them was real: a
+           * build going red and a review refusing are different failures, and a
+           * single round shared between them means whichever happens first decides
+           * whether the other gets an attempt at all. That is the race 0038 called
+           * *not a budget*. A pass that fixes a red build and then meets a finding
+           * needs two rounds to do what two purses of one used to do, so two is
+           * the smallest number that does not quietly take the feature away.
+           *
+           * Zero is legal and means **every refusal goes straight to a person** —
+           * what `repair.on: false` used to say, now said in the block where the
+           * other limits are. A boolean beside a count whose zero already means
+           * the same thing is a redundant pair (0039 §4).
+           *
+           * **And it is the only number a refusal spends against** (`#143`). It
+           * was read twice for a while: once here, for a round inside the pass,
+           * and once by `decideRepair` for a whole new run the merge lane bought
+           * — one key naming two extents, which is what `#141` left behind and
+           * 0039 §Consequences says should not exist. The second reading is gone
+           * with the purchase, so `rounds` means one thing: how many times a
+           * **pass** sends the agent back.
+           *
+           * Lingtai's *own* failures never reach it, in code (`whoseFailure`): no
+           * recipe can make an agent able to fix a database it cannot reach.
+           */
+          rounds: z.number().int().nonnegative().default(2),
+          /**
+           * How many times a spent `rounds` ceiling starts the work over instead
+           * of asking a person — a fresh pass, from a worktree cut off the base.
+           *
+           * **The breadth half of the pair `rounds` is the depth half of**
+           * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+           * A round buys another attempt at *this* approach; a restart buys
+           * another approach. When the approach is the defect, no value of
+           * `rounds` reaches the fix — which is what
+           * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)
+           * measured: `#144` patched across two rounds refused three times, cost
+           * ~$12 and landed nothing, while the same ticket started over carrying
+           * those findings passed first read for $6.56, using none of the ten
+           * rounds it had. Each refusal in the first arm was about the code the
+           * round before it had written.
+           *
+           * **Zero by default, and zero is today's behaviour**: a pass whose
+           * rounds are spent asks a person, exactly as it did before this key
+           * existed. That is 0040 §4 and it is the whole of why this is a key
+           * rather than a change — the evidence is one ticket, and no second
+           * restart has ever been observed.
+           *
+           * 0025 §3's rule for a spending default — *the smallest number that
+           * makes the feature exist* — would say one, and it does not apply here.
+           * That rule is about not taking a feature away by defaulting it too
+           * low; this default takes nothing away, because until a project writes
+           * a number down there is no feature to take. Turning it on for every
+           * project on the strength of n = 1 is the thing being avoided.
+           *
+           * Only a **judgement** is answered this way, in code and not by recipe:
+           * a red build and a conflict stay in the worktree, because for those
+           * *the work is still there* is a fact rather than an assumption
+           * (0039 §2). See `decideRestart`.
+           */
+          restarts: z.number().int().nonnegative().default(0),
+          /**
+           * A dollar ceiling on one agent run, passed to a runtime that can hold
+           * one (`--max-budget-usd` on Claude Code) and reported absent otherwise
+           * (`#370`).
+           *
+           * **No default, unlike the other four.** `turns`'s schema default of
+           * `300` is why Codex reads red forever on that limit
+           * (`apps/cli/src/doctor.ts`'s `limitsRow`) — a default present on every
+           * recipe, whether anyone wrote it or not. `usd` must not do the same
+           * thing on a second axis: absent means "no dollar ceiling", said out
+           * loud, never assumed.
+           */
+          usd: z.number().positive().optional(),
+        })
+        .default({ turns: 300, wall: '2h', rounds: 2, restarts: 0 }),
+      /**
+       * Which issues this project takes, by their assignee
+       * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2, #181).
+       *
+       * **This is `queue:`'s `assignee` field under its v1 name**
+       * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3),
+       * and `assigneeOf` in `settings.ts` is what every reader asks. 0063 §3
+       * settles that it is one of the four settings that decide which ticket is
+       * taken rather than a plugin beside them; §4 is what moves where a person
+       * writes it, and since `#373` it has: this is written here, in the
+       * recipe, rather than on the machine.
+       *
+       * **The recipe's, and refused on the machine file by name** —
+       * `resolveLocalRecipe` reads it from here untouched, and a machine file
+       * that still writes `runtime.assignee` or `projects.<p>.runtime.assignee`
+       * is refused rather than merged in.
+       *
+       * **Optional, and absent is `both`** — every ticket, assigned or not, which
+       * is how the queue behaved before an assignee was read and what somebody
+       * working alone expects. Optional rather than defaulted so that a recipe
+       * that says nothing hashes and emits exactly as it did.
+       */
+      assignee: AssigneeRule.optional(),
+      /**
+       * How much an agent is told, in characters and rows
+       * ([0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).
+       *
+       * `limits` bounds what a run may *spend*; this bounds what it is *given*,
+       * and the two are the same kind of decision — which is why they sit
+       * together. Four numbers decided the answer to "what does an agent know
+       * about why the last attempt failed" (`#82`, `#84`) from four constants in
+       * two packages that nobody reviewed together, and prompt content is the
+       * most expensive lever this system has.
+       *
+       * Here rather than compiled in for the reason `backoff` and `repair` are
+       * (0016 §7): how much of a failure is worth quoting depends on what this
+       * repository's failures look like — a build that prints one line and a
+       * suite that prints two hundred do not want the same budget — and that is a
+       * thing the repository knows and the core cannot see.
+       *
+       * The defaults are the constants they replaced, unchanged, so a recipe that
+       * says nothing renders exactly the prompt it rendered before.
+       */
+      budget: z
+        .object({
+          /** Characters of one earlier failure's output quoted verbatim into the next prompt. */
+          evidence: z.number().int().positive().default(2_000),
+          /** Rows the attempt table names before it says "and N earlier". */
+          attempts: z.number().int().positive().default(5),
+          /** Findings of a review gate carried into the next attempt. */
+          findings: z.number().int().positive().default(5),
+          /**
+           * Bytes of the diff a review agent sees before it is truncated.
+           *
+           * [Experiment 001](../../../doc/experiments/001-cold-review-issue-58.md)'s
+           * diff was 1391 lines across 6 files and fitted comfortably. Far past
+           * that is a work item scoped too large, which the compaction counter
+           * already reports; sending a megabyte produces a worse review, not a
+           * better one.
+           */
+          diff: z.number().int().positive().default(400_000),
+        })
+        .default({ evidence: 2_000, attempts: 5, findings: 5, diff: 400_000 }),
+    }),
+  })
   /**
    * **A dispatch may only narrow the ceiling, and a built-in judge has none**
    * (0070 §5, §7).
@@ -3151,7 +3150,7 @@ export const Recipe = z.object({
    * would be refusing a recipe for being explicit.
    */
   .superRefine((recipe, ctx) => {
-    const ceiling = recipe.runtime.limits;
+    const ceiling = recipe.runtime.limits
     /**
      * **A duration this refinement is handed may be malformed, and it may not
      * throw on one** (#218).
@@ -3172,49 +3171,49 @@ export const Recipe = z.object({
      * step may narrow* is not a useful thing to hear about a ceiling that is
      * not a duration.
      */
-    const msOf = (text: string): number | null => (positiveDuration(text) ? parseDuration(text) : null);
-    const ceilingWallMs = msOf(ceiling.wall);
+    const msOf = (text: string): number | null => (positiveDuration(text) ? parseDuration(text) : null)
+    const ceilingWallMs = msOf(ceiling.wall)
     for (const [step, actions] of Object.entries(recipe.steps)) {
       for (const action of actions) {
         const refuse = (message: string): void => {
-          ctx.addIssue({ code: "custom", path: ["steps", step], message });
-        };
-        if ("judge" in action && isBuiltInJudge(action.judge)) {
-          for (const field of ["model", "limits"] as const) {
-            if (action[field] === undefined) continue;
+          ctx.addIssue({ code: 'custom', path: ['steps', step], message })
+        }
+        if ('judge' in action && isBuiltInJudge(action.judge)) {
+          for (const field of ['model', 'limits'] as const) {
+            if (action[field] === undefined) continue
             refuse(
               `steps.${step}'s "${action.name}" names the built-in judge \`${action.judge}\` and a ` +
                 `\`${field}:\` — but a built-in judge is a synchronous function the router applies ` +
-                "(0070 §3): it dispatches nothing, so it has no model to name and no call to bound. " +
+                '(0070 §3): it dispatches nothing, so it has no model to name and no call to bound. ' +
                 `A \`${field}:\` belongs beside a \`judge:\` naming a runtime`,
-            );
+            )
           }
-          continue;
+          continue
         }
-        if (!("limits" in action) || action.limits === undefined) continue;
-        const { turns, wall } = action.limits;
+        if (!('limits' in action) || action.limits === undefined) continue
+        const { turns, wall } = action.limits
         if (turns !== undefined && turns > ceiling.turns) {
           refuse(
             `steps.${step}'s "${action.name}" asks for ${turns} turns; runtime.limits.turns is ` +
               `${ceiling.turns}, and a step may only narrow it (0070 §5)`,
-          );
+          )
         }
         // Both sides through `msOf`, and either one being `null` skips the
         // comparison: a malformed `wall` at *this* end has been refused by the
         // leaf too, and a second issue about narrowing would be noise beside it.
-        const wallMs = wall === undefined ? null : msOf(wall);
+        const wallMs = wall === undefined ? null : msOf(wall)
         if (wallMs !== null && ceilingWallMs !== null && wallMs > ceilingWallMs) {
           refuse(
             `steps.${step}'s "${action.name}" asks for ${wall} of wall clock; runtime.limits.wall is ` +
               `${ceiling.wall}, and a step may only narrow it (0070 §5)`,
-          );
+          )
         }
       }
     }
-  });
-export type Recipe = z.infer<typeof Recipe>;
+  })
+export type Recipe = z.infer<typeof Recipe>
 
-export { formatDuration, parseDuration } from "./duration.ts";
+export { formatDuration, parseDuration } from './duration.ts'
 
 /**
  * What a recipe that says nothing about limits gets.
@@ -3224,7 +3223,7 @@ export { formatDuration, parseDuration } from "./duration.ts";
  * project's recipe, and naming it by hand is how it came to say one `wall` when
  * the fix loop had already made that false.
  */
-export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined);
+export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined)
 
 /**
  * `parseDuration`, as a predicate: for a schema, where throwing is the wrong
@@ -3232,8 +3231,8 @@ export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined)
  */
 function positiveDuration(text: string): boolean {
   try {
-    return parseDuration(text) > 0;
+    return parseDuration(text) > 0
   } catch {
-    return false;
+    return false
   }
 }

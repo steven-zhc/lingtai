@@ -1,3 +1,5 @@
+import { type Runtime, everyRuntime } from '@lingtai/agent'
+import { runnableEnv } from '@lingtai/agent-env'
 /**
  * The registered projects, read from the log.
  *
@@ -5,18 +7,10 @@
  * events, is a stream to fold rather than a projection to maintain. If that ever
  * stops being true it becomes one, which costs a truncate and a replay.
  */
-import { PROJECT_STREAM_PREFIX, projectStream } from "@lingtai/domain";
-import {
-  type LocalRecipeOptions,
-  type ResolvedRecipe,
-  type SignedIn,
-  resolveLocalRecipe,
-} from "@lingtai/recipe";
-import { type Runtime, everyRuntime } from "@lingtai/agent";
-import { runnableEnv } from "@lingtai/agent-env";
-import type { RuntimeId } from "@lingtai/domain";
-import { type ProjectState, isRegistered, reduceProject } from "@lingtai/domain";
-import type { GitHubClient } from "@lingtai/github";
+import { PROJECT_STREAM_PREFIX, projectStream } from '@lingtai/domain'
+import type { RuntimeId } from '@lingtai/domain'
+import { type ProjectState, isRegistered, reduceProject } from '@lingtai/domain'
+import type { Log, LogQueries } from '@lingtai/event-store/log'
 // **Type-only, and the submodules rather than the barrel** (`#157`, #221).
 // Importing `@lingtai/event-store` used to construct the process-wide client as
 // a side effect of the import, and `createDb()` read `postgresUrl()` eagerly —
@@ -26,12 +20,13 @@ import type { GitHubClient } from "@lingtai/github";
 // store a written choice, opened at first use, so the barrel no longer builds
 // anything at import; the split stays because a caller that brings its own log
 // should still load no store at all.
-import type { EventStore } from "@lingtai/event-store/store";
-import type { Log, LogQueries } from "@lingtai/event-store/log";
+import type { EventStore } from '@lingtai/event-store/store'
+import type { GitHubClient } from '@lingtai/github'
+import { type LocalRecipeOptions, type ResolvedRecipe, type SignedIn, resolveLocalRecipe } from '@lingtai/recipe'
 
 /** The process-wide log — whichever store this machine chose — reached only when nobody supplied one. */
 async function defaultLog(): Promise<Log> {
-  return (await import("@lingtai/event-store")).log;
+  return (await import('@lingtai/event-store')).log
 }
 
 /**
@@ -42,19 +37,16 @@ async function defaultLog(): Promise<Log> {
  * init-time choice does not reach (0055 §1).
  */
 export async function listProjectStreams(queries?: LogQueries): Promise<string[]> {
-  const ask = queries ?? (await defaultLog()).queries;
-  return ask.projectStreams(PROJECT_STREAM_PREFIX);
+  const ask = queries ?? (await defaultLog()).queries
+  return ask.projectStreams(PROJECT_STREAM_PREFIX)
 }
 
-export async function loadProject(
-  project: string,
-  store?: EventStore,
-): Promise<ProjectState | null> {
-  const from = store ?? (await defaultLog()).store;
-  const events = await from.read(projectStream(project));
-  if (events.length === 0) return null;
-  const state = reduceProject(events);
-  return isRegistered(state) ? state : null;
+export async function loadProject(project: string, store?: EventStore): Promise<ProjectState | null> {
+  const from = store ?? (await defaultLog()).store
+  const events = await from.read(projectStream(project))
+  if (events.length === 0) return null
+  const state = reduceProject(events)
+  return isRegistered(state) ? state : null
 }
 
 /**
@@ -73,9 +65,9 @@ export async function loadAllProjects(log?: Log): Promise<ProjectState[]> {
   // and they must not be able to come from different ones: it used to take an
   // `EventStore` and then ask `listProjectStreams()` — whose default was
   // Postgres whatever store it had been handed (#221).
-  const from = log ?? (await defaultLog());
-  const streams = await from.queries.projectStreams(PROJECT_STREAM_PREFIX);
-  return Promise.all(streams.map((s) => from.store.read(s).then(reduceProject)));
+  const from = log ?? (await defaultLog())
+  const streams = await from.queries.projectStreams(PROJECT_STREAM_PREFIX)
+  return Promise.all(streams.map((s) => from.store.read(s).then(reduceProject)))
 }
 
 /**
@@ -88,9 +80,8 @@ export async function loadAllProjects(log?: Log): Promise<ProjectState[]> {
  * pins that rather than adding one.
  */
 export async function loadProjects(log?: Log): Promise<ProjectState[]> {
-  return (await loadAllProjects(log)).filter(isRegistered);
+  return (await loadAllProjects(log)).filter(isRegistered)
 }
-
 
 /**
  * Which runtimes are signed in here, in the environment a run gets.
@@ -108,21 +99,21 @@ export async function loadProjects(log?: Log): Promise<ProjectState[]> {
  * later pass without anybody restarting anything.
  */
 export function signedInProbe(
-  runtimes: readonly Pick<Runtime, "capabilities" | "checkAuth">[],
+  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
   ttlMs = 60_000,
   now: () => number = Date.now,
 ): SignedIn {
-  let kept: { at: number; ids: Promise<readonly RuntimeId[]> } | null = null;
+  let kept: { at: number; ids: Promise<readonly RuntimeId[]> } | null = null
   return () => {
     if (kept === null || now() - kept.at >= ttlMs) {
-      const env = runnableEnv({});
+      const env = runnableEnv({})
       const ids = Promise.all(
         runtimes.map(async (r) => ((await r.checkAuth?.(env))?.loggedIn ? [r.capabilities.id] : [])),
-      ).then((found) => found.flat());
-      kept = { at: now(), ids };
+      ).then((found) => found.flat())
+      kept = { at: now(), ids }
     }
-    return kept.ids;
-  };
+    return kept.ids
+  }
 }
 
 /**
@@ -135,7 +126,7 @@ export function signedInProbe(
  * one is signed in, so a missing row makes *the only runtime signed in* a reason
  * that is false. `everyRuntime()` is `RUNTIMES`' own values.
  */
-export const signedInHere: SignedIn = signedInProbe(everyRuntime());
+export const signedInHere: SignedIn = signedInProbe(everyRuntime())
 
 /**
  * The recipe governing this project's next run: `~/.lingtai/<project>/recipe.yml`,
@@ -164,12 +155,12 @@ export async function currentRecipe(
   state: ProjectState,
   _client?: GitHubClient,
   base?: string,
-  options: Omit<LocalRecipeOptions, "base" | "signedIn"> & { signedIn?: SignedIn } = {},
+  options: Omit<LocalRecipeOptions, 'base' | 'signedIn'> & { signedIn?: SignedIn } = {},
 ): Promise<ResolvedRecipe> {
-  if (!state.project) throw new Error("no repository name recorded — re-run lingtai add");
+  if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
   return resolveLocalRecipe(state.project, {
     ...options,
     base: base ?? state.base ?? null,
     signedIn: options.signedIn ?? signedInHere,
-  });
+  })
 }

@@ -1,3 +1,5 @@
+import { conductorWorker } from '@lingtai/conductor/claim'
+import { CONTROL_STREAM, type ControlState, type ShutdownRequest, parsePayload, reduceControl } from '@lingtai/domain'
 /**
  * Telling the conductor what to do, and knowing whether it is listening.
  *
@@ -62,38 +64,25 @@
  * being taken is bounded by the sweep. That is the number 0031 is replacing:
  * the limit lifted at 23:00 and the queue was still idle at 23:12.
  */
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
-import {
-  CONTROL_STREAM,
-  type ControlState,
-  type ShutdownRequest,
-  parsePayload,
-  reduceControl,
-} from "@lingtai/domain";
-import { conductorWorker } from "@lingtai/conductor/claim";
-import { readTasks } from "@lingtai/projector";
-import type { CodeVersion } from "./currency.ts";
-import { withDaemonStore } from "./choose.ts";
-import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore } from "./store.ts";
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { readTasks } from '@lingtai/projector'
+
+import { withDaemonStore } from './choose.ts'
+import type { CodeVersion } from './currency.ts'
+import { HEARTBEAT_MS, type DaemonStatus, type DaemonStore } from './store.ts'
 
 // The stream name, the state and the fold moved to `@lingtai/domain` when
 // `conductor` needed to ask whether the conductor is already paused (0031 §3)
 // — `daemon` depends on `conductor`, so the fold could not stay here. What
 // stays here is what it always was: the I/O, and the commands that append.
-export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from "@lingtai/domain";
+export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from '@lingtai/domain'
 
 // The beacon's row, its thresholds and the one function that reads it moved to
 // `store.ts` when the beacon got an interface (#220) — they are what the two
 // implementations and the contract are about. Re-exported from here because
 // this is where every caller has always imported them from, and moving a type
 // is not a reason to touch the board, `doctor` and `restart`.
-export {
-  HEARTBEAT_MS,
-  STALE_AFTER_MS,
-  lastBeat,
-  type Beating,
-  type DaemonStatus,
-} from "./store.ts";
+export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus } from './store.ts'
 
 /**
  * Folds the control stream. Cheap: it is a handful of events, not a history.
@@ -112,8 +101,8 @@ export {
  * than *what am I being told*.
  */
 export async function readControl(store: EventStore = eventStore, since = 0): Promise<ControlState> {
-  const events = await store.read(CONTROL_STREAM);
-  return reduceControl(since <= 0 ? events : events.filter((e) => e.version > since));
+  const events = await store.read(CONTROL_STREAM)
+  return reduceControl(since <= 0 ? events : events.filter((e) => e.version > since))
 }
 
 /**
@@ -123,16 +112,16 @@ export async function readControl(store: EventStore = eventStore, since = 0): Pr
  * "somebody told the daemon before me" and "somebody is telling me".
  */
 export async function controlWatermark(store: EventStore = eventStore): Promise<number> {
-  return (await store.read(CONTROL_STREAM)).length;
+  return (await store.read(CONTROL_STREAM)).length
 }
 
 /** Appends one event and returns the version it landed at. */
 async function append(type: string, data: unknown, store: EventStore, at?: number): Promise<number> {
-  const expected = at ?? (await store.read(CONTROL_STREAM)).length;
+  const expected = at ?? (await store.read(CONTROL_STREAM)).length
   await store.append(CONTROL_STREAM, expected, [
     { type, actor: (data as { by: string }).by, data: parsePayload(type as never, data) },
-  ]);
-  return expected + 1;
+  ])
+  return expected + 1
 }
 
 /**
@@ -150,11 +139,11 @@ export async function pauseConductor(
   store: EventStore = eventStore,
   until: Date | null = null,
 ): Promise<void> {
-  await append("ConductorPaused", { by, reason, until: until?.toISOString() ?? null }, store);
+  await append('ConductorPaused', { by, reason, until: until?.toISOString() ?? null }, store)
 }
 
 export async function resumeConductor(by: string, store: EventStore = eventStore): Promise<void> {
-  await append("ConductorResumed", { by }, store);
+  await append('ConductorResumed', { by }, store)
 }
 
 /**
@@ -174,7 +163,7 @@ export async function requestShutdown(
 ): Promise<number> {
   // The version is what names the request, so a caller that means to withdraw
   // it later — `lingtai restart` — can withdraw that one and no other.
-  return append("ConductorShutdownRequested", { by, reason, timeoutMs, force }, store);
+  return append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)
 }
 
 /** What `requestShutdownUnlessStanding` found, and so what it did. */
@@ -182,7 +171,7 @@ export type Asking =
   /** Nothing was standing, and this request now is — at `version`. */
   | { asked: true; version: number }
   /** A request was already standing, and nothing was appended over it. */
-  | { asked: false; standing: ShutdownRequest };
+  | { asked: false; standing: ShutdownRequest }
 
 /**
  * Ask for a drain only if none stands, as one write.
@@ -206,14 +195,14 @@ export async function requestShutdownUnlessStanding(
   force = false,
 ): Promise<Asking> {
   for (let attempt = 0; ; attempt++) {
-    const events = await store.read(CONTROL_STREAM);
-    const standing = reduceControl(events).shutdown;
-    if (standing !== null) return { asked: false, standing };
+    const events = await store.read(CONTROL_STREAM)
+    const standing = reduceControl(events).shutdown
+    if (standing !== null) return { asked: false, standing }
     try {
-      const version = await append("ConductorShutdownRequested", { by, reason, timeoutMs, force }, store, events.length);
-      return { asked: true, version };
+      const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, events.length)
+      return { asked: true, version }
     } catch (err) {
-      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
     }
   }
 }
@@ -246,31 +235,31 @@ export async function recordStart(
   // a start depends on what else landed, so a `RunRequested` between the read
   // and the append is a reason to read again, not a start with no record.
   for (let attempt = 0; ; attempt++) {
-    const at = (await store.read(CONTROL_STREAM)).length;
+    const at = (await store.read(CONTROL_STREAM)).length
     try {
       await append(
-        "ConductorStarted",
+        'ConductorStarted',
         { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff: null },
         store,
         at,
-      );
-      return;
+      )
+      return
     } catch (err) {
-      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
     }
   }
 }
 
 /** A `ConductorStarted`, as the log has it. */
 export interface RecordedStart {
-  by: string;
-  reason: string | null;
-  sha: string | null;
-  dirty: boolean;
-  worker: string;
+  by: string
+  reason: string | null
+  sha: string | null
+  dirty: boolean
+  worker: string
   /** Where it sits on `ctl-conductor`. */
-  version: number;
-  at: Date;
+  version: number
+  at: Date
 }
 
 /**
@@ -284,18 +273,18 @@ export interface RecordedStart {
  * the lock records nothing and exits 0.
  */
 export async function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
-  const found = (await store.read(CONTROL_STREAM)).find((e) => e.type === "ConductorStarted" && e.version > version);
-  if (!found) return null;
-  const d = (found.data ?? {}) as Record<string, unknown>;
+  const found = (await store.read(CONTROL_STREAM)).find((e) => e.type === 'ConductorStarted' && e.version > version)
+  if (!found) return null
+  const d = (found.data ?? {}) as Record<string, unknown>
   return {
-    by: typeof d["by"] === "string" ? d["by"] : "",
-    reason: typeof d["reason"] === "string" ? d["reason"] : null,
-    sha: typeof d["sha"] === "string" ? d["sha"] : null,
-    dirty: d["dirty"] === true,
-    worker: typeof d["worker"] === "string" ? d["worker"] : "",
+    by: typeof d['by'] === 'string' ? d['by'] : '',
+    reason: typeof d['reason'] === 'string' ? d['reason'] : null,
+    sha: typeof d['sha'] === 'string' ? d['sha'] : null,
+    dirty: d['dirty'] === true,
+    worker: typeof d['worker'] === 'string' ? d['worker'] : '',
     version: found.version,
     at: found.at,
-  };
+  }
 }
 
 /** What `withdrawShutdown` found, and so what it did. */
@@ -305,7 +294,7 @@ export type Withdrawal =
   /** Nothing is standing — somebody's `lingtai resume` already lifted it. */
   | { withdrew: false; standing: null }
   /** A different request is standing, and it is left exactly where it is. */
-  | { withdrew: false; standing: ShutdownRequest };
+  | { withdrew: false; standing: ShutdownRequest }
 
 /**
  * Lift one drain — the one at `version` — and touch nothing else.
@@ -334,15 +323,20 @@ export async function withdrawShutdown(
   store: EventStore = eventStore,
 ): Promise<Withdrawal> {
   for (let attempt = 0; ; attempt++) {
-    const events = await store.read(CONTROL_STREAM);
-    const standing = reduceControl(events).shutdown;
-    if (standing === null) return { withdrew: false, standing: null };
-    if (standing.version !== version) return { withdrew: false, standing };
+    const events = await store.read(CONTROL_STREAM)
+    const standing = reduceControl(events).shutdown
+    if (standing === null) return { withdrew: false, standing: null }
+    if (standing.version !== version) return { withdrew: false, standing }
     try {
-      const at = await append("ConductorShutdownWithdrawn", { by, version, reason, handoff: null }, store, events.length);
-      return { withdrew: true, request: standing, version: at };
+      const at = await append(
+        'ConductorShutdownWithdrawn',
+        { by, version, reason, handoff: null },
+        store,
+        events.length,
+      )
+      return { withdrew: true, request: standing, version: at }
     } catch (err) {
-      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err;
+      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
     }
   }
 }
@@ -363,16 +357,14 @@ export async function withdrawShutdown(
  * a drain that starts then is over immediately.
  */
 export async function inFlight(url?: string): Promise<string[]> {
-  const tasks = await readTasks(url === undefined ? {} : { url }).catch(() => []);
-  return tasks
-    .filter((t) => t.state === "running" || t.state === "verifying")
-    .map((t) => `${t.project}#${t.issue}`);
+  const tasks = await readTasks(url === undefined ? {} : { url }).catch(() => [])
+  return tasks.filter((t) => t.state === 'running' || t.state === 'verifying').map((t) => `${t.project}#${t.issue}`)
 }
 
 /** The sentence a drain leads with, for whoever is doing the draining. */
 export function describeInFlight(items: readonly string[]): string {
-  if (items.length === 0) return "nothing is in flight";
-  return `finishing ${items.join(", ")}`;
+  if (items.length === 0) return 'nothing is in flight'
+  return `finishing ${items.join(', ')}`
 }
 
 export async function requestRun(
@@ -381,7 +373,7 @@ export async function requestRun(
   by: string,
   store: EventStore = eventStore,
 ): Promise<void> {
-  await append("RunRequested", { project, issue, by }, store);
+  await append('RunRequested', { project, issue, by }, store)
 }
 
 // ------------------------------------------------------------- liveness ----
@@ -400,12 +392,12 @@ export async function requestRun(
 
 /** Idempotent DDL for the beacon's row. Called once, at every daemon start. */
 export async function createStatusTable(store?: DaemonStore): Promise<void> {
-  await withDaemonStore(store, {}, (it) => it.create());
+  await withDaemonStore(store, {}, (it) => it.create())
 }
 
 export interface BeatOptions {
   /** The run this daemon is hosting, when it is hosting one. */
-  currentRunId?: string | null;
+  currentRunId?: string | null
   /**
    * What code this process is running, read once at startup.
    *
@@ -413,9 +405,9 @@ export interface BeatOptions {
    * would report the checkout as it is *now*, which is exactly the value that
    * has moved on underneath the modules Node already loaded.
    */
-  code?: CodeVersion | null;
+  code?: CodeVersion | null
   /** Where the row is. Defaults to the store this machine wrote down (#179). */
-  store?: DaemonStore;
+  store?: DaemonStore
 }
 
 /**
@@ -426,7 +418,7 @@ export interface BeatOptions {
  * process and not about a database.
  */
 export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null } = options;
+  const { currentRunId = null, code = null } = options
   await withDaemonStore(options.store, {}, (store) =>
     store.beat({
       pid: process.pid,
@@ -436,7 +428,7 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
       codeSha: code?.sha ?? null,
       codeDirty: code?.dirty ?? false,
     }),
-  );
+  )
 }
 
 /**
@@ -479,32 +471,32 @@ export async function beat(state: string, options: BeatOptions = {}): Promise<vo
  */
 export interface Beacon {
   /** The word the row carries now. */
-  readonly state: string;
+  readonly state: string
   /** Say something new, at once. Resolves when that write has landed. */
-  say(state: string): Promise<void>;
+  say(state: string): Promise<void>
   /** A last word, and then nothing further is written. Idempotent. */
-  stop(last?: string): Promise<void>;
+  stop(last?: string): Promise<void>
 }
 
 export interface BeaconOptions extends BeatOptions {
   /** How often to say "still here". `HEARTBEAT_MS` is the only one in production. */
-  every?: number;
+  every?: number
 }
 
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
-  const { every = HEARTBEAT_MS, ...beatOptions } = options;
-  let current = state;
-  let stopped = false;
+  const { every = HEARTBEAT_MS, ...beatOptions } = options
+  let current = state
+  let stopped = false
   /** The writes, in the order they were asked for, and never two at once. */
-  let chain: Promise<void> = Promise.resolve();
+  let chain: Promise<void> = Promise.resolve()
   /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
-  let owed = 0;
+  let owed = 0
 
   const write = (word: string): Promise<void> => {
-    owed += 1;
+    owed += 1
     chain = chain.then(async () => {
       try {
-        await beat(word, beatOptions);
+        await beat(word, beatOptions)
       } catch {
         // Every beat, the first one included — and that is a change. Startup
         // used to `await beat("starting")` uncaught, and the CLI's top-level
@@ -514,53 +506,53 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
         // lock conducting nothing. A row that cannot be written is reported by
         // its going stale, which is a report; a held lock is not.
       } finally {
-        owed -= 1;
+        owed -= 1
       }
-    });
-    return chain;
-  };
+    })
+    return chain
+  }
 
   // Announced before the timer, so the row is the new daemon's from the first
   // moment it can be — and then again every `every` milliseconds, whatever the
   // process is doing in between.
-  void write(current);
+  void write(current)
   const timer = setInterval(() => {
-    if (owed === 0) void write(current);
-  }, every);
+    if (owed === 0) void write(current)
+  }, every)
 
   return {
     get state() {
-      return current;
+      return current
     },
     say: (next) => {
-      if (stopped) return Promise.resolve();
-      current = next;
-      return write(next);
+      if (stopped) return Promise.resolve()
+      current = next
+      return write(next)
     },
     stop: async (last) => {
-      clearInterval(timer);
+      clearInterval(timer)
       if (!stopped && last !== undefined) {
-        current = last;
-        void write(last);
+        current = last
+        void write(last)
       }
-      stopped = true;
+      stopped = true
       // Everything scheduled, including the last word, has landed by here.
-      await chain;
+      await chain
     },
-  };
+  }
 }
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
 export async function readStatus(store?: DaemonStore): Promise<DaemonStatus | null> {
-  return withDaemonStore(store, {}, (it) => it.status());
+  return withDaemonStore(store, {}, (it) => it.status())
 }
 
 function hostname(): string {
   try {
     // Imported lazily: this file is also loaded by the board, where `os` is
     // available but the import would run on every render for one string.
-    return process.env["HOSTNAME"] ?? "local";
+    return process.env['HOSTNAME'] ?? 'local'
   } catch {
-    return "local";
+    return 'local'
   }
 }

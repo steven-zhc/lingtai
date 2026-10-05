@@ -34,8 +34,8 @@
  * `close` and `labels` are the other two kinds. They are effects rather than
  * verdicts, they only run at `end`, and they never reach this interface.
  */
-import { taggedTrace, type RunTrace } from "@lingtai/agent/run-log";
-import type { Finding, Step, PayloadOf, RefusedAbout } from "@lingtai/domain";
+import { taggedTrace, type RunTrace } from '@lingtai/agent/run-log'
+import type { Finding, Step, PayloadOf, RefusedAbout } from '@lingtai/domain'
 
 /**
  * `needs-approval` is a third outcome, not a flavour of failure.
@@ -76,7 +76,7 @@ import type { Finding, Step, PayloadOf, RefusedAbout } from "@lingtai/domain";
  * that works: this is not a refusal, it buys no round, and it stands the pass
  * down rather than the conductor.
  */
-export type ActionVerdict = "passed" | "failed" | "needs-approval" | "never-ran" | "did-not-finish";
+export type ActionVerdict = 'passed' | 'failed' | 'needs-approval' | 'never-ran' | 'did-not-finish'
 
 /**
  * One finding, exactly as a reviewer reported it — `@lingtai/domain`'s own
@@ -84,16 +84,16 @@ export type ActionVerdict = "passed" | "failed" | "needs-approval" | "never-ran"
  * built from the same type, so the schema a runtime is handed and the shape
  * this file reads cannot diverge (`#369`).
  */
-export type ActionFinding = Finding;
+export type ActionFinding = Finding
 
 export interface ActionResult {
-  verdict: ActionVerdict;
+  verdict: ActionVerdict
   /**
    * What the board shows. For a process action this is the log tail — enough to
    * act on without leaving the card, which is the whole point of the board.
    */
-  evidence: string;
-  findings: ActionFinding[];
+  evidence: string
+  findings: ActionFinding[]
   /**
    * **Where this action left the worktree**, and absent on every kind that only
    * judged one (0065 §2, `#268`).
@@ -106,7 +106,7 @@ export interface ActionResult {
    * It is not the head a verdict is *about* — that is `ActionContext.onSha`, and
    * for this action it is the base the pass arrived carrying.
    */
-  head?: string;
+  head?: string
   /**
    * **Why this action said no, in its own machine-readable word** — and absent on
    * every kind whose *no* means nothing more than *no* (0065 §2, `#270`).
@@ -135,7 +135,7 @@ export interface ActionResult {
    * Never a substitute for `evidence`. That is the words a person reads (0043);
    * this is the token a judge reads, and 0058 §3c asks for both.
    */
-  because?: string;
+  because?: string
   /**
    * **This action's answer could not be read at all** — absent on every kind that
    * has no answer to read, and on an `agent` whose answer parsed (`#279`).
@@ -158,7 +158,7 @@ export interface ActionResult {
    * what this changes is which sentence a person is shown and what the log says —
    * never whether a round is spent.
    */
-  unreadable?: true;
+  unreadable?: true
   /**
    * **Which of the two kinds of refusal this is, in the action's own word** —
    * `lines` or `approach` (`REFUSED_ABOUT`), and absent on every result that did
@@ -182,7 +182,7 @@ export interface ActionResult {
    * updated says nothing, and a seam that read that as `lines` would make the
    * count this field exists for a count of its own default.
    */
-  about?: RefusedAbout;
+  about?: RefusedAbout
   /**
    * **The document a `design:` agent wrote** — absent on every kind that judged
    * something rather than producing one (0065 §2, `#265`).
@@ -202,7 +202,7 @@ export interface ActionResult {
    * string is set rather than the key omitted, and the distinction that is worth
    * keeping is on `evidence`, where a person reads it.
    */
-  document?: string;
+  document?: string
   /**
    * **Where it kept that document** — absent where it kept it nowhere, which is
    * every action today (`#297`, 0066 §3).
@@ -221,7 +221,7 @@ export interface ActionResult {
    *
    * Opaque here and everywhere above here — see `TheDesign.locator`.
    */
-  locator?: string;
+  locator?: string
 }
 
 /**
@@ -295,7 +295,7 @@ export interface TheDesign {
    * `implement` is briefed identically either way (0058 §3) and a person reading
    * the card is not.
    */
-  readonly document: string;
+  readonly document: string
   /**
    * **Where the document was kept, in the words of whatever kept it** — absent
    * where nothing kept it, which is every pass today.
@@ -307,7 +307,7 @@ export interface TheDesign {
    * change to the core rather than a plugin, and the extension point has
    * quietly closed.
    */
-  readonly locator?: string;
+  readonly locator?: string
 }
 
 /**
@@ -320,7 +320,7 @@ export interface TheDesign {
  * read — the absent key on `WroteTheDesign.design`, and `evidence`, where a
  * person sees it.
  */
-export const NO_DESIGN: TheDesign = { document: "" };
+export const NO_DESIGN: TheDesign = { document: '' }
 
 /**
  * **The step asked a question, and a judge is what answers it** (0058 §3c).
@@ -334,7 +334,7 @@ export const NO_DESIGN: TheDesign = { document: "" };
  * pass reads it, and a second definition of one token is the drift
  * `worktree-action.ts` names. `pass.ts` re-exports this name.
  */
-export const NEEDS_INPUT = "needs-input";
+export const NEEDS_INPUT = 'needs-input'
 
 /**
  * **Why a step is being run a second time** — or `null`, which is every visit on
@@ -351,19 +351,19 @@ export const NEEDS_INPUT = "needs-input";
  */
 export interface SentBack {
   /** The judge's own words for why it sent the pass back here. */
-  readonly why: string;
+  readonly why: string
   /** What this step asked the first time, where it asked anything. */
-  readonly asked: string | null;
+  readonly asked: string | null
   /** What the refusing step printed, where the round was not bought on a question. */
-  readonly printed: { readonly step: Step; readonly detail: string } | null;
+  readonly printed: { readonly step: Step; readonly detail: string } | null
 }
 
 export interface ActionContext {
-  runId: string;
+  runId: string
   /** The commit this verdict is about, and the only thing that makes it stale. */
-  onSha: string;
+  onSha: string
   /** The worktree. Actions run where the agent worked, never anywhere else. */
-  cwd: string;
+  cwd: string
   /**
    * The **agent's** environment, filtered exactly as the agent's was — and an
    * `agent` action is now the only kind that reads it.
@@ -376,7 +376,7 @@ export interface ActionContext {
    * `ProcessActionSpec`. This stays here because a cold reviewer is the core's own
    * agent runtime, not an extension.
    */
-  env: Record<string, string>;
+  env: Record<string, string>
   /**
    * Findings a **previous** version of this diff was refused for, and that an
    * agent has since been asked to make stop happening
@@ -393,12 +393,12 @@ export interface ActionContext {
    * could not author. A process action re-runs unchanged — a build does not need
    * to be told what the reviewer said.
    */
-  recheck?: readonly ActionFinding[];
+  recheck?: readonly ActionFinding[]
   /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
    * Only said on the run log, so a slow re-review reads as *round 2*.
    */
-  round?: number;
+  round?: number
   /**
    * The run's log ([0034](../../../doc/decisions-archive/0034-the-run-log.md), #153).
    *
@@ -435,7 +435,7 @@ export interface ActionContext {
    * Absent is *no pipeline filled it in*, which is a context somebody built by
    * hand: `runStep` sets it on every verdicts pipeline it runs.
    */
-  design?: TheDesign;
+  design?: TheDesign
   /**
    * **Why this step is being run a second time**, or `null` on the way through.
    *
@@ -443,59 +443,50 @@ export interface ActionContext {
    * round was bought on, and this is what the judge said and what the step asked
    * — the two shapes a round can be bought in that no finding carries.
    */
-  again?: SentBack | null;
-  log?: RunTrace;
-  signal?: AbortSignal;
+  again?: SentBack | null
+  log?: RunTrace
+  signal?: AbortSignal
 }
 
 export interface Action {
-  readonly name: string;
+  readonly name: string
   /**
    * Which action shape produced it: `run`, `agent`, `watch`, `human`, `worktree`,
    * `queue`, `merge`, `file` or `file-brief`.
    */
-  readonly kind:
-    | "run"
-    | "agent"
-    | "watch"
-    | "human"
-    | "worktree"
-    | "queue"
-    | "merge"
-    | "file"
-    | "file-brief";
-  run(context: ActionContext): Promise<ActionResult>;
+  readonly kind: 'run' | 'agent' | 'watch' | 'human' | 'worktree' | 'queue' | 'merge' | 'file' | 'file-brief'
+  run(context: ActionContext): Promise<ActionResult>
 }
 
 /** Emitted for every action, in order. The pipeline's whole output is events. */
 export type ActionEvent =
-  | { type: "StepRequested"; data: PayloadOf<"StepRequested"> }
-  | { type: "StepStarted"; data: PayloadOf<"StepStarted"> }
-  | { type: "StepPassed"; data: PayloadOf<"StepPassed"> }
-  | { type: "StepFailed"; data: PayloadOf<"StepFailed"> }
+  | { type: 'StepRequested'; data: PayloadOf<'StepRequested'> }
+  | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
+  | { type: 'StepPassed'; data: PayloadOf<'StepPassed'> }
+  | { type: 'StepFailed'; data: PayloadOf<'StepFailed'> }
   /** The step was reached and produced no verdict, because its agent never
    *  started. Appended so that an action which did not judge is readable as that
    *  rather than as one still running. */
-  | { type: "StepNeverRan"; data: PayloadOf<"StepNeverRan"> }
+  | { type: 'StepNeverRan'; data: PayloadOf<'StepNeverRan'> }
   /** The step was reached, its agent started and ended with no receipt, so
    *  nothing judged the diff. Appended once, because the action is run once
    *  (0057 §1, and §4's retry deleted by `#234`). */
-  | { type: "StepDidNotFinish"; data: PayloadOf<"StepDidNotFinish"> }
+  | { type: 'StepDidNotFinish'; data: PayloadOf<'StepDidNotFinish'> }
   /** The step's agent stopped and asked something, so nothing judged the diff
    *  and there is a question to answer. Its own type since `#296`: it was a
    *  `StepDidNotFinish` whose `because` happened to be `NEEDS_INPUT`, and a
    *  destination that lives in a free-form string is one a typo loses. */
-  | { type: "StepAsked"; data: PayloadOf<"StepAsked"> }
+  | { type: 'StepAsked'; data: PayloadOf<'StepAsked'> }
   /** The same event `--no-merge` emits. One vocabulary for one idea. */
-  | { type: "ApprovalRequested"; data: PayloadOf<"ApprovalRequested"> };
+  | { type: 'ApprovalRequested'; data: PayloadOf<'ApprovalRequested'> }
 
 export interface PipelineResult {
   /** True when every action passed. Never true when one is waiting on a person. */
-  ok: boolean;
+  ok: boolean
   /** The action that failed, when one did. */
-  failedAt: string | null;
+  failedAt: string | null
   /** The action waiting on a person, when one is. */
-  heldAt: string | null;
+  heldAt: string | null
   /**
    * The action whose agent never started, when one did not — with the runtime's
    * own words, because they are the only evidence there is and 0031 §4 reads a
@@ -505,7 +496,7 @@ export interface PipelineResult {
    * ending that is about the account rather than about the diff, and the caller
    * has to be able to tell them apart without reading a sentence.
    */
-  neverRanAt: { action: string; detail: string } | null;
+  neverRanAt: { action: string; detail: string } | null
   /**
    * The action whose agent started and did not finish
    * ([0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §1).
@@ -515,7 +506,7 @@ export interface PipelineResult {
    * that had to read `evidence` to tell it from a refusal would be the second
    * reader of a sentence that 0031 §1 exists to prevent.
    */
-  didNotFinishAt: { action: string; detail: string; because?: string } | null;
+  didNotFinishAt: { action: string; detail: string; because?: string } | null
   /**
    * The action whose agent **stopped and asked something** (0058 §3c) — and
    * `didNotFinishAt`'s sibling rather than a flavour of it, since `#296`.
@@ -531,7 +522,7 @@ export interface PipelineResult {
    * No `because`: *it asked* is the whole reason, where `didNotFinishAt` carries
    * a word for each of the several unlike things that end that way.
    */
-  askedAt: { action: string; detail: string } | null;
+  askedAt: { action: string; detail: string } | null
   /**
    * Every verdict, with the findings behind it.
    *
@@ -541,32 +532,32 @@ export interface PipelineResult {
    * said would be a second source of truth for the same sentence.
    */
   results: {
-    action: string;
-    verdict: ActionVerdict;
-    evidence: string;
-    findings: ActionFinding[];
+    action: string
+    verdict: ActionVerdict
+    evidence: string
+    findings: ActionFinding[]
     /** Where the action left the worktree, where it moved it. `ActionResult.head`. */
-    head?: string;
+    head?: string
     /** Its own word for why it said no, where it has one. `ActionResult.because`. */
-    because?: string;
+    because?: string
     /** That its answer could not be read, where it had one. `ActionResult.unreadable`. */
-    unreadable?: true;
+    unreadable?: true
     /** Which kind of refusal it said this was, where it said. `ActionResult.about`. */
-    about?: RefusedAbout;
+    about?: RefusedAbout
     /** The document it wrote, where it wrote one. `ActionResult.document`. */
-    document?: string;
+    document?: string
     /** Where it kept that document, where it kept it. `ActionResult.locator`. */
-    locator?: string;
-  }[];
+    locator?: string
+  }[]
   /** Actions never reached because an earlier one failed or is waiting. */
-  skipped: string[];
+  skipped: string[]
 }
 
 export interface PipelineOptions {
   /** Which of the ten steps this pipeline is. Stamped on every verdict. */
-  step: Step;
-  actions: readonly Action[];
-  context: ActionContext;
+  step: Step
+  actions: readonly Action[]
+  context: ActionContext
   /**
    * Called for every event, in order, before the next action starts.
    *
@@ -574,7 +565,7 @@ export interface PipelineOptions {
    * verdict was never recorded is the failure this design exists to remove, and
    * keeping the append in one place makes that impossible to forget.
    */
-  emit: (event: ActionEvent) => Promise<void> | void;
+  emit: (event: ActionEvent) => Promise<void> | void
 }
 
 /**
@@ -586,8 +577,8 @@ export interface PipelineOptions {
  * reading that it is three-quarters fine.
  */
 export async function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
-  const { actions, step, emit } = options;
-  const results: PipelineResult["results"] = [];
+  const { actions, step, emit } = options
+  const results: PipelineResult['results'] = []
   /**
    * **The context, advanced as the step's own list produces a design** (`#300`).
    *
@@ -606,15 +597,15 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
    * a pipeline that edited it would leave `design` behind for the next step to
    * read instead of `designOn`'s answer.
    */
-  let context = options.context;
+  let context = options.context
 
   for (const [index, action] of actions.entries()) {
     // `step:` is the **event payload's** field and stays that spelling until the
     // log's own vocabulary is renamed — it carries the step, and `action` beside
     // it carries this action's name.
-    const base = { step: step, action: action.name, runId: context.runId, onSha: context.onSha };
+    const base = { step: step, action: action.name, runId: context.runId, onSha: context.onSha }
 
-    await emit({ type: "StepRequested", data: base });
+    await emit({ type: 'StepRequested', data: base })
 
     /**
      * The start and the end on the run's log, for every kind (#153).
@@ -625,8 +616,8 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
      * handed the log tagged as this action, so what its agent does lands between
      * these two lines; any other kind has no agent and writes nothing between.
      */
-    const tag = `${step}:${action.name}`;
-    const round = context.round ? ` · round ${context.round}` : "";
+    const tag = `${step}:${action.name}`
+    const round = context.round ? ` · round ${context.round}` : ''
 
     /**
      * **One run of the action, and no retry** (`#234`).
@@ -647,23 +638,23 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
      * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
      * §3c's judge, not a constant in a loop here.
      */
-    await emit({ type: "StepStarted", data: base });
-    const started = Date.now();
-    context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`);
+    await emit({ type: 'StepStarted', data: base })
+    const started = Date.now()
+    context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
 
-    let result: ActionResult;
+    let result: ActionResult
     try {
-      result = await action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context);
+      result = await action.run(context.log ? { ...context, log: taggedTrace(context.log, tag) } : context)
     } catch (err) {
       // An action that throws is an action that failed. The alternative is an
       // exception escaping the pipeline and a run ending with no verdict at all.
       result = {
-        verdict: "failed",
+        verdict: 'failed',
         evidence: `the ${action.name} action threw: ${(err as Error).message}`,
         findings: [],
-      };
+      }
     }
-    context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`);
+    context.log?.note(tag, `${result.verdict} · after ${elapsed(Date.now() - started)}${round}`)
 
     results.push({
       action: action.name,
@@ -699,7 +690,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // on one result, and `designFrom` reads the pair off one result so that a
       // locator whose document did not survive is a locator nothing carries.
       ...(result.locator === undefined ? {} : { locator: result.locator }),
-    });
+    })
 
     // And the same pair onto the context the *next* action is handed, so a
     // destination written after the drafter keeps what the drafter made. Read the
@@ -712,27 +703,27 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
           document: result.document,
           ...(result.locator === undefined ? {} : { locator: result.locator }),
         },
-      };
+      }
     }
 
-    if (result.verdict === "passed") {
+    if (result.verdict === 'passed') {
       // Findings go on a pass as well as a refusal: a minor does not stop the
       // run, and a finding left only in `evidence` is one nothing can read (#135).
       await emit({
-        type: "StepPassed",
+        type: 'StepPassed',
         data: { ...base, evidence: result.evidence, findings: result.findings },
-      });
-      continue;
+      })
+      continue
     }
 
-    if (result.verdict === "never-ran") {
+    if (result.verdict === 'never-ran') {
       // No verdict event, because there is no verdict: what is appended says
       // the step was reached and its agent never started. The pipeline stops
       // for the reason a refusal stops it and one it does not have — the actions
       // after this one would ask the same account the same question and meet
       // the same wall, which is 0031 §3 with a queue's worth of items replaced
       // by a recipe's worth of actions.
-      await emit({ type: "StepNeverRan", data: { ...base, detail: result.evidence } });
+      await emit({ type: 'StepNeverRan', data: { ...base, detail: result.evidence } })
       return {
         ok: false,
         failedAt: null,
@@ -742,10 +733,10 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         askedAt: null,
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
-      };
+      }
     }
 
-    if (result.verdict === "did-not-finish") {
+    if (result.verdict === 'did-not-finish') {
       /**
        * **The one place `NEEDS_INPUT` is compared to anything** (`#296`).
        *
@@ -761,7 +752,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
        * So the string is read once, here, in the file that defines the token,
        * and what leaves this function is a field and an event type.
        */
-      const asked = result.because === NEEDS_INPUT;
+      const asked = result.because === NEEDS_INPUT
       // No verdict event either way, for the reason `never-ran` has none: the
       // agent judged nothing. Which of the two it was is the event's name —
       // `StepAsked` has a question in it and `StepDidNotFinish` has broken
@@ -770,9 +761,9 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       // rather than the conductor, because both are local (0057 §3).
       await emit(
         asked
-          ? { type: "StepAsked", data: { ...base, detail: result.evidence } }
-          : { type: "StepDidNotFinish", data: { ...base, detail: result.evidence } },
-      );
+          ? { type: 'StepAsked', data: { ...base, detail: result.evidence } }
+          : { type: 'StepDidNotFinish', data: { ...base, detail: result.evidence } },
+      )
       return {
         ok: false,
         failedAt: null,
@@ -791,17 +782,17 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         askedAt: asked ? { action: action.name, detail: result.evidence } : null,
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
-      };
+      }
     }
 
-    if (result.verdict === "needs-approval") {
+    if (result.verdict === 'needs-approval') {
       // Stops for the same reason a failure does — the actions after this one are
       // about a diff that is not going anywhere yet — but it is not a failure,
       // and the event says which.
       await emit({
-        type: "ApprovalRequested",
+        type: 'ApprovalRequested',
         data: { ...base, question: result.evidence, artifacts: [] },
-      });
+      })
       return {
         ok: false,
         failedAt: null,
@@ -811,11 +802,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         askedAt: null,
         results,
         skipped: actions.slice(index + 1).map((a) => a.name),
-      };
+      }
     }
 
     await emit({
-      type: "StepFailed",
+      type: 'StepFailed',
       data: {
         ...base,
         evidence: result.evidence,
@@ -830,7 +821,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
         // (0034), so the rate has to be a fold over `events` or it is a guess.
         ...(result.about === undefined ? {} : { about: result.about }),
       },
-    });
+    })
     return {
       ok: false,
       failedAt: action.name,
@@ -840,7 +831,7 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
       askedAt: null,
       results,
       skipped: actions.slice(index + 1).map((a) => a.name),
-    };
+    }
   }
 
   return {
@@ -852,11 +843,11 @@ export async function runActionPipeline(options: PipelineOptions): Promise<Pipel
     askedAt: null,
     results,
     skipped: [],
-  };
+  }
 }
 
 /** `4m27s`, `12s` — how long an action took, as the run log says it. */
 function elapsed(ms: number): string {
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+  const s = Math.round(ms / 1000)
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
 }

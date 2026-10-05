@@ -16,17 +16,27 @@
  * board all read this, which is what stops any two of them disagreeing about
  * whether a queue is empty or unreadable.
  */
-import { STEPS, type Step, type ProjectState } from "@lingtai/domain";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient, type GitHubClient } from "@lingtai/github";
-import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe } from "@lingtai/recipe";
-import { assigneeOf, backoffOf, boundsBesides, ceilingOf, excludeOf, kindsOf, limitsFor, type StepBound } from "@lingtai/recipe/settings";
-import { passCeiling } from "./ceiling.ts";
-import { currentRecipe } from "./projects.ts";
+import { STEPS, type Step, type ProjectState } from '@lingtai/domain'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { createGitHubClient, type GitHubClient } from '@lingtai/github'
+import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe } from '@lingtai/recipe'
+import {
+  assigneeOf,
+  backoffOf,
+  boundsBesides,
+  ceilingOf,
+  excludeOf,
+  kindsOf,
+  limitsFor,
+  type StepBound,
+} from '@lingtai/recipe/settings'
+
+import { passCeiling } from './ceiling.ts'
+import { currentRecipe } from './projects.ts'
 
 // Its own file so a page can call it in the browser (#164); every caller that
 // imported it from here still does.
-export { passCeiling };
+export { passCeiling }
 
 /**
  * One thing the recipe configures at a point, and what bounds it.
@@ -36,8 +46,8 @@ export { passCeiling };
  * a card that showed `0` there would say the opposite.
  */
 export interface PlannedAction {
-  name: string;
-  budgetMs: number | null;
+  name: string
+  budgetMs: number | null
 }
 
 /**
@@ -49,7 +59,7 @@ export interface PlannedAction {
  * step that is merely absent from this map is indistinguishable from one that
  * was configured and silently did not run.
  */
-export type StepPlan = ReadonlyMap<Step, readonly PlannedAction[]>;
+export type StepPlan = ReadonlyMap<Step, readonly PlannedAction[]>
 
 /**
  * The recipe's gates, with every duration already a number.
@@ -67,10 +77,10 @@ export function stepPlan(recipe: Recipe): StepPlan {
         name: action.name,
         // Only a command has a clock. `parseDuration` throws on nonsense, and a
         // recipe that resolved has already been through the schema's check.
-        budgetMs: "run" in action ? parseDuration(action.timeout) : null,
+        budgetMs: 'run' in action ? parseDuration(action.timeout) : null,
       })),
     ]),
-  );
+  )
 }
 
 /**
@@ -83,27 +93,27 @@ export function stepPlan(recipe: Recipe): StepPlan {
  */
 export type ProjectFilter =
   | {
-      project: string;
-      ok: true;
+      project: string
+      ok: true
       /** Of the *resolved* recipe. Identifies which configuration this is. */
-      configHash: string;
+      configHash: string
       /**
        * The base branch this recipe governs. Since #180 the recipe is read from
        * this machine rather than from that branch, and `provenance` says from
        * where.
        */
-      ref: string;
+      ref: string
       /**
        * Where each value came from — the recipe file, the machine file,
        * detection or a default — keyed by its path in the recipe. What
        * `lingtai doctor` prints, because a value that can come from four places
        * is not answerable by reading one file.
        */
-      provenance: Readonly<Record<string, string>>;
+      provenance: Readonly<Record<string, string>>
       /** The labels that name work, most wanted first. */
-      kinds: readonly string[];
+      kinds: readonly string[]
       /** The labels that keep an agent off a ticket. */
-      exclude: readonly string[];
+      exclude: readonly string[]
       /**
        * What one pass may spend: `runtime.limits`, as numbers.
        *
@@ -129,14 +139,14 @@ export type ProjectFilter =
        * empty list and reads exactly as it did.
        */
       limits: {
-        rounds: number;
-        restarts: number;
-        turns: number;
-        wall: string;
-        wallMs: number;
-        usd?: number;
-        steps: readonly StepBound[];
-      };
+        rounds: number
+        restarts: number
+        turns: number
+        wall: string
+        wallMs: number
+        usd?: number
+        steps: readonly StepBound[]
+      }
       /**
        * How long a failed attempt keeps its own ticket out of the queue,
        * `source.backoff` in milliseconds
@@ -147,7 +157,7 @@ export type ProjectFilter =
        * money is spent next — has to be readable without opening Lingtai's
        * source. Parsed once here so that no caller reads a duration string.
        */
-      backoffMs: number;
+      backoffMs: number
       /**
        * What runs at each of the ten steps, with the timeouts as numbers.
        *
@@ -155,18 +165,18 @@ export type ProjectFilter =
        * thing: a gate's timeout is the denominator a running card measures
        * against, and the board must not parse `20m` itself (#79).
        */
-      plan: StepPlan;
+      plan: StepPlan
       /**
        * The recipe and the client that read it, carried so a caller that wants
        * to go on and ask GitHub what is offered does not fetch either twice.
        */
-      recipe: Recipe;
-      client: GitHubClient;
+      recipe: Recipe
+      client: GitHubClient
     }
-  | { project: string; ok: false; problem: string };
+  | { project: string; ok: false; problem: string }
 
 /** Builds a client for a project, or throws saying why it cannot. */
-export type ClientFor = (state: ProjectState) => Promise<GitHubClient>;
+export type ClientFor = (state: ProjectState) => Promise<GitHubClient>
 
 /**
  * Reads a project's recipe from its base branch.
@@ -178,7 +188,7 @@ export type ClientFor = (state: ProjectState) => Promise<GitHubClient>;
  * every append (#112) and asks the same branch the same thing several times a
  * second — and the answer to that one lives with the board.
  */
-export type RecipeFor = (state: ProjectState, client: GitHubClient) => Promise<ResolvedRecipe>;
+export type RecipeFor = (state: ProjectState, client: GitHubClient) => Promise<ResolvedRecipe>
 
 /**
  * The `ClientFor` everything outside a test uses.
@@ -190,10 +200,10 @@ export type RecipeFor = (state: ProjectState, client: GitHubClient) => Promise<R
  * is where "an App that is misconfigured" stopped being an empty column.
  */
 export async function githubClientFor(state: ProjectState): Promise<GitHubClient> {
-  if (!hasGitHubApp()) throw new Error("no GitHub App configured, so GitHub cannot be asked about this project");
-  if (!state.project) throw new Error("no repository name recorded — re-run lingtai add");
-  if (!state.owner) throw new Error("no owner recorded — re-run lingtai add to record it");
-  return createGitHubClient({ auth: githubApp(), owner: state.owner, repo: state.project });
+  if (!hasGitHubApp()) throw new Error('no GitHub App configured, so GitHub cannot be asked about this project')
+  if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
+  if (!state.owner) throw new Error('no owner recorded — re-run lingtai add to record it')
+  return createGitHubClient({ auth: githubApp(), owner: state.owner, repo: state.project })
 }
 
 /**
@@ -209,10 +219,10 @@ export async function projectFilter(
   clientFor: ClientFor = githubClientFor,
   recipeFor: RecipeFor = currentRecipe,
 ): Promise<ProjectFilter> {
-  const project = state.project ?? "(unnamed)";
+  const project = state.project ?? '(unnamed)'
   try {
-    const client = await clientFor(state);
-    const resolved = await recipeFor(state, client);
+    const client = await clientFor(state)
+    const resolved = await recipeFor(state, client)
     return {
       project,
       ok: true,
@@ -227,19 +237,19 @@ export async function projectFilter(
         // which is the ceiling unless a dispatch there narrowed it (`#314`).
         rounds: ceilingOf(resolved.recipe).rounds,
         restarts: ceilingOf(resolved.recipe).restarts,
-        turns: limitsFor(resolved.recipe, "implement").turns,
-        wall: limitsFor(resolved.recipe, "implement").wall,
-        wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
+        turns: limitsFor(resolved.recipe, 'implement').turns,
+        wall: limitsFor(resolved.recipe, 'implement').wall,
+        wallMs: parseDuration(limitsFor(resolved.recipe, 'implement').wall),
         usd: ceilingOf(resolved.recipe).usd,
-        steps: boundsBesides(resolved.recipe, "implement"),
+        steps: boundsBesides(resolved.recipe, 'implement'),
       },
       backoffMs: parseDuration(backoffOf(resolved.recipe)),
       plan: stepPlan(resolved.recipe),
       recipe: resolved.recipe,
       client,
-    };
+    }
   } catch (err) {
-    return { project, ok: false, problem: oneLine((err as Error).message) };
+    return { project, ok: false, problem: oneLine((err as Error).message) }
   }
 }
 
@@ -248,7 +258,7 @@ export async function projectFilters(
   clientFor: ClientFor = githubClientFor,
   recipeFor: RecipeFor = currentRecipe,
 ): Promise<ProjectFilter[]> {
-  return Promise.all(projects.map((p) => projectFilter(p, clientFor, recipeFor)));
+  return Promise.all(projects.map((p) => projectFilter(p, clientFor, recipeFor)))
 }
 
 /**
@@ -256,11 +266,11 @@ export async function projectFilters(
  * message and badly in a column. Folded to one line here, keeping every problem.
  */
 function oneLine(message: string): string {
-  return message.replace(/\s*\n\s*/g, " ").trim();
+  return message.replace(/\s*\n\s*/g, ' ').trim()
 }
 
 /** Wide enough for the project names this has, and stable so the block aligns. */
-const NAME_WIDTH = 14;
+const NAME_WIDTH = 14
 
 /**
  * The block a person reads: two or three lines per project, aligned.
@@ -278,16 +288,16 @@ const NAME_WIDTH = 14;
  * outside, exactly like a backlog nobody had labelled.
  */
 export function describeFilter(filter: ProjectFilter): string[] {
-  const name = filter.project.padEnd(NAME_WIDTH);
-  const gap = " ".repeat(NAME_WIDTH);
+  const name = filter.project.padEnd(NAME_WIDTH)
+  const gap = ' '.repeat(NAME_WIDTH)
   if (!filter.ok) {
-    return [`${name} RECIPE INVALID — ${filter.problem}`, `${gap} nothing will be taken from this project`];
+    return [`${name} RECIPE INVALID — ${filter.problem}`, `${gap} nothing will be taken from this project`]
   }
-  const order = filter.kinds.length > 1 ? "   (in priority order)" : "";
+  const order = filter.kinds.length > 1 ? '   (in priority order)' : ''
   return [
     `${name} recipe ${filter.configHash.slice(0, 12)} from ${filter.ref}`,
-    `  picks up     ${filter.kinds.join(" > ")}${order}`,
-    `  excludes     ${filter.exclude.length > 0 ? filter.exclude.join(", ") : "nothing"}`,
+    `  picks up     ${filter.kinds.join(' > ')}${order}`,
+    `  excludes     ${filter.exclude.length > 0 ? filter.exclude.join(', ') : 'nothing'}`,
     // With the login in it, because a wrong login is the mistake this setting
     // can have, and it should be readable before it hands over somebody else's
     // tickets rather than only after (0046 §2, #181).
@@ -304,22 +314,22 @@ export function describeFilter(filter: ProjectFilter): string[] {
     // that describe a project (#95) — a rule nobody can read is one nobody can
     // change on purpose.
     `  retries      after ${backoffOf(filter.recipe)}, unless a repair is pending`,
-  ];
+  ]
 }
 
 /** `queue:`'s `assignee` as a person reads it. Absent is `both`, and says so. */
 export function describeAssignee(rule: AssigneeRule | undefined): string {
-  const as = rule?.login ? ` (this machine is ${rule.login})` : "";
-  switch (rule?.take ?? "both") {
-    case "mine":
-      return `only issues assigned to ${rule?.login}`;
-    case "unassigned":
-      return `only issues assigned to nobody${as}`;
+  const as = rule?.login ? ` (this machine is ${rule.login})` : ''
+  switch (rule?.take ?? 'both') {
+    case 'mine':
+      return `only issues assigned to ${rule?.login}`
+    case 'unassigned':
+      return `only issues assigned to nobody${as}`
     default:
-      return `any issue, whoever it is assigned to${as}`;
+      return `any issue, whoever it is assigned to${as}`
   }
 }
 
 export function describeFilters(filters: readonly ProjectFilter[]): string[] {
-  return filters.flatMap(describeFilter);
+  return filters.flatMap(describeFilter)
 }

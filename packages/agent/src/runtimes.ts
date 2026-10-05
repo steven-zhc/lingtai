@@ -13,10 +13,11 @@
  * an `undefined` at whichever call site reached for it first. That is the whole of
  * the third-runtime claim: one enum value, one row, and nothing else to find.
  */
-import type { RuntimeId } from "@lingtai/domain";
-import { createClaudeCodeRuntime } from "./claude-code.ts";
-import { createCodexRuntime } from "./codex.ts";
-import type { Runtime } from "./runtime.ts";
+import type { RuntimeId } from '@lingtai/domain'
+
+import { createClaudeCodeRuntime } from './claude-code.ts'
+import { createCodexRuntime } from './codex.ts'
+import type { Runtime } from './runtime.ts'
 
 /**
  * What a caller may ask of *any* runtime.
@@ -32,7 +33,7 @@ import type { Runtime } from "./runtime.ts";
  */
 export interface RuntimeOptions {
   /** The executable. Overridable so a test can use a stand-in. */
-  binary?: string;
+  binary?: string
   /**
    * Whether this agent may act, or only read and answer.
    *
@@ -43,7 +44,7 @@ export interface RuntimeOptions {
    * denies every tool by name; **Codex's row refuses it**, because Codex has no
    * way to say it (`ToolsCannotBeDenied`).
    */
-  tools?: "full" | "none";
+  tools?: 'full' | 'none'
 }
 
 /**
@@ -57,7 +58,7 @@ export interface RuntimeOptions {
  * never silently downgrades."*
  */
 export class ToolsCannotBeDenied extends Error {
-  override readonly name = "ToolsCannotBeDenied";
+  override readonly name = 'ToolsCannotBeDenied'
   /**
    * Assigned in the body rather than declared as a constructor parameter
    * property, which is the one TypeScript feature this repository cannot use:
@@ -70,23 +71,23 @@ export class ToolsCannotBeDenied extends Error {
    * `pnpm test` and `pnpm typecheck` were green on the commit that broke every
    * `lingtai` command.
    */
-  readonly id: RuntimeId;
+  readonly id: RuntimeId
   constructor(id: RuntimeId) {
     super(
       `${id} has no way to be given no tools, and a discussion has no other containment: ` +
-        "measured on codex-cli 0.155.1, `-s read-only` forbids writes and forbids nothing " +
-        "else — the agent keeps a shell and read access to the whole machine, ~/.ssh " +
+        'measured on codex-cli 0.155.1, `-s read-only` forbids writes and forbids nothing ' +
+        'else — the agent keeps a shell and read access to the whole machine, ~/.ssh ' +
         "included. Claude Code's tool-deny list is not a file Codex reads (0033 §1).",
-    );
-    this.id = id;
+    )
+    this.id = id
   }
 }
 
 export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> = {
-  "claude-code": (options = {}) =>
+  'claude-code': (options = {}) =>
     createClaudeCodeRuntime({
       ...(options.binary === undefined ? {} : { binary: options.binary }),
-      permissionMode: options.tools === "none" ? "default" : "bypassPermissions",
+      permissionMode: options.tools === 'none' ? 'default' : 'bypassPermissions',
     }),
   codex: (options = {}) => {
     /**
@@ -108,13 +109,13 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
      * did not restrict reads under `-s` when tried, and `enabled_tools` /
      * `disabled_tools` are MCP server keys and not the built-in shell.
      */
-    if (options.tools === "none") throw new ToolsCannotBeDenied("codex");
+    if (options.tools === 'none') throw new ToolsCannotBeDenied('codex')
     return createCodexRuntime({
       ...(options.binary === undefined ? {} : { binary: options.binary }),
-      sandbox: "workspace-write",
-    });
+      sandbox: 'workspace-write',
+    })
   },
-};
+}
 
 /**
  * The runtime the recipe named.
@@ -130,7 +131,7 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
  * `RuntimeId` this table's `tools: "none"` does not throw on (`#243`).
  */
 export function createRuntime(id: RuntimeId, options?: RuntimeOptions): Runtime {
-  return RUNTIMES[id](options);
+  return RUNTIMES[id](options)
 }
 
 /**
@@ -142,5 +143,5 @@ export function createRuntime(id: RuntimeId, options?: RuntimeOptions): Runtime 
  * where a forgotten runtime would be **broken rather than invisible**.
  */
 export function everyRuntime(options?: RuntimeOptions): Runtime[] {
-  return Object.values(RUNTIMES).map((make) => make(options));
+  return Object.values(RUNTIMES).map((make) => make(options))
 }

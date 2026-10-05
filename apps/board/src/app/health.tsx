@@ -26,10 +26,12 @@
  * started. This only ever reports. Whether a daemon should restart itself is
  * deliberately open.
  */
-import { lastBeat, readStatus } from "@lingtai/daemon/control";
-import { codeCurrency, describeCurrency } from "@lingtai/daemon/currency";
-import type { CodeNews } from "@/lib/bearing";
-import { Live } from "./live.tsx";
+import { lastBeat, readStatus } from '@lingtai/daemon/control'
+import { codeCurrency, describeCurrency } from '@lingtai/daemon/currency'
+
+import type { CodeNews } from '@/lib/bearing'
+
+import { Live } from './live.tsx'
 
 /**
  * What the beacon and the checkout say between them, or null when there is
@@ -40,43 +42,41 @@ import { Live } from "./live.tsx";
  * is not being advanced. Saying it twice would be the second chip again.
  */
 async function news(): Promise<CodeNews | null> {
-  const status = await readStatus().catch(() => null);
-  if (!status) return null;
-  if (!lastBeat(status).up) return null;
+  const status = await readStatus().catch(() => null)
+  if (!status) return null
+  if (!lastBeat(status).up) return null
 
   if (!status.codeSha) {
     return {
-      wrong: "code unknown",
-      action: "restart it with: pnpm lingtai daemon",
-      said: "this daemon started before the beacon carried a commit, so what code it is running cannot be read from here",
-    };
+      wrong: 'code unknown',
+      action: 'restart it with: pnpm lingtai daemon',
+      said: 'this daemon started before the beacon carried a commit, so what code it is running cannot be read from here',
+    }
   }
 
-  const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty }).catch(
-    () => null,
-  );
+  const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty }).catch(() => null)
   // Not knowing is the same silence this exists to break, so it says so rather
   // than reading as though the daemon were current.
   if (!currency) {
     return {
-      wrong: "code unknown",
-      action: "compare it by hand: lingtai doctor",
+      wrong: 'code unknown',
+      action: 'compare it by hand: lingtai doctor',
       said: "the daemon's commit could not be compared against the repository",
-    };
+    }
   }
   // `unknown` is a comparison that could not be made — a sha the checkout no
   // longer holds, a base ref never fetched. `describeCurrency` says which, and
   // it is not a fault to act on.
   if (currency.unknown || currency.behind.length === 0) {
-    return { wrong: null, action: null, said: describeCurrency(currency) };
+    return { wrong: null, action: null, said: describeCurrency(currency) }
   }
   return {
     wrong: `daemon ${currency.behind.length} behind`,
-    action: "restart it to take them",
+    action: 'restart it to take them',
     said: describeCurrency(currency),
-  };
+  }
 }
 
 export async function Health() {
-  return <Live code={await news()} />;
+  return <Live code={await news()} />
 }

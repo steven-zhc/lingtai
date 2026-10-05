@@ -43,7 +43,8 @@
  * once per event and a failure is an exit code, which the daemon records as
  * `PluginFailed` (0037 §7) and acts on in no other way.
  */
-import { spawn } from "node:child_process";
+import { spawn } from 'node:child_process'
+
 // By path, not by package name, for the reason the `run:` line is a path: this
 // file is started from whatever the daemon's checkout holds, and a merge reaches
 // that checkout without a `pnpm install`. A workspace name added in the same
@@ -51,23 +52,23 @@ import { spawn } from "node:child_process";
 // worked the day before included — would become `PluginFailed` until somebody
 // reinstalled. A path into a package that depends on nothing needs no
 // `node_modules` at all.
-import { describe, isMain, parsePayload, readStdin } from "../../../packages/extension/src/index.ts";
-import type { Notification } from "../../../packages/extension/src/index.ts";
+import { describe, isMain, parsePayload, readStdin } from '../../../packages/extension/src/index.ts'
+import type { Notification } from '../../../packages/extension/src/index.ts'
 
 export interface NotifyChannel {
-  readonly name: string;
-  send(notification: Notification): Promise<void>;
+  readonly name: string
+  send(notification: Notification): Promise<void>
 }
 
 /** Spawn a binary, come back with its exit code. `null` when it never started. */
-export type Exec = (bin: string, args: string[]) => Promise<number | null>;
+export type Exec = (bin: string, args: string[]) => Promise<number | null>
 
 const run: Exec = (bin, args) =>
   new Promise((resolve) => {
-    const child = spawn(bin, args, { stdio: "ignore" });
-    child.on("close", (code) => resolve(code));
-    child.on("error", () => resolve(null));
-  });
+    const child = spawn(bin, args, { stdio: 'ignore' })
+    child.on('close', (code) => resolve(code))
+    child.on('error', () => resolve(null))
+  })
 
 /**
  * The same spawn, with its exit code read rather than discarded.
@@ -85,9 +86,9 @@ const run: Exec = (bin, args) =>
  * `osascript` is the ordinary way this fails.
  */
 async function must(exec: Exec, bin: string, args: string[]): Promise<void> {
-  const code = await exec(bin, args);
-  if (code === 0) return;
-  throw new Error(code === null ? `${bin} could not be run` : `${bin} exited ${code}`);
+  const code = await exec(bin, args)
+  if (code === 0) return
+  throw new Error(code === null ? `${bin} could not be run` : `${bin} exited ${code}`)
 }
 
 /**
@@ -112,43 +113,36 @@ async function must(exec: Exec, bin: string, args: string[]): Promise<void> {
  * and there is no way to make a working `osascript` produce it.
  */
 export async function macNotifier(exec: Exec = run): Promise<NotifyChannel> {
-  const hasTerminalNotifier = (await exec("which", ["terminal-notifier"])) === 0;
+  const hasTerminalNotifier = (await exec('which', ['terminal-notifier'])) === 0
 
   if (hasTerminalNotifier) {
     return {
-      name: "terminal-notifier",
+      name: 'terminal-notifier',
       async send(n) {
-        await must(exec, "terminal-notifier", [
-          "-title",
-          n.title,
-          "-message",
-          n.body.slice(0, 200),
-          "-open",
-          n.url,
-        ]);
+        await must(exec, 'terminal-notifier', ['-title', n.title, '-message', n.body.slice(0, 200), '-open', n.url])
       },
-    };
+    }
   }
 
   return {
-    name: "osascript",
+    name: 'osascript',
     async send(n) {
       // Quotes are the injection surface here: the body is a question written
       // by an agent or a person, and it goes into an AppleScript string.
-      const esc = (s: string) => s.replace(/["\\]/g, "\\$&");
-      const body = `${n.body.slice(0, 200)}\n${n.url}`;
-      await must(exec, "osascript", [
-        "-e",
+      const esc = (s: string) => s.replace(/["\\]/g, '\\$&')
+      const body = `${n.body.slice(0, 200)}\n${n.url}`
+      await must(exec, 'osascript', [
+        '-e',
         `display notification "${esc(body)}" with title "${esc(n.title.slice(0, 200))}"`,
-      ]);
+      ])
     },
-  };
+  }
 }
 
 export interface NotifyCommandDeps {
-  read?: () => Promise<string>;
-  channelFor?: () => Promise<NotifyChannel>;
-  log?: (line: string) => void;
+  read?: () => Promise<string>
+  channelFor?: () => Promise<NotifyChannel>
+  log?: (line: string) => void
 }
 
 /**
@@ -160,15 +154,15 @@ export interface NotifyCommandDeps {
  * looking like a quiet week (0037 §7).
  */
 export async function notifyCommand(deps: NotifyCommandDeps = {}): Promise<number> {
-  const log = deps.log ?? ((line: string) => console.error(line));
+  const log = deps.log ?? ((line: string) => console.error(line))
   try {
-    const payload = parsePayload(await (deps.read ?? readStdin)());
-    const channel = await (deps.channelFor ?? macNotifier)();
-    await channel.send(describe(payload));
-    return 0;
+    const payload = parsePayload(await (deps.read ?? readStdin)())
+    const channel = await (deps.channelFor ?? macNotifier)()
+    await channel.send(describe(payload))
+    return 0
   } catch (err) {
-    log(`notification failed: ${(err as Error).message}`);
-    return 1;
+    log(`notification failed: ${(err as Error).message}`)
+    return 1
   }
 }
 
@@ -178,5 +172,5 @@ export async function notifyCommand(deps: NotifyCommandDeps = {}): Promise<numbe
  * from.
  */
 if (isMain(import.meta.url)) {
-  process.exitCode = await notifyCommand();
+  process.exitCode = await notifyCommand()
 }

@@ -54,9 +54,10 @@
  * `evidence` says the size and the path it read, so a person comparing the two
  * cards can see whether `design` wrote what `implement` was given.
  */
-import { whyThePathEscapes } from "@lingtai/recipe";
-import type { Action, ActionContext, ActionResult } from "./action.ts";
-import { sizeOf } from "./file-action.ts";
+import { whyThePathEscapes } from '@lingtai/recipe'
+
+import type { Action, ActionContext, ActionResult } from './action.ts'
+import { sizeOf } from './file-action.ts'
 
 /**
  * What the read answers — two branches, `KeptAnswer`'s mirror, and no `asked`
@@ -68,7 +69,7 @@ export type ReadAnswer =
   /** The document, exactly as the destination kept it. */
   | { readonly document: string }
   /** Why it could not be read, in words a person reads (0043). */
-  | { readonly notRead: string };
+  | { readonly notRead: string }
 
 /**
  * The read, as the only thing this action needs from its caller.
@@ -79,12 +80,12 @@ export type ReadAnswer =
 export interface FileBriefActionDeps {
   read(spec: {
     /** Relative to the worktree, and `whyThePathEscapes` has already refused anything else. */
-    readonly path: string;
-  }): Promise<ReadAnswer>;
+    readonly path: string
+  }): Promise<ReadAnswer>
 }
 
 export interface FileBriefActionSpec {
-  name: string;
+  name: string
 }
 
 /**
@@ -109,21 +110,18 @@ export interface FileBriefActionSpec {
 function notThisDestination(locator: string, why: string): string {
   return (
     `the design was not read back: \`${locator}\` is not somewhere a \`file-brief:\` can read — ${why}. ` +
-    "This action reads what a `file:` at `design` kept, which is a path inside the worktree and nothing " +
+    'This action reads what a `file:` at `design` kept, which is a path inside the worktree and nothing ' +
     "else; a design kept anywhere else is read by that destination's own plugin at `implement` (0066 §4)"
-  );
+  )
 }
 
-export function createFileBriefAction(
-  spec: FileBriefActionSpec,
-  deps: FileBriefActionDeps,
-): Action {
+export function createFileBriefAction(spec: FileBriefActionSpec, deps: FileBriefActionDeps): Action {
   return {
     name: spec.name,
-    kind: "file-brief",
+    kind: 'file-brief',
 
     async run(context: ActionContext): Promise<ActionResult> {
-      const design = context.design;
+      const design = context.design
       if (design === undefined) {
         // A context nothing filled in, which is one built by hand: `runStep`
         // sets `design` on every verdicts pipeline, off the last `design` visit.
@@ -131,12 +129,12 @@ export function createFileBriefAction(
         // this a design* and *the design step answered that none was needed* are
         // different facts and only the second is an answer (0058 §3).
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence:
             `nothing handed "${spec.name}" a design to read — a \`file-brief:\` reads what a ` +
-            "destination at `design` kept, and no pipeline filled `ActionContext.design` in",
+            'destination at `design` kept, and no pipeline filled `ActionContext.design` in',
           findings: [],
-        };
+        }
       }
 
       // **Silent where nothing was kept.** No locator is *no destination was
@@ -147,32 +145,32 @@ export function createFileBriefAction(
       // in carrying is the one the agent after this is dispatched with.
       if (design.locator === undefined) {
         return {
-          verdict: "passed",
-          evidence: "nothing to read back — no destination at `design` kept a document",
+          verdict: 'passed',
+          evidence: 'nothing to read back — no destination at `design` kept a document',
           findings: [],
-        };
+        }
       }
 
-      const why = whyThePathEscapes(design.locator);
+      const why = whyThePathEscapes(design.locator)
       if (why !== null) {
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence: notThisDestination(design.locator, why),
           findings: [],
-        };
+        }
       }
 
-      const answer = await deps.read({ path: design.locator });
-      if ("notRead" in answer) {
+      const answer = await deps.read({ path: design.locator })
+      if ('notRead' in answer) {
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence: `the design was not read back from \`${design.locator}\`: ${answer.notRead}`,
           findings: [],
-        };
+        }
       }
 
       return {
-        verdict: "passed",
+        verdict: 'passed',
         // The mirror of the keep's sentence, and the fact a person reads the
         // card for: the implementing agent was briefed with *this*, off *there*.
         evidence: `read a ${sizeOf(answer.document)} design back from \`${design.locator}\``,
@@ -183,7 +181,7 @@ export function createFileBriefAction(
         // agent written after this is briefed with.
         document: answer.document,
         locator: design.locator,
-      };
+      }
     },
-  };
+  }
 }

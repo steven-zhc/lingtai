@@ -60,21 +60,17 @@ import {
   isEventType,
   isRetiredEventType,
   parsePayload,
-} from "@lingtai/domain";
+} from '@lingtai/domain'
+
 // The narrow path, never the barrel. `../src/index.ts` constructs the
 // process-wide client at import, so a fake store reached through it would
 // require the database it exists to avoid — the trap this file is the answer
 // to, and one it must not fall into itself.
-import {
-  ConcurrencyError,
-  type EventStore,
-  RetiredEventTypeError,
-  UnknownEventTypeError,
-} from "../src/event-store.ts";
+import { ConcurrencyError, type EventStore, RetiredEventTypeError, UnknownEventTypeError } from '../src/event-store.ts'
 
 export interface MemoryEventStore extends EventStore {
   /** Everything appended, in `seq` order. For a test that wants to assert on the log as a whole. */
-  all(): Envelope[];
+  all(): Envelope[]
 }
 
 /**
@@ -88,33 +84,29 @@ export interface MemoryEventStore extends EventStore {
  * reads a clock is not a fold, and a test that asserts on `at` should not have
  * to wait.
  */
-export function createMemoryEventStore(
-  options: { now?: () => Date } = {},
-): MemoryEventStore {
-  const now = options.now ?? (() => new Date());
-  const log: Envelope[] = [];
-  let seq = 0n;
+export function createMemoryEventStore(options: { now?: () => Date } = {}): MemoryEventStore {
+  const now = options.now ?? (() => new Date())
+  const log: Envelope[] = []
+  let seq = 0n
 
   const versionOf = (streamId: string): number =>
-    log.reduce((max, e) => (e.streamId === streamId && e.version > max ? e.version : max), 0);
+    log.reduce((max, e) => (e.streamId === streamId && e.version > max ? e.version : max), 0)
 
   return {
     async append(streamId, expectedVersion, events) {
-      StreamId.parse(streamId);
+      StreamId.parse(streamId)
       if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
-        throw new RangeError(
-          `expectedVersion must be a non-negative integer, got ${expectedVersion}`,
-        );
+        throw new RangeError(`expectedVersion must be a non-negative integer, got ${expectedVersion}`)
       }
-      if (events.length === 0) return [];
+      if (events.length === 0) return []
 
       // Everything validated before anything is written, which is the real
       // store's rule and its reason: a batch must not be able to fail halfway
       // through validation with rows already in the log.
       const rows = events.map((e: ToAppend, i) => {
-        if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, "append");
-        if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type);
-        Actor.parse(e.actor);
+        if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, 'append')
+        if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type)
+        Actor.parse(e.actor)
         return {
           streamId,
           version: expectedVersion + 1 + i,
@@ -123,41 +115,41 @@ export function createMemoryEventStore(
           data: parsePayload(e.type, e.data),
           actor: e.actor,
           causation: e.causation ?? null,
-        };
-      });
+        }
+      })
 
       // `UNIQUE (stream_id, version)`, as a length check. Postgres raises this
       // on the insert; here it is asked before, which is the same answer for a
       // single writer and is all a test has.
-      const at = versionOf(streamId);
+      const at = versionOf(streamId)
       if (at !== expectedVersion) {
         throw new ConcurrencyError(
           streamId,
           expectedVersion,
           rows.map((r) => r.version),
-        );
+        )
       }
 
       const written = rows.map((r) => {
-        seq += 1n;
-        return { ...r, seq, at: now() } as Envelope;
-      });
-      log.push(...written);
-      return written;
+        seq += 1n
+        return { ...r, seq, at: now() } as Envelope
+      })
+      log.push(...written)
+      return written
     },
 
     async read(streamId, fromVersion = 1) {
       return log
         .filter((e) => e.streamId === streamId && e.version >= fromVersion)
-        .sort((a, b) => a.version - b.version);
+        .sort((a, b) => a.version - b.version)
     },
 
     async readAll(fromSeq, limit) {
-      return log.filter((e) => e.seq > fromSeq).slice(0, limit);
+      return log.filter((e) => e.seq > fromSeq).slice(0, limit)
     },
 
     all() {
-      return [...log];
+      return [...log]
     },
-  };
+  }
 }

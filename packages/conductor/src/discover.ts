@@ -26,7 +26,7 @@
  * any `agent:*` label is one the old loop has touched, so Lingtai does not
  * discover it at all.
  */
-import type { AssigneeRule, QueueSettings } from "@lingtai/recipe";
+import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
 // `workItemStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
 
@@ -38,11 +38,11 @@ import type { AssigneeRule, QueueSettings } from "@lingtai/recipe";
  * have.
  */
 export interface TicketListing {
-  number: number;
-  title: string;
-  state: "open" | "closed";
-  labels: readonly { name: string; color: string | null }[];
-  assignees: readonly string[];
+  number: number
+  title: string
+  state: 'open' | 'closed'
+  labels: readonly { name: string; color: string | null }[]
+  assignees: readonly string[]
   /**
    * `dependencies: null` means *GitHub said nothing about dependencies*, not
    * *nothing blocks it* (CLAUDE.md, "Null is not zero"). A required, nullable
@@ -50,7 +50,7 @@ export interface TicketListing {
    * source leave it out, and `issue.dependencies === null` below would read
    * `undefined` the same way, so every ticket would go silently clear.
    */
-  dependencies: { blockedBy: number } | null;
+  dependencies: { blockedBy: number } | null
 }
 
 /**
@@ -60,13 +60,13 @@ export interface TicketListing {
  * for the ticket that was claimed).
  */
 export interface TicketDetail extends TicketListing {
-  body: string;
+  body: string
 }
 
 /** The two calls discovery makes of a ticket source. */
 export interface TicketSource {
-  listOpenIssues(): Promise<TicketListing[]>;
-  getIssue(number: number): Promise<TicketDetail>;
+  listOpenIssues(): Promise<TicketListing[]>
+  getIssue(number: number): Promise<TicketDetail>
 }
 
 /**
@@ -89,7 +89,7 @@ export interface TicketSource {
  * queue.
  */
 export function kindOf(issue: TicketListing, kinds: readonly string[]): string | null {
-  return kindLabelOf(issue, kinds)?.kind ?? null;
+  return kindLabelOf(issue, kinds)?.kind ?? null
 }
 
 /**
@@ -103,17 +103,17 @@ export function kindOf(issue: TicketListing, kinds: readonly string[]): string |
 export function kindLabelOf(
   issue: TicketListing,
   kinds: readonly string[],
-): { kind: string; label: TicketListing["labels"][number] } | null {
-  const carried = new Map(issue.labels.map((l) => [normaliseLabel(l.name), l]));
+): { kind: string; label: TicketListing['labels'][number] } | null {
+  const carried = new Map(issue.labels.map((l) => [normaliseLabel(l.name), l]))
   for (const kind of kinds) {
-    const label = carried.get(normaliseLabel(kind));
-    if (label) return { kind, label };
+    const label = carried.get(normaliseLabel(kind))
+    if (label) return { kind, label }
   }
-  return null;
+  return null
 }
 
 function normaliseLabel(label: string): string {
-  return label.toLowerCase().replace(/\s+/g, "-");
+  return label.toLowerCase().replace(/\s+/g, '-')
 }
 
 /**
@@ -124,10 +124,10 @@ function normaliseLabel(label: string): string {
  * only thing that ever knew what a kind was.
  */
 export type SkipReason =
-  | "closed"
-  | "no-kind"
-  | "excluded-label"
-  | "already-discovered"
+  | 'closed'
+  | 'no-kind'
+  | 'excluded-label'
+  | 'already-discovered'
   /**
    * Something this issue depends on is still open.
    *
@@ -143,7 +143,7 @@ export type SkipReason =
    * reorder: a refused item is still first in line next pass, refused again,
    * forever. `agent:hold` already works the way this does, one line above.
    */
-  | "blocked-by"
+  | 'blocked-by'
   /**
    * Assigned to somebody other than this machine's login, under `take: mine`
    * or `take: unassigned` (0046 §2, #181).
@@ -153,21 +153,21 @@ export type SkipReason =
    * `lingtai:working` is not read here and never decides this: a stale one
    * misinforms and blocks nobody.
    */
-  | "assigned-elsewhere"
+  | 'assigned-elsewhere'
   /** Assigned to nobody, under `take: mine`. */
-  | "unassigned"
+  | 'unassigned'
   /** Assigned to this machine's own login, under `take: unassigned`. */
-  | "assigned-to-me"
+  | 'assigned-to-me'
   /**
    * Assigned to somebody, under `take: unassigned` with no login — so whether
    * it is this machine's own cannot be said, and is not guessed.
    */
-  | "assigned";
+  | 'assigned'
 
 export interface Considered {
-  issue: TicketListing;
+  issue: TicketListing
   /** Null when the issue should be discovered. */
-  skip: SkipReason | null;
+  skip: SkipReason | null
 }
 
 /**
@@ -177,9 +177,9 @@ export interface Considered {
  * which is the question the old loop's `pick_ticket` could never answer.
  */
 export function considerIssue(issue: TicketListing, queue: QueueSettings): Considered {
-  if (issue.state === "closed") return { issue, skip: "closed" };
+  if (issue.state === 'closed') return { issue, skip: 'closed' }
 
-  const labels = issue.labels.map((l) => l.name.toLowerCase());
+  const labels = issue.labels.map((l) => l.name.toLowerCase())
 
   // Every reason an issue is not this agent's comes from the recipe. There used
   // to be one more, hardcoded here: any label starting `agent:` meant the issue
@@ -192,10 +192,10 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   // of it in `nextloom-ai-admin` — and it was skipped alongside `agent:hold`,
   // which means the opposite. A repository knows which of its labels are holds;
   // this file cannot.
-  const excluded = new Set(queue.exclude.map((l) => l.toLowerCase()));
-  if (labels.some((l) => excluded.has(l))) return { issue, skip: "excluded-label" };
+  const excluded = new Set(queue.exclude.map((l) => l.toLowerCase()))
+  if (labels.some((l) => excluded.has(l))) return { issue, skip: 'excluded-label' }
 
-  if (kindOf(issue, queue.kinds) === null) return { issue, skip: "no-kind" };
+  if (kindOf(issue, queue.kinds) === null) return { issue, skip: 'no-kind' }
 
   // After the checks above, and deliberately the least permanent of them. A ticket carrying
   // `agent:hold` is one a person is holding and a ticket of no kind is one this
@@ -209,14 +209,14 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   // Null is not zero. A repository whose GitHub said nothing about dependencies
   // is one this cannot answer for, and it degrades to the behaviour before this
   // existed rather than passing everything over — `runnableNow` is what says so.
-  if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: "blocked-by" };
+  if ((issue.dependencies?.blockedBy ?? 0) > 0) return { issue, skip: 'blocked-by' }
 
   // Last: whose work it is (#181). An issue both blocked and somebody else's
   // reports `blocked-by`, the reason that clears on its own.
-  const assignee = assigneeSkip(issue, queue.assignee);
-  if (assignee) return { issue, skip: assignee };
+  const assignee = assigneeSkip(issue, queue.assignee)
+  if (assignee) return { issue, skip: assignee }
 
-  return { issue, skip: null };
+  return { issue, skip: null }
 }
 
 /**
@@ -231,25 +231,25 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
  * case-insensitively, because GitHub's do.
  */
 export function assigneeSkip(issue: TicketListing, rule: AssigneeRule | undefined): SkipReason | null {
-  const take = rule?.take ?? "both";
-  if (take === "both") return null;
-  const me = rule?.login?.toLowerCase();
-  const assignees = issue.assignees.map((a) => a.toLowerCase());
-  const mine = me !== undefined && assignees.includes(me);
-  if (take === "mine") {
-    if (mine) return null;
-    return assignees.length === 0 ? "unassigned" : "assigned-elsewhere";
+  const take = rule?.take ?? 'both'
+  if (take === 'both') return null
+  const me = rule?.login?.toLowerCase()
+  const assignees = issue.assignees.map((a) => a.toLowerCase())
+  const mine = me !== undefined && assignees.includes(me)
+  if (take === 'mine') {
+    if (mine) return null
+    return assignees.length === 0 ? 'unassigned' : 'assigned-elsewhere'
   }
-  if (assignees.length === 0) return null;
-  if (me === undefined) return "assigned";
-  return mine ? "assigned-to-me" : "assigned-elsewhere";
+  if (assignees.length === 0) return null
+  if (me === undefined) return 'assigned'
+  return mine ? 'assigned-to-me' : 'assigned-elsewhere'
 }
 
 export interface Offered {
   /** Issues GitHub lists that the recipe will take. */
-  runnable: { ref: string; title: string; kind: string }[];
+  runnable: { ref: string; title: string; kind: string }[]
   /** Every issue that was not runnable, with the reason. */
-  skipped: { ref: number; reason: SkipReason }[];
+  skipped: { ref: number; reason: SkipReason }[]
   /**
    * What colour this repository gives each kind, `#rrggbb`, keyed by the kind
    * as the recipe names it.
@@ -267,7 +267,7 @@ export interface Offered {
    * A kind nobody has an open issue for is simply absent. Nothing invents an
    * entry: no colour is what a renderer needs to hear to render none (#85).
    */
-  kindColors: Record<string, string>;
+  kindColors: Record<string, string>
   /**
    * Which issues were not checked for a blocker, in words — and null when every
    * one was.
@@ -289,7 +289,7 @@ export interface Offered {
    * the daemon's log and the board all say it, and the places an operator asks
    * *why is this not moving* must not come to word it differently (`#100`).
    */
-  dependenciesUnread: string | null;
+  dependenciesUnread: string | null
 }
 
 /**
@@ -300,22 +300,19 @@ export interface Offered {
  * by kind and number and still needs `agent:hold` by hand.
  */
 export const DEPENDENCIES_UNREAD =
-  "GitHub reported no issue dependencies for this repository — nothing is held by a blocker";
+  'GitHub reported no issue dependencies for this repository — nothing is held by a blocker'
 
 /**
  * The sentence for `Offered.dependenciesUnread`, from the issues GitHub sent no
  * summary for. Null when there are none.
  */
-export function dependenciesUnread(
-  unread: readonly number[],
-  listed: number,
-): string | null {
-  if (unread.length === 0) return null;
-  if (unread.length === listed) return DEPENDENCIES_UNREAD;
-  const refs = unread.map((n) => `#${n}`).join(", ");
+export function dependenciesUnread(unread: readonly number[], listed: number): string | null {
+  if (unread.length === 0) return null
+  if (unread.length === listed) return DEPENDENCIES_UNREAD
+  const refs = unread.map((n) => `#${n}`).join(', ')
   return unread.length === 1
     ? `GitHub sent no dependency summary for ${refs} — it is not held by a blocker`
-    : `GitHub sent no dependency summary for ${refs} — they are not held by a blocker`;
+    : `GitHub sent no dependency summary for ${refs} — they are not held by a blocker`
 }
 
 /**
@@ -327,19 +324,19 @@ export function dependenciesUnread(
  * silence (0016 §4), and two places counting it must not word it differently.
  * Most first, then by name, so the line does not reorder between passes.
  */
-export function passedOver(skipped: Offered["skipped"]): string | null {
-  if (skipped.length === 0) return null;
-  const reasons = new Map<string, number>();
-  for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
+export function passedOver(skipped: Offered['skipped']): string | null {
+  if (skipped.length === 0) return null
+  const reasons = new Map<string, number>()
+  for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1)
   const counted = [...reasons]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([reason, n]) => `${reason} ${n}`)
-    .join(", ");
-  return `${skipped.length} passed over — ${counted}`;
+    .join(', ')
+  return `${skipped.length} passed over — ${counted}`
 }
 
 export interface RunnableNowOptions {
-  client: TicketSource;
+  client: TicketSource
   /**
    * The four values `queue:` carries — **the block and not a recipe** (`#269`).
    *
@@ -348,9 +345,9 @@ export interface RunnableNowOptions {
    * running `claim`'s declared `queue:` action hands the block itself, so the
    * ticket a pass takes is the one the reading of that action says it took.
    */
-  queue: QueueSettings;
+  queue: QueueSettings
   /** Restricts the read to specific issue numbers. */
-  only?: number[];
+  only?: number[]
 }
 
 /**
@@ -369,40 +366,40 @@ export interface RunnableNowOptions {
  * which subtracts what the log says is claimed.
  */
 export async function runnableNow(options: RunnableNowOptions): Promise<Offered> {
-  const { client, queue } = options;
+  const { client, queue } = options
 
   const issues = options.only
     ? await Promise.all(options.only.map((n) => client.getIssue(n)))
-    : await client.listOpenIssues();
+    : await client.listOpenIssues()
 
-  const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null };
+  const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null }
 
-  const unread: number[] = [];
+  const unread: number[] = []
 
   for (const issue of issues) {
-    if (issue.dependencies === null) unread.push(issue.number);
+    if (issue.dependencies === null) unread.push(issue.number)
 
-    const matched = kindLabelOf(issue, queue.kinds);
+    const matched = kindLabelOf(issue, queue.kinds)
     // Before the skip, deliberately: the colour of `bug` is the same whether or
     // not this particular bug can be run, and a held ticket is often the only
     // open issue a kind has.
     if (matched && matched.label.color && !(matched.kind in result.kindColors)) {
-      result.kindColors[matched.kind] = matched.label.color;
+      result.kindColors[matched.kind] = matched.label.color
     }
 
-    const { skip } = considerIssue(issue, queue);
+    const { skip } = considerIssue(issue, queue)
     if (skip) {
-      result.skipped.push({ ref: issue.number, reason: skip });
-      continue;
+      result.skipped.push({ ref: issue.number, reason: skip })
+      continue
     }
     result.runnable.push({
       ref: String(issue.number),
       title: issue.title,
       // `considerIssue` already refused a null kind, so this is a string.
       kind: matched!.kind,
-    });
+    })
   }
 
-  result.dependenciesUnread = dependenciesUnread(unread, issues.length);
-  return result;
+  result.dependenciesUnread = dependenciesUnread(unread, issues.length)
+  return result
 }

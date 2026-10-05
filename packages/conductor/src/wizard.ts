@@ -1,3 +1,6 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+
 /**
  * The onboarding wizard's last screen, and the one write the whole of
  * onboarding makes (#165,
@@ -33,41 +36,49 @@
  * everything the wizard does by itself and not for a button a person pressed:
  * the labels stay, and taking them off is theirs. The screen has to say so.
  */
+import { isPending, isRegistered, parsePayload, projectStream, reduceProject } from '@lingtai/domain'
+import { stateDir } from '@lingtai/env'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import type { GitHubClient } from '@lingtai/github'
 import {
-  isPending,
-  isRegistered,
-  parsePayload,
-  projectStream,
-  reduceProject,
-} from "@lingtai/domain";
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
-import type { GitHubClient } from "@lingtai/github";
-import { stateDir } from "@lingtai/env";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { Recipe, backoffOf, baseOf, emitRecipe, excludeOf, kindsOf, queueOf, machineFiles, machinePath, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type Said } from "@lingtai/recipe";
-import { passedOver, runnableNow } from "./discover.ts";
-import { type Runnable, selectRunnable } from "./queue.ts";
-import { CHECKING_STEPS, nothingChecks } from "./wizard-page.ts";
+  Recipe,
+  backoffOf,
+  baseOf,
+  emitRecipe,
+  excludeOf,
+  kindsOf,
+  queueOf,
+  machineFiles,
+  machinePath,
+  parseDuration,
+  recipePath,
+  resolveLocalRecipe,
+  resolveRecipe,
+  type Said,
+} from '@lingtai/recipe'
+
+import { passedOver, runnableNow } from './discover.ts'
+import { type Runnable, selectRunnable } from './queue.ts'
+import { CHECKING_STEPS, nothingChecks } from './wizard-page.ts'
 
 export interface FirstPassOptions {
-  client: GitHubClient;
+  client: GitHubClient
   /** The recipe the wizard just built — not one read from a branch; there is none yet. */
-  recipe: Recipe;
+  recipe: Recipe
   /** Injectable so a test does not have to wait an hour. */
-  now?: Date;
+  now?: Date
 }
 
 /** What pressing the button starts, and what it will leave alone. */
 export interface FirstPass {
   /** `selectRunnable`'s answer, in the order the conductor will claim them. */
-  taking: Runnable[];
+  taking: Runnable[]
   /** `discover.ts`'s own sentence, word for word, or null when nothing was passed over. */
-  passedOver: string | null;
+  passedOver: string | null
   /** `discover.ts`'s own sentence about a GitHub that reports no dependencies. */
-  dependenciesUnread: string | null;
+  dependenciesUnread: string | null
   /** `12 runnable · 18 passed over — excluded-label 14, no-kind 4`. */
-  line: string;
+  line: string
 }
 
 /**
@@ -85,8 +96,8 @@ export interface FirstPass {
  * beside it.
  */
 export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
-  const { client, recipe } = options;
-  const offered = await runnableNow({ client, queue: queueOf(recipe) });
+  const { client, recipe } = options
+  const offered = await runnableNow({ client, queue: queueOf(recipe) })
   const taking = await selectRunnable({
     project: client.repo,
     offered: offered.runnable,
@@ -96,14 +107,14 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
     // wrong window the first time this screen is shown for a re-onboarding.
     backoffMs: parseDuration(backoffOf(recipe)),
     ...(options.now === undefined ? {} : { now: options.now }),
-  });
-  const passed = passedOver(offered.skipped);
+  })
+  const passed = passedOver(offered.skipped)
   return {
     taking,
     passedOver: passed,
     dependenciesUnread: offered.dependenciesUnread,
-    line: `${taking.length} runnable` + (passed === null ? "" : ` · ${passed}`),
-  };
+    line: `${taking.length} runnable` + (passed === null ? '' : ` · ${passed}`),
+  }
 }
 
 /**
@@ -125,9 +136,9 @@ export async function firstPass(options: FirstPassOptions): Promise<FirstPass> {
  * re-reading a moved base.
  */
 export function nothingReadsIt(recipe: Recipe): string | null {
-  if (recipe.steps.merge.some((action) => !("merge" in action))) return null;
-  if (CHECKING_STEPS.some((step) => recipe.steps[step].length > 0)) return null;
-  return nothingChecks(baseOf(recipe));
+  if (recipe.steps.merge.some((action) => !('merge' in action))) return null
+  if (CHECKING_STEPS.some((step) => recipe.steps[step].length > 0)) return null
+  return nothingChecks(baseOf(recipe))
 }
 
 /**
@@ -149,25 +160,25 @@ export function nothingReadsIt(recipe: Recipe): string | null {
  * not exist on GitHub yet, which is why nothing creates it: a label is created
  * the first time it is applied.
  */
-export const HOLD_LABEL = "agent:hold";
+export const HOLD_LABEL = 'agent:hold'
 
 export function holdLabel(recipe: Recipe): string | null {
-  return excludeOf(recipe).includes(HOLD_LABEL) ? HOLD_LABEL : null;
+  return excludeOf(recipe).includes(HOLD_LABEL) ? HOLD_LABEL : null
 }
 
 export interface HoldAllOptions {
-  client: GitHubClient;
+  client: GitHubClient
   /** Exactly the issues the screen listed — `FirstPass.taking`'s `issue`s. */
-  issues: readonly string[];
+  issues: readonly string[]
   /** `holdLabel`'s answer. */
-  label: string;
+  label: string
 }
 
 export interface HoldAllResult {
   /** Issues now carrying the label, including any that already did. */
-  held: number[];
+  held: number[]
   /** Issues GitHub refused, and what it said. */
-  failed: { issue: number; detail: string }[];
+  failed: { issue: number; detail: string }[]
 }
 
 /**
@@ -196,24 +207,24 @@ export interface HoldAllResult {
  * error over an unknown prefix of the list.
  */
 export async function holdAll(options: HoldAllOptions): Promise<HoldAllResult> {
-  const { client } = options;
-  const result: HoldAllResult = { held: [], failed: [] };
+  const { client } = options
+  const result: HoldAllResult = { held: [], failed: [] }
   for (const ref of options.issues) {
-    const n = Number(ref);
+    const n = Number(ref)
     try {
-      await client.request("POST", `/repos/${client.owner}/${client.repo}/issues/${n}/labels`, {
+      await client.request('POST', `/repos/${client.owner}/${client.repo}/issues/${n}/labels`, {
         labels: [options.label],
-      });
-      result.held.push(n);
+      })
+      result.held.push(n)
     } catch (err) {
-      result.failed.push({ issue: n, detail: (err as Error).message });
+      result.failed.push({ issue: n, detail: (err as Error).message })
     }
   }
-  return result;
+  return result
 }
 
 /** The recipe as a file, or the reason nothing will be written. */
-export type Validated = { ok: true; file: string } | { ok: false; refusal: string };
+export type Validated = { ok: true; file: string } | { ok: false; refusal: string }
 
 /**
  * The generated recipe, parsed by the system's own parser before anything opens.
@@ -232,52 +243,52 @@ export type Validated = { ok: true; file: string } | { ok: false; refusal: strin
  *   will not apply is caught here rather than by a run.
  */
 export async function validateProposal(recipe: Recipe, said: Said = {}): Promise<Validated> {
-  const parsed = Recipe.safeParse(recipe);
+  const parsed = Recipe.safeParse(recipe)
   if (!parsed.success) {
-    const problems = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
-    return { ok: false, refusal: `the recipe is not valid:\n  ${problems.join("\n  ")}` };
+    const problems = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+    return { ok: false, refusal: `the recipe is not valid:\n  ${problems.join('\n  ')}` }
   }
 
-  let file: string;
+  let file: string
   try {
-    file = emitRecipe(parsed.data, said);
+    file = emitRecipe(parsed.data, said)
   } catch (err) {
-    return { ok: false, refusal: `the recipe could not be written down: ${(err as Error).message}` };
+    return { ok: false, refusal: `the recipe could not be written down: ${(err as Error).message}` }
   }
 
   try {
     // A reader that answers from the string in hand. `resolveRecipe` is async
     // because the real one fetches; nothing is fetched here, and the ref is
     // only what a refusal will name — the branch it would land on.
-    await resolveRecipe(async () => file, baseOf(parsed.data));
+    await resolveRecipe(async () => file, baseOf(parsed.data))
   } catch (err) {
-    return { ok: false, refusal: (err as Error).message };
+    return { ok: false, refusal: (err as Error).message }
   }
-  return { ok: true, file };
+  return { ok: true, file }
 }
 
 export interface StartOnboardingOptions {
   /** The repository: its owner and name. Nothing is asked of it and nothing is written to it. */
-  client: GitHubClient;
+  client: GitHubClient
   /** The recipe the wizard built. Its `repo.base` is the base the event records. */
-  recipe: Recipe;
+  recipe: Recipe
   /** The sentences the page showed, by dotted path — the file's comments. */
-  said?: Said;
+  said?: Said
   /** Who pressed it — `human:<id>`. */
-  by: string;
+  by: string
   /** `stateDir()` unless a test says otherwise. */
-  home?: string;
-  store?: EventStore;
+  home?: string
+  store?: EventStore
 }
 
-export type Started = { ok: true; path: string } | { ok: false; refusal: string };
+export type Started = { ok: true; path: string } | { ok: false; refusal: string }
 
 async function readIfThere(path: string): Promise<string | null> {
   try {
-    return await readFile(path, "utf8");
+    return await readFile(path, 'utf8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
   }
 }
 
@@ -310,34 +321,34 @@ async function readIfThere(path: string): Promise<string | null> {
  * state nobody can get out of.
  */
 export async function startOnboarding(options: StartOnboardingOptions): Promise<Started> {
-  const { client, recipe } = options;
-  const store = options.store ?? eventStore;
-  const home = options.home ?? stateDir();
-  const slug = `${client.owner}/${client.repo}`;
-  const base = baseOf(recipe);
-  const stream = projectStream(client.repo);
-  const path = recipePath(client.repo, home);
-  const machineFile = machinePath(home);
+  const { client, recipe } = options
+  const store = options.store ?? eventStore
+  const home = options.home ?? stateDir()
+  const slug = `${client.owner}/${client.repo}`
+  const base = baseOf(recipe)
+  const stream = projectStream(client.repo)
+  const path = recipePath(client.repo, home)
+  const machineFile = machinePath(home)
 
-  const existing = await store.read(stream);
-  const state = reduceProject(existing);
+  const existing = await store.read(stream)
+  const state = reduceProject(existing)
   if (isRegistered(state)) {
-    return { ok: false, refusal: `${slug} is already registered — its recipe is ${path}` };
+    return { ok: false, refusal: `${slug} is already registered — its recipe is ${path}` }
   }
   if (isPending(state)) {
     return {
       ok: false,
       refusal:
         `${slug} is already on its way in — onboarding was recorded for it, and its recipe is ${path}. ` +
-        "Press Recheck to finish it.",
-    };
+        'Press Recheck to finish it.',
+    }
   }
 
-  const validated = await validateProposal(recipe, options.said ?? {});
-  if (!validated.ok) return { ok: false, refusal: validated.refusal };
+  const validated = await validateProposal(recipe, options.said ?? {})
+  if (!validated.ok) return { ok: false, refusal: validated.refusal }
 
-  let files: ReturnType<typeof machineFiles>;
-  let there: string | null;
+  let files: ReturnType<typeof machineFiles>
+  let there: string | null
   try {
     files = machineFiles({
       file: validated.file,
@@ -345,24 +356,24 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
       project: client.repo,
       machine: await readIfThere(machineFile),
       home,
-    });
-    there = await readIfThere(path);
+    })
+    there = await readIfThere(path)
   } catch (err) {
-    return { ok: false, refusal: `this machine's files could not be read: ${(err as Error).message}` };
+    return { ok: false, refusal: `this machine's files could not be read: ${(err as Error).message}` }
   }
-  if (!files.ok) return { ok: false, refusal: files.refusal };
+  if (!files.ok) return { ok: false, refusal: files.refusal }
   if (there !== null && there !== files.recipe) {
     return {
       ok: false,
       refusal:
         `there is already a recipe at ${path}, and it is not the one this page describes. Nothing was ` +
-        "written — edit that file, or delete it and press this again.",
-    };
+        'written — edit that file, or delete it and press this again.',
+    }
   }
 
   // The bytes, read back the way `lingtai add` reads them — the agent is named
   // in the machine file now, so nothing is asked what is signed in.
-  const planned = files;
+  const planned = files
   try {
     await resolveLocalRecipe(client.repo, {
       home,
@@ -370,20 +381,20 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
       signedIn: async () => [],
       read: async (p) =>
         p === path ? planned.recipe : p === machineFile ? (planned.machine ?? readIfThere(p)) : readIfThere(p),
-    });
+    })
   } catch (err) {
-    return { ok: false, refusal: (err as Error).message };
+    return { ok: false, refusal: (err as Error).message }
   }
 
   try {
-    await mkdir(dirname(path), { recursive: true });
-    if (there === null) await writeFile(path, files.recipe);
-    if (files.machine !== null) await writeFile(machineFile, files.machine);
+    await mkdir(dirname(path), { recursive: true })
+    if (there === null) await writeFile(path, files.recipe)
+    if (files.machine !== null) await writeFile(machineFile, files.machine)
   } catch (err) {
-    return { ok: false, refusal: `the recipe was not written: ${(err as Error).message}` };
+    return { ok: false, refusal: `the recipe was not written: ${(err as Error).message}` }
   }
 
-  return record({ store, stream, expected: existing.length, by: options.by, slug, base, path });
+  return record({ store, stream, expected: existing.length, by: options.by, slug, base, path })
 }
 
 /**
@@ -407,24 +418,24 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
  * to decide about.
  */
 async function record(at: {
-  store: EventStore;
-  stream: string;
-  expected: number;
-  by: string;
-  slug: string;
-  base: string;
-  path: string;
+  store: EventStore
+  stream: string
+  expected: number
+  by: string
+  slug: string
+  base: string
+  path: string
 }): Promise<Started> {
   try {
     await at.store.append(at.stream, at.expected, [
       {
-        type: "ProjectOnboardingStarted",
+        type: 'ProjectOnboardingStarted',
         actor: at.by,
-        data: parsePayload("ProjectOnboardingStarted", { slug: at.slug, base: at.base, by: at.by }),
+        data: parsePayload('ProjectOnboardingStarted', { slug: at.slug, base: at.base, by: at.by }),
       },
-    ]);
+    ])
   } catch (err) {
-    const named = `${at.slug}'s recipe is written — ${at.path} — and onboarding was not recorded: ${(err as Error).message}.`;
+    const named = `${at.slug}'s recipe is written — ${at.path} — and onboarding was not recorded: ${(err as Error).message}.`
     if (err instanceof ConcurrencyError) {
       return {
         ok: false,
@@ -433,12 +444,12 @@ async function record(at: {
           `this again will not finish it — it will say ${at.slug} is already registered, or already on ` +
           `its way in. The file is still there, and it is what ${at.slug}'s runs obey once it is ` +
           `registered: keep it only if you want this recipe, and otherwise edit it or delete it.`,
-      };
+      }
     }
     return {
       ok: false,
       refusal: `${named} Press this again; it picks up the recipe already at ${at.path} rather than writing another.`,
-    };
+    }
   }
-  return { ok: true, path: at.path };
+  return { ok: true, path: at.path }
 }

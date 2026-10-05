@@ -50,28 +50,22 @@
  *   lane runs git outside the sandbox. `$HOME` stays refused. Measured every way;
  *   see that function.
  */
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { StringDecoder } from "node:string_decoder";
-import type { TokenCounts, Usage } from "@lingtai/domain";
-import { mergeTokenCounts } from "@lingtai/domain";
-import { codexAuth } from "./auth.ts";
-import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from "./claude-code.ts";
-import { NO_RUN_LOG } from "./run-log.ts";
-import type {
-  AuthStatus,
-  Invocable,
-  RunOutcome,
-  RunRequest,
-  Runtime,
-  RuntimeCapabilities,
-  Spawned,
-} from "./runtime.ts";
+import { spawn } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
+
+import type { TokenCounts, Usage } from '@lingtai/domain'
+import { mergeTokenCounts } from '@lingtai/domain'
+
+import { codexAuth } from './auth.ts'
+import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
+import { NO_RUN_LOG } from './run-log.ts'
+import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
-  id: "codex",
+  id: 'codex',
   /**
    * The intersection, which is the contract — and the *reason* has changed
    * (`#313`).
@@ -85,7 +79,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * Widening the declaration is a different ticket and 0007's table would want a
    * superseding file rather than an edit.
    */
-  hooks: ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
+  hooks: ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'],
   /**
    * **Proved against the binary, not read off documentation** (`#313`).
    *
@@ -104,7 +98,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // Codex can rewrite a tool call, not merely refuse it.
   canRewriteToolCall: true,
   /** `-s workspace-write` is a real filesystem boundary. See the module header. */
-  providesTier: "sandboxed",
+  providesTier: 'sandboxed',
   /**
    * **`wall` only, and that is `#89` working rather than a regression.**
    *
@@ -140,8 +134,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * on this runtime is answered by `limitsRow` as `usd` carried and unapplied,
    * the same shape `turns` already is.
    */
-  enforces: ["wall"],
-};
+  enforces: ['wall'],
+}
 
 /**
  * Which filesystem boundary the run gets.
@@ -156,41 +150,41 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
  * makes this runtime `sandboxed` rather than `guarded` is that Lingtai does not
  * pass it.
  */
-export type CodexSandbox = "workspace-write" | "read-only";
+export type CodexSandbox = 'workspace-write' | 'read-only'
 
 export interface CodexOptions {
   /** The `codex` executable. Overridable so a test can use a stand-in. */
-  binary?: string;
+  binary?: string
   /** Defaults to `workspace-write`. See `CodexSandbox`. */
-  sandbox?: CodexSandbox;
+  sandbox?: CodexSandbox
   /** Extra arguments, for a project that needs one. Never used to widen the sandbox. */
-  extraArgs?: readonly string[];
+  extraArgs?: readonly string[]
 }
 
 /** One line of `codex exec --json`. Every field here was read off a real stream. */
 interface CodexEvent {
-  type?: string;
+  type?: string
   /** On `thread.started`: the session id, which nothing supplies. */
-  thread_id?: string;
+  thread_id?: string
   item?: {
-    id?: string;
+    id?: string
     /** `agent_message`, `reasoning`, `command_execution`, `error`, … */
-    type?: string;
+    type?: string
     /** `agent_message`, `reasoning`. */
-    text?: string;
+    text?: string
     /** `error`. */
-    message?: string;
+    message?: string
     /** `command_execution`. */
-    command?: string;
-  };
+    command?: string
+  }
   /** On `turn.completed`. Tokens, and no dollars. */
   usage?: {
-    input_tokens?: number;
-    cached_input_tokens?: number;
-    cache_write_input_tokens?: number;
-    output_tokens?: number;
-    reasoning_output_tokens?: number;
-  };
+    input_tokens?: number
+    cached_input_tokens?: number
+    cache_write_input_tokens?: number
+    output_tokens?: number
+    reasoning_output_tokens?: number
+  }
   /**
    * On `turn.failed` — **why the turn ended**, which is not an `item`.
    *
@@ -201,9 +195,9 @@ interface CodexEvent {
    * vocabulary beside `TurnCompletedEvent`, so this is the shape a quota wall
    * takes too.
    */
-  error?: { message?: string };
+  error?: { message?: string }
   /** On a top-level `{"type":"error"}`, which precedes `turn.failed`. */
-  message?: string;
+  message?: string
 }
 
 /**
@@ -216,7 +210,7 @@ interface CodexEvent {
  */
 export interface CodexReceipt {
   /** `thread.started`'s id, or `""` where the stream was cut before it. */
-  sessionId: string;
+  sessionId: string
   /**
    * Model responses, counted as `agent_message` items.
    *
@@ -225,9 +219,9 @@ export interface CodexReceipt {
    * that is what Codex's stream lets you count. It is evidence and never a
    * bound — see `enforces`.
    */
-  turns: number;
+  turns: number
   /** The last `agent_message`, which is the model's final message. */
-  text: string | null;
+  text: string | null
   /**
    * Whether a `turn.completed` arrived at all — *whether the turn finished*.
    *
@@ -238,7 +232,7 @@ export interface CodexReceipt {
    * `never-started` was our own hook refusing the prompt, which is not about the
    * account at all. `failed` is the gate now; see it and `codexClose`.
    */
-  completed: boolean;
+  completed: boolean
   /**
    * Why the **turn** ended, where the runtime said the turn failed — the
    * message off `turn.failed`, or off a top-level `{"type":"error"}` where that
@@ -255,7 +249,7 @@ export interface CodexReceipt {
    * every stream that simply stopped. Null is *no statement* and never *no
    * failure*.
    */
-  failed: string | null;
+  failed: string | null
   /**
    * Input plus output tokens off the last `turn.completed`.
    *
@@ -272,7 +266,7 @@ export interface CodexReceipt {
    * are computed from: a turn that reached a model billed input tokens, and zero
    * is the runtime answering for itself.
    */
-  billedTokens: number;
+  billedTokens: number
   /**
    * The five counts (0110 §3), accumulated across every `turn.completed` and
    * kept disjoint — never Codex's own overlapping pair.
@@ -293,7 +287,7 @@ export interface CodexReceipt {
    * stores it whole, which double-counts it if it turns out to overlap the
    * way `cached_input_tokens` does.
    */
-  tokens: TokenCounts;
+  tokens: TokenCounts
   /**
    * `error` **items**, in order — which are notices and not the failure.
    *
@@ -305,24 +299,24 @@ export interface CodexReceipt {
    * chain and was recorded as why the run failed — the quota sentence, the
    * stderr and the reset time all displaced by a notice about a flag.
    */
-  errors: readonly string[];
+  errors: readonly string[]
 }
 
 /** A receipt being written. `CodexReceipt` is the readable face of it. */
 interface Tally {
-  sessionId: string;
-  turns: number;
-  text: string | null;
-  completed: boolean;
-  failed: string | null;
-  billedTokens: number;
-  tokens: TokenCounts;
-  errors: string[];
+  sessionId: string
+  turns: number
+  text: string | null
+  completed: boolean
+  failed: string | null
+  billedTokens: number
+  tokens: TokenCounts
+  errors: string[]
 }
 
 function emptyTally(): Tally {
   return {
-    sessionId: "",
+    sessionId: '',
     turns: 0,
     text: null,
     completed: false,
@@ -330,7 +324,7 @@ function emptyTally(): Tally {
     billedTokens: 0,
     tokens: {},
     errors: [],
-  };
+  }
 }
 
 /**
@@ -350,36 +344,36 @@ function emptyTally(): Tally {
  * whole of `output_tokens` is still correctly billed at the output rate, so it
  * is kept rather than discarded — only `reasoning` stays absent.
  */
-function codexTokenCounts(usage: NonNullable<CodexEvent["usage"]>): TokenCounts {
-  const out: TokenCounts = {};
+function codexTokenCounts(usage: NonNullable<CodexEvent['usage']>): TokenCounts {
+  const out: TokenCounts = {}
 
   if (usage.input_tokens !== undefined && usage.cached_input_tokens !== undefined) {
-    const fresh = usage.input_tokens - usage.cached_input_tokens;
+    const fresh = usage.input_tokens - usage.cached_input_tokens
     if (fresh >= 0) {
-      out.fresh = fresh;
-      out.cacheRead = usage.cached_input_tokens;
+      out.fresh = fresh
+      out.cacheRead = usage.cached_input_tokens
     }
   } else if (usage.input_tokens !== undefined) {
-    out.fresh = usage.input_tokens;
+    out.fresh = usage.input_tokens
   } else if (usage.cached_input_tokens !== undefined) {
-    out.cacheRead = usage.cached_input_tokens;
+    out.cacheRead = usage.cached_input_tokens
   }
 
-  if (usage.cache_write_input_tokens !== undefined) out.cacheWrite = usage.cache_write_input_tokens;
+  if (usage.cache_write_input_tokens !== undefined) out.cacheWrite = usage.cache_write_input_tokens
 
   if (usage.output_tokens !== undefined && usage.reasoning_output_tokens !== undefined) {
-    const output = usage.output_tokens - usage.reasoning_output_tokens;
+    const output = usage.output_tokens - usage.reasoning_output_tokens
     if (output >= 0) {
-      out.output = output;
-      out.reasoning = usage.reasoning_output_tokens;
+      out.output = output
+      out.reasoning = usage.reasoning_output_tokens
     }
   } else if (usage.output_tokens !== undefined) {
-    out.output = usage.output_tokens;
+    out.output = usage.output_tokens
   } else if (usage.reasoning_output_tokens !== undefined) {
-    out.reasoning = usage.reasoning_output_tokens;
+    out.reasoning = usage.reasoning_output_tokens
   }
 
-  return out;
+  return out
 }
 
 /**
@@ -392,61 +386,61 @@ function codexTokenCounts(usage: NonNullable<CodexEvent["usage"]>): TokenCounts 
  * `doc/rate-card.md` reads as *unpriced* rather than a guess.
  */
 export function codexUsage(tokens: TokenCounts, model: string | undefined): Usage | undefined {
-  const hasTokens = Object.values(tokens).some((value) => value !== undefined);
-  if (!hasTokens) return undefined;
-  return [{ ...(model === undefined ? {} : { model }), tokens }];
+  const hasTokens = Object.values(tokens).some((value) => value !== undefined)
+  if (!hasTokens) return undefined
+  return [{ ...(model === undefined ? {} : { model }), tokens }]
 }
 
 /** One line, folded in. Everything the receipt knows is decided here. */
 function foldLine(receipt: Tally, line: string): void {
-  const t = line.trim();
-  if (!t.startsWith("{")) return;
-  let event: CodexEvent;
+  const t = line.trim()
+  if (!t.startsWith('{')) return
+  let event: CodexEvent
   try {
-    event = JSON.parse(t) as CodexEvent;
+    event = JSON.parse(t) as CodexEvent
   } catch {
-    return;
+    return
   }
 
-  if (event.type === "thread.started" && event.thread_id) receipt.sessionId = event.thread_id;
+  if (event.type === 'thread.started' && event.thread_id) receipt.sessionId = event.thread_id
 
-  if (event.type === "turn.completed") {
-    receipt.completed = true;
-    receipt.billedTokens = (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0);
+  if (event.type === 'turn.completed') {
+    receipt.completed = true
+    receipt.billedTokens = (event.usage?.input_tokens ?? 0) + (event.usage?.output_tokens ?? 0)
     // **Accumulated, not assigned** — unlike `billedTokens` above, which stays
     // exactly as it was (0110 §3's `Tally` carries both: a spend leg beside a
     // reach-a-model leg, never repurposing one for the other). Lingtai never
     // runs `exec resume`, so no stream this reads carries two turns today; a
     // multi-turn fixture proves the accumulation ahead of the day one does.
-    if (event.usage) receipt.tokens = mergeTokenCounts(receipt.tokens, codexTokenCounts(event.usage));
+    if (event.usage) receipt.tokens = mergeTokenCounts(receipt.tokens, codexTokenCounts(event.usage))
   }
 
   // **The turn ending in failure, which `turn.completed` never says.** The
   // runtime's own account of a quota wall, a refused model, a dropped stream —
   // and the only place it appears, since the exit code is 0 on some of them and
   // the `error` items are notices.
-  if (event.type === "turn.failed") {
-    receipt.failed = event.error?.message?.trim() || "the runtime said the turn failed and said nothing more";
+  if (event.type === 'turn.failed') {
+    receipt.failed = event.error?.message?.trim() || 'the runtime said the turn failed and said nothing more'
   }
   // A top-level `error` precedes `turn.failed` carrying the same message; taken
   // only where no `turn.failed` followed, so the turn-ending statement wins.
-  if (event.type === "error" && event.message?.trim() && receipt.failed === null) {
-    receipt.failed = event.message.trim();
+  if (event.type === 'error' && event.message?.trim() && receipt.failed === null) {
+    receipt.failed = event.message.trim()
   }
 
-  if (event.type === "item.completed" && event.item?.type === "agent_message") {
-    receipt.turns += 1;
-    if (event.item.text) receipt.text = event.item.text;
+  if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+    receipt.turns += 1
+    if (event.item.text) receipt.text = event.item.text
   }
-  if (event.type === "item.completed" && event.item?.type === "error" && event.item.message) {
-    receipt.errors.push(event.item.message);
+  if (event.type === 'item.completed' && event.item?.type === 'error' && event.item.message) {
+    receipt.errors.push(event.item.message)
   }
 }
 
 export function codexOutcome(lines: readonly string[]): CodexReceipt {
-  const receipt = emptyTally();
-  for (const line of lines) foldLine(receipt, line);
-  return receipt;
+  const receipt = emptyTally()
+  for (const line of lines) foldLine(receipt, line)
+  return receipt
 }
 
 /**
@@ -470,7 +464,7 @@ export function codexOutcome(lines: readonly string[]): CodexReceipt {
  */
 export interface CodexAccount {
   /** A chunk of stdout, at any boundary — inside a line, inside a character. */
-  chunk(text: string): void;
+  chunk(text: string): void
   /**
    * No more is coming.
    *
@@ -478,39 +472,39 @@ export interface CodexAccount {
    * fragment is a fragment, but at close it is the last thing the runtime said,
    * and a `turn.completed` without a trailing newline is a receipt.
    */
-  end(): void;
+  end(): void
   /** What the stream has said so far. */
-  readonly receipt: CodexReceipt;
+  readonly receipt: CodexReceipt
 }
 
 export function codexAccount(): CodexAccount {
-  const receipt = emptyTally();
-  let pending = "";
+  const receipt = emptyTally()
+  let pending = ''
   return {
     chunk(text: string) {
-      pending += text;
-      const lines = pending.split("\n");
-      pending = lines.pop() ?? "";
-      for (const line of lines) foldLine(receipt, line);
+      pending += text
+      const lines = pending.split('\n')
+      pending = lines.pop() ?? ''
+      for (const line of lines) foldLine(receipt, line)
     },
     end() {
-      if (pending === "") return;
-      foldLine(receipt, pending);
-      pending = "";
+      if (pending === '') return
+      foldLine(receipt, pending)
+      pending = ''
     },
     get receipt(): CodexReceipt {
-      return receipt;
+      return receipt
     },
-  };
+  }
 }
 
 /** What a closed process said besides its stream. */
 export interface CodexClosed {
-  exitCode: number | null;
+  exitCode: number | null
   /** All of stderr. */
-  stderr: string;
+  stderr: string
   /** The **end** of stdout, for quoting — never for accounting. */
-  stdoutTail: string;
+  stdoutTail: string
 }
 
 /**
@@ -552,17 +546,17 @@ export interface CodexClosed {
 export function codexClose(
   receipt: CodexReceipt,
   closed: CodexClosed,
-): { kind: "crash" | "never-started"; detail: string } | null {
-  const reachedAModel = receipt.billedTokens > 0;
-  if (receipt.completed && closed.exitCode === 0 && reachedAModel && receipt.turns > 0) return null;
+): { kind: 'crash' | 'never-started'; detail: string } | null {
+  const reachedAModel = receipt.billedTokens > 0
+  if (receipt.completed && closed.exitCode === 0 && reachedAModel && receipt.turns > 0) return null
 
   // The runtime saying its own turn ended in failure. A turn that *completed* is
   // not one that failed, however little it billed — that is the hook refusal, and
   // it is this diff's business rather than the account's.
-  const endedInFailure = receipt.failed !== null && !receipt.completed;
+  const endedInFailure = receipt.failed !== null && !receipt.completed
 
   return {
-    kind: endedInFailure && receipt.turns === 0 ? "never-started" : "crash",
+    kind: endedInFailure && receipt.turns === 0 ? 'never-started' : 'crash',
     /**
      * **The runtime's own account of the failure first, and the notices last.**
      *
@@ -581,10 +575,10 @@ export function codexClose(
       failedClosed(receipt) ||
       saidOnStderr(closed.stderr).slice(-500) ||
       receipt.text?.slice(0, 500) ||
-      (receipt.errors.length > 0 ? receipt.errors.join(" · ").slice(0, 500) : "") ||
+      (receipt.errors.length > 0 ? receipt.errors.join(' · ').slice(0, 500) : '') ||
       closed.stdoutTail.trim().slice(-500) ||
       `exited ${closed.exitCode}`,
-  };
+  }
 }
 
 /**
@@ -605,11 +599,11 @@ export function codexClose(
  */
 function failedClosed(receipt: CodexReceipt): string {
   return receipt.completed && receipt.turns === 0 && receipt.billedTokens === 0
-    ? "the turn completed having reached no model — 0 tokens billed and no message produced, which " +
-        "is a hook refusing the prompt: `lingtai-hook` exited non-zero at UserPromptSubmit, or the " +
-        "conductor it reports to was gone and it failed closed rather than let the run produce " +
-        "nothing and look like it produced everything"
-    : "";
+    ? 'the turn completed having reached no model — 0 tokens billed and no message produced, which ' +
+        'is a hook refusing the prompt: `lingtai-hook` exited non-zero at UserPromptSubmit, or the ' +
+        'conductor it reports to was gone and it failed closed rather than let the run produce ' +
+        'nothing and look like it produced everything'
+    : ''
 }
 
 /**
@@ -632,10 +626,10 @@ function failedClosed(receipt: CodexReceipt): string {
  */
 function saidOnStderr(stderr: string): string {
   return stderr
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("Reading additional input from stdin"))
-    .join("\n")
-    .trim();
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('Reading additional input from stdin'))
+    .join('\n')
+    .trim()
 }
 
 /**
@@ -647,47 +641,44 @@ function saidOnStderr(stderr: string): string {
  * tool result, and tool results are the volume in a stream and the least the
  * agent's own.
  */
-export function codexTrace(
-  line: string,
-  options: { tools?: boolean } = {},
-): readonly (readonly [string, string])[] {
-  const t = line.trim();
-  if (!t) return [];
-  if (!t.startsWith("{")) return [["stdout", clip(t)]];
+export function codexTrace(line: string, options: { tools?: boolean } = {}): readonly (readonly [string, string])[] {
+  const t = line.trim()
+  if (!t) return []
+  if (!t.startsWith('{')) return [['stdout', clip(t)]]
 
-  let event: CodexEvent;
+  let event: CodexEvent
   try {
-    event = JSON.parse(t) as CodexEvent;
+    event = JSON.parse(t) as CodexEvent
   } catch {
-    return [["stdout", clip(t)]];
+    return [['stdout', clip(t)]]
   }
 
   // **Why the turn ended, which is not an `item` and would otherwise reach no
   // reader at all.** A quota wall's whole account of itself is here; the log is
   // where somebody watching a run finds out why it stopped.
-  if (event.type === "turn.failed" && event.error?.message?.trim()) {
-    return [["codex", clip(event.error.message)]];
+  if (event.type === 'turn.failed' && event.error?.message?.trim()) {
+    return [['codex', clip(event.error.message)]]
   }
-  if (event.type === "error" && event.message?.trim()) return [["codex", clip(event.message)]];
+  if (event.type === 'error' && event.message?.trim()) return [['codex', clip(event.message)]]
 
-  const item = event.item;
-  if (item === undefined) return [];
+  const item = event.item
+  if (item === undefined) return []
 
-  if (event.type === "item.started") {
-    return options.tools && item.type === "command_execution" && item.command
-      ? [["Bash", clip(item.command).replace(/\s*\r?\n\s*/g, " ")]]
-      : [];
+  if (event.type === 'item.started') {
+    return options.tools && item.type === 'command_execution' && item.command
+      ? [['Bash', clip(item.command).replace(/\s*\r?\n\s*/g, ' ')]]
+      : []
   }
-  if (event.type !== "item.completed") return [];
+  if (event.type !== 'item.completed') return []
 
-  if (item.type === "agent_message" && item.text?.trim()) return [["agent", clip(item.text)]];
+  if (item.type === 'agent_message' && item.text?.trim()) return [['agent', clip(item.text)]]
   // Its reasoning, which is often the only account of why it did the thing the
   // tool trace shows it doing.
-  if (item.type === "reasoning" && item.text?.trim()) return [["think", clip(item.text)]];
+  if (item.type === 'reasoning' && item.text?.trim()) return [['think', clip(item.text)]]
   // Codex talking about the invocation rather than the work — the bypass notice,
   // a refused flag. Kept, because it is the only place it would have survived.
-  if (item.type === "error" && item.message?.trim()) return [["codex", clip(item.message)]];
-  return [];
+  if (item.type === 'error' && item.message?.trim()) return [['codex', clip(item.message)]]
+  return []
 }
 
 /**
@@ -734,36 +725,36 @@ export function codexTrace(
  * which is the right answer rather than a special case.
  */
 export function codexHookArgs(settings: unknown): string[] {
-  const hooks = (settings as { hooks?: Record<string, unknown> } | null)?.hooks;
-  if (!hooks || typeof hooks !== "object") return [];
+  const hooks = (settings as { hooks?: Record<string, unknown> } | null)?.hooks
+  if (!hooks || typeof hooks !== 'object') return []
 
-  const args: string[] = [];
+  const args: string[] = []
   for (const event of CODEX_CAPABILITIES.hooks) {
-    const groups = (hooks as Record<string, unknown>)[event];
-    if (!Array.isArray(groups)) continue;
+    const groups = (hooks as Record<string, unknown>)[event]
+    if (!Array.isArray(groups)) continue
     const rendered = groups
       .map((group) => {
-        const g = group as { matcher?: unknown; hooks?: unknown };
-        const handlers = Array.isArray(g.hooks) ? g.hooks : [];
+        const g = group as { matcher?: unknown; hooks?: unknown }
+        const handlers = Array.isArray(g.hooks) ? g.hooks : []
         const inner = handlers
           .map((handler) => {
-            const h = handler as { type?: unknown; command?: unknown };
-            return typeof h.command === "string"
-              ? `{type=${toml(String(h.type ?? "command"))},command=${toml(h.command)}}`
-              : null;
+            const h = handler as { type?: unknown; command?: unknown }
+            return typeof h.command === 'string'
+              ? `{type=${toml(String(h.type ?? 'command'))},command=${toml(h.command)}}`
+              : null
           })
-          .filter((one): one is string => one !== null);
+          .filter((one): one is string => one !== null)
         return inner.length === 0
           ? null
-          : `{matcher=${toml(typeof g.matcher === "string" ? g.matcher : "*")},hooks=[${inner.join(",")}]}`;
+          : `{matcher=${toml(typeof g.matcher === 'string' ? g.matcher : '*')},hooks=[${inner.join(',')}]}`
       })
-      .filter((one): one is string => one !== null);
-    if (rendered.length > 0) args.push("-c", `hooks.${event}=[${rendered.join(",")}]`);
+      .filter((one): one is string => one !== null)
+    if (rendered.length > 0) args.push('-c', `hooks.${event}=[${rendered.join(',')}]`)
   }
 
   // Only where something is actually wired. Passing it with no hooks would be a
   // dangerous-sounding flag that buys nothing, which is how one stops being read.
-  return args.length > 0 ? [...args, "--dangerously-bypass-hook-trust"] : [];
+  return args.length > 0 ? [...args, '--dangerously-bypass-hook-trust'] : []
 }
 
 /**
@@ -774,7 +765,7 @@ export function codexHookArgs(settings: unknown): string[] {
  * takes an argv — so this is TOML's escaping and not a shell's.
  */
 function toml(value: string): string {
-  return JSON.stringify(value);
+  return JSON.stringify(value)
 }
 
 /**
@@ -793,9 +784,9 @@ function toml(value: string): string {
  */
 function hookWiringAt(settingsPath: string): unknown | null {
   try {
-    return JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
+    return JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -858,52 +849,52 @@ function hookWiringAt(settingsPath: string): unknown | null {
  * that is not a worktree is not a reason to refuse to run.
  */
 export function gitWritableRoots(cwd: string): readonly string[] {
-  let gitDir: string;
+  let gitDir: string
   try {
-    const dotGit = join(cwd, ".git");
+    const dotGit = join(cwd, '.git')
     // A directory means an ordinary checkout: it is under `--cd` already.
-    if (statSync(dotGit).isDirectory()) return [];
-    const said = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"));
-    if (said === null) return [];
-    gitDir = resolve(cwd, said[1]!.trim());
+    if (statSync(dotGit).isDirectory()) return []
+    const said = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, 'utf8'))
+    if (said === null) return []
+    gitDir = resolve(cwd, said[1]!.trim())
   } catch {
-    return [];
+    return []
   }
 
   // The worktree's own git directory: its index — `index.lock` is what the
   // refusal named — its `HEAD`, its `COMMIT_EDITMSG` and its own reflog.
-  const roots = [gitDir];
-  let common: string;
+  const roots = [gitDir]
+  let common: string
   try {
-    const said = readFileSync(join(gitDir, "commondir"), "utf8").trim();
-    if (said === "") return roots;
-    common = resolve(gitDir, said);
+    const said = readFileSync(join(gitDir, 'commondir'), 'utf8').trim()
+    if (said === '') return roots
+    common = resolve(gitDir, said)
   } catch {
     // No `commondir`: this git directory is the whole of it.
-    return roots;
+    return roots
   }
 
   // Where a commit's objects, its branch and its reflog land, and nothing else in
   // the repository it borrows them from. See the note above on each of the three.
   for (const store of GIT_STORES) {
-    const path = join(common, store);
+    const path = join(common, store)
     try {
       // Present already, except `logs` on a mirror nothing has committed to yet.
-      mkdirSync(path, { recursive: true });
+      mkdirSync(path, { recursive: true })
     } catch {
       // Unwritable, or not a directory. Naming it would be a root the sandbox
       // cannot take, so it is left out and git says what it could not write.
     }
-    if (existsSync(path)) roots.push(path);
+    if (existsSync(path)) roots.push(path)
   }
-  return roots;
+  return roots
 }
 
 /**
  * The three directories of a repository a commit made in a linked worktree
  * writes to — measured, by taking every other one away. See `gitWritableRoots`.
  */
-const GIT_STORES = ["objects", "refs", "logs"] as const;
+const GIT_STORES = ['objects', 'refs', 'logs'] as const
 
 /**
  * argv, in one place — `run` and `invocation` call this with the only thing that
@@ -919,13 +910,13 @@ export function codexArgv(
   request: Invocable,
   prompt: string,
   options: {
-    settings: unknown;
-    sandbox: CodexSandbox;
+    settings: unknown
+    sandbox: CodexSandbox
     /** See `gitWritableRoots`. Empty for a reader, which commits nothing. */
-    writable?: readonly string[];
-    extraArgs?: readonly string[];
+    writable?: readonly string[]
+    extraArgs?: readonly string[]
     /** See `outputSchemaPathFor`. Absent on every run but the cold reviewer's. */
-    outputSchemaPath?: string;
+    outputSchemaPath?: string
   },
 ): string[] {
   return argsFor(
@@ -936,7 +927,7 @@ export function codexArgv(
     options.writable ?? [],
     options.extraArgs ?? [],
     options.outputSchemaPath,
-  );
+  )
 }
 
 function argsFor(
@@ -949,39 +940,39 @@ function argsFor(
   outputSchemaPath: string | undefined,
 ): string[] {
   return [
-    "exec",
+    'exec',
     // Parsed, not scraped, and arriving as it happens.
-    "--json",
+    '--json',
     // The working root, and therefore the sandbox's writable root: the blast
     // radius stated to the runtime rather than inherited from `spawn`'s cwd.
-    "--cd",
+    '--cd',
     request.cwd,
-    "--sandbox",
+    '--sandbox',
     sandbox,
     // Nothing is watching to approve anything. Without this a command needing
     // escalation waits for an answer that never comes and the run burns to the
     // wall clock — the Codex shape of `claude-code.ts`'s `--permission-mode`
     // paragraph. `never` is a member of Codex's own closed set: `untrusted`,
     // `on-failure`, `on-request`, `granular`, `never`.
-    "-c",
-    "approval_policy=never",
+    '-c',
+    'approval_policy=never',
     // **The git directory, or the agent cannot commit what it wrote.** See
     // `gitWritableRoots` — this is the one widening of the sandbox Lingtai asks
     // for, and it is asked for by path rather than by turning the sandbox down.
-    ...writable.flatMap((dir) => ["--add-dir", dir]),
+    ...writable.flatMap((dir) => ['--add-dir', dir]),
     ...hookArgs,
-    ...(request.model ? ["--model", request.model] : []),
+    ...(request.model ? ['--model', request.model] : []),
     // The file `run()` writes just before this is built — `codexArgv` only
     // names it (`#369`).
-    ...(outputSchemaPath ? ["--output-schema", outputSchemaPath] : []),
+    ...(outputSchemaPath ? ['--output-schema', outputSchemaPath] : []),
     ...extraArgs,
     // **Behind `--`, and it is load-bearing.** `codex exec` takes subcommands —
     // `resume`, `fork`, `review` — in the same position as the prompt, and
     // measured at 0.155.1 a bare `review` runs the subcommand while `-- review`
     // is the prompt. A prompt is a document somebody wrote.
-    "--",
+    '--',
     prompt,
-  ];
+  ]
 }
 
 /**
@@ -994,15 +985,15 @@ function argsFor(
  * `run()` spawns name the same file without either having to ask the other.
  */
 function outputSchemaPathFor(runId: string): string {
-  return join(tmpdir(), `lingtai-output-schema-${runId}.json`);
+  return join(tmpdir(), `lingtai-output-schema-${runId}.json`)
 }
 
 /** `JSON.parse`, where failing to parse is `undefined` rather than a throw. */
 function tryParseJSON(text: string): unknown {
   try {
-    return JSON.parse(text);
+    return JSON.parse(text)
   } catch {
-    return undefined;
+    return undefined
   }
 }
 
@@ -1014,20 +1005,20 @@ function tryParseJSON(text: string): unknown {
  * is for.
  */
 function writableFor(sandbox: CodexSandbox, cwd: string): readonly string[] {
-  return sandbox === "workspace-write" ? gitWritableRoots(cwd) : [];
+  return sandbox === 'workspace-write' ? gitWritableRoots(cwd) : []
 }
 
 export function createCodexRuntime(options: CodexOptions = {}): Runtime {
-  const binary = options.binary ?? "codex";
-  const sandbox: CodexSandbox = options.sandbox ?? "workspace-write";
-  const extraArgs = options.extraArgs ?? [];
+  const binary = options.binary ?? 'codex'
+  const sandbox: CodexSandbox = options.sandbox ?? 'workspace-write'
+  const extraArgs = options.extraArgs ?? []
 
   return {
     capabilities: CODEX_CAPABILITIES,
 
     /** `codex login status` — `auth.ts`. */
     checkAuth(env: Record<string, string>): Promise<AuthStatus> {
-      return codexAuth(binary, env);
+      return codexAuth(binary, env)
     },
 
     /** The same list `run` spawns, with the prompt standing in. */
@@ -1043,16 +1034,16 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           extraArgs,
           outputSchemaPath: request.outputSchema ? outputSchemaPathFor(request.runId) : undefined,
         }),
-      };
+      }
     },
 
     async run(request: RunRequest): Promise<RunOutcome> {
-      const started = Date.now();
+      const started = Date.now()
       // A run with no log writes to the one that is not there, so there is no
       // `?.` on the hot path (0034 §1).
-      const trace = request.log ?? NO_RUN_LOG;
+      const trace = request.log ?? NO_RUN_LOG
 
-      const wiring = hookWiringAt(request.settingsPath);
+      const wiring = hookWiringAt(request.settingsPath)
       if (wiring === null) {
         // Before the spawn, and an event rather than a throw. A Codex run with
         // no hook produces no events and looks exactly like one that produced
@@ -1060,25 +1051,25 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         // layer down.
         const detail =
           `the hook wiring at ${request.settingsPath} could not be read, so nothing would have ` +
-          "recorded this run's tool calls or stopped it when the conductor went away";
-        trace.note("codex", detail);
+          "recorded this run's tool calls or stopped it when the conductor went away"
+        trace.note('codex', detail)
         return {
           exitCode: null,
           turns: 0,
           durationMs: Date.now() - started,
           costUsd: null,
           text: null,
-          failure: { kind: "crash", detail },
-          sessionId: "",
-        };
+          failure: { kind: 'crash', detail },
+          sessionId: '',
+        }
       }
 
       // Written just ahead of the argv that names it, and removed in `finish`
       // on every ending (`#369`). An agent that could overwrite its own answer
       // schema has no schema, so this lives in `os.tmpdir()` rather than the
       // worktree — `outputSchemaPathFor`'s reason.
-      const outputSchemaPath = request.outputSchema ? outputSchemaPathFor(request.runId) : undefined;
-      if (outputSchemaPath) writeFileSync(outputSchemaPath, JSON.stringify(request.outputSchema));
+      const outputSchemaPath = request.outputSchema ? outputSchemaPathFor(request.runId) : undefined
+      if (outputSchemaPath) writeFileSync(outputSchemaPath, JSON.stringify(request.outputSchema))
 
       const args = codexArgv(request, request.prompt, {
         settings: wiring,
@@ -1086,7 +1077,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         writable: writableFor(sandbox, request.cwd),
         outputSchemaPath,
         extraArgs,
-      });
+      })
 
       return new Promise<RunOutcome>((resolve) => {
         const child = spawn(binary, args, {
@@ -1099,11 +1090,11 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           // `<stdin>` block"* — and an inherited stdin makes it sit on
           // *"Reading additional input from stdin…"* until the wall clock. Node's
           // `"ignore"` is `/dev/null`, which is an immediate EOF.
-          stdio: ["ignore", "pipe", "pipe"],
+          stdio: ['ignore', 'pipe', 'pipe'],
           // Its own process group (0030 §3), so the Ctrl+C that begins a
           // shutdown does not kill the agent the drain promised to finish.
           detached: true,
-        });
+        })
 
         /**
          * The receipt, **folded as the bytes arrive** — see `codexAccount`.
@@ -1112,7 +1103,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
          * window would drop `thread.started` and most of the turns on any run
          * long enough to matter.
          */
-        const account = codexAccount();
+        const account = codexAccount()
         /**
          * The **end** of stdout, kept only to quote in a failure's `detail`.
          *
@@ -1121,40 +1112,40 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
          * `claude-code.ts`'s and is true there, where `parseResult` looks for one
          * final `result` object.
          */
-        let stdoutTail = "";
-        let stderr = "";
-        let settled = false;
+        let stdoutTail = ''
+        let stderr = ''
+        let settled = false
 
         // Whole lines only: a chunk boundary falls anywhere, and half a JSON
         // object traced as prose would be both unreadable and a lie.
         const stream = lineReader((line) => {
           for (const [label, detail] of codexTrace(line, { tools: request.traceTools === true })) {
-            trace.note(label, detail);
+            trace.note(label, detail)
           }
-        });
-        const errors = lineReader((line) => trace.note("stderr", line));
+        })
+        const errors = lineReader((line) => trace.note('stderr', line))
 
         // A chunk boundary can also fall inside a character.
-        const outText = new StringDecoder("utf8");
-        const errText = new StringDecoder("utf8");
+        const outText = new StringDecoder('utf8')
+        const errText = new StringDecoder('utf8')
 
-        child.stdout.on("data", (c: Buffer) => {
-          const text = outText.write(c);
-          account.chunk(text);
-          stdoutTail = (stdoutTail + text).slice(-RECEIPT_TAIL_CHARS);
-          stream(text);
-        });
-        child.stderr.on("data", (c: Buffer) => {
-          const text = errText.write(c);
-          stderr += text;
-          errors(text);
-        });
+        child.stdout.on('data', (c: Buffer) => {
+          const text = outText.write(c)
+          account.chunk(text)
+          stdoutTail = (stdoutTail + text).slice(-RECEIPT_TAIL_CHARS)
+          stream(text)
+        })
+        child.stderr.on('data', (c: Buffer) => {
+          const text = errText.write(c)
+          stderr += text
+          errors(text)
+        })
 
         const finish = (outcome: RunOutcome) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(wall);
-          request.signal?.removeEventListener("abort", onAbort);
+          if (settled) return
+          settled = true
+          clearTimeout(wall)
+          request.signal?.removeEventListener('abort', onAbort)
           // On every ending, not only a clean close (`#369`): a kill or a
           // spawn error leaves the file written just as surely as a receipt
           // does, and an agent that could read its own schema past the run
@@ -1162,19 +1153,19 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           // avoid.
           if (outputSchemaPath) {
             try {
-              unlinkSync(outputSchemaPath);
+              unlinkSync(outputSchemaPath)
             } catch {
               // Already gone, or never written because the spawn itself never
               // started — either way there is nothing left to clean up.
             }
           }
-          resolve(outcome);
-        };
+          resolve(outcome)
+        }
 
-        const kill = (kind: "timeout" | "aborted", detail: string) => {
-          child.kill("SIGTERM");
-          const hard = setTimeout(() => child.kill("SIGKILL"), 5_000);
-          hard.unref?.();
+        const kill = (kind: 'timeout' | 'aborted', detail: string) => {
+          child.kill('SIGTERM')
+          const hard = setTimeout(() => child.kill('SIGKILL'), 5_000)
+          hard.unref?.()
           finish({
             exitCode: null,
             // **What the stream counted, not zero.** A run stopped at the wall
@@ -1192,18 +1183,18 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             failure: { kind, detail },
             sessionId: account.receipt.sessionId,
             usage: codexUsage(account.receipt.tokens, request.model),
-          });
-        };
+          })
+        }
 
         // Ours, and the only one of the recipe's two bounds anything applies.
         const wall = setTimeout(
-          () => kill("timeout", `no result within ${request.limits.wallMs}ms`),
+          () => kill('timeout', `no result within ${request.limits.wallMs}ms`),
           request.limits.wallMs,
-        );
-        const onAbort = () => kill("aborted", "the conductor aborted the run");
-        request.signal?.addEventListener("abort", onAbort, { once: true });
+        )
+        const onAbort = () => kill('aborted', 'the conductor aborted the run')
+        request.signal?.addEventListener('abort', onAbort, { once: true })
 
-        child.on("error", (err) =>
+        child.on('error', (err) =>
           finish({
             exitCode: null,
             turns: 0,
@@ -1212,26 +1203,26 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             text: null,
             // Includes "codex is not installed", which must be an event and not
             // a stack trace nobody sees.
-            failure: { kind: "crash", detail: err.message },
-            sessionId: "",
+            failure: { kind: 'crash', detail: err.message },
+            sessionId: '',
           }),
-        );
+        )
 
-        child.on("close", (code) => {
+        child.on('close', (code) => {
           // The last line may have arrived without its newline, and at close
           // that is the runtime's final word rather than a fragment.
-          account.end();
-          const receipt = account.receipt;
+          account.end()
+          const receipt = account.receipt
           // Codex reports no duration, so the wall clock is the answer rather
           // than a field read off a receipt.
-          const durationMs = Date.now() - started;
+          const durationMs = Date.now() - started
 
           trace.note(
-            "receipt",
+            'receipt',
             receipt.completed
               ? `${receipt.turns} turns · ${receipt.billedTokens} tokens · cost unrecorded · exit ${code}`
               : `${receipt.turns} turns · no turn.completed · exit ${code}`,
-          );
+          )
 
           // One decision, and a pure one — `codexClose`. `out-of-turns` is not
           // among its answers and that is correct: nothing bounds turns, so no
@@ -1240,15 +1231,14 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             exitCode: code,
             stderr,
             stdoutTail,
-          });
+          })
 
           // Codex prints no `structured_output` of its own: under a schema the
           // final `agent_message` *is* the constrained JSON, so this is where it
           // is read back (`#369`). Absent where no schema was sent, and absent
           // where one was and the text would not parse — the same unreadable
           // path `createAgentAction` already has for `outcome.text`.
-          const structured =
-            outputSchemaPath && receipt.text !== null ? tryParseJSON(receipt.text) : undefined;
+          const structured = outputSchemaPath && receipt.text !== null ? tryParseJSON(receipt.text) : undefined
 
           finish({
             exitCode: code,
@@ -1261,9 +1251,9 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             sessionId: receipt.sessionId,
             usage: codexUsage(receipt.tokens, request.model),
             ...(structured !== undefined ? { structured } : {}),
-          });
-        });
-      });
+          })
+        })
+      })
     },
-  };
+  }
 }

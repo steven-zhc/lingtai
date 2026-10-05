@@ -19,16 +19,18 @@
  * recipe that will not parse all render as *no prompt*, and only the reason
  * tells them apart (#76).
  */
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { repoRoot } from "@lingtai/env";
-import { buildCommands, nextPrompt, renderPrompt } from "@lingtai/conductor/prompt";
-import { githubClientFor, projectFilter } from "@lingtai/conductor/filter";
-import { armsOnOrigin } from "@lingtai/conductor/arms";
-import { agentBranch } from "@lingtai/conductor/branches";
-import { loadProject } from "@lingtai/conductor/projects";
-import type { Envelope } from "@lingtai/domain";
-import type { TicketView } from "./task.ts";
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+import { armsOnOrigin } from '@lingtai/conductor/arms'
+import { agentBranch } from '@lingtai/conductor/branches'
+import { githubClientFor, projectFilter } from '@lingtai/conductor/filter'
+import { loadProject } from '@lingtai/conductor/projects'
+import { buildCommands, nextPrompt, renderPrompt } from '@lingtai/conductor/prompt'
+import type { Envelope } from '@lingtai/domain'
+import { repoRoot } from '@lingtai/env'
+
+import type { TicketView } from './task.ts'
 
 /**
  * Lines added and removed against what Lingtai composed.
@@ -40,19 +42,15 @@ import type { TicketView } from "./task.ts";
  * sentence did to it*, and the document itself says what it says.
  */
 export function lineDelta(before: string, after: string): { added: number; removed: number } {
-  const a = before.split("\n");
-  const b = after.split("\n");
-  let head = 0;
-  while (head < a.length && head < b.length && a[head] === b[head]) head += 1;
-  let tail = 0;
-  while (
-    tail < a.length - head &&
-    tail < b.length - head &&
-    a[a.length - 1 - tail] === b[b.length - 1 - tail]
-  ) {
-    tail += 1;
+  const a = before.split('\n')
+  const b = after.split('\n')
+  let head = 0
+  while (head < a.length && head < b.length && a[head] === b[head]) head += 1
+  let tail = 0
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) {
+    tail += 1
   }
-  return { removed: a.length - head - tail, added: b.length - head - tail };
+  return { removed: a.length - head - tail, added: b.length - head - tail }
 }
 
 /** The box above the buttons: what will be sent, and the one part a person owns. */
@@ -75,36 +73,36 @@ export interface OutgoingView {
    * looking at; until it is, a reader of a project with a `design:` sees a
    * shorter prompt than the one that will be sent and nothing says so.
    */
-  text: string;
+  text: string
   /** `ticket@1924+failure@1c5708ba+human@a91f2e`. Names the edit, or does not. */
-  version: string;
+  version: string
   /**
    * The version with no edit in it — what Lingtai composed on its own.
    *
    * Sent back with an edit as `PromptEdited.basedOn`, so the log records what
    * the person was looking at when they typed rather than only what they typed.
    */
-  basedOn: string;
+  basedOn: string
   /** 1-based. The box says `attempt 3 only`, because that is how long it lasts. */
-  attempt: number;
+  attempt: number
   /** The sentence standing on the item, and null when nobody has added one. */
-  edit: { text: string; by: string } | null;
+  edit: { text: string; by: string } | null
   /** `+4 −0` against what Lingtai composed. Both zero when there is no edit. */
-  delta: { added: number; removed: number };
+  delta: { added: number; removed: number }
   /** Why there is no prompt to show, when there is none. */
-  problem: string | null;
+  problem: string | null
 }
 
 function refused(detail: string): OutgoingView {
   return {
-    text: "",
-    version: "",
-    basedOn: "",
+    text: '',
+    version: '',
+    basedOn: '',
     attempt: 0,
     edit: null,
     delta: { added: 0, removed: 0 },
     problem: detail,
-  };
+  }
 }
 
 /**
@@ -120,37 +118,35 @@ function refused(detail: string): OutgoingView {
  * nothing (`nextPrompt`).
  */
 export async function outgoingFor(input: {
-  own: readonly Envelope[];
-  streams: readonly (readonly Envelope[])[];
-  ticket: TicketView | null;
+  own: readonly Envelope[]
+  streams: readonly (readonly Envelope[])[]
+  ticket: TicketView | null
 }): Promise<OutgoingView> {
-  const { ticket } = input;
-  if (!ticket) return refused("this id is not a work item, so there is no ticket to fill in");
+  const { ticket } = input
+  if (!ticket) return refused('this id is not a work item, so there is no ticket to fill in')
   if (ticket.body === null) {
     // The body is most of the document. Composing without it would show a
     // prompt shorter than the one that runs, which is the specific lie this
     // page exists to stop telling.
-    return refused(
-      ticket.problem ?? "the issue body could not be read, so the prompt cannot be composed",
-    );
+    return refused(ticket.problem ?? 'the issue body could not be read, so the prompt cannot be composed')
   }
 
-  const path = resolve(repoRoot(), "prompts/ticket.md");
-  let template: string;
+  const path = resolve(repoRoot(), 'prompts/ticket.md')
+  let template: string
   try {
-    template = await readFile(path, "utf8");
+    template = await readFile(path, 'utf8')
   } catch {
-    return refused(`no prompt template at ${path}`);
+    return refused(`no prompt template at ${path}`)
   }
 
-  const state = await loadProject(ticket.project).catch(() => null);
-  if (!state) return refused(`${ticket.project} is not a registered project`);
+  const state = await loadProject(ticket.project).catch(() => null)
+  if (!state) return refused(`${ticket.project} is not a registered project`)
   // Never throws, and its `problem` is already one line. The recipe is here for
   // two things, not one: `runtime.budget` — how much of the earlier attempts
   // this prompt quotes (0029) — and `steps`, to name the commands `{{checks}}`
   // renders (`#319`). Guessing at either would misstate the document.
-  const filter = await projectFilter(state);
-  if (!filter.ok) return refused(`the recipe could not be read: ${filter.problem}`);
+  const filter = await projectFilter(state)
+  if (!filter.ok) return refused(`the recipe could not be read: ${filter.problem}`)
 
   // What `conduct.ts` asks, asked the same way (#315): only where there was an
   // earlier attempt, so a first attempt's preview makes no request. A client
@@ -161,7 +157,7 @@ export async function outgoingFor(input: {
       ? null
       : await githubClientFor(state)
           .then((client) => armsOnOrigin(client, agentBranch(ticket.ref)))
-          .catch(() => null);
+          .catch(() => null)
 
   const next = nextPrompt({
     // The same version `conduct.ts` and `lingtai run` pass, computed the same
@@ -171,11 +167,11 @@ export async function outgoingFor(input: {
     item: input.own,
     lastRun: input.streams.length === 0 ? null : (input.streams.at(-1) ?? []),
     arms,
-  });
+  })
 
-  const checks = buildCommands(filter.recipe.steps);
-  const filled = { number: Number(ticket.ref), title: ticket.title ?? "", body: ticket.body };
-  const text = renderPrompt(template, filled, checks, next.failure);
+  const checks = buildCommands(filter.recipe.steps)
+  const filled = { number: Number(ticket.ref), title: ticket.title ?? '', body: ticket.body }
+  const text = renderPrompt(template, filled, checks, next.failure)
 
   return {
     text,
@@ -188,5 +184,5 @@ export async function outgoingFor(input: {
         ? { added: 0, removed: 0 }
         : lineDelta(renderPrompt(template, filled, checks, next.composed.failure), text),
     problem: null,
-  };
+  }
 }

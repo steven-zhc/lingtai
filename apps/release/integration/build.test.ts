@@ -1,13 +1,24 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { platformName } from "../../cli/src/version.ts";
-import { buildBinary, canBuildSea } from "../src/binary.ts";
-import { buildRelease, layout, nativeFiles } from "../src/build.ts";
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { platformName } from '../../cli/src/version.ts'
+import { buildBinary, canBuildSea } from '../src/binary.ts'
+import { buildRelease, layout, nativeFiles } from '../src/build.ts'
 
 /**
  * `pnpm build`, built and then run (#183).
@@ -30,64 +41,64 @@ import { buildRelease, layout, nativeFiles } from "../src/build.ts";
  * installed copy is the one that has to serve the board, after the shim has
  * moved forward and back.
  */
-const work = mkdtempSync(join(tmpdir(), "lingtai-release-"));
-const first = join(work, "first");
-const second = join(work, "second");
-const boards: ChildProcess[] = [];
-const sea = canBuildSea();
+const work = mkdtempSync(join(tmpdir(), 'lingtai-release-'))
+const first = join(work, 'first')
+const second = join(work, 'second')
+const boards: ChildProcess[] = []
+const sea = canBuildSea()
 
 beforeAll(async () => {
   // The URL is in `.env.local` beside the build and nowhere else, as it is in a
   // checkout that ran `pnpm build`: the bundle — and the binary — have to find
   // the file themselves. Refused at once: the setup page renders without the
   // log, and nothing here may reach the operator's or the test database.
-  writeFileSync(join(work, ".env.local"), "LINGTAI_DATABASE_URL=postgres://127.0.0.1:1/none\n");
-  await buildRelease({ out: first });
-  await buildRelease({ out: second });
-});
+  writeFileSync(join(work, '.env.local'), 'LINGTAI_DATABASE_URL=postgres://127.0.0.1:1/none\n')
+  await buildRelease({ out: first })
+  await buildRelease({ out: second })
+})
 
 afterAll(() => {
-  for (const board of boards) board.kill();
-  rmSync(work, { recursive: true, force: true });
-});
+  for (const board of boards) board.kill()
+  rmSync(work, { recursive: true, force: true })
+})
 
-describe("pnpm build", () => {
-  it("writes the CLI as one CommonJS file beside the board, and a package that is not private", () => {
-    expect(readdirSync(first).sort()).toEqual(["board", "lingtai.cjs", "package.json"]);
-    expect(existsSync(join(first, "board", "apps", "board", "server.js"))).toBe(true);
+describe('pnpm build', () => {
+  it('writes the CLI as one CommonJS file beside the board, and a package that is not private', () => {
+    expect(readdirSync(first).sort()).toEqual(['board', 'lingtai.cjs', 'package.json'])
+    expect(existsSync(join(first, 'board', 'apps', 'board', 'server.js'))).toBe(true)
 
-    const pkg = JSON.parse(readFileSync(join(first, "package.json"), "utf8"));
-    expect(pkg.private).toBeUndefined();
-    expect(pkg.bin).toEqual({ lingtai: "lingtai.cjs" });
-  });
+    const pkg = JSON.parse(readFileSync(join(first, 'package.json'), 'utf8'))
+    expect(pkg.private).toBeUndefined()
+    expect(pkg.bin).toEqual({ lingtai: 'lingtai.cjs' })
+  })
 
-  it("leaves no native file in the board, so it is the same on every platform", () => {
-    expect(nativeFiles(join(first, "board"))).toEqual([]);
-  });
+  it('leaves no native file in the board, so it is the same on every platform', () => {
+    expect(nativeFiles(join(first, 'board'))).toEqual([])
+  })
 
-  it("gives the same layout on a second build", () => {
-    expect(layout(second)).toEqual(layout(first));
-  });
+  it('gives the same layout on a second build', () => {
+    expect(layout(second)).toEqual(layout(first))
+  })
 
-  it("serves a page from the built board, started by the bundled CLI", async () => {
-    await servesAPage(process.execPath, [join(first, "lingtai.cjs")]);
-  });
-});
+  it('serves a page from the built board, started by the bundled CLI', async () => {
+    await servesAPage(process.execPath, [join(first, 'lingtai.cjs')])
+  })
+})
 
-describe(`pnpm binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"}`, () => {
-  it.runIf(sea)("builds one executable beside the board, which reports its version and platform", () => {
-    const binary = buildBinary({ dist: first });
-    expect(binary).toBe(join(first, "lingtai"));
+describe(`pnpm binary${sea ? '' : ' (skipped: node --build-sea needs Node 25.5)'}`, () => {
+  it.runIf(sea)('builds one executable beside the board, which reports its version and platform', () => {
+    const binary = buildBinary({ dist: first })
+    expect(binary).toBe(join(first, 'lingtai'))
 
-    const version = spawnSync(binary, ["version"], { cwd: work, env: childEnv(), encoding: "utf8" });
-    expect(version.status, version.stderr).toBe(0);
-    const workspace = JSON.parse(readFileSync(join(import.meta.dirname, "../../../package.json"), "utf8"));
-    expect(version.stdout).toContain(`lingtai ${workspace.version} ${platformName()} (binary,`);
-  });
+    const version = spawnSync(binary, ['version'], { cwd: work, env: childEnv(), encoding: 'utf8' })
+    expect(version.status, version.stderr).toBe(0)
+    const workspace = JSON.parse(readFileSync(join(import.meta.dirname, '../../../package.json'), 'utf8'))
+    expect(version.stdout).toContain(`lingtai ${workspace.version} ${platformName()} (binary,`)
+  })
 
-  it.runIf(sea)("serves a page from the built board, started by the binary", async () => {
-    await servesAPage(join(first, "lingtai"), []);
-  });
+  it.runIf(sea)('serves a page from the built board, started by the binary', async () => {
+    await servesAPage(join(first, 'lingtai'), [])
+  })
 
   // The signature is ours, not `--build-sea`'s: Node's builder removes the one
   // the copied Node shipped with and writes none (`src/node_sea_bin.cc`), and a
@@ -98,153 +109,165 @@ describe(`pnpm binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"
   // every run. Drop the signing step in `buildBinary` and the first assertion
   // fails on any Mac; the second says it is that step, so nobody "fixes" it
   // elsewhere.
-  it.runIf(sea && process.platform === "darwin")("is signed, and only because buildBinary signs it", () => {
-    const signed = join(first, "lingtai");
-    if (!existsSync(signed)) buildBinary({ dist: first });
-    const verified = codesignVerify(signed);
-    expect(verified.status, verified.stderr).toBe(0);
+  it.runIf(sea && process.platform === 'darwin')('is signed, and only because buildBinary signs it', () => {
+    const signed = join(first, 'lingtai')
+    if (!existsSync(signed)) buildBinary({ dist: first })
+    const verified = codesignVerify(signed)
+    expect(verified.status, verified.stderr).toBe(0)
 
-    const unsigned = codesignVerify(buildBinary({ dist: first, output: join(work, "unsigned"), sign: false }));
-    expect(unsigned.status).not.toBe(0);
-    expect(unsigned.stderr).toMatch(/not signed at all/);
-  });
-});
+    const unsigned = codesignVerify(buildBinary({ dist: first, output: join(work, 'unsigned'), sign: false }))
+    expect(unsigned.status).not.toBe(0)
+    expect(unsigned.stderr).toMatch(/not signed at all/)
+  })
+})
 
-describe(`install.sh over the binary${sea ? "" : " (skipped: node --build-sea needs Node 25.5)"}`, () => {
-  it.runIf(sea)("installs it, and after an upgrade and a rollback the older directory still serves the board", async () => {
-    const workspace = JSON.parse(readFileSync(join(import.meta.dirname, "../../../package.json"), "utf8"));
-    const version: string = workspace.version;
-    const platform = platformName();
-    if (!existsSync(join(first, "lingtai"))) buildBinary({ dist: first });
+describe(`install.sh over the binary${sea ? '' : ' (skipped: node --build-sea needs Node 25.5)'}`, () => {
+  it.runIf(sea)(
+    'installs it, and after an upgrade and a rollback the older directory still serves the board',
+    async () => {
+      const workspace = JSON.parse(readFileSync(join(import.meta.dirname, '../../../package.json'), 'utf8'))
+      const version: string = workspace.version
+      const platform = platformName()
+      if (!existsSync(join(first, 'lingtai'))) buildBinary({ dist: first })
 
-    // As `.github/workflows/release.yml` packs and sums them.
-    const releases = join(work, "releases");
-    const publish = (v: string, lingtaiDir: string) => {
-      const dir = join(releases, `v${v}`);
-      mkdirSync(dir, { recursive: true });
-      tar(join(dir, `lingtai-${platform}.tar.gz`), lingtaiDir, "lingtai");
-      tar(join(dir, "board.tar.gz"), first, "board");
-      const sum = (name: string) => `${createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")}  ${name}`;
-      writeFileSync(join(dir, "SHA256SUMS"), `${sum(`lingtai-${platform}.tar.gz`)}\n${sum("board.tar.gz")}\n`);
-    };
-    publish(version, first);
-    // A newer release to upgrade to: the binary cannot be rebuilt at another
-    // version here, so it is a script that says one.
-    const [major, minor, patch] = version.split(/[.-]/).map(Number);
-    const newer = `${major}.${minor}.${patch! + 1}`;
-    const fake = join(work, "fake-newer");
-    mkdirSync(fake, { recursive: true });
-    writeFileSync(join(fake, "lingtai"), `#!/bin/sh\necho "lingtai ${newer} ${platform} (script)"\n`);
-    chmodSync(join(fake, "lingtai"), 0o755);
-    publish(newer, fake);
+      // As `.github/workflows/release.yml` packs and sums them.
+      const releases = join(work, 'releases')
+      const publish = (v: string, lingtaiDir: string) => {
+        const dir = join(releases, `v${v}`)
+        mkdirSync(dir, { recursive: true })
+        tar(join(dir, `lingtai-${platform}.tar.gz`), lingtaiDir, 'lingtai')
+        tar(join(dir, 'board.tar.gz'), first, 'board')
+        const sum = (name: string) =>
+          `${createHash('sha256')
+            .update(readFileSync(join(dir, name)))
+            .digest('hex')}  ${name}`
+        writeFileSync(join(dir, 'SHA256SUMS'), `${sum(`lingtai-${platform}.tar.gz`)}\n${sum('board.tar.gz')}\n`)
+      }
+      publish(version, first)
+      // A newer release to upgrade to: the binary cannot be rebuilt at another
+      // version here, so it is a script that says one.
+      const [major, minor, patch] = version.split(/[.-]/).map(Number)
+      const newer = `${major}.${minor}.${patch! + 1}`
+      const fake = join(work, 'fake-newer')
+      mkdirSync(fake, { recursive: true })
+      writeFileSync(join(fake, 'lingtai'), `#!/bin/sh\necho "lingtai ${newer} ${platform} (script)"\n`)
+      chmodSync(join(fake, 'lingtai'), 0o755)
+      publish(newer, fake)
 
-    const user = join(work, "user");
-    const env: NodeJS.ProcessEnv = { ...childEnv(), HOME: user, LINGTAI_RELEASES_URL: `file://${releases}` };
-    delete env["LINGTAI_HOME"];
-    delete env["LINGTAI_BIN_DIR"];
-    const installer = join(import.meta.dirname, "..", "..", "site", "public", "install.sh");
-    const install = (v: string) => {
-      const ran = spawnSync("sh", [installer], { env: { ...env, LINGTAI_VERSION: v }, cwd: work, encoding: "utf8" });
-      expect(ran.status, `${ran.stdout}${ran.stderr}`).toBe(0);
-    };
-    const shim = join(user, ".local", "bin", "lingtai");
-    const says = () => spawnSync(shim, ["version"], { env, cwd: work, encoding: "utf8" }).stdout.trim();
+      const user = join(work, 'user')
+      const env: NodeJS.ProcessEnv = { ...childEnv(), HOME: user, LINGTAI_RELEASES_URL: `file://${releases}` }
+      delete env['LINGTAI_HOME']
+      delete env['LINGTAI_BIN_DIR']
+      const installer = join(import.meta.dirname, '..', '..', 'site', 'public', 'install.sh')
+      const install = (v: string) => {
+        const ran = spawnSync('sh', [installer], { env: { ...env, LINGTAI_VERSION: v }, cwd: work, encoding: 'utf8' })
+        expect(ran.status, `${ran.stdout}${ran.stderr}`).toBe(0)
+      }
+      const shim = join(user, '.local', 'bin', 'lingtai')
+      const says = () => spawnSync(shim, ['version'], { env, cwd: work, encoding: 'utf8' }).stdout.trim()
 
-    install(version);
-    expect(says()).toContain(`lingtai ${version} ${platform} (binary,`);
-    install(newer);
-    expect(says()).toContain(`lingtai ${newer} `);
+      install(version)
+      expect(says()).toContain(`lingtai ${version} ${platform} (binary,`)
+      install(newer)
+      expect(says()).toContain(`lingtai ${newer} `)
 
-    // The older binary, run by its own path, moves the shim back to the newest below.
-    const old = join(user, ".lingtai", "versions", version, "lingtai");
-    const back = spawnSync(old, ["rollback"], { env, cwd: work, encoding: "utf8" });
-    expect(back.status, `${back.stdout}${back.stderr}`).toBe(0);
-    expect(says()).toContain(`lingtai ${version} ${platform} (binary,`);
+      // The older binary, run by its own path, moves the shim back to the newest below.
+      const old = join(user, '.lingtai', 'versions', version, 'lingtai')
+      const back = spawnSync(old, ['rollback'], { env, cwd: work, encoding: 'utf8' })
+      expect(back.status, `${back.stdout}${back.stderr}`).toBe(0)
+      expect(says()).toContain(`lingtai ${version} ${platform} (binary,`)
 
-    // Installed, `.env.local` is looked for one directory above the binary.
-    writeFileSync(join(user, ".lingtai", "versions", ".env.local"), "LINGTAI_DATABASE_URL=postgres://127.0.0.1:1/none\n");
-    await servesAPage(shim, [], env);
-  });
-});
+      // Installed, `.env.local` is looked for one directory above the binary.
+      writeFileSync(
+        join(user, '.lingtai', 'versions', '.env.local'),
+        'LINGTAI_DATABASE_URL=postgres://127.0.0.1:1/none\n',
+      )
+      await servesAPage(shim, [], env)
+    },
+  )
+})
 
 function tar(out: string, dir: string, entry: string): void {
-  const ran = spawnSync("tar", ["-czf", out, "-C", dir, entry], { encoding: "utf8", env: { ...process.env, COPYFILE_DISABLE: "1" } });
-  expect(ran.status, ran.stderr).toBe(0);
+  const ran = spawnSync('tar', ['-czf', out, '-C', dir, entry], {
+    encoding: 'utf8',
+    env: { ...process.env, COPYFILE_DISABLE: '1' },
+  })
+  expect(ran.status, ran.stderr).toBe(0)
 }
 
 /**
  * Start `lingtai board` from a build and fetch a page and its stylesheet.
  */
 async function servesAPage(command: string, args: string[], env: NodeJS.ProcessEnv = childEnv()): Promise<void> {
-  const port = await freePort();
+  const port = await freePort()
 
   // `--no-open`: `lingtai board start` opens a browser (#187), and a gate that
   // opened two tabs every run would be its own bug report.
-  const board = spawn(command, [...args, "board", "--port", String(port), "--no-open"], {
+  const board = spawn(command, [...args, 'board', '--port', String(port), '--no-open'], {
     cwd: work,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  boards.push(board);
-  let output = "";
-  board.stdout?.on("data", (chunk) => (output += chunk));
-  board.stderr?.on("data", (chunk) => (output += chunk));
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  boards.push(board)
+  let output = ''
+  board.stdout?.on('data', (chunk) => (output += chunk))
+  board.stderr?.on('data', (chunk) => (output += chunk))
 
   try {
-    const page = await fetchWhenUp(board, `http://127.0.0.1:${port}/setup/github-app`, () => output);
-    expect(page.status, output).toBe(200);
-    const html = await page.text();
-    expect(html).toContain("<title>Lingtai</title>");
+    const page = await fetchWhenUp(board, `http://127.0.0.1:${port}/setup/github-app`, () => output)
+    expect(page.status, output).toBe(200)
+    const html = await page.text()
+    expect(html).toContain('<title>Lingtai</title>')
 
     // Next leaves `.next/static` out of standalone; a page whose stylesheet
     // 404s is a board that answers and does not render.
-    const stylesheet = html.match(/\/_next\/static\/[^"]+\.css/)?.[0];
-    expect(stylesheet).toBeDefined();
-    expect((await fetch(`http://127.0.0.1:${port}${stylesheet}`)).status).toBe(200);
+    const stylesheet = html.match(/\/_next\/static\/[^"]+\.css/)?.[0]
+    expect(stylesheet).toBeDefined()
+    expect((await fetch(`http://127.0.0.1:${port}${stylesheet}`)).status).toBe(200)
     // Nothing between the person and the board's own lines.
-    expect(output).not.toContain("ExperimentalWarning");
+    expect(output).not.toContain('ExperimentalWarning')
   } finally {
-    board.kill();
+    board.kill()
   }
 }
 
 function codesignVerify(file: string): { status: number | null; stderr: string } {
-  const result = spawnSync("codesign", ["--verify", "--strict", file], { encoding: "utf8" });
-  return { status: result.status, stderr: result.stderr };
+  const result = spawnSync('codesign', ['--verify', '--strict', file], { encoding: 'utf8' })
+  return { status: result.status, stderr: result.stderr }
 }
 
 function childEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, LINGTAI_HOME: join(work, "home") };
-  delete env["LINGTAI_DATABASE_URL"];
-  delete env["NODE_ENV"];
-  for (const name of Object.keys(env)) if (name.startsWith("VITEST")) delete env[name];
-  return env;
+  const env: NodeJS.ProcessEnv = { ...process.env, LINGTAI_HOME: join(work, 'home') }
+  delete env['LINGTAI_DATABASE_URL']
+  delete env['NODE_ENV']
+  for (const name of Object.keys(env)) if (name.startsWith('VITEST')) delete env[name]
+  return env
 }
 
 async function fetchWhenUp(board: ChildProcess, url: string, output: () => string): Promise<Response> {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 60_000
   for (;;) {
     try {
-      return await fetch(url);
+      return await fetch(url)
     } catch (err) {
       // Killed by a signal — as an unsigned binary is at exec on Apple Silicon —
       // `exitCode` stays null and only `signalCode` says so.
       if (board.exitCode !== null || board.signalCode !== null) {
-        throw new Error(`the board exited ${board.exitCode ?? board.signalCode}:\n${output()}`);
+        throw new Error(`the board exited ${board.exitCode ?? board.signalCode}:\n${output()}`)
       }
-      if (Date.now() > deadline) throw new Error(`the board never answered ${url}:\n${output()}`, { cause: err });
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (Date.now() > deadline) throw new Error(`the board never answered ${url}:\n${output()}`, { cause: err })
+      await new Promise((resolve) => setTimeout(resolve, 250))
     }
   }
 }
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      server.close(() => resolve(typeof address === "object" && address ? address.port : 0));
-    });
-  });
+    const server = createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      server.close(() => resolve(typeof address === 'object' && address ? address.port : 0))
+    })
+  })
 }

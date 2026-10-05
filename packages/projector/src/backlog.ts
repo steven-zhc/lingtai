@@ -27,47 +27,48 @@
  * a fix round, and then a person (0038 §1–§4) — and a minor on a failing gate
  * is in the prompt the fixing agent is handed.
  */
-import type { Finding, PayloadOf } from "@lingtai/domain";
-import { findingKey, parseWorkItemStream } from "@lingtai/domain";
-import { withProjectionStore } from "./choose.ts";
-import type { Projection } from "./store.ts";
+import type { Finding, PayloadOf } from '@lingtai/domain'
+import { findingKey, parseWorkItemStream } from '@lingtai/domain'
 
-export const BACKLOG_TABLE = "finding_backlog";
+import { withProjectionStore } from './choose.ts'
+import type { Projection } from './store.ts'
+
+export const BACKLOG_TABLE = 'finding_backlog'
 
 /**
  * `accepted` with no `proposedRef` is a decision whose issue the log has not
  * recorded yet — opening it is still owed, and safe to repeat.
  */
-export type BacklogStatus = "open" | "accepted" | "declined";
+export type BacklogStatus = 'open' | 'accepted' | 'declined'
 
 export interface BacklogEntry {
-  key: string;
-  project: string;
+  key: string
+  project: string
   /** The ticket the finding is about — not the one accepting it opens. */
-  issue: string;
-  taskId: string;
+  issue: string
+  taskId: string
   /** The first run whose gate raised it. */
-  runId: string;
-  step: string;
-  action: string;
-  onSha: string;
-  file: string;
-  line: number | null;
-  severity: Finding["severity"];
-  claim: string;
-  failureScenario: string;
-  raisedSeq: string;
-  raisedAt: Date;
-  status: BacklogStatus;
-  decidedBy: string | null;
-  decidedAt: Date | null;
+  runId: string
+  step: string
+  action: string
+  onSha: string
+  file: string
+  line: number | null
+  severity: Finding['severity']
+  claim: string
+  failureScenario: string
+  raisedSeq: string
+  raisedAt: Date
+  status: BacklogStatus
+  decidedBy: string | null
+  decidedAt: Date | null
   /** The kind an accepted entry's issue carries. */
-  kind: string | null;
+  kind: string | null
   /** What the store called the ticket it opened, on an accepted entry — null until it is recorded. */
-  proposedRef: string | null;
-  proposedUrl: string | null;
+  proposedRef: string | null
+  proposedUrl: string | null
   /** Why, on a declined entry. */
-  reason: string | null;
+  reason: string | null
 }
 
 export const backlogProjection: Projection = {
@@ -100,8 +101,8 @@ export const backlogProjection: Projection = {
         proposed_url     text,
         reason           text,
         primary key (project, key)
-      )`);
-    await ctx.query("create index if not exists finding_backlog_status_idx on finding_backlog (status)");
+      )`)
+    await ctx.query('create index if not exists finding_backlog_status_idx on finding_backlog (status)')
 
     // Which ticket a run belongs to. `StepPassed` is on the run's stream and
     // names only the run; `RunStarted` names the work item. Kept here rather
@@ -111,41 +112,41 @@ export const backlogProjection: Projection = {
       create table if not exists finding_backlog_run (
         run_id  text primary key,
         task_id text not null
-      )`);
+      )`)
   },
 
   async reset(ctx) {
-    await ctx.query("drop table if exists finding_backlog");
-    await ctx.query("drop table if exists finding_backlog_run");
+    await ctx.query('drop table if exists finding_backlog')
+    await ctx.query('drop table if exists finding_backlog_run')
   },
 
   async apply(events, ctx) {
     for (const event of events) {
-      const seq = event.seq.toString();
+      const seq = event.seq.toString()
 
       switch (event.type) {
-        case "RunStarted": {
-          const d = event.data as PayloadOf<"RunStarted">;
+        case 'RunStarted': {
+          const d = event.data as PayloadOf<'RunStarted'>
           await ctx.query(
             `insert into finding_backlog_run (run_id, task_id) values ($1, $2)
              on conflict (run_id) do nothing`,
             [event.streamId, d.workItemId],
-          );
-          break;
+          )
+          break
         }
 
-        case "StepPassed": {
-          const d = event.data as PayloadOf<"StepPassed">;
-          const minors = d.findings.filter((f) => f.severity === "minor");
-          if (minors.length === 0) break;
+        case 'StepPassed': {
+          const d = event.data as PayloadOf<'StepPassed'>
+          const minors = d.findings.filter((f) => f.severity === 'minor')
+          if (minors.length === 0) break
           const [link] = await ctx.query<{ task_id: string }>(
-            "select task_id from finding_backlog_run where run_id = $1",
+            'select task_id from finding_backlog_run where run_id = $1',
             [d.runId],
-          );
-          const task = link ? parseWorkItemStream(link.task_id) : null;
+          )
+          const task = link ? parseWorkItemStream(link.task_id) : null
           // A pass on a run nothing started names no ticket, and an entry that
           // cannot say which ticket it is about cannot open one that cites it.
-          if (!link || !task) break;
+          if (!link || !task) break
           for (const f of minors) {
             const key = findingKey({
               issue: task.issue,
@@ -153,7 +154,7 @@ export const backlogProjection: Projection = {
               action: d.action,
               file: f.file,
               claim: f.claim,
-            });
+            })
             await ctx.query(
               `insert into finding_backlog
                  (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
@@ -177,54 +178,54 @@ export const backlogProjection: Projection = {
                 seq,
                 event.at,
               ],
-            );
+            )
           }
-          break;
+          break
         }
 
-        case "FindingAccepted": {
-          const d = event.data as PayloadOf<"FindingAccepted">;
+        case 'FindingAccepted': {
+          const d = event.data as PayloadOf<'FindingAccepted'>
           await ctx.query(
             `update finding_backlog
                set status = 'accepted', decided_by = $3, decided_at = $4, decided_seq = $5, kind = $6
              where project = $1 and key = $2`,
             [d.project, d.key, d.by, event.at, seq, d.kind],
-          );
-          break;
+          )
+          break
         }
 
-        case "FindingProposed": {
-          const d = event.data as PayloadOf<"FindingProposed">;
+        case 'FindingProposed': {
+          const d = event.data as PayloadOf<'FindingProposed'>
           await ctx.query(
             `update finding_backlog set proposed_ref = $3, proposed_url = $4
              where project = $1 and key = $2`,
             [d.project, d.key, d.externalRef, d.url],
-          );
-          break;
+          )
+          break
         }
 
-        case "FindingDeclined": {
-          const d = event.data as PayloadOf<"FindingDeclined">;
+        case 'FindingDeclined': {
+          const d = event.data as PayloadOf<'FindingDeclined'>
           await ctx.query(
             `update finding_backlog
                set status = 'declined', decided_by = $3, decided_at = $4, decided_seq = $5,
                    reason = $6
              where project = $1 and key = $2`,
             [d.project, d.key, d.by, event.at, seq, d.reason],
-          );
-          break;
+          )
+          break
         }
       }
     }
   },
-};
+}
 
 export interface ReadBacklogOptions {
-  project?: string;
+  project?: string
   /** Absent reads every status. */
-  status?: BacklogStatus;
-  key?: string;
-  url?: string;
+  status?: BacklogStatus
+  key?: string
+  url?: string
 }
 
 /**
@@ -243,5 +244,5 @@ export async function readBacklog(options: ReadBacklogOptions = {}): Promise<Bac
       status: options.status,
       key: options.key,
     }),
-  );
+  )
 }

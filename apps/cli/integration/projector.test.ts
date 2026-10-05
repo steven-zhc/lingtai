@@ -1,3 +1,9 @@
+import { execFile } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+
+import { processEventStore, type EventStore } from '@lingtai/event-store'
 /**
  * The projector a command holds while it appends.
  *
@@ -13,59 +19,55 @@
  * the two things worth asserting are that the work sees a current projection
  * *during* it, and that the process can still exit afterwards.
  */
-import { readTasks } from "@lingtai/projector";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { projectionLag } from "@lingtai/projector";
-import { execFile } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { beforeAll, describe, expect, it } from "vitest";
-import { withProjector } from "../src/projector.ts";
+import { readTasks } from '@lingtai/projector'
+import { projectionLag } from '@lingtai/projector'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const run = promisify(execFile);
-const here = dirname(fileURLToPath(import.meta.url));
+import { withProjector } from '../src/projector.ts'
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
-const wi = `wi-${PROJECT}-1`;
-const runId = `run-${PROJECT}-1`;
-let store: EventStore;
+const run = promisify(execFile)
+const here = dirname(fileURLToPath(import.meta.url))
+
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
+const wi = `wi-${PROJECT}-1`
+const runId = `run-${PROJECT}-1`
+let store: EventStore
 
 beforeAll(async () => {
-  store = await processEventStore();
-}, 120_000);
+  store = await processEventStore()
+}, 120_000)
 
-describe("withProjector", () => {
+describe('withProjector', () => {
   /**
    * The whole of `#64`, inverted. What was appended a moment ago is folded
    * *while the work is still running*, not after the command returns.
    */
-  it("folds what the work appends, before the work has finished", async () => {
+  it('folds what the work appends, before the work has finished', async () => {
     const seen = await withProjector(
       () => {},
       async () => {
         await store.append(wi, 0, [
           {
-            type: "WorkItemClaimed",
-            actor: "conductor",
-            data: { runId, worker: "w", title: "held open", kind: "bug" },
+            type: 'WorkItemClaimed',
+            actor: 'conductor',
+            data: { runId, worker: 'w', title: 'held open', kind: 'bug' },
           },
-        ]);
+        ])
 
         // The subscription is asynchronous, so this waits on the fact rather
         // than on a duration — a sleep long enough to be reliable here would be
         // long enough to hide a regression.
         for (let i = 0; i < 100; i += 1) {
-          const tasks = await readTasks({ project: PROJECT });
-          if (tasks.length > 0) return tasks.map((t) => [t.issue, t.state]);
-          await new Promise((r) => setTimeout(r, 100));
+          const tasks = await readTasks({ project: PROJECT })
+          if (tasks.length > 0) return tasks.map((t) => [t.issue, t.state])
+          await new Promise((r) => setTimeout(r, 100))
         }
-        return [];
+        return []
       },
-    );
+    )
 
-    expect(seen).toEqual([["1", "running"]]);
-  }, 60_000);
+    expect(seen).toEqual([['1', 'running']])
+  }, 60_000)
 
   /** Every exit path, not just the happy one — including the early refusals. */
   it("releases the projector when the work throws, and the error is the caller's", async () => {
@@ -73,15 +75,18 @@ describe("withProjector", () => {
       withProjector(
         () => {},
         async () => {
-          throw new Error("the recipe could not be read");
+          throw new Error('the recipe could not be read')
         },
       ),
-    ).rejects.toThrow("the recipe could not be read");
+    ).rejects.toThrow('the recipe could not be read')
 
     // Released, so the next one starts cleanly rather than on an exhausted pool.
-    const lags = await withProjector(() => {}, async () => projectionLag());
-    expect(lags.some((l) => l.name === "task_view")).toBe(true);
-  }, 60_000);
+    const lags = await withProjector(
+      () => {},
+      async () => projectionLag(),
+    )
+    expect(lags.some((l) => l.name === 'task_view')).toBe(true)
+  }, 60_000)
 
   /**
    * The hazard the scope exists for. An open projector holds a session-mode
@@ -89,17 +94,21 @@ describe("withProjector", () => {
    * release one would print its result and then hang forever — which is worse
    * than a stale board, because it looks like the work is still going.
    */
-  it("lets the process exit", async () => {
+  it('lets the process exit', async () => {
     const script = `
-      import { withProjector } from ${JSON.stringify(resolve(here, "../src/projector.ts"))};
+      import { withProjector } from ${JSON.stringify(resolve(here, '../src/projector.ts'))};
       await withProjector(() => {}, async () => "done");
       console.log("returned");
-    `;
-    const { stdout } = await run(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
-      cwd: resolve(here, "../../.."),
-      env: process.env,
-      timeout: 60_000,
-    });
-    expect(stdout).toContain("returned");
-  }, 90_000);
-});
+    `
+    const { stdout } = await run(
+      process.execPath,
+      ['--experimental-strip-types', '--input-type=module', '-e', script],
+      {
+        cwd: resolve(here, '../../..'),
+        env: process.env,
+        timeout: 60_000,
+      },
+    )
+    expect(stdout).toContain('returned')
+  }, 90_000)
+})

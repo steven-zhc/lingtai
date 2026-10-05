@@ -1,3 +1,4 @@
+import { reduceWorkItem } from '@lingtai/domain'
 /**
  * The subtraction: what GitHub offers, minus what the log says is claimed.
  *
@@ -6,78 +7,82 @@
  * take next is the conductor's, and this is that decision — the seam 0022 drew
  * between a projection and a caller that reads one.
  */
-import { directPostgresUrl } from "@lingtai/env";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
-import { createProjectionRunner } from "@lingtai/projector";
-import { taskViewProjection } from "@lingtai/projector";
-import pg from "pg";
-import { beforeAll, describe, expect, it } from "vitest";
-import { reduceWorkItem } from "@lingtai/domain";
-import { answer, ask, heldUntil, inWords, requeue, selectRunnable } from "../src/index.ts";
+import { directPostgresUrl } from '@lingtai/env'
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import { createProjectionRunner } from '@lingtai/projector'
+import { taskViewProjection } from '@lingtai/projector'
+import pg from 'pg'
+import { beforeAll, describe, expect, it } from 'vitest'
+
+import { answer, ask, heldUntil, inWords, requeue, selectRunnable } from '../src/index.ts'
 
 /**
  * An hour, as `source.backoff` resolves to for a recipe that does not mention
  * it. Named here rather than imported: it is the *recipe's* default now (0028),
  * and a test that read it back off the schema would agree with itself.
  */
-const HOUR = 60 * 60_000;
+const HOUR = 60 * 60_000
 
-const created = new Set<string>();
-let store: EventStore;
+const created = new Set<string>()
+let store: EventStore
 
 /** The projection has to exist before the queue can subtract from it. */
 async function build(): Promise<void> {
-  const runner = createProjectionRunner({ projection: taskViewProjection, store });
+  const runner = createProjectionRunner({ projection: taskViewProjection, store })
   try {
-    await runner.start();
+    await runner.start()
   } finally {
-    await runner.close();
+    await runner.close()
   }
 }
 
 beforeAll(async () => {
-  store = await processEventStore();
-}, 120_000);
+  store = await processEventStore()
+}, 120_000)
 
-describe("selectRunnable", () => {
-  const other = `esctest${crypto.randomUUID().slice(0, 6)}`;
+describe('selectRunnable', () => {
+  const other = `esctest${crypto.randomUUID().slice(0, 6)}`
 
   /**
    * The subtraction. GitHub's offer is an argument now rather than a table, so
    * what is being tested is the rule and not a cache's freshness.
    */
-  it("offers what GitHub lists, minus what the log says is claimed", async () => {
+  it('offers what GitHub lists, minus what the log says is claimed', async () => {
     const offered = [
-      { ref: "10", title: "one", kind: "bug" },
-      { ref: "11", title: "two", kind: "feature" },
-    ];
-    const kinds = ["bug", "feature"];
+      { ref: '10', title: 'one', kind: 'bug' },
+      { ref: '11', title: 'two', kind: 'feature' },
+    ]
+    const kinds = ['bug', 'feature']
 
     // No rows at all: the log has no opinion about either, so both are runnable.
-    const before = await selectRunnable({ project: other, offered, kinds, backoffMs: HOUR });
-    expect(before.map((r) => r.issue)).toEqual(["10", "11"]);
-    expect(before[0]).toEqual({ taskId: `wi-${other}-10`, issue: "10", title: "one", kind: "bug" });
+    const before = await selectRunnable({ project: other, offered, kinds, backoffMs: HOUR })
+    expect(before.map((r) => r.issue)).toEqual(['10', '11'])
+    expect(before[0]).toEqual({ taskId: `wi-${other}-10`, issue: '10', title: 'one', kind: 'bug' })
 
-    const claimedId = `wi-${other}-10`;
-    created.add(claimedId);
+    const claimedId = `wi-${other}-10`
+    created.add(claimedId)
     await store.append(claimedId, 0, [
-      { type: "WorkItemClaimed", actor: "conductor", data: { runId: `run-${other}-10`, worker: "w", title: null, kind: null } },
-    ]);
-    created.add(`run-${other}-10`);
-    await build();
+      {
+        type: 'WorkItemClaimed',
+        actor: 'conductor',
+        data: { runId: `run-${other}-10`, worker: 'w', title: null, kind: null },
+      },
+    ])
+    created.add(`run-${other}-10`)
+    await build()
 
     // GitHub still lists 10. The log is the authority on what happened after
     // the claim, and it says the claim happened.
     expect((await selectRunnable({ project: other, offered, kinds, backoffMs: HOUR })).map((r) => r.issue)).toEqual([
-      "11",
-    ]);
+      '11',
+    ])
 
     // GitHub stops listing 11 — closed by a person. Nothing has to be
     // invalidated, because nothing was stored: it is simply not in the offer.
-    const narrowed = await selectRunnable({ project: other, offered: [offered[0]!], kinds, backoffMs: HOUR });
-    expect(narrowed).toEqual([]);
-  });
+    const narrowed = await selectRunnable({ project: other, offered: [offered[0]!], kinds, backoffMs: HOUR })
+    expect(narrowed).toEqual([])
+  })
 
   /**
    * A question asked before any run is passed over with no label involved
@@ -85,79 +90,79 @@ describe("selectRunnable", () => {
    * is not `queued`, and that is the whole of the exclusion. The answer is what
    * hands it back.
    */
-  it("passes over an item asked a question before any run, until it is answered", async () => {
-    const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
-    const offered = [{ ref: "51", title: "the tripwire", kind: "bug" }];
-    const kinds = ["bug"];
-    created.add(`wi-${project}-51`);
+  it('passes over an item asked a question before any run, until it is answered', async () => {
+    const project = `esctest${crypto.randomUUID().slice(0, 6)}`
+    const offered = [{ ref: '51', title: 'the tripwire', kind: 'bug' }]
+    const kinds = ['bug']
+    created.add(`wi-${project}-51`)
 
-    const asked = await ask({ project, issue: 51, question: "which of the three designs?", by: "human:steven", store });
-    expect(asked.ok).toBe(true);
-    await build();
-    expect(await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).toEqual([]);
+    const asked = await ask({ project, issue: 51, question: 'which of the three designs?', by: 'human:steven', store })
+    expect(asked.ok).toBe(true)
+    await build()
+    expect(await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).toEqual([])
 
     // A second question is refused rather than replacing the first unanswered.
-    expect((await ask({ project, issue: 51, question: "and another?", by: "human:steven", store })).ok).toBe(false);
+    expect((await ask({ project, issue: 51, question: 'and another?', by: 'human:steven', store })).ok).toBe(false)
 
     // An answer to wording the item is no longer asking is refused, not kept
     // against the question it now asks — nothing is appended.
     const stale = await answer({
       project,
       issue: 51,
-      answer: "the second",
-      question: "refuse at the hook or at the claim?",
-      by: "human:steven",
+      answer: 'the second',
+      question: 'refuse at the hook or at the claim?',
+      by: 'human:steven',
       store,
-    });
-    expect(stale.ok).toBe(false);
-    expect(stale.detail).toContain("different question");
+    })
+    expect(stale.ok).toBe(false)
+    expect(stale.detail).toContain('different question')
     // And Send's requeue refuses the question rather than withdrawing it.
-    const sent = await requeue({ project, issue: 51, by: "human:steven", note: "sent", onQuestion: "refuse", store });
-    expect(sent.ok).toBe(false);
-    expect(reduceWorkItem(await store.read(`wi-${project}-51`)).lifecycle.status).toBe("blocked");
+    const sent = await requeue({ project, issue: 51, by: 'human:steven', note: 'sent', onQuestion: 'refuse', store })
+    expect(sent.ok).toBe(false)
+    expect(reduceWorkItem(await store.read(`wi-${project}-51`)).lifecycle.status).toBe('blocked')
 
     const answered = await answer({
       project,
       issue: 51,
-      answer: "the second",
-      question: "which of the three designs?",
-      by: "human:steven",
+      answer: 'the second',
+      question: 'which of the three designs?',
+      by: 'human:steven',
       store,
-    });
-    expect(answered.ok).toBe(true);
-    await build();
+    })
+    expect(answered.ok).toBe(true)
+    await build()
     // Never attempted, so the backoff holds nothing: runnable at once.
-    expect((await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).map((r) => r.issue)).toEqual(["51"]);
-  });
+    expect((await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).map((r) => r.issue)).toEqual(['51'])
+  })
 
   /** Priority is the recipe's `kinds` order, and ties break numerically. */
   it("puts the recipe's first kind first, and orders by issue number inside it", async () => {
-    const fresh = `esctest${crypto.randomUUID().slice(0, 6)}`;
+    const fresh = `esctest${crypto.randomUUID().slice(0, 6)}`
     const runnable = await selectRunnable({
       project: fresh,
       offered: [
-        { ref: "9", title: "b", kind: "bug" },
-        { ref: "100", title: "f", kind: "feature" },
-        { ref: "20", title: "b2", kind: "bug" },
+        { ref: '9', title: 'b', kind: 'bug' },
+        { ref: '100', title: 'f', kind: 'feature' },
+        { ref: '20', title: 'b2', kind: 'bug' },
       ],
-      kinds: ["feature", "bug"],
+      kinds: ['feature', 'bug'],
       backoffMs: HOUR,
-    });
+    })
     // #100 beats both bugs on kind; #9 beats #20 numerically, not lexically.
-    expect(runnable.map((r) => r.issue)).toEqual(["100", "9", "20"]);
-  });
+    expect(runnable.map((r) => r.issue)).toEqual(['100', '9', '20'])
+  })
 
   /** A kind the recipe does not want is not offered, whatever GitHub says. */
-  it("drops a kind the recipe does not take", async () => {
-    const fresh = `esctest${crypto.randomUUID().slice(0, 6)}`;
+  it('drops a kind the recipe does not take', async () => {
+    const fresh = `esctest${crypto.randomUUID().slice(0, 6)}`
     const runnable = await selectRunnable({
       project: fresh,
-      offered: [{ ref: "1", title: "c", kind: "chore" }],
-      kinds: ["bug"],
+      offered: [{ ref: '1', title: 'c', kind: 'chore' }],
+      kinds: ['bug'],
       backoffMs: HOUR,
-    });
-    expect(runnable).toEqual([]);
-  });
+    })
+    expect(runnable).toEqual([])
+  })
 
   /**
    * The loop guard itself, which had no test — the thing `#95` found was that
@@ -173,88 +178,91 @@ describe("selectRunnable", () => {
   // LINGTAI_TEST_DATABASE_URL is set, so the skip is visible in vitest's own
   // count. Every other case in this describe runs on whichever store the
   // process chose.
-  it.skipIf(!postgresUnderTest())("holds a released item for the backoff, and offers it once the window passes", async () => {
-    const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
-    const item = `wi-${project}-7`;
-    const runId = `run-${crypto.randomUUID()}`;
-    created.add(item);
-    created.add(runId);
-    const offered = [{ ref: "7", title: "flaky", kind: "bug" }];
-    const kinds = ["bug"];
+  it.skipIf(!postgresUnderTest())(
+    'holds a released item for the backoff, and offers it once the window passes',
+    async () => {
+      const project = `esctest${crypto.randomUUID().slice(0, 6)}`
+      const item = `wi-${project}-7`
+      const runId = `run-${crypto.randomUUID()}`
+      created.add(item)
+      created.add(runId)
+      const offered = [{ ref: '7', title: 'flaky', kind: 'bug' }]
+      const kinds = ['bug']
 
-    await store.append(item, 0, [
-      {
-        type: "WorkItemClaimed",
-        actor: "conductor",
-        data: { runId, worker: "w", title: null, kind: null },
-      },
-      {
-        type: "WorkItemReleased",
-        actor: "conductor",
-        data: { runId, reason: "the gate failed" },
-      },
-    ]);
-    await build();
+      await store.append(item, 0, [
+        {
+          type: 'WorkItemClaimed',
+          actor: 'conductor',
+          data: { runId, worker: 'w', title: null, kind: null },
+        },
+        {
+          type: 'WorkItemReleased',
+          actor: 'conductor',
+          data: { runId, reason: 'the gate failed' },
+        },
+      ])
+      await build()
 
-    const attemptedAt = (await readAttempt(project)) as Date;
+      const attemptedAt = (await readAttempt(project)) as Date
 
-    // Released, so the row is `queued` again — and that is exactly the loop the
-    // backoff exists to break: the release is the completion event that starts
-    // the next pass.
-    const straightAway = await selectRunnable({
-      project,
-      offered,
-      kinds,
-      backoffMs: HOUR,
-      now: new Date(attemptedAt.getTime() + 59 * 60_000),
-    });
-    expect(straightAway).toEqual([]);
+      // Released, so the row is `queued` again — and that is exactly the loop the
+      // backoff exists to break: the release is the completion event that starts
+      // the next pass.
+      const straightAway = await selectRunnable({
+        project,
+        offered,
+        kinds,
+        backoffMs: HOUR,
+        now: new Date(attemptedAt.getTime() + 59 * 60_000),
+      })
+      expect(straightAway).toEqual([])
 
-    const later = await selectRunnable({
-      project,
-      offered,
-      kinds,
-      backoffMs: HOUR,
-      now: new Date(attemptedAt.getTime() + HOUR),
-    });
-    expect(later.map((r) => r.issue)).toEqual(["7"]);
+      const later = await selectRunnable({
+        project,
+        offered,
+        kinds,
+        backoffMs: HOUR,
+        now: new Date(attemptedAt.getTime() + HOUR),
+      })
+      expect(later.map((r) => r.issue)).toEqual(['7'])
 
-    // And the same log with a shorter window says the opposite, which is the
-    // whole of "the recipe decides" (0028).
-    const impatient = await selectRunnable({
-      project,
-      offered,
-      kinds,
-      backoffMs: 60_000,
-      now: new Date(attemptedAt.getTime() + 5 * 60_000),
-    });
-    expect(impatient.map((r) => r.issue)).toEqual(["7"]);
+      // And the same log with a shorter window says the opposite, which is the
+      // whole of "the recipe decides" (0028).
+      const impatient = await selectRunnable({
+        project,
+        offered,
+        kinds,
+        backoffMs: 60_000,
+        now: new Date(attemptedAt.getTime() + 5 * 60_000),
+      })
+      expect(impatient.map((r) => r.issue)).toEqual(['7'])
 
-    await drop(project);
-  });
-});
+      await drop(project)
+    },
+  )
+})
 
 /**
  * The rule read forwards, so that something can be *said* about a held item.
  * Pure, and tested as such: the arithmetic is what the board and `lingtai
  * status` put in front of a person, and it should not need a database.
  */
-describe("heldUntil", () => {
-  const at = new Date("2026-09-08T12:00:00Z");
-  const now = at.getTime() + 10 * 60_000;
+describe('heldUntil', () => {
+  const at = new Date('2026-09-08T12:00:00Z')
+  const now = at.getTime() + 10 * 60_000
 
-  it("says when the window ends, while it is still open", () => {
-    const until = heldUntil({ lastAttemptAt: at, repairPending: false }, HOUR, now);
-    expect(until?.toISOString()).toBe("2026-09-08T13:00:00.000Z");
-  });
+  it('says when the window ends, while it is still open', () => {
+    const until = heldUntil({ lastAttemptAt: at, repairPending: false }, HOUR, now)
+    expect(until?.toISOString()).toBe('2026-09-08T13:00:00.000Z')
+  })
 
-  it("holds nothing once the window has passed", () => {
-    expect(heldUntil({ lastAttemptAt: at, repairPending: false }, 5 * 60_000, now)).toBeNull();
-  });
+  it('holds nothing once the window has passed', () => {
+    expect(heldUntil({ lastAttemptAt: at, repairPending: false }, 5 * 60_000, now)).toBeNull()
+  })
 
-  it("holds nothing that has never been attempted", () => {
-    expect(heldUntil({ lastAttemptAt: null, repairPending: false }, HOUR, now)).toBeNull();
-  });
+  it('holds nothing that has never been attempted', () => {
+    expect(heldUntil({ lastAttemptAt: null, repairPending: false }, HOUR, now)).toBeNull()
+  })
 
   /**
    * A pending repair jumps the backoff, and only a repair (0025 §3, 0028).
@@ -264,60 +272,60 @@ describe("heldUntil", () => {
    * the run it was released for, and making it wait an hour would leave it
    * stuck an hour longer.
    */
-  it("holds nothing with a repair pending", () => {
-    expect(heldUntil({ lastAttemptAt: at, repairPending: true }, HOUR, now)).toBeNull();
-  });
-});
+  it('holds nothing with a repair pending', () => {
+    expect(heldUntil({ lastAttemptAt: at, repairPending: true }, HOUR, now)).toBeNull()
+  })
+})
 
 /** What a person is shown. Minutes while it matters, hours while it does not. */
-describe("inWords", () => {
-  it("says a duration the way the recipe writes one", () => {
-    expect(inWords(HOUR)).toBe("1h");
-    expect(inWords(45 * 60_000)).toBe("45m");
-    expect(inWords(90 * 60_000)).toBe("1h 30m");
-    expect(inWords(30_000)).toBe("under a minute");
-    expect(inWords(-1)).toBe("now");
-  });
+describe('inWords', () => {
+  it('says a duration the way the recipe writes one', () => {
+    expect(inWords(HOUR)).toBe('1h')
+    expect(inWords(45 * 60_000)).toBe('45m')
+    expect(inWords(90 * 60_000)).toBe('1h 30m')
+    expect(inWords(30_000)).toBe('under a minute')
+    expect(inWords(-1)).toBe('now')
+  })
 
   /**
    * The board asks this about a card's age, where `48h` is correct and
    * unreadable — "five minutes and three days look identical" was the whole of
    * #79's first complaint.
    */
-  it("says days once hours stop being readable", () => {
-    expect(inWords(48 * HOUR)).toBe("2d");
-    expect(inWords(51 * HOUR)).toBe("2d 3h");
+  it('says days once hours stop being readable', () => {
+    expect(inWords(48 * HOUR)).toBe('2d')
+    expect(inWords(51 * HOUR)).toBe('2d 3h')
     // The boundary belongs to hours, not to a zero-day.
-    expect(inWords(23 * HOUR)).toBe("23h");
-  });
+    expect(inWords(23 * HOUR)).toBe('23h')
+  })
 
   /** `Math.round` on the remainder turns 1h 59m 40s into "1h 60m". */
-  it("never carries a remainder past its own unit", () => {
-    expect(inWords(HOUR + 59 * 60_000 + 40_000)).toBe("1h 59m");
-  });
-});
+  it('never carries a remainder past its own unit', () => {
+    expect(inWords(HOUR + 59 * 60_000 + 40_000)).toBe('1h 59m')
+  })
+})
 
 /** The projection's own timestamp, so the test's window is the row's window. */
 async function readAttempt(project: string): Promise<Date | null> {
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
+  const c = new pg.Client({ connectionString: directPostgresUrl() })
+  await c.connect()
   try {
     const { rows } = await c.query<{ last_attempt_at: Date | null }>(
-      "select last_attempt_at from task_view where project = $1",
+      'select last_attempt_at from task_view where project = $1',
       [project],
-    );
-    return rows[0]?.last_attempt_at ?? null;
+    )
+    return rows[0]?.last_attempt_at ?? null
   } finally {
-    await c.end();
+    await c.end()
   }
 }
 
 async function drop(project: string): Promise<void> {
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
+  const c = new pg.Client({ connectionString: directPostgresUrl() })
+  await c.connect()
   try {
-    await c.query("delete from task_view where project = $1", [project]);
+    await c.query('delete from task_view where project = $1', [project])
   } finally {
-    await c.end();
+    await c.end()
   }
 }

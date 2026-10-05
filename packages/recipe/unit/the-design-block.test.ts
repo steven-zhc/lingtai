@@ -25,13 +25,14 @@
  * What it does assert is the block itself, in a valid recipe: the fields, their
  * order, and the plugin's own `at`.
  */
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { parse as parseYaml } from "yaml";
-import { RECIPE_PATH, resolveSource } from "@lingtai/recipe";
+import { readFileSync } from 'node:fs'
 
-const root = new URL("../../../", import.meta.url);
-const EXPERIMENT = "doc/experiments/015-does-a-design-make-the-implementing-run-smaller.md";
+import { RECIPE_PATH, resolveSource } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
+import { parse as parseYaml } from 'yaml'
+
+const root = new URL('../../../', import.meta.url)
+const EXPERIMENT = 'doc/experiments/015-does-a-design-make-the-implementing-run-smaller.md'
 
 /**
  * The block as the experiment publishes it — sliced from `  design:` so the
@@ -39,23 +40,23 @@ const EXPERIMENT = "doc/experiments/015-does-a-design-make-the-implementing-run-
  * indented to sit directly under `steps:`.
  */
 function documented(): string {
-  const md = readFileSync(new URL(EXPERIMENT, root), "utf8");
-  const fence = md.match(/```yaml\n([\s\S]*?)```/);
-  if (fence === null) throw new Error(`${EXPERIMENT} has no yaml block — the block has no home`);
-  const at = fence[1]!.indexOf("  design:");
-  if (at === -1) throw new Error(`${EXPERIMENT}'s first yaml block does not declare \`design:\``);
-  return fence[1]!.slice(at);
+  const md = readFileSync(new URL(EXPERIMENT, root), 'utf8')
+  const fence = md.match(/```yaml\n([\s\S]*?)```/)
+  if (fence === null) throw new Error(`${EXPERIMENT} has no yaml block — the block has no home`)
+  const at = fence[1]!.indexOf('  design:')
+  if (at === -1) throw new Error(`${EXPERIMENT}'s first yaml block does not declare \`design:\``)
+  return fence[1]!.slice(at)
 }
 
 /** The documented block, in this repository's own recipe, resolved by the real schema. */
 function resolved() {
-  const live = readFileSync(new URL(RECIPE_PATH, root), "utf8");
-  const spliced = live.replace(/^steps:\n/m, `steps:\n${documented()}`);
-  if (spliced === live) throw new Error(`${RECIPE_PATH} has no \`steps:\` to splice into`);
-  return resolveSource(spliced, "main", EXPERIMENT).recipe;
+  const live = readFileSync(new URL(RECIPE_PATH, root), 'utf8')
+  const spliced = live.replace(/^steps:\n/m, `steps:\n${documented()}`)
+  if (spliced === live) throw new Error(`${RECIPE_PATH} has no \`steps:\` to splice into`)
+  return resolveSource(spliced, 'main', EXPERIMENT).recipe
 }
 
-describe("the `design:` block 015 publishes", () => {
+describe('the `design:` block 015 publishes', () => {
   /**
    * **It resolves**, which is the claim the live queue would otherwise test. A
    * plugin declared at a step it does not serve, a field it does not understand,
@@ -63,8 +64,8 @@ describe("the `design:` block 015 publishes", () => {
    * resolves, and all of them fail here instead.
    */
   it("resolves in this repository's own recipe", () => {
-    expect(resolved().steps.design).toHaveLength(2);
-  });
+    expect(resolved().steps.design).toHaveLength(2)
+  })
 
   /**
    * **The drafter first and the keep second, because that order is the
@@ -73,12 +74,12 @@ describe("the `design:` block 015 publishes", () => {
    * refused by `filePlugin`, and the reason the document's block cannot be
    * reordered by somebody tidying it.
    */
-  it("drafts before it keeps, and names the runtime the conductor runs", () => {
-    const [drafter, keep] = resolved().steps.design;
-    expect(drafter).toMatchObject({ agent: "claude-code" });
-    expect("file" in drafter!).toBe(false);
-    expect(keep).toMatchObject({ file: expect.stringContaining("doc/design/") });
-  });
+  it('drafts before it keeps, and names the runtime the conductor runs', () => {
+    const [drafter, keep] = resolved().steps.design
+    expect(drafter).toMatchObject({ agent: 'claude-code' })
+    expect('file' in drafter!).toBe(false)
+    expect(keep).toMatchObject({ file: expect.stringContaining('doc/design/') })
+  })
 
   /**
    * **`prompt:` carries the project's half and not the step's.** What is written
@@ -88,14 +89,14 @@ describe("the `design:` block 015 publishes", () => {
    * in one context window. Pinned as *it says something, and it does not say the
    * built-in's sentences*.
    */
-  it("gives the drafter a project prompt that does not restate the built-in", () => {
-    const [drafter] = resolved().steps.design;
-    const prompt = (drafter as { prompt?: string }).prompt ?? "";
-    expect(prompt.length).toBeGreaterThan(0);
-    expect(prompt).toContain("file.ts:line");
-    expect(prompt).not.toContain("Reply with the document and nothing else");
-    expect(prompt).not.toContain("Do not change it");
-  });
+  it('gives the drafter a project prompt that does not restate the built-in', () => {
+    const [drafter] = resolved().steps.design
+    const prompt = (drafter as { prompt?: string }).prompt ?? ''
+    expect(prompt.length).toBeGreaterThan(0)
+    expect(prompt).toContain('file.ts:line')
+    expect(prompt).not.toContain('Reply with the document and nothing else')
+    expect(prompt).not.toContain('Do not change it')
+  })
 
   /**
    * **The published block declares `design` and no other step**, which is the
@@ -111,10 +112,10 @@ describe("the `design:` block 015 publishes", () => {
    * from `  design:`, so it can only ever declare `design` — that expectation is
    * green before the document is read, which is why it is this one instead.
    */
-  it("publishes a block that declares `design` and no other step", () => {
-    const block = parseYaml(`steps:\n${documented()}`) as { steps: Record<string, unknown> };
-    expect(Object.keys(block.steps)).toEqual(["design"]);
-  });
+  it('publishes a block that declares `design` and no other step', () => {
+    const block = parseYaml(`steps:\n${documented()}`) as { steps: Record<string, unknown> }
+    expect(Object.keys(block.steps)).toEqual(['design'])
+  })
 
   /**
    * **§4's queries name the drafter, and this is what holds the two together.**
@@ -128,10 +129,10 @@ describe("the `design:` block 015 publishes", () => {
    * key (`packages/domain/src/events.ts:812`).
    */
   it("names the drafter in every query that reads the drafter's row", () => {
-    const [drafter] = resolved().steps.design;
-    const md = readFileSync(new URL(EXPERIMENT, root), "utf8");
-    const named = [...md.matchAll(/data->>'action' = '([^']*)'/g)].map((m) => m[1]);
-    expect(named.length).toBeGreaterThan(0);
-    expect(new Set(named)).toEqual(new Set([drafter!.name]));
-  });
-});
+    const [drafter] = resolved().steps.design
+    const md = readFileSync(new URL(EXPERIMENT, root), 'utf8')
+    const named = [...md.matchAll(/data->>'action' = '([^']*)'/g)].map((m) => m[1])
+    expect(named.length).toBeGreaterThan(0)
+    expect(new Set(named)).toEqual(new Set([drafter!.name]))
+  })
+})

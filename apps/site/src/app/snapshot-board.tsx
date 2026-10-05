@@ -1,4 +1,4 @@
-import { elapsed, money, stamp, type Snapshot, type SnapshotCard, type SnapshotLane } from "@/lib/snapshot";
+import { elapsed, money, stamp, type Snapshot, type SnapshotCard, type SnapshotLane } from '@/lib/snapshot'
 
 /**
  * Lingtai's own board, on the front page.
@@ -17,7 +17,7 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
   // The lane's own count and not the cards drawn in it: a lane publishes a
   // handful, and "3 waiting on people" has to mean three tickets rather than
   // three pictures of tickets.
-  const waiting = snapshot.lanes.find((l) => l.id === "waiting")?.count ?? 0;
+  const waiting = snapshot.lanes.find((l) => l.id === 'waiting')?.count ?? 0
   return (
     <>
       <div className="snap">
@@ -28,12 +28,12 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
             {snapshot.commit !== null && ` · ${snapshot.commit}`}
           </span>
           <span>
-            {snapshot.totals.cards} work items · {snapshot.totals.turns} agent turns ·{" "}
-            {money(snapshot.totals.costUsd)} spent
+            {snapshot.totals.cards} work items · {snapshot.totals.turns} agent turns · {money(snapshot.totals.costUsd)}{' '}
+            spent
           </span>
           {waiting > 0 && (
             <span className="chip sig">
-              {waiting} waiting on {waiting === 1 ? "a person" : "people"}
+              {waiting} waiting on {waiting === 1 ? 'a person' : 'people'}
             </span>
           )}
         </div>
@@ -44,22 +44,23 @@ export function SnapshotBoard({ snapshot }: { snapshot: Snapshot }) {
         </div>
       </div>
       <p className="snap-note">
-        Snapshot from {stamp(snapshot.capturedAt)}, not live. Lane counts and totals include all
-        work, even when only a few cards are shown.
+        Snapshot from {stamp(snapshot.capturedAt)}, not live. Lane counts and totals include all work, even when only a
+        few cards are shown.
         {snapshot.withheld > 0 && (
           <>
-            {" "}{snapshot.withheld} private-repository{" "}
-            {snapshot.withheld === 1 ? "card has" : "cards have"} identifying details withheld;
-            {snapshot.withheld === 1 ? " its" : " their"} lane and totals still count.
+            {' '}
+            {snapshot.withheld} private-repository {snapshot.withheld === 1 ? 'card has' : 'cards have'} identifying
+            details withheld;
+            {snapshot.withheld === 1 ? ' its' : ' their'} lane and totals still count.
           </>
         )}
       </p>
     </>
-  );
+  )
 }
 
 /** How many landed items stay open before the rest are counted rather than listed. */
-const LANDED_OPEN = 3;
+const LANDED_OPEN = 3
 
 /**
  * One lane: the count is the lane, the cards are a sample of it.
@@ -72,18 +73,16 @@ const LANDED_OPEN = 3;
  * kind of figure this page exists to not print.
  */
 function Lane({ lane }: { lane: SnapshotLane }) {
-  const hot = lane.id === "waiting" && lane.count > 0;
-  const quiet = lane.id === "landed";
+  const hot = lane.id === 'waiting' && lane.count > 0
+  const quiet = lane.id === 'landed'
   return (
-    <div className={`col${hot ? " hot" : ""}${quiet ? " quiet" : ""}`}>
+    <div className={`col${hot ? ' hot' : ''}${quiet ? ' quiet' : ''}`}>
       <div className="col-h">
         <span>{lane.label}</span>
         <span className="ct">{lane.count}</span>
       </div>
       {lane.cards.length === 0 ? (
-        <p className="empty">
-          {lane.id === "waiting" ? "Nothing is waiting on you." : "Nothing here."}
-        </p>
+        <p className="empty">{lane.id === 'waiting' ? 'Nothing is waiting on you.' : 'Nothing here.'}</p>
       ) : quiet ? (
         <Landed lane={lane} />
       ) : (
@@ -97,7 +96,7 @@ function Lane({ lane }: { lane: SnapshotLane }) {
         </>
       )}
     </div>
-  );
+  )
 }
 
 /**
@@ -110,32 +109,32 @@ function Lane({ lane }: { lane: SnapshotLane }) {
  * more" — the same figure it would have said before the snapshot was capped.
  */
 function Landed({ lane }: { lane: SnapshotLane }) {
-  const shown = lane.cards.slice(0, LANDED_OPEN);
+  const shown = lane.cards.slice(0, LANDED_OPEN)
   return (
     <>
       <ul className="landed">
         {shown.map((card, i) => (
           <li key={i} className="lrow">
-            <span className={card.ref === null ? "withheld" : undefined}>{ref(card)}</span>
-            <span className="proj">{card.project ?? ""}</span>
-            <span>{money(card.costUsd) ?? ""}</span>
+            <span className={card.ref === null ? 'withheld' : undefined}>{ref(card)}</span>
+            <span className="proj">{card.project ?? ''}</span>
+            <span>{money(card.costUsd) ?? ''}</span>
           </li>
         ))}
       </ul>
       <Rest more={lane.count - shown.length} />
     </>
-  );
+  )
 }
 
 /** What is in the lane and not on the page. Says where to find it. */
 function Rest({ more }: { more: number }) {
-  if (more <= 0) return null;
-  return <p className="empty">and {more} more, all of them in the log.</p>;
+  if (more <= 0) return null
+  return <p className="empty">and {more} more, all of them in the log.</p>
 }
 
 function Card({ card }: { card: SnapshotCard }) {
-  const age = elapsed(card.hoursSinceUpdate);
-  const cost = money(card.costUsd);
+  const age = elapsed(card.hoursSinceUpdate)
+  const cost = money(card.costUsd)
   return (
     <article className={`card ${accent(card)}`}>
       <div className="id">
@@ -144,27 +143,25 @@ function Card({ card }: { card: SnapshotCard }) {
             one board over every project Lingtai runs. A withheld card links
             nowhere, because the link would name what the card does not. */}
         {card.ref !== null && card.project !== null ? (
-          <a className="iss" href={`https://github.com/${card.project}/issues/${card.ref.replace("#", "")}`}>
+          <a className="iss" href={`https://github.com/${card.project}/issues/${card.ref.replace('#', '')}`}>
             {card.ref}
           </a>
         ) : (
           <span className="withheld">{ref(card)}</span>
-        )}{" "}
-        <span className="proj">{card.project ?? "a private repository"}</span> · {card.kind}
+        )}{' '}
+        <span className="proj">{card.project ?? 'a private repository'}</span> · {card.kind}
       </div>
-      <div className="ti">
-        {card.title ?? <span className="withheld">title withheld</span>}
-      </div>
+      <div className="ti">{card.title ?? <span className="withheld">title withheld</span>}</div>
       <ul className="meta">
-        {age !== null && <li className={`pill${card.blocked ? " sig" : ""}`}>{age}</li>}
+        {age !== null && <li className={`pill${card.blocked ? ' sig' : ''}`}>{age}</li>}
         {card.turns !== null && <li className="pill">{card.turns} turns</li>}
         {cost !== null && <li className="pill">{cost}</li>}
         {card.attempts > 1 && <li className="pill hold">attempt {card.attempts}</li>}
         {card.blocked && <li className="pill sig">blocked on you</li>}
       </ul>
-      {card.note !== null && <div style={{ color: "var(--ink-2)", fontSize: 11.5 }}>{card.note}</div>}
+      {card.note !== null && <div style={{ color: 'var(--ink-2)', fontSize: 11.5 }}>{card.note}</div>}
     </article>
-  );
+  )
 }
 
 /**
@@ -177,7 +174,7 @@ function Card({ card }: { card: SnapshotCard }) {
  * configured and did not run.
  */
 function ref(card: SnapshotCard): string {
-  return card.ref ?? "withheld";
+  return card.ref ?? 'withheld'
 }
 
 /**
@@ -187,11 +184,11 @@ function ref(card: SnapshotCard): string {
  * version of it.
  */
 function accent(card: SnapshotCard): string {
-  if (card.blocked) return "a-sig";
-  if (card.lane === "running") return "a-run";
-  if (card.lane === "landed") return "a-pass";
-  if (card.attempts > 1) return "a-hold";
-  return "";
+  if (card.blocked) return 'a-sig'
+  if (card.lane === 'running') return 'a-run'
+  if (card.lane === 'landed') return 'a-pass'
+  if (card.attempts > 1) return 'a-hold'
+  return ''
 }
 
 /**
@@ -206,9 +203,8 @@ function accent(card: SnapshotCard): string {
 export function NoSnapshot() {
   return (
     <div className="no-snapshot">
-      <b>No public board snapshot in this build.</b> The site does not invent work or numbers.
-      Build beside a configured event store with <code>pnpm --filter @lingtai/site snapshot</code>{" "}
-      to publish a dated, privacy-filtered view.
+      <b>No public board snapshot in this build.</b> The site does not invent work or numbers. Build beside a configured
+      event store with <code>pnpm --filter @lingtai/site snapshot</code> to publish a dated, privacy-filtered view.
     </div>
-  );
+  )
 }

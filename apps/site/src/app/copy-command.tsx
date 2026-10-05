@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { useRef, useState } from "react";
+import { useRef, useState } from 'react'
 
 /**
  * The install line, with a button that copies it.
@@ -16,29 +16,29 @@ import { useRef, useState } from "react";
  * be read.
  */
 export function CopyCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-  const text = useRef<HTMLElement>(null);
+  const [copied, setCopied] = useState(false)
+  const text = useRef<HTMLElement>(null)
 
   async function copy() {
-    let ok = false;
+    let ok = false
     try {
-      await navigator.clipboard.writeText(command);
-      ok = true;
+      await navigator.clipboard.writeText(command)
+      ok = true
     } catch {
-      const node = text.current;
+      const node = text.current
       if (node !== null) {
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-        ok = document.execCommand("copy");
-        selection?.removeAllRanges();
+        const range = document.createRange()
+        range.selectNodeContents(node)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        ok = document.execCommand('copy')
+        selection?.removeAllRanges()
       }
     }
     if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
     }
   }
 
@@ -47,11 +47,11 @@ export function CopyCommand({ command }: { command: string }) {
       <span aria-hidden="true">$</span>
       <code ref={text}>{command}</code>
       <button type="button" className="copy" onClick={copy} aria-label="Copy the install command">
-        {copied ? "Copied" : "Copy"}
+        {copied ? 'Copied' : 'Copy'}
       </button>
       <span className="sr-only" role="status" aria-live="polite">
-        {copied ? "Copied to clipboard" : ""}
+        {copied ? 'Copied to clipboard' : ''}
       </span>
     </div>
-  );
+  )
 }

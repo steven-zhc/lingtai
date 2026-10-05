@@ -1,3 +1,4 @@
+import { RuntimeId } from '@lingtai/domain'
 /**
  * The `RuntimeId → factory` table, and the claim that it is the only place.
  *
@@ -15,16 +16,16 @@
  * `satisfies` line below is what pins that, and `pnpm typecheck` is where it
  * fails.
  */
-import { describe, expect, it } from "vitest";
-import { RuntimeId } from "@lingtai/domain";
-import { RUNTIMES, ToolsCannotBeDenied, createRuntime, everyRuntime } from "../src/runtimes.ts";
-import { AUTH_PROBES } from "../src/auth.ts";
-import type { Runtime } from "../src/runtime.ts";
+import { describe, expect, it } from 'vitest'
 
-describe("the table", () => {
-  it("has a row for every RuntimeId and no row for anything else", () => {
-    expect(Object.keys(RUNTIMES).sort()).toEqual([...RuntimeId.options].sort());
-  });
+import { AUTH_PROBES } from '../src/auth.ts'
+import type { Runtime } from '../src/runtime.ts'
+import { RUNTIMES, ToolsCannotBeDenied, createRuntime, everyRuntime } from '../src/runtimes.ts'
+
+describe('the table', () => {
+  it('has a row for every RuntimeId and no row for anything else', () => {
+    expect(Object.keys(RUNTIMES).sort()).toEqual([...RuntimeId.options].sort())
+  })
 
   /**
    * **A key that disagrees with its row is the silent pick 0046 §3 forbids**, one
@@ -33,21 +34,21 @@ describe("the table", () => {
    * a row filed under the wrong key would make that comparison pass while the
    * wrong binary ran.
    */
-  it("builds, for each id, a runtime that says it is that id", () => {
+  it('builds, for each id, a runtime that says it is that id', () => {
     for (const id of RuntimeId.options) {
-      expect(createRuntime(id).capabilities.id).toBe(id);
-      expect(RUNTIMES[id]().capabilities.id).toBe(id);
+      expect(createRuntime(id).capabilities.id).toBe(id)
+      expect(RUNTIMES[id]().capabilities.id).toBe(id)
     }
-  });
+  })
 
-  it("is exhaustive as a type, so a new enum member is a tsc error here", () => {
+  it('is exhaustive as a type, so a new enum member is a tsc error here', () => {
     // Not a runtime assertion — it is the `satisfies` that carries the claim, and
     // `pnpm typecheck` is where it fails. Written down because the guarantee is
     // the reason there is no `undefined` branch in `createRuntime`.
-    const exhaustive = RUNTIMES satisfies Record<RuntimeId, (o?: never) => Runtime>;
-    expect(Object.keys(exhaustive)).toHaveLength(RuntimeId.options.length);
-  });
-});
+    const exhaustive = RUNTIMES satisfies Record<RuntimeId, (o?: never) => Runtime>
+    expect(Object.keys(exhaustive)).toHaveLength(RuntimeId.options.length)
+  })
+})
 
 /**
  * **The second table, and why it is allowed to exist.**
@@ -64,33 +65,33 @@ describe("the table", () => {
  * assertions write that down where somebody counting the places a runtime is
  * named would look.
  */
-describe("the auth probe table, which init reads before there is a log", () => {
-  it("has the same keys as the factory table, because both are total over the enum", () => {
-    expect(Object.keys(AUTH_PROBES).sort()).toEqual(Object.keys(RUNTIMES).sort());
-    expect(Object.keys(AUTH_PROBES).sort()).toEqual([...RuntimeId.options].sort());
-  });
+describe('the auth probe table, which init reads before there is a log', () => {
+  it('has the same keys as the factory table, because both are total over the enum', () => {
+    expect(Object.keys(AUTH_PROBES).sort()).toEqual(Object.keys(RUNTIMES).sort())
+    expect(Object.keys(AUTH_PROBES).sort()).toEqual([...RuntimeId.options].sort())
+  })
 
-  it("answers every id with a function, so no id is probed by position", () => {
+  it('answers every id with a function, so no id is probed by position', () => {
     // It was `Promise.all([claudeCodeAuth(…), codexAuth(…)])` indexed against a
     // written-out list of ids — one insertion from reporting Codex's answer under
     // Claude Code's name.
-    for (const id of RuntimeId.options) expect(AUTH_PROBES[id]).toBeTypeOf("function");
-  });
-});
+    for (const id of RuntimeId.options) expect(AUTH_PROBES[id]).toBeTypeOf('function')
+  })
+})
 
-describe("what a caller may ask of any runtime", () => {
+describe('what a caller may ask of any runtime', () => {
   /**
    * 0054 applied one ticket early: the caller says what the agent is *for*, and
    * each row translates into its own vocabulary. A table typed on
    * `ClaudeCodeOptions` would make every other row translate `permissionMode`, a
    * word it does not have.
    */
-  it("takes runtime-neutral options every row can answer", () => {
+  it('takes runtime-neutral options every row can answer', () => {
     for (const id of RuntimeId.options) {
-      expect(createRuntime(id, { tools: "full" }).capabilities.id).toBe(id);
-      expect(createRuntime(id, { binary: "/nowhere/stand-in" }).capabilities.id).toBe(id);
+      expect(createRuntime(id, { tools: 'full' }).capabilities.id).toBe(id)
+      expect(createRuntime(id, { binary: '/nowhere/stand-in' }).capabilities.id).toBe(id)
     }
-  });
+  })
 
   /**
    * **`tools: "none"` is a promise and not a preference, so a row that cannot
@@ -105,18 +106,17 @@ describe("what a caller may ask of any runtime", () => {
    * nothing reported that the deny list had been dropped. That is 0007's
    * *"never silently downgrades"* one layer along.
    */
-  it("refuses a runtime that has no way to be given no tools, by name", () => {
-    expect(createRuntime("claude-code", { tools: "none" }).capabilities.id).toBe("claude-code");
-    expect(() => createRuntime("codex", { tools: "none" })).toThrow(ToolsCannotBeDenied);
-    expect(() => createRuntime("codex", { tools: "none" })).toThrow(/read-only/);
+  it('refuses a runtime that has no way to be given no tools, by name', () => {
+    expect(createRuntime('claude-code', { tools: 'none' }).capabilities.id).toBe('claude-code')
+    expect(() => createRuntime('codex', { tools: 'none' })).toThrow(ToolsCannotBeDenied)
+    expect(() => createRuntime('codex', { tools: 'none' })).toThrow(/read-only/)
     // `full` is unaffected: a Codex *implementer* is what the sandbox is for.
-    expect(createRuntime("codex", { tools: "full" }).capabilities.id).toBe("codex");
-    expect(createRuntime("codex").capabilities.id).toBe("codex");
-  });
+    expect(createRuntime('codex', { tools: 'full' }).capabilities.id).toBe('codex')
+    expect(createRuntime('codex').capabilities.id).toBe('codex')
+  })
+})
 
-});
-
-describe("every runtime, for asking all of them something", () => {
+describe('every runtime, for asking all of them something', () => {
   /**
    * `projects.ts`'s sign-in probe is the caller, and the probe is the one place a
    * forgotten runtime is **invisible rather than broken**: detection is allowed
@@ -124,38 +124,41 @@ describe("every runtime, for asking all of them something", () => {
    * runtime signed in* a reason that is false.
    */
   it("is the table's own values, so a row is all a third runtime needs", () => {
-    expect(everyRuntime().map((r) => r.capabilities.id).sort()).toEqual([...RuntimeId.options].sort());
-    expect(everyRuntime()).toHaveLength(Object.keys(RUNTIMES).length);
-  });
+    expect(
+      everyRuntime()
+        .map((r) => r.capabilities.id)
+        .sort(),
+    ).toEqual([...RuntimeId.options].sort())
+    expect(everyRuntime()).toHaveLength(Object.keys(RUNTIMES).length)
+  })
 
-  it("gives each one a checkAuth, so the probe can ask", () => {
+  it('gives each one a checkAuth, so the probe can ask', () => {
     // `signedInProbe` reads `checkAuth?.()`; a runtime that cannot be asked is
     // reported as not signed in, which for a runtime that *is* would be wrong.
-    for (const runtime of everyRuntime()) expect(runtime.checkAuth).toBeTypeOf("function");
-  });
+    for (const runtime of everyRuntime()) expect(runtime.checkAuth).toBeTypeOf('function')
+  })
 
   /**
    * Both adapters answer `invocation()` now, which is what `RunStarted.invocation`
    * records before a run happens. A runtime that cannot say must not pretend — the
    * field is optional for that reason — but neither of these two is that runtime.
    */
-  it("gives each one an invocation, so RunStarted records how it was spawned", () => {
-    for (const runtime of everyRuntime()) expect(runtime.invocation).toBeTypeOf("function");
-  });
-});
+  it('gives each one an invocation, so RunStarted records how it was spawned', () => {
+    for (const runtime of everyRuntime()) expect(runtime.invocation).toBeTypeOf('function')
+  })
+})
 
-describe("the preference order, where more than one is signed in", () => {
+describe('the preference order, where more than one is signed in', () => {
   /**
    * `propose.ts` picks among ids *already signed in* — it constructs nothing, so
    * it does not read `RUNTIMES` — and what it needs is an order. The enum has one,
    * and it is the same order the ternary hardcoded.
    */
   it("is the enum's own, with claude-code first", () => {
-    expect(RuntimeId.options[0]).toBe("claude-code");
-    const prefer = (signedIn: readonly string[]) =>
-      RuntimeId.options.find((id) => signedIn.includes(id)) ?? null;
-    expect(prefer(["codex", "claude-code"])).toBe("claude-code");
-    expect(prefer(["codex"])).toBe("codex");
-    expect(prefer([])).toBeNull();
-  });
-});
+    expect(RuntimeId.options[0]).toBe('claude-code')
+    const prefer = (signedIn: readonly string[]) => RuntimeId.options.find((id) => signedIn.includes(id)) ?? null
+    expect(prefer(['codex', 'claude-code'])).toBe('claude-code')
+    expect(prefer(['codex'])).toBe('codex')
+    expect(prefer([])).toBeNull()
+  })
+})

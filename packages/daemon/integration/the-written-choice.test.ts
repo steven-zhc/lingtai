@@ -15,30 +15,31 @@
  * the case's own directory throughout, so nothing here can read or write the
  * operator's machine.
  */
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { repoRoot } from "@lingtai/env";
-import { describe, expect, it } from "vitest";
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+
+import { repoRoot } from '@lingtai/env'
+import { describe, expect, it } from 'vitest'
 
 /** A module of this workspace, as a URL a spawned `node` can import. */
 function module_(...parts: string[]): string {
-  return JSON.stringify(pathToFileURL(join(repoRoot(), ...parts)).href);
+  return JSON.stringify(pathToFileURL(join(repoRoot(), ...parts)).href)
 }
 
-const EVENT_STORE = module_("packages", "event-store", "src", "index.ts");
-const PROJECTOR = module_("packages", "projector", "src", "index.ts");
-const DAEMON = module_("packages", "daemon", "src", "index.ts");
-const CONTROL = module_("packages", "daemon", "src", "control.ts");
-const DOMAIN = module_("packages", "domain", "src", "index.ts");
+const EVENT_STORE = module_('packages', 'event-store', 'src', 'index.ts')
+const PROJECTOR = module_('packages', 'projector', 'src', 'index.ts')
+const DAEMON = module_('packages', 'daemon', 'src', 'index.ts')
+const CONTROL = module_('packages', 'daemon', 'src', 'control.ts')
+const DOMAIN = module_('packages', 'domain', 'src', 'index.ts')
 
 interface Ran {
-  home: string;
-  status: number | null;
-  out: string;
-  err: string;
+  home: string
+  status: number | null
+  out: string
+  err: string
 }
 
 /**
@@ -51,28 +52,28 @@ interface Ran {
  * the machine under test.
  */
 function run(script: string, config: string | null, env: NodeJS.ProcessEnv = {}): Ran {
-  const home = mkdtempSync(join(tmpdir(), "lingtai-choice-"));
-  if (config !== null) writeFileSync(join(home, "config.yml"), config);
-  const ran = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
-    encoding: "utf8",
+  const home = mkdtempSync(join(tmpdir(), 'lingtai-choice-'))
+  if (config !== null) writeFileSync(join(home, 'config.yml'), config)
+  const ran = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
     timeout: 60_000,
     env: {
-      PATH: process.env["PATH"] ?? "",
+      PATH: process.env['PATH'] ?? '',
       HOME: home,
       LINGTAI_HOME: home,
-      LINGTAI_DATABASE_URL: "",
-      LINGTAI_DIRECT_DATABASE_URL: "",
+      LINGTAI_DATABASE_URL: '',
+      LINGTAI_DIRECT_DATABASE_URL: '',
       ...env,
     },
-  });
-  return { home, status: ran.status, out: ran.stdout, err: ran.stderr };
+  })
+  return { home, status: ran.status, out: ran.stdout, err: ran.stderr }
 }
 
 /** The last line of stdout, parsed. Anything the modules printed first is ignored. */
 function said<T>(ran: Ran): T {
-  expect(ran.err, ran.err).toBe("");
-  expect(ran.status, ran.out).toBe(0);
-  return JSON.parse(ran.out.trim().split("\n").at(-1)!) as T;
+  expect(ran.err, ran.err).toBe('')
+  expect(ran.status, ran.out).toBe(0)
+  return JSON.parse(ran.out.trim().split('\n').at(-1)!) as T
 }
 
 /**
@@ -85,8 +86,8 @@ function said<T>(ran: Ran): T {
  * Postgres anywhere" is not a claim here, it is the thing that would have
  * thrown.
  */
-describe("a machine that wrote sqlite", () => {
-  it("appends, folds, renders and beats, without opening a socket", () => {
+describe('a machine that wrote sqlite', () => {
+  it('appends, folds, renders and beats, without opening a socket', () => {
     const script = `
       import net from "node:net";
       import tls from "node:tls";
@@ -131,29 +132,29 @@ describe("a machine that wrote sqlite", () => {
         folded: lags.some((l) => l.name === taskViewProjection.name),
         streams: streams.length,
       }));
-    `;
-    const ran = run(script, "database:\n  store: sqlite\n");
+    `
+    const ran = run(script, 'database:\n  store: sqlite\n')
     const read = said<{
-      cards: string[];
-      state: string | null;
-      pid: number | null;
-      folded: boolean;
-      streams: number;
-    }>(ran);
+      cards: string[]
+      state: string | null
+      pid: number | null
+      folded: boolean
+      streams: number
+    }>(ran)
 
     // The board's card, out of the projection, out of the fold, out of the log.
-    expect(read.cards).toEqual(["a card with no server behind it"]);
+    expect(read.cards).toEqual(['a card with no server behind it'])
     // The beacon's row, which is what the health dot and `lingtai doctor` read.
-    expect(read.state).toBe("up");
-    expect(read.pid).toBeGreaterThan(0);
+    expect(read.state).toBe('up')
+    expect(read.pid).toBeGreaterThan(0)
     // The lag the same dot reports, and the questions that are not a stream
     // read — `LogQueries`, the third face of a log (#221).
-    expect(read.folded).toBe(true);
-    expect(read.streams).toBe(1);
+    expect(read.folded).toBe(true)
+    expect(read.streams).toBe(1)
     // And all of it is in the one file the choice named.
-    expect(existsSync(join(ran.home, "lingtai.db"))).toBe(true);
-  }, 90_000);
-});
+    expect(existsSync(join(ran.home, 'lingtai.db'))).toBe(true)
+  }, 90_000)
+})
 
 /**
  * **`store: postgres`, and `node:sqlite` never loaded.**
@@ -178,9 +179,9 @@ describe("a machine that wrote sqlite", () => {
  * five faces is used, the recorder is cleared between them, and each is
  * asserted to have gone to the written port **and nowhere else**.
  */
-describe("a machine that wrote postgres", () => {
-  const URL_ = "postgresql://nobody:secret@127.0.0.1:5599/none";
-  const DIRECT = "postgresql://nobody:secret@127.0.0.1:5600/none";
+describe('a machine that wrote postgres', () => {
+  const URL_ = 'postgresql://nobody:secret@127.0.0.1:5599/none'
+  const DIRECT = 'postgresql://nobody:secret@127.0.0.1:5600/none'
 
   /**
    * Each face of the choice, used once, with the addresses it reached.
@@ -234,36 +235,36 @@ describe("a machine that wrote postgres", () => {
         store, queries, waker, fold, beacon,
         sqlite: process.moduleLoadList.filter((m) => m.includes("sqlite")),
       }));
-    `;
+    `
 
   interface Reached {
-    store: number[];
-    queries: number[];
-    waker: number[];
-    fold: number[];
-    beacon: number[];
-    sqlite: string[];
+    store: number[]
+    queries: number[]
+    waker: number[]
+    fold: number[]
+    beacon: number[]
+    sqlite: string[]
   }
 
   /** Went to that port, and to no other. `toContain` alone would miss a second database. */
   function only(ports: number[], port: number, what: string): void {
-    expect(ports.length, `${what} opened no connection`).toBeGreaterThan(0);
-    expect([...new Set(ports)], what).toEqual([port]);
+    expect(ports.length, `${what} opened no connection`).toBeGreaterThan(0)
+    expect([...new Set(ports)], what).toEqual([port])
   }
 
-  it("opens all five connections at the written URL, and never loads node:sqlite", () => {
-    const read = said<Reached>(run(probe, `database:\n  store: postgres\n  url: ${URL_}\n`));
+  it('opens all five connections at the written URL, and never loads node:sqlite', () => {
+    const read = said<Reached>(run(probe, `database:\n  store: postgres\n  url: ${URL_}\n`))
 
     // The boundary, stated as what the process loaded.
-    expect(read.sqlite).toEqual([]);
+    expect(read.sqlite).toEqual([])
     // The log's three faces (#221), the fold, and the beacon — each at the port
     // the file named, none of them anywhere else.
-    only(read.store, 5599, "the log's store");
-    only(read.queries, 5599, "the log's queries");
-    only(read.waker, 5599, "the log's waker");
-    only(read.fold, 5599, "the projections");
-    only(read.beacon, 5599, "the beacon");
-  }, 90_000);
+    only(read.store, 5599, "the log's store")
+    only(read.queries, 5599, "the log's queries")
+    only(read.waker, 5599, "the log's waker")
+    only(read.fold, 5599, 'the projections')
+    only(read.beacon, 5599, 'the beacon')
+  }, 90_000)
 
   /**
    * **And the waker's connection, and only the waker's, follows an exported
@@ -281,20 +282,20 @@ describe("a machine that wrote postgres", () => {
    * one — from the environment or from an env file, since that string is what
    * `.env.example` tells a checkout to keep.
    */
-  it("sends the waker, alone, to an exported session-mode URL", () => {
+  it('sends the waker, alone, to an exported session-mode URL', () => {
     const read = said<Reached>(
       run(probe, `database:\n  store: postgres\n  url: ${URL_}\n`, {
         LINGTAI_DIRECT_DATABASE_URL: DIRECT,
       }),
-    );
+    )
 
-    only(read.waker, 5600, "the log's waker");
-    only(read.store, 5599, "the log's store");
-    only(read.queries, 5599, "the log's queries");
-    only(read.fold, 5599, "the projections");
-    only(read.beacon, 5599, "the beacon");
-  }, 90_000);
-});
+    only(read.waker, 5600, "the log's waker")
+    only(read.store, 5599, "the log's store")
+    only(read.queries, 5599, "the log's queries")
+    only(read.fold, 5599, 'the projections')
+    only(read.beacon, 5599, 'the beacon')
+  }, 90_000)
+})
 
 /**
  * **A machine that wrote nothing is refused by name, at first use.**
@@ -309,8 +310,8 @@ describe("a machine that wrote postgres", () => {
  * So three things are asserted, and the third is the one that matters: the
  * modules load, the first use is refused by name, and **no file was created**.
  */
-describe("a machine that wrote nothing", () => {
-  it("loads, refuses the first append by name, and creates no log", () => {
+describe('a machine that wrote nothing', () => {
+  it('loads, refuses the first append by name, and creates no log', () => {
     const script = `
       const { eventStore } = await import(${EVENT_STORE});
       const { readTasks } = await import(${PROJECTOR});
@@ -327,21 +328,21 @@ describe("a machine that wrote nothing", () => {
         tasks: await refusal("tasks", () => readTasks({})),
         status: await refusal("status", () => readStatus()),
       }));
-    `;
+    `
     // No `database` key at all, which is every installation that upgrades into
     // 0056 — and a `config.yml` that exists, because the absence of the file
     // and the absence of the key must reach the same refusal.
-    const ran = run(script, "runtime:\n  agent: claude-code\n");
-    const read = said<Record<string, string>>(ran);
+    const ran = run(script, 'runtime:\n  agent: claude-code\n')
+    const read = said<Record<string, string>>(ran)
 
-    expect(ran.out.split("\n")[0]).toBe("loaded");
+    expect(ran.out.split('\n')[0]).toBe('loaded')
     for (const [what, line] of Object.entries(read)) {
-      expect(line, what).toContain("which store it runs");
-      expect(line, what).toContain("lingtai init");
+      expect(line, what).toContain('which store it runs')
+      expect(line, what).toContain('lingtai init')
     }
     // **Never defaulted.** An empty append of an empty batch is a no-op on
     // either store, so a file here would mean the refusal had been replaced by
     // a guess — which is exactly what the ninth pass shipped.
-    expect(existsSync(join(ran.home, "lingtai.db"))).toBe(false);
-  }, 90_000);
-});
+    expect(existsSync(join(ran.home, 'lingtai.db'))).toBe(false)
+  }, 90_000)
+})

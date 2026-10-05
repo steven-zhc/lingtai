@@ -47,7 +47,7 @@
  * same name on the retry instead of stranding one.
  */
 export function armBranch(branch: string, n: number): string {
-  return `${armPrefix(branch)}${n}`;
+  return `${armPrefix(branch)}${n}`
 }
 
 /**
@@ -60,7 +60,7 @@ export function armBranch(branch: string, n: number): string {
  * too, so the publish and the delete are provably about one string.
  */
 export function agentBranch(issue: number | string): string {
-  return `agent/${issue}`;
+  return `agent/${issue}`
 }
 
 /**
@@ -72,5 +72,5 @@ export function agentBranch(issue: number | string): string {
  * equality.
  */
 export function armPrefix(branch: string): string {
-  return `${branch}-attempt-`;
+  return `${branch}-attempt-`
 }

@@ -1,3 +1,5 @@
+import { LABEL_STATES } from '@lingtai/domain'
+import type { TaskCard } from '@lingtai/projector/task-view'
 /**
  * Every state a task can be in is on exactly one column.
  *
@@ -8,20 +10,19 @@
  * was absent from the board for the whole three minutes its gates ran, while
  * `lingtai status` said `[gates]` throughout.
  */
-import { describe, expect, it } from "vitest";
-import { LABEL_STATES } from "@lingtai/domain";
-import type { TaskCard } from "@lingtai/projector/task-view";
-import { COLUMNS, emptyNote, toCard, toColumns } from "../src/lib/board.ts";
+import { describe, expect, it } from 'vitest'
 
-function task(state: TaskCard["state"]): TaskCard {
+import { COLUMNS, emptyNote, toCard, toColumns } from '../src/lib/board.ts'
+
+function task(state: TaskCard['state']): TaskCard {
   return {
     taskId: `wi-esctest-${state}`,
-    project: "esctest",
-    issue: "1",
-    title: "a task",
-    kind: "bug",
+    project: 'esctest',
+    issue: '1',
+    title: 'a task',
+    kind: 'bug',
     state,
-    tier: "guarded",
+    tier: 'guarded',
     runId: null,
     turns: null,
     costUsd: null,
@@ -35,7 +36,7 @@ function task(state: TaskCard["state"]): TaskCard {
     insertions: null,
     deletions: null,
     note: null,
-    updatedAt: new Date("2026-09-04T04:27:22Z"),
+    updatedAt: new Date('2026-09-04T04:27:22Z'),
     closedAt: null,
     attempts: 0,
     restarts: 0,
@@ -50,24 +51,27 @@ function task(state: TaskCard["state"]): TaskCard {
     answer: null,
     repairPending: false,
     repairCostUsd: null,
-  };
+  }
 }
 
 describe("the board's columns", () => {
-  it("puts a task in every state on exactly one column", () => {
+  it('puts a task in every state on exactly one column', () => {
     for (const state of LABEL_STATES) {
-      const columns = toColumns([toCard(task(state))]);
-      const on = columns.filter((c) => c.cards.length === 1);
-      expect(on.map((c) => c.id), `a task in ${state} is on`).toHaveLength(1);
-      expect(columns.reduce((n, c) => n + c.cards.length, 0)).toBe(1);
+      const columns = toColumns([toCard(task(state))])
+      const on = columns.filter((c) => c.cards.length === 1)
+      expect(
+        on.map((c) => c.id),
+        `a task in ${state} is on`,
+      ).toHaveLength(1)
+      expect(columns.reduce((n, c) => n + c.cards.length, 0)).toBe(1)
     }
-  });
+  })
 
-  it("loses none of them when they are on the board together", () => {
-    const columns = toColumns(LABEL_STATES.map((state) => toCard(task(state))));
-    expect(columns.reduce((n, c) => n + c.cards.length, 0)).toBe(LABEL_STATES.length);
-    expect(columns.map((c) => c.id)).toEqual(COLUMNS.map((c) => c.id));
-  });
+  it('loses none of them when they are on the board together', () => {
+    const columns = toColumns(LABEL_STATES.map((state) => toCard(task(state))))
+    expect(columns.reduce((n, c) => n + c.cards.length, 0)).toBe(LABEL_STATES.length)
+    expect(columns.map((c) => c.id)).toEqual(COLUMNS.map((c) => c.id))
+  })
 
   /**
    * *Nothing is runnable* and *the queue could not be listed* used to render
@@ -75,34 +79,29 @@ describe("the board's columns", () => {
    * parse, one that was missing and a misconfigured App all reached the same
    * empty catch, whose comment named only "GitHub unreachable".
    */
-  it("carries a queue that could not be listed as a reason, not as an absence", () => {
-    const columns = toColumns([], [{ project: "lingtai", reason: "source.kinds.3: Invalid option" }]);
-    const queued = columns.find((c) => c.id === "queued");
+  it('carries a queue that could not be listed as a reason, not as an absence', () => {
+    const columns = toColumns([], [{ project: 'lingtai', reason: 'source.kinds.3: Invalid option' }])
+    const queued = columns.find((c) => c.id === 'queued')
 
-    expect(queued?.cards).toEqual([]);
-    expect(queued?.problems).toEqual([
-      { project: "lingtai", reason: "source.kinds.3: Invalid option" },
-    ]);
+    expect(queued?.cards).toEqual([])
+    expect(queued?.problems).toEqual([{ project: 'lingtai', reason: 'source.kinds.3: Invalid option' }])
     // Only Queued. Every other column is a fold of the log, which cannot fail
     // to be asked.
-    expect(columns.filter((c) => c.problems !== undefined).map((c) => c.id)).toEqual(["queued"]);
-  });
+    expect(columns.filter((c) => c.problems !== undefined).map((c) => c.id)).toEqual(['queued'])
+  })
 
-  it("leaves an empty queue empty, so the two stay distinguishable", () => {
-    const queued = toColumns([]).find((c) => c.id === "queued");
-    expect(queued?.cards).toEqual([]);
-    expect(queued?.problems).toBeUndefined();
-  });
+  it('leaves an empty queue empty, so the two stay distinguishable', () => {
+    const queued = toColumns([]).find((c) => c.id === 'queued')
+    expect(queued?.cards).toEqual([])
+    expect(queued?.problems).toBeUndefined()
+  })
 
-  it("shows a task in verifying as running, beside the state that shares the lane", () => {
-    const columns = toColumns([toCard(task("verifying")), toCard(task("running"))]);
-    const running = columns.find((c) => c.id === "running");
-    expect(running?.cards.map((c) => c.taskId)).toEqual([
-      "wi-esctest-verifying",
-      "wi-esctest-running",
-    ]);
-  });
-});
+  it('shows a task in verifying as running, beside the state that shares the lane', () => {
+    const columns = toColumns([toCard(task('verifying')), toCard(task('running'))])
+    const running = columns.find((c) => c.id === 'running')
+    expect(running?.cards.map((c) => c.taskId)).toEqual(['wi-esctest-verifying', 'wi-esctest-running'])
+  })
+})
 
 /**
  * The copy under an empty lane is a claim, and it can be false.
@@ -112,27 +111,27 @@ describe("the board's columns", () => {
  * the column, wrong about the world. Checked here rather than in the page,
  * because the sentence is a function of two facts and nothing else.
  */
-describe("what an empty column says", () => {
-  it("says Running is stopped, not bare, while the conductor is paused", () => {
-    expect(emptyNote("running", true)).toBe("Paused — nothing will start.");
-  });
+describe('what an empty column says', () => {
+  it('says Running is stopped, not bare, while the conductor is paused', () => {
+    expect(emptyNote('running', true)).toBe('Paused — nothing will start.')
+  })
 
-  it("keeps the ordinary copy when nothing is paused", () => {
-    expect(emptyNote("running", false)).toBe("Nothing here yet.");
-    expect(emptyNote("queued", false)).toBe("Nothing here yet.");
-  });
+  it('keeps the ordinary copy when nothing is paused', () => {
+    expect(emptyNote('running', false)).toBe('Nothing here yet.')
+    expect(emptyNote('queued', false)).toBe('Nothing here yet.')
+  })
 
-  it("never tells a person a lane is waiting on them when it is not", () => {
+  it('never tells a person a lane is waiting on them when it is not', () => {
     for (const paused of [true, false]) {
-      expect(emptyNote("waiting", paused)).toBe("Nothing is waiting on you.");
+      expect(emptyNote('waiting', paused)).toBe('Nothing is waiting on you.')
     }
-  });
+  })
 
-  it("says something for every column there is", () => {
+  it('says something for every column there is', () => {
     for (const column of COLUMNS) {
-      expect(emptyNote(column.id, true).length, `${column.id} says`).toBeGreaterThan(0);
+      expect(emptyNote(column.id, true).length, `${column.id} says`).toBeGreaterThan(0)
     }
-  });
+  })
 
   /**
    * Under a filter the lane is bare because of a choice the reader made, and
@@ -140,19 +139,19 @@ describe("what an empty column says", () => {
    * project they are not looking at (#86). Four cards under a heading reading
    * `Queued 9` was the same failure in the other direction.
    */
-  it("says whose emptiness it is when the board is narrowed to one project", () => {
-    expect(emptyNote("landed", false, "esctest")).toBe("Nothing here for esctest.");
-    expect(emptyNote("queued", false, "esctest")).toBe("Nothing here for esctest.");
-    expect(emptyNote("waiting", false, "esctest")).toBe("Nothing in esctest is waiting on you.");
-  });
+  it('says whose emptiness it is when the board is narrowed to one project', () => {
+    expect(emptyNote('landed', false, 'esctest')).toBe('Nothing here for esctest.')
+    expect(emptyNote('queued', false, 'esctest')).toBe('Nothing here for esctest.')
+    expect(emptyNote('waiting', false, 'esctest')).toBe('Nothing in esctest is waiting on you.')
+  })
 
-  it("leaves the pause alone under a filter, because a pause is not per-project", () => {
-    expect(emptyNote("running", true, "esctest")).toBe("Paused — nothing will start.");
-  });
+  it('leaves the pause alone under a filter, because a pause is not per-project', () => {
+    expect(emptyNote('running', true, 'esctest')).toBe('Paused — nothing will start.')
+  })
 
-  it("names the project on every column a filter can empty", () => {
+  it('names the project on every column a filter can empty', () => {
     for (const column of COLUMNS) {
-      expect(emptyNote(column.id, false, "esctest"), `${column.id} says`).toContain("esctest");
+      expect(emptyNote(column.id, false, 'esctest'), `${column.id} says`).toContain('esctest')
     }
-  });
-});
+  })
+})

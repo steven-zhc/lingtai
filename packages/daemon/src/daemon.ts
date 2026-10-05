@@ -31,10 +31,11 @@
  * shape is a daemon that refuses with the remedy in the message, rather than one
  * that runs until the wrong event arrives (#90).
  */
-import { paint } from "@lingtai/env/colour";
-import type { Projection, ProjectionRunner } from "@lingtai/projector";
-import { ProjectionShapeError, createProjectionRunner } from "@lingtai/projector";
-import { controlWatermark } from "./control.ts";
+import { paint } from '@lingtai/env/colour'
+import type { Projection, ProjectionRunner } from '@lingtai/projector'
+import { ProjectionShapeError, createProjectionRunner } from '@lingtai/projector'
+
+import { controlWatermark } from './control.ts'
 import {
   type AcquireDaemonLockOptions,
   type DaemonLock,
@@ -42,51 +43,51 @@ import {
   type LockResult,
   acquireDaemonLock,
   createFileLocker,
-} from "./lock.ts";
+} from './lock.ts'
 
 export interface DaemonOptions {
   /** Everything the follower keeps current. */
-  projections: readonly Projection[];
+  projections: readonly Projection[]
   /** What holds the conductor lock. Defaults to this machine's lock file. */
-  locker?: Locker;
-  lockKey?: string;
-  log?: (line: string) => void;
+  locker?: Locker
+  lockKey?: string
+  log?: (line: string) => void
   /** `acquireDaemonLock`. Replaceable so the order below can be asserted without a database. */
-  acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>;
+  acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>
   /** `controlWatermark`. Replaceable for the same reason. */
-  watermark?: () => Promise<number>;
+  watermark?: () => Promise<number>
 }
 
 export type DaemonStart =
   | {
-      ok: true;
-      daemon: Daemon;
+      ok: true
+      daemon: Daemon
       /**
        * Where the control stream stood **before** the lock was taken — the
        * `since` every signal this daemon obeys is read from (#159). See the
        * comment at the read.
        */
-      since: number;
+      since: number
     }
   /**
    * Another daemon holds the lock. Not an error: running `lingtai daemon` while
    * launchd's copy is up is a reasonable thing to do, and the right answer is
    * to say who has it and exit 0.
    */
-  | { ok: false; reason: "already-running"; holder: string | null };
+  | { ok: false; reason: 'already-running'; holder: string | null }
 
 export interface Daemon {
   /** Resolves when the daemon stops, with why. */
-  readonly stopped: Promise<StopReason>;
-  stop(): void;
+  readonly stopped: Promise<StopReason>
+  stop(): void
   /** Set when a projection's handler threw. */
-  readonly failure: { projection: string; error: unknown } | null;
+  readonly failure: { projection: string; error: unknown } | null
 }
 
-export type StopReason = "asked" | "projection-failed";
+export type StopReason = 'asked' | 'projection-failed'
 
 export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> {
-  const log = options.log ?? (() => {});
+  const log = options.log ?? (() => {})
 
   // **The watermark, then the lock, and never the other way round** (#174). A
   // daemon ignores every control event at or below its watermark, and a holder
@@ -99,39 +100,39 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
   // a request appended in the instant before the lock is obeyed by this daemon
   // too — and that request was asked while this one was starting, so it is
   // this one's.
-  const since = await (options.watermark ?? (() => controlWatermark()))();
+  const since = await (options.watermark ?? (() => controlWatermark()))()
 
   const held = await (options.acquire ?? acquireDaemonLock)({
     // Named, so that a `lingtai run` turned away by this lock — and
     // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
-    name: "lingtai daemon",
+    name: 'lingtai daemon',
     locker: options.locker ?? createFileLocker(),
     ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
-  });
-  if (!held.ok) return { ok: false, reason: "already-running", holder: held.holder };
+  })
+  if (!held.ok) return { ok: false, reason: 'already-running', holder: held.holder }
 
-  const lock: DaemonLock = held.lock;
-  const state: { failure: { projection: string; error: unknown } | null } = { failure: null };
-  const runners: ProjectionRunner[] = [];
+  const lock: DaemonLock = held.lock
+  const state: { failure: { projection: string; error: unknown } | null } = { failure: null }
+  const runners: ProjectionRunner[] = []
 
-  let settle: (reason: StopReason) => void = () => {};
+  let settle: (reason: StopReason) => void = () => {}
   const stopped = new Promise<StopReason>((resolve) => {
-    settle = resolve;
-  });
+    settle = resolve
+  })
 
-  let stopping = false;
+  let stopping = false
   const shutdown = (reason: StopReason): void => {
-    if (stopping) return;
-    stopping = true;
+    if (stopping) return
+    stopping = true
     void (async () => {
       for (const runner of runners) {
-        await runner.stop().catch(() => {});
-        await runner.close().catch(() => {});
+        await runner.stop().catch(() => {})
+        await runner.close().catch(() => {})
       }
-      await lock.release();
-      settle(reason);
-    })();
-  };
+      await lock.release()
+      settle(reason)
+    })()
+  }
 
   try {
     for (const projection of options.projections) {
@@ -141,49 +142,48 @@ export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> 
           // A connection error retries inside `subscribe`; a handler error has
           // already stopped that runner, and a half-current board is worse than
           // an absent one because nobody distrusts it.
-          if (phase !== "handler") return;
-          state.failure ??= { projection: projection.name, error };
-          log(paint.fail(`${projection.name} stopped: ${String(error)}`));
-          shutdown("projection-failed");
+          if (phase !== 'handler') return
+          state.failure ??= { projection: projection.name, error }
+          log(paint.fail(`${projection.name} stopped: ${String(error)}`))
+          shutdown('projection-failed')
         },
-      });
-      runners.push(runner);
+      })
+      runners.push(runner)
       try {
-        await runner.start();
+        await runner.start()
       } catch (err) {
         // Said here, beside the lag, rather than left to the throw on the way
         // out. A shape that has drifted from its table is the one projection
         // failure a daemon can see *before* it costs anything: #84's column
         // landed, the daemon came up green, and it stopped eight events later
         // with a run in flight and nothing on the board saying why (#90).
-        if (err instanceof ProjectionShapeError)
-          log(paint.fail(`${projection.name}\twill not follow — ${err.message}`));
-        throw err;
+        if (err instanceof ProjectionShapeError) log(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
+        throw err
       }
-      const lag = await runner.lag();
+      const lag = await runner.lag()
       // Chrome: a name and two sequence numbers. Dim, so that the refusal above
       // it is what the eye lands on when there is one.
-      log(paint.muted(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`));
+      log(paint.muted(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`))
     }
   } catch (err) {
     // Started nothing useful. Release rather than sit on the lock and keep the
     // next daemon out.
-    for (const runner of runners) await runner.close().catch(() => {});
-    await lock.release();
-    throw err;
+    for (const runner of runners) await runner.close().catch(() => {})
+    await lock.release()
+    throw err
   }
 
-  log(paint.accent(`daemon up — ${runners.length} projection(s)`));
+  log(paint.accent(`daemon up — ${runners.length} projection(s)`))
 
   return {
     ok: true,
     since,
     daemon: {
       stopped,
-      stop: () => shutdown("asked"),
+      stop: () => shutdown('asked'),
       get failure() {
-        return state.failure;
+        return state.failure
       },
     },
-  };
+  }
 }

@@ -12,19 +12,20 @@
  * What is left here is exactly the translation from "a command ended" to "a
  * verdict about a commit", which is the part that is genuinely about actions.
  */
-import { parseDuration } from "@lingtai/recipe";
-import { runCommand } from "./command.ts";
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import { parseDuration } from '@lingtai/recipe'
+
+import type { Action, ActionContext, ActionResult } from './action.ts'
+import { runCommand } from './command.ts'
 
 // Re-exported because they were part of this module's surface before the
 // extraction, and moving a file should not move someone's import.
-export { EVIDENCE_BYTES, EVIDENCE_LINES, tail } from "./command.ts";
+export { EVIDENCE_BYTES, EVIDENCE_LINES, tail } from './command.ts'
 
 export interface ProcessActionSpec {
-  name: string;
-  run: string;
+  name: string
+  run: string
   /** `15m` by default, per the recipe schema. */
-  timeout?: string;
+  timeout?: string
   /**
    * **Everything this command's process gets**, resolved from the names the
    * recipe declared beside it
@@ -44,16 +45,16 @@ export interface ProcessActionSpec {
    * and it is `runnableEnv`'s job, not this one's, to add the `PATH` a process
    * needs to be a process.
    */
-  env: Record<string, string>;
+  env: Record<string, string>
 }
 
 export function createProcessAction(spec: ProcessActionSpec): Action {
-  const timeoutLabel = spec.timeout ?? "15m";
-  const timeoutMs = parseDuration(timeoutLabel);
+  const timeoutLabel = spec.timeout ?? '15m'
+  const timeoutMs = parseDuration(timeoutLabel)
 
   return {
     name: spec.name,
-    kind: "run",
+    kind: 'run',
 
     async run(context: ActionContext): Promise<ActionResult> {
       const outcome = await runCommand({
@@ -65,12 +66,12 @@ export function createProcessAction(spec: ProcessActionSpec): Action {
         // the agent's environment and this is not the agent. See ProcessActionSpec.
         env: spec.env,
         signal: context.signal,
-      });
+      })
 
       // A process action finds nothing structured — that is what the agent action is
       // for (#18). Its evidence is the log, which is what someone acting on the
       // card actually needs.
-      return { verdict: outcome.ok ? "passed" : "failed", evidence: outcome.evidence, findings: [] };
+      return { verdict: outcome.ok ? 'passed' : 'failed', evidence: outcome.evidence, findings: [] }
     },
-  };
+  }
 }

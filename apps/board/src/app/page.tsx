@@ -1,39 +1,33 @@
-import { Fragment } from "react";
-import Link from "next/link";
-import {
-  emptyNote,
-  groupQueue,
-  issueUrl,
-  loadBoard,
-  queuedStanding,
-  type BoardCard,
-  LANDED_OPEN,
-} from "@/lib/board";
-import { kindDot } from "@/lib/kind-colour";
-import { elapsed } from "@/lib/progress";
-// The subpath, for the reason `board.ts` gives: the barrel pulls the gate
-// pipeline in behind it. `describeHold` is pure and lives beside the field it
-// reads, so the card and `lingtai status` say the same thing about a hold.
-import { describeHold, type HoldLine } from "@lingtai/projector/task-view";
-import { loadProjects } from "@lingtai/conductor/projects";
-import { Pending } from "./pending.tsx";
-// Whether there is an App at all, which is where the bar's add-a-repository
-// lands: the picker once it exists, step 0 before. Read here and handed down
-// so `projects.tsx` stays a fold over its arguments (#216).
-import { hasGitHubApp } from "@lingtai/env";
-import { Projects } from "./projects.tsx";
-import { inWords } from "@lingtai/conductor/queue";
+import { loadProjects } from '@lingtai/conductor/projects'
+import { inWords } from '@lingtai/conductor/queue'
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
-import { readControl } from "@lingtai/daemon/control";
-import { Close, Decide, Requeue } from "./decide.tsx";
-import { Draining } from "./draining.tsx";
-import { Health } from "./health.tsx";
-import { Paused } from "./paused.tsx";
+import { readControl } from '@lingtai/daemon/control'
+// Whether there is an App at all, which is where the bar's add-a-repository
+// lands: the picker once it exists, step 0 before. Read here and handed down
+// so `projects.tsx` stays a fold over its arguments (#216).
+import { hasGitHubApp } from '@lingtai/env'
+// The subpath, for the reason `board.ts` gives: the barrel pulls the gate
+// pipeline in behind it. `describeHold` is pure and lives beside the field it
+// reads, so the card and `lingtai status` say the same thing about a hold.
+import { describeHold, type HoldLine } from '@lingtai/projector/task-view'
+import Link from 'next/link'
+import { Fragment } from 'react'
+
+import { emptyNote, groupQueue, issueUrl, loadBoard, queuedStanding, type BoardCard, LANDED_OPEN } from '@/lib/board'
+import { kindDot } from '@/lib/kind-colour'
+import { elapsed } from '@/lib/progress'
+
+import { Close, Decide, Requeue } from './decide.tsx'
+import { Draining } from './draining.tsx'
+import { Health } from './health.tsx'
+import { Paused } from './paused.tsx'
+import { Pending } from './pending.tsx'
+import { Projects } from './projects.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
 // (#189): one rail, two surfaces, and never a copy.
-import { Rail, Segs } from "./rail.tsx";
+import { Rail, Segs } from './rail.tsx'
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the
@@ -76,7 +70,7 @@ import { Rail, Segs } from "./rail.tsx";
  * (#170, [the-card.md](../../../../doc/design/the-card.md)). Six objects, and
  * the ones that went were the counters the bar says better.
  */
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 /**
  * The stripe down the left edge, from what the card is waiting on.
@@ -93,12 +87,12 @@ export const dynamic = "force-dynamic";
  * reason, and the next claim clears it.
  */
 function accent(card: BoardCard): string {
-  if (card.failed > 0) return "a-fail";
-  if (card.column === "queued" && card.note) return "a-hold";
-  if (card.column === "waiting") return "a-sig";
-  if (card.column === "landed") return "a-pass";
-  if (card.column === "running") return "a-run";
-  return "";
+  if (card.failed > 0) return 'a-fail'
+  if (card.column === 'queued' && card.note) return 'a-hold'
+  if (card.column === 'waiting') return 'a-sig'
+  if (card.column === 'landed') return 'a-pass'
+  if (card.column === 'running') return 'a-run'
+  return ''
 }
 
 /**
@@ -113,12 +107,12 @@ function accent(card: BoardCard): string {
  * link to build then, and a dead one is worse than none.
  */
 function IssueRef({ href, issue }: { href: string | null; issue: string }) {
-  if (href === null) return <>#{issue}</>;
+  if (href === null) return <>#{issue}</>
   return (
     <a className="iss" href={href} target="_blank" rel="noreferrer" title="the issue on GitHub">
       #{issue}
     </a>
-  );
+  )
 }
 
 /**
@@ -135,8 +129,8 @@ function IssueRef({ href, issue }: { href: string | null; issue: string }) {
  * before #85: grey text on the same line, and no dot to explain.
  */
 function KindDot({ card }: { card: BoardCard }) {
-  const colour = kindDot(card.kindColor);
-  if (colour === null) return null;
+  const colour = kindDot(card.kindColor)
+  if (colour === null) return null
   // `aria-hidden`, because the kind is written out in the words beside it: the
   // dot is a second encoding of a fact already said, which is what makes it
   // safe to have no meaning of its own to a reader who cannot see it.
@@ -147,7 +141,7 @@ function KindDot({ card }: { card: BoardCard }) {
       title={`${card.kind}, in the colour ${card.project} gives that label`}
       aria-hidden="true"
     />
-  );
+  )
 }
 
 export function Card({
@@ -156,18 +150,18 @@ export function Card({
   issue,
   paused,
 }: {
-  card: BoardCard;
-  showProject: boolean;
-  issue: string | null;
+  card: BoardCard
+  showProject: boolean
+  issue: string | null
   /**
    * Whether the conductor is taking anything at all — one fact about the whole
    * installation, and one of the three states a Queued card can be in (#100).
    * Passed to every card because `queuedStanding` is what decides it matters,
    * and it matters in exactly one column.
    */
-  paused: boolean;
+  paused: boolean
 }) {
-  const standing = queuedStanding(card, paused);
+  const standing = queuedStanding(card, paused)
   return (
     <article className={`card ${accent(card)}`}>
       {/* Reference and kind are one fact — which ticket — so they are one line.
@@ -211,7 +205,7 @@ export function Card({
             — a plausible number, which is the worst kind. It is the lane's own
             word here for the same reason it is everywhere else in this
             sentence. */}
-        {card.column === "running" && card.progress ? (
+        {card.column === 'running' && card.progress ? (
           <li className="pill run" title={`this run's first event was ${card.progress.since}`}>
             running {elapsed(Date.now() - Date.parse(card.progress.since))}
           </li>
@@ -268,10 +262,7 @@ export function Card({
             change and a rebuild, and this is the reading, which is what a person
             sees. */}
         {card.repairCostUsd !== null ? (
-          <li
-            className="pill sig"
-            title="what answering refusals on this has cost, apart from the work"
-          >
+          <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
             ${card.repairCostUsd.toFixed(2)} answering
           </li>
         ) : null}
@@ -297,14 +288,12 @@ export function Card({
           <li
             className="pill sig"
             title={
-              card.arm
-                ? "attempts so far, and approaches abandoned against the recipe's ceiling"
-                : "attempts so far"
+              card.arm ? "attempts so far, and approaches abandoned against the recipe's ceiling" : 'attempts so far'
             }
           >
             {[card.attempts > 1 ? `attempt ${card.attempts}` : null, card.arm]
               .filter((s): s is string => s !== null)
-              .join(" · ")}
+              .join(' · ')}
           </li>
         ) : null}
         {/* When, not whether (#95) — and, since #100, which of the three a
@@ -320,8 +309,8 @@ export function Card({
             `describeWait`'s, so `lingtai status` says the same. */}
         {card.wait ? (
           <li
-            className={card.asked ? "pill sig" : "pill hold"}
-            title={card.asked ? "asked before any run — nothing has been spent" : "a run is holding a diff for you"}
+            className={card.asked ? 'pill sig' : 'pill hold'}
+            title={card.asked ? 'asked before any run — nothing has been spent' : 'a run is holding a diff for you'}
           >
             {card.wait}
           </li>
@@ -343,9 +332,7 @@ export function Card({
           The lane's own word goes with it, for the reason the elapsed pill
           above takes it: *this run is in flight* is a fact about the column and
           not one the fold can reach. */}
-      {card.progress ? (
-        <Rail progress={card.progress} live={card.column === "running"} />
-      ) : null}
+      {card.progress ? <Rail progress={card.progress} live={card.column === 'running'} /> : null}
 
       {card.note ? <p className="question">{card.note}</p> : null}
 
@@ -409,13 +396,13 @@ export function Card({
           this was written for is the item nothing is asking about: five sat in
           Queued that GitHub had closed hours earlier, because `gh issue close`
           appends nothing and the fold went on calling them `backlog`. */}
-      {card.column === "queued" ? (
+      {card.column === 'queued' ? (
         <div className="btnrow">
           <Close project={card.project} issue={Number(card.ref)} />
         </div>
       ) : null}
     </article>
-  );
+  )
 }
 
 /**
@@ -441,9 +428,9 @@ function Held({ card }: { card: BoardCard }) {
   // The sentences are `describeHold`'s, not this file's, so the card and
   // `lingtai status` cannot come to describe the same hold differently. What
   // this component decides is the weight each one is given.
-  const lines = describeHold(card);
-  const raw = card.diagnosis?.raw ?? null;
-  if (lines.length === 0 && raw === null) return null;
+  const lines = describeHold(card)
+  const raw = card.diagnosis?.raw ?? null
+  if (lines.length === 0 && raw === null) return null
   return (
     <div className="held">
       {lines.map((line) => (
@@ -458,7 +445,7 @@ function Held({ card }: { card: BoardCard }) {
         </details>
       ) : null}
     </div>
-  );
+  )
 }
 
 /**
@@ -468,12 +455,12 @@ function Held({ card }: { card: BoardCard }) {
  * `rec` carries the signal colour because it is the sentence the primary button
  * is the end of. A card where all four shout says nothing.
  */
-const HELD_CLASS: Record<HoldLine["part"], string> = {
-  needs: "needs",
-  what: "diag",
-  did: "did",
-  rec: "rec",
-};
+const HELD_CLASS: Record<HoldLine['part'], string> = {
+  needs: 'needs',
+  what: 'diag',
+  did: 'did',
+  rec: 'rec',
+}
 
 /**
  * One landed item, on one line.
@@ -493,9 +480,9 @@ export function LandedRow({
   showProject,
   issue,
 }: {
-  card: BoardCard;
-  showProject: boolean;
-  issue: string | null;
+  card: BoardCard
+  showProject: boolean
+  issue: string | null
 }) {
   const said = [
     // First, and only when it is true: this column's heading says *Landed*, and
@@ -505,14 +492,14 @@ export function LandedRow({
     // difference can be said. Without it the heading speaks for a row it is
     // wrong about, which is the shape this repository keeps finding in itself:
     // a claim that is true where it was written and false where it is read.
-    card.closed ? "closed" : null,
+    card.closed ? 'closed' : null,
     card.kind,
     card.turns === null ? null : `${card.turns} turns`,
     card.costUsd === null ? null : `$${card.costUsd.toFixed(2)}`,
     // The lane's own word is on the card; here the column heading is already
     // saying "landed", so the row says only how long ago (#79).
     card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),
-  ].filter((s): s is string => s !== null);
+  ].filter((s): s is string => s !== null)
 
   return (
     <li className="lrow">
@@ -537,15 +524,11 @@ export function LandedRow({
       ) : null}
       {showProject ? <span className="proj">{card.project}</span> : null}
       <IssueRef href={issue} issue={card.ref} />
-      <Link
-        className="lmeta"
-        href={`/task/${encodeURIComponent(card.taskId)}`}
-        title={card.title}
-      >
-        · {said.join(" · ")}
+      <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
+        · {said.join(' · ')}
       </Link>
     </li>
-  );
+  )
 }
 
 /**
@@ -561,9 +544,9 @@ function Landed({
   showProject,
   issue,
 }: {
-  cards: BoardCard[];
-  showProject: boolean;
-  issue: (card: BoardCard) => string | null;
+  cards: BoardCard[]
+  showProject: boolean
+  issue: (card: BoardCard) => string | null
 }) {
   const rows = (some: BoardCard[]) => (
     <ul className="landed">
@@ -571,8 +554,8 @@ function Landed({
         <LandedRow key={c.taskId} card={c} showProject={showProject} issue={issue(c)} />
       ))}
     </ul>
-  );
-  const older = cards.slice(LANDED_OPEN);
+  )
+  const older = cards.slice(LANDED_OPEN)
 
   return (
     <>
@@ -584,7 +567,7 @@ function Landed({
         </details>
       ) : null}
     </>
-  );
+  )
 }
 
 /**
@@ -606,11 +589,11 @@ function Queued({
   issue,
   paused,
 }: {
-  cards: BoardCard[];
-  order: string[];
-  showProject: boolean;
-  issue: (card: BoardCard) => string | null;
-  paused: boolean;
+  cards: BoardCard[]
+  order: string[]
+  showProject: boolean
+  issue: (card: BoardCard) => string | null
+  paused: boolean
 }) {
   return (
     <>
@@ -624,18 +607,12 @@ function Queued({
             {group.next ? <span className="qnext"> — taken first</span> : null}
           </p>
           {group.cards.map((card) => (
-            <Card
-              key={card.taskId}
-              card={card}
-              showProject={showProject}
-              issue={issue(card)}
-              paused={paused}
-            />
+            <Card key={card.taskId} card={card} showProject={showProject} issue={issue(card)} paused={paused} />
           ))}
         </Fragment>
       ))}
     </>
-  );
+  )
 }
 
 /**
@@ -659,12 +636,8 @@ function Queued({
  * same markup. Held in component state it would instead have been thrown away
  * by the first event from the project you had just stopped looking at.
  */
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ project?: string }>;
-}) {
-  const only = (await searchParams).project;
+export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+  const only = (await searchParams).project
   // Three reads waiting together rather than in a row. None of them is an
   // argument to another, and this route is re-rendered on every append to the
   // log (#112) — so a round trip spent waiting for the one before it is spent
@@ -676,29 +649,32 @@ export default async function Page({
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
-  const [{ columns, queueOrder, projects: filters, pending }, registered, control] =
-    await Promise.all([loadBoard(only), loadProjects().catch(() => []), readControl()]);
-  const total = columns.reduce((n, c) => n + c.cards.length, 0);
+  const [{ columns, queueOrder, projects: filters, pending }, registered, control] = await Promise.all([
+    loadBoard(only),
+    loadProjects().catch(() => []),
+    readControl(),
+  ])
+  const total = columns.reduce((n, c) => n + c.cards.length, 0)
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
-  const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)));
+  const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)))
 
   // The one number an operator acts on *in the next minute*: how many need me.
   // What it has cost is the other number #81 wanted, and it is a click away on
   // `/spend` — a running total on a rail glanced at every few seconds is one
   // you learn to stop seeing (`the-bar.md`).
-  const waiting = columns.find((c) => c.id === "waiting")?.cards.length ?? 0;
+  const waiting = columns.find((c) => c.id === 'waiting')?.cards.length ?? 0
   // And the rest, which is what `11 items` was a sum of. Said as its parts,
   // because the parts mean different things and the sum meant nothing.
   const rest = columns
-    .filter((c) => c.id !== "waiting" && c.cards.length > 0)
+    .filter((c) => c.id !== 'waiting' && c.cards.length > 0)
     .map((c) => `${c.cards.length} ${c.label.toLowerCase()}`)
-    .join(" · ");
+    .join(' · ')
 
   // Where each card's ticket lives, from the owners already loaded — a lookup,
   // not a request per card.
-  const owners = new Map(registered.map((p) => [p.project, p.owner]));
-  const ticket = (card: BoardCard) => issueUrl(owners.get(card.project) ?? null, card.project, card.ref);
+  const owners = new Map(registered.map((p) => [p.project, p.owner]))
+  const ticket = (card: BoardCard) => issueUrl(owners.get(card.project) ?? null, card.project, card.ref)
 
   return (
     <main>
@@ -745,19 +721,19 @@ export default async function Page({
               emptiness this is, the way the columns below do (#86). */}
           <Link
             className="reading"
-            href={only === undefined ? "/spend" : `/spend?project=${encodeURIComponent(only)}`}
+            href={only === undefined ? '/spend' : `/spend?project=${encodeURIComponent(only)}`}
             title={
               total === 0
-                ? "nothing has run — and what a pass may spend when it does"
-                : "everything that is not waiting on you — and what it has cost"
+                ? 'nothing has run — and what a pass may spend when it does'
+                : 'everything that is not waiting on you — and what it has cost'
             }
           >
             {total === 0
               ? only === undefined
-                ? "nothing in the log yet"
+                ? 'nothing in the log yet'
                 : `nothing here for ${only}`
-              : rest === ""
-                ? "what this has cost"
+              : rest === ''
+                ? 'what this has cost'
                 : rest}
           </Link>
           {/* One health, out of two facts that were two chips. `#64` asks
@@ -793,14 +769,12 @@ export default async function Page({
               colour at all: a bar where everything is emphasised is a bar where
               nothing is. */}
           <span
-            className={`head${waiting > 0 ? " sig" : ""}`}
+            className={`head${waiting > 0 ? ' sig' : ''}`}
             title={
-              waiting > 0
-                ? "items that will not move until you decide"
-                : "nothing on this board is blocked on a person"
+              waiting > 0 ? 'items that will not move until you decide' : 'nothing on this board is blocked on a person'
             }
           >
-            {waiting > 0 ? `${waiting} waiting on you` : "nothing waiting on you"}
+            {waiting > 0 ? `${waiting} waiting on you` : 'nothing waiting on you'}
           </span>
           {/* **A chip is not free, and the row is the unit.**
               [the-bar.md](../../../../doc/design/the-bar.md)
@@ -845,7 +819,7 @@ export default async function Page({
           // where something is happening (#81).
           <section
             key={col.id}
-            className={`col${col.id === "waiting" ? " hot" : ""}${col.id === "landed" ? " quiet" : ""}`}
+            className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
           >
             <header className="col-h">
               <span>{col.label}</span>
@@ -879,12 +853,12 @@ export default async function Page({
                 </p>
               ))}
               {col.cards.length === 0 && !col.problems?.length ? (
-                <p className={`empty${col.id === "running" && control.paused ? " held" : ""}`}>
+                <p className={`empty${col.id === 'running' && control.paused ? ' held' : ''}`}>
                   {emptyNote(col.id, control.paused, only)}
                 </p>
-              ) : col.id === "landed" ? (
+              ) : col.id === 'landed' ? (
                 <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
-              ) : col.id === "queued" ? (
+              ) : col.id === 'queued' ? (
                 <Queued
                   cards={col.cards}
                   order={queueOrder}
@@ -908,5 +882,5 @@ export default async function Page({
         ))}
       </div>
     </main>
-  );
+  )
 }

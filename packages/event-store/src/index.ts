@@ -10,13 +10,13 @@
  * A caller that wants only the interface still reaches for
  * `@lingtai/event-store/store`, which constructs nothing at all (#157).
  */
-export { directPostgresUrl, postgresUrl } from "./env.ts";
-export { createDb, type Db } from "./db.ts";
-import { deferredEventStore, deferredLog, processEventStore, processLog } from "./choose.ts";
-import type { Log } from "./log.ts";
-import type { EventStore } from "./event-store.ts";
-export { processEventStore, processLog } from "./choose.ts";
-export { type Log, type PostgresLogOptions } from "./log.ts";
+export { directPostgresUrl, postgresUrl } from './env.ts'
+export { createDb, type Db } from './db.ts'
+import { deferredEventStore, deferredLog, processEventStore, processLog } from './choose.ts'
+import type { EventStore } from './event-store.ts'
+import type { Log } from './log.ts'
+export { processEventStore, processLog } from './choose.ts'
+export { type Log, type PostgresLogOptions } from './log.ts'
 export {
   type EndedOutcome,
   type EndedWithoutEnd,
@@ -25,7 +25,7 @@ export {
   type SubscriberFailures,
   type TypeCount,
   type UnconvergedUpdate,
-} from "./queries.ts";
+} from './queries.ts'
 export {
   ConcurrencyError,
   createEventStore,
@@ -33,7 +33,7 @@ export {
   RetiredEventTypeError,
   UnknownEventTypeError,
   type EventStore,
-} from "./event-store.ts";
+} from './event-store.ts'
 
 /**
  * The store this process appends to and reads, **opened at first use**.
@@ -51,7 +51,7 @@ export {
  * how a process that could not see a checkout's `.env.local` came to open a
  * second, empty log and report every append into it as success.
  */
-export const eventStore: EventStore = deferredEventStore(processEventStore);
+export const eventStore: EventStore = deferredEventStore(processEventStore)
 
 /**
  * The log this process reads and asks: the store above, the questions beside it
@@ -63,16 +63,7 @@ export const eventStore: EventStore = deferredEventStore(processEventStore);
  * which is what left a machine with no Postgres with no waker at all rather
  * than with the poll #178 built for it.
  */
-export const log: Log = deferredLog(processLog);
-export {
-  subscribe,
-  type SubscribeOptions,
-  type Subscription,
-} from "./subscribe.ts";
-export {
-  CHANNEL,
-  type WakeListener,
-  type WakeSession,
-  type Waker,
-} from "./wake.ts";
-export { parseTimestamptz } from "./timestamptz.ts";
+export const log: Log = deferredLog(processLog)
+export { subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
+export { CHANNEL, type WakeListener, type WakeSession, type Waker } from './wake.ts'
+export { parseTimestamptz } from './timestamptz.ts'

@@ -44,8 +44,9 @@
  * built without one is refused by name rather than quietly claiming nothing
  * (`from-recipe.ts`).
  */
-import type { QueueSettings } from "@lingtai/recipe";
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import type { QueueSettings } from '@lingtai/recipe'
+
+import type { Action, ActionContext, ActionResult } from './action.ts'
 
 /**
  * What the take answered — four branches, and the fourth is why there are not
@@ -75,7 +76,7 @@ export type TakeAnswer =
    */
   | { readonly notClaimed: string }
   /** The append may have committed. Named, so the caller can give it back. */
-  | { readonly mayHold: { readonly workItemId: string; readonly detail: string } };
+  | { readonly mayHold: { readonly workItemId: string; readonly detail: string } }
 
 /**
  * The take, as the only thing this action needs from its caller.
@@ -94,44 +95,44 @@ export interface QueueActionDeps {
    * (0063 §3) — a `queue:` that could be written with three fields at the step
    * and a fourth somewhere else would be the second home that rule removed.
    */
-  take(spec: QueueSettings): Promise<TakeAnswer>;
+  take(spec: QueueSettings): Promise<TakeAnswer>
 }
 
 export interface QueueActionSpec extends QueueSettings {
-  name: string;
+  name: string
 }
 
 export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps): Action {
-  const { name, ...queue } = spec;
+  const { name, ...queue } = spec
   return {
     name,
-    kind: "queue",
+    kind: 'queue',
 
     async run(_context: ActionContext): Promise<ActionResult> {
-      const answer = await deps.take(queue);
-      if ("taken" in answer) {
+      const answer = await deps.take(queue)
+      if ('taken' in answer) {
         return {
-          verdict: "passed",
+          verdict: 'passed',
           evidence: `${answer.taken.workItemId} claimed as a ${answer.taken.kind}`,
           findings: [],
-        };
+        }
       }
-      if ("mayHold" in answer) {
+      if ('mayHold' in answer) {
         return {
-          verdict: "failed",
+          verdict: 'failed',
           // The item by name, because the caller has to be able to give back
           // something this run may be holding, and `detail` one layer up is this.
           evidence: `${answer.mayHold.workItemId} may be claimed by this run: ${answer.mayHold.detail}`,
           findings: [],
-          because: "claim-unconfirmed",
-        };
+          because: 'claim-unconfirmed',
+        }
       }
       // Two tokens rather than one, because they clear differently: an issue
       // GitHub passed over comes back when a label or a blocker changes, and one
       // somebody else holds comes back when that run ends.
-      return "passedOver" in answer
-        ? { verdict: "failed", evidence: answer.passedOver, findings: [], because: "passed-over" }
-        : { verdict: "failed", evidence: answer.notClaimed, findings: [], because: "not-claimed" };
+      return 'passedOver' in answer
+        ? { verdict: 'failed', evidence: answer.passedOver, findings: [], because: 'passed-over' }
+        : { verdict: 'failed', evidence: answer.notClaimed, findings: [], because: 'not-claimed' }
     },
-  };
+  }
 }

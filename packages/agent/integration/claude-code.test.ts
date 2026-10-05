@@ -20,11 +20,13 @@
  * `#109`'s whole risk is that the accounting reads a line the real binary does
  * not print, or fails to read one it does.
  */
-import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { existsSync } from 'node:fs'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
 import {
   CLAUDE_CODE_CAPABILITIES,
   CODEX_CAPABILITIES,
@@ -44,16 +46,16 @@ import {
   sessionIdFor,
   traceOf,
   type RunTrace,
-} from "../src/index.ts";
+} from '../src/index.ts'
 
-let root: string;
+let root: string
 
 /** A script standing in for `claude`, so the adapter meets a real process. */
 async function fakeClaude(body: string): Promise<string> {
-  const path = join(root, `claude-${crypto.randomUUID().slice(0, 8)}.sh`);
-  await writeFile(path, `#!/bin/sh\n${body}\n`);
-  await chmod(path, 0o755);
-  return path;
+  const path = join(root, `claude-${crypto.randomUUID().slice(0, 8)}.sh`)
+  await writeFile(path, `#!/bin/sh\n${body}\n`)
+  await chmod(path, 0o755)
+  return path
 }
 
 /**
@@ -63,131 +65,139 @@ async function fakeClaude(body: string): Promise<string> {
  * makes the accounting comparable across the change.
  */
 const RECEIPT = {
-  type: "result",
-  subtype: "success",
+  type: 'result',
+  subtype: 'success',
   is_error: false,
   duration_ms: 4_210_000,
   duration_api_ms: 4_101_233,
   num_turns: 63,
-  result: "the point runs on every outcome, not just an inline merge",
-  session_id: sessionIdFor("run-01JX"),
+  result: 'the point runs on every outcome, not just an inline merge',
+  session_id: sessionIdFor('run-01JX'),
   total_cost_usd: 5.42,
   usage: { input_tokens: 10, output_tokens: 4_212 },
   permission_denials: [],
-  terminal_reason: "completed",
-  uuid: "f0e4abbc-18b5-4a48-87e7-86a24b4fb6fe",
-};
+  terminal_reason: 'completed',
+  uuid: 'f0e4abbc-18b5-4a48-87e7-86a24b4fb6fe',
+}
 
 /** What the agent said, and everything the runtime says around it. */
 const stream = (receipt: Record<string, unknown> | null = RECEIPT) => [
-  { type: "system", subtype: "hook_started", hook_name: "SessionStart:startup", hook_event: "SessionStart" },
-  { type: "system", subtype: "init", cwd: "/tmp", model: "claude-opus-5", tools: ["Read", "Edit", "Bash"] },
+  { type: 'system', subtype: 'hook_started', hook_name: 'SessionStart:startup', hook_event: 'SessionStart' },
+  { type: 'system', subtype: 'init', cwd: '/tmp', model: 'claude-opus-5', tools: ['Read', 'Edit', 'Bash'] },
   {
-    type: "assistant",
+    type: 'assistant',
     message: {
-      role: "assistant",
-      content: [{ type: "thinking", thinking: "the close handler is what produces the accounting", signature: "Ep8DCrIBCBEY" }],
-    },
-  },
-  { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Reading the adapter first." }] } },
-  {
-    type: "assistant",
-    message: {
-      role: "assistant",
-      content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "packages/agent/src/claude-code.ts" } }],
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'the close handler is what produces the accounting', signature: 'Ep8DCrIBCBEY' },
+      ],
     },
   },
   {
-    type: "user",
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'Reading the adapter first.' }] },
+  },
+  {
+    type: 'assistant',
     message: {
-      role: "user",
-      content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "…four hundred lines of the adapter…" }],
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'packages/agent/src/claude-code.ts' } },
+      ],
     },
   },
-  { type: "rate_limit_event", rate_limit_info: { status: "allowed", resetsAt: 1_788_994_800 } },
+  {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '…four hundred lines of the adapter…' }],
+    },
+  },
+  { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: 1_788_994_800 } },
   ...(receipt ? [receipt] : []),
-];
+]
 
 /** A `claude` that prints those lines, one per line, and exits. */
-async function fakeStream(lines: readonly unknown[], exit = 0, trailer = ""): Promise<string> {
+async function fakeStream(lines: readonly unknown[], exit = 0, trailer = ''): Promise<string> {
   return fakeClaude(
-    ["cat <<'JSON'", ...lines.map((l) => JSON.stringify(l)), "JSON", ...(trailer ? [trailer] : []), `exit ${exit}`].join(
-      "\n",
-    ),
-  );
+    [
+      "cat <<'JSON'",
+      ...lines.map((l) => JSON.stringify(l)),
+      'JSON',
+      ...(trailer ? [trailer] : []),
+      `exit ${exit}`,
+    ].join('\n'),
+  )
 }
 
 /** A log that remembers, so a test can read what a run wrote to one. */
 function recordingTrace(): RunTrace & { lines: string[] } {
-  const lines: string[] = [];
-  return { lines, note: (label, detail = "") => void lines.push(`${label}\t${detail}`) };
+  const lines: string[] = []
+  return { lines, note: (label, detail = '') => void lines.push(`${label}\t${detail}`) }
 }
 
-const request = (over: Partial<Parameters<ReturnType<typeof createClaudeCodeRuntime>["run"]>[0]> = {}) => ({
-  runId: "run-01JX",
+const request = (over: Partial<Parameters<ReturnType<typeof createClaudeCodeRuntime>['run']>[0]> = {}) => ({
+  runId: 'run-01JX',
   cwd: root,
-  prompt: "fix the thing",
-  settingsPath: join(root, "settings.json"),
-  env: { PATH: process.env["PATH"] ?? "" },
+  prompt: 'fix the thing',
+  settingsPath: join(root, 'settings.json'),
+  env: { PATH: process.env['PATH'] ?? '' },
   limits: { turns: 300, wallMs: 30_000 },
   ...over,
-});
+})
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "lingtai-runtime-"));
-});
+  root = await mkdtemp(join(tmpdir(), 'lingtai-runtime-'))
+})
 
 afterAll(async () => {
-  await rm(root, { recursive: true, force: true });
-});
+  await rm(root, { recursive: true, force: true })
+})
 
-describe("capabilities", () => {
+describe('capabilities', () => {
   it("declares the intersection plus Claude Code's extras", () => {
     expect(CLAUDE_CODE_CAPABILITIES.hooks).toEqual(
-      expect.arrayContaining(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]),
-    );
+      expect.arrayContaining(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']),
+    )
     // Bonus signal: better when present, never required.
-    expect(CLAUDE_CODE_CAPABILITIES.hooks).toContain("PreCompact");
+    expect(CLAUDE_CODE_CAPABILITIES.hooks).toContain('PreCompact')
     // Codex has only the five, which is why the contract is the intersection.
-    expect(CODEX_CAPABILITIES.hooks).toHaveLength(5);
-    expect(CODEX_CAPABILITIES.hooks).not.toContain("PreCompact");
-  });
+    expect(CODEX_CAPABILITIES.hooks).toHaveLength(5)
+    expect(CODEX_CAPABILITIES.hooks).not.toContain('PreCompact')
+  })
 
   /**
    * A project's safety level must not depend on which agent happens to be
    * running today. Claude Code cannot provide `sandboxed` on its own, and the
    * scheduler has to be able to say so *before* dispatching.
    */
-  it("says which runtime can carry which tier, and what is missing", () => {
-    expect(meetsTier(CLAUDE_CODE_CAPABILITIES, "guarded")).toBe(true);
-    expect(meetsTier(CLAUDE_CODE_CAPABILITIES, "sandboxed")).toBe(false);
-    expect(meetsTier(CODEX_CAPABILITIES, "sandboxed")).toBe(true);
+  it('says which runtime can carry which tier, and what is missing', () => {
+    expect(meetsTier(CLAUDE_CODE_CAPABILITIES, 'guarded')).toBe(true)
+    expect(meetsTier(CLAUDE_CODE_CAPABILITIES, 'sandboxed')).toBe(false)
+    expect(meetsTier(CODEX_CAPABILITIES, 'sandboxed')).toBe(true)
 
     // Named, so DispatchRefused carries a reason rather than a refusal.
-    expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "sandboxed")).toEqual(["filesystem-sandbox"]);
-    expect(missingForTier(CLAUDE_CODE_CAPABILITIES, "guarded")).toEqual([]);
-  });
+    expect(missingForTier(CLAUDE_CODE_CAPABILITIES, 'sandboxed')).toEqual(['filesystem-sandbox'])
+    expect(missingForTier(CLAUDE_CODE_CAPABILITIES, 'guarded')).toEqual([])
+  })
 
   /**
    * `#138` renamed `canBlockToolUse` to `canFailClosed` and changed nothing
    * else: the same capabilities name the same things on `DispatchRefused`.
    */
-  it("refuses the same capabilities with the same names after the rename", () => {
-    const notifyOnly = { ...CLAUDE_CODE_CAPABILITIES, providesTier: "open" as const, canFailClosed: false };
-    const refusable = { ...notifyOnly, canFailClosed: true };
+  it('refuses the same capabilities with the same names after the rename', () => {
+    const notifyOnly = { ...CLAUDE_CODE_CAPABILITIES, providesTier: 'open' as const, canFailClosed: false }
+    const refusable = { ...notifyOnly, canFailClosed: true }
 
-    expect(missingForTier(notifyOnly, "guarded")).toEqual(["pre-tool-use-interception"]);
-    expect(missingForTier(refusable, "guarded")).toEqual(["tier-guarded"]);
+    expect(missingForTier(notifyOnly, 'guarded')).toEqual(['pre-tool-use-interception'])
+    expect(missingForTier(refusable, 'guarded')).toEqual(['tier-guarded'])
     // **Both promises, since `#313`.** `notifyOnly` has neither a sandbox nor a
     // hook that stops the run, and `sandboxed` asks for both: naming only the
     // filesystem half would send an operator to fix half of it. The names
     // themselves are unchanged, which is what `#138` pinned here.
-    expect(missingForTier(notifyOnly, "sandboxed")).toEqual([
-      "pre-tool-use-interception",
-      "filesystem-sandbox",
-    ]);
-    expect(missingForTier(notifyOnly, "open")).toEqual([]);
-  });
+    expect(missingForTier(notifyOnly, 'sandboxed')).toEqual(['pre-tool-use-interception', 'filesystem-sandbox'])
+    expect(missingForTier(notifyOnly, 'open')).toEqual([])
+  })
 
   /**
    * `canFailClosed` is about the prompt hook, not a hook before tool use: that
@@ -195,86 +205,84 @@ describe("capabilities", () => {
    * definition pointing at a hook Lingtai does not install lets an adapter
    * declare it for a runtime that can only notify.
    */
-  it("fails closed at a hook Lingtai installs, which is not one before tool use", () => {
-    expect(INTERSECTION_HOOKS).toContain("UserPromptSubmit");
-    expect(INTERSECTION_HOOKS).not.toContain("PreToolUse");
+  it('fails closed at a hook Lingtai installs, which is not one before tool use', () => {
+    expect(INTERSECTION_HOOKS).toContain('UserPromptSubmit')
+    expect(INTERSECTION_HOOKS).not.toContain('PreToolUse')
     for (const capabilities of [CLAUDE_CODE_CAPABILITIES, CODEX_CAPABILITIES]) {
-      if (capabilities.canFailClosed) expect(capabilities.hooks).toContain("UserPromptSubmit");
+      if (capabilities.canFailClosed) expect(capabilities.hooks).toContain('UserPromptSubmit')
     }
-  });
+  })
 
   /** `#89`: a limit is declared applied only where the adapter applies it. */
-  it("says which declared limits it applies", () => {
-    expect([...CLAUDE_CODE_CAPABILITIES.enforces].sort()).toEqual([...RUN_LIMITS].sort());
+  it('says which declared limits it applies', () => {
+    expect([...CLAUDE_CODE_CAPABILITIES.enforces].sort()).toEqual([...RUN_LIMITS].sort())
     // `[]` until `#313`, on the grounds that nothing ran. Now `["wall"]`, because
     // `run()` applies that one and there is no `--max-turns` to delegate the other
     // to — measured against `codex-cli 0.155.1`. `unit/codex.test.ts` carries the
     // reasoning; this is the pair, side by side.
-    expect(CODEX_CAPABILITIES.enforces).toEqual(["wall"]);
-  });
-});
+    expect(CODEX_CAPABILITIES.enforces).toEqual(['wall'])
+  })
+})
 
-describe("sessionIdFor", () => {
+describe('sessionIdFor', () => {
   /**
    * design.md assumed the session id would be learned from `SessionStart` and
    * stored. `claude --session-id` takes one, so it is derived instead — there is
    * nothing to store and nothing to lose.
    */
-  it("is stable for a run id and different between runs", () => {
-    expect(sessionIdFor("run-a")).toBe(sessionIdFor("run-a"));
-    expect(sessionIdFor("run-a")).not.toBe(sessionIdFor("run-b"));
-  });
+  it('is stable for a run id and different between runs', () => {
+    expect(sessionIdFor('run-a')).toBe(sessionIdFor('run-a'))
+    expect(sessionIdFor('run-a')).not.toBe(sessionIdFor('run-b'))
+  })
 
-  it("is a valid UUID, because --session-id requires one", () => {
-    expect(sessionIdFor("run-a")).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
-  });
-});
+  it('is a valid UUID, because --session-id requires one', () => {
+    expect(sessionIdFor('run-a')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+})
 
-describe("run", () => {
+describe('run', () => {
   /**
    * A lone object, which is what `--output-format json` printed before `#109`
    * and what a stand-in still prints. It has no `type`, and is a receipt on
    * that account — nothing in a stream is typeless, so accepting one cannot be
    * what misreads a stream.
    */
-  it("reads the receipt out of a lone object", async () => {
+  it('reads the receipt out of a lone object', async () => {
     const binary = await fakeClaude(
       `echo '{"is_error":false,"num_turns":63,"duration_ms":4210000,"total_cost_usd":5.42}'`,
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+    )
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure).toBeNull();
-    expect(outcome.turns).toBe(63);
-    expect(outcome.costUsd).toBe(5.42);
-    expect(outcome.durationMs).toBe(4_210_000);
-    expect(outcome.sessionId).toBe(sessionIdFor("run-01JX"));
-  });
+    expect(outcome.failure).toBeNull()
+    expect(outcome.turns).toBe(63)
+    expect(outcome.costUsd).toBe(5.42)
+    expect(outcome.durationMs).toBe(4_210_000)
+    expect(outcome.sessionId).toBe(sessionIdFor('run-01JX'))
+  })
 
-  it("passes the flags that make the run attributable and governed", async () => {
+  it('passes the flags that make the run attributable and governed', async () => {
     // The arguments are what wire the hook, the session and the model. A test
     // that only checks the exit code would not notice one going missing.
-    const binary = await fakeClaude(`printf '%s\\n' "$@" > "${join(root, "args.txt")}"; echo '{}'`);
-    await createClaudeCodeRuntime({ binary }).run(request({ model: "claude-opus-5" }));
+    const binary = await fakeClaude(`printf '%s\\n' "$@" > "${join(root, 'args.txt')}"; echo '{}'`)
+    await createClaudeCodeRuntime({ binary }).run(request({ model: 'claude-opus-5' }))
 
-    const args = (await import("node:fs/promises")).readFile;
-    const written = await args(join(root, "args.txt"), "utf8");
-    expect(written).toContain("-p");
-    expect(written).toContain("--output-format");
-    expect(written).toContain("--settings");
-    expect(written).toContain(sessionIdFor("run-01JX"));
-    expect(written).toContain("claude-opus-5");
+    const args = (await import('node:fs/promises')).readFile
+    const written = await args(join(root, 'args.txt'), 'utf8')
+    expect(written).toContain('-p')
+    expect(written).toContain('--output-format')
+    expect(written).toContain('--settings')
+    expect(written).toContain(sessionIdFor('run-01JX'))
+    expect(written).toContain('claude-opus-5')
 
     // The pair, together or not at all: 2.1.263 refuses `--print` with
     // `--output-format=stream-json` and no `--verbose`, so a run that lost the
     // second flag would not be a quieter stream, it would not start.
-    expect(written).toContain("stream-json");
-    expect(written).toContain("--verbose");
+    expect(written).toContain('stream-json')
+    expect(written).toContain('--verbose')
     // Considered and declined: it says every sentence twice, once in deltas
     // and once whole, and the run log is what pays for it.
-    expect(written).not.toContain("--include-partial-messages");
-  });
+    expect(written).not.toContain('--include-partial-messages')
+  })
 
   /**
    * What the log records about the invocation is what was invoked.
@@ -284,56 +292,52 @@ describe("run", () => {
    * flag added to `run` and not to the recorded list — so this asserts them
    * against each other rather than against a copy of the flags.
    */
-  it("describes the invocation as the same list it spawns, minus the prompt", async () => {
-    const dump = join(root, "invocation-args.txt");
-    const binary = await fakeClaude(`printf '%s\n' "$@" > "${dump}"; echo '{}'`);
-    const runtime = createClaudeCodeRuntime({ binary });
-    const req = request({ model: "claude-opus-5" });
+  it('describes the invocation as the same list it spawns, minus the prompt', async () => {
+    const dump = join(root, 'invocation-args.txt')
+    const binary = await fakeClaude(`printf '%s\n' "$@" > "${dump}"; echo '{}'`)
+    const runtime = createClaudeCodeRuntime({ binary })
+    const req = request({ model: 'claude-opus-5' })
 
-    await runtime.run(req);
-    const spawned = (await readFile(dump, "utf8")).split("\n").slice(0, -1);
-    const described = runtime.invocation!(req);
+    await runtime.run(req)
+    const spawned = (await readFile(dump, 'utf8')).split('\n').slice(0, -1)
+    const described = runtime.invocation!(req)
 
-    expect(described.command).toBe(binary);
+    expect(described.command).toBe(binary)
     // The one difference, and the only one: the document itself is on the run's
     // stream as `RunPrompted` rather than repeated here.
-    expect(spawned[1]).toBe("fix the thing");
-    expect(described.args[1]).toBe(PROMPT_ELIDED);
-    expect([...described.args].toSpliced(1, 1)).toEqual(spawned.toSpliced(1, 1));
-  });
+    expect(spawned[1]).toBe('fix the thing')
+    expect(described.args[1]).toBe(PROMPT_ELIDED)
+    expect([...described.args].toSpliced(1, 1)).toEqual(spawned.toSpliced(1, 1))
+  })
 
   /** The old loop's failures produced no event at all. Every ending has a kind. */
-  it("turns a non-zero exit into a crash, with the detail", async () => {
-    const binary = await fakeClaude(`echo "context window exceeded" >&2; exit 1`);
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+  it('turns a non-zero exit into a crash, with the detail', async () => {
+    const binary = await fakeClaude(`echo "context window exceeded" >&2; exit 1`)
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure?.kind).toBe("crash");
-    expect(outcome.failure?.detail).toContain("context window exceeded");
-    expect(outcome.exitCode).toBe(1);
-  });
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toContain('context window exceeded')
+    expect(outcome.exitCode).toBe(1)
+  })
 
-  it("turns is_error into a crash even when the exit code is zero", async () => {
-    const binary = await fakeClaude(
-      `echo '{"is_error":true,"result":"the model refused","num_turns":2}'; exit 0`,
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+  it('turns is_error into a crash even when the exit code is zero', async () => {
+    const binary = await fakeClaude(`echo '{"is_error":true,"result":"the model refused","num_turns":2}'; exit 0`)
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
     // A clean exit code with an error result is still a failure, and saying so
     // is the difference between a receipt and a rumour.
-    expect(outcome.failure?.kind).toBe("crash");
-    expect(outcome.failure?.detail).toContain("the model refused");
-    expect(outcome.turns).toBe(2);
-  });
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toContain('the model refused')
+    expect(outcome.turns).toBe(2)
+  })
 
-  it("turns a run that never ends into a timeout, not a hang", async () => {
-    const binary = await fakeClaude("sleep 30");
-    const outcome = await createClaudeCodeRuntime({ binary }).run(
-      request({ limits: { turns: 300, wallMs: 400 } }),
-    );
+  it('turns a run that never ends into a timeout, not a hang', async () => {
+    const binary = await fakeClaude('sleep 30')
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request({ limits: { turns: 300, wallMs: 400 } }))
 
-    expect(outcome.failure?.kind).toBe("timeout");
-    expect(outcome.failure?.detail).toContain("400ms");
-  });
+    expect(outcome.failure?.kind).toBe('timeout')
+    expect(outcome.failure?.detail).toContain('400ms')
+  })
 
   /**
    * `#89`: the turn bound, modelled on the wall's test above.
@@ -353,34 +357,34 @@ describe("run", () => {
         '[ -n "$max" ] || { echo "no --max-turns on argv" >&2; exit 64; }',
         'i=0; while [ "$i" -lt "$max" ]; do i=$((i+1)); echo \'{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"again"}]}}\'; done',
         'echo "{\\"type\\":\\"result\\",\\"subtype\\":\\"error_max_turns\\",\\"is_error\\":true,\\"num_turns\\":$max,\\"duration_ms\\":900,\\"total_cost_usd\\":0.37}"',
-        "exit 1",
-      ].join("\n"),
-    );
+        'exit 1',
+      ].join('\n'),
+    )
 
   it("stops a run at the recipe's turns, and says it was the turns and not the time", async () => {
     const outcome = await createClaudeCodeRuntime({ binary: await honoursMaxTurns() }).run(
       request({ limits: { turns: 3, wallMs: 30_000 } }),
-    );
+    )
 
-    expect(outcome.failure?.kind).toBe("out-of-turns");
-    expect(outcome.failure?.detail).toBe("3 turns, and the recipe allows 3 · $0.37");
+    expect(outcome.failure?.kind).toBe('out-of-turns')
+    expect(outcome.failure?.detail).toBe('3 turns, and the recipe allows 3 · $0.37')
     // The receipt survives, because the binary ended the session rather than
     // being killed: the run that overspent is exactly the one whose cost must
     // not be recorded as nothing.
-    expect(outcome.turns).toBe(3);
-    expect(outcome.costUsd).toBe(0.37);
-  });
+    expect(outcome.turns).toBe(3)
+    expect(outcome.costUsd).toBe(0.37)
+  })
 
   it("passes the recipe's turns to the binary, where the log can see it", () => {
     const { args } = createClaudeCodeRuntime().invocation!({
-      runId: "run-01JX",
+      runId: 'run-01JX',
       cwd: root,
-      settingsPath: join(root, "settings.json"),
+      settingsPath: join(root, 'settings.json'),
       env: {},
       limits: { turns: 150, wallMs: 3_600_000 },
-    });
-    expect(args[args.indexOf("--max-turns") + 1]).toBe("150");
-  });
+    })
+    expect(args[args.indexOf('--max-turns') + 1]).toBe('150')
+  })
 
   /**
    * **The cold reviewer's own flag, absent on every other invocation** (`#369`).
@@ -388,44 +392,42 @@ describe("run", () => {
    * the adapter carries it through when it is there, and leaves it off when
    * it is not.
    */
-  it("passes an output schema as --json-schema, and omits the flag without one", () => {
-    const schema = { type: "object", properties: { findings: { type: "array" } } };
+  it('passes an output schema as --json-schema, and omits the flag without one', () => {
+    const schema = { type: 'object', properties: { findings: { type: 'array' } } }
     const withSchema = createClaudeCodeRuntime().invocation!({
-      runId: "run-01JX",
+      runId: 'run-01JX',
       cwd: root,
-      settingsPath: join(root, "settings.json"),
+      settingsPath: join(root, 'settings.json'),
       env: {},
       limits: { turns: 150, wallMs: 3_600_000 },
       outputSchema: schema,
-    });
-    expect(withSchema.args[withSchema.args.indexOf("--json-schema") + 1]).toBe(JSON.stringify(schema));
+    })
+    expect(withSchema.args[withSchema.args.indexOf('--json-schema') + 1]).toBe(JSON.stringify(schema))
 
     const withoutSchema = createClaudeCodeRuntime().invocation!({
-      runId: "run-01JX",
+      runId: 'run-01JX',
       cwd: root,
-      settingsPath: join(root, "settings.json"),
+      settingsPath: join(root, 'settings.json'),
       env: {},
       limits: { turns: 150, wallMs: 3_600_000 },
-    });
-    expect(withoutSchema.args).not.toContain("--json-schema");
-  });
+    })
+    expect(withoutSchema.args).not.toContain('--json-schema')
+  })
 
-  it("turns an abort into aborted", async () => {
-    const binary = await fakeClaude("sleep 30");
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 200);
+  it('turns an abort into aborted', async () => {
+    const binary = await fakeClaude('sleep 30')
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 200)
 
-    const outcome = await createClaudeCodeRuntime({ binary }).run(
-      request({ signal: controller.signal }),
-    );
-    expect(outcome.failure?.kind).toBe("aborted");
-  });
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request({ signal: controller.signal }))
+    expect(outcome.failure?.kind).toBe('aborted')
+  })
 
-  it("turns a missing binary into a crash rather than a stack trace", async () => {
-    const outcome = await createClaudeCodeRuntime({ binary: join(root, "not-here") }).run(request());
-    expect(outcome.failure?.kind).toBe("crash");
-    expect(outcome.failure?.detail.length).toBeGreaterThan(0);
-  });
+  it('turns a missing binary into a crash rather than a stack trace', async () => {
+    const outcome = await createClaudeCodeRuntime({ binary: join(root, 'not-here') }).run(request())
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail.length).toBeGreaterThan(0)
+  })
 
   /**
    * The six runs of
@@ -437,8 +439,8 @@ describe("run", () => {
    * first three and not the fourth — which is why the assertion below is that
    * the sentence survives *whole* rather than that it was recognised.
    */
-  it("turns an error that took no turns and spent nothing into never-started", async () => {
-    const said = "You've hit your session limit \u00b7 resets 11pm (America/Chicago)";
+  it('turns an error that took no turns and spent nothing into never-started', async () => {
+    const said = "You've hit your session limit \u00b7 resets 11pm (America/Chicago)"
     // A heredoc rather than `echo '…'`: the sentence has an apostrophe in it,
     // which is the sort of thing that makes a fixture quietly stop being the
     // string it is standing in for.
@@ -446,18 +448,18 @@ describe("run", () => {
       [
         "cat <<'JSON'",
         JSON.stringify({ is_error: true, num_turns: 0, total_cost_usd: 0, result: said }),
-        "JSON",
-        "exit 1",
-      ].join("\n"),
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+        'JSON',
+        'exit 1',
+      ].join('\n'),
+    )
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure?.kind).toBe("never-started");
+    expect(outcome.failure?.kind).toBe('never-started')
     // Evidence, not a verdict: the prose is kept, and nothing was decided by it.
-    expect(outcome.failure?.detail).toBe(said);
-    expect(outcome.turns).toBe(0);
-    expect(outcome.costUsd).toBe(0);
-  });
+    expect(outcome.failure?.detail).toBe(said)
+    expect(outcome.turns).toBe(0)
+    expect(outcome.costUsd).toBe(0)
+  })
 
   /**
    * **The receipt the wall actually printed**, which 0031's fixture above was
@@ -475,44 +477,44 @@ describe("run", () => {
    * how the adapter is spawned.
    */
   it("turns the session limit's own receipt into never-started", async () => {
-    const said = "You've hit your session limit · resets 2pm (America/Chicago)";
+    const said = "You've hit your session limit · resets 2pm (America/Chicago)"
     const binary = await fakeStream(
-      stream({ ...RECEIPT, subtype: "success", is_error: true, num_turns: 1, total_cost_usd: 0, result: said }),
+      stream({ ...RECEIPT, subtype: 'success', is_error: true, num_turns: 1, total_cost_usd: 0, result: said }),
       1,
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+    )
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure?.kind).toBe("never-started");
-    expect(outcome.failure?.detail).toBe(said);
-    expect(outcome.turns).toBe(1);
-  });
+    expect(outcome.failure?.kind).toBe('never-started')
+    expect(outcome.failure?.detail).toBe(said)
+    expect(outcome.turns).toBe(1)
+  })
 
   /** And when the receipt does not say `is_error`, the exit code does. */
-  it("reads a non-zero exit beside a free one-turn receipt as never-started", async () => {
-    const said = "You've hit your session limit · resets 2pm (America/Chicago)";
+  it('reads a non-zero exit beside a free one-turn receipt as never-started', async () => {
+    const said = "You've hit your session limit · resets 2pm (America/Chicago)"
     const binary = await fakeStream(
-      stream({ ...RECEIPT, subtype: "success", is_error: false, num_turns: 1, total_cost_usd: 0, result: said }),
+      stream({ ...RECEIPT, subtype: 'success', is_error: false, num_turns: 1, total_cost_usd: 0, result: said }),
       1,
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+    )
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure?.kind).toBe("never-started");
-  });
+    expect(outcome.failure?.kind).toBe('never-started')
+  })
 
   /**
    * The false positive that would matter: output nobody can parse leaves turns
    * at zero and cost at null out of *ignorance*, and reading that as "never
    * started" would stop the whole conductor over one broken run.
    */
-  it("leaves an unparseable ending a crash, however little it appears to have spent", async () => {
-    const binary = await fakeClaude(`echo "Segmentation fault" >&2; exit 139`);
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+  it('leaves an unparseable ending a crash, however little it appears to have spent', async () => {
+    const binary = await fakeClaude(`echo "Segmentation fault" >&2; exit 139`)
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.turns).toBe(0);
-    expect(outcome.costUsd).toBeNull();
-    expect(outcome.failure?.kind).toBe("crash");
-  });
-});
+    expect(outcome.turns).toBe(0)
+    expect(outcome.costUsd).toBeNull()
+    expect(outcome.failure?.kind).toBe('crash')
+  })
+})
 
 /**
  * `#109`'s one risk, asserted rather than argued.
@@ -523,8 +525,8 @@ describe("run", () => {
  * a stream parses — it is that a stream and the lone object the old format
  * printed produce **the same outcome, field for field**.
  */
-describe("the stream, and the accounting that must not move", () => {
-  const accounting = (o: Awaited<ReturnType<ReturnType<typeof createClaudeCodeRuntime>["run"]>>) => ({
+describe('the stream, and the accounting that must not move', () => {
+  const accounting = (o: Awaited<ReturnType<ReturnType<typeof createClaudeCodeRuntime>['run']>>) => ({
     exitCode: o.exitCode,
     turns: o.turns,
     durationMs: o.durationMs,
@@ -532,40 +534,40 @@ describe("the stream, and the accounting that must not move", () => {
     text: o.text,
     failure: o.failure,
     sessionId: o.sessionId,
-  });
+  })
 
-  it("reads a real stream to the same fields the lone object produced", async () => {
-    const runtime = createClaudeCodeRuntime;
-    const streamed = await runtime({ binary: await fakeStream(stream()) }).run(request());
+  it('reads a real stream to the same fields the lone object produced', async () => {
+    const runtime = createClaudeCodeRuntime
+    const streamed = await runtime({ binary: await fakeStream(stream()) }).run(request())
     // The same receipt, alone, which is exactly what `--output-format json`
     // printed and what the parser was written against.
-    const lone = await runtime({ binary: await fakeStream([RECEIPT]) }).run(request());
+    const lone = await runtime({ binary: await fakeStream([RECEIPT]) }).run(request())
 
-    expect(accounting(streamed)).toEqual(accounting(lone));
+    expect(accounting(streamed)).toEqual(accounting(lone))
     // Named as well as compared, so a change to both at once is still caught.
     expect(accounting(streamed)).toEqual({
       exitCode: 0,
       turns: 63,
       durationMs: 4_210_000,
       costUsd: 5.42,
-      text: "the point runs on every outcome, not just an inline merge",
+      text: 'the point runs on every outcome, not just an inline merge',
       failure: null,
-      sessionId: sessionIdFor("run-01JX"),
-    });
-  });
+      sessionId: sessionIdFor('run-01JX'),
+    })
+  })
 
   /**
    * The five `subtype`s of the shipped bundle, 2026-09-08 (0031 §2).
    *
- * **Three `subtype`s are branched on** — `error_max_turns`, the runtime's
- * answer to `--max-turns` (`#89`); `error_max_budget_usd`, its answer to
- * `--max-budget-usd` (`#370`); and `error_max_structured_output_retries`, its
- * answer to `--json-schema` (`#369`) — and the rest are classified by
- * `neverStarted`'s three checkable facts, so what survives here is that each
- * lands where it should with its turns and its cost intact. All three were a
- * `crash` before, beside a segfault, and moved for two different reasons: a
- * ceiling reached is a bound applied rather than the runtime falling over, and
- * a schema it could not fit is the machinery losing an answer the agent gave.
+   * **Three `subtype`s are branched on** — `error_max_turns`, the runtime's
+   * answer to `--max-turns` (`#89`); `error_max_budget_usd`, its answer to
+   * `--max-budget-usd` (`#370`); and `error_max_structured_output_retries`, its
+   * answer to `--json-schema` (`#369`) — and the rest are classified by
+   * `neverStarted`'s three checkable facts, so what survives here is that each
+   * lands where it should with its turns and its cost intact. All three were a
+   * `crash` before, beside a segfault, and moved for two different reasons: a
+   * ceiling reached is a bound applied rather than the runtime falling over, and
+   * a schema it could not fit is the machinery losing an answer the agent gave.
    */
   const subtypes: readonly [
     string,
@@ -573,29 +575,29 @@ describe("the stream, and the accounting that must not move", () => {
     number,
     string | null,
   ][] = [
-    ["success", { is_error: false, num_turns: 63, total_cost_usd: 5.42 }, 0, null],
-    ["error_during_execution", { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, "crash"],
-    ["error_max_turns", { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, "out-of-turns"],
-    ["error_max_budget_usd", { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, "out-of-usd"],
+    ['success', { is_error: false, num_turns: 63, total_cost_usd: 5.42 }, 0, null],
+    ['error_during_execution', { is_error: true, num_turns: 12, total_cost_usd: 0.41 }, 1, 'crash'],
+    ['error_max_turns', { is_error: true, num_turns: 300, total_cost_usd: 12.9 }, 1, 'out-of-turns'],
+    ['error_max_budget_usd', { is_error: true, num_turns: 40, total_cost_usd: 20 }, 1, 'out-of-usd'],
     [
-      "error_max_structured_output_retries",
+      'error_max_structured_output_retries',
       { is_error: true, num_turns: 3, total_cost_usd: 0.08 },
       1,
-      "no-structured-answer",
+      'no-structured-answer',
     ],
     // Not a subtype: the shape 0031 measured, which carries no word of its own.
-    ["error_during_execution", { is_error: true, num_turns: 0, total_cost_usd: 0 }, 1, "never-started"],
-  ];
+    ['error_during_execution', { is_error: true, num_turns: 0, total_cost_usd: 0 }, 1, 'never-started'],
+  ]
 
-  it.each(subtypes)("carries %s through the stream unchanged", async (subtype, receipt, exit, kind) => {
-    const binary = await fakeStream(stream({ ...RECEIPT, subtype, ...receipt }), exit);
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+  it.each(subtypes)('carries %s through the stream unchanged', async (subtype, receipt, exit, kind) => {
+    const binary = await fakeStream(stream({ ...RECEIPT, subtype, ...receipt }), exit)
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure?.kind ?? null).toBe(kind);
-    expect(outcome.turns).toBe(receipt.num_turns);
-    expect(outcome.costUsd).toBe(receipt.total_cost_usd);
-    expect(outcome.exitCode).toBe(exit);
-  });
+    expect(outcome.failure?.kind ?? null).toBe(kind)
+    expect(outcome.turns).toBe(receipt.num_turns)
+    expect(outcome.costUsd).toBe(receipt.total_cost_usd)
+    expect(outcome.exitCode).toBe(exit)
+  })
 
   /**
    * **`structured_output` arrives on a clean answer, and nowhere else**
@@ -603,21 +605,21 @@ describe("the stream, and the accounting that must not move", () => {
    * receipt — `outcome.structured` is what `createAgentAction` reads instead
    * of `parseFindings(outcome.text)` once a schema was sent.
    */
-  it("carries structured_output through on a clean answer", async () => {
-    const structured = { findings: [], about: null };
-    const binary = await fakeStream(stream({ ...RECEIPT, structured_output: structured }));
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+  it('carries structured_output through on a clean answer', async () => {
+    const structured = { findings: [], about: null }
+    const binary = await fakeStream(stream({ ...RECEIPT, structured_output: structured }))
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure).toBeNull();
-    expect(outcome.structured).toEqual(structured);
-  });
+    expect(outcome.failure).toBeNull()
+    expect(outcome.structured).toEqual(structured)
+  })
 
-  it("carries nothing where the receipt had no structured_output", async () => {
-    const binary = await fakeStream(stream());
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+  it('carries nothing where the receipt had no structured_output', async () => {
+    const binary = await fakeStream(stream())
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.structured).toBeUndefined();
-  });
+    expect(outcome.structured).toBeUndefined()
+  })
 
   /**
    * The daemon killed mid-run, which is what `reconcile` does to an agent left
@@ -629,37 +631,37 @@ describe("the stream, and the accounting that must not move", () => {
    * zero turns**. That is the false success `#109` had to not introduce.
    */
   it.each([
-    [137, "killed"],
+    [137, 'killed'],
     // The dangerous one. A non-zero exit is a failure whatever the parser
     // says; a *clean* exit with no receipt is the case where reading the last
     // object would report a successful run of zero turns and nothing spent.
-    [0, "exited cleanly with nothing to show for it"],
-  ])("makes a stream cut off before its receipt a crash (%i, %s)", async (exit) => {
+    [0, 'exited cleanly with nothing to show for it'],
+  ])('makes a stream cut off before its receipt a crash (%i, %s)', async (exit) => {
     const binary = await fakeStream(
       stream(null),
       exit,
       // Half a line, with no newline after it: a pipe closed mid-object.
       `printf '%s' '{"type":"assistant","message":{"content":[{"type":"tex'`,
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
+    )
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
 
-    expect(outcome.failure?.kind).toBe("crash");
-    expect(outcome.turns).toBe(0);
-    expect(outcome.costUsd).toBeNull();
-    expect(outcome.text).toBeNull();
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.turns).toBe(0)
+    expect(outcome.costUsd).toBeNull()
+    expect(outcome.text).toBeNull()
     // Something says so, always. Here it is the end of what was printed.
-    expect(outcome.failure?.detail.length).toBeGreaterThan(0);
-  });
+    expect(outcome.failure?.detail.length).toBeGreaterThan(0)
+  })
 
   it("still finds the receipt behind a wrapper's warning", async () => {
     const binary = await fakeClaude(
-      ["echo 'npm warn Unknown env config'", "cat <<'JSON'", JSON.stringify(RECEIPT), "JSON"].join("\n"),
-    );
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
-    expect(outcome.turns).toBe(63);
-    expect(outcome.failure).toBeNull();
-  });
-});
+      ["echo 'npm warn Unknown env config'", "cat <<'JSON'", JSON.stringify(RECEIPT), 'JSON'].join('\n'),
+    )
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    expect(outcome.turns).toBe(63)
+    expect(outcome.failure).toBeNull()
+  })
+})
 
 /**
  * What the ticket was filed for: the agent's own output reaching somebody.
@@ -668,44 +670,46 @@ describe("the stream, and the accounting that must not move", () => {
  * so a run that took four minutes could be observed only with `ps`.
  */
 describe("the agent's output in the run log", () => {
-  it("writes what the agent said and thought, and not what the hook already writes", async () => {
-    const trace = recordingTrace();
-    const binary = await fakeStream(stream());
-    await createClaudeCodeRuntime({ binary }).run(request({ log: trace }));
+  it('writes what the agent said and thought, and not what the hook already writes', async () => {
+    const trace = recordingTrace()
+    const binary = await fakeStream(stream())
+    await createClaudeCodeRuntime({ binary }).run(request({ log: trace }))
 
-    expect(trace.lines).toContain("agent\tReading the adapter first.");
-    expect(trace.lines).toContain("think\tthe close handler is what produces the accounting");
+    expect(trace.lines).toContain('agent\tReading the adapter first.')
+    expect(trace.lines).toContain('think\tthe close handler is what produces the accounting')
     // The tool call is the hook socket's line, written with the verdict it got
     // — which is more than the stream knows. Twice would say it happened twice.
-    expect(trace.lines.join("\n")).not.toContain("claude-code.ts");
+    expect(trace.lines.join('\n')).not.toContain('claude-code.ts')
     // And a tool *result* is a file that is still on disk. It is the volume in
     // a stream and the least the agent's own.
-    expect(trace.lines.join("\n")).not.toContain("four hundred lines");
+    expect(trace.lines.join('\n')).not.toContain('four hundred lines')
     // How it ended, in the runtime's own word for it, `subtype` included.
-    expect(trace.lines.at(-1)).toBe("receipt\tsuccess · 63 turns · $5.42 · exit 0");
-  });
+    expect(trace.lines.at(-1)).toBe('receipt\tsuccess · 63 turns · $5.42 · exit 0')
+  })
 
   /**
    * An agent no hook is watching — a reviewer, a fixer — has its tool calls
    * written off the stream instead (#153), or its run is prose and silence.
    */
-  it("writes the tool calls too, when no hook is there to", async () => {
-    const trace = recordingTrace();
-    const binary = await fakeStream(stream());
-    await createClaudeCodeRuntime({ binary }).run(request({ log: trace, traceTools: true }));
+  it('writes the tool calls too, when no hook is there to', async () => {
+    const trace = recordingTrace()
+    const binary = await fakeStream(stream())
+    await createClaudeCodeRuntime({ binary }).run(request({ log: trace, traceTools: true }))
 
-    expect(trace.lines).toContain("Read\tpackages/agent/src/claude-code.ts");
-    expect(trace.lines.join("\n")).not.toContain("four hundred lines");
+    expect(trace.lines).toContain('Read\tpackages/agent/src/claude-code.ts')
+    expect(trace.lines.join('\n')).not.toContain('four hundred lines')
     expect(
       traceOf(
         JSON.stringify({
-          type: "assistant",
-          message: { content: [{ type: "tool_use", name: "Bash", input: { command: "pnpm typecheck\n&& pnpm test" } }] },
+          type: 'assistant',
+          message: {
+            content: [{ type: 'tool_use', name: 'Bash', input: { command: 'pnpm typecheck\n&& pnpm test' } }],
+          },
         }),
         { tools: true },
       ),
-    ).toEqual([["Bash", "pnpm typecheck && pnpm test"]]);
-  });
+    ).toEqual([['Bash', 'pnpm typecheck && pnpm test']])
+  })
 
   /**
    * One file, one writer, one order.
@@ -714,36 +718,36 @@ describe("the agent's output in the run log", () => {
    * 0034 §3, and they are handed the same `RunTrace` rather than the same path
    * — so this is the file that comes out, read back as a person would.
    */
-  it("interleaves with the hook trace in one readable file", async () => {
-    const path = join(root, "interleaved.log");
-    const log = await openRunLog({ path });
-    log.note("run", "run-01JX · wi-lingtai-109 · agent/109 → main");
+  it('interleaves with the hook trace in one readable file', async () => {
+    const path = join(root, 'interleaved.log')
+    const log = await openRunLog({ path })
+    log.note('run', 'run-01JX · wi-lingtai-109 · agent/109 → main')
 
-    const binary = await fakeStream(stream());
-    await createClaudeCodeRuntime({ binary }).run(request({ log }));
+    const binary = await fakeStream(stream())
+    await createClaudeCodeRuntime({ binary }).run(request({ log }))
 
-    log.note("run", "did not land — this file is kept, and is the only account of why");
-    await log.close("keep");
+    log.note('run', 'did not land — this file is kept, and is the only account of why')
+    await log.close('keep')
 
-    const written = (await readFile(path, "utf8")).split("\n");
-    expect(written[0]).toContain("lingtai run log · started");
+    const written = (await readFile(path, 'utf8')).split('\n')
+    expect(written[0]).toContain('lingtai run log · started')
     const labels = written
       .filter((l) => /^\d\d:\d\d:\d\d {2}/.test(l))
-      .map((l) => l.slice(10).trimEnd().split(/\s+/)[0]);
-    expect(labels).toEqual(["run", "think", "agent", "receipt", "run"]);
+      .map((l) => l.slice(10).trimEnd().split(/\s+/)[0])
+    expect(labels).toEqual(['run', 'think', 'agent', 'receipt', 'run'])
     // Timestamped, one line each, and readable while it is being written.
-    expect(written[3]).toMatch(/^\d\d:\d\d:\d\d {2}agent {3}Reading the adapter first\.$/);
-  });
+    expect(written[3]).toMatch(/^\d\d:\d\d:\d\d {2}agent {3}Reading the adapter first\.$/)
+  })
 
   /**
    * A run with no log — a gate agent, or `discuss` — writes to the one that is
    * not there. The run is worse observed and is not worse off.
    */
-  it("runs without a log at all", async () => {
-    const binary = await fakeStream(stream());
-    const outcome = await createClaudeCodeRuntime({ binary }).run(request());
-    expect(outcome.turns).toBe(63);
-  });
+  it('runs without a log at all', async () => {
+    const binary = await fakeStream(stream())
+    const outcome = await createClaudeCodeRuntime({ binary }).run(request())
+    expect(outcome.turns).toBe(63)
+  })
 
   /**
    * 0034 §7's cap is about the file; this one is about the line. A single
@@ -751,85 +755,97 @@ describe("the agent's output in the run log", () => {
    * line nobody can read is not what the file is for — the transcript keeps
    * all of it, at a session id computable from the run id forever.
    */
-  it("clips one enormous line, and says it clipped it", () => {
+  it('clips one enormous line, and says it clipped it', () => {
     const [[label, detail]] = traceOf(
-      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "x".repeat(9_000) }] } }),
-    ) as [[string, string]];
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'x'.repeat(9_000) }] } }),
+    ) as [[string, string]]
 
-    expect(label).toBe("agent");
-    expect(detail).toContain(`(${9_000 - TRACE_LINE_CHARS} more characters`);
-    expect(detail.length).toBeLessThan(TRACE_LINE_CHARS + 200);
-  });
+    expect(label).toBe('agent')
+    expect(detail).toContain(`(${9_000 - TRACE_LINE_CHARS} more characters`)
+    expect(detail.length).toBeLessThan(TRACE_LINE_CHARS + 200)
+  })
 
   /**
    * A line that is not a stream event at all — a wrapper's warning, or the
    * truncated object at the end of a killed run. This file is the only place
    * it would have survived.
    */
-  it("keeps a line that is not a stream event, rather than dropping it", () => {
-    expect(traceOf("npm warn Unknown env config")).toEqual([["stdout", "npm warn Unknown env config"]]);
+  it('keeps a line that is not a stream event, rather than dropping it', () => {
+    expect(traceOf('npm warn Unknown env config')).toEqual([['stdout', 'npm warn Unknown env config']])
     expect(traceOf('{"type":"assistant","message":{"conte')).toEqual([
-      ["stdout", '{"type":"assistant","message":{"conte'],
-    ]);
+      ['stdout', '{"type":"assistant","message":{"conte'],
+    ])
     // And the ones with nothing to say say nothing.
-    expect(traceOf(JSON.stringify({ type: "system", subtype: "init" }))).toEqual([]);
-    expect(traceOf("")).toEqual([]);
-  });
-});
+    expect(traceOf(JSON.stringify({ type: 'system', subtype: 'init' }))).toEqual([])
+    expect(traceOf('')).toEqual([])
+  })
+})
 
-describe("neverStarted", () => {
+describe('neverStarted', () => {
   /** At most one turn, zero cost, an error. Three facts, and no words. */
-  it("is the three facts and nothing else", () => {
-    expect(neverStarted({ turns: 0, costUsd: 0, isError: true })).toBe(true);
+  it('is the three facts and nothing else', () => {
+    expect(neverStarted({ turns: 0, costUsd: 0, isError: true })).toBe(true)
     // A receipt that recorded no cost recorded no spend.
-    expect(neverStarted({ turns: 0, costUsd: null, isError: true })).toBe(true);
+    expect(neverStarted({ turns: 0, costUsd: null, isError: true })).toBe(true)
     // The wall as it actually reports: the runtime counts its own refusal as
     // the turn, and a turn nothing billed was never answered by a model (0041).
-    expect(neverStarted({ turns: 1, costUsd: 0, isError: true })).toBe(true);
+    expect(neverStarted({ turns: 1, costUsd: 0, isError: true })).toBe(true)
 
     // A run that took turns failed at its task, not at beginning.
-    expect(neverStarted({ turns: 2, costUsd: 0, isError: true })).toBe(false);
+    expect(neverStarted({ turns: 2, costUsd: 0, isError: true })).toBe(false)
     // Nor does one turn that was paid for.
-    expect(neverStarted({ turns: 1, costUsd: 0.01, isError: true })).toBe(false);
+    expect(neverStarted({ turns: 1, costUsd: 0.01, isError: true })).toBe(false)
     // A run that spent money started.
-    expect(neverStarted({ turns: 0, costUsd: 0.02, isError: true })).toBe(false);
+    expect(neverStarted({ turns: 0, costUsd: 0.02, isError: true })).toBe(false)
     // And a clean ending is not a failure at all.
-    expect(neverStarted({ turns: 0, costUsd: 0, isError: false })).toBe(false);
-  });
-});
+    expect(neverStarted({ turns: 0, costUsd: 0, isError: false })).toBe(false)
+  })
+})
 
-describe("parseResult", () => {
-  it("reads clean JSON", () => {
-    expect(parseResult('{"num_turns":3}')).toEqual({ num_turns: 3 });
-  });
+describe('parseResult', () => {
+  it('reads clean JSON', () => {
+    expect(parseResult('{"num_turns":3}')).toEqual({ num_turns: 3 })
+  })
 
   /**
    * The old loop's cost record was a `.jsonl` that also contained raw `pnpm
    * build` output — 9,555 of 42,147 lines were not JSON and the file would not
    * parse. Assuming clean output is how a receipt gets lost.
    */
-  it("finds the result even behind a line of noise", () => {
-    expect(parseResult('npm warn something\n{"num_turns":3}')).toEqual({ num_turns: 3 });
-  });
+  it('finds the result even behind a line of noise', () => {
+    expect(parseResult('npm warn something\n{"num_turns":3}')).toEqual({ num_turns: 3 })
+  })
 
-  it("returns null rather than guessing", () => {
-    expect(parseResult("")).toBeNull();
-    expect(parseResult("not json at all")).toBeNull();
-  });
+  it('returns null rather than guessing', () => {
+    expect(parseResult('')).toBeNull()
+    expect(parseResult('not json at all')).toBeNull()
+  })
 
   /**
    * The line that says it is the receipt, and no other. Every line of a stream
    * is an object, so "the last one" is a different function on a stream than it
    * was on a lone object — and on a truncated stream it is the wrong one.
    */
-  it("takes the result line out of a stream and passes over the rest", () => {
-    expect(parseResult(stream().map((l) => JSON.stringify(l)).join("\n"))?.num_turns).toBe(63);
-  });
+  it('takes the result line out of a stream and passes over the rest', () => {
+    expect(
+      parseResult(
+        stream()
+          .map((l) => JSON.stringify(l))
+          .join('\n'),
+      )?.num_turns,
+    ).toBe(63)
+  })
 
-  it("finds no receipt in a stream that has not reached one", () => {
-    expect(parseResult(stream(null).map((l) => JSON.stringify(l)).join("\n"))).toBeNull();
-  });
-});
+  it('finds no receipt in a stream that has not reached one', () => {
+    expect(
+      parseResult(
+        stream(null)
+          .map((l) => JSON.stringify(l))
+          .join('\n'),
+      ),
+    ).toBeNull()
+  })
+})
 
 /**
  * **The Codex adapter, only where it touches the filesystem.**
@@ -841,28 +857,26 @@ describe("parseResult", () => {
  * reach it. What is left here is the one thing that is not: reading the wiring
  * off disk (0060 §1 — *a temporary directory is still the filesystem*).
  */
-describe("the Codex adapter, where it reads the wiring off disk", () => {
+describe('the Codex adapter, where it reads the wiring off disk', () => {
   const settingsAt = async (contents: unknown): Promise<string> => {
-    const dir = await mkdtemp(join(tmpdir(), "codex-wiring-"));
-    const path = join(dir, "settings.json");
-    await writeFile(path, JSON.stringify(contents));
-    return path;
-  };
+    const dir = await mkdtemp(join(tmpdir(), 'codex-wiring-'))
+    const path = join(dir, 'settings.json')
+    await writeFile(path, JSON.stringify(contents))
+    return path
+  }
 
-  it("finds the hook the conductor rendered and points Codex at it", async () => {
-    const path = await settingsAt(
-      renderSettings({ runId: "run-1", hookBinary: "/opt/lingtai/lingtai-hook" }),
-    );
+  it('finds the hook the conductor rendered and points Codex at it', async () => {
+    const path = await settingsAt(renderSettings({ runId: 'run-1', hookBinary: '/opt/lingtai/lingtai-hook' }))
     const { args } = createCodexRuntime().invocation!({
-      runId: "run-1",
-      cwd: "/tmp/tree",
+      runId: 'run-1',
+      cwd: '/tmp/tree',
       settingsPath: path,
       env: {},
       limits: { turns: 150, wallMs: 1_000 },
-    });
-    expect(args.join(" ")).toContain("hooks.UserPromptSubmit=");
-    expect(args).toContain("--dangerously-bypass-hook-trust");
-  });
+    })
+    expect(args.join(' ')).toContain('hooks.UserPromptSubmit=')
+    expect(args).toContain('--dangerously-bypass-hook-trust')
+  })
 
   /**
    * A Codex run with no hook produces no events and looks exactly like one that
@@ -870,21 +884,21 @@ describe("the Codex adapter, where it reads the wiring off disk", () => {
    * one layer up. **Refused before the spawn**, so nothing is spent on it, and as
    * an outcome rather than a throw so the conductor records it.
    */
-  it("refuses to start where the wiring cannot be read, rather than running unhooked", async () => {
+  it('refuses to start where the wiring cannot be read, rather than running unhooked', async () => {
     const outcome = await createCodexRuntime().run({
-      runId: "run-1",
-      cwd: "/tmp/tree",
-      prompt: "do the thing",
-      settingsPath: join(tmpdir(), "lingtai-no-such-settings.json"),
+      runId: 'run-1',
+      cwd: '/tmp/tree',
+      prompt: 'do the thing',
+      settingsPath: join(tmpdir(), 'lingtai-no-such-settings.json'),
       env: {},
       limits: { turns: 150, wallMs: 1_000 },
-    });
-    expect(outcome.failure?.kind).toBe("crash");
-    expect(outcome.failure?.detail).toMatch(/could not be read/);
+    })
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toMatch(/could not be read/)
     // Unknown cost is not free (#198).
-    expect(outcome.costUsd).toBeNull();
-    expect(outcome.exitCode).toBeNull();
-  });
+    expect(outcome.costUsd).toBeNull()
+    expect(outcome.exitCode).toBeNull()
+  })
 
   /**
    * **Where a worktree's commits land, read off its `.git` file.**
@@ -906,40 +920,40 @@ describe("the Codex adapter, where it reads the wiring off disk", () => {
    * which is why the assertion below is an exact list and not a `toContain`.
    */
   it("names a linked worktree's git directory and the borrowed stores, not the repository", async () => {
-    const root = await mkdtemp(join(tmpdir(), "codex-worktree-"));
-    const bare = join(root, "repos", "p.git");
-    const gitDir = join(bare, "worktrees", "run-1");
-    const tree = join(root, "worktrees", "p", "run-1");
-    await mkdir(gitDir, { recursive: true });
-    await mkdir(tree, { recursive: true });
-    await mkdir(join(bare, "hooks"), { recursive: true });
-    await writeFile(join(tree, ".git"), `gitdir: ${gitDir}\n`);
+    const root = await mkdtemp(join(tmpdir(), 'codex-worktree-'))
+    const bare = join(root, 'repos', 'p.git')
+    const gitDir = join(bare, 'worktrees', 'run-1')
+    const tree = join(root, 'worktrees', 'p', 'run-1')
+    await mkdir(gitDir, { recursive: true })
+    await mkdir(tree, { recursive: true })
+    await mkdir(join(bare, 'hooks'), { recursive: true })
+    await writeFile(join(tree, '.git'), `gitdir: ${gitDir}\n`)
     // Git's own spelling: relative to the worktree's git directory.
-    await writeFile(join(gitDir, "commondir"), "../..\n");
+    await writeFile(join(gitDir, 'commondir'), '../..\n')
 
-    const roots = gitWritableRoots(tree);
-    expect(roots).toEqual([gitDir, join(bare, "objects"), join(bare, "refs"), join(bare, "logs")]);
+    const roots = gitWritableRoots(tree)
+    expect(roots).toEqual([gitDir, join(bare, 'objects'), join(bare, 'refs'), join(bare, 'logs')])
     // The two that would put a script, or a command git reads out of `config`,
     // inside the writable set.
-    expect(roots).not.toContain(bare);
-    expect(roots).not.toContain(join(bare, "hooks"));
+    expect(roots).not.toContain(bare)
+    expect(roots).not.toContain(join(bare, 'hooks'))
 
     // **`logs` is created, not assumed.** A mirror nothing has committed to has
     // none, git makes it itself in the repository directory, and a sandbox cannot
     // create its own root: with it missing, the same commit answered `fatal:
     // cannot update the ref … unable to create directory for '…/logs/refs/heads/…'`.
-    expect(existsSync(join(bare, "logs"))).toBe(true);
+    expect(existsSync(join(bare, 'logs'))).toBe(true)
 
     // An ordinary checkout's `.git` is a directory under `--cd` and so is
     // already writable — naming it would widen the sandbox for nothing.
-    const plain = join(root, "plain");
-    await mkdir(join(plain, ".git"), { recursive: true });
-    expect(gitWritableRoots(plain)).toEqual([]);
+    const plain = join(root, 'plain')
+    await mkdir(join(plain, '.git'), { recursive: true })
+    expect(gitWritableRoots(plain)).toEqual([])
 
     // Not a repository at all: a reader's empty directory, and not a reason to
     // refuse to run.
-    expect(gitWritableRoots(join(root, "nothing-here"))).toEqual([]);
+    expect(gitWritableRoots(join(root, 'nothing-here'))).toEqual([])
 
-    await rm(root, { recursive: true, force: true });
-  });
-});
+    await rm(root, { recursive: true, force: true })
+  })
+})

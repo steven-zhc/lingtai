@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+
+import type { TaskCard } from '@lingtai/projector/task-view'
+import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The third button exists, and it is not the loud one (#151).
  *
@@ -13,73 +17,71 @@
  * that render a row of moves, and `#150` is the standing proof that a control
  * can exist and still be missing from the one row that needs it.
  */
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { Close } from "../src/app/decide.tsx";
-import { LandedRow } from "../src/app/page.tsx";
-import { toCard } from "../src/lib/board.ts";
-import type { TaskCard } from "@lingtai/projector/task-view";
+import { describe, expect, it } from 'vitest'
 
-const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+import { Close } from '../src/app/decide.tsx'
+import { LandedRow } from '../src/app/page.tsx'
+import { toCard } from '../src/lib/board.ts'
 
-describe("Close", () => {
-  it("rests as one button and asks for nothing until it is clicked", () => {
-    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} />);
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-    expect(html).toContain(">Close<");
+describe('Close', () => {
+  it('rests as one button and asks for nothing until it is clicked', () => {
+    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} />)
+
+    expect(html).toContain('>Close<')
     // The reason box is the second click. A close that could be made in one is
     // a close that can be made by a misclick, and nothing lifts one.
-    expect(html).not.toContain("<input");
-  });
+    expect(html).not.toContain('<input')
+  })
 
-  it("is never amber", () => {
-    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} />);
+  it('is never amber', () => {
+    const html = renderToStaticMarkup(<Close project="lingtai" issue={151} />)
 
     // Brass on this board means *a person is being waited on* and nothing else
     // (0035 §3). Closing is a person deciding, not being asked, so the resting
     // button wears `btn` and not `btn pri` — which is also why no diagnosis can
     // promote it the way `primaryMove` promotes Approve and Requeue.
-    expect(html).toMatch(/class="btn"/);
-    expect(html).not.toMatch(/class="btn pri"/);
-  });
+    expect(html).toMatch(/class="btn"/)
+    expect(html).not.toMatch(/class="btn pri"/)
+  })
 
-  it("refuses to send an empty reason", () => {
-    const source = read("../src/app/decide.tsx");
-    const close = source.slice(source.indexOf("export function Close"));
+  it('refuses to send an empty reason', () => {
+    const source = read('../src/app/decide.tsx')
+    const close = source.slice(source.indexOf('export function Close'))
 
     // `close()` refuses a blank reason on the server too; this is the half that
     // stops the click being possible at all, so the refusal is not the first
     // thing a person learns about the control.
-    expect(close).toMatch(/disabled=\{!reason\.trim\(\) \|\| pending\}/);
-  });
-});
+    expect(close).toMatch(/disabled=\{!reason\.trim\(\) \|\| pending\}/)
+  })
+})
 
-describe("the row of moves", () => {
-  it("offers it beside Approve and Requeue on a blocked card", () => {
-    for (const file of ["../src/app/page.tsx", "../src/app/standing.tsx"]) {
-      const source = read(file);
-      expect(source, file).toMatch(/import \{ Close[,\s]/);
-      expect(source, file).toContain("<Close");
+describe('the row of moves', () => {
+  it('offers it beside Approve and Requeue on a blocked card', () => {
+    for (const file of ['../src/app/page.tsx', '../src/app/standing.tsx']) {
+      const source = read(file)
+      expect(source, file).toMatch(/import \{ Close[,\s]/)
+      expect(source, file).toContain('<Close')
     }
-  });
+  })
 
-  it("offers it on a queued card, which is where the ones that sat were", () => {
+  it('offers it on a queued card, which is where the ones that sat were', () => {
     // #32, #115, #126 and #136 were closed on GitHub for hours and the board
     // went on listing them in Queued, because `gh issue close` appends nothing
     // and the fold reads the log. A queued card's only move was `Run now`.
-    const page = read("../src/app/page.tsx");
+    const page = read('../src/app/page.tsx')
     // `lastIndexOf`: the string also appears in `accent()` near the top of the
     // file, where it picks a card's colour and has nothing to do with a row of
     // moves. The row is the last of them.
-    const queued = page.slice(page.search(/card\.column === ["']queued["'](?![\s\S]*card\.column === ["']queued["'])/));
-    expect(queued.slice(0, 400)).toContain("<Close");
+    const queued = page.slice(page.search(/card\.column === ["']queued["'](?![\s\S]*card\.column === ["']queued["'])/))
+    expect(queued.slice(0, 400)).toContain('<Close')
 
-    const standing = read("../src/app/standing.tsx");
-    const runNow = standing.slice(standing.indexOf("<RunNow"));
-    expect(runNow.slice(0, 600)).toContain("<Close");
-  });
-});
+    const standing = read('../src/app/standing.tsx')
+    const runNow = standing.slice(standing.indexOf('<RunNow'))
+    expect(runNow.slice(0, 600)).toContain('<Close')
+  })
+})
 
 /**
  * The archive column holds two different endings, and says which (#151).
@@ -91,18 +93,18 @@ describe("the row of moves", () => {
  * heading reading **Landed**, having landed nothing. The row is the only place
  * the difference can be said, so it says it.
  */
-describe("a closed item in the archive", () => {
+describe('a closed item in the archive', () => {
   // The same shape `bar.test.ts` builds, kept whole rather than cast: the two
   // fields this test turns on — `state` and `updatedAt` — are the two a loose
   // cast would have let through wrong, and one of them did.
   const task = (over: Partial<TaskCard> = {}): TaskCard => ({
-    taskId: "wi-lingtai-136",
-    project: "lingtai",
-    issue: "136",
-    title: "A refused review buys a fixing agent",
-    kind: "feature",
-    state: "landed",
-    tier: "guarded",
+    taskId: 'wi-lingtai-136',
+    project: 'lingtai',
+    issue: '136',
+    title: 'A refused review buys a fixing agent',
+    kind: 'feature',
+    state: 'landed',
+    tier: 'guarded',
     runId: null,
     turns: 67,
     costUsd: 20.3,
@@ -116,7 +118,7 @@ describe("a closed item in the archive", () => {
     insertions: null,
     deletions: null,
     note: null,
-    updatedAt: new Date("2026-09-14T04:27:22Z"),
+    updatedAt: new Date('2026-09-14T04:27:22Z'),
     closedAt: null,
     attempts: 0,
     lastAttemptAt: null,
@@ -132,28 +134,28 @@ describe("a closed item in the archive", () => {
     restartsOf: 0,
     repairCostUsd: null,
     ...over,
-  });
+  })
 
-  it("says so, where a landed one says nothing extra", () => {
+  it('says so, where a landed one says nothing extra', () => {
     const closed = renderToStaticMarkup(
-      <LandedRow card={toCard(task({ state: "closed" }))} showProject={false} issue={null} />,
-    );
+      <LandedRow card={toCard(task({ state: 'closed' }))} showProject={false} issue={null} />,
+    )
     const landed = renderToStaticMarkup(
-      <LandedRow card={toCard(task({ state: "landed" }))} showProject={false} issue={null} />,
-    );
+      <LandedRow card={toCard(task({ state: 'landed' }))} showProject={false} issue={null} />,
+    )
 
-    expect(closed).toContain("closed");
+    expect(closed).toContain('closed')
     // And the ordinary row is untouched: the word appears only where it is
     // true, so it carries information rather than decorating every row.
-    expect(landed).not.toContain("closed");
-  });
+    expect(landed).not.toContain('closed')
+  })
 
-  it("shares the column, so nothing falls off the board", () => {
+  it('shares the column, so nothing falls off the board', () => {
     // `COLUMN_OF` is a `Record<TaskState, ColumnId>` for this reason (#59): a
     // state with no column left a task drawn nowhere for the whole of its gate
     // run. Closed is in Landed's column, and the row above is what pays for it.
-    expect(toCard(task({ state: "closed" })).column).toBe("landed");
-    expect(toCard(task({ state: "closed" })).closed).toBe(true);
-    expect(toCard(task({ state: "landed" })).closed).toBe(false);
-  });
-});
+    expect(toCard(task({ state: 'closed' })).column).toBe('landed')
+    expect(toCard(task({ state: 'closed' })).closed).toBe(true)
+    expect(toCard(task({ state: 'landed' })).closed).toBe(false)
+  })
+})

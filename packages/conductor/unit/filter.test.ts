@@ -11,13 +11,14 @@
  * stopped parsing and every issue in the project vanished from the queue with
  * nothing anywhere saying why.
  */
-import type { ProjectState } from "@lingtai/domain";
-import type { GitHubClient } from "@lingtai/github";
-import { describe, expect, it } from "vitest";
-import { type RecipeFor, describeAssignee, describeFilter, passCeiling, projectFilter } from "../src/filter.ts";
-import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from "@lingtai/recipe";
+import type { ProjectState } from '@lingtai/domain'
+import type { GitHubClient } from '@lingtai/github'
+import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
 
-const project = { project: "lingtai", owner: "steven-zhc", base: "main" } as ProjectState;
+import { type RecipeFor, describeAssignee, describeFilter, passCeiling, projectFilter } from '../src/filter.ts'
+
+const project = { project: 'lingtai', owner: 'steven-zhc', base: 'main' } as ProjectState
 
 const RECIPE = `
 version: 2
@@ -44,38 +45,38 @@ steps:
       prompt: reviewer
 runtime:
   agent: claude-code
-`;
+`
 
 /**
  * The recipe through the client's `fileAt`, so each test keeps the file it
  * wrote. Where a conductor reads it from is `local.test.ts`'s; what is under
  * test here is what a resolved recipe reduces to.
  */
-const fromFile: RecipeFor = (state, c) => resolveRecipe((p, r) => c.fileAt(p, r), state.base ?? "main");
+const fromFile: RecipeFor = (state, c) => resolveRecipe((p, r) => c.fileAt(p, r), state.base ?? 'main')
 
 /** Answers one file at one ref, and nothing else. */
 function client(file: string | null): GitHubClient {
   return {
-    owner: "steven-zhc",
-    repo: "lingtai",
+    owner: 'steven-zhc',
+    repo: 'lingtai',
     fileAt: async () => file,
-  } as unknown as GitHubClient;
+  } as unknown as GitHubClient
 }
 
-describe("projectFilter", () => {
-  it("reduces a resolved recipe to what it takes, in priority order", async () => {
-    const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
+describe('projectFilter', () => {
+  it('reduces a resolved recipe to what it takes, in priority order', async () => {
+    const filter = await projectFilter(project, async () => client(RECIPE), fromFile)
 
-    expect(filter.ok).toBe(true);
-    if (!filter.ok) return;
-    expect(filter.kinds).toEqual(["bug", "tech-debt", "documentation"]);
-    expect(filter.exclude).toEqual(["blocked", "agent:hold"]);
-    expect(filter.ref).toBe("main");
-    expect(filter.configHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(filter.ok).toBe(true)
+    if (!filter.ok) return
+    expect(filter.kinds).toEqual(['bug', 'tech-debt', 'documentation'])
+    expect(filter.exclude).toEqual(['blocked', 'agent:hold'])
+    expect(filter.ref).toBe('main')
+    expect(filter.configHash).toMatch(/^[0-9a-f]{64}$/)
     // Parsed here so that no caller reads a duration string, and defaulted by
     // the schema rather than by a constant in the queue (0028).
-    expect(filter.backoffMs).toBe(60 * 60_000);
-  });
+    expect(filter.backoffMs).toBe(60 * 60_000)
+  })
 
   /**
    * The denominator a running card measures a gate against (#79) — parsed here
@@ -89,145 +90,147 @@ describe("projectFilter", () => {
    * this asserts is *every step the vocabulary has*, whatever it has.
    */
   it("carries every step's actions with the timeouts already numbers", async () => {
-    const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
+    const filter = await projectFilter(project, async () => client(RECIPE), fromFile)
 
-    expect(filter.ok).toBe(true);
-    if (!filter.ok) return;
+    expect(filter.ok).toBe(true)
+    if (!filter.ok) return
     // All ten, in pass order, whatever the recipe configured — which is the
     // property this line is for, not the five it used to name.
     expect([...filter.plan.keys()]).toEqual([
-      "claim",
-      "admit",
-      "prepared",
-      "design",
-      "implement",
-      "build",
-      "review",
-      "proposed",
-      "merge",
-      "end",
-    ]);
-    expect(filter.plan.get("prepared")).toEqual([{ name: "install", budgetMs: 10 * 60_000 }]);
+      'claim',
+      'admit',
+      'prepared',
+      'design',
+      'implement',
+      'build',
+      'review',
+      'proposed',
+      'merge',
+      'end',
+    ])
+    expect(filter.plan.get('prepared')).toEqual([{ name: 'install', budgetMs: 10 * 60_000 }])
     // A reviewer has no clock on it, and null is not zero: a card that showed a
     // budget of 0 would say it was already out of time.
-    expect(filter.plan.get("proposed")).toEqual([
-      { name: "build", budgetMs: 20 * 60_000 },
-      { name: "review", budgetMs: null },
-    ]);
-    expect(filter.plan.get("merge")).toEqual([]);
-  });
+    expect(filter.plan.get('proposed')).toEqual([
+      { name: 'build', budgetMs: 20 * 60_000 },
+      { name: 'review', budgetMs: null },
+    ])
+    expect(filter.plan.get('merge')).toEqual([])
+  })
 
   /** The recipe decides it, so a recipe that says something else is obeyed. */
-  it("takes the backoff from the recipe, in milliseconds", async () => {
-    const filter = await projectFilter(project, async () =>
-      client(RECIPE.replace("exclude:", "backoff: 15m\n  exclude:")),
+  it('takes the backoff from the recipe, in milliseconds', async () => {
+    const filter = await projectFilter(
+      project,
+      async () => client(RECIPE.replace('exclude:', 'backoff: 15m\n  exclude:')),
       fromFile,
-    );
+    )
 
-    expect(filter.ok).toBe(true);
-    if (!filter.ok) return;
-    expect(filter.backoffMs).toBe(15 * 60_000);
-  });
+    expect(filter.ok).toBe(true)
+    if (!filter.ok) return
+    expect(filter.backoffMs).toBe(15 * 60_000)
+  })
 
   /**
    * Zero is not a shorter backoff, it is the absence of the guard the $29 loop
    * bought — so it fails to resolve, naming the key, rather than throwing from
    * the middle of a queue pass.
    */
-  it("refuses a backoff that is not a positive duration", async () => {
-    const filter = await projectFilter(project, async () =>
-      client(RECIPE.replace("exclude:", "backoff: 0s\n  exclude:")),
+  it('refuses a backoff that is not a positive duration', async () => {
+    const filter = await projectFilter(
+      project,
+      async () => client(RECIPE.replace('exclude:', 'backoff: 0s\n  exclude:')),
       fromFile,
-    );
+    )
 
-    expect(filter.ok).toBe(false);
-    if (filter.ok) return;
-    expect(filter.problem).toContain("source.backoff");
-    expect(filter.problem).toContain("positive duration");
-  });
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.problem).toContain('source.backoff')
+    expect(filter.problem).toContain('positive duration')
+  })
 
   /**
    * The failure that started this. `documentation` was refused by `WorkKind`,
    * so the whole file failed to parse — and a caller who only looked at the
    * returned queue saw a project with no work.
    */
-  it("answers with the reason rather than throwing, when the recipe will not parse", async () => {
-    const filter = await projectFilter(project, async () => client("version: 2\nrepo: {}\n"), fromFile);
+  it('answers with the reason rather than throwing, when the recipe will not parse', async () => {
+    const filter = await projectFilter(project, async () => client('version: 2\nrepo: {}\n'), fromFile)
 
-    expect(filter.ok).toBe(false);
-    if (filter.ok) return;
-    expect(filter.problem).toContain(".lingtai/config.yaml");
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.problem).toContain('.lingtai/config.yaml')
     // One line, keeping every problem: `RecipeInvalidError` puts one per line,
     // which reads badly in a column.
-    expect(filter.problem).not.toContain("\n");
-  });
+    expect(filter.problem).not.toContain('\n')
+  })
 
-  it("says so when there is no recipe at all", async () => {
-    const filter = await projectFilter(project, async () => client(null), fromFile);
+  it('says so when there is no recipe at all', async () => {
+    const filter = await projectFilter(project, async () => client(null), fromFile)
 
-    expect(filter.ok).toBe(false);
-    if (filter.ok) return;
-    expect(filter.problem).toContain("no .lingtai/config.yaml on main");
-  });
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.problem).toContain('no .lingtai/config.yaml on main')
+  })
 
-  it("says so when the project cannot be reached, in the same shape", async () => {
+  it('says so when the project cannot be reached, in the same shape', async () => {
     const filter = await projectFilter(
       project,
       async () => {
-        throw new Error("no owner recorded — re-run lingtai add to record it");
+        throw new Error('no owner recorded — re-run lingtai add to record it')
       },
       fromFile,
-    );
+    )
 
     expect(filter).toEqual({
-      project: "lingtai",
+      project: 'lingtai',
       ok: false,
-      problem: "no owner recorded — re-run lingtai add to record it",
-    });
-  });
-});
+      problem: 'no owner recorded — re-run lingtai add to record it',
+    })
+  })
+})
 
-describe("describeFilter", () => {
-  it("names the recipe, what it picks up and excludes, what a pass costs and when it retries", async () => {
-    const filter = await projectFilter(project, async () => client(RECIPE), fromFile);
-    const lines = describeFilter(filter);
+describe('describeFilter', () => {
+  it('names the recipe, what it picks up and excludes, what a pass costs and when it retries', async () => {
+    const filter = await projectFilter(project, async () => client(RECIPE), fromFile)
+    const lines = describeFilter(filter)
 
-    expect(lines).toHaveLength(6);
-    expect(lines[0]).toMatch(/^lingtai\s+recipe [0-9a-f]{12} from main$/);
-    expect(lines[1]).toContain("picks up     bug > tech-debt > documentation");
-    expect(lines[1]).toContain("(in priority order)");
-    expect(lines[2]).toContain("excludes     blocked, agent:hold");
+    expect(lines).toHaveLength(6)
+    expect(lines[0]).toMatch(/^lingtai\s+recipe [0-9a-f]{12} from main$/)
+    expect(lines[1]).toContain('picks up     bug > tech-debt > documentation')
+    expect(lines[1]).toContain('(in priority order)')
+    expect(lines[2]).toContain('excludes     blocked, agent:hold')
     // Said when the machine says nothing, as `both` — unassigned work and
     // everybody's, which is what the queue did before it read an assignee (#181).
-    const assignee = lines.splice(3, 1)[0];
-    expect(assignee).toContain("assignee     any issue, whoever it is assigned to");
+    const assignee = lines.splice(3, 1)[0]
+    expect(assignee).toContain('assignee     any issue, whoever it is assigned to')
     // Printed by a recipe that never mentions it, which is the point: a default
     // that spends money has to be readable without opening Lingtai's source
     // (0025 §2), and a line that only appears when it is on is not that.
     // The product and not the numbers: what an operator is deciding about is
     // what one pass of this project can cost (0039 §3).
-    expect(lines[3]).toContain("a pass       up to 3 agent runs");
+    expect(lines[3]).toContain('a pass       up to 3 agent runs')
     // And for the same reason again: the backoff decides when this project
     // spends money next, and it was in none of the four places that describe a
     // project (#95).
-    expect(lines[4]).toContain("retries      after 1h, unless a repair is pending");
-  });
+    expect(lines[4]).toContain('retries      after 1h, unless a repair is pending')
+  })
 
   /**
    * A project that will take nothing gets a *line*, not an absence. Being
    * omitted is what an empty queue already looks like, which is the whole
    * confusion #76 records.
    */
-  it("gives a project whose recipe will not resolve its own line, loudly", async () => {
-    const filter = await projectFilter(project, async () => client("nope: 1\n"), fromFile);
-    const lines = describeFilter(filter);
+  it('gives a project whose recipe will not resolve its own line, loudly', async () => {
+    const filter = await projectFilter(project, async () => client('nope: 1\n'), fromFile)
+    const lines = describeFilter(filter)
 
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain("lingtai");
-    expect(lines[0]).toContain("RECIPE INVALID");
-    expect(lines[1]).toContain("nothing will be taken from this project");
-  });
-});
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('lingtai')
+    expect(lines[0]).toContain('RECIPE INVALID')
+    expect(lines[1]).toContain('nothing will be taken from this project')
+  })
+})
 
 /**
  * What a pass costs, said once so three places cannot disagree.
@@ -239,51 +242,51 @@ describe("describeFilter", () => {
  * better sentence, it is one sentence that is **made of** the numbers, so the
  * only way to make it wrong is to change the numbers.
  */
-describe("what a pass may spend", () => {
-  const limits = (rounds: number, wall = "1h", wallMs = 3_600_000, restarts = 0) => ({
+describe('what a pass may spend', () => {
+  const limits = (rounds: number, wall = '1h', wallMs = 3_600_000, restarts = 0) => ({
     rounds,
     restarts,
     turns: 150,
     wall,
     wallMs,
-  });
+  })
 
-  it("multiplies the wall by the runs a pass can buy, not by the rounds", () => {
+  it('multiplies the wall by the runs a pass can buy, not by the rounds', () => {
     // Two rounds is three runs: the work, then two goes at what refused it.
     // Off-by-one here is the whole failure being prevented.
-    expect(passCeiling(limits(2))).toContain("up to 3 agent runs");
-    expect(passCeiling(limits(2))).toContain("at most 3h");
-  });
+    expect(passCeiling(limits(2))).toContain('up to 3 agent runs')
+    expect(passCeiling(limits(2))).toContain('at most 3h')
+  })
 
   /** The assertion the ticket asked for: change the number, the sentence moves. */
-  it("changes when rounds changes", () => {
-    const one = passCeiling(limits(1));
-    const four = passCeiling(limits(4));
+  it('changes when rounds changes', () => {
+    const one = passCeiling(limits(1))
+    const four = passCeiling(limits(4))
 
-    expect(one).not.toBe(four);
-    expect(one).toContain("at most 2h");
-    expect(four).toContain("at most 5h");
-  });
+    expect(one).not.toBe(four)
+    expect(one).toContain('at most 2h')
+    expect(four).toContain('at most 5h')
+  })
 
   it("reads the wall back in the recipe's own words", () => {
     // `15m` and not `900000`: this line is read against the file it came from.
-    expect(passCeiling(limits(1, "15m", 900_000))).toContain("15m and 150 turns each");
-    expect(passCeiling(limits(1, "15m", 900_000))).toContain("at most 30m");
-  });
+    expect(passCeiling(limits(1, '15m', 900_000))).toContain('15m and 150 turns each')
+    expect(passCeiling(limits(1, '15m', 900_000))).toContain('at most 30m')
+  })
 
   /**
    * `rounds: 0` is the whole of what `repair.on: false` used to say (0039 §4),
    * and it has to read as a choice rather than as an absence — 0025 §2's rule
    * that a default which spends money is shown when it is off as well as on.
    */
-  it("says where a refusal goes when nothing is bought", () => {
-    const none = passCeiling(limits(0));
+  it('says where a refusal goes when nothing is bought', () => {
+    const none = passCeiling(limits(0))
 
-    expect(none).toContain("straight to you");
-    expect(none).toContain("runtime.limits.rounds: 0");
+    expect(none).toContain('straight to you')
+    expect(none).toContain('runtime.limits.rounds: 0')
     // And no product, because there is nothing to multiply.
-    expect(none).not.toContain("agent runs");
-  });
+    expect(none).not.toContain('agent runs')
+  })
 
   /**
    * **The second ceiling multiplies the first**
@@ -294,14 +297,14 @@ describe("what a pass may spend", () => {
    * that named `rounds` and not `restarts` would be exactly the 2026-09-10
    * failure again, with more money on it.
    */
-  it("multiplies again for the passes a restart can buy", () => {
+  it('multiplies again for the passes a restart can buy', () => {
     // Two rounds is three runs a pass; one restart is two passes. Six runs.
-    const once = passCeiling(limits(2, "1h", 3_600_000, 1));
+    const once = passCeiling(limits(2, '1h', 3_600_000, 1))
 
-    expect(once).toContain("up to 3 agent runs");
-    expect(once).toContain("up to 1 restart(s)");
-    expect(once).toContain("at most 2 passes, 6 agent runs and 6h");
-  });
+    expect(once).toContain('up to 3 agent runs')
+    expect(once).toContain('up to 1 restart(s)')
+    expect(once).toContain('at most 2 passes, 6 agent runs and 6h')
+  })
 
   /**
    * 0025 §2 again, one ceiling along: a default that spends money is shown when
@@ -309,13 +312,13 @@ describe("what a pass may spend", () => {
    * every project today, so this is the line an operator reads to learn that a
    * spent pass is theirs.
    */
-  it("says a spent pass is yours when no restart is bought", () => {
-    const none = passCeiling(limits(2));
+  it('says a spent pass is yours when no restart is bought', () => {
+    const none = passCeiling(limits(2))
 
-    expect(none).toContain("runtime.limits.restarts: 0");
-    expect(none).toContain("goes to you");
-    expect(none).not.toContain("restart(s) —");
-  });
+    expect(none).toContain('runtime.limits.restarts: 0')
+    expect(none).toContain('goes to you')
+    expect(none).not.toContain('restart(s) —')
+  })
 
   /**
    * **A recipe that narrows nothing prints today's sentence, character for
@@ -327,21 +330,21 @@ describe("what a pass may spend", () => {
    * assertion cannot make. `LIMIT_DEFAULTS` rather than a hand-written pair, so
    * the recipe it is asserted about is the one every project has.
    */
-  it("prints exactly what it printed before a step could narrow", () => {
+  it('prints exactly what it printed before a step could narrow', () => {
     const defaults = {
       rounds: LIMIT_DEFAULTS.rounds,
       restarts: LIMIT_DEFAULTS.restarts,
       turns: LIMIT_DEFAULTS.turns,
       wall: LIMIT_DEFAULTS.wall,
       wallMs: parseDuration(LIMIT_DEFAULTS.wall),
-    };
-    expect(passCeiling({ ...defaults, steps: [] })).toBe(passCeiling(defaults));
+    }
+    expect(passCeiling({ ...defaults, steps: [] })).toBe(passCeiling(defaults))
     expect(passCeiling(defaults)).toBe(
-      "up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused " +
-        "it. 2h and 300 turns each, so at most 6h. A pass whose rounds are spent goes to you " +
-        "(runtime.limits.restarts: 0)",
-    );
-  });
+      'up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused ' +
+        'it. 2h and 300 turns each, so at most 6h. A pass whose rounds are spent goes to you ' +
+        '(runtime.limits.restarts: 0)',
+    )
+  })
 
   /**
    * **And a step that narrows is named, on the same line** (`#314`, 0070 §9).
@@ -352,68 +355,68 @@ describe("what a pass may spend", () => {
    * number every recipe prints today. So the other bounds are *named* rather than
    * added, which is what keeps this one line and keeps it true.
    */
-  it("names the dispatching steps bounded differently from the one it prints", () => {
-    const said = passCeiling({ ...limits(2), steps: [{ step: "review", turns: 50, wall: "30m" }] });
+  it('names the dispatching steps bounded differently from the one it prints', () => {
+    const said = passCeiling({ ...limits(2), steps: [{ step: 'review', turns: 50, wall: '30m' }] })
 
-    expect(said).toContain("1h and 150 turns each at implement (review 30m/50 turns)");
+    expect(said).toContain('1h and 150 turns each at implement (review 30m/50 turns)')
     // The arithmetic is untouched: three runs of `implement`'s hour.
-    expect(said).toContain("at most 3h");
-  });
-});
+    expect(said).toContain('at most 3h')
+  })
+})
 
 /**
  * `usd`, the dollar ceiling (`#370`). Follows `wallMs`, not `turns` — it
  * multiplies across runs the same way the wall does.
  */
-describe("what a pass may spend in dollars", () => {
+describe('what a pass may spend in dollars', () => {
   const limits = (rounds: number, restarts = 0) => ({
     rounds,
     restarts,
     turns: 150,
-    wall: "1h",
+    wall: '1h',
     wallMs: 3_600_000,
-  });
+  })
 
   /** Absent is today's string, character for character — 0070 §8's rule, carried. */
-  it("is byte-identical to the pre-#370 sentence when usd is absent", () => {
+  it('is byte-identical to the pre-#370 sentence when usd is absent', () => {
     expect(passCeiling(limits(2))).toBe(
-      "up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused " +
-        "it. 1h and 150 turns each, so at most 3h. A pass whose rounds are spent goes to you " +
-        "(runtime.limits.restarts: 0)",
-    );
-  });
+      'up to 3 agent runs — the work, then 2 round(s) back to the agent carrying what refused ' +
+        'it. 1h and 150 turns each, so at most 3h. A pass whose rounds are spent goes to you ' +
+        '(runtime.limits.restarts: 0)',
+    )
+  })
 
-  it("multiplies usd by the runs a pass can buy, beside the wall", () => {
-    const said = passCeiling({ ...limits(2), usd: 12 });
-    expect(said).toContain("1h, 150 turns and $12 each");
-    expect(said).toContain("at most 3h and $36");
-  });
+  it('multiplies usd by the runs a pass can buy, beside the wall', () => {
+    const said = passCeiling({ ...limits(2), usd: 12 })
+    expect(said).toContain('1h, 150 turns and $12 each')
+    expect(said).toContain('at most 3h and $36')
+  })
 
   it("names one run's figure rather than 'each' where rounds is zero", () => {
-    const said = passCeiling({ ...limits(0), usd: 12 });
+    const said = passCeiling({ ...limits(0), usd: 12 })
     expect(said).toBe(
-      "one agent run — 1h, 150 turns and $12. Every refusal goes straight to you " +
-        "(runtime.limits.rounds: 0, restarts: 0)",
-    );
-    expect(said).not.toContain("each");
-  });
+      'one agent run — 1h, 150 turns and $12. Every refusal goes straight to you ' +
+        '(runtime.limits.rounds: 0, restarts: 0)',
+    )
+    expect(said).not.toContain('each')
+  })
 
-  it("multiplies again for the passes a restart can buy", () => {
-    const said = passCeiling({ ...limits(2, 1), usd: 12 });
-    expect(said).toContain("at most 2 passes, 6 agent runs and 6h and $72");
-  });
-});
+  it('multiplies again for the passes a restart can buy', () => {
+    const said = passCeiling({ ...limits(2, 1), usd: 12 })
+    expect(said).toContain('at most 2 passes, 6 agent runs and 6h and $72')
+  })
+})
 
 /** The login is printed, because a wrong one is the mistake this setting can have (#181). */
-describe("describeAssignee", () => {
-  it("names the login it matches, under each setting", () => {
-    expect(describeAssignee(undefined)).toBe("any issue, whoever it is assigned to");
-    expect(describeAssignee({ login: "alice", take: "mine" })).toBe("only issues assigned to alice");
-    expect(describeAssignee({ login: "alice", take: "unassigned" })).toBe(
-      "only issues assigned to nobody (this machine is alice)",
-    );
-    expect(describeAssignee({ login: "alice", take: "both" })).toBe(
-      "any issue, whoever it is assigned to (this machine is alice)",
-    );
-  });
-});
+describe('describeAssignee', () => {
+  it('names the login it matches, under each setting', () => {
+    expect(describeAssignee(undefined)).toBe('any issue, whoever it is assigned to')
+    expect(describeAssignee({ login: 'alice', take: 'mine' })).toBe('only issues assigned to alice')
+    expect(describeAssignee({ login: 'alice', take: 'unassigned' })).toBe(
+      'only issues assigned to nobody (this machine is alice)',
+    )
+    expect(describeAssignee({ login: 'alice', take: 'both' })).toBe(
+      'any issue, whoever it is assigned to (this machine is alice)',
+    )
+  })
+})

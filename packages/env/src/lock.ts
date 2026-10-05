@@ -59,21 +59,22 @@
  *   reported.
  * - `<key>.queue` — **wait in line.** See `queue`.
  */
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
-import { join } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
-import { stateDir } from "./index.ts";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { hostname } from 'node:os'
+import { join } from 'node:path'
+import type { DatabaseSync } from 'node:sqlite'
+
+import { stateDir } from './index.ts'
 
 export interface HeldLock {
   /** Gives the lock up. Safe to call twice; the kernel does it too if the process dies first. */
-  release(): Promise<void>;
+  release(): Promise<void>
 }
 
 export type LockResult =
   | { ok: true; lock: HeldLock }
   /** Somebody else holds it. `holder` is their name, pid and host, when they recorded one. */
-  | { ok: false; holder: string | null };
+  | { ok: false; holder: string | null }
 
 /**
  * Something that can hold a named lock for this process.
@@ -88,24 +89,24 @@ export interface Locker {
    * Takes `key` if nobody holds it; never waits. `name` is what the holder
    * calls itself, reported back to whoever is refused — best effort.
    */
-  tryLock(key: string, name: string): Promise<LockResult>;
+  tryLock(key: string, name: string): Promise<LockResult>
 }
 
 /** A place in the queue for a lock. See `FileLocker.queue`. */
 export interface LockPlace {
   /** Whether the place has become the lock. */
-  held(): boolean;
+  held(): boolean
   /** Why the place was lost — a lock file that could not be opened; null while it stands. */
-  lost(): Error | null;
+  lost(): Error | null
   /**
    * Whether the lock is still held. A file lock is not dropped behind its
    * holder's back, with one exception: the file was deleted and something
    * locked a new one at the same path. So this checks the inode is still the
    * one it locked.
    */
-  confirm(): Promise<boolean>;
+  confirm(): Promise<boolean>
   /** Releases the lock when held and leaves the queue when not. Safe to call twice. */
-  leave(): Promise<void>;
+  leave(): Promise<void>
 }
 
 export interface FileLocker extends Locker {
@@ -114,7 +115,7 @@ export interface FileLocker extends Locker {
    * what a diagnostic must not do. Throws when the lock files cannot be read,
    * rather than answering *nobody*: `lingtai restart` ends a wait on null.
    */
-  holder(key: string): Promise<string | null>;
+  holder(key: string): Promise<string | null>
   /**
    * Wait in line for `key` rather than race for it, and be handed it ahead of
    * any `tryLock` issued once this place is taken (#174).
@@ -131,31 +132,31 @@ export interface FileLocker extends Locker {
    * What it does not order is two waiters against each other; nothing queues
    * twice for one key.
    */
-  queue(key: string, name: string): Promise<LockPlace>;
+  queue(key: string, name: string): Promise<LockPlace>
 }
 
 export interface FileLockerOptions {
   /** Where the lock files live. `~/.lingtai/locks`, or `$LINGTAI_HOME/locks`. */
-  dir?: string;
+  dir?: string
 }
 
 /** SQLite's `SQLITE_BUSY` and `SQLITE_LOCKED`, the two ways of being refused. */
 function refused(err: unknown): boolean {
-  const code = (err as { errcode?: number }).errcode;
-  return code !== undefined && ((code & 0xff) === 5 || (code & 0xff) === 6);
+  const code = (err as { errcode?: number }).errcode
+  return code !== undefined && ((code & 0xff) === 5 || (code & 0xff) === 6)
 }
 
 /** How often a place in the queue asks for the lock. */
-const QUEUE_POLL_MS = 25;
+const QUEUE_POLL_MS = 25
 /**
  * How long a flag has to stay up to be believed. A reader of `.held` can be
  * refused for an instant by another reader's probe; a holder's flag stays up.
  */
-const FLAG_SETTLE_MS = 100;
+const FLAG_SETTLE_MS = 100
 /** How long opening a flag waits on somebody else's instant on it. */
-const FLAG_WAIT_MS = 5_000;
+const FLAG_WAIT_MS = 5_000
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * `node:sqlite`, loaded when a lock is first asked for rather than when this
@@ -164,12 +165,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * command down with it, where this fails only the lock, by name. It is
  * unflagged from 22.13, which is why `engines` says so.
  */
-function sqlite(): typeof import("node:sqlite") {
-  const mod = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite") | undefined;
+function sqlite(): typeof import('node:sqlite') {
+  const mod = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite') | undefined
   if (mod === undefined) {
-    throw new Error(`the lock needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`);
+    throw new Error(
+      `the lock needs node:sqlite, which Node ${process.version} does not have without a flag — Node 22.13 or later has it`,
+    )
   }
-  return mod;
+  return mod
 }
 
 /**
@@ -180,80 +183,80 @@ function sqlite(): typeof import("node:sqlite") {
  * fail with `SQLITE_BUSY` on another process's probe instead of waiting it out.
  */
 function open(path: string, waitMs: number): DatabaseSync {
-  const db = new (sqlite().DatabaseSync)(path);
+  const db = new (sqlite().DatabaseSync)(path)
   try {
-    db.exec(`PRAGMA busy_timeout = ${Math.trunc(waitMs)}`);
-    return db;
+    db.exec(`PRAGMA busy_timeout = ${Math.trunc(waitMs)}`)
+    return db
   } catch (err) {
-    db.close();
-    throw err;
+    db.close()
+    throw err
   }
 }
 
 /** Takes the lock on `path`, or null when somebody holds it. */
 function take(path: string): DatabaseSync | null {
-  const db = open(path, 0);
+  const db = open(path, 0)
   try {
-    db.exec("BEGIN IMMEDIATE");
-    return db;
+    db.exec('BEGIN IMMEDIATE')
+    return db
   } catch (err) {
-    db.close();
-    if (refused(err)) return null;
-    throw err;
+    db.close()
+    if (refused(err)) return null
+    throw err
   }
 }
 
 function giveBack(db: DatabaseSync): void {
   try {
-    db.exec("ROLLBACK");
+    db.exec('ROLLBACK')
   } catch {}
-  db.close();
+  db.close()
 }
 
 /** Raises a flag: a read transaction left open, which holds a `SHARED` lock until it is lowered. */
 function raise(path: string): DatabaseSync {
-  const db = open(path, FLAG_WAIT_MS);
+  const db = open(path, FLAG_WAIT_MS)
   try {
-    db.exec("BEGIN");
-    db.prepare("SELECT count(*) FROM sqlite_schema").get();
-    return db;
+    db.exec('BEGIN')
+    db.prepare('SELECT count(*) FROM sqlite_schema').get()
+    return db
   } catch (err) {
-    db.close();
-    throw err;
+    db.close()
+    throw err
   }
 }
 
 /** Whether a flag is raised, asked once: `EXCLUSIVE` is refused while any `SHARED` lock stands. */
 function raisedNow(path: string): boolean {
-  const db = open(path, 0);
+  const db = open(path, 0)
   try {
-    db.exec("BEGIN EXCLUSIVE");
-    db.exec("COMMIT");
-    return false;
+    db.exec('BEGIN EXCLUSIVE')
+    db.exec('COMMIT')
+    return false
   } catch (err) {
-    if (refused(err)) return true;
-    throw err;
+    if (refused(err)) return true
+    throw err
   } finally {
-    db.close();
+    db.close()
   }
 }
 
 export function createFileLocker(options: FileLockerOptions = {}): FileLocker {
-  const dir = options.dir ?? join(stateDir(), "locks");
+  const dir = options.dir ?? join(stateDir(), 'locks')
 
   const paths = (key: string) => {
-    mkdirSync(dir, { recursive: true });
-    const base = join(dir, encodeURIComponent(key));
-    return { lock: `${base}.lock`, held: `${base}.held`, who: `${base}.who`, queue: `${base}.queue` };
-  };
+    mkdirSync(dir, { recursive: true })
+    const base = join(dir, encodeURIComponent(key))
+    return { lock: `${base}.lock`, held: `${base}.held`, who: `${base}.who`, queue: `${base}.queue` }
+  }
 
   const whoIs = (path: string): string | null => {
     try {
-      return readFileSync(path, "utf8").trim() || null;
+      return readFileSync(path, 'utf8').trim() || null
     } catch {
-      return null;
+      return null
     }
-  };
+  }
 
   /**
    * Takes the lock for `name`: `null` when somebody holds it, `"queued"` when
@@ -268,118 +271,118 @@ export function createFileLocker(options: FileLockerOptions = {}): FileLocker {
    * the lock is this process's, well inside that window.
    */
   const acquire = (p: ReturnType<typeof paths>, name: string, giveWay: boolean) => {
-    const flag = raise(p.held);
-    let lock: DatabaseSync | null = null;
+    const flag = raise(p.held)
+    let lock: DatabaseSync | null = null
     try {
-      lock = take(p.lock);
+      lock = take(p.lock)
       if (lock === null) {
-        giveBack(flag);
-        return null;
+        giveBack(flag)
+        return null
       }
       // Somebody queued for it: this try was never theirs to win.
       if (giveWay && raisedNow(p.queue)) {
-        giveBack(lock);
-        giveBack(flag);
-        return "queued" as const;
+        giveBack(lock)
+        giveBack(flag)
+        return 'queued' as const
       }
-      const inode = statSync(p.lock).ino;
-      const tmp = `${p.who}.${process.pid}`;
-      writeFileSync(tmp, `${name} pid ${process.pid} on ${hostname()}\n`);
-      renameSync(tmp, p.who);
-      const held: DatabaseSync = lock;
-      let released = false;
+      const inode = statSync(p.lock).ino
+      const tmp = `${p.who}.${process.pid}`
+      writeFileSync(tmp, `${name} pid ${process.pid} on ${hostname()}\n`)
+      renameSync(tmp, p.who)
+      const held: DatabaseSync = lock
+      let released = false
       return {
         inode,
         release() {
-          if (released) return;
-          released = true;
-          giveBack(held);
-          giveBack(flag);
+          if (released) return
+          released = true
+          giveBack(held)
+          giveBack(flag)
         },
-      };
+      }
     } catch (err) {
-      if (lock !== null) giveBack(lock);
-      giveBack(flag);
-      throw err;
+      if (lock !== null) giveBack(lock)
+      giveBack(flag)
+      throw err
     }
-  };
+  }
 
   return {
     async tryLock(key, name) {
-      const p = paths(key);
-      const held = acquire(p, name, true);
-      if (held === null) return { ok: false, holder: whoIs(p.who) };
-      if (held === "queued") return { ok: false, holder: "a process waiting in line for it" };
-      return { ok: true, lock: { release: async () => held.release() } };
+      const p = paths(key)
+      const held = acquire(p, name, true)
+      if (held === null) return { ok: false, holder: whoIs(p.who) }
+      if (held === 'queued') return { ok: false, holder: 'a process waiting in line for it' }
+      return { ok: true, lock: { release: async () => held.release() } }
     },
 
     async holder(key) {
-      const p = paths(key);
+      const p = paths(key)
       // Refused for the whole window, or it was only another reader's instant.
-      const until = Date.now() + FLAG_SETTLE_MS;
+      const until = Date.now() + FLAG_SETTLE_MS
       for (;;) {
-        if (!raisedNow(p.held)) return null;
-        if (Date.now() >= until) return whoIs(p.who) ?? "a holder that has not named itself";
-        await sleep(FLAG_SETTLE_MS / 4);
+        if (!raisedNow(p.held)) return null
+        if (Date.now() >= until) return whoIs(p.who) ?? 'a holder that has not named itself'
+        await sleep(FLAG_SETTLE_MS / 4)
       }
     },
 
     async queue(key, name) {
-      const p = paths(key);
-      const place = raise(p.queue);
-      let lowered = false;
+      const p = paths(key)
+      const place = raise(p.queue)
+      let lowered = false
       const lower = () => {
-        if (lowered) return;
-        lowered = true;
-        giveBack(place);
-      };
+        if (lowered) return
+        lowered = true
+        giveBack(place)
+      }
 
-      let held: Exclude<ReturnType<typeof acquire>, null | "queued"> | null = null;
-      let lost: Error | null = null;
-      let leaving = false;
-      let timer: NodeJS.Timeout | undefined;
+      let held: Exclude<ReturnType<typeof acquire>, null | 'queued'> | null = null
+      let lost: Error | null = null
+      let leaving = false
+      let timer: NodeJS.Timeout | undefined
 
       const ask = () => {
-        timer = undefined;
-        if (leaving) return;
+        timer = undefined
+        if (leaving) return
         try {
-          const got = acquire(p, name, false);
-          if (got !== null && got !== "queued") {
-            held = got;
+          const got = acquire(p, name, false)
+          if (got !== null && got !== 'queued') {
+            held = got
             // Lowered only once the lock is this place's, so there is no instant
             // in which the lock is free and the queue looks empty.
-            lower();
-            return;
+            lower()
+            return
           }
         } catch (err) {
-          lost = err as Error;
-          lower();
-          return;
+          lost = err as Error
+          lower()
+          return
         }
-        timer = setTimeout(ask, QUEUE_POLL_MS);
-      };
-      ask();
+        timer = setTimeout(ask, QUEUE_POLL_MS)
+      }
+      ask()
 
       return {
         held: () => held !== null,
         lost: () => lost,
         async confirm() {
-          if (held === null || lost !== null || leaving) return false;
+          if (held === null || lost !== null || leaving) return false
           try {
-            if (statSync(p.lock).ino === held.inode) return true;
-            lost = new Error(`${p.lock} is not the file this lock was taken on — it was deleted while held`);
+            if (statSync(p.lock).ino === held.inode) return true
+            lost = new Error(`${p.lock} is not the file this lock was taken on — it was deleted while held`)
           } catch (err) {
-            lost = err as Error;
+            lost = err as Error
           }
-          return false;
+          return false
         },
         async leave() {
-          leaving = true;
-          clearTimeout(timer);
-          held?.release();
-          lower();
+          leaving = true
+          clearTimeout(timer)
+          held?.release()
+          lower()
         },
-      };
+      }
     },
-  };
+  }
 }

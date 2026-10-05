@@ -13,7 +13,7 @@
  * by `(model, mode)`; a differently-keyed entry is a different line in the
  * bill, not a second count of the same one.
  */
-import { z } from "zod";
+import { z } from 'zod'
 
 export const TokenCounts = z.object({
   /** Fresh input, billed at the full input rate. */
@@ -26,8 +26,8 @@ export const TokenCounts = z.object({
   output: z.number().optional(),
   /** Reasoning output, billed at the output rate — reported by Codex alone. */
   reasoning: z.number().optional(),
-});
-export type TokenCounts = z.infer<typeof TokenCounts>;
+})
+export type TokenCounts = z.infer<typeof TokenCounts>
 
 export const UsageEntry = z.object({
   /** The runtime's own model id. Absent where the runtime never names one. */
@@ -35,13 +35,13 @@ export const UsageEntry = z.object({
   /** A premium speed at the same model id (0073 §2). Absent where none applies. */
   mode: z.string().optional(),
   tokens: TokenCounts,
-});
-export type UsageEntry = z.infer<typeof UsageEntry>;
+})
+export type UsageEntry = z.infer<typeof UsageEntry>
 
-export const Usage = z.array(UsageEntry);
-export type Usage = z.infer<typeof Usage>;
+export const Usage = z.array(UsageEntry)
+export type Usage = z.infer<typeof Usage>
 
-const TOKEN_FIELDS = ["fresh", "cacheRead", "cacheWrite", "output", "reasoning"] as const;
+const TOKEN_FIELDS = ['fresh', 'cacheRead', 'cacheWrite', 'output', 'reasoning'] as const
 
 /**
  * Two counts from the same call, added field by field.
@@ -52,18 +52,18 @@ const TOKEN_FIELDS = ["fresh", "cacheRead", "cacheWrite", "output", "reasoning"]
  * that reports unknown cost as free.
  */
 export function mergeTokenCounts(a: TokenCounts, b: TokenCounts): TokenCounts {
-  const merged: TokenCounts = {};
+  const merged: TokenCounts = {}
   for (const field of TOKEN_FIELDS) {
-    const x = a[field];
-    const y = b[field];
-    if (x === undefined && y === undefined) continue;
-    merged[field] = (x ?? 0) + (y ?? 0);
+    const x = a[field]
+    const y = b[field]
+    if (x === undefined && y === undefined) continue
+    merged[field] = (x ?? 0) + (y ?? 0)
   }
-  return merged;
+  return merged
 }
 
 function keyOf(entry: UsageEntry): string {
-  return `${entry.model ?? ""}\u0000${entry.mode ?? ""}`;
+  return `${entry.model ?? ''}\u0000${entry.mode ?? ''}`
 }
 
 /**
@@ -73,15 +73,15 @@ function keyOf(entry: UsageEntry): string {
  * turns an absence into a free lunch.
  */
 export function addUsage(a: Usage, b: Usage): Usage {
-  const byKey = new Map<string, UsageEntry>();
-  for (const entry of a) byKey.set(keyOf(entry), entry);
+  const byKey = new Map<string, UsageEntry>()
+  for (const entry of a) byKey.set(keyOf(entry), entry)
   for (const entry of b) {
-    const key = keyOf(entry);
-    const existing = byKey.get(key);
+    const key = keyOf(entry)
+    const existing = byKey.get(key)
     byKey.set(
       key,
       existing === undefined ? entry : { ...existing, tokens: mergeTokenCounts(existing.tokens, entry.tokens) },
-    );
+    )
   }
-  return [...byKey.values()];
+  return [...byKey.values()]
 }

@@ -1,3 +1,5 @@
+import { EVENTS } from '@lingtai/domain'
+import type { Envelope } from '@lingtai/domain'
 /**
  * Every event type renders something, and the ones the ticket named render the
  * thing they carry.
@@ -11,41 +13,40 @@
  * It asserts against an **empty** payload on purpose. A formatter is allowed
  * not to recognise what it is given; it is not allowed to say nothing.
  */
-import { describe, expect, it } from "vitest";
-import { EVENTS } from "@lingtai/domain";
-import type { Envelope } from "@lingtai/domain";
-import { describePayload, shortActor, summarise } from "../src/lib/history.ts";
+import { describe, expect, it } from 'vitest'
 
-function e(type: string, data: unknown, actor = "conductor"): Envelope {
+import { describePayload, shortActor, summarise } from '../src/lib/history.ts'
+
+function e(type: string, data: unknown, actor = 'conductor'): Envelope {
   return {
     seq: 1n,
-    streamId: "wi-lingtai-59",
+    streamId: 'wi-lingtai-59',
     version: 1,
     type,
     schemaVer: 1,
     data,
     actor,
     causation: null,
-    at: new Date("2026-09-04T17:12:15Z"),
-  };
+    at: new Date('2026-09-04T17:12:15Z'),
+  }
 }
 
-describe("a line of history", () => {
-  it("says something for every type in the catalogue, whatever the payload", () => {
+describe('a line of history', () => {
+  it('says something for every type in the catalogue, whatever the payload', () => {
     for (const type of Object.keys(EVENTS)) {
-      for (const data of [{}, null, { of: "an unexpected shape" }]) {
-        expect(summarise(e(type, data)), `${type} with ${JSON.stringify(data)}`).not.toBe("");
+      for (const data of [{}, null, { of: 'an unexpected shape' }]) {
+        expect(summarise(e(type, data)), `${type} with ${JSON.stringify(data)}`).not.toBe('')
       }
     }
-  });
+  })
 
-  it("falls back to the payload for a type no formatter has learned", () => {
+  it('falls back to the payload for a type no formatter has learned', () => {
     // Not in the catalogue at all — the case a renderer is always one commit
     // away from, and the one that used to render as a blank row.
-    const said = summarise(e("SomethingNobodyHasWrittenYet", { thing: "happened", n: 3 }));
-    expect(said).toContain("thing=happened");
-    expect(said).toContain("n=3");
-  });
+    const said = summarise(e('SomethingNobodyHasWrittenYet', { thing: 'happened', n: 3 }))
+    expect(said).toContain('thing=happened')
+    expect(said).toContain('n=3')
+  })
 
   /**
    * **A route that went where it wanted and one that did not read differently**
@@ -57,33 +58,33 @@ describe("a line of history", () => {
    * fields were separated for: `to: waiting` is *a person is next* either way,
    * and only `chose` says whether the decision asked for that or was refused it.
    */
-  it("says where a route went, and what it wanted where those differ", () => {
+  it('says where a route went, and what it wanted where those differ', () => {
     const row = (data: Record<string, unknown>) =>
-      summarise(e("PassRouted", { from: "build", why: "the lines, not the approach", ...data }));
+      summarise(e('PassRouted', { from: 'build', why: 'the lines, not the approach', ...data }))
 
     // Nothing intervened: one sentence, and no parenthesis to read past.
-    expect(row({ chose: "implement", to: "implement", ceiling: null })).toBe(
-      "build → implement — the lines, not the approach",
-    );
+    expect(row({ chose: 'implement', to: 'implement', ceiling: null })).toBe(
+      'build → implement — the lines, not the approach',
+    )
     // The rounds were spent, so the round the decision wanted is on the row
     // beside the person who got it instead.
-    expect(row({ chose: "implement", to: "waiting", ceiling: "rounds" })).toBe(
-      "build → waiting (wanted implement, rounds spent) — the lines, not the approach",
-    );
+    expect(row({ chose: 'implement', to: 'waiting', ceiling: 'rounds' })).toBe(
+      'build → waiting (wanted implement, rounds spent) — the lines, not the approach',
+    )
     // And a choice no ceiling refused says what was wanted without naming a limit
     // a person would raise for nothing.
-    expect(row({ chose: "implement", to: "waiting", ceiling: null })).toBe(
-      "build → waiting (wanted implement) — the lines, not the approach",
-    );
-  });
+    expect(row({ chose: 'implement', to: 'waiting', ceiling: null })).toBe(
+      'build → waiting (wanted implement) — the lines, not the approach',
+    )
+  })
 
   /** A copy with no checkout records `sha: null`, which the schema allows. */
-  it("says who started a conductor with no recorded commit, rather than the raw payload", () => {
+  it('says who started a conductor with no recorded commit, rather than the raw payload', () => {
     const said = summarise(
-      e("ConductorStarted", { by: "daemon", reason: null, sha: null, dirty: false, worker: "h:1", handoff: null }),
-    );
-    expect(said).toBe("daemon started an unrecorded commit");
-  });
+      e('ConductorStarted', { by: 'daemon', reason: null, sha: null, dirty: false, worker: 'h:1', handoff: null }),
+    )
+    expect(said).toBe('daemon started an unrecorded commit')
+  })
 
   /**
    * **The two silent outcomes get a sentence, or the silence is back on the
@@ -95,89 +96,91 @@ describe("a line of history", () => {
    * sentences — and a refusal says the head, because that is what says whether
    * there is anything still to rescue.
    */
-  it("says what a claim left on origin, including when it left nothing", () => {
+  it('says what a claim left on origin, including when it left nothing', () => {
     const row = (data: Record<string, unknown>) =>
-      summarise(e("RunRefsPublished", { branch: "agent/250", arm: "agent/250-attempt-1", ...data }));
+      summarise(e('RunRefsPublished', { branch: 'agent/250', arm: 'agent/250-attempt-1', ...data }))
 
-    expect(row({ outcome: "published", headSha: "a".repeat(40), detail: null })).toContain(
-      "agent/250 and agent/250-attempt-1 at aaaaaaa",
-    );
-    expect(row({ outcome: "already-published", headSha: "a".repeat(40), detail: null })).toContain(
-      "already there",
-    );
-    expect(row({ outcome: "nothing-committed", headSha: null, detail: null })).toBe(
-      "nothing committed, so no ref was left",
-    );
+    expect(row({ outcome: 'published', headSha: 'a'.repeat(40), detail: null })).toContain(
+      'agent/250 and agent/250-attempt-1 at aaaaaaa',
+    )
+    expect(row({ outcome: 'already-published', headSha: 'a'.repeat(40), detail: null })).toContain('already there')
+    expect(row({ outcome: 'nothing-committed', headSha: null, detail: null })).toBe(
+      'nothing committed, so no ref was left',
+    )
     // With a head: there are commits behind the refusal, so there is something
     // to go and get.
-    expect(row({ outcome: "refused", headSha: "a".repeat(40), detail: "stale info" })).toBe(
-      "agent/250 at aaaaaaa was not pushed: stale info",
-    );
+    expect(row({ outcome: 'refused', headSha: 'a'.repeat(40), detail: 'stale info' })).toBe(
+      'agent/250 at aaaaaaa was not pushed: stale info',
+    )
     // Without one: the `rev-parse` itself failed and nothing is known to exist.
-    expect(row({ outcome: "refused", headSha: null, detail: "not a git repository" })).toBe(
-      "agent/250 was not pushed, and no head was read: not a git repository",
-    );
+    expect(row({ outcome: 'refused', headSha: null, detail: 'not a git repository' })).toBe(
+      'agent/250 was not pushed, and no head was read: not a git repository',
+    )
     // Both halves, because they are opposite: the branch is somebody else's
     // and the arm is this run's work, on origin, fetchable.
-    expect(row({ outcome: "arm-only", headSha: "a".repeat(40), detail: "stale info" })).toBe(
-      "agent/250 was not pushed: stale info — agent/250-attempt-1 at aaaaaaa is there",
-    );
+    expect(row({ outcome: 'arm-only', headSha: 'a'.repeat(40), detail: 'stale info' })).toBe(
+      'agent/250 was not pushed: stale info — agent/250-attempt-1 at aaaaaaa is there',
+    )
     // The refs went and the record did not, so the row above this one on the
     // page says the opposite of what a reader needs to act on (`#252`).
     expect(
       row({
-        outcome: "unrecorded",
-        headSha: "a".repeat(40),
-        detail: "agent/250 — the connection is closed, and again — the connection is closed",
+        outcome: 'unrecorded',
+        headSha: 'a'.repeat(40),
+        detail: 'agent/250 — the connection is closed, and again — the connection is closed',
       }),
     ).toBe(
-      "aaaaaaa is on origin and nothing records it: agent/250 — the connection is closed, and again — the connection is closed",
-    );
-  });
+      'aaaaaaa is on origin and nothing records it: agent/250 — the connection is closed, and again — the connection is closed',
+    )
+  })
 
-  it("keeps a null in the payload, because a null is a statement", () => {
-    expect(describePayload({ prompt: null })).toBe("prompt=null");
-  });
+  it('keeps a null in the payload, because a null is a statement', () => {
+    expect(describePayload({ prompt: null })).toBe('prompt=null')
+  })
 
   /**
    * The two kinds of block, told apart on the row (#83). `held at the merge
    * gate: …` and `conflict: agent/112 does not merge into develop: …` were both
    * `WorkItemBlocked` with a string, and the history printed the string.
    */
-  it("says which kind of block it was, and what it recommends", () => {
+  it('says which kind of block it was, and what it recommends', () => {
     const said = summarise(
-      e("WorkItemBlocked", {
-        question: "conflict: agent/112 does not merge into develop",
-        needsFrom: "human",
-        runId: "run-1",
-        needs: "acknowledgement",
+      e('WorkItemBlocked', {
+        question: 'conflict: agent/112 does not merge into develop',
+        needsFrom: 'human',
+        runId: 'run-1',
+        needs: 'acknowledgement',
         diagnosis: {
-          what: "agent/112 does not merge into develop.",
+          what: 'agent/112 does not merge into develop.',
           done: null,
-          raw: "CONFLICT (content): …",
-          recommendation: { action: "requeue", why: "the base has moved" },
+          raw: 'CONFLICT (content): …',
+          recommendation: { action: 'requeue', why: 'the base has moved' },
         },
       }),
-    );
-    expect(said).toContain("acknowledgement:");
-    expect(said).toContain("conflict: agent/112 does not merge into develop");
-    expect(said).toContain("recommends requeue");
-  });
+    )
+    expect(said).toContain('acknowledgement:')
+    expect(said).toContain('conflict: agent/112 does not merge into develop')
+    expect(said).toContain('recommends requeue')
+  })
 
-  it("prints a v1 block as the question alone, which is all it carries", () => {
+  it('prints a v1 block as the question alone, which is all it carries', () => {
     const said = summarise(
-      e("WorkItemBlocked", { question: "held at the merge gate: agent/112 into develop", needsFrom: "human", runId: null }),
-    );
-    expect(said).toBe("held at the merge gate: agent/112 into develop");
-  });
+      e('WorkItemBlocked', {
+        question: 'held at the merge gate: agent/112 into develop',
+        needsFrom: 'human',
+        runId: null,
+      }),
+    )
+    expect(said).toBe('held at the merge gate: agent/112 into develop')
+  })
 
-  it("names the action on a gate row, not only the point", () => {
-    const build = e("StepStarted", { step: "prepared", action: "build", runId: "run-1", onSha: "abc" });
-    const lint = e("StepStarted", { step: "prepared", action: "lint", runId: "run-1", onSha: "abc" });
-    expect(summarise(build)).toBe("prepared · build");
+  it('names the action on a gate row, not only the point', () => {
+    const build = e('StepStarted', { step: 'prepared', action: 'build', runId: 'run-1', onSha: 'abc' })
+    const lint = e('StepStarted', { step: 'prepared', action: 'lint', runId: 'run-1', onSha: 'abc' })
+    expect(summarise(build)).toBe('prepared · build')
     // Three gates at one point used to render as three identical rows.
-    expect(summarise(build)).not.toBe(summarise(lint));
-  });
+    expect(summarise(build)).not.toBe(summarise(lint))
+  })
 
   /**
    * **A dropped answer and a clean review used to be the same row** (`#279`).
@@ -187,71 +190,69 @@ describe("a line of history", () => {
    * third review said four things, ended one closing brace short of valid JSON, and
    * had this row as its only appearance on the page.
    */
-  it("says the answer could not be read, where a zero would have said nothing", () => {
-    const step = { step: "review", action: "cold reviewer", runId: "run-1", onSha: "abc" };
-    const dropped = summarise(e("StepFailed", { ...step, evidence: "…", findings: [], unreadable: true }));
+  it('says the answer could not be read, where a zero would have said nothing', () => {
+    const step = { step: 'review', action: 'cold reviewer', runId: 'run-1', onSha: 'abc' }
+    const dropped = summarise(e('StepFailed', { ...step, evidence: '…', findings: [], unreadable: true }))
 
-    expect(dropped).toBe("review · cold reviewer — the answer could not be read");
+    expect(dropped).toBe('review · cold reviewer — the answer could not be read')
     // The row it was, and still is for every failure whose answer was read: a
     // refusal with no findings is silent and a refusal with them counts them.
-    expect(summarise(e("StepFailed", { ...step, evidence: "exit 1", findings: [] }))).toBe(
-      "review · cold reviewer",
-    );
-    expect(dropped).not.toBe(summarise(e("StepFailed", { ...step, evidence: "exit 1", findings: [] })));
-  });
+    expect(summarise(e('StepFailed', { ...step, evidence: 'exit 1', findings: [] }))).toBe('review · cold reviewer')
+    expect(dropped).not.toBe(summarise(e('StepFailed', { ...step, evidence: 'exit 1', findings: [] })))
+  })
 
-  it("renders the plan StepsResolved carries, including the empty points", () => {
+  it('renders the plan StepsResolved carries, including the empty points', () => {
     const said = summarise(
-      e("StepsResolved", {
-        runId: "run-1",
-        configHash: "3f8a1c2b9d04",
+      e('StepsResolved', {
+        runId: 'run-1',
+        configHash: '3f8a1c2b9d04',
         steps: [
-          { step: "admit", actions: [] },
-          { step: "prepared", actions: ["build", "lint"] },
-          { step: "proposed", actions: ["review"] },
-          { step: "merge", actions: [] },
-          { step: "end", actions: ["comment", "close"] },
+          { step: 'admit', actions: [] },
+          { step: 'prepared', actions: ['build', 'lint'] },
+          { step: 'proposed', actions: ['review'] },
+          { step: 'merge', actions: [] },
+          { step: 'end', actions: ['comment', 'close'] },
         ],
       }),
-    );
+    )
     // The evidence behind every `skipped` on the page: a point with nothing
     // planned reads as nothing planned, rather than as a point that vanished.
-    expect(said).toBe("admit — · prepared build+lint · proposed review · merge — · end comment+close");
-  });
+    expect(said).toBe('admit — · prepared build+lint · proposed review · merge — · end comment+close')
+  })
 
-  it("says what IssueUpdated changed and to what", () => {
+  it('says what IssueUpdated changed and to what', () => {
     const said = summarise(
-      e("IssueUpdated", { project: "lingtai", issue: "59", change: "labels", detail: "lingtai:working" }),
-    );
-    expect(said).toBe("labels: lingtai:working");
-  });
+      e('IssueUpdated', { project: 'lingtai', issue: '59', change: 'labels', detail: 'lingtai:working' }),
+    )
+    expect(said).toBe('labels: lingtai:working')
+  })
 
-  it("says how the run was started", () => {
+  it('says how the run was started', () => {
     const said = summarise(
-      e("RunStarted", {
-        workItemId: "wi-lingtai-59",
-        runtime: "claude-code",
-        model: "opus-5",
-        promptVersion: "ticket@1911",
-        baseSha: "1f7d07be3c2a91",
-        configHash: "3f8a1c2b9d04ee",
-        worktree: "/tmp/wt",
+      e('RunStarted', {
+        workItemId: 'wi-lingtai-59',
+        runtime: 'claude-code',
+        model: 'opus-5',
+        promptVersion: 'ticket@1911',
+        baseSha: '1f7d07be3c2a91',
+        configHash: '3f8a1c2b9d04ee',
+        worktree: '/tmp/wt',
         invocation: null,
       }),
-    );
-    expect(said).toBe("claude-code · opus-5 · base 1f7d07b · recipe 3f8a1c2b9d04");
-  });
+    )
+    expect(said).toBe('claude-code · opus-5 · base 1f7d07b · recipe 3f8a1c2b9d04')
+  })
 
-  it("gives RunPrompted a detail of its own, so its actor is not read as one", () => {
+  it('gives RunPrompted a detail of its own, so its actor is not read as one', () => {
     const said = summarise(
-      e("RunPrompted", { promptVersion: "ticket@1911", bytes: 4593, prompt: "…" }, "agent:run-78db72ff-d659"),
-    );
-    expect(said).toBe("ticket@1911, 4593 bytes");
-  });
+      e('RunPrompted', { promptVersion: 'ticket@1911', bytes: 4593, prompt: '…' }, 'agent:run-78db72ff-d659'),
+    )
+    expect(said).toBe('ticket@1911, 4593 bytes')
+  })
 
   it("shortens a run's actor to something an actor column can hold", () => {
-    expect(shortActor("agent:run-78db72ff-d659-4515-a5d3-150a0e8a3b33")).toBe("agent:run-78db72ff");
-    expect(shortActor("conductor")).toBe("conductor");
-    expect(shortActor("human:steven")).toBe("human:steven");
-  });
-});
+    expect(shortActor('agent:run-78db72ff-d659-4515-a5d3-150a0e8a3b33')).toBe('agent:run-78db72ff')
+    expect(shortActor('conductor')).toBe('conductor')
+    expect(shortActor('human:steven')).toBe('human:steven')
+  })
+})

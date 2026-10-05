@@ -41,36 +41,36 @@ import {
   type LockPlace,
   type Locker,
   type LockResult,
-} from "@lingtai/env/lock";
+} from '@lingtai/env/lock'
 
-export { createFileLocker, type FileLockerOptions, type LockPlace, type Locker, type LockResult };
+export { createFileLocker, type FileLockerOptions, type LockPlace, type Locker, type LockResult }
 
 /** One lock for the whole conductor, per machine. */
-export const DAEMON_LOCK_KEY = "lingtai:daemon";
+export const DAEMON_LOCK_KEY = 'lingtai:daemon'
 
-export type DaemonLock = HeldLock;
+export type DaemonLock = HeldLock
 
 export interface AcquireDaemonLockOptions {
   /** What holds it. `createFileLocker()` for this machine's own lock. */
-  locker: Locker;
-  key?: string;
+  locker: Locker
+  key?: string
   /** Recorded so the next caller — and `lingtai doctor` — gets a name rather than a bare pid. */
-  name?: string;
+  name?: string
 }
 
 export interface AcquireOptions extends FileLockerOptions {
-  key?: string;
+  key?: string
   /**
    * What the holder calls itself, recorded beside the lock with its pid and
    * host so the next caller — and `lingtai doctor` — gets a name rather than a
    * bare pid. There are two kinds of conductor, and "who has it" is the whole
    * question.
    */
-  name?: string;
+  name?: string
 }
 
 export function acquireDaemonLock(options: AcquireDaemonLockOptions): Promise<LockResult> {
-  return options.locker.tryLock(options.key ?? DAEMON_LOCK_KEY, options.name ?? "lingtai");
+  return options.locker.tryLock(options.key ?? DAEMON_LOCK_KEY, options.name ?? 'lingtai')
 }
 
 /**
@@ -86,7 +86,7 @@ export function acquireDaemonLock(options: AcquireDaemonLockOptions): Promise<Lo
  * over while the old daemon was still in its pass (0042 §6).
  */
 export function conductorLockHolder(options: AcquireOptions = {}): Promise<string | null> {
-  return createFileLocker(options).holder(options.key ?? DAEMON_LOCK_KEY);
+  return createFileLocker(options).holder(options.key ?? DAEMON_LOCK_KEY)
 }
 
 /**
@@ -102,5 +102,5 @@ export function conductorLockHolder(options: AcquireOptions = {}): Promise<strin
  * place is ahead of every copy the supervisor can start.
  */
 export function queueForDaemonLock(options: AcquireOptions = {}): Promise<LockPlace> {
-  return createFileLocker(options).queue(options.key ?? DAEMON_LOCK_KEY, options.name ?? "lingtai");
+  return createFileLocker(options).queue(options.key ?? DAEMON_LOCK_KEY, options.name ?? 'lingtai')
 }

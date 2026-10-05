@@ -1,3 +1,6 @@
+import type { ActionFinding } from '@lingtai/actions'
+import { RuntimeId, STEPS } from '@lingtai/domain'
+import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from '@lingtai/recipe'
 /**
  * **The workflow counts; the judge chooses** —
  * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3, and the
@@ -25,10 +28,8 @@
  * Unit, under `--project unit`: nothing here reads a database, spawns anything
  * or touches the filesystem.
  */
-import { describe, expect, it } from "vitest";
-import type { ActionFinding } from "@lingtai/actions";
-import { RuntimeId, STEPS } from "@lingtai/domain";
-import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from "@lingtai/recipe";
+import { describe, expect, it } from 'vitest'
+
 import {
   BUILT_IN,
   BUILT_IN_FOR,
@@ -41,15 +42,15 @@ import {
   briefFor,
   judgeDeclaredAt,
   stepsOnOffer,
-} from "../src/judge.ts";
+} from '../src/judge.ts'
 
 const FINDING: ActionFinding = {
-  file: "packages/conductor/src/conduct.ts",
+  file: 'packages/conductor/src/conduct.ts',
   line: 1761,
-  claim: "the decision that costs the most money is invisible",
-  failureScenario: "a review refuses twice about the approach; every round patches the lines",
-  severity: "major",
-};
+  claim: 'the decision that costs the most money is invisible',
+  failureScenario: 'a review refuses twice about the approach; every round patches the lines',
+  severity: 'major',
+}
 
 /**
  * A pass that has run an agent, has rounds and restarts left, nobody else
@@ -57,17 +58,17 @@ const FINDING: ActionFinding = {
  * about a ceiling is about that ceiling and not about the rule in front of it.
  */
 const EVERYTHING = {
-  reached: "proposed",
-  refusal: { findings: [FINDING], evidence: "tsc: 3 errors in 2 files" },
+  reached: 'proposed',
+  refusal: { findings: [FINDING], evidence: 'tsc: 3 errors in 2 files' },
   rounds: 2,
   roundsSpent: 0,
   restarts: 1,
   restartsSpent: 0,
   alsoAsked: null,
-} as const;
+} as const
 
 function brief(when: JudgeWhen, offer: readonly Destination[]): JudgeBrief {
-  return { when, evidence: EVERYTHING.refusal.evidence, findings: [FINDING], offer };
+  return { when, evidence: EVERYTHING.refusal.evidence, findings: [FINDING], offer }
 }
 
 describe("the set is the workflow's", () => {
@@ -75,13 +76,13 @@ describe("the set is the workflow's", () => {
    * The rule stated as arithmetic: `implement` leaves the set the round the
    * ceiling is reached, and no input a judge has any part in brings it back.
    */
-  it("takes `implement` off the set when the rounds are spent", () => {
-    expect(stepsOnOffer({ ...EVERYTHING, when: "red", roundsSpent: 1 })).toContain("implement");
-    expect(stepsOnOffer({ ...EVERYTHING, when: "red", roundsSpent: 2 })).not.toContain("implement");
+  it('takes `implement` off the set when the rounds are spent', () => {
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'red', roundsSpent: 1 })).toContain('implement')
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'red', roundsSpent: 2 })).not.toContain('implement')
     // And a recipe that never patches is the same fact with the ceiling at zero
     // — `rounds: 0` is a legible configuration and not a disabled feature.
-    expect(stepsOnOffer({ ...EVERYTHING, when: "red", rounds: 0 })).toEqual(["human"]);
-  });
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'red', rounds: 0 })).toEqual(['human'])
+  })
 
   /**
    * **The half a reader assumes away** (0061 §3). `prepared` refuses before any
@@ -90,19 +91,17 @@ describe("the set is the workflow's", () => {
    * that knows nothing about `prepared` still cannot choose wrongly, because
    * the wrong answer was never in the set.
    */
-  it("takes `implement` off the set before an agent has run, whatever is left to spend", () => {
-    const early = stepsOnOffer({ ...EVERYTHING, when: "red", reached: "prepared" });
-    expect(early).toEqual(["human"]);
+  it('takes `implement` off the set before an agent has run, whatever is left to spend', () => {
+    const early = stepsOnOffer({ ...EVERYTHING, when: 'red', reached: 'prepared' })
+    expect(early).toEqual(['human'])
     // Not a fact about `prepared`'s name: it is where the step sits in the pass.
-    for (const reached of STEPS.slice(0, STEPS.indexOf("implement"))) {
-      expect(stepsOnOffer({ ...EVERYTHING, when: "red", reached }), reached).not.toContain(
-        "implement",
-      );
+    for (const reached of STEPS.slice(0, STEPS.indexOf('implement'))) {
+      expect(stepsOnOffer({ ...EVERYTHING, when: 'red', reached }), reached).not.toContain('implement')
     }
-    for (const reached of STEPS.slice(STEPS.indexOf("implement"))) {
-      expect(stepsOnOffer({ ...EVERYTHING, when: "red", reached }), reached).toContain("implement");
+    for (const reached of STEPS.slice(STEPS.indexOf('implement'))) {
+      expect(stepsOnOffer({ ...EVERYTHING, when: 'red', reached }), reached).toContain('implement')
     }
-  });
+  })
 
   /**
    * `restarts` is the breadth ceiling and it bounds the same way, with the
@@ -110,21 +109,17 @@ describe("the set is the workflow's", () => {
    * No number a project writes down should make a typecheck error buy a new
    * worktree, and no judge should be able to either.
    */
-  it("offers `claim` only for a judgement, and only while restarts are left", () => {
-    expect(stepsOnOffer({ ...EVERYTHING, when: "findings" })).toContain("claim");
-    expect(stepsOnOffer({ ...EVERYTHING, when: "findings", restartsSpent: 1 })).not.toContain(
-      "claim",
-    );
-    for (const when of ["red", "verify-failed", "conflict", "needs-input"] as const) {
-      expect(stepsOnOffer({ ...EVERYTHING, when }), when).not.toContain("claim");
+  it('offers `claim` only for a judgement, and only while restarts are left', () => {
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings' })).toContain('claim')
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings', restartsSpent: 1 })).not.toContain('claim')
+    for (const when of ['red', 'verify-failed', 'conflict', 'needs-input'] as const) {
+      expect(stepsOnOffer({ ...EVERYTHING, when }), when).not.toContain('claim')
     }
     // Somebody else is waiting on this pass, and releasing the item would throw
     // their question away — `decideRestart`'s own rule, kept on this side of
     // the line because it is a fact about what the pass may do.
-    expect(
-      stepsOnOffer({ ...EVERYTHING, when: "findings", alsoAsked: "the approve action" }),
-    ).not.toContain("claim");
-  });
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings', alsoAsked: 'the approve action' })).not.toContain('claim')
+  })
 
   /**
    * **`decideFix`'s first rule, and it has to be on this side of the line.**
@@ -137,32 +132,29 @@ describe("the set is the workflow's", () => {
    * answers past, because the judge is asked after them — so the offered set
    * carries it, and there is nothing on offer but a person.
    */
-  it("offers nothing but a person when the refusal carries nothing to hold an agent to", () => {
+  it('offers nothing but a person when the refusal carries nothing to hold an agent to', () => {
     // An opinion: a finding whose `failureScenario` was never written.
-    const opinion = { ...FINDING, failureScenario: "  " };
-    expect(
-      stepsOnOffer({ ...EVERYTHING, when: "findings", refusal: { findings: [opinion], evidence: "" } }),
-    ).toEqual(["human"]);
+    const opinion = { ...FINDING, failureScenario: '  ' }
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings', refusal: { findings: [opinion], evidence: '' } })).toEqual([
+      'human',
+    ])
     // And a reviewer that refused with no findings at all, which is the same
     // absence arriving as an empty array rather than as an empty string.
-    expect(
-      stepsOnOffer({ ...EVERYTHING, when: "findings", refusal: { findings: [], evidence: "" } }),
-    ).toEqual(["human"]);
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings', refusal: { findings: [], evidence: '' } })).toEqual([
+      'human',
+    ])
 
     // The other four are held to what the step printed instead: a command that
     // refused and printed nothing leaves no output to make go green, and the
     // same command with output is `implement` again — so the rule is about the
     // criterion and not about the direction. Read off the enum rather than
     // listed, so a sixth direction arrives here rather than being left out.
-    for (const when of JudgeWhen.options.filter((direction) => direction !== "findings")) {
+    for (const when of JudgeWhen.options.filter((direction) => direction !== 'findings')) {
+      expect(stepsOnOffer({ ...EVERYTHING, when, refusal: { findings: [], evidence: '   ' } }), when).toEqual(['human'])
       expect(
-        stepsOnOffer({ ...EVERYTHING, when, refusal: { findings: [], evidence: "   " } }),
+        stepsOnOffer({ ...EVERYTHING, when, refusal: { findings: [], evidence: 'tsc: 3 errors' } }),
         when,
-      ).toEqual(["human"]);
-      expect(
-        stepsOnOffer({ ...EVERYTHING, when, refusal: { findings: [], evidence: "tsc: 3 errors" } }),
-        when,
-      ).toContain("implement");
+      ).toContain('implement')
     }
 
     // One scenario among several is a criterion, as it is in `decideFix`: one
@@ -171,25 +163,25 @@ describe("the set is the workflow's", () => {
     expect(
       stepsOnOffer({
         ...EVERYTHING,
-        when: "findings",
-        refusal: { findings: [opinion, FINDING], evidence: "" },
+        when: 'findings',
+        refusal: { findings: [opinion, FINDING], evidence: '' },
       }),
-    ).toContain("implement");
-  });
+    ).toContain('implement')
+  })
 
   /** Never empty, so no judge is ever cornered and every refusal has somewhere to land. */
-  it("always offers a person", () => {
+  it('always offers a person', () => {
     for (const when of JudgeWhen.options) {
       for (const reached of STEPS) {
-        const offer = stepsOnOffer({ ...EVERYTHING, when, reached, rounds: 0, restarts: 0 });
-        expect(offer, `${when} at ${reached}`).toContain("human");
-        expect(offer.every((step) => DESTINATIONS.includes(step))).toBe(true);
+        const offer = stepsOnOffer({ ...EVERYTHING, when, reached, rounds: 0, restarts: 0 })
+        expect(offer, `${when} at ${reached}`).toContain('human')
+        expect(offer.every((step) => DESTINATIONS.includes(step))).toBe(true)
       }
     }
-  });
-});
+  })
+})
 
-describe("the judge chooses, and cannot widen anything", () => {
+describe('the judge chooses, and cannot widen anything', () => {
   /**
    * **The numbers are not in front of it.** The safety property is negative and
    * so is the assertion: a judge cannot widen a ceiling it is never shown, so
@@ -202,20 +194,20 @@ describe("the judge chooses, and cannot widen anything", () => {
    * constructs from the `OfferInput` it is already holding, so that is the
    * subject. The helper above is for the cases that only need *a* brief.
    */
-  it("hands the judge the set and never the counts", async () => {
-    let seen: JudgeBrief | null = null;
+  it('hands the judge the set and never the counts', async () => {
+    let seen: JudgeBrief | null = null
     const nosy: Judge = (b) => {
-      seen = b;
-      return "human";
-    };
-    const input = { ...EVERYTHING, when: "findings" } as const;
-    await askJudge("claude-code", nosy, briefFor(input));
+      seen = b
+      return 'human'
+    }
+    const input = { ...EVERYTHING, when: 'findings' } as const
+    await askJudge('claude-code', nosy, briefFor(input))
 
-    expect(Object.keys(seen!).sort()).toEqual(["evidence", "findings", "offer", "when"]);
-    expect(seen!.offer).toEqual(["implement", "claim", "human"]);
-    expect(JSON.stringify(seen)).not.toContain("rounds");
-    expect(JSON.stringify(seen)).not.toContain("restarts");
-  });
+    expect(Object.keys(seen!).sort()).toEqual(['evidence', 'findings', 'offer', 'when'])
+    expect(seen!.offer).toEqual(['implement', 'claim', 'human'])
+    expect(JSON.stringify(seen)).not.toContain('rounds')
+    expect(JSON.stringify(seen)).not.toContain('restarts')
+  })
 
   /**
    * **The construction that would have leaked them, refused by the compiler.**
@@ -232,15 +224,15 @@ describe("the judge chooses, and cannot widen anything", () => {
    * line ever starts type-checking again — and the runtime check beside it is
    * what a reader wants to see: those keys really do arrive.
    */
-  it("will not compile the spread that carries the ceilings across", () => {
-    const input = { ...EVERYTHING, when: "findings" } as const;
-    const leaky = { ...input, ...input.refusal, offer: stepsOnOffer(input) };
+  it('will not compile the spread that carries the ceilings across', () => {
+    const input = { ...EVERYTHING, when: 'findings' } as const
+    const leaky = { ...input, ...input.refusal, offer: stepsOnOffer(input) }
     // @ts-expect-error — `rounds` is `never` on a brief, and this is the line
     // that would otherwise hand an agent judge every ceiling it must not see.
-    const _refused: JudgeBrief = leaky;
-    expect(Object.keys(leaky)).toContain("rounds");
-    expect(Object.keys(briefFor(input))).not.toContain("rounds");
-  });
+    const _refused: JudgeBrief = leaky
+    expect(Object.keys(leaky)).toContain('rounds')
+    expect(Object.keys(briefFor(input))).not.toContain('rounds')
+  })
 
   /**
    * **The ceiling, from the judge's side.** Rounds spent, so `implement` is not
@@ -248,20 +240,20 @@ describe("the judge chooses, and cannot widen anything", () => {
    * held for a person. This is the loop that would otherwise never terminate,
    * and it terminates in one pass.
    */
-  it("refuses a step it did not offer, and holds for a person instead", async () => {
-    const offer = stepsOnOffer({ ...EVERYTHING, when: "findings", roundsSpent: 2 });
-    expect(offer).not.toContain("implement");
+  it('refuses a step it did not offer, and holds for a person instead', async () => {
+    const offer = stepsOnOffer({ ...EVERYTHING, when: 'findings', roundsSpent: 2 })
+    expect(offer).not.toContain('implement')
 
-    const greedy: Judge = () => "implement";
-    const answered = await askJudge("my-own-judge", greedy, brief("findings", offer));
+    const greedy: Judge = () => 'implement'
+    const answered = await askJudge('my-own-judge', greedy, brief('findings', offer))
 
-    expect(answered.next).toBe("human");
-    expect(answered.refused).toContain('"my-own-judge"');
-    expect(answered.refused).toContain('"implement"');
-    expect(answered.refused).toContain('"findings"');
+    expect(answered.next).toBe('human')
+    expect(answered.refused).toContain('"my-own-judge"')
+    expect(answered.refused).toContain('"implement"')
+    expect(answered.refused).toContain('"findings"')
     // It says what *was* on offer, so the entry to fix is readable off the card.
-    expect(answered.refused).toContain('"claim", "human"');
-  });
+    expect(answered.refused).toContain('"claim", "human"')
+  })
 
   /**
    * And the same refusal for `prepared`, where `implement` was never reached —
@@ -269,17 +261,17 @@ describe("the judge chooses, and cannot widen anything", () => {
    * judge here is the one a project would plausibly write: it knows `red` means
    * *go back and fix it* and nothing about which step refused.
    */
-  it("refuses it again where no agent ever ran, with every round unspent", async () => {
-    const offer = stepsOnOffer({ ...EVERYTHING, when: "red", reached: "prepared" });
-    expect(offer).toEqual(["human"]);
+  it('refuses it again where no agent ever ran, with every round unspent', async () => {
+    const offer = stepsOnOffer({ ...EVERYTHING, when: 'red', reached: 'prepared' })
+    expect(offer).toEqual(['human'])
 
-    const naive: Judge = () => "implement";
-    const answered = await askJudge("same-worktree-but-mine", naive, brief("red", offer));
+    const naive: Judge = () => 'implement'
+    const answered = await askJudge('same-worktree-but-mine', naive, brief('red', offer))
 
-    expect(answered.next).toBe("human");
-    expect(answered.refused).toContain("not one of the steps it was offered");
-    expect(answered.refused).toContain('"human"');
-  });
+    expect(answered.next).toBe('human')
+    expect(answered.refused).toContain('not one of the steps it was offered')
+    expect(answered.refused).toContain('"human"')
+  })
 
   /**
    * **The purchase the set exists to make impossible, at the seam.** A reviewer
@@ -289,34 +281,34 @@ describe("the judge chooses, and cannot widen anything", () => {
    * is refused by name and the pass is held, rather than buying ~31 turns and
    * ~$3.40 a round against an opinion until `rounds` runs out.
    */
-  it("refuses a round bought against an opinion, with every round unspent", async () => {
+  it('refuses a round bought against an opinion, with every round unspent', async () => {
     const input = {
       ...EVERYTHING,
-      when: "findings",
-      refusal: { findings: [{ ...FINDING, failureScenario: "" }], evidence: "" },
-    } as const;
-    expect(stepsOnOffer(input)).toEqual(["human"]);
+      when: 'findings',
+      refusal: { findings: [{ ...FINDING, failureScenario: '' }], evidence: '' },
+    } as const
+    expect(stepsOnOffer(input)).toEqual(['human'])
 
-    const eager: Judge = () => "implement";
-    const answered = await askJudge("claude-code", eager, briefFor(input));
-    expect(answered.next).toBe("human");
-    expect(answered.refused).toContain("not one of the steps it was offered");
-  });
+    const eager: Judge = () => 'implement'
+    const answered = await askJudge('claude-code', eager, briefFor(input))
+    expect(answered.next).toBe('human')
+    expect(answered.refused).toContain('not one of the steps it was offered')
+  })
 
   /** An answer from the set is passed straight through, and says nothing was overruled. */
-  it("takes an answer that is on offer", async () => {
-    const offer = stepsOnOffer({ ...EVERYTHING, when: "findings" });
+  it('takes an answer that is on offer', async () => {
+    const offer = stepsOnOffer({ ...EVERYTHING, when: 'findings' })
     // Annotated rather than inferred: `Judge` returns `Destination |
     // Promise<Destination>`, and an `async` body takes no contextual return
     // type from a union, so a bare `async () => "claim"` widens to
     // `Promise<string>` and stops type-checking. Writing the awaited type here
     // keeps this the async half — the shape an agent judge has.
-    const thoughtful: Judge = async (): Promise<Destination> => "claim";
-    expect(await askJudge("claude-code", thoughtful, brief("findings", offer))).toEqual({
-      next: "claim",
+    const thoughtful: Judge = async (): Promise<Destination> => 'claim'
+    expect(await askJudge('claude-code', thoughtful, brief('findings', offer))).toEqual({
+      next: 'claim',
       refused: null,
-    });
-  });
+    })
+  })
 
   /**
    * **No plugin can widen either bound, because neither is a field it has.**
@@ -331,32 +323,32 @@ describe("the judge chooses, and cannot widen anything", () => {
    * inside it by name, which is the same refusal one level down rather than a
    * hole in it. `packages/recipe/unit/plugin.test.ts` is where both are held.
    */
-  it("declares no ceiling over the pass", () => {
-    expect(judgePlugin.declares).toEqual(["name", "judge", "when", "model", "limits"]);
-    for (const ceiling of ["rounds", "restarts"] as const) {
+  it('declares no ceiling over the pass', () => {
+    expect(judgePlugin.declares).toEqual(['name', 'judge', 'when', 'model', 'limits'])
+    for (const ceiling of ['rounds', 'restarts'] as const) {
       const problems = readFields(judgePlugin, {
-        name: "the lines or the approach",
-        judge: "same-worktree",
-        when: "findings",
+        name: 'the lines or the approach',
+        judge: 'same-worktree',
+        when: 'findings',
         [ceiling]: 9,
-      }).problems!;
-      expect(problems).toHaveLength(1);
-      expect(problems[0]!.field).toBe(ceiling);
-      expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`);
+      }).problems!
+      expect(problems).toHaveLength(1)
+      expect(problems[0]!.field).toBe(ceiling)
+      expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`)
 
       const inside = readFields(judgePlugin, {
-        name: "the lines or the approach",
-        judge: "claude-code",
-        when: "findings",
+        name: 'the lines or the approach',
+        judge: 'claude-code',
+        when: 'findings',
         limits: { [ceiling]: 9 },
-      }).problems!;
-      expect(inside).toHaveLength(1);
-      expect(inside[0]!.why).toContain("bounds the pass and not one call (0040)");
+      }).problems!
+      expect(inside).toHaveLength(1)
+      expect(inside[0]!.why).toContain('bounds the pass and not one call (0040)')
     }
-  });
-});
+  })
+})
 
-describe("the mechanical directions spend nothing", () => {
+describe('the mechanical directions spend nothing', () => {
   /**
    * **A built-in cannot dispatch, and the type checker is what says so** (`#277`).
    *
@@ -373,21 +365,21 @@ describe("the mechanical directions spend nothing", () => {
    * accepted, so what is being pinned is the difference between the two types and
    * not some quirk of an async arrow.
    */
-  it("will not compile a built-in that awaits a dispatch", () => {
+  it('will not compile a built-in that awaits a dispatch', () => {
     // @ts-expect-error — a `Promise<Destination>` is not a `Destination`, and
     // that refusal is what `judge: same-worktree` means by *spends nothing*.
-    const spender: BuiltIn = async (): Promise<Destination> => "human";
-    const dispatched: Judge = async (): Promise<Destination> => "human";
+    const spender: BuiltIn = async (): Promise<Destination> => 'human'
+    const dispatched: Judge = async (): Promise<Destination> => 'human'
 
     // Both exist at runtime; only one of them is a name the schema accepts.
-    expect(typeof spender).toBe("function");
-    expect(typeof dispatched).toBe("function");
+    expect(typeof spender).toBe('function')
+    expect(typeof dispatched).toBe('function')
     // And every built-in there is answers without a promise, which is the same
     // claim read off the values rather than off the type.
     for (const built of Object.values(BUILT_IN)) {
-      expect(built(brief("red", ["implement", "human"]))).not.toBeInstanceOf(Promise);
+      expect(built(brief('red', ['implement', 'human']))).not.toBeInstanceOf(Promise)
     }
-  });
+  })
 
   /**
    * **Synchronous is the declaration**, and it is why this is an assertion
@@ -395,34 +387,34 @@ describe("the mechanical directions spend nothing", () => {
    * awaiting, so a built-in that started spending money would fail here and in
    * the type checker at once.
    */
-  it("answers `red` and `verify-failed` with a built-in that returns without awaiting", () => {
-    for (const when of ["red", "verify-failed"] as const) {
-      const name = BUILT_IN_FOR[when];
-      expect(name, `${when} has no built-in`).not.toBeNull();
-      const answer = BUILT_IN[name!](brief(when, ["implement", "human"]));
-      expect(answer).not.toBeInstanceOf(Promise);
-      expect(answer).toBe("implement");
+  it('answers `red` and `verify-failed` with a built-in that returns without awaiting', () => {
+    for (const when of ['red', 'verify-failed'] as const) {
+      const name = BUILT_IN_FOR[when]
+      expect(name, `${when} has no built-in`).not.toBeNull()
+      const answer = BUILT_IN[name!](brief(when, ['implement', 'human']))
+      expect(answer).not.toBeInstanceOf(Promise)
+      expect(answer).toBe('implement')
     }
-  });
+  })
 
   /** And it holds to the set like any other judge: no round left, so a person. */
-  it("falls to a person when `implement` is not on offer", async () => {
-    const offer = stepsOnOffer({ ...EVERYTHING, when: "red", roundsSpent: 2 });
-    const answered = await askJudge("same-worktree", BUILT_IN["same-worktree"], brief("red", offer));
-    expect(answered).toEqual({ next: "human", refused: null });
-  });
+  it('falls to a person when `implement` is not on offer', async () => {
+    const offer = stepsOnOffer({ ...EVERYTHING, when: 'red', roundsSpent: 2 })
+    const answered = await askJudge('same-worktree', BUILT_IN['same-worktree'], brief('red', offer))
+    expect(answered).toEqual({ next: 'human', refused: null })
+  })
 
   /**
    * The three that cost money are `null` rather than absent, so a sixth
    * direction does not compile until somebody has said which kind it is — and
    * so that *no built-in* is a decision on the record rather than a gap.
    */
-  it("says which directions have no built-in, rather than leaving them out", () => {
-    expect(Object.keys(BUILT_IN_FOR).sort()).toEqual([...JudgeWhen.options].sort());
-    expect(BUILT_IN_FOR.conflict).toBeNull();
-    expect(BUILT_IN_FOR["needs-input"]).toBeNull();
-    expect(BUILT_IN_FOR.findings).toBeNull();
-  });
+  it('says which directions have no built-in, rather than leaving them out', () => {
+    expect(Object.keys(BUILT_IN_FOR).sort()).toEqual([...JudgeWhen.options].sort())
+    expect(BUILT_IN_FOR.conflict).toBeNull()
+    expect(BUILT_IN_FOR['needs-input']).toBeNull()
+    expect(BUILT_IN_FOR.findings).toBeNull()
+  })
 
   /**
    * **Every name the schema accepts is a function here**, which is what stops a
@@ -430,11 +422,11 @@ describe("the mechanical directions spend nothing", () => {
    * replaceable plugin opens. 0061 §3's example also names `ask-or-assume`, and
    * it is deliberately in neither list: nothing implements it.
    */
-  it("implements every built-in name the recipe accepts, and no others", () => {
-    expect(Object.keys(BUILT_IN).sort()).toEqual([...BUILT_IN_JUDGES].sort());
-    expect(BUILT_IN_JUDGES).not.toContain("ask-or-assume");
-  });
-});
+  it('implements every built-in name the recipe accepts, and no others', () => {
+    expect(Object.keys(BUILT_IN).sort()).toEqual([...BUILT_IN_JUDGES].sort())
+    expect(BUILT_IN_JUDGES).not.toContain('ask-or-assume')
+  })
+})
 
 /**
  * **What the recipe declared, which is the half that is called** (`#274`).
@@ -445,9 +437,9 @@ describe("the mechanical directions spend nothing", () => {
  * rule — so what these cases are about is the lookup being the one 0061 §3
  * describes, and the entries being read as entries rather than as shapes.
  */
-describe("the judge the recipe declared", () => {
-  const entry = (name: string, when: JudgeWhen, judge = "same-worktree") =>
-    StepMap.parse({ proposed: [{ name, judge, when }] }).proposed;
+describe('the judge the recipe declared', () => {
+  const entry = (name: string, when: JudgeWhen, judge = 'same-worktree') =>
+    StepMap.parse({ proposed: [{ name, judge, when }] }).proposed
 
   /**
    * **A runtime comes back as a runtime, and that is what makes it a dispatch**
@@ -461,35 +453,35 @@ describe("the judge the recipe declared", () => {
    * `isBuiltInJudge`'s and so is read off `BUILT_IN_JUDGES`, not off a name
    * spelled again here.
    */
-  it("says which half of the enum the entry named, so a runtime cannot be applied", () => {
+  it('says which half of the enum the entry named, so a runtime cannot be applied', () => {
     for (const runtime of RuntimeId.options) {
-      expect(judgeDeclaredAt(entry("the lines or the approach", "findings", runtime), "findings")).toEqual({
+      expect(judgeDeclaredAt(entry('the lines or the approach', 'findings', runtime), 'findings')).toEqual({
         runtime,
-        named: "the lines or the approach",
-      });
+        named: 'the lines or the approach',
+      })
     }
     for (const built of BUILT_IN_JUDGES) {
-      expect(judgeDeclaredAt(entry("mechanical", "red", built), "red")).toEqual({
+      expect(judgeDeclaredAt(entry('mechanical', 'red', built), 'red')).toEqual({
         built,
-        named: "mechanical",
-      });
+        named: 'mechanical',
+      })
     }
-  });
+  })
 
   /** One per direction, matched on `when:`, and the name comes back with it. */
-  it("takes the entry whose `when:` matches, and says which line it was", () => {
-    const declared = entry("a red build is the agent's to fix", "red");
-    expect(judgeDeclaredAt(declared, "red")).toEqual({
-      built: "same-worktree",
+  it('takes the entry whose `when:` matches, and says which line it was', () => {
+    const declared = entry("a red build is the agent's to fix", 'red')
+    expect(judgeDeclaredAt(declared, 'red')).toEqual({
+      built: 'same-worktree',
       named: "a red build is the agent's to fix",
-    });
+    })
     // And nothing for the other four, which is what makes one entry per
     // direction a reduction rather than a default: `BUILT_IN_FOR` answers the
     // other mechanical one and a person is the floor under the three that cost.
-    for (const when of JudgeWhen.options.filter((w) => w !== "red")) {
-      expect(judgeDeclaredAt(declared, when), when).toBeNull();
+    for (const when of JudgeWhen.options.filter((w) => w !== 'red')) {
+      expect(judgeDeclaredAt(declared, when), when).toBeNull()
     }
-  });
+  })
 
   /**
    * **A recipe that declared nothing is the ordinary case**, and it has to answer
@@ -497,12 +489,12 @@ describe("the judge the recipe declared", () => {
    * fall back to `BUILT_IN_FOR`, so a step's empty list must not resolve to a
    * judge the recipe never wrote (0064 §5 — absent is not empty).
    */
-  it("answers nothing for a step that declared none", () => {
+  it('answers nothing for a step that declared none', () => {
     for (const when of JudgeWhen.options) {
-      expect(judgeDeclaredAt([], when), when).toBeNull();
-      expect(judgeDeclaredAt(StepMap.parse({}).proposed, when), when).toBeNull();
+      expect(judgeDeclaredAt([], when), when).toBeNull()
+      expect(judgeDeclaredAt(StepMap.parse({}).proposed, when), when).toBeNull()
     }
-  });
+  })
 
   /**
    * **The key is the discriminator, and this is the case `#238` cost.** `when:`
@@ -512,30 +504,30 @@ describe("the judge the recipe declared", () => {
    * is what this repository's own recipe holds — is not a judge for any
    * direction.
    */
-  it("reads the key rather than the shape, so nothing else at the step is a judge", () => {
+  it('reads the key rather than the shape, so nothing else at the step is a judge', () => {
     const beside = StepMap.parse({
       proposed: [
-        { name: "the lines or the approach", judge: "same-worktree", when: "findings" },
-        { name: "tamper", watch: ["**/recipe.yml"], then: "fail" },
-        { name: "approval", human: "merge this?" },
+        { name: 'the lines or the approach', judge: 'same-worktree', when: 'findings' },
+        { name: 'tamper', watch: ['**/recipe.yml'], then: 'fail' },
+        { name: 'approval', human: 'merge this?' },
       ],
-    }).proposed;
-    expect(judgeDeclaredAt(beside, "findings")?.named).toBe("the lines or the approach");
-    expect(judgeDeclaredAt(beside, "red")).toBeNull();
-  });
+    }).proposed
+    expect(judgeDeclaredAt(beside, 'findings')?.named).toBe('the lines or the approach')
+    expect(judgeDeclaredAt(beside, 'red')).toBeNull()
+  })
 
   /**
    * Two entries for one direction is a file a person can write, and the order in
    * a step's list is the recipe's own (0061 §2) — so the first wins, and neither
    * is hidden: both are in `StepsResolved` and on the board.
    */
-  it("takes the first of two written for one direction", () => {
+  it('takes the first of two written for one direction', () => {
     const twice = StepMap.parse({
       proposed: [
-        { name: "first", judge: "same-worktree", when: "red" },
-        { name: "second", judge: "same-worktree", when: "red" },
+        { name: 'first', judge: 'same-worktree', when: 'red' },
+        { name: 'second', judge: 'same-worktree', when: 'red' },
       ],
-    }).proposed;
-    expect(judgeDeclaredAt(twice, "red")?.named).toBe("first");
-  });
-});
+    }).proposed
+    expect(judgeDeclaredAt(twice, 'red')?.named).toBe('first')
+  })
+})

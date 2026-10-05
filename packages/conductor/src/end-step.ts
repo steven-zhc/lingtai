@@ -38,13 +38,13 @@
  * A project that configures no `end` at all still writes nothing. There the
  * skip is the user's decision, and `StepsResolved` already records it.
  */
-import { workItemStream } from "@lingtai/domain";
-import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from "@lingtai/recipe";
-import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from "@lingtai/domain";
+import { workItemStream } from '@lingtai/domain'
+import { type Envelope, type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
+import type { LogQueries } from '@lingtai/event-store/log'
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
-import type { EventStore } from "@lingtai/event-store/store";
-import type { LogQueries } from "@lingtai/event-store/log";
+import type { EventStore } from '@lingtai/event-store/store'
+import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from '@lingtai/recipe'
 
 /**
  * The outcomes `end` fires on. The recipe's `when:` is one of these or `any`.
@@ -61,7 +61,7 @@ import type { LogQueries } from "@lingtai/event-store/log";
  * silently — which is the half of the responsibility 0016 §4 calls Lingtai's
  * bug rather than the operator's. A recipe saying `when: any` means any.
  */
-export type TerminalOutcome = "landed" | "blocked" | "failed" | "closed";
+export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed'
 
 /**
  * The event the `end` point resolves to, or nothing.
@@ -94,20 +94,18 @@ export function resolveEndActions(
 ): ToAppend[] {
   // Nothing declared is not this point's business: the skip is the user's
   // decision, and `StepsResolved` already says the point was empty.
-  if (actions.length === 0) return [];
+  if (actions.length === 0) return []
 
   const already = events.some(
-    (e) =>
-      e.type === "EndActionsResolved" &&
-      (e.data as PayloadOf<"EndActionsResolved">).outcome === outcome,
-  );
-  if (already) return [];
+    (e) => e.type === 'EndActionsResolved' && (e.data as PayloadOf<'EndActionsResolved'>).outcome === outcome,
+  )
+  if (already) return []
 
   type Resolved =
     | { name: string; close: true }
     | { name: string; labels: string[] }
-    | { name: string; refs: true; branch: boolean };
-  const resolved: Resolved[] = [];
+    | { name: string; refs: true; branch: boolean }
+  const resolved: Resolved[] = []
   for (const a of actions) {
     // **The kind, and not the shape.** Every kind but the two that run for
     // effect is refused when the recipe resolves (`whyNoKindAt`), so this is
@@ -125,9 +123,9 @@ export function resolveEndActions(
     // silently: `end` resolves, records an empty list, and the log says
     // nothing was declared. A plugin's fields are its own and any of them may
     // spell a word twice; what this point runs is a kind.
-    if (!("close" in a) && !("labels" in a) && !("refs" in a)) {
-      const kind = kindOfAction(a);
-      throw new Error(kindRefusedAt("end", kind, a.name, whyNoKindAt("end", kind) ?? "it produces no effect"));
+    if (!('close' in a) && !('labels' in a) && !('refs' in a)) {
+      const kind = kindOfAction(a)
+      throw new Error(kindRefusedAt('end', kind, a.name, whyNoKindAt('end', kind) ?? 'it produces no effect'))
     }
     // **This line is the whole safety of `refs:`** (`#240`). Its `when:` is a
     // `z.literal("landed")`, so an ending that is not a landing fails the match
@@ -135,23 +133,23 @@ export function resolveEndActions(
     // refs are the only surviving account of what was tried. Nothing downstream
     // re-derives which refs to delete: an action that is not in the list was
     // not resolved, and `tell.ts` carries out the list.
-    if (a.when !== outcome && a.when !== "any") continue;
+    if (a.when !== outcome && a.when !== 'any') continue
     resolved.push(
-      "close" in a
+      'close' in a
         ? { name: a.name, close: true }
-        : "labels" in a
+        : 'labels' in a
           ? { name: a.name, labels: a.labels }
           : { name: a.name, refs: true, branch: a.branch },
-    );
+    )
   }
 
   return [
     {
-      type: "EndActionsResolved",
-      actor: "conductor",
-      data: parsePayload("EndActionsResolved", { outcome, actions: resolved }),
+      type: 'EndActionsResolved',
+      actor: 'conductor',
+      data: parsePayload('EndActionsResolved', { outcome, actions: resolved }),
     },
-  ];
+  ]
 }
 
 /**
@@ -167,24 +165,24 @@ export async function appendEndActions(
   actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): Promise<ToAppend[]> {
-  if (actions.length === 0) return [];
-  const events = await store.read(workItemId);
-  const toAppend = resolveEndActions(events, actions, outcome);
-  if (toAppend.length === 0) return [];
-  await store.append(workItemId, events.length, toAppend);
+  if (actions.length === 0) return []
+  const events = await store.read(workItemId)
+  const toAppend = resolveEndActions(events, actions, outcome)
+  if (toAppend.length === 0) return []
+  await store.append(workItemId, events.length, toAppend)
   // Returned so the caller can carry them out. Resolving and doing are two
   // steps on purpose — the resolution is a fact and belongs in one transaction
   // with the outcome, and the doing is I/O that must not be able to undo it.
-  return toAppend;
+  return toAppend
 }
 
 // ------------------------------------------------------- what did not run ----
 
 /** A work item that ended with a plan at `end` and no record of it running. */
 export interface UnresolvedEnd {
-  workItemId: string;
-  project: string;
-  issue: number;
+  workItemId: string
+  project: string
+  issue: number
   /**
    * Which ending it reached, so a replay resolves the point for the outcome
    * that actually happened. It used to be unnecessary because only one ending
@@ -192,7 +190,7 @@ export interface UnresolvedEnd {
    * naming an outcome the log does not contain, and `when: landed` actions
    * would run on a ticket that landed nothing.
    */
-  outcome: Extract<TerminalOutcome, "landed" | "closed">;
+  outcome: Extract<TerminalOutcome, 'landed' | 'closed'>
 }
 
 /**
@@ -207,12 +205,12 @@ export interface UnresolvedEnd {
  * does not need it.
  */
 export function splitWorkItem(streamId: string): { project: string; issue: number } | null {
-  const body = streamId.startsWith("wi-") ? streamId.slice(3) : streamId;
-  const cut = body.lastIndexOf("-");
-  if (cut < 0) return null;
-  const issue = Number(body.slice(cut + 1));
-  if (!Number.isInteger(issue)) return null;
-  return { project: body.slice(0, cut), issue };
+  const body = streamId.startsWith('wi-') ? streamId.slice(3) : streamId
+  const cut = body.lastIndexOf('-')
+  if (cut < 0) return null
+  const issue = Number(body.slice(cut + 1))
+  if (!Number.isInteger(issue)) return null
+  return { project: body.slice(0, cut), issue }
 }
 
 /**
@@ -245,10 +243,10 @@ export async function endedWithoutEndActions(queries?: LogQueries): Promise<Unre
   // The comparison is the store's since #221 — an anti-join that returns only
   // the offending items — and the naming is still this file's: `wi-lingtai-52`
   // becomes a project and an issue here, where `splitWorkItem` is.
-  const ask = queries ?? (await import("@lingtai/event-store")).log.queries;
-  const found = await ask.endedWithoutEndActions();
+  const ask = queries ?? (await import('@lingtai/event-store')).log.queries
+  const found = await ask.endedWithoutEndActions()
   return found.flatMap((row) => {
-    const split = splitWorkItem(row.streamId);
-    return split === null ? [] : [{ workItemId: row.streamId, outcome: row.outcome, ...split }];
-  });
+    const split = splitWorkItem(row.streamId)
+    return split === null ? [] : [{ workItemId: row.streamId, outcome: row.outcome, ...split }]
+  })
 }

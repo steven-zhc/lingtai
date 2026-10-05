@@ -1,3 +1,5 @@
+import { userInfo } from 'node:os'
+
 /**
  * `lingtai ask` and `lingtai answer`, against the real log (#147).
  *
@@ -8,30 +10,30 @@
  *
  * Real events, throwaway project, as every database-touching test here does.
  */
-import { projectStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { createProjectionRunner, taskViewProjection } from "@lingtai/projector";
-import { userInfo } from "node:os";
-import { beforeAll, describe, expect, it } from "vitest";
-import { answerCommand, askCommand } from "../src/ask.ts";
-import { requeueCommand } from "../src/requeue.ts";
-import { status } from "../src/status.ts";
+import { projectStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
+import { answerCommand, askCommand } from '../src/ask.ts'
+import { requeueCommand } from '../src/requeue.ts'
+import { status } from '../src/status.ts'
+
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 
 /** Asked, then answered. */
-const ASKED = 51;
+const ASKED = 51
 /** Claimed, so there is no asking it anything before a run. */
-const RUNNING = 52;
+const RUNNING = 52
 /** Asked by mistake, then withdrawn. */
-const WITHDRAWN = 53;
+const WITHDRAWN = 53
 
-const wi = (n: number) => workItemStream(PROJECT, n);
-const ACTOR = `human:${userInfo().username}`;
-const QUESTION = "which of the three designs for the production-credential tripwire?";
-const CHOICE = "the second — refuse at the hook";
+const wi = (n: number) => workItemStream(PROJECT, n)
+const ACTOR = `human:${userInfo().username}`
+const QUESTION = 'which of the three designs for the production-credential tripwire?'
+const CHOICE = 'the second — refuse at the hook'
 
-let store: EventStore;
+let store: EventStore
 
 /**
  * Catches the projection up to the head before `status` reads it. The command
@@ -40,69 +42,69 @@ let store: EventStore;
  * this test has none.
  */
 async function fold(): Promise<void> {
-  const runner = createProjectionRunner({ projection: taskViewProjection, store });
+  const runner = createProjectionRunner({ projection: taskViewProjection, store })
   try {
-    await runner.start();
+    await runner.start()
   } finally {
-    await runner.close();
+    await runner.close()
   }
 }
 
 beforeAll(async () => {
-  store = await processEventStore();
+  store = await processEventStore()
   await store.append(projectStream(PROJECT), 0, [
     {
-      type: "ProjectConfigured",
-      actor: "conductor",
-      data: { project: PROJECT, owner: "steven-zhc", base: "develop", configHash: "h", fromSha: "s" },
+      type: 'ProjectConfigured',
+      actor: 'conductor',
+      data: { project: PROJECT, owner: 'steven-zhc', base: 'develop', configHash: 'h', fromSha: 's' },
     },
-  ]);
+  ])
   await store.append(wi(RUNNING), 0, [
     {
-      type: "WorkItemClaimed",
-      actor: "conductor",
-      data: { runId: `run-${PROJECT}-${RUNNING}`, worker: "w", title: null, kind: null },
+      type: 'WorkItemClaimed',
+      actor: 'conductor',
+      data: { runId: `run-${PROJECT}-${RUNNING}`, worker: 'w', title: null, kind: null },
     },
-  ]);
-}, 120_000);
+  ])
+}, 120_000)
 
-describe("lingtai ask / answer", () => {
-  it("asks before any run, and status prints the question rather than counting it", async () => {
-    const said: string[] = [];
-    expect(await askCommand({ project: PROJECT, issue: ASKED, text: QUESTION }, (l) => said.push(l))).toBe(0);
+describe('lingtai ask / answer', () => {
+  it('asks before any run, and status prints the question rather than counting it', async () => {
+    const said: string[] = []
+    expect(await askCommand({ project: PROJECT, issue: ASKED, text: QUESTION }, (l) => said.push(l))).toBe(0)
 
-    const events = await store.read(wi(ASKED));
-    expect(events.map((e) => e.type)).toEqual(["WorkItemBlocked"]);
+    const events = await store.read(wi(ASKED))
+    expect(events.map((e) => e.type)).toEqual(['WorkItemBlocked'])
     expect(events[0]!.data).toEqual({
       question: QUESTION,
-      needsFrom: "human",
+      needsFrom: 'human',
       runId: null,
-      needs: "judgement",
+      needs: 'judgement',
       diagnosis: null,
-    });
-    expect(reduceWorkItem(events).lifecycle.status).toBe("blocked");
+    })
+    expect(reduceWorkItem(events).lifecycle.status).toBe('blocked')
 
-    await fold();
-    const listed: string[] = [];
-    await status({ project: PROJECT }, (l) => listed.push(l));
-    const out = listed.join("\n");
-    expect(out).toContain(QUESTION);
-    expect(out).toContain("waiting for your answer");
+    await fold()
+    const listed: string[] = []
+    await status({ project: PROJECT }, (l) => listed.push(l))
+    const out = listed.join('\n')
+    expect(out).toContain(QUESTION)
+    expect(out).toContain('waiting for your answer')
     // Printed, not counted: the queue line does not fold it into "waiting on you".
-    expect(out).not.toMatch(/\d+ waiting on you/);
-  });
+    expect(out).not.toMatch(/\d+ waiting on you/)
+  })
 
-  it("refuses to ask about an item a run holds", async () => {
-    const said: string[] = [];
-    expect(await askCommand({ project: PROJECT, issue: RUNNING, text: QUESTION }, (l) => said.push(l))).toBe(1);
-    expect(said.join("\n")).toContain("claimed");
-    expect((await store.read(wi(RUNNING))).some((e) => e.type === "WorkItemBlocked")).toBe(false);
-  });
+  it('refuses to ask about an item a run holds', async () => {
+    const said: string[] = []
+    expect(await askCommand({ project: PROJECT, issue: RUNNING, text: QUESTION }, (l) => said.push(l))).toBe(1)
+    expect(said.join('\n')).toContain('claimed')
+    expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WorkItemBlocked')).toBe(false)
+  })
 
-  it("refuses a blank question and a blank answer rather than defaulting either", async () => {
-    expect(await askCommand({ project: PROJECT, issue: ASKED, text: "  " }, () => {})).toBe(2);
-    expect(await answerCommand({ project: PROJECT, issue: ASKED, text: "" }, () => {})).toBe(2);
-  });
+  it('refuses a blank question and a blank answer rather than defaulting either', async () => {
+    expect(await askCommand({ project: PROJECT, issue: ASKED, text: '  ' }, () => {})).toBe(2)
+    expect(await answerCommand({ project: PROJECT, issue: ASKED, text: '' }, () => {})).toBe(2)
+  })
 
   /**
    * The fold keeps whatever note ends a block with no run as a decision, and
@@ -110,38 +112,37 @@ describe("lingtai ask / answer", () => {
    * a question asked by mistake still has to have a way out that is not an
    * answer, or *asked by mistake, ignore* is what the agent is told to build.
    */
-  it("withdraws a question asked before any run on requeue, and keeps no answer", async () => {
-    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: "which desgin?" }, () => {})).toBe(0);
+  it('withdraws a question asked before any run on requeue, and keeps no answer', async () => {
+    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which desgin?' }, () => {})).toBe(0)
 
-    const said: string[] = [];
-    const code = await requeueCommand(
-      { project: PROJECT, issue: WITHDRAWN, note: "asked by mistake, ignore" },
-      (l) => said.push(l),
-    );
-    expect(code).toBe(0);
-    expect(said.join("\n")).toContain("withdrawn");
+    const said: string[] = []
+    const code = await requeueCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) =>
+      said.push(l),
+    )
+    expect(code).toBe(0)
+    expect(said.join('\n')).toContain('withdrawn')
 
-    const events = await store.read(wi(WITHDRAWN));
-    expect(events[events.length - 1]!.data).toEqual({ by: ACTOR, note: "asked by mistake, ignore", withdrawn: true });
-    const item = reduceWorkItem(events);
-    expect(item.lifecycle.status).toBe("backlog");
-    expect(item.answers).toEqual([]);
+    const events = await store.read(wi(WITHDRAWN))
+    expect(events[events.length - 1]!.data).toEqual({ by: ACTOR, note: 'asked by mistake, ignore', withdrawn: true })
+    const item = reduceWorkItem(events)
+    expect(item.lifecycle.status).toBe('backlog')
+    expect(item.answers).toEqual([])
 
     // And it can be asked again, reworded.
-    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: "which design?" }, () => {})).toBe(0);
-  });
+    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which design?' }, () => {})).toBe(0)
+  })
 
-  it("answers on the record, and the fold keeps what the answer was", async () => {
-    const said: string[] = [];
-    expect(await answerCommand({ project: PROJECT, issue: ASKED, text: CHOICE }, (l) => said.push(l))).toBe(0);
+  it('answers on the record, and the fold keeps what the answer was', async () => {
+    const said: string[] = []
+    expect(await answerCommand({ project: PROJECT, issue: ASKED, text: CHOICE }, (l) => said.push(l))).toBe(0)
 
-    const events = await store.read(wi(ASKED));
-    const last = events[events.length - 1]!;
-    expect(last.type).toBe("WorkItemUnblocked");
-    expect(last.data).toEqual({ by: ACTOR, note: CHOICE });
+    const events = await store.read(wi(ASKED))
+    const last = events[events.length - 1]!
+    expect(last.type).toBe('WorkItemUnblocked')
+    expect(last.data).toEqual({ by: ACTOR, note: CHOICE })
 
-    const item = reduceWorkItem(events);
-    expect(item.lifecycle.status).toBe("backlog");
-    expect(item.answers).toEqual([{ question: QUESTION, runId: null, answer: CHOICE, by: ACTOR }]);
-  });
-});
+    const item = reduceWorkItem(events)
+    expect(item.lifecycle.status).toBe('backlog')
+    expect(item.answers).toEqual([{ question: QUESTION, runId: null, answer: CHOICE, by: ACTOR }])
+  })
+})

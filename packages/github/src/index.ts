@@ -16,7 +16,7 @@ export {
   type Installation,
   type PermissionGap,
   type VisibleRepository,
-} from "./app.ts";
+} from './app.ts'
 export {
   LINGTAI_URL,
   MANIFEST_EVENTS,
@@ -28,7 +28,7 @@ export {
   type AppManifest,
   type CreatedApp,
   type ManifestOptions,
-} from "./manifest.ts";
+} from './manifest.ts'
 export {
   createGitHubClient,
   parseSlug,
@@ -37,11 +37,5 @@ export {
   type GitHubClient,
   type Issue,
   type Label,
-} from "./client.ts";
-export {
-  DELIVERY_HEADER,
-  EVENT_HEADER,
-  SIGNATURE_HEADER,
-  verifyWebhook,
-  type WebhookVerdict,
-} from "./webhook.ts";
+} from './client.ts'
+export { DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER, verifyWebhook, type WebhookVerdict } from './webhook.ts'

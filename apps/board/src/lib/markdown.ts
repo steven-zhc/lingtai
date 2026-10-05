@@ -49,26 +49,26 @@
  * claim about the author, which is the only thing that settles whether markdown
  * is the right reading of the bytes.
  */
-export type DocumentSource = "ticket-body" | "prompt" | "log";
+export type DocumentSource = 'ticket-body' | 'prompt' | 'log'
 
 /** What the page is allowed to do with a source's documents. */
 export type Rendering =
   /** Markdown, sanitised. */
-  | "rendered"
+  | 'rendered'
   /** Raw, with a rendered view offered beside it. */
-  | "on request"
+  | 'on request'
   /** Raw, and nothing else. No renderer ever sees it. */
-  | "never";
+  | 'never'
 
 const RENDERING: Record<DocumentSource, Rendering> = {
-  "ticket-body": "rendered",
-  prompt: "on request",
-  log: "never",
-};
+  'ticket-body': 'rendered',
+  prompt: 'on request',
+  log: 'never',
+}
 
 /** The table above, as the one function that answers it. */
 export function renderingFor(source: DocumentSource): Rendering {
-  return RENDERING[source];
+  return RENDERING[source]
 }
 
 /**
@@ -82,6 +82,6 @@ export function renderingFor(source: DocumentSource): Rendering {
  * behind the catalogue costs a convenience and never costs correctness.
  */
 export function sourceOfPayloadDocument(type: string | undefined, field: string): DocumentSource {
-  if (type === "RunPrompted" && field === "prompt") return "prompt";
-  return "log";
+  if (type === 'RunPrompted' && field === 'prompt') return 'prompt'
+  return 'log'
 }

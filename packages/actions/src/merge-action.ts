@@ -40,8 +40,9 @@
  * no amount of checking would be as good as not having. So the spec carries the
  * strategy and nothing else, and the base reaches `integrate` from the caller.
  */
-import type { RefusalReason } from "@lingtai/domain";
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import type { RefusalReason } from '@lingtai/domain'
+
+import type { Action, ActionContext, ActionResult } from './action.ts'
 
 /**
  * How the lane lands it, and there is one value because `integrate.ts` offers
@@ -53,7 +54,7 @@ import type { Action, ActionContext, ActionResult } from "./action.ts";
  * code does and grows when the code does. It is `mergePlugin`'s enum under the
  * name this side of the seam reads it by.
  */
-export type MergeStrategy = "merge-commit";
+export type MergeStrategy = 'merge-commit'
 
 /**
  * What the lane answered — `IntegrateResult`'s two cases, and no third.
@@ -65,8 +66,7 @@ export type MergeStrategy = "merge-commit";
  */
 export type LandAnswer =
   /** The merge commit on the base branch. Not a worktree head: nothing local moved. */
-  | { readonly merged: string }
-  | { readonly notMerged: { readonly reason: RefusalReason; readonly detail: string } };
+  { readonly merged: string } | { readonly notMerged: { readonly reason: RefusalReason; readonly detail: string } }
 
 /**
  * The lane, as the only thing this action needs from its caller.
@@ -82,35 +82,32 @@ export interface MergeActionDeps {
    * every step before it passed, so a lane told otherwise would be a lane told
    * something the pass cannot be in a position to say.
    */
-  land(spec: {
-    readonly strategy: MergeStrategy;
-    readonly onSha: string;
-  }): Promise<LandAnswer>;
+  land(spec: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer>
 }
 
 export interface MergeActionSpec {
-  name: string;
-  strategy: MergeStrategy;
+  name: string
+  strategy: MergeStrategy
 }
 
 export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps): Action {
   return {
     name: spec.name,
-    kind: "merge",
+    kind: 'merge',
 
     async run(context: ActionContext): Promise<ActionResult> {
-      const answer = await deps.land({ strategy: spec.strategy, onSha: context.onSha });
-      if ("merged" in answer) {
+      const answer = await deps.land({ strategy: spec.strategy, onSha: context.onSha })
+      if ('merged' in answer) {
         return {
-          verdict: "passed",
+          verdict: 'passed',
           evidence: `merged as ${answer.merged.slice(0, 7)}`,
           findings: [],
-        };
+        }
       }
       return {
         // A judgement about the change, at a step the workflow lets refuse — and
         // what it buys is a round the judge at `proposed` decides how to spend.
-        verdict: "failed",
+        verdict: 'failed',
         // The lane's words, and the whole of `detail` one layer up.
         evidence: answer.notMerged.detail,
         findings: [],
@@ -118,7 +115,7 @@ export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps):
         // what `directionOf` reads to tell a `conflict` from a `verify-failed`
         // from the five a judge is never offered.
         because: answer.notMerged.reason,
-      };
+      }
     },
-  };
+  }
 }

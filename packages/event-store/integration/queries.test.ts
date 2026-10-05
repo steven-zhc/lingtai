@@ -12,32 +12,33 @@
  * append-only rule disabled for the delete: do not run it against a database a
  * conductor is writing to.
  */
-import { afterAll, beforeAll, describe } from "vitest";
-import { createDb, createEventStore, type Db, directPostgresUrl } from "../src/index.ts";
-// The implementation under test by its own module, not the barrel (#179).
-import { createPostgresLogQueries } from "../src/queries.ts";
-import { cleanupStreams, created } from "../test/support.ts";
-import { describeLogQueriesContract } from "../test/queries-contract.ts";
-import { postgresUnderTest } from "../test/postgres.ts";
+import { afterAll, beforeAll, describe } from 'vitest'
 
-let client: Db;
+import { createDb, createEventStore, type Db, directPostgresUrl } from '../src/index.ts'
+// The implementation under test by its own module, not the barrel (#179).
+import { createPostgresLogQueries } from '../src/queries.ts'
+import { postgresUnderTest } from '../test/postgres.ts'
+import { describeLogQueriesContract } from '../test/queries-contract.ts'
+import { cleanupStreams, created } from '../test/support.ts'
+
+let client: Db
 
 // #275: the Postgres side of the queries contract — three anti-joins with
 // `jsonb_array_elements` and `distinct on` — is skipped rather than converted
 // where no LINGTAI_TEST_DATABASE_URL is set, so the skip is visible in
 // vitest's own count. `integration/sqlite.test.ts` runs the same contract
 // against SQLite unconditionally.
-describe.skipIf(!postgresUnderTest())("against Postgres", () => {
+describe.skipIf(!postgresUnderTest())('against Postgres', () => {
   beforeAll(() => {
-    client = createDb();
-  });
+    client = createDb()
+  })
 
   afterAll(async () => {
-    await client.close();
-    await cleanupStreams();
-  });
+    await client.close()
+    await cleanupStreams()
+  })
 
-  describeLogQueriesContract("postgres", () => ({
+  describeLogQueriesContract('postgres', () => ({
     store: createEventStore(client),
     // The direct connection, which is what `lingtai doctor` asks these on: the
     // pooler is where a dropped connection turns an audit into a red check that
@@ -47,5 +48,5 @@ describe.skipIf(!postgresUnderTest())("against Postgres", () => {
     // database does not go away between them.
     project: `esctest${crypto.randomUUID().slice(0, 6)}`,
     note: (streamId) => created.add(streamId),
-  }));
-});
+  }))
+})

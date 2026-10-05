@@ -1,3 +1,10 @@
+import { passedOver, runnableNow } from '@lingtai/conductor/discover'
+import { passCeiling } from '@lingtai/conductor/filter'
+import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
+import { loadAllProjects } from '@lingtai/conductor/projects'
+import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
+import { type BlockDiagnosis, type ProjectState, isPending, isRegistered } from '@lingtai/domain'
+import { eventStore } from '@lingtai/event-store'
 /**
  * The board's data: one table, plus one question put to GitHub.
  *
@@ -30,16 +37,10 @@ import {
   readTasks,
   type TaskCard,
   type TaskState,
-} from "@lingtai/projector/task-view";
-import { type BlockDiagnosis, type ProjectState, isPending, isRegistered } from "@lingtai/domain";
-import { eventStore } from "@lingtai/event-store";
-import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
-import { passedOver, runnableNow } from "@lingtai/conductor/discover";
-import { queueOf } from "@lingtai/recipe/settings";
-import { loadAllProjects } from "@lingtai/conductor/projects";
-import { passCeiling } from "@lingtai/conductor/filter";
-import { projectFilter, type StepPlan, type ProjectFilter } from "@lingtai/conductor/filter";
-import { foldProgress, type RunProgress } from "./progress.ts";
+} from '@lingtai/projector/task-view'
+import { queueOf } from '@lingtai/recipe/settings'
+
+import { foldProgress, type RunProgress } from './progress.ts'
 
 /**
  * Four, not five. `verifying` folds into `running` (ADR 0016 §8).
@@ -49,10 +50,10 @@ import { foldProgress, type RunProgress } from "./progress.ts";
  * them made the board wider without making it say more. `waiting` is the lane
  * the board exists for, and keeping it distinct is the whole point.
  */
-export type ColumnId = "queued" | "running" | "waiting" | "landed";
+export type ColumnId = 'queued' | 'running' | 'waiting' | 'landed'
 
 export interface BoardCard {
-  taskId: string;
+  taskId: string
   /**
    * Which repository this is from.
    *
@@ -61,10 +62,10 @@ export interface BoardCard {
    * are not — which a board full of `esctest*` fixtures made obvious: eight
    * cards reading `#122`, one per project, none of them duplicates.
    */
-  project: string;
-  column: ColumnId;
-  ref: string;
-  kind: string;
+  project: string
+  column: ColumnId
+  ref: string
+  kind: string
   /**
    * What colour *this repository* gives the label this kind is read from,
    * `#rrggbb`, or null when GitHub has none for it.
@@ -82,32 +83,32 @@ export interface BoardCard {
    * a separate file — `kind-colour.ts` holds the contrast floor and the one
    * hue the board refuses.
    */
-  kindColor: string | null;
-  title: string;
-  tier: string;
+  kindColor: string | null
+  title: string
+  tier: string
   /** What the last run produced. The diff a person reads is this one. */
-  headSha: string | null;
+  headSha: string | null
   /**
    * What the run is *asking* about, for the controls that are bound to a
    * commit. Not `headSha`: a branch repaired and re-offered moves this and
    * leaves that where it was, and sending the wrong one is an Approve that
    * refuses what `lingtai approve` accepts (#92).
    */
-  awaitingSha: string | null;
+  awaitingSha: string | null
   /**
    * Counts, not verdicts, and only from the run this card names — the verdicts
    * themselves are on the task's own page. Waived and approved are separate
    * from passed because they are a person's word standing in for a gate's, and
    * folding them together made an override read as a green build (#78).
    */
-  passed: number;
-  failed: number;
-  waived: number;
-  approved: number;
-  turns: number | null;
-  costUsd: number | null;
+  passed: number
+  failed: number
+  waived: number
+  approved: number
+  turns: number | null
+  costUsd: number | null
   /** One line: what it is waiting on, or why it stopped, or what it merged as. */
-  note: string | null;
+  note: string | null
   /**
    * When the log last moved this card, ISO — the one number every lane wants
    * and none of them showed (#79). Five minutes and three days looked
@@ -119,9 +120,9 @@ export interface BoardCard {
    * stamping the render clock would put `queued now` on a ticket that has sat
    * open for a week.
    */
-  updatedAt: string | null;
+  updatedAt: string | null
   /** Attempts so far, so a card that keeps failing reads as one. */
-  attempts: number;
+  attempts: number
   /**
    * *restart 1 of 2*, or null on a ticket that has only ever had one approach
    * — which is every ticket until a recipe sets `runtime.limits.restarts`
@@ -136,13 +137,13 @@ export interface BoardCard {
    * It is not `attempts`. That counts claims, so a claim after a crash, after a
    * backoff and after an approach was thrown away all read as `attempt 3`.
    */
-  arm: string | null;
+  arm: string | null
   /**
    * Whether a person is holding a question at all. The waiting lane also holds
    * a refused dispatch and a run that asked something mid-flight, and neither
    * is an item anybody can hand back.
    */
-  blocked: boolean;
+  blocked: boolean
   /**
    * Whether this item reached its end by a person's decision rather than by
    * landing (`#151`). It shares Landed's column because both are over and
@@ -151,18 +152,18 @@ export interface BoardCard {
    * wrong about. `COLUMN_OF`'s comment promised the row would say; this is the
    * field that lets it.
    */
-  closed: boolean;
+  closed: boolean
   /**
    * Whether that question was asked before any run (`lingtai ask`, #147) — so
    * the move is an answer, not a review and not a requeue.
    */
-  asked: boolean;
+  asked: boolean
   /**
    * *waiting for your answer* or *waiting for your review*, or null. One brass
    * chip carried both before #147; the sentence is `describeWait`'s, which
    * `lingtai status` prints too.
    */
-  wait: string | null;
+  wait: string | null
   /**
    * Which kind of hold this is — `judgement` when the decision is a person's,
    * `acknowledgement` when something failed and nobody has decided what to do.
@@ -170,7 +171,7 @@ export interface BoardCard {
    * Null on every block written before #83, and the card renders one of those
    * exactly as it did then: the question, and the move it actually has.
    */
-  needs: "judgement" | "acknowledgement" | null;
+  needs: 'judgement' | 'acknowledgement' | null
   /**
    * What happened, what was done about it, and what is recommended.
    *
@@ -179,12 +180,12 @@ export interface BoardCard {
    * operator being asked to diagnose, in a UI with no diagnosis in it (#83).
    * Null when nobody has written one, which is most blocks.
    */
-  diagnosis: BlockDiagnosis | null;
+  diagnosis: BlockDiagnosis | null
   /**
    * What diagnosis has cost, separately from the work. Null on the cards that
    * have never bought one, which is nearly all of them.
    */
-  repairCostUsd: number | null;
+  repairCostUsd: number | null
   /**
    * When the backoff stops holding this card, ISO. Null when nothing is holding
    * it — which is every card that is not queued, and most that are.
@@ -195,7 +196,7 @@ export interface BoardCard {
    * the card rather than derived at render: the rule that produced it is
    * `heldUntil`, and the board does not get to have its own version of it.
    */
-  runnableAt: string | null;
+  runnableAt: string | null
   /**
    * Where the run got to: the phase, its elapsed, and all ten steps.
    *
@@ -209,7 +210,7 @@ export interface BoardCard {
    * (#170). Folded from the run's own stream rather than held in `task_view` —
    * see `progress.ts` for why that does not make the list expensive.
    */
-  progress: RunProgress | null;
+  progress: RunProgress | null
 }
 
 /**
@@ -235,9 +236,9 @@ export interface BoardCard {
  * day without anybody being able to see it.
  */
 export interface PassLimitsView {
-  project: string;
+  project: string
   /** `runtime.limits.rounds`. Zero means nothing patches a diff in place. */
-  rounds: number;
+  rounds: number
   /**
    * `runtime.limits.restarts`. Zero means a pass whose rounds are spent asks a
    * person, which is every project today
@@ -249,15 +250,15 @@ export interface PassLimitsView {
    * the first would be the 2026-09-10 drain failure on the one always-visible
    * surface — a sentence that is true of a number it is not made of.
    */
-  restarts: number;
+  restarts: number
   /** `passCeiling`'s sentence, for the chip's title. */
-  summary: string;
+  summary: string
 }
 
 export interface Board {
-  columns: BoardColumn[];
+  columns: BoardColumn[]
   /** One per project whose recipe could be read. */
-  limits: PassLimitsView[];
+  limits: PassLimitsView[]
   /**
    * The priority order the Queued column groups by — `source.kinds`, earlier
    * first, which is the order `selectRunnable` sorts on.
@@ -273,7 +274,7 @@ export interface Board {
    * unordered tail, which is the honest rendering of "nothing said what comes
    * first".
    */
-  queueOrder: string[];
+  queueOrder: string[]
   /**
    * Every project this board can be narrowed to, in the order the bar offers
    * them.
@@ -284,7 +285,7 @@ export interface Board {
    * from. A filter whose options are computed from what it is filtered to can
    * only ever offer the choice already made.
    */
-  projects: string[];
+  projects: string[]
   /**
    * The repositories that are recorded and not yet conducted — a card each,
    * with `Recheck` (#163).
@@ -293,7 +294,7 @@ export interface Board {
    * project has none — it has not been asked GitHub for a queue and must not
    * be, because it has no recipe to be asked under.
    */
-  pending: PendingProject[];
+  pending: PendingProject[]
 }
 
 /**
@@ -305,9 +306,9 @@ export interface Board {
  * whose, and the branch the recipe is expected on.
  */
 export interface PendingProject {
-  project: string;
-  owner: string | null;
-  base: string | null;
+  project: string
+  owner: string | null
+  base: string | null
 }
 
 /**
@@ -318,14 +319,14 @@ export interface PendingProject {
  * on a board whose whole claim is that every card is real.
  */
 export interface QueueProblem {
-  project: string;
-  reason: string;
+  project: string
+  reason: string
 }
 
 export interface BoardColumn {
-  id: ColumnId;
-  label: string;
-  cards: BoardCard[];
+  id: ColumnId
+  label: string
+  cards: BoardCard[]
   /**
    * Only ever on Queued, and only when something went wrong.
    *
@@ -335,7 +336,7 @@ export interface BoardColumn {
    * misconfigured all arrived at the same empty catch here, whose comment
    * assumed the one failure it named.
    */
-  problems?: QueueProblem[];
+  problems?: QueueProblem[]
   /**
    * Only ever on Queued: what GitHub listed and the column is not showing, per
    * project — `12 passed over — excluded-label 9, blocked-by 1` — and, when it
@@ -348,7 +349,7 @@ export interface BoardColumn {
    * dependencies says so here, where the operator is looking, instead of
    * rendering a queue that looks ordered and is not.
    */
-  notes?: QueueProblem[];
+  notes?: QueueProblem[]
 }
 
 /**
@@ -361,7 +362,7 @@ export interface BoardColumn {
  * few answer *did the last thing work*; everything under them is a record, and
  * a record is something you open rather than something you scan.
  */
-export const LANDED_OPEN = 3;
+export const LANDED_OPEN = 3
 
 /**
  * How many Waiting cards draw a rail.
@@ -379,16 +380,16 @@ export const LANDED_OPEN = 3;
  * next, so the cards that fold are the ones being worked through; the rest keep
  * their counters, which is what every card had before `#170`.
  */
-export const WAITING_RAILS = 6;
+export const WAITING_RAILS = 6
 
 export const COLUMNS: { id: ColumnId; label: string }[] = [
-  { id: "queued", label: "Queued" },
-  { id: "running", label: "Running" },
+  { id: 'queued', label: 'Queued' },
+  { id: 'running', label: 'Running' },
   // Its own column rather than a label, because it is where the queue actually
   // stalls: 45 items and growing against zero processed.
-  { id: "waiting", label: "Waiting on you" },
-  { id: "landed", label: "Landed" },
-];
+  { id: 'waiting', label: 'Waiting on you' },
+  { id: 'landed', label: 'Landed' },
+]
 
 /**
  * What an empty column says.
@@ -408,13 +409,11 @@ export const COLUMNS: { id: ColumnId; label: string }[] = [
  * alone.
  */
 export function emptyNote(column: ColumnId, paused: boolean, project?: string): string {
-  if (column === "running" && paused) return "Paused — nothing will start.";
-  if (column === "waiting") {
-    return project === undefined
-      ? "Nothing is waiting on you."
-      : `Nothing in ${project} is waiting on you.`;
+  if (column === 'running' && paused) return 'Paused — nothing will start.'
+  if (column === 'waiting') {
+    return project === undefined ? 'Nothing is waiting on you.' : `Nothing in ${project} is waiting on you.`
   }
-  return project === undefined ? "Nothing here yet." : `Nothing here for ${project}.`;
+  return project === undefined ? 'Nothing here yet.' : `Nothing here for ${project}.`
 }
 
 /**
@@ -428,20 +427,20 @@ export function emptyNote(column: ColumnId, paused: boolean, project?: string): 
  * task in `gates` off every column for the whole of its gate run.
  */
 export const COLUMN_OF: Record<TaskState, ColumnId> = {
-  queued: "queued",
-  running: "running",
+  queued: 'queued',
+  running: 'running',
   // `verifying` is a task state and no longer a lane; it belongs with `running`.
-  verifying: "running",
-  waiting: "waiting",
-  landed: "landed",
+  verifying: 'running',
+  waiting: 'waiting',
+  landed: 'landed',
   // Closed shares Landed's column and not Queued's. Both are over, and Landed
   // is already the archive — a list of one-line rows rather than a lane of
   // cards. What must not happen is the state before this existed: an item
   // nobody would ever claim, drawn where things that are going to be worked
   // are. Whether *over* deserves a column of its own is a later call, and the
   // row says which of the two it is.
-  closed: "landed",
-};
+  closed: 'landed',
+}
 
 /**
  * `runnableAt`, `progress` and `kindColor` are passed in rather than computed:
@@ -459,7 +458,7 @@ export function toCard(
     taskId: t.taskId,
     project: t.project,
     column: COLUMN_OF[t.state],
-    closed: t.state === "closed",
+    closed: t.state === 'closed',
     ref: t.issue,
     kind: t.kind,
     kindColor,
@@ -485,7 +484,7 @@ export function toCard(
     repairCostUsd: t.repairCostUsd,
     runnableAt: runnableAt === null ? null : runnableAt.toISOString(),
     progress,
-  };
+  }
 }
 
 /**
@@ -498,14 +497,14 @@ export function toCard(
  * would take the Queued column's ordering and a running card's timeout with it.
  */
 export type ProjectQueue =
-  | { state: "unreadable"; filter: Extract<ProjectFilter, { ok: false }> }
-  | { state: "unanswered"; filter: Extract<ProjectFilter, { ok: true }>; problem: string }
+  | { state: 'unreadable'; filter: Extract<ProjectFilter, { ok: false }> }
+  | { state: 'unanswered'; filter: Extract<ProjectFilter, { ok: true }>; problem: string }
   | {
-      state: "listed";
-      filter: Extract<ProjectFilter, { ok: true }>;
-      offered: Awaited<ReturnType<typeof runnableNow>>;
-      runnable: Awaited<ReturnType<typeof selectRunnable>>;
-    };
+      state: 'listed'
+      filter: Extract<ProjectFilter, { ok: true }>
+      offered: Awaited<ReturnType<typeof runnableNow>>
+      runnable: Awaited<ReturnType<typeof selectRunnable>>
+    }
 
 /**
  * Everything one project has to be asked, and nothing about any other.
@@ -518,21 +517,21 @@ export type ProjectQueue =
 export async function askProject(state: ProjectState): Promise<ProjectQueue> {
   // The default `currentRecipe`, the conductor's own read — a local file since
   // #180, so a render asks GitHub nothing for it.
-  const filter = await projectFilter(state);
-  if (!filter.ok) return { state: "unreadable", filter };
+  const filter = await projectFilter(state)
+  if (!filter.ok) return { state: 'unreadable', filter }
   try {
-    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) });
+    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) })
     const runnable = await selectRunnable({
       project: filter.project,
       offered: offered.runnable,
       kinds: filter.kinds,
       backoffMs: filter.backoffMs,
-    });
-    return { state: "listed", filter, offered, runnable };
+    })
+    return { state: 'listed', filter, offered, runnable }
   } catch (err) {
     // The recipe resolved and GitHub still would not answer — a rate limit, a
     // revoked installation. Named rather than dropped, for the same reason.
-    return { state: "unanswered", filter, problem: (err as Error).message };
+    return { state: 'unanswered', filter, problem: (err as Error).message }
   }
 }
 
@@ -564,42 +563,42 @@ export async function queuedCards(
   projects: readonly ProjectState[],
   ask: (state: ProjectState) => Promise<ProjectQueue> = askProject,
 ): Promise<{
-  cards: BoardCard[];
-  problems: QueueProblem[];
+  cards: BoardCard[]
+  problems: QueueProblem[]
   /** What each listed project passed over and what it could not check. See `BoardColumn.notes`. */
-  notes: QueueProblem[];
-  limits: PassLimitsView[];
+  notes: QueueProblem[]
+  limits: PassLimitsView[]
   /** `source.backoff` per project, for the held cards `loadBoard` folds from the log. */
-  backoffMs: Map<string, number>;
+  backoffMs: Map<string, number>
   /**
    * The recipe's gates per project, for the running cards `loadBoard` folds.
    * Gathered here for the reason `backoffMs` is: this loop already resolved
    * every recipe, and reading one twice is how a render gets expensive.
    */
-  plans: Map<string, StepPlan>;
+  plans: Map<string, StepPlan>
   /**
    * What each project's repository calls each kind's colour, keyed by project
    * and then by kind. Off the issues `runnableNow` has already read, for the
    * reason above: it is a fact that arrived with an answer this loop needed
    * anyway, so carrying it costs no request.
    */
-  kindColors: Map<string, Record<string, string>>;
+  kindColors: Map<string, Record<string, string>>
   /** The kinds each project prioritises, in order, for the Queued grouping. */
-  kindOrder: string[];
+  kindOrder: string[]
 }> {
-  const cards: BoardCard[] = [];
-  const problems: QueueProblem[] = [];
-  const notes: QueueProblem[] = [];
+  const cards: BoardCard[] = []
+  const problems: QueueProblem[] = []
+  const notes: QueueProblem[] = []
   // Gathered here rather than by a second pass over the projects: this loop
   // already resolves every recipe, and asking GitHub twice for a fact that
   // arrived with the first answer is how a render gets expensive.
-  const limits: PassLimitsView[] = [];
-  const backoffMs = new Map<string, number>();
-  const plans = new Map<string, StepPlan>();
-  const kindColors = new Map<string, Record<string, string>>();
+  const limits: PassLimitsView[] = []
+  const backoffMs = new Map<string, number>()
+  const plans = new Map<string, StepPlan>()
+  const kindColors = new Map<string, Record<string, string>>()
   // First mention wins, so two projects that order their kinds differently give
   // one column one order rather than an order that changes as rows arrive.
-  const kindOrder: string[] = [];
+  const kindOrder: string[] = []
 
   // **All of them at once.** Nothing one project is asked depends on another's
   // answer, and in series the board waited for the sum: two projects meant two
@@ -609,55 +608,55 @@ export async function queuedCards(
   //
   // The fan-out is `laneProgress`'s, two hundred lines down and written by
   // the same hand: this loop simply did not get it.
-  const asked = await Promise.all(projects.map((p) => ask(p)));
+  const asked = await Promise.all(projects.map((p) => ask(p)))
 
   // The fold stays in project order, and the ordering rules stay exactly what
   // they were — `kindOrder`'s first mention, the bar's project order, which
   // problem is listed first. Concurrency is about when the questions are asked,
   // never about what the answers mean.
   for (const answer of asked) {
-    if (answer.state === "unreadable") {
-      problems.push({ project: answer.filter.project, reason: answer.filter.problem });
-      continue;
+    if (answer.state === 'unreadable') {
+      problems.push({ project: answer.filter.project, reason: answer.filter.problem })
+      continue
     }
-    const filter = answer.filter;
+    const filter = answer.filter
     limits.push({
       project: filter.project,
       rounds: filter.limits.rounds,
       restarts: filter.limits.restarts,
       summary: passCeiling(filter.limits),
-    });
-    backoffMs.set(filter.project, filter.backoffMs);
-    plans.set(filter.project, filter.plan);
-    for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind);
-    if (answer.state === "unanswered") {
-      problems.push({ project: filter.project, reason: answer.problem });
-      continue;
+    })
+    backoffMs.set(filter.project, filter.backoffMs)
+    plans.set(filter.project, filter.plan)
+    for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind)
+    if (answer.state === 'unanswered') {
+      problems.push({ project: filter.project, reason: answer.problem })
+      continue
     }
-    const offered = answer.offered;
+    const offered = answer.offered
     // What the repository says each of its kinds looks like. A project whose
     // queue could not be listed contributes none, and its cards render the
     // way every card did before #85 — the failure costs a dot, not a card.
-    kindColors.set(filter.project, offered.kindColors);
+    kindColors.set(filter.project, offered.kindColors)
     // The same two sentences `lingtai status` prints, from the same functions,
     // so the column and the terminal cannot count a held ticket differently.
-    const passed = passedOver(offered.skipped);
-    if (passed !== null) notes.push({ project: filter.project, reason: passed });
+    const passed = passedOver(offered.skipped)
+    if (passed !== null) notes.push({ project: filter.project, reason: passed })
     if (offered.dependenciesUnread !== null) {
-      notes.push({ project: filter.project, reason: offered.dependenciesUnread });
+      notes.push({ project: filter.project, reason: offered.dependenciesUnread })
     }
     for (const r of answer.runnable) {
       cards.push({
         taskId: r.taskId,
         project: filter.project,
-        column: "queued",
+        column: 'queued',
         ref: r.issue,
         kind: r.kind,
         kindColor: offered.kindColors[r.kind] ?? null,
         title: r.title,
         // The column default the deleted cache also relied on. Which tier it
         // will actually run at is decided when it runs, not now.
-        tier: "guarded",
+        tier: 'guarded',
         headSha: null,
         awaitingSha: null,
         passed: 0,
@@ -690,10 +689,10 @@ export async function queuedCards(
         runnableAt: null,
         // Nothing has run, so there is nothing to be part-way through.
         progress: null,
-      });
+      })
     }
   }
-  return { cards, problems, notes, limits, backoffMs, plans, kindColors, kindOrder };
+  return { cards, problems, notes, limits, backoffMs, plans, kindColors, kindOrder }
 }
 
 /**
@@ -728,19 +727,19 @@ async function laneProgress(
   const folded = await Promise.all(
     railCandidates(tasks).map(async ({ task, over }) => {
       try {
-        const events = await eventStore.read(task.runId as string);
-        return [task.taskId, foldProgress(events, plans.get(task.project), over)] as const;
+        const events = await eventStore.read(task.runId as string)
+        return [task.taskId, foldProgress(events, plans.get(task.project), over)] as const
       } catch {
-        return [task.taskId, null] as const;
+        return [task.taskId, null] as const
       }
     }),
-  );
-  return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null));
+  )
+  return new Map(folded.filter((e): e is readonly [string, RunProgress] => e[1] !== null))
 }
 
 /** A card that draws a rail, and whether this run's pass landed. */
 export interface RailCandidate {
-  task: TaskCard;
+  task: TaskCard
   /**
    * The item **landed** — not merely that it is over.
    *
@@ -753,7 +752,7 @@ export interface RailCandidate {
    * later points that correctly did not run, and marking them our bug would
    * draw the hatch on exactly the outcome the rail exists to report truthfully.
    */
-  over: boolean;
+  over: boolean
 }
 
 /**
@@ -772,17 +771,15 @@ export interface RailCandidate {
  * next, so its head is the head of the work.
  */
 export function railCandidates(tasks: readonly TaskCard[]): RailCandidate[] {
-  const lane = (id: ColumnId) => tasks.filter((t) => COLUMN_OF[t.state] === id);
+  const lane = (id: ColumnId) => tasks.filter((t) => COLUMN_OF[t.state] === id)
   const open = [
-    ...lane("running"),
-    ...lane("waiting").slice(0, WAITING_RAILS),
-    ...lane("landed")
+    ...lane('running'),
+    ...lane('waiting').slice(0, WAITING_RAILS),
+    ...lane('landed')
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, LANDED_OPEN),
-  ];
-  return open
-    .filter((t) => t.runId !== null)
-    .map((t) => ({ task: t, over: t.state === "landed" }));
+  ]
+  return open.filter((t) => t.runId !== null).map((t) => ({ task: t, over: t.state === 'landed' }))
 }
 
 /**
@@ -806,36 +803,34 @@ export async function loadBoard(project?: string): Promise<Board> {
     readTasks(project === undefined ? {} : { project }).catch(emptyIfUnbuilt),
     loadAllProjects().catch(() => []),
     onBoardProjects(),
-  ]);
-  const { registered, pending } = splitRegister(all);
-  const names = registered.map((p) => p.project).filter((p): p is string => p !== null);
+  ])
+  const { registered, pending } = splitRegister(all)
+  const names = registered.map((p) => p.project).filter((p): p is string => p !== null)
 
   // Before the fold, because the fold needs what it learned: a card the backoff
   // is holding is a card the log wrote, and how long it is held for is in the
   // recipe this just read (0028).
-  const queued = await queuedCards(
-    registered.filter((p) => project === undefined || p.project === project),
-  );
+  const queued = await queuedCards(registered.filter((p) => project === undefined || p.project === project))
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
-  const progress = await laneProgress(tasks, queued.plans);
-  const now = Date.now();
+  const progress = await laneProgress(tasks, queued.plans)
+  const now = Date.now()
   const fromLog = tasks.map((t) =>
     toCard(
       t,
-      t.state === "queued" ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
+      t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
       progress.get(t.taskId) ?? null,
       // By kind and by project, because a label's colour is the repository's:
       // two projects can both have a `bug` and colour it differently, and the
       // cards say which repository they are from for the same reason.
       queued.kindColors.get(t.project)?.[t.kind] ?? null,
     ),
-  );
+  )
   // A task released back to the queue has a row *and* is offered by GitHub, so
   // it would otherwise appear twice. The row wins: it carries the attempts.
-  const known = new Set(fromLog.map((c) => c.taskId));
-  const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))];
+  const known = new Set(fromLog.map((c) => c.taskId))
+  const cards = [...fromLog, ...queued.cards.filter((c) => !known.has(c.taskId))]
 
   return {
     columns: toColumns(cards, queued.problems, queued.notes),
@@ -849,7 +844,7 @@ export async function loadBoard(project?: string): Promise<Board> {
     // saying which repository they are looking at, and another one arriving is
     // as much a distraction here as a card would be.
     pending: pending.filter((p) => project === undefined || p.project === project),
-  };
+  }
 }
 
 /**
@@ -868,15 +863,13 @@ export async function loadBoard(project?: string): Promise<Board> {
  * asked*, and a test can hold it without a database or a GitHub.
  */
 export function splitRegister(projects: readonly ProjectState[]): {
-  registered: ProjectState[];
-  pending: PendingProject[];
+  registered: ProjectState[]
+  pending: PendingProject[]
 } {
   return {
     registered: projects.filter(isRegistered),
-    pending: projects
-      .filter(isPending)
-      .map((p) => ({ project: p.project as string, owner: p.owner, base: p.base })),
-  };
+    pending: projects.filter(isPending).map((p) => ({ project: p.project as string, owner: p.owner, base: p.base })),
+  }
 }
 
 /**
@@ -888,8 +881,8 @@ export function splitRegister(projects: readonly ProjectState[]): {
  * rethrow everything that is not that.
  */
 function emptyIfUnbuilt(err: unknown): TaskCard[] {
-  if (!/does not exist/i.test((err as Error).message)) throw err;
-  return [];
+  if (!/does not exist/i.test((err as Error).message)) throw err
+  return []
 }
 
 /**
@@ -900,10 +893,10 @@ function emptyIfUnbuilt(err: unknown): TaskCard[] {
  */
 async function onBoardProjects(): Promise<string[]> {
   try {
-    return await readTaskProjects();
+    return await readTaskProjects()
   } catch (err) {
-    if (!/does not exist/i.test((err as Error).message)) throw err;
-    return [];
+    if (!/does not exist/i.test((err as Error).message)) throw err
+    return []
   }
 }
 
@@ -922,13 +915,10 @@ async function onBoardProjects(): Promise<string[]> {
  * day keep their places; an unregistered project falls to the tail, where its
  * work is being wound down anyway.
  */
-export function filterOptions(
-  registered: readonly string[],
-  onBoard: readonly string[],
-): string[] {
-  const all = [...registered];
-  for (const project of onBoard) if (!all.includes(project)) all.push(project);
-  return all;
+export function filterOptions(registered: readonly string[], onBoard: readonly string[]): string[] {
+  const all = [...registered]
+  for (const project of onBoard) if (!all.includes(project)) all.push(project)
+  return all
 }
 
 /**
@@ -949,7 +939,7 @@ export function toColumns(
   notes: QueueProblem[] = [],
 ): BoardColumn[] {
   return COLUMNS.map((c) => {
-    const mine = cards.filter((card) => card.column === c.id);
+    const mine = cards.filter((card) => card.column === c.id)
     return {
       ...c,
       // Landed only. `readTasks` orders the other lanes deliberately — waiting
@@ -958,11 +948,11 @@ export function toColumns(
       // *what just happened*, and it is also the one that folds away past the
       // most recent few (#81): "the most recent" is only a sentence the order
       // can make true.
-      cards: c.id === "landed" ? mine.sort(newestFirst) : mine,
-      ...(c.id === "queued" && problems.length > 0 ? { problems } : {}),
-      ...(c.id === "queued" && notes.length > 0 ? { notes } : {}),
-    };
-  });
+      cards: c.id === 'landed' ? mine.sort(newestFirst) : mine,
+      ...(c.id === 'queued' && problems.length > 0 ? { problems } : {}),
+      ...(c.id === 'queued' && notes.length > 0 ? { notes } : {}),
+    }
+  })
 }
 
 /**
@@ -974,11 +964,11 @@ export function toColumns(
  * place so two readers of the same row cannot be told different things.
  */
 export interface QueuedStanding {
-  state: "paused" | "backing-off";
+  state: 'paused' | 'backing-off'
   /** What the card says. The whole of what is rendered. */
-  text: string;
+  text: string
   /** The hover, carrying the instant the phrase rounds off. */
-  title: string;
+  title: string
 }
 
 /**
@@ -1007,28 +997,28 @@ export interface QueuedStanding {
  * it is a fact reaching the column it was missing from.
  */
 export function queuedStanding(
-  card: Pick<BoardCard, "column" | "runnableAt">,
+  card: Pick<BoardCard, 'column' | 'runnableAt'>,
   paused: boolean,
   now: number = Date.now(),
 ): QueuedStanding | null {
   // Only Queued. Every other lane is describing something that is running or
   // over, and neither the backoff nor the pause says anything about those.
-  if (card.column !== "queued") return null;
+  if (card.column !== 'queued') return null
   if (paused) {
     return {
-      state: "paused",
-      text: "paused — nothing will start",
-      title: "the conductor has been told to take no new work; this card keeps its place",
-    };
+      state: 'paused',
+      text: 'paused — nothing will start',
+      title: 'the conductor has been told to take no new work; this card keeps its place',
+    }
   }
-  if (card.runnableAt === null) return null;
+  if (card.runnableAt === null) return null
   return {
-    state: "backing-off",
+    state: 'backing-off',
     // `lingtai status`'s own phrase, from the package that owns the rule, so
     // the two places this is asked cannot come to word it differently again.
     text: backingOff(new Date(card.runnableAt), now),
     title: `backing off until ${card.runnableAt}`,
-  };
+  }
 }
 
 /**
@@ -1036,8 +1026,8 @@ export function queuedStanding(
  * claim comes out of.
  */
 export interface QueueGroup {
-  kind: string;
-  cards: BoardCard[];
+  kind: string
+  cards: BoardCard[]
   /**
    * Whether the conductor's next claim comes from here.
    *
@@ -1051,7 +1041,7 @@ export interface QueueGroup {
    * It says nothing about *when*. A paused conductor takes nothing at all, and
    * the bar says so (#77).
    */
-  next: boolean;
+  next: boolean
 }
 
 /**
@@ -1072,29 +1062,26 @@ export interface QueueGroup {
  * Within a group, by issue number — `selectRunnable`'s own tiebreak, so the
  * card at the top of a group is the one that would actually be claimed first.
  */
-export function groupQueue(
-  cards: readonly BoardCard[],
-  order: readonly string[],
-): QueueGroup[] {
-  const byKind = new Map<string, BoardCard[]>();
+export function groupQueue(cards: readonly BoardCard[], order: readonly string[]): QueueGroup[] {
+  const byKind = new Map<string, BoardCard[]>()
   for (const card of cards) {
-    const group = byKind.get(card.kind);
-    if (group) group.push(card);
-    else byKind.set(card.kind, [card]);
+    const group = byKind.get(card.kind)
+    if (group) group.push(card)
+    else byKind.set(card.kind, [card])
   }
 
-  const named = order.filter((kind) => byKind.has(kind));
-  const rest = [...byKind.keys()].filter((kind) => !order.includes(kind));
+  const named = order.filter((kind) => byKind.has(kind))
+  const rest = [...byKind.keys()].filter((kind) => !order.includes(kind))
 
   const groups = [...named, ...rest].map((kind) => ({
     kind,
     cards: [...(byKind.get(kind) ?? [])].sort(byIssueNumber),
     next: false,
-  }));
+  }))
 
-  const takenNext = groups.find((g) => g.cards.some((c) => c.runnableAt === null));
-  if (takenNext) takenNext.next = true;
-  return groups;
+  const takenNext = groups.find((g) => g.cards.some((c) => c.runnableAt === null))
+  if (takenNext) takenNext.next = true
+  return groups
 }
 
 /**
@@ -1103,8 +1090,8 @@ export function groupQueue(
  * only readable as a priority if the two agree.
  */
 function byIssueNumber(a: BoardCard, b: BoardCard): number {
-  const n = (c: BoardCard) => (Number.isFinite(Number(c.ref)) ? Number(c.ref) : Number.MAX_SAFE_INTEGER);
-  return n(a) - n(b);
+  const n = (c: BoardCard) => (Number.isFinite(Number(c.ref)) ? Number(c.ref) : Number.MAX_SAFE_INTEGER)
+  return n(a) - n(b)
 }
 
 /**
@@ -1116,8 +1103,8 @@ function byIssueNumber(a: BoardCard, b: BoardCard): number {
  * the case arises.
  */
 function newestFirst(a: BoardCard, b: BoardCard): number {
-  const when = (c: BoardCard) => (c.updatedAt === null ? 0 : Date.parse(c.updatedAt));
-  return when(b) - when(a);
+  const when = (c: BoardCard) => (c.updatedAt === null ? 0 : Date.parse(c.updatedAt))
+  return when(b) - when(a)
 }
 
 /**
@@ -1137,11 +1124,11 @@ function newestFirst(a: BoardCard, b: BoardCard): number {
  */
 export interface Spend {
   /** What the work itself cost, over every card on the board. */
-  work: number;
+  work: number
   /** What diagnosing it cost, over the same cards. */
-  repair: number;
+  repair: number
   /** How many cards that is, so the total can say what it totals. */
-  cards: number;
+  cards: number
 }
 
 /**
@@ -1164,25 +1151,25 @@ export interface Spend {
  * whole claim is that the money adds up.
  */
 export function ledger(columns: readonly BoardColumn[]): {
-  rows: (Spend & { project: string })[];
-  total: Spend;
+  rows: (Spend & { project: string })[]
+  total: Spend
 } {
-  const raw = new Map<string, Spend & { project: string }>();
+  const raw = new Map<string, Spend & { project: string }>()
   for (const card of columns.flatMap((c) => c.cards)) {
-    const row = raw.get(card.project) ?? { project: card.project, work: 0, repair: 0, cards: 0 };
-    row.work += card.costUsd ?? 0;
-    row.repair += card.repairCostUsd ?? 0;
-    row.cards += 1;
-    raw.set(card.project, row);
+    const row = raw.get(card.project) ?? { project: card.project, work: 0, repair: 0, cards: 0 }
+    row.work += card.costUsd ?? 0
+    row.repair += card.repairCostUsd ?? 0
+    row.cards += 1
+    raw.set(card.project, row)
   }
-  const cents = (usd: number) => Math.round(usd * 100);
-  const rows = [...raw.values()].map((r) => ({ ...r, work: cents(r.work), repair: cents(r.repair) }));
+  const cents = (usd: number) => Math.round(usd * 100)
+  const rows = [...raw.values()].map((r) => ({ ...r, work: cents(r.work), repair: cents(r.repair) }))
   const total = rows.reduce(
     (t, r) => ({ work: t.work + r.work, repair: t.repair + r.repair, cards: t.cards + r.cards }),
     { work: 0, repair: 0, cards: 0 },
-  );
-  const dollars = <T extends Spend>(r: T): T => ({ ...r, work: r.work / 100, repair: r.repair / 100 });
-  return { rows: rows.map(dollars), total: dollars(total) };
+  )
+  const dollars = <T extends Spend>(r: T): T => ({ ...r, work: r.work / 100, repair: r.repair / 100 })
+  return { rows: rows.map(dollars), total: dollars(total) }
 }
 
 /**
@@ -1196,6 +1183,6 @@ export function ledger(columns: readonly BoardColumn[]): {
  * it* are different questions and the second one had no link at all (#81).
  */
 export function issueUrl(owner: string | null, project: string, ref: string): string | null {
-  if (owner === null) return null;
-  return `https://github.com/${owner}/${project}/issues/${encodeURIComponent(ref)}`;
+  if (owner === null) return null
+  return `https://github.com/${owner}/${project}/issues/${encodeURIComponent(ref)}`
 }

@@ -41,9 +41,11 @@
  * `conductor/unit/step-matrix.test.ts` and `domain/unit/retired-names.test.ts`
  * already do, and this follows them.
  */
-import { readdir, readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
-import { Recipe } from "../src/recipe.ts";
+import { readdir, readFile } from 'node:fs/promises'
+
+import { describe, expect, it } from 'vitest'
+
+import { Recipe } from '../src/recipe.ts'
 import {
   assigneeOf,
   backoffOf,
@@ -55,36 +57,36 @@ import {
   kindsOf,
   limitsFor,
   submodulesOf,
-} from "../src/settings.ts";
+} from '../src/settings.ts'
 
 const WRITTEN = {
   version: 2,
-  repo: { base: "develop", submodules: true },
-  source: { kinds: ["bug", "tech-debt"], exclude: ["agent:hold"], backoff: "45m" },
-  env: { plantAt: ".env.local" },
+  repo: { base: 'develop', submodules: true },
+  source: { kinds: ['bug', 'tech-debt'], exclude: ['agent:hold'], backoff: '45m' },
+  env: { plantAt: '.env.local' },
   runtime: {},
-};
-const RECIPE: Recipe = Recipe.parse(WRITTEN);
+}
+const RECIPE: Recipe = Recipe.parse(WRITTEN)
 
-describe("the accessors", () => {
-  it("read what the recipe holds today", () => {
-    expect(baseOf(RECIPE)).toBe("develop");
-    expect(kindsOf(RECIPE)).toEqual(["bug", "tech-debt"]);
+describe('the accessors', () => {
+  it('read what the recipe holds today', () => {
+    expect(baseOf(RECIPE)).toBe('develop')
+    expect(kindsOf(RECIPE)).toEqual(['bug', 'tech-debt'])
     // By identity, and that is the cheap proof of *a recipe nobody edited
     // resolves to the same values*: nothing at `implement` narrows, so the
     // ceiling object itself comes back rather than a copy of its fields.
-    expect(limitsFor(RECIPE, "implement")).toBe(RECIPE.runtime.limits);
-  });
+    expect(limitsFor(RECIPE, 'implement')).toBe(RECIPE.runtime.limits)
+  })
 
   /**
    * The three the guard below used to have no accessor for. One per setting
    * 0061 §4 moves, so that the move stays a change to `settings.ts`.
    */
-  it("read the other three the same ADR moves", () => {
-    expect(submodulesOf(RECIPE)).toBe(true);
-    expect(excludeOf(RECIPE)).toEqual(["agent:hold"]);
-    expect(backoffOf(RECIPE)).toBe("45m");
-  });
+  it('read the other three the same ADR moves', () => {
+    expect(submodulesOf(RECIPE)).toBe(true)
+    expect(excludeOf(RECIPE)).toEqual(['agent:hold'])
+    expect(backoffOf(RECIPE)).toBe('45m')
+  })
 
   /**
    * **The seventh, and the one whose v1 name is not `source:`'s** (`#244`,
@@ -94,15 +96,15 @@ describe("the accessors", () => {
    * for. Absent is returned absent: *nothing was written* and *both* are the
    * same behaviour and not the same reading.
    */
-  it("reads the `assignee` 0063 §3 adds to that list", () => {
-    expect(assigneeOf(RECIPE)).toBeUndefined();
+  it('reads the `assignee` 0063 §3 adds to that list', () => {
+    expect(assigneeOf(RECIPE)).toBeUndefined()
 
     const mine = Recipe.parse({
       ...WRITTEN,
-      runtime: { assignee: { login: "steven-zhc", take: "mine" } },
-    });
-    expect(assigneeOf(mine)).toEqual({ login: "steven-zhc", take: "mine" });
-  });
+      runtime: { assignee: { login: 'steven-zhc', take: 'mine' } },
+    })
+    expect(assigneeOf(mine)).toEqual({ login: 'steven-zhc', take: 'mine' })
+  })
 
   /**
    * **The two that have actually moved, read at both of their spellings**
@@ -116,20 +118,20 @@ describe("the accessors", () => {
    * the board, the wizard — asks the accessor, so there is nowhere for the two
    * spellings to disagree.
    */
-  it("read the base and the submodules off `admit` where the recipe declares them", () => {
+  it('read the base and the submodules off `admit` where the recipe declares them', () => {
     const declared = Recipe.parse({
       ...WRITTEN,
-      steps: { admit: [{ name: "cut the branch", worktree: { base: "1.0", submodules: false } }] },
-    });
+      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: false } }] },
+    })
 
-    expect(baseOf(declared)).toBe("1.0");
+    expect(baseOf(declared)).toBe('1.0')
     // `repo.submodules` is `true` in `WRITTEN`, and the declaration is what runs:
     // a step that says is not overridden by the block it replaces.
-    expect(submodulesOf(declared)).toBe(false);
+    expect(submodulesOf(declared)).toBe(false)
     // And the `repo:` block is still there, untouched — one setting, two
     // spellings, and the accessor is the only thing that knows.
-    expect(declared.repo).toEqual({ base: "develop", submodules: true });
-  });
+    expect(declared.repo).toEqual({ base: 'develop', submodules: true })
+  })
 
   /**
    * **A `worktree:` that does not name `submodules` never reaches an accessor**
@@ -141,14 +143,14 @@ describe("the accessors", () => {
    * every test that imports a submodule failing, at `build`, reading as the agent
    * breaking the tests.
    */
-  it("refuses a `worktree:` that leaves `submodules` out, rather than defaulting it", () => {
+  it('refuses a `worktree:` that leaves `submodules` out, rather than defaulting it', () => {
     const silent = Recipe.safeParse({
       ...WRITTEN,
-      steps: { admit: [{ name: "cut the branch", worktree: { base: "1.0" } }] },
-    });
-    expect(silent.success).toBe(false);
-    expect(JSON.stringify(silent.error?.issues)).toContain("submodules");
-  });
+      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0' } }] },
+    })
+    expect(silent.success).toBe(false)
+    expect(JSON.stringify(silent.error?.issues)).toContain('submodules')
+  })
 
   /**
    * **And the three readings that print the key name get the one the file uses**
@@ -160,36 +162,36 @@ describe("the accessors", () => {
    * conductor does not read, which is the reader-drift this file's guard is about
    * arriving through a sentence instead.
    */
-  it("names the key the recipe actually wrote the base at", () => {
-    expect(baseWrittenAt(RECIPE)).toBe("repo.base");
+  it('names the key the recipe actually wrote the base at', () => {
+    expect(baseWrittenAt(RECIPE)).toBe('repo.base')
     expect(
       baseWrittenAt(
         Recipe.parse({
           ...WRITTEN,
           steps: {
-            admit: [{ name: "cut the branch", worktree: { base: "1.0", submodules: false } }],
+            admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: false } }],
           },
         }),
       ),
-    ).toContain("worktree.base");
-  });
+    ).toContain('worktree.base')
+  })
 
   /** One cut per step, so *the first* and *the only* are the same entry. */
-  it("refuses a second `worktree:` at `admit` by name", () => {
+  it('refuses a second `worktree:` at `admit` by name', () => {
     const twice = Recipe.safeParse({
       ...WRITTEN,
       steps: {
         admit: [
-          { name: "cut the branch", worktree: { base: "main", submodules: false } },
-          { name: "cut from release", worktree: { base: "release", submodules: false } },
+          { name: 'cut the branch', worktree: { base: 'main', submodules: false } },
+          { name: 'cut from release', worktree: { base: 'release', submodules: false } },
         ],
       },
-    });
-    expect(twice.success).toBe(false);
-    const said = JSON.stringify(twice.error?.issues);
-    expect(said).toContain("cut from release");
-    expect(said).toContain("already cuts a worktree");
-  });
+    })
+    expect(twice.success).toBe(false)
+    const said = JSON.stringify(twice.error?.issues)
+    expect(said).toContain('cut from release')
+    expect(said).toContain('already cuts a worktree')
+  })
 
   /**
    * **The lane is the last action at `merge`, and the refusal says why rather than
@@ -207,29 +209,34 @@ describe("the accessors", () => {
    * running over the first one's merge.
    */
   it.each([
-    { what: "a check after the lane", after: { name: "smoke", run: "pnpm smoke" } },
-    { what: "a second lane", after: { name: "land it again", merge: { strategy: "merge-commit" } } },
-  ])("refuses $what at `merge` by name", ({ after }) => {
+    { what: 'a check after the lane', after: { name: 'smoke', run: 'pnpm smoke' } },
+    { what: 'a second lane', after: { name: 'land it again', merge: { strategy: 'merge-commit' } } },
+  ])('refuses $what at `merge` by name', ({ after }) => {
     const late = Recipe.safeParse({
       ...WRITTEN,
-      steps: { merge: [{ name: "land the branch", merge: { strategy: "merge-commit" } }, after] },
-    });
-    expect(late.success).toBe(false);
-    const said = JSON.stringify(late.error?.issues);
-    expect(said).toContain(after.name);
-    expect(said).toContain("lands the branch at entry 0");
-    expect(said).toContain("the lane is the last action a step carries");
-    expect(said).toContain("a change already on the base branch");
+      steps: { merge: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }, after] },
+    })
+    expect(late.success).toBe(false)
+    const said = JSON.stringify(late.error?.issues)
+    expect(said).toContain(after.name)
+    expect(said).toContain('lands the branch at entry 0')
+    expect(said).toContain('the lane is the last action a step carries')
+    expect(said).toContain('a change already on the base branch')
 
     // And the same two entries the other way round resolve: a check before the
     // lane is where a reader would write it, and is what the rule asks for.
     expect(
       Recipe.safeParse({
         ...WRITTEN,
-        steps: { merge: [{ name: "smoke", run: "pnpm smoke" }, { name: "land the branch", merge: { strategy: "merge-commit" } }] },
+        steps: {
+          merge: [
+            { name: 'smoke', run: 'pnpm smoke' },
+            { name: 'land the branch', merge: { strategy: 'merge-commit' } },
+          ],
+        },
       }).success,
-    ).toBe(true);
-  });
+    ).toBe(true)
+  })
 
   /**
    * **A written `merge:` with no lane is refused, and the empty one is not**
@@ -255,27 +262,27 @@ describe("the accessors", () => {
    * would refuse every recipe here — and a refusal that offered `merge: []` as
    * the way to land nothing would send a person to a list that merges.
    */
-  it("refuses a `merge:` that checks and never lands, and keeps `merge: []`", () => {
+  it('refuses a `merge:` that checks and never lands, and keeps `merge: []`', () => {
     const never = Recipe.safeParse({
       ...WRITTEN,
-      steps: { merge: [{ name: "smoke", run: "pnpm smoke" }] },
-    });
-    expect(never.success).toBe(false);
-    const said = JSON.stringify(never.error?.issues);
-    expect(said).toContain("none of them is the lane");
-    expect(said).toContain("pass having landed nothing");
-    expect(said).toContain("buys a second agent for the same diff");
+      steps: { merge: [{ name: 'smoke', run: 'pnpm smoke' }] },
+    })
+    expect(never.success).toBe(false)
+    const said = JSON.stringify(never.error?.issues)
+    expect(said).toContain('none of them is the lane')
+    expect(said).toContain('pass having landed nothing')
+    expect(said).toContain('buys a second agent for the same diff')
     // Before the money: the refusal is the recipe's, not a worktree's.
-    expect(said).toContain("before any money");
+    expect(said).toContain('before any money')
     // And it does not send them to `merge: []`, which takes the default lane.
-    expect(said).toContain("the default lane runs and the branch merges");
-    expect(said).toContain("declare a `human:` action at `proposed:`");
+    expect(said).toContain('the default lane runs and the branch merges')
+    expect(said).toContain('declare a `human:` action at `proposed:`')
 
     // The empty list is a different statement and still resolves.
-    expect(Recipe.safeParse({ ...WRITTEN, steps: { merge: [] } }).success).toBe(true);
+    expect(Recipe.safeParse({ ...WRITTEN, steps: { merge: [] } }).success).toBe(true)
     // And so does a step that says nothing at all.
-    expect(Recipe.safeParse({ ...WRITTEN, steps: {} }).success).toBe(true);
-  });
+    expect(Recipe.safeParse({ ...WRITTEN, steps: {} }).success).toBe(true)
+  })
 
   /**
    * **The test this replaces was called *answer the same for every step, because
@@ -298,14 +305,14 @@ describe("the accessors", () => {
     const narrowed = Recipe.parse({
       ...WRITTEN,
       steps: {
-        implement: [{ name: "write it", agent: "claude-code", prompt: "go", limits: { turns: 4 } }],
+        implement: [{ name: 'write it', agent: 'claude-code', prompt: 'go', limits: { turns: 4 } }],
       },
-    });
-    expect(limitsFor(narrowed, "implement").turns).toBe(4);
-    expect(limitsFor(narrowed, "implement").wall).toBe(ceilingOf(narrowed).wall);
-    expect(limitsFor(narrowed, "implement").rounds).toBe(ceilingOf(narrowed).rounds);
-    expect(limitsFor(narrowed, "build")).toBe(ceilingOf(narrowed));
-  });
+    })
+    expect(limitsFor(narrowed, 'implement').turns).toBe(4)
+    expect(limitsFor(narrowed, 'implement').wall).toBe(ceilingOf(narrowed).wall)
+    expect(limitsFor(narrowed, 'implement').rounds).toBe(ceilingOf(narrowed).rounds)
+    expect(limitsFor(narrowed, 'build')).toBe(ceilingOf(narrowed))
+  })
 
   /**
    * **A step's upper bound and never one dispatch's own.**
@@ -316,18 +323,18 @@ describe("the accessors", () => {
    * would under-report what a pass can cost, which is the one direction this
    * number must never be wrong in.
    */
-  it("answer the maximum where a step holds two dispatches", () => {
+  it('answer the maximum where a step holds two dispatches', () => {
     const both = Recipe.parse({
       ...WRITTEN,
       steps: {
         review: [
-          { name: "cheap", agent: "claude-code", prompt: "a", limits: { turns: 4 } },
-          { name: "whatever the ceiling allows", agent: "claude-code", prompt: "b" },
+          { name: 'cheap', agent: 'claude-code', prompt: 'a', limits: { turns: 4 } },
+          { name: 'whatever the ceiling allows', agent: 'claude-code', prompt: 'b' },
         ],
       },
-    });
-    expect(limitsFor(both, "review")).toBe(ceilingOf(both));
-  });
+    })
+    expect(limitsFor(both, 'review')).toBe(ceilingOf(both))
+  })
 
   /**
    * **`ceilingOf` is `runtime.limits` and `limitsFor` is not, and `pnpm
@@ -336,16 +343,16 @@ describe("the accessors", () => {
    * assertion that stands in for the compiler (`#314`).
    */
   it("keep the ceiling and a step's bound as two questions", () => {
-    expect(ceilingOf(RECIPE)).toBe(RECIPE.runtime.limits);
+    expect(ceilingOf(RECIPE)).toBe(RECIPE.runtime.limits)
     const narrowed = Recipe.parse({
       ...WRITTEN,
       steps: {
-        implement: [{ name: "write it", agent: "claude-code", prompt: "go", limits: { turns: 4 } }],
+        implement: [{ name: 'write it', agent: 'claude-code', prompt: 'go', limits: { turns: 4 } }],
       },
-    });
-    expect(ceilingOf(narrowed).turns).toBe(RECIPE.runtime.limits.turns);
-    expect(limitsFor(narrowed, "implement").turns).not.toBe(ceilingOf(narrowed).turns);
-  });
+    })
+    expect(ceilingOf(narrowed).turns).toBe(RECIPE.runtime.limits.turns)
+    expect(limitsFor(narrowed, 'implement').turns).not.toBe(ceilingOf(narrowed).turns)
+  })
 
   /**
    * What `passCeiling`'s sentence names, and **only steps that dispatch**.
@@ -355,38 +362,36 @@ describe("the accessors", () => {
    * that alone would print `admit 1h/150 turns` beside a narrowed `implement`,
    * which is a bound on a step that buys no agent at all.
    */
-  it("name the dispatching steps whose bound is not the one already printed", () => {
+  it('name the dispatching steps whose bound is not the one already printed', () => {
     const mixed = Recipe.parse({
       ...WRITTEN,
       steps: {
-        implement: [{ name: "write it", agent: "claude-code", prompt: "go" }],
-        review: [{ name: "cold", agent: "claude-code", prompt: "read", limits: { turns: 4 } }],
+        implement: [{ name: 'write it', agent: 'claude-code', prompt: 'go' }],
+        review: [{ name: 'cold', agent: 'claude-code', prompt: 'read', limits: { turns: 4 } }],
       },
-    });
-    expect(boundsBesides(mixed, "implement")).toEqual([
-      { step: "review", turns: 4, wall: ceilingOf(mixed).wall },
-    ]);
+    })
+    expect(boundsBesides(mixed, 'implement')).toEqual([{ step: 'review', turns: 4, wall: ceilingOf(mixed).wall }])
     // A recipe that narrows nothing names nothing, which is what keeps today's
     // sentence character for character (0070 §8).
-    expect(boundsBesides(RECIPE, "implement")).toEqual([]);
-  });
+    expect(boundsBesides(RECIPE, 'implement')).toEqual([])
+  })
 
-  it("do not invent a default — a resolved recipe has every value", () => {
-    expect(limitsFor(RECIPE, "implement").turns).toBeGreaterThan(0);
-    expect(kindsOf(RECIPE).length).toBeGreaterThan(0);
-  });
-});
+  it('do not invent a default — a resolved recipe has every value', () => {
+    expect(limitsFor(RECIPE, 'implement').turns).toBeGreaterThan(0)
+    expect(kindsOf(RECIPE).length).toBeGreaterThan(0)
+  })
+})
 
 /** Every `src/` in the workspace, as paths. */
 async function sources(dir: URL): Promise<URL[]> {
-  const out: URL[] = [];
+  const out: URL[] = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
-    const at = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, dir);
-    if (entry.isDirectory()) out.push(...(await sources(at)));
-    else if (/\.tsx?$/.test(entry.name)) out.push(at);
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
+    const at = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir)
+    if (entry.isDirectory()) out.push(...(await sources(at)))
+    else if (/\.tsx?$/.test(entry.name)) out.push(at)
   }
-  return out;
+  return out
 }
 
 /**
@@ -411,18 +416,17 @@ async function sources(dir: URL): Promise<URL[]> {
  * or a space — which is every mention of them in prose and in a refusal — do
  * not.
  */
-const MOVING =
-  /\w\.(runtime\.(limits|assignee)|repo\.(base|submodules)|source\.(kinds|exclude|backoff))\b/;
+const MOVING = /\w\.(runtime\.(limits|assignee)|repo\.(base|submodules)|source\.(kinds|exclude|backoff))\b/
 
-describe("nothing reaches past them", () => {
-  it("has no reader of a moving setting outside settings.ts", async () => {
-    const root = new URL("../../../", import.meta.url);
-    const roots = [new URL("packages/", root), new URL("apps/", root)];
-    const reaching: string[] = [];
+describe('nothing reaches past them', () => {
+  it('has no reader of a moving setting outside settings.ts', async () => {
+    const root = new URL('../../../', import.meta.url)
+    const roots = [new URL('packages/', root), new URL('apps/', root)]
+    const reaching: string[] = []
 
     for (const at of roots) {
       for (const file of await sources(at)) {
-        const path = file.pathname.slice(root.pathname.length);
+        const path = file.pathname.slice(root.pathname.length)
         // `settings.ts` is the one place that may, and a `src/` path is the
         // only thing this is about: a test may build a recipe by hand.
         //
@@ -434,26 +438,22 @@ describe("nothing reaches past them", () => {
         // narrowing, so asking it here would be asking the answer about itself.
         // When the setting moves onto `implement`, this file moves with it in
         // the same diff, which is what the guard is for.
-        if (
-          !path.includes("/src/") ||
-          path.endsWith("recipe/src/settings.ts") ||
-          path.endsWith("recipe/src/recipe.ts")
-        )
-          continue;
-        const text = await readFile(file, "utf8");
-        for (const line of text.split("\n")) {
+        if (!path.includes('/src/') || path.endsWith('recipe/src/settings.ts') || path.endsWith('recipe/src/recipe.ts'))
+          continue
+        const text = await readFile(file, 'utf8')
+        for (const line of text.split('\n')) {
           // A doc comment naming the old shape is prose, not a reader.
-          if (line.trimStart().startsWith("*") || line.trimStart().startsWith("//")) continue;
-          if (MOVING.test(line)) reaching.push(`${path}: ${line.trim()}`);
+          if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) continue
+          if (MOVING.test(line)) reaching.push(`${path}: ${line.trim()}`)
         }
       }
     }
 
     expect(
       reaching,
-      "use the accessors in recipe/src/settings.ts — 0061 §4 and 0063 §3 move all seven of these onto their " +
-        "steps, " +
-        "and a reader that reaches past the accessor is a file that ticket has to edit",
-    ).toEqual([]);
-  });
-});
+      'use the accessors in recipe/src/settings.ts — 0061 §4 and 0063 §3 move all seven of these onto their ' +
+        'steps, ' +
+        'and a reader that reaches past the accessor is a file that ticket has to edit',
+    ).toEqual([])
+  })
+})

@@ -6,7 +6,7 @@
  * move — the same sentence `lingtai status` and `lingtai add` print, called
  * rather than rewritten.
  */
-import { formatDuration } from "@lingtai/recipe/duration";
+import { formatDuration } from '@lingtai/recipe/duration'
 
 /**
  * What one pass may spend, as one sentence, out of the numbers that decide it
@@ -56,35 +56,35 @@ import { formatDuration } from "@lingtai/recipe/duration";
  * cold reviewer's own `wall` already is not (see `boundsBesides`).
  */
 export function passCeiling(limits: {
-  rounds: number;
-  restarts: number;
-  turns: number;
-  wall: string;
-  wallMs: number;
-  usd?: number;
+  rounds: number
+  restarts: number
+  turns: number
+  wall: string
+  wallMs: number
+  usd?: number
   /** The dispatching steps whose own bound is not the figure named above. */
-  steps?: readonly { step: string; turns: number; wall: string }[];
+  steps?: readonly { step: string; turns: number; wall: string }[]
 }): string {
   const elsewhere =
     limits.steps === undefined || limits.steps.length === 0
-      ? ""
-      : ` (${limits.steps.map((s) => `${s.step} ${s.wall}/${s.turns} turns`).join(", ")})`;
-  const at = elsewhere === "" ? "" : " at implement";
+      ? ''
+      : ` (${limits.steps.map((s) => `${s.step} ${s.wall}/${s.turns} turns`).join(', ')})`
+  const at = elsewhere === '' ? '' : ' at implement'
   // Byte-identical to the pre-#370 text when `usd` is absent (0070 §8's rule,
   // carried to the new field): the join between `wall` and `turns` only
   // changes from "and" to a comma when there is a third figure to join in.
-  const eachUsd = limits.usd === undefined ? "" : ` and $${limits.usd}`;
+  const eachUsd = limits.usd === undefined ? '' : ` and $${limits.usd}`
   const wallAndTurns =
     limits.usd === undefined
       ? `${limits.wall} and ${limits.turns} turns`
-      : `${limits.wall}, ${limits.turns} turns and $${limits.usd}`;
+      : `${limits.wall}, ${limits.turns} turns and $${limits.usd}`
   const pass =
     limits.rounds === 0
       ? `one agent run — ${limits.wall}, ${limits.turns} turns${eachUsd}${at}${elsewhere}`
       : `up to ${limits.rounds + 1} agent runs — the work, then ${limits.rounds} round(s) ` +
         `back to the agent carrying what refused it. ${wallAndTurns} each${at}${elsewhere}, ` +
         `so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}` +
-        (limits.usd === undefined ? "" : ` and $${dollarsAt(limits.usd, limits.rounds + 1)}`);
+        (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, limits.rounds + 1)}`)
 
   // **Said whether it buys anything or not**, like a `skipped` gate point and
   // like `rounds: 0` below it: a default that spends money has to be auditable
@@ -93,19 +93,19 @@ export function passCeiling(limits: {
     return (
       `${pass}. ` +
       (limits.rounds === 0
-        ? "Every refusal goes straight to you (runtime.limits.rounds: 0, restarts: 0)"
-        : "A pass whose rounds are spent goes to you (runtime.limits.restarts: 0)")
-    );
+        ? 'Every refusal goes straight to you (runtime.limits.rounds: 0, restarts: 0)'
+        : 'A pass whose rounds are spent goes to you (runtime.limits.restarts: 0)')
+    )
   }
-  const passes = limits.restarts + 1;
-  const runs = passes * (limits.rounds + 1);
+  const passes = limits.restarts + 1
+  const runs = passes * (limits.rounds + 1)
   return (
     `${pass}. Then up to ${limits.restarts} restart(s) — the ticket started over ` +
     `from the base carrying what refused it — so at most ${passes} passes, ` +
     `${runs} agent runs and ${formatDuration(limits.wallMs * runs)}` +
-    (limits.usd === undefined ? "" : ` and $${dollarsAt(limits.usd, runs)}`) +
+    (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`) +
     ` before it is yours`
-  );
+  )
 }
 
 /**
@@ -116,8 +116,8 @@ export function passCeiling(limits: {
  * cent first is enough: nothing here carries a fraction of a cent.
  */
 function dollarsAt(usd: number, factor: number): string {
-  const cents = Math.round(usd * factor * 100);
-  const whole = Math.trunc(cents / 100);
-  const frac = Math.abs(cents % 100);
-  return frac === 0 ? `${whole}` : `${whole}.${String(frac).padStart(2, "0")}`;
+  const cents = Math.round(usd * factor * 100)
+  const whole = Math.trunc(cents / 100)
+  const frac = Math.abs(cents % 100)
+  return frac === 0 ? `${whole}` : `${whole}.${String(frac).padStart(2, '0')}`
 }

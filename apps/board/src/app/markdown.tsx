@@ -29,10 +29,11 @@
  *   on* and appears once per screen — and it carries `nofollow ugc noreferrer`
  *   and an outbound mark.
  */
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
-import { renderingFor, type DocumentSource } from "@/lib/markdown";
+import ReactMarkdown, { type Components } from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
+import remarkGfm from 'remark-gfm'
+
+import { renderingFor, type DocumentSource } from '@/lib/markdown'
 
 const COMPONENTS: Components = {
   /**
@@ -42,21 +43,21 @@ const COMPONENTS: Components = {
    * new tab on `#user-content-fn-1` would be nonsense.
    */
   a({ href, children, ...rest }) {
-    if (typeof href === "string" && href.startsWith("#")) {
+    if (typeof href === 'string' && href.startsWith('#')) {
       return (
         <a href={href} {...rest}>
           {children}
         </a>
-      );
+      )
     }
     return (
       <a className="mdlink" href={href} target="_blank" rel="noreferrer nofollow ugc">
         {children}
         <span className="mdout" aria-hidden="true">
-          {" ↗"}
+          {' ↗'}
         </span>
       </a>
-    );
+    )
   },
 
   /**
@@ -64,29 +65,25 @@ const COMPONENTS: Components = {
    * `https`, nothing else — and it is offered rather than fetched.
    */
   img({ src, alt }) {
-    const url = typeof src === "string" ? src : "";
-    const said = alt && alt.trim() ? alt : url;
+    const url = typeof src === 'string' ? src : ''
+    const said = alt && alt.trim() ? alt : url
     return (
       <a className="mdimg" href={url} target="_blank" rel="noreferrer nofollow ugc">
         image: {said} ↗
       </a>
-    );
+    )
   },
-};
+}
 
 /** The renderer, configured once. Reached only through `DocumentBody`. */
 function Rendered({ text }: { text: string }) {
   return (
     <div className="md">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeSanitize]}
-        components={COMPONENTS}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={COMPONENTS}>
         {text}
       </ReactMarkdown>
     </div>
-  );
+  )
 }
 
 /**
@@ -96,18 +93,10 @@ function Rendered({ text }: { text: string }) {
  * document sit in different boxes — and is used by every rendering except
  * `rendered`, which brings its own.
  */
-export function DocumentBody({
-  source,
-  text,
-  rawClass,
-}: {
-  source: DocumentSource;
-  text: string;
-  rawClass: string;
-}) {
-  const rendering = renderingFor(source);
+export function DocumentBody({ source, text, rawClass }: { source: DocumentSource; text: string; rawClass: string }) {
+  const rendering = renderingFor(source)
 
-  if (rendering === "rendered") return <Rendered text={text} />;
+  if (rendering === 'rendered') return <Rendered text={text} />
 
   return (
     <>
@@ -118,12 +107,12 @@ export function DocumentBody({
       {/* Offered, never taken by default: the raw form above is the record and
           this is a reading of it. A `details` rather than a toggle because the
           page has no client JavaScript here and does not need any. */}
-      {rendering === "on request" ? (
+      {rendering === 'on request' ? (
         <details className="mdask">
           <summary>Read as markdown</summary>
           <Rendered text={text} />
         </details>
       ) : null}
     </>
-  );
+  )
 }

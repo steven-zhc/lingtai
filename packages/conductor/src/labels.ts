@@ -17,10 +17,10 @@
  * on an issue is somebody else's and is left alone.
  */
 
-import type { LabelState } from "@lingtai/domain";
+import type { LabelState } from '@lingtai/domain'
 
 /** Every label Lingtai owns starts with this. Everything else is somebody else's. */
-export const LINGTAI_LABEL_PREFIX = "lingtai:";
+export const LINGTAI_LABEL_PREFIX = 'lingtai:'
 
 /**
  * The label set a task's state implies.
@@ -32,17 +32,17 @@ export const LINGTAI_LABEL_PREFIX = "lingtai:";
  */
 export function labelsFor(state: LabelState): string[] {
   switch (state) {
-    case "running":
-    case "verifying":
-      return [`${LINGTAI_LABEL_PREFIX}working`];
-    case "waiting":
-      return [`${LINGTAI_LABEL_PREFIX}waiting`];
+    case 'running':
+    case 'verifying':
+      return [`${LINGTAI_LABEL_PREFIX}working`]
+    case 'waiting':
+      return [`${LINGTAI_LABEL_PREFIX}waiting`]
     default:
-      return [];
+      return []
   }
 }
 
 /** Somebody else's labels, which a whole-set write must not drop. */
 export function foreignLabels(current: readonly string[]): string[] {
-  return current.filter((l) => !l.startsWith(LINGTAI_LABEL_PREFIX));
+  return current.filter((l) => !l.startsWith(LINGTAI_LABEL_PREFIX))
 }

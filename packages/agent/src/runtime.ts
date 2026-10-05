@@ -19,8 +19,9 @@
  * and records `DispatchRefused` when the combination cannot meet the tier — it
  * never silently downgrades. See doc/decisions-archive/0007-dual-runtime.md.
  */
-import type { RunFailureKind, RuntimeId, Tier, Usage } from "@lingtai/domain";
-import type { RunTrace } from "./run-log.ts";
+import type { RunFailureKind, RuntimeId, Tier, Usage } from '@lingtai/domain'
+
+import type { RunTrace } from './run-log.ts'
 
 /**
  * The bounds a recipe may put on a run, by name.
@@ -29,19 +30,19 @@ import type { RunTrace } from "./run-log.ts";
  * third limit added to `runtime.limits` and not here is one doctor never asks
  * about, which is `#89` again one field along.
  */
-export const RUN_LIMITS = ["turns", "wall", "usd"] as const;
+export const RUN_LIMITS = ['turns', 'wall', 'usd'] as const
 
-export type RunLimit = (typeof RUN_LIMITS)[number];
+export type RunLimit = (typeof RUN_LIMITS)[number]
 
 export interface RuntimeCapabilities {
-  id: RuntimeId;
+  id: RuntimeId
   /** The lifecycle hooks this runtime actually emits. */
-  hooks: readonly string[];
+  hooks: readonly string[]
   /**
    * Whether a refusal from the `UserPromptSubmit` hook stops the run, so the
- * record can fail closed. That is the hook to check: `PreToolUse` is not wired
- * (`INTERSECTION_HOOKS`) and `PostToolUse` fires after the tool already ran, so
- * honouring a refusal before tool calls says nothing about this.
+   * record can fail closed. That is the hook to check: `PreToolUse` is not wired
+   * (`INTERSECTION_HOOKS`) and `PostToolUse` fires after the tool already ran, so
+   * honouring a refusal before tool calls says nothing about this.
    *
    * Not mediation — the hook refuses nothing it is not forced to (ADR 0016 §6).
    * It is for the other half of the conductor's smoke test (`conduct.ts`):
@@ -50,11 +51,11 @@ export interface RuntimeCapabilities {
    * and look like it produced everything."* A runtime that only notifies its
    * hook cannot stop anything. Both declare it; a future one might not.
    */
-  canFailClosed: boolean;
+  canFailClosed: boolean
   /** Codex can rewrite a call as well as refuse it. Claude Code cannot. */
-  canRewriteToolCall: boolean;
+  canRewriteToolCall: boolean
   /** The strongest containment this runtime provides on its own. */
-  providesTier: Tier;
+  providesTier: Tier
   /**
    * Which of `RUN_LIMITS` this adapter actually stops a run at (`#89`).
    *
@@ -64,17 +65,17 @@ export interface RuntimeCapabilities {
    * an adapter says which half it honours, answerable before a run rather than
    * inferred from one that overspent.
    */
-  enforces: readonly RunLimit[];
+  enforces: readonly RunLimit[]
 }
 
 export interface RunRequest {
-  runId: string;
+  runId: string
   /** The worktree. Its directory is the blast radius. */
-  cwd: string;
-  prompt: string;
-  model?: string;
+  cwd: string
+  prompt: string
+  model?: string
   /** Rendered by the conductor, outside the worktree. */
-  settingsPath: string;
+  settingsPath: string
   /**
    * The run's log, opened by the conductor and written to from here.
    *
@@ -105,7 +106,7 @@ export interface RunRequest {
    * one since `#132`: its trace is named for the chat and lives for one turn
    * (`answerDiscussion`), so the board can show the answer being written.
    */
-  log?: RunTrace;
+  log?: RunTrace
   /**
    * Whether the agent's tool calls are this adapter's to trace.
    *
@@ -115,19 +116,19 @@ export interface RunRequest {
    * reviewer at a gate, a fixer — has no socket to write them**, so without
    * this its whole run would be prose and silence (#153).
    */
-  traceTools?: boolean;
+  traceTools?: boolean
   /** Filtered — only what the recipe allows, plus the hook's wiring. */
-  env: Record<string, string>;
-  limits: { turns: number; wallMs: number; usd?: number };
+  env: Record<string, string>
+  limits: { turns: number; wallMs: number; usd?: number }
   /**
    * The answer's shape, as JSON Schema — sent only by the cold reviewer and
    * absent on every other run (`#369`). Each adapter hands it to the runtime
    * its own way: `claude-code.ts`'s `--json-schema <inline>`, `codex.ts`'s
    * `--output-schema <file>`. Absent is an ordinary, unconstrained run.
    */
-  outputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>
   /** Killed when this aborts, producing a `timeout` failure rather than silence. */
-  signal?: AbortSignal;
+  signal?: AbortSignal
 }
 
 /**
@@ -141,30 +142,30 @@ export interface RunRequest {
  */
 export interface Spawned {
   /** The executable, as spawned. */
-  command: string;
+  command: string
   /**
    * argv as applied, except for the prompt: it stands in as `PROMPT_ELIDED`,
    * because the document itself is on the run's stream as `RunPrompted` and
    * does not want to be there twice (#88).
    */
-  args: readonly string[];
+  args: readonly string[]
 }
 
 /** What `invocation` is asked about: a run request, before it is a run. */
-export type Invocable = Omit<RunRequest, "prompt" | "signal">;
+export type Invocable = Omit<RunRequest, 'prompt' | 'signal'>
 
 /** What the adapter knows when the process is gone. */
 export interface RunOutcome {
-  exitCode: number | null;
-  turns: number;
-  durationMs: number;
-  costUsd: number | null;
+  exitCode: number | null
+  turns: number
+  durationMs: number
+  costUsd: number | null
   /**
    * Set when the run did not complete normally. **Never null and silent** — the
    * old loop's failures produced no event at all, which is the thing this type
    * exists to make impossible.
    */
-  failure: { kind: RunFailureKind; detail: string } | null;
+  failure: { kind: RunFailureKind; detail: string } | null
   /**
    * The model's final message.
    *
@@ -172,14 +173,14 @@ export interface RunOutcome {
    * runtime was throwing it away — cost and turn counts survived, the actual
    * output did not. Null when the run produced nothing parseable.
    */
-  text: string | null;
+  text: string | null
   /** The runtime's own session identifier, for finding its transcript. */
-  sessionId: string;
+  sessionId: string
   /**
    * What the run billed, by the runtime's own counts (0110 §3). Absent where
    * the runtime reported nothing to accumulate — never zero.
    */
-  usage?: Usage;
+  usage?: Usage
   /**
    * **The object a schema-constrained answer parsed to** — present only where
    * `RunRequest.outputSchema` was sent and an answer could be read against it,
@@ -187,7 +188,7 @@ export interface RunOutcome {
    * `parseFindings(outcome.text)` instead, exactly as it did before this field
    * existed.
    */
-  structured?: unknown;
+  structured?: unknown
 }
 
 /**
@@ -223,12 +224,8 @@ export interface RunOutcome {
  * answering for itself. A second turn would need a model to have replied, so
  * the bound stays at one.
  */
-export function neverStarted(receipt: {
-  turns: number;
-  costUsd: number | null;
-  isError: boolean;
-}): boolean {
-  return receipt.isError && receipt.turns <= 1 && (receipt.costUsd ?? 0) === 0;
+export function neverStarted(receipt: { turns: number; costUsd: number | null; isError: boolean }): boolean {
+  return receipt.isError && receipt.turns <= 1 && (receipt.costUsd ?? 0) === 0
 }
 
 /**
@@ -241,16 +238,16 @@ export function neverStarted(receipt: {
  * macOS finds a keychain item by who is asking.
  */
 export interface AuthStatus {
-  loggedIn: boolean;
+  loggedIn: boolean
   /** `claude.ai`, `apiKey`, `none` — whatever the runtime calls it. */
-  method: string | null;
+  method: string | null
   /** Said back verbatim when something could not be asked at all. */
-  detail: string;
+  detail: string
 }
 
 export interface Runtime {
-  readonly capabilities: RuntimeCapabilities;
-  run(request: RunRequest): Promise<RunOutcome>;
+  readonly capabilities: RuntimeCapabilities
+  run(request: RunRequest): Promise<RunOutcome>
   /**
    * How this request would be spawned, for the log to record before it is.
    *
@@ -258,12 +255,12 @@ export interface Runtime {
    * not pretend. `RunStarted.invocation` is null when it does not answer, which
    * reads as "not recorded" rather than as a reconstruction nobody ran.
    */
-  invocation?(request: Invocable): Spawned;
+  invocation?(request: Invocable): Spawned
   /**
    * Optional: a runtime that cannot be asked cheaply should not pretend.
    * `lingtai doctor` reports an absent check as deferred rather than as passing.
    */
-  checkAuth?(env: Record<string, string>): Promise<AuthStatus>;
+  checkAuth?(env: Record<string, string>): Promise<AuthStatus>
 }
 
 /**
@@ -285,7 +282,7 @@ export interface Runtime {
  * `canFailClosed` being consulted — see `meetsTier`.
  */
 export function meetsTier(capabilities: RuntimeCapabilities, required: Tier): boolean {
-  const rank: Record<Tier, number> = { open: 0, guarded: 1, sandboxed: 2 };
+  const rank: Record<Tier, number> = { open: 0, guarded: 1, sandboxed: 2 }
   // **`guarded` is an axis, not a rung** (`#313`). For weeks this returned on
   // rank alone, so a `providesTier: "sandboxed"` runtime satisfied a `guarded`
   // recipe **without `canFailClosed` ever being read** — and `missingForTier`'s
@@ -299,24 +296,24 @@ export function meetsTier(capabilities: RuntimeCapabilities, required: Tier): bo
   // Dead code today and correct anyway: both runtimes declare `canFailClosed`,
   // and Codex's was proved against the binary rather than assumed (`codex.ts`).
   // It fires on the day a runtime arrives that only notifies its hook.
-  if (required !== "open" && !capabilities.canFailClosed) return false;
-  return rank[capabilities.providesTier] >= rank[required];
+  if (required !== 'open' && !capabilities.canFailClosed) return false
+  return rank[capabilities.providesTier] >= rank[required]
 }
 
 /** What is missing, so `DispatchRefused` can name it rather than say "no". */
 export function missingForTier(capabilities: RuntimeCapabilities, required: Tier): string[] {
-  if (meetsTier(capabilities, required)) return [];
+  if (meetsTier(capabilities, required)) return []
   // **Accumulated rather than branched** (`#313`), because since `meetsTier`
   // reads two independent promises a runtime can be missing both, and a list
   // that named only the first would send an operator to fix half of it. The
   // names are unchanged and `DispatchRefused` records them.
-  const missing: string[] = [];
+  const missing: string[] = []
   // The name predates 0016 and is kept because the event carries it.
-  if (!capabilities.canFailClosed) missing.push("pre-tool-use-interception");
-  if (required === "sandboxed" && capabilities.providesTier !== "sandboxed") {
-    missing.push("filesystem-sandbox");
+  if (!capabilities.canFailClosed) missing.push('pre-tool-use-interception')
+  if (required === 'sandboxed' && capabilities.providesTier !== 'sandboxed') {
+    missing.push('filesystem-sandbox')
   }
   // Something is missing — `meetsTier` said so — and neither promise above is
   // it. The tier itself, so the refusal still says a word rather than nothing.
-  return missing.length > 0 ? missing : [`tier-${required}`];
+  return missing.length > 0 ? missing : [`tier-${required}`]
 }

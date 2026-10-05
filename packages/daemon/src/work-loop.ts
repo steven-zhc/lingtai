@@ -77,10 +77,11 @@
  * notifier that has silently stopped notifying is the one failure a notifier
  * must not have. `lingtai doctor` reads them back.
  */
-import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from "@lingtai/domain";
-import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from "@lingtai/event-store";
-import { withDaemonStore } from "./choose.ts";
-import type { DaemonStore } from "./store.ts";
+import { type Envelope, SUBSCRIBER_STREAM, parsePayload, workItemOf } from '@lingtai/domain'
+import { type EventStore, eventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
+
+import { withDaemonStore } from './choose.ts'
+import type { DaemonStore } from './store.ts'
 
 /**
  * The events that mean the conductor is free to look again.
@@ -90,27 +91,27 @@ import type { DaemonStore } from "./store.ts";
  * previous one is mid-agent, dozens of times per run.
  */
 export const COMPLETION_EVENTS = [
-  "WorkItemLanded",
-  "WorkItemReleased",
-  "WorkItemBlocked",
-  "WorkItemUnblocked",
-  "IntegrationSucceeded",
-  "IntegrationRefused",
+  'WorkItemLanded',
+  'WorkItemReleased',
+  'WorkItemBlocked',
+  'WorkItemUnblocked',
+  'IntegrationSucceeded',
+  'IntegrationRefused',
   // Control, for the same reason: resuming has to start work without anybody
   // restarting the daemon, and asking for a specific ticket has to be answered
   // now rather than at the next completion.
-  "ConductorResumed",
-  "RunRequested",
+  'ConductorResumed',
+  'RunRequested',
   // And a shutdown, most of all. An idle daemon appends nothing, so without
   // this a `lingtai shutdown` would sit unread until the next sweep — five
   // minutes of a command that has already returned looking ignored (0030 §2).
-  "ConductorShutdownRequested",
+  'ConductorShutdownRequested',
   // A webhook said GitHub changed. The sweep would find it eventually; this
   // is what makes "eventually" mean seconds when a webhook can reach us.
-  "QueueChanged",
-] as const;
+  'QueueChanged',
+] as const
 
-export type PassReason = "startup" | "completion" | "sweep";
+export type PassReason = 'startup' | 'completion' | 'sweep'
 
 /**
  * How often to look at GitHub without being told to.
@@ -120,7 +121,7 @@ export type PassReason = "startup" | "completion" | "sweep";
  * triggers a pass immediately, so the only thing this bounds is how long a
  * brand-new issue can sit unnoticed on a machine with no webhook.
  */
-export const SWEEP_MS = 5 * 60_000;
+export const SWEEP_MS = 5 * 60_000
 
 /**
  * How long a subscriber may take before the boundary calls it failed.
@@ -131,7 +132,7 @@ export const SWEEP_MS = 5 * 60_000;
  * the point at which *never returned* stops being indistinguishable from *still
  * working*, which is the only thing a hang can otherwise be mistaken for.
  */
-export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000;
+export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000
 
 /**
  * One thing that is told what happened and is never waited for.
@@ -144,7 +145,7 @@ export const SUBSCRIBER_TIMEOUT_MS = 10 * 60_000;
  */
 export interface EventSubscriber {
   /** As the recipe named it. It is what `PluginFailed` records. */
-  readonly name: string;
+  readonly name: string
   /**
    * The project whose recipe declared it, and what `PluginFailed.project` says
    * when it fails.
@@ -154,8 +155,8 @@ export interface EventSubscriber {
    * stream or an `int-{project}-{base}` lane, and cutting either at its last
    * dash names a project that does not exist. The subscriber already knows.
    */
-  readonly project?: string;
-  deliver(event: Envelope): Promise<void>;
+  readonly project?: string
+  deliver(event: Envelope): Promise<void>
 }
 
 export interface WorkLoopOptions {
@@ -166,7 +167,7 @@ export interface WorkLoopOptions {
    * the daemon hosts the loop, and the CLI knows how to build the world it runs
    * against.
    */
-  pass: (reason: PassReason) => Promise<void>;
+  pass: (reason: PassReason) => Promise<void>
   /**
    * Whether the conductor is currently allowed to take work.
    *
@@ -174,7 +175,7 @@ export interface WorkLoopOptions {
    * change while a run is in flight — the point of a pause is that it lands
    * without a restart.
    */
-  paused?: () => Promise<boolean>;
+  paused?: () => Promise<boolean>
   /**
    * Whether somebody has asked the conductor to stop, and why.
    *
@@ -187,12 +188,12 @@ export interface WorkLoopOptions {
    * the `if (stopped) break` at the top of the loop retires the pending `again`
    * on its own.
    */
-  shutdown?: () => Promise<string | null>;
+  shutdown?: () => Promise<string | null>
   /**
    * Called once, when the loop has read a shutdown request and stopped taking
    * work. The host is what exits; the loop only stops looping.
    */
-  onShutdown?: (why: string) => void;
+  onShutdown?: (why: string) => void
   /**
    * Everything declared under `subscribers:` in a project's recipe, already
    * built. Each is told about every appended event — it decides.
@@ -219,7 +220,7 @@ export interface WorkLoopOptions {
    * Their failures are held by `deliver`, not by them. See the note on the
    * subscriber boundary at the top of this file.
    */
-  subscribers?: readonly EventSubscriber[] | (() => readonly EventSubscriber[]);
+  subscribers?: readonly EventSubscriber[] | (() => readonly EventSubscriber[])
   /**
    * Somebody asked the discussion assistant a question. Answer it.
    *
@@ -239,14 +240,14 @@ export interface WorkLoopOptions {
    * the loop over a question — which is why nothing does: `deliver` holds it,
    * and holds it identically to a declared subscriber's.
    */
-  discuss?: (event: Envelope) => Promise<void>;
+  discuss?: (event: Envelope) => Promise<void>
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
    */
-  sweepMs?: number;
+  sweepMs?: number
   /** Defaults to `COMPLETION_EVENTS`. */
-  triggers?: readonly string[];
+  triggers?: readonly string[]
   /**
    * A Postgres connection for the head read, **refining the choice and never
    * replacing it** (#179): used where this machine wrote Postgres, ignored
@@ -257,7 +258,7 @@ export interface WorkLoopOptions {
    * connection named here would have been a second answer to a question the
    * store already settles.
    */
-  url?: string;
+  url?: string
   /**
    * The log the daemon follows: what to read **and what says it moved**.
    *
@@ -271,32 +272,32 @@ export interface WorkLoopOptions {
    * poll from a file (#179). Named `eventLog` because `log` here is the line
    * printer.
    */
-  eventLog?: Log;
+  eventLog?: Log
   /**
    * Where the log's head is read from. Defaults to the store this machine wrote
    * down, at `url` where Postgres is what it wrote (#179).
    */
-  daemonStore?: DaemonStore;
+  daemonStore?: DaemonStore
   /**
    * How long a subscriber may take before the boundary calls it failed.
    *
    * Defaults to `SUBSCRIBER_TIMEOUT_MS`. A test sets it low; nothing else has a
    * reason to. It does not cancel anything — see `deliver`.
    */
-  subscriberTimeoutMs?: number;
+  subscriberTimeoutMs?: number
   /**
    * Where `PluginFailed` is appended. Defaults to the process-wide store.
    *
    * An option only so a test can hand in the store it is already cleaning up
    * after. The daemon uses the default.
    */
-  store?: EventStore;
-  log?: (line: string) => void;
+  store?: EventStore
+  log?: (line: string) => void
 }
 
 export interface WorkLoop {
   /** Runs the first pass and then follows the log. */
-  start(): Promise<void>;
+  start(): Promise<void>
   /**
    * Takes no more work, and waits for the pass in flight.
    *
@@ -305,23 +306,23 @@ export interface WorkLoop {
    * only wait that means "finished". `running` used to be a flag nothing read;
    * the promise it stands for is retained now, and this is what awaits it.
    */
-  stop(): Promise<void>;
+  stop(): Promise<void>
   /** Passes run so far. */
-  readonly passes: number;
+  readonly passes: number
   /** True while a pass is running. What a drain is waiting for. */
-  readonly busy: boolean;
+  readonly busy: boolean
 }
 
 export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
-  const log = options.log ?? (() => {});
-  const triggers = new Set<string>(options.triggers ?? COMPLETION_EVENTS);
+  const log = options.log ?? (() => {})
+  const triggers = new Set<string>(options.triggers ?? COMPLETION_EVENTS)
 
-  let subscription: Subscription | null = null;
-  let sweep: ReturnType<typeof setInterval> | undefined;
-  let running = false;
-  let again = false;
-  let stopped = false;
-  let passes = 0;
+  let subscription: Subscription | null = null
+  let sweep: ReturnType<typeof setInterval> | undefined
+  let running = false
+  let again = false
+  let stopped = false
+  let passes = 0
   /**
    * The pass in flight, retained.
    *
@@ -330,14 +331,14 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * the loop looked as though it drained; nothing held the promise, so nothing
    * could wait for it (0030).
    */
-  let inFlight: Promise<void> | null = null;
+  let inFlight: Promise<void> | null = null
 
   // ------------------------------------------------ the subscriber boundary --
 
-  const store = options.store ?? eventStore;
+  const store = options.store ?? eventStore
   const subscribers = (): readonly EventSubscriber[] =>
-    typeof options.subscribers === "function" ? options.subscribers() : (options.subscribers ?? []);
-  const subscriberTimeoutMs = options.subscriberTimeoutMs ?? SUBSCRIBER_TIMEOUT_MS;
+    typeof options.subscribers === 'function' ? options.subscribers() : (options.subscribers ?? [])
+  const subscriberTimeoutMs = options.subscriberTimeoutMs ?? SUBSCRIBER_TIMEOUT_MS
 
   /**
    * `ext-subscribers`'s version, as this process last left it.
@@ -348,7 +349,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * broken notifier progressively more expensive. Null means *ask the log* —
    * which is what a conflict sets it back to.
    */
-  let failuresAt: number | null = null;
+  let failuresAt: number | null = null
 
   /**
    * Appends serially, whatever order the failures arrive in.
@@ -357,7 +358,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * `discuss` are handed the same event — and each would otherwise read the
    * same version and race the others for it.
    */
-  let recording: Promise<void> = Promise.resolve();
+  let recording: Promise<void> = Promise.resolve()
 
   function record(name: string, event: Envelope, reason: string, owner: string | undefined): void {
     // The loop, closed. A `PluginFailed` is an append like any other, so the
@@ -365,35 +366,37 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     // failing on everything would fail on this one too — appending another, for
     // ever. The failure is still logged; what it does not do is write itself
     // down again.
-    if (event.type === "PluginFailed") return;
+    if (event.type === 'PluginFailed') return
 
     // The subscriber's own project when it has one. Otherwise only what the
     // event names *exactly* — its `wi-` stream or its `workItemId` — and null
     // rather than a guess: `parseWorkItemStream` cuts any id at its last dash,
     // so `run-3f2a…-0123` would be recorded as project `run-3f2a…`.
-    const project = owner ?? workItemOf(event)?.project ?? null;
-    const data = { name, eventType: event.type, project, reason };
-    recording = recording.then(async () => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          failuresAt ??= (await store.read(SUBSCRIBER_STREAM)).length;
-          await store.append(SUBSCRIBER_STREAM, failuresAt, [
-            { type: "PluginFailed", actor: "conductor", data: parsePayload("PluginFailed", data) },
-          ]);
-          failuresAt += 1;
-          return;
-        } catch (err) {
-          // Somebody else moved the stream, or the log is unreachable. Ask it
-          // again; on the third refusal say so and stop, because a boundary
-          // that could throw is the boundary this file exists to remove.
-          failuresAt = null;
-          if (attempt === 2) log(`could not record ${name}'s failure: ${(err as Error).message}`);
+    const project = owner ?? workItemOf(event)?.project ?? null
+    const data = { name, eventType: event.type, project, reason }
+    recording = recording
+      .then(async () => {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            failuresAt ??= (await store.read(SUBSCRIBER_STREAM)).length
+            await store.append(SUBSCRIBER_STREAM, failuresAt, [
+              { type: 'PluginFailed', actor: 'conductor', data: parsePayload('PluginFailed', data) },
+            ])
+            failuresAt += 1
+            return
+          } catch (err) {
+            // Somebody else moved the stream, or the log is unreachable. Ask it
+            // again; on the third refusal say so and stop, because a boundary
+            // that could throw is the boundary this file exists to remove.
+            failuresAt = null
+            if (attempt === 2) log(`could not record ${name}'s failure: ${(err as Error).message}`)
+          }
         }
-      }
-      // Nothing above can reject, and the chain is caught anyway. A rejected
-      // `recording` would poison every failure after it — and an unhandled
-      // rejection in this process is the whole of what #120 is about.
-    }).catch(() => {});
+        // Nothing above can reject, and the chain is caught anyway. A rejected
+        // `recording` would poison every failure after it — and an unhandled
+        // rejection in this process is the whole of what #120 is about.
+      })
+      .catch(() => {})
   }
 
   /**
@@ -411,42 +414,37 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
    * `settled` is why a subscriber that rejects an hour after timing out does
    * not append a second `PluginFailed` for the same event.
    */
-  function deliver(
-    name: string,
-    event: Envelope,
-    run: (e: Envelope) => Promise<void>,
-    project?: string,
-  ): void {
-    let settled = false;
+  function deliver(name: string, event: Envelope, run: (e: Envelope) => Promise<void>, project?: string): void {
+    let settled = false
     const failed = (reason: string): void => {
-      if (settled) return;
-      settled = true;
-      log(`${name} failed on ${event.type}: ${reason}`);
-      record(name, event, reason, project);
-    };
+      if (settled) return
+      settled = true
+      log(`${name} failed on ${event.type}: ${reason}`)
+      record(name, event, reason, project)
+    }
 
     const timer = setTimeout(
       () => failed(`did not return within ${Math.round(subscriberTimeoutMs / 1000)}s`),
       subscriberTimeoutMs,
-    );
+    )
     // Never a reason for the process to stay alive. A daemon whose last
     // obligation is a timer waiting on a hung notifier cannot exit.
-    timer.unref?.();
+    timer.unref?.()
 
     try {
       void run(event).then(
         () => {
-          settled = true;
-          clearTimeout(timer);
+          settled = true
+          clearTimeout(timer)
         },
         (err: unknown) => {
-          clearTimeout(timer);
-          failed(String(err instanceof Error ? err.message : err));
+          clearTimeout(timer)
+          failed(String(err instanceof Error ? err.message : err))
         },
-      );
+      )
     } catch (err) {
-      clearTimeout(timer);
-      failed(String(err instanceof Error ? err.message : err));
+      clearTimeout(timer)
+      failed(String(err instanceof Error ? err.message : err))
     }
   }
 
@@ -454,23 +452,23 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     if (running) {
       // A pass is in flight. Remember to go round again rather than starting a
       // second one into the same queue.
-      again = true;
-      return inFlight ?? Promise.resolve();
+      again = true
+      return inFlight ?? Promise.resolve()
     }
-    running = true;
+    running = true
     const pass = drain(reason).finally(() => {
-      running = false;
-      inFlight = null;
-    });
-    inFlight = pass;
-    return pass;
+      running = false
+      inFlight = null
+    })
+    inFlight = pass
+    return pass
   }
 
   async function drain(reason: PassReason): Promise<void> {
     try {
       do {
-        again = false;
-        if (stopped) break;
+        again = false
+        if (stopped) break
         // Asked before every pass, not cached: a pause issued mid-run has to
         // take effect at the next opportunity, and the next opportunity is
         // here.
@@ -478,66 +476,66 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         // A shutdown is asked first, because it is the stronger answer: a
         // conductor that has been told to stop does not need to know whether
         // it was also paused.
-        const why = await options.shutdown?.();
+        const why = await options.shutdown?.()
         if (why) {
           // Set here, not by the caller. The pending `again` from events that
           // arrived during the pass lapses on the `if (stopped) break` above,
           // which is the whole reason that line was already worth having.
-          stopped = true;
-          log(`shutting down — ${why}`);
-          options.onShutdown?.(why);
-          break;
+          stopped = true
+          log(`shutting down — ${why}`)
+          options.onShutdown?.(why)
+          break
         }
         if (await options.paused?.()) {
           // Nothing is left pending by a pause any more: a run tells GitHub
           // as it goes, so a paused conductor has nothing owed (0022). What
           // used to sit here was a drain for the outbox's queue.
-          log("paused — taking no work");
-          break;
+          log('paused — taking no work')
+          break
         }
-        passes += 1;
+        passes += 1
         try {
-          await options.pass(reason);
+          await options.pass(reason)
         } catch (err) {
           // A pass that throws must not take the loop with it: the next
           // completion event is exactly when you want it to try again.
-          log(`pass failed: ${(err as Error).message}`);
+          log(`pass failed: ${(err as Error).message}`)
         }
-        reason = "completion";
-      } while (again);
+        reason = 'completion'
+      } while (again)
     } catch (err) {
       // Reaching here means the loop's own bookkeeping threw, not the pass —
       // the pass has its own catch. It must still not escape into a caller
       // that is only draining.
-      log(`loop failed: ${(err as Error).message}`);
+      log(`loop failed: ${(err as Error).message}`)
     }
   }
 
   return {
     get passes() {
-      return passes;
+      return passes
     },
 
     get busy() {
-      return running;
+      return running
     },
 
     async start() {
       // From the head, not from zero. Replaying history would fire a pass for
       // every task that has ever landed.
-      const from = await headSeq(options);
+      const from = await headSeq(options)
 
       // The log, not `options.store`: that one is where failures are recorded,
       // and a test's store is not the log that wakes. The process-wide one is
       // the store this machine chose and the waker that goes with it — which is
       // what #221 made inseparable, and #179 made a written choice rather than
       // Postgres by default.
-      const following = options.eventLog ?? (await processLog());
+      const following = options.eventLog ?? (await processLog())
 
       subscription = subscribe({
         fromSeq: from,
         store: following.store,
-        waker: following.waker("lingtai-daemon"),
+        waker: following.waker('lingtai-daemon'),
         onEvent: (event) => {
           // Before the trigger check: the events worth interrupting somebody
           // for are mostly *not* the ones that wake the conductor. A task being
@@ -547,36 +545,36 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           // That is the boundary this file's header is about: what a subscriber
           // does with an event is its own business, and what it does *to the
           // process following the log* is not its business at all.
-          for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project);
+          for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project)
           // Before the trigger check too, and never through `pump`. See
           // `discuss` above: a question must not wait for a run.
-          if (event.type === "DiscussionRequested" && options.discuss) {
-            deliver("discuss", event, options.discuss);
+          if (event.type === 'DiscussionRequested' && options.discuss) {
+            deliver('discuss', event, options.discuss)
           }
-          if (!triggers.has(event.type)) return;
-          void pump("completion");
+          if (!triggers.has(event.type)) return
+          void pump('completion')
         },
         onError: (error, phase) => log(`subscription ${phase}: ${String(error)}`),
-      });
+      })
 
       // The cold start. Nothing is in flight, so nothing will tell us to begin.
-      await pump("startup");
+      await pump('startup')
 
-      const every = options.sweepMs ?? SWEEP_MS;
+      const every = options.sweepMs ?? SWEEP_MS
       if (every > 0) {
-        sweep = setInterval(() => void pump("sweep"), every);
+        sweep = setInterval(() => void pump('sweep'), every)
         // Never hold the process open on its own account. A daemon whose only
         // remaining reason to live is its own fallback timer is a daemon that
         // cannot exit.
-        sweep.unref?.();
+        sweep.unref?.()
       }
     },
 
     async stop() {
-      stopped = true;
-      clearInterval(sweep);
-      await subscription?.close().catch(() => {});
-      subscription = null;
+      stopped = true
+      clearInterval(sweep)
+      await subscription?.close().catch(() => {})
+      subscription = null
       // And then the drain. The subscription is closed first so nothing new
       // arrives to set `again` while this waits — though it would lapse on
       // `if (stopped) break` if it did.
@@ -585,9 +583,9 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       // as `runtime.limits.wall`, and a wait that gave up after some minutes
       // would recreate the orphan this exists to prevent, silently, at the
       // moment it matters most. Whoever wants to accept that asks for it.
-      await inFlight?.catch(() => {});
+      await inFlight?.catch(() => {})
     },
-  };
+  }
 }
 
 /**
@@ -598,9 +596,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
  * (0055 §1).
  */
 async function headSeq(options: WorkLoopOptions): Promise<bigint> {
-  return withDaemonStore(
-    options.daemonStore,
-    options.url === undefined ? {} : { url: options.url },
-    (store) => store.head(),
-  );
+  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (store) =>
+    store.head(),
+  )
 }

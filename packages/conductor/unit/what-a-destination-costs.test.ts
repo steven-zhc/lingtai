@@ -47,12 +47,14 @@
  * and `doc/writing-a-plugin.md`'s *a plugin that keeps something somewhere fails
  * three ways* is the page that tells a plugin author the same table.
  */
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import type { Step } from "@lingtai/domain";
-import { NEEDS_INPUT, type Action, type ActionEvent, type ActionResult } from "@lingtai/actions";
-import { StepMap } from "@lingtai/recipe";
-import { describe, expect, it } from "vitest";
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+
+import { NEEDS_INPUT, type Action, type ActionEvent, type ActionResult } from '@lingtai/actions'
+import type { Step } from '@lingtai/domain'
+import { StepMap } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
+
 import {
   onOffer,
   outcomeOf,
@@ -61,15 +63,15 @@ import {
   type PassOptions,
   type PassResult,
   type StepEnding,
-} from "../src/pass.ts";
+} from '../src/pass.ts'
 
-const root = fileURLToPath(new URL("../../../", import.meta.url));
+const root = fileURLToPath(new URL('../../../', import.meta.url))
 
 /**
  * Rounds to spare on every pass below, so that *no round was bought* is a fact
  * about the ending rather than about an empty purse.
  */
-const SPARE: Ceilings = { rounds: 2, restartsLeft: 1 };
+const SPARE: Ceilings = { rounds: 2, restartsLeft: 1 }
 
 /**
  * **The line a recipe writes to keep the design somewhere**, as near as the
@@ -80,31 +82,31 @@ const SPARE: Ceilings = { rounds: 2, restartsLeft: 1 };
  * list it sits in and everything the pass then does with its answer are the
  * same, and those are what is being measured.
  */
-const DESTINATION = { name: "keep it", agent: "claude-code", prompt: "write the shape down" };
+const DESTINATION = { name: 'keep it', agent: 'claude-code', prompt: 'write the shape down' }
 
 /** A destination that answers what the row under test says it answers. */
-const answering = (result: ActionResult): PassOptions["actionsAt"] => {
-  const kept: Action = { name: DESTINATION.name, kind: "agent", run: async () => result };
-  return (step, actions) => (step === "design" ? [kept] : actions.map((a) => ({ ...kept, name: a.name })));
-};
+const answering = (result: ActionResult): PassOptions['actionsAt'] => {
+  const kept: Action = { name: DESTINATION.name, kind: 'agent', run: async () => result }
+  return (step, actions) => (step === 'design' ? [kept] : actions.map((a) => ({ ...kept, name: a.name })))
+}
 
 /** One pass with a destination at `design`, and the events it appended. */
 async function passWith(result: ActionResult): Promise<{ result: PassResult; events: ActionEvent[] }> {
-  const events: ActionEvent[] = [];
+  const events: ActionEvent[] = []
   const passed = await runPass({
     recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
-    context: { runId: "run-1", onSha: "abc1234def", cwd: "/nowhere", env: {} },
+    context: { runId: 'run-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
     emit: (event) => void events.push(event),
     actionsAt: answering(result),
     // No `bodies`, so `NOT_BUILT_YET` answers — which is the floor 0066 §7's
     // third row names in as many words: *with no judge declared, a person*.
     ceilings: SPARE,
-  });
-  return { result: passed, events };
+  })
+  return { result: passed, events }
 }
 
 /** The visits, in order, which is the whole of *what did this pass pay for*. */
-const visited = (result: PassResult): readonly Step[] => result.steps.map((visit) => visit.step);
+const visited = (result: PassResult): readonly Step[] => result.steps.map((visit) => visit.step)
 
 /**
  * Why the schema refused this `design:` list — the issues themselves rather than
@@ -112,12 +114,12 @@ const visited = (result: PassResult): readonly Step[] => result.steps.map((visit
  * quotation mark in a refusal written for a person to read.
  */
 function refusing(...actions: readonly unknown[]): { path: readonly PropertyKey[]; message: string }[] {
-  const read = StepMap.safeParse({ design: actions });
-  if (read.success) throw new Error("the schema accepted a `design:` list this test wrote to be refused");
-  return read.error.issues.map((issue) => ({ path: issue.path, message: issue.message }));
+  const read = StepMap.safeParse({ design: actions })
+  if (read.success) throw new Error('the schema accepted a `design:` list this test wrote to be refused')
+  return read.error.issues.map((issue) => ({ path: issue.path, message: issue.message }))
 }
 
-describe("a destination fails three ways, and a step has one way to say so", () => {
+describe('a destination fails three ways, and a step has one way to say so', () => {
   // ------------------------------------------- the recipe is wrong ----
 
   /**
@@ -131,28 +133,28 @@ describe("a destination fails three ways, and a step has one way to say so", () 
    * would lose it is a plugin that took a loose shape here and checked it when
    * it ran.
    */
-  describe("the recipe is wrong", () => {
-    it("is refused when the recipe resolves, naming the line", () => {
-      const [refused] = refusing({ ...DESTINATION, prompt: 12 });
+  describe('the recipe is wrong', () => {
+    it('is refused when the recipe resolves, naming the line', () => {
+      const [refused] = refusing({ ...DESTINATION, prompt: 12 })
 
-      expect(refused?.message).toContain('the "keep it" action is a "agent" at the "design" step');
-      expect(refused?.message).toContain('its "prompt" field is not what "agent" accepts');
+      expect(refused?.message).toContain('the "keep it" action is a "agent" at the "design" step')
+      expect(refused?.message).toContain('its "prompt" field is not what "agent" accepts')
       expect(refused?.message).toContain(
-        "Refused when the recipe resolves, before a worktree, before an agent, before any money.",
-      );
-    });
+        'Refused when the recipe resolves, before a worktree, before an agent, before any money.',
+      )
+    })
 
     /**
      * **The line, and not the file**: the step, which entry in its list, and the
      * field. A refusal that named only the step would send a person reading a
      * `design:` with three actions under it to the wrong one.
      */
-    it("says which action and which field", () => {
-      const refused = refusing(DESTINATION, { ...DESTINATION, name: "file a copy", prompt: 12 });
+    it('says which action and which field', () => {
+      const refused = refusing(DESTINATION, { ...DESTINATION, name: 'file a copy', prompt: 12 })
 
-      expect(refused.map((issue) => issue.path)).toEqual([["design", 1, "prompt"]]);
-      expect(refused[0]?.message).toContain('the "file a copy" action');
-    });
+      expect(refused.map((issue) => issue.path)).toEqual([['design', 1, 'prompt']])
+      expect(refused[0]?.message).toContain('the "file a copy" action')
+    })
 
     /**
      * **A field no plugin declares is refused too, and by name.** This is what a
@@ -161,12 +163,12 @@ describe("a destination fails three ways, and a step has one way to say so", () 
      * misspelt `path:` will get, from the same place: a plugin refuses a field it
      * does not understand rather than accepting it and ignoring it (0061 §9).
      */
-    it("refuses a destination field written under a plugin that declares none", () => {
-      const [refused] = refusing({ ...DESTINATION, path: "doc/design/x.md" });
+    it('refuses a destination field written under a plugin that declares none', () => {
+      const [refused] = refusing({ ...DESTINATION, path: 'doc/design/x.md' })
 
-      expect(refused?.message).toContain('"agent" declares no "path" field');
-      expect(refused?.path).toEqual(["design", 0, "path"]);
-    });
+      expect(refused?.message).toContain('"agent" declares no "path" field')
+      expect(refused?.path).toEqual(['design', 0, 'path'])
+    })
 
     /**
      * **And what it costs is nothing**, which is this row's whole point: the
@@ -174,13 +176,13 @@ describe("a destination fails three ways, and a step has one way to say so", () 
      * no worktree to cut. The contrast is the assertion — the same list, made
      * legal, resolves and is run.
      */
-    it("costs nothing, because the pass is never reached", async () => {
-      expect(refusing({ ...DESTINATION, prompt: 12 })).not.toEqual([]);
+    it('costs nothing, because the pass is never reached', async () => {
+      expect(refusing({ ...DESTINATION, prompt: 12 })).not.toEqual([])
 
-      const { result } = await passWith({ verdict: "passed", evidence: "kept it", findings: [], document: "x" });
-      expect(visited(result)).toContain("design");
-    });
-  });
+      const { result } = await passWith({ verdict: 'passed', evidence: 'kept it', findings: [], document: 'x' })
+      expect(visited(result)).toContain('design')
+    })
+  })
 
   // ----------------------------------- the destination was unreachable ----
 
@@ -193,30 +195,30 @@ describe("a destination fails three ways, and a step has one way to say so", () 
    * start everything here, so this is the row a destination's first failure
    * belongs in.
    */
-  describe("the destination was briefly unreachable", () => {
-    it("ends `did-not-finish`, stops the pass, and buys no round", async () => {
+  describe('the destination was briefly unreachable', () => {
+    it('ends `did-not-finish`, stops the pass, and buys no round', async () => {
       const { result, events } = await passWith({
-        verdict: "did-not-finish",
-        evidence: "confluence.example: ETIMEDOUT after 30s",
+        verdict: 'did-not-finish',
+        evidence: 'confluence.example: ETIMEDOUT after 30s',
         findings: [],
-      });
+      })
 
       expect(result.stoppedAt).toEqual({
-        step: "design",
+        step: 'design',
         ending: {
-          ending: "did-not-finish",
-          because: "did-not-finish",
-          at: "keep it",
-          detail: "confluence.example: ETIMEDOUT after 30s",
+          ending: 'did-not-finish',
+          because: 'did-not-finish',
+          at: 'keep it',
+          detail: 'confluence.example: ETIMEDOUT after 30s',
         },
-      });
+      })
       // It never reached the router, so no judge was asked and no round could
       // have been spent — the cost row two is named for.
-      expect(result.routes).toEqual([]);
-      expect(result.rested).toBeNull();
+      expect(result.routes).toEqual([])
+      expect(result.rested).toBeNull()
       // And nothing after `design` ran: `implement` is not among the visits, so
       // the expensive half of the pass was never bought.
-      expect(visited(result)).toEqual(["claim", "admit", "prepared", "design", "end"]);
+      expect(visited(result)).toEqual(['claim', 'admit', 'prepared', 'design', 'end'])
       // **`blocked` and never `failed`**, which is the whole of what the next
       // pass does about it: `failed` releases the claim and the backoff offers
       // the item again, where `blocked` folds to `state: "waiting"` and
@@ -224,13 +226,13 @@ describe("a destination fails three ways, and a step has one way to say so", () 
       // the backoff (`queue.ts`). So this row waits for a person and is not
       // retried, however cheap the failure was — the line `#299` corrected at
       // 0066 §6, about a configuration error that reaches run time.
-      expect(outcomeOf(result)).toBe("blocked");
-      expect(outcomeOf(result)).not.toBe("failed");
+      expect(outcomeOf(result)).toBe('blocked')
+      expect(outcomeOf(result)).not.toBe('failed')
       // `StepDidNotFinish` and not `StepAsked` — broken machinery, not a
       // question (0068).
-      expect(events.filter((e) => e.type === "StepAsked")).toEqual([]);
-      expect(events.some((e) => e.type === "StepDidNotFinish")).toBe(true);
-    });
+      expect(events.filter((e) => e.type === 'StepAsked')).toEqual([])
+      expect(events.some((e) => e.type === 'StepDidNotFinish')).toBe(true)
+    })
 
     /**
      * **And a plain `failed` lands in the same row**, because `design` is not one
@@ -240,18 +242,18 @@ describe("a destination fails three ways, and a step has one way to say so", () 
      * get attention would be buying an agent to report a typo, which is the
      * ticket's *watch out*.
      */
-    it("reads a refusal at `design` as the same ending, and still buys no round", async () => {
+    it('reads a refusal at `design` as the same ending, and still buys no round', async () => {
       const { result } = await passWith({
-        verdict: "failed",
-        evidence: "the wiki answered 503",
+        verdict: 'failed',
+        evidence: 'the wiki answered 503',
         findings: [],
-      });
+      })
 
-      expect(result.stoppedAt?.ending.ending).toBe("did-not-finish");
-      expect(result.routes).toEqual([]);
-      expect(outcomeOf(result)).toBe("blocked");
-    });
-  });
+      expect(result.stoppedAt?.ending.ending).toBe('did-not-finish')
+      expect(result.routes).toEqual([])
+      expect(outcomeOf(result)).toBe('blocked')
+    })
+  })
 
   // ------------------------------------ the destination needs a person ----
 
@@ -265,49 +267,49 @@ describe("a destination fails three ways, and a step has one way to say so", () 
    * appends `StepAsked`, and what leaves the pipeline is a field and an event
    * type rather than a string the workflow branches on.
    */
-  describe("the destination needs a person", () => {
+  describe('the destination needs a person', () => {
     const asking: ActionResult = {
-      verdict: "did-not-finish",
+      verdict: 'did-not-finish',
       because: NEEDS_INPUT,
-      evidence: "which Confluence space should the design go in?",
+      evidence: 'which Confluence space should the design go in?',
       findings: [],
-    };
+    }
 
-    it("ends `asked`, reaches the router, and rests at a person", async () => {
-      const { result, events } = await passWith(asking);
+    it('ends `asked`, reaches the router, and rests at a person', async () => {
+      const { result, events } = await passWith(asking)
 
-      expect(result.steps.find((visit) => visit.step === "design")?.ending).toEqual({
-        ending: "asked",
-        at: "keep it",
-        detail: "which Confluence space should the design go in?",
-      });
+      expect(result.steps.find((visit) => visit.step === 'design')?.ending).toEqual({
+        ending: 'asked',
+        at: 'keep it',
+        detail: 'which Confluence space should the design go in?',
+      })
       // It arrived, which is the whole difference from row two — and with no
       // judge declared, the router's floor sends it to a person.
       expect(result.routes.map((route) => ({ from: route.from, to: route.to }))).toEqual([
-        { from: "design", to: "waiting" },
-      ]);
-      expect(result.rested).toBe("waiting");
-      expect(outcomeOf(result)).toBe("blocked");
+        { from: 'design', to: 'waiting' },
+      ])
+      expect(result.rested).toBe('waiting')
+      expect(outcomeOf(result)).toBe('blocked')
       // The question is on `StepAsked.detail`, which is where a person reads it.
-      expect(events.filter((e) => e.type === "StepDidNotFinish")).toEqual([]);
-      expect(events.find((e) => e.type === "StepAsked")?.data).toMatchObject({
-        step: "design",
-        action: "keep it",
-        detail: "which Confluence space should the design go in?",
-      });
-    });
+      expect(events.filter((e) => e.type === 'StepDidNotFinish')).toEqual([])
+      expect(events.find((e) => e.type === 'StepAsked')?.data).toMatchObject({
+        step: 'design',
+        action: 'keep it',
+        detail: 'which Confluence space should the design go in?',
+      })
+    })
 
     /**
      * **And it buys no round getting there** (0066 §7). The pass rests at a
      * person with the rounds untouched: `design` is visited once, and the ceiling
      * had two to give.
      */
-    it("buys no round, though there were rounds to spend", async () => {
-      const { result } = await passWith(asking);
+    it('buys no round, though there were rounds to spend', async () => {
+      const { result } = await passWith(asking)
 
-      expect(result.steps.filter((visit) => visit.step === "design")).toHaveLength(1);
-      expect(result.routes.every((route) => route.ceiling === null)).toBe(true);
-    });
+      expect(result.steps.filter((visit) => visit.step === 'design')).toHaveLength(1)
+      expect(result.routes.every((route) => route.ceiling === null)).toBe(true)
+    })
 
     /**
      * **What separates the two costs is that this one is answerable.** A
@@ -316,14 +318,14 @@ describe("a destination fails three ways, and a step has one way to say so", () 
      * answer it and a person is the floor rather than the only reading — 0058
      * §3c's *that step again, stating the assumption*.
      */
-    it("arrives with somewhere to go, which a crash never does", () => {
-      const question: StepEnding = { ending: "asked", at: "keep it", detail: "which space?" };
+    it('arrives with somewhere to go, which a crash never does', () => {
+      const question: StepEnding = { ending: 'asked', at: 'keep it', detail: 'which space?' }
 
-      expect(onOffer("design", question, SPARE, 0).affordable).toEqual(["waiting", "design"]);
+      expect(onOffer('design', question, SPARE, 0).affordable).toEqual(['waiting', 'design'])
       // Nobody but the step that asked knows the question, so the offer is that
       // step and a person, and never `implement`.
-      expect(onOffer("design", question, SPARE, 0).reachable).not.toContain("implement");
-    });
+      expect(onOffer('design', question, SPARE, 0).reachable).not.toContain('implement')
+    })
 
     /**
      * **And what `design` on that offer costs is a round**, which is why *none
@@ -334,16 +336,16 @@ describe("a destination fails three ways, and a step has one way to say so", () 
      * `when: needs-input` that keeps answering `design` is paying for a second
      * design run each time, up to `runtime.limits.rounds` and no further.
      */
-    it("charges a round for `design` again, and stops offering it once they are spent", () => {
-      const question: StepEnding = { ending: "asked", at: "keep it", detail: "which space?" };
+    it('charges a round for `design` again, and stops offering it once they are spent', () => {
+      const question: StepEnding = { ending: 'asked', at: 'keep it', detail: 'which space?' }
 
-      expect(onOffer("design", question, SPARE, SPARE.rounds).affordable).toEqual(["waiting"]);
+      expect(onOffer('design', question, SPARE, SPARE.rounds).affordable).toEqual(['waiting'])
       // Reachable all the same: having no round left is the budget's answer and
       // not the workflow's, which is the distinction the two sets exist to keep.
-      expect(onOffer("design", question, SPARE, SPARE.rounds).reachable).toEqual(["waiting", "design"]);
-    });
-  });
-});
+      expect(onOffer('design', question, SPARE, SPARE.rounds).reachable).toEqual(['waiting', 'design'])
+    })
+  })
+})
 
 /**
  * **The table's own home says what was measured here**, which is the half of
@@ -362,45 +364,45 @@ describe("a destination fails three ways, and a step has one way to say so", () 
  * reason: the document is what the claim is judged against, so the judgement
  * belongs beside the code the document describes.
  */
-describe("the ADR the table came from carries what was measured", () => {
+describe('the ADR the table came from carries what was measured', () => {
   /** One `## N. …` section of an ADR, which is the unit a citation names. */
   async function section(file: string, n: number): Promise<string> {
-    const body = await readFile(`${root}doc/decisions-archive/${file}`, "utf8");
-    const found = body.split(/^## /m).find((part) => part.startsWith(`${n}. `));
-    if (found === undefined) throw new Error(`${file} has no §${n}`);
-    return found;
+    const body = await readFile(`${root}doc/decisions-archive/${file}`, 'utf8')
+    const found = body.split(/^## /m).find((part) => part.startsWith(`${n}. `))
+    if (found === undefined) throw new Error(`${file} has no §${n}`)
+    return found
   }
 
-  const ADR = "0066-a-large-answer-is-a-locator-on-the-log.md";
+  const ADR = '0066-a-large-answer-is-a-locator-on-the-log.md'
 
-  it("corrects §6 where §6 prices a run-time failure", async () => {
-    const six = await section(ADR, 6);
+  it('corrects §6 where §6 prices a run-time failure', async () => {
+    const six = await section(ADR, 6)
 
-    expect(six).toContain("#299");
+    expect(six).toContain('#299')
     // The mechanism, named where the wrong one is: not a retry, a block.
-    expect(six).toContain("not retried");
-    expect(six).toContain("blocked");
-  });
+    expect(six).toContain('not retried')
+    expect(six).toContain('blocked')
+  })
 
   it("corrects both of §7's run-time cells, quoting the cell it corrects", async () => {
-    const seven = await section(ADR, 7);
+    const seven = await section(ADR, 7)
 
-    expect(seven).toContain("#299");
-    expect(seven).toContain("the item is released, the backoff retries it");
-    expect(seven).toContain("buys no round");
+    expect(seven).toContain('#299')
+    expect(seven).toContain('the item is released, the backoff retries it')
+    expect(seven).toContain('buys no round')
     // And the reason the second cell was written, so it is not written again:
     // refusing and arriving at the router are different transactions.
-    expect(seven).toMatch(/round is bought at the\s+router/);
-  });
+    expect(seven).toMatch(/round is bought at the\s+router/)
+  })
 
-  it("is cited as corrected on the page a plugin author reads", async () => {
-    const page = await readFile(`${root}doc/writing-a-plugin.md`, "utf8");
+  it('is cited as corrected on the page a plugin author reads', async () => {
+    const page = await readFile(`${root}doc/writing-a-plugin.md`, 'utf8')
     const destination = page
       .split(/^### /m)
-      .find((part) => part.startsWith("A plugin that keeps something somewhere fails three ways"));
-    if (destination === undefined) throw new Error("doc/writing-a-plugin.md has no destination section");
+      .find((part) => part.startsWith('A plugin that keeps something somewhere fails three ways'))
+    if (destination === undefined) throw new Error('doc/writing-a-plugin.md has no destination section')
 
-    expect(destination).toContain("0066 §7");
-    expect(destination).toContain("#299");
-  });
-});
+    expect(destination).toContain('0066 §7')
+    expect(destination).toContain('#299')
+  })
+})

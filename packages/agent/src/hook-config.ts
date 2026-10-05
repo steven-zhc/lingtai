@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join } from 'node:path'
+
+import { stateDir } from '@lingtai/env'
 /**
  * The hook wiring, rendered by the conductor **outside the worktree**.
  *
@@ -12,12 +18,7 @@
  * intersection (doc/decisions-archive/0007-dual-runtime.md); the extras are bonus signal
  * and the system works without them.
  */
-import { Data, Effect } from "effect";
-import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
-import { stateDir } from "@lingtai/env";
+import { Data, Effect } from 'effect'
 
 /**
  * The four both runtimes have, then Claude Code's extras.
@@ -28,25 +29,20 @@ import { stateDir } from "@lingtai/env";
  * startup alone was 17ms ([ADR 0011](../../../doc/decisions-archive/0011-hook-latency-is-runtime-startup.md)).
  * Dropping it removes the hot path rather than optimising it.
  */
-export const INTERSECTION_HOOKS = [
-  "SessionStart",
-  "UserPromptSubmit",
-  "PostToolUse",
-  "Stop",
-] as const;
+export const INTERSECTION_HOOKS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'] as const
 
-export const CLAUDE_ONLY_HOOKS = ["SessionEnd", "PreCompact", "Notification"] as const;
+export const CLAUDE_ONLY_HOOKS = ['SessionEnd', 'PreCompact', 'Notification'] as const
 
 export interface HookWiring {
   /** `--settings` for `claude -p`. Outside the worktree, always. */
-  settingsPath: string;
-  socketPath: string;
+  settingsPath: string
+  socketPath: string
   /** Environment the runtime child needs so the hook can find the conductor. */
-  env: Record<string, string>;
+  env: Record<string, string>
 }
 
 /** macOS caps `sun_path` at 104 bytes; Linux at 108. Neither reports why. */
-export const SUN_PATH_MAX = 104;
+export const SUN_PATH_MAX = 104
 
 /**
  * Where a run's hook socket lives.
@@ -62,30 +58,30 @@ export const SUN_PATH_MAX = 104;
  * two conductors with different state directories cannot collide.
  */
 export function socketPathFor(runId: string, home = stateDir()): string {
-  const short = createHash("sha256").update(`${home}\u0000${runId}`).digest("hex").slice(0, 12);
-  const path = join(tmpdir(), "lingtai", `${short}.sock`);
+  const short = createHash('sha256').update(`${home}\u0000${runId}`).digest('hex').slice(0, 12)
+  const path = join(tmpdir(), 'lingtai', `${short}.sock`)
 
   if (Buffer.byteLength(path) >= SUN_PATH_MAX) {
     // Say which limit and how far over. `EINVAL` on its own costs an hour.
     throw new Error(
       `the hook socket path is ${Buffer.byteLength(path)} bytes and the limit is ${SUN_PATH_MAX}: ${path}. ` +
-        "Set TMPDIR to something shorter.",
-    );
+        'Set TMPDIR to something shorter.',
+    )
   }
-  return path;
+  return path
 }
 
 export function settingsPathFor(runId: string, home = stateDir()): string {
-  return join(home, "runs", runId, "settings.json");
+  return join(home, 'runs', runId, 'settings.json')
 }
 
 export interface RenderOptions {
-  runId: string;
+  runId: string
   /** Absolute path to the compiled `lingtai-hook`. */
-  hookBinary: string;
-  home?: string;
+  hookBinary: string
+  home?: string
   /** Claude Code's extras. Off for a runtime that does not have them. */
-  includeClaudeOnly?: boolean;
+  includeClaudeOnly?: boolean
 }
 
 /**
@@ -103,18 +99,18 @@ export function renderSettings(options: RenderOptions): unknown {
   // a non-blocking error and carries on. The result is a run that records
   // nothing and looks exactly like a run that recorded everything. Refusing
   // here costs nothing and removes the whole class.
-  const command = options.hookBinary;
+  const command = options.hookBinary
   if (!isAbsolute(command)) {
-    throw new Error(`lingtai-hook path must be absolute, got: ${command}`);
+    throw new Error(`lingtai-hook path must be absolute, got: ${command}`)
   }
-  const entry = () => [{ matcher: "*", hooks: [{ type: "command", command }] }];
+  const entry = () => [{ matcher: '*', hooks: [{ type: 'command', command }] }]
 
-  const hooks: Record<string, unknown> = {};
-  for (const name of INTERSECTION_HOOKS) hooks[name] = entry();
+  const hooks: Record<string, unknown> = {}
+  for (const name of INTERSECTION_HOOKS) hooks[name] = entry()
   if (options.includeClaudeOnly !== false) {
-    for (const name of CLAUDE_ONLY_HOOKS) hooks[name] = entry();
+    for (const name of CLAUDE_ONLY_HOOKS) hooks[name] = entry()
   }
-  return { hooks };
+  return { hooks }
 }
 
 /**
@@ -146,26 +142,22 @@ export function renderSettings(options: RenderOptions): unknown {
  * and the managed repository's own `.claude/settings.json` is the level that
  * decides what a run may do. This file exists to say *no hook*, and nothing else.
  */
-export async function writeUnhookedSettings(
-  runId: string,
-  label: string,
-  home = stateDir(),
-): Promise<string> {
-  const path = join(dirname(settingsPathFor(runId, home)), `${runId}.${label}.settings.json`);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 });
-  return path;
+export async function writeUnhookedSettings(runId: string, label: string, home = stateDir()): Promise<string> {
+  const path = join(dirname(settingsPathFor(runId, home)), `${runId}.${label}.settings.json`)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 })
+  return path
 }
 
 export async function writeHookWiring(options: RenderOptions): Promise<HookWiring> {
-  const home = options.home ?? stateDir();
-  const settingsPath = settingsPathFor(options.runId, home);
-  const socketPath = socketPathFor(options.runId, home);
+  const home = options.home ?? stateDir()
+  const settingsPath = settingsPathFor(options.runId, home)
+  const socketPath = socketPathFor(options.runId, home)
 
-  await mkdir(dirname(settingsPath), { recursive: true });
+  await mkdir(dirname(settingsPath), { recursive: true })
   await writeFile(settingsPath, `${JSON.stringify(renderSettings(options), null, 2)}\n`, {
     mode: 0o600,
-  });
+  })
 
   return {
     settingsPath,
@@ -180,7 +172,7 @@ export async function writeHookWiring(options: RenderOptions): Promise<HookWirin
       LINGTAI_HOOK_SOCKET: socketPath,
       LINGTAI_HOOK_RUN_ID: options.runId,
     },
-  };
+  }
 }
 
 /**
@@ -201,30 +193,26 @@ export async function writeHookWiring(options: RenderOptions): Promise<HookWirin
  */
 export async function smokeTestFailClosed(
   hookBinary: string,
-  run: (
-    bin: string,
-    env: Record<string, string>,
-    stdin: string,
-  ) => Promise<{ code: number | null; stderr: string }>,
+  run: (bin: string, env: Record<string, string>, stdin: string) => Promise<{ code: number | null; stderr: string }>,
 ): Promise<{ ok: boolean; detail: string }> {
-  const nowhere = join(stateDir(), "sockets", `smoke-${Date.now()}.sock`);
+  const nowhere = join(stateDir(), 'sockets', `smoke-${Date.now()}.sock`)
   const { code, stderr } = await run(
     hookBinary,
-    { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: "run-smoke" },
-    JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }),
-  );
+    { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: 'run-smoke' },
+    JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }),
+  )
 
   if (code === 2) {
-    return { ok: true, detail: `denied with exit 2 when the socket was absent: ${stderr.trim()}` };
+    return { ok: true, detail: `denied with exit 2 when the socket was absent: ${stderr.trim()}` }
   }
   return {
     ok: false,
     detail:
       `lingtai-hook exited ${code} with no conductor listening — it must exit 2. ` +
-      "A recorder that fails open silently is worse than one that stops: the run " +
-      "continues and produces no events, and in a system whose whole claim is that " +
-      "the log is the answer, that is the failure with no symptom.",
-  };
+      'A recorder that fails open silently is worse than one that stops: the run ' +
+      'continues and produces no events, and in a system whose whole claim is that ' +
+      'the log is the answer, that is the failure with no symptom.',
+  }
 }
 
 /**
@@ -235,10 +223,10 @@ export async function smokeTestFailClosed(
  * conversion is worth something because the type says a call can fail, not
  * because it returns an `Effect`.
  */
-export class AgentHostFailed extends Data.TaggedError("AgentHostFailed")<{
+export class AgentHostFailed extends Data.TaggedError('AgentHostFailed')<{
   /** `wire`, `smokeTest`, `serve` — what was being attempted. */
-  readonly operation: string;
-  readonly detail: string;
+  readonly operation: string
+  readonly detail: string
 }> {}
 
 export const writeUnhookedSettingsEffect = (
@@ -248,28 +236,21 @@ export const writeUnhookedSettingsEffect = (
 ): Effect.Effect<string, AgentHostFailed> =>
   Effect.tryPromise({
     try: () => writeUnhookedSettings(runId, label, home),
-    catch: (err) =>
-      new AgentHostFailed({ operation: "unhooked-settings", detail: (err as Error).message }),
-  });
+    catch: (err) => new AgentHostFailed({ operation: 'unhooked-settings', detail: (err as Error).message }),
+  })
 
 /** The two above, as `Effect`s. The promise faces stay for callers that are not. */
-export const writeHookWiringEffect = (
-  options: RenderOptions,
-): Effect.Effect<HookWiring, AgentHostFailed> =>
+export const writeHookWiringEffect = (options: RenderOptions): Effect.Effect<HookWiring, AgentHostFailed> =>
   Effect.tryPromise({
     try: () => writeHookWiring(options),
-    catch: (err) => new AgentHostFailed({ operation: "wire", detail: (err as Error).message }),
-  });
+    catch: (err) => new AgentHostFailed({ operation: 'wire', detail: (err as Error).message }),
+  })
 
 export const smokeTestFailClosedEffect = (
   hookBinary: string,
-  run: (
-    bin: string,
-    env: Record<string, string>,
-    stdin: string,
-  ) => Promise<{ code: number | null; stderr: string }>,
+  run: (bin: string, env: Record<string, string>, stdin: string) => Promise<{ code: number | null; stderr: string }>,
 ): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed> =>
   Effect.tryPromise({
     try: () => smokeTestFailClosed(hookBinary, run),
-    catch: (err) => new AgentHostFailed({ operation: "smokeTest", detail: (err as Error).message }),
-  });
+    catch: (err) => new AgentHostFailed({ operation: 'smokeTest', detail: (err as Error).message }),
+  })

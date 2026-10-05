@@ -33,8 +33,9 @@
  * A `confluence:` gets its own port with its own `fetch`, beside this one and
  * never inside it.
  */
-import { join } from "node:path";
-import type { ReadAnswer } from "@lingtai/actions";
+import { join } from 'node:path'
+
+import type { ReadAnswer } from '@lingtai/actions'
 
 /**
  * The filesystem, as the one thing this port needs from its caller.
@@ -44,7 +45,7 @@ import type { ReadAnswer } from "@lingtai/actions";
  * and a reader meets one convention.
  */
 export interface WhatIsUnderTheWorktree {
-  read(at: string): Promise<string>;
+  read(at: string): Promise<string>
 }
 
 /**
@@ -79,9 +80,9 @@ export function readWhatAFileKept(
 ): (spec: { readonly path: string }) => Promise<ReadAnswer> {
   return async (spec) => {
     try {
-      return { document: await underneath.read(join(cwd, spec.path)) };
+      return { document: await underneath.read(join(cwd, spec.path)) }
     } catch (error) {
-      return { notRead: (error as Error).message };
+      return { notRead: (error as Error).message }
     }
-  };
+  }
 }

@@ -30,8 +30,7 @@
  * before standard time zones existed — which no row this store writes can have,
  * since `at` defaults to `now()`.
  */
-const TIMESTAMPTZ =
-  /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)([+-])(\d{2})(?::(\d{2}))?(?::(\d{2}))?$/;
+const TIMESTAMPTZ = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)([+-])(\d{2})(?::(\d{2}))?(?::(\d{2}))?$/
 
 /**
  * A `Date` holds milliseconds; Postgres stores microseconds, so reading an event
@@ -39,19 +38,19 @@ const TIMESTAMPTZ =
  * ordering key — `seq` is. Do not start comparing `at` values for ordering.
  */
 export function parseTimestamptz(text: string): Date {
-  const m = TIMESTAMPTZ.exec(text);
+  const m = TIMESTAMPTZ.exec(text)
   if (!m) {
-    throw new Error(`not a Postgres timestamptz: ${JSON.stringify(text)}`);
+    throw new Error(`not a Postgres timestamptz: ${JSON.stringify(text)}`)
   }
-  const [, date, time, sign, hours, minutes] = m;
+  const [, date, time, sign, hours, minutes] = m
 
   // Seconds-of-offset (m[6]) are dropped: `Date` cannot represent them, and they
   // only appear on pre-1900 local-mean-time offsets. Worth knowing about rather
   // than worth handling.
-  const iso = `${date}T${time}${sign}${hours}:${minutes ?? "00"}`;
-  const at = new Date(iso);
+  const iso = `${date}T${time}${sign}${hours}:${minutes ?? '00'}`
+  const at = new Date(iso)
   if (Number.isNaN(at.getTime())) {
-    throw new Error(`unparseable timestamptz: ${JSON.stringify(text)}`);
+    throw new Error(`unparseable timestamptz: ${JSON.stringify(text)}`)
   }
-  return at;
+  return at
 }

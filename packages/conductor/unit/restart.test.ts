@@ -1,3 +1,4 @@
+import { emptyWorkItem, type RestartRecord, type WorkItemState } from '@lingtai/domain'
 /**
  * Whether a pass whose rounds are spent starts the work over, or asks a person.
  *
@@ -15,43 +16,47 @@
  *
  * Unit, under `--project unit`: nothing here reads a database.
  */
-import { describe, expect, it } from "vitest";
-import { emptyWorkItem, type RestartRecord, type WorkItemState } from "@lingtai/domain";
-import { armBranch } from "../src/branches.ts";
-import { decideRestart, restartReason } from "../src/restart.ts";
+import { describe, expect, it } from 'vitest'
+
+import { armBranch } from '../src/branches.ts'
+import { decideRestart, restartReason } from '../src/restart.ts'
 
 const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
-  after: "run-1",
+  after: 'run-1',
   restart: 1,
   of: 2,
-  action: "review",
+  action: 'review',
   rounds: 3,
-  branch: "agent/144",
-  headSha: "8634c5d0000000000000000000000000000000000",
+  branch: 'agent/144',
+  headSha: '8634c5d0000000000000000000000000000000000',
   findings: [],
   ...over,
-});
+})
 
 const item = (restarts: readonly RestartRecord[] = []): WorkItemState => ({
   ...emptyWorkItem,
   restarts,
-});
+})
 
 /** A review that refused, with the rounds spent against it. The ordinary case. */
-const refused = { action: "review", on: "findings" as const, exhausted: true };
+const refused = { action: 'review', on: 'findings' as const, exhausted: true }
 
-describe("whether a spent pass buys another approach", () => {
-  it("buys one when the recipe asks for one and the ceiling is not spent", () => {
-    expect(
-      decideRestart({ refusal: refused, restarts: 2, item: item(), alsoAsked: null }),
-    ).toEqual({ restart: true, n: 1, of: 2 });
+describe('whether a spent pass buys another approach', () => {
+  it('buys one when the recipe asks for one and the ceiling is not spent', () => {
+    expect(decideRestart({ refusal: refused, restarts: 2, item: item(), alsoAsked: null })).toEqual({
+      restart: true,
+      n: 1,
+      of: 2,
+    })
 
     // And the ordinal counts off the arms on the log rather than a counter —
     // which is what makes it survive a rebuild (0025 §3, one ceiling along).
-    expect(
-      decideRestart({ refusal: refused, restarts: 2, item: item([arm()]), alsoAsked: null }),
-    ).toEqual({ restart: true, n: 2, of: 2 });
-  });
+    expect(decideRestart({ refusal: refused, restarts: 2, item: item([arm()]), alsoAsked: null })).toEqual({
+      restart: true,
+      n: 2,
+      of: 2,
+    })
+  })
 
   /**
    * **The default, and the whole of 0040 §4.** The evidence is one ticket and
@@ -60,13 +65,13 @@ describe("whether a spent pass buys another approach", () => {
    * writes a number down. A test rather than a comment because a default that
    * drifts to `1` is a new way to spend an agent on every project at once.
    */
-  it("buys nothing when the recipe says nothing, and names the key", () => {
-    const none = decideRestart({ refusal: refused, restarts: 0, item: item(), alsoAsked: null });
+  it('buys nothing when the recipe says nothing, and names the key', () => {
+    const none = decideRestart({ refusal: refused, restarts: 0, item: item(), alsoAsked: null })
 
-    expect(none.restart).toBe(false);
-    expect(none.restart === false && none.why).toMatch(/runtime\.limits\.restarts: 0/);
-    expect(none.restart === false && none.why).toMatch(/to a person/);
-  });
+    expect(none.restart).toBe(false)
+    expect(none.restart === false && none.why).toMatch(/runtime\.limits\.restarts: 0/)
+    expect(none.restart === false && none.why).toMatch(/to a person/)
+  })
 
   /**
    * **0039 §2 kept, not contradicted.** For a red build and a conflict *the work
@@ -76,19 +81,19 @@ describe("whether a spent pass buys another approach", () => {
    * in the recipe, so no number a project writes down can make a typecheck
    * error buy a fresh worktree.
    */
-  it("buys nothing for a check that stayed red, or a base that moved", () => {
-    for (const on of ["output", "conflict"] as const) {
+  it('buys nothing for a check that stayed red, or a base that moved', () => {
+    for (const on of ['output', 'conflict'] as const) {
       const no = decideRestart({
-        refusal: { action: "build", on, exhausted: true },
+        refusal: { action: 'build', on, exhausted: true },
         restarts: 2,
         item: item(),
         alsoAsked: null,
-      });
+      })
 
-      expect(no.restart).toBe(false);
-      expect(no.restart === false && no.why).toMatch(/the work is still there/);
+      expect(no.restart).toBe(false)
+      expect(no.restart === false && no.why).toMatch(/the work is still there/)
     }
-  });
+  })
 
   /**
    * **A decline is an objection, and this is the test that stops it being
@@ -97,46 +102,46 @@ describe("whether a spent pass buys another approach", () => {
    * fresh approach on that discards the one verdict the whole loop was built to
    * carry, and it would look like progress while doing it.
    */
-  it("buys nothing when an agent declined rather than the ceiling being spent", () => {
+  it('buys nothing when an agent declined rather than the ceiling being spent', () => {
     const no = decideRestart({
-      refusal: { action: "review", on: "findings", exhausted: false },
+      refusal: { action: 'review', on: 'findings', exhausted: false },
       restarts: 2,
       item: item(),
       alsoAsked: null,
-    });
+    })
 
-    expect(no.restart).toBe(false);
-    expect(no.restart === false && no.why).toMatch(/rounds were not spent/);
-  });
+    expect(no.restart).toBe(false)
+    expect(no.restart === false && no.why).toMatch(/rounds were not spent/)
+  })
 
-  it("defers to anything already asking for a person, and says who", () => {
+  it('defers to anything already asking for a person, and says who', () => {
     const no = decideRestart({
       refusal: refused,
       restarts: 2,
       item: item(),
-      alsoAsked: "the a-person-sees-a-new-noun action",
-    });
+      alsoAsked: 'the a-person-sees-a-new-noun action',
+    })
 
-    expect(no.restart).toBe(false);
-    expect(no.restart === false && no.why).toContain("a-person-sees-a-new-noun");
-    expect(no.restart === false && no.why).toMatch(/throw that question away/);
-  });
+    expect(no.restart).toBe(false)
+    expect(no.restart === false && no.why).toContain('a-person-sees-a-new-noun')
+    expect(no.restart === false && no.why).toMatch(/throw that question away/)
+  })
 
   /**
    * **The bound, which is the reason the second ceiling exists at all.** A loop
    * that restarts without one is a money pump on a ticket that is simply wrong.
    */
-  it("stops at the ceiling, and says which ceiling", () => {
+  it('stops at the ceiling, and says which ceiling', () => {
     const spent = decideRestart({
       refusal: refused,
       restarts: 2,
-      item: item([arm({ restart: 1 }), arm({ restart: 2, after: "run-2" })]),
+      item: item([arm({ restart: 1 }), arm({ restart: 2, after: 'run-2' })]),
       alsoAsked: null,
-    });
+    })
 
-    expect(spent.restart).toBe(false);
-    expect(spent.restart === false && spent.why).toContain("ceiling of 2 restart(s)");
-  });
+    expect(spent.restart).toBe(false)
+    expect(spent.restart === false && spent.why).toContain('ceiling of 2 restart(s)')
+  })
 
   /**
    * The order the refusals are checked in is the order an operator reads them,
@@ -144,17 +149,17 @@ describe("whether a spent pass buys another approach", () => {
    * fundamental reason and not the last one checked. Same property `decideFix`
    * is written for, and `decideRepair` was before `#143` deleted it.
    */
-  it("names the recipe before the ceiling when both would refuse", () => {
+  it('names the recipe before the ceiling when both would refuse', () => {
     const no = decideRestart({
       refusal: refused,
       restarts: 0,
       item: item([arm()]),
-      alsoAsked: "a repair",
-    });
+      alsoAsked: 'a repair',
+    })
 
-    expect(no.restart === false && no.why).toMatch(/runtime\.limits\.restarts: 0/);
-  });
-});
+    expect(no.restart === false && no.why).toMatch(/runtime\.limits\.restarts: 0/)
+  })
+})
 
 /**
  * The sentence has two readers, which is why it is a function: the card's line,
@@ -162,15 +167,15 @@ describe("whether a spent pass buys another approach", () => {
  * That is the whole of what a restart adds to a prompt — nothing new, one
  * honest row — so it has to say *abandoned* rather than merely *failed*.
  */
-describe("what the release says", () => {
-  it("says the approach was abandoned, and which arm this is", () => {
-    const reason = restartReason({ action: "review", rounds: 3, n: 1, of: 2 });
+describe('what the release says', () => {
+  it('says the approach was abandoned, and which arm this is', () => {
+    const reason = restartReason({ action: 'review', rounds: 3, n: 1, of: 2 })
 
-    expect(reason).toContain("review reviewer still refused after 3 round(s)");
-    expect(reason).toContain("approach is abandoned");
-    expect(reason).toContain("restart 1 of 2");
-  });
-});
+    expect(reason).toContain('review reviewer still refused after 3 round(s)')
+    expect(reason).toContain('approach is abandoned')
+    expect(reason).toContain('restart 1 of 2')
+  })
+})
 
 /**
  * **Where a claim's commits are published**, which is the other half of the
@@ -184,11 +189,11 @@ describe("what the release says", () => {
  * exactly the moment a person is being asked to compare the arms.
  */
 describe("where a claim's commits are published", () => {
-  it("gives each arm a ref of its own, beside the working branch", () => {
-    expect(armBranch("agent/7", 1)).toBe("agent/7-attempt-1");
-    expect(armBranch("agent/7", 2)).toBe("agent/7-attempt-2");
-    expect(armBranch("agent/7", 1)).not.toBe(armBranch("agent/7", 2));
-  });
+  it('gives each arm a ref of its own, beside the working branch', () => {
+    expect(armBranch('agent/7', 1)).toBe('agent/7-attempt-1')
+    expect(armBranch('agent/7', 2)).toBe('agent/7-attempt-2')
+    expect(armBranch('agent/7', 1)).not.toBe(armBranch('agent/7', 2))
+  })
 
   /**
    * **The ordinal is the attempt's, and `-restart-` is gone**
@@ -201,10 +206,10 @@ describe("where a claim's commits are published", () => {
    * keeping both would give one set of commits two names: a pass's first
    * restart would be `agent/7-restart-1` and `agent/7-attempt-2` at once.
    */
-  it("names the attempt and not the restart, because only one of those always exists", () => {
-    expect(armBranch("agent/7", 1)).not.toContain("-restart-");
-    expect(armBranch("agent/7", 1)).toContain("-attempt-");
-  });
+  it('names the attempt and not the restart, because only one of those always exists', () => {
+    expect(armBranch('agent/7', 1)).not.toContain('-restart-')
+    expect(armBranch('agent/7', 1)).toContain('-attempt-')
+  })
 
   /**
    * A sibling and not a child: git cannot hold `refs/heads/agent/7` and
@@ -212,7 +217,7 @@ describe("where a claim's commits are published", () => {
    * directory — and `agent/7` has to keep existing, since it is the name
    * `attempts.ts` spells out in the next attempt's prompt.
    */
-  it("does not nest under the branch it is abandoning", () => {
-    expect(armBranch("agent/7", 1).startsWith("agent/7/")).toBe(false);
-  });
-});
+  it('does not nest under the branch it is abandoning', () => {
+    expect(armBranch('agent/7', 1).startsWith('agent/7/')).toBe(false)
+  })
+})

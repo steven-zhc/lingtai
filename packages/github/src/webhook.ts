@@ -23,11 +23,11 @@
  * how a rate limit gets hit. The delivery id is carried on the event so the
  * caller can drop one it has already seen.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from 'node:crypto'
 
-export const SIGNATURE_HEADER = "x-hub-signature-256";
-export const EVENT_HEADER = "x-github-event";
-export const DELIVERY_HEADER = "x-github-delivery";
+export const SIGNATURE_HEADER = 'x-hub-signature-256'
+export const EVENT_HEADER = 'x-github-event'
+export const DELIVERY_HEADER = 'x-github-delivery'
 
 export type WebhookVerdict =
   /** Verified, and it means the queue may have changed. */
@@ -35,7 +35,7 @@ export type WebhookVerdict =
   /** Verified, and it means nothing to us. */
   | { ok: true; act: false; reason: string; delivery: string }
   /** Not verified. Nothing is done, and the reason never quotes the body. */
-  | { ok: false; reason: "no-signature" | "bad-signature" | "malformed" };
+  | { ok: false; reason: 'no-signature' | 'bad-signature' | 'malformed' }
 
 /**
  * Which `issues` actions can change what is runnable.
@@ -44,14 +44,7 @@ export type WebhookVerdict =
  * from labels — an issue becoming a `bug` is an issue becoming runnable, and it
  * is the case somebody will actually use.
  */
-const ISSUE_ACTIONS = new Set([
-  "opened",
-  "reopened",
-  "closed",
-  "labeled",
-  "unlabeled",
-  "edited",
-]);
+const ISSUE_ACTIONS = new Set(['opened', 'reopened', 'closed', 'labeled', 'unlabeled', 'edited'])
 
 /**
  * Every event a delivery of can be acted on, with the actions that count.
@@ -62,44 +55,44 @@ const ISSUE_ACTIONS = new Set([
  * not here is one `verifyWebhook` drops — `push` is not, below — so subscribing
  * to it asks GitHub to send what this system throws away.
  */
-export const ACTED_ON: Readonly<Record<string, ReadonlySet<string>>> = { issues: ISSUE_ACTIONS };
+export const ACTED_ON: Readonly<Record<string, ReadonlySet<string>>> = { issues: ISSUE_ACTIONS }
 
 export function verifyWebhook(
   body: string,
   headers: Record<string, string | undefined>,
   secret: string,
 ): WebhookVerdict {
-  const signature = headers[SIGNATURE_HEADER];
-  const delivery = headers[DELIVERY_HEADER] ?? "";
-  if (!signature) return { ok: false, reason: "no-signature" };
+  const signature = headers[SIGNATURE_HEADER]
+  const delivery = headers[DELIVERY_HEADER] ?? ''
+  if (!signature) return { ok: false, reason: 'no-signature' }
 
-  const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
+  const expected = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
+  const a = Buffer.from(signature)
+  const b = Buffer.from(expected)
   // Length first: `timingSafeEqual` throws on a mismatch, and a thrown
   // exception is a timing signal of its own.
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    return { ok: false, reason: "bad-signature" };
+    return { ok: false, reason: 'bad-signature' }
   }
 
-  let payload: { action?: string; repository?: { name?: string } };
+  let payload: { action?: string; repository?: { name?: string } }
   try {
-    payload = JSON.parse(body);
+    payload = JSON.parse(body)
   } catch {
-    return { ok: false, reason: "malformed" };
+    return { ok: false, reason: 'malformed' }
   }
 
-  const event = headers[EVENT_HEADER] ?? "";
-  const project = payload.repository?.name;
-  if (!project) return { ok: true, act: false, reason: `${event}: no repository`, delivery };
+  const event = headers[EVENT_HEADER] ?? ''
+  const project = payload.repository?.name
+  if (!project) return { ok: true, act: false, reason: `${event}: no repository`, delivery }
 
   if (payload.action && ACTED_ON[event]?.has(payload.action)) {
-    return { ok: true, act: true, project, reason: `issues.${payload.action}`, delivery };
+    return { ok: true, act: true, project, reason: `issues.${payload.action}`, delivery }
   }
 
   // `push` deliberately does nothing. A force-push already invalidates a gate
   // verdict by arithmetic — the verdict names the sha it was about — so there
   // is nothing for a push to trigger that is not already handled, and acting on
   // one would mean re-asking GitHub on every commit anybody makes.
-  return { ok: true, act: false, reason: `${event}.${payload.action ?? ""}`, delivery };
+  return { ok: true, act: false, reason: `${event}.${payload.action ?? ''}`, delivery }
 }

@@ -1,3 +1,9 @@
+import { createPublicKey } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, join } from 'node:path'
+
+import { RUN_LIMITS, type AuthStatus, type RuntimeCapabilities, createRuntime, everyRuntime } from '@lingtai/agent'
 /**
  * `lingtai doctor` — the old `preflight()`, generalised.
  *
@@ -22,7 +28,7 @@
  * not about what happened to be installed the day it was written: see
  * `DEFERRED`.
  */
-import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from "@lingtai/agent-env";
+import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from '@lingtai/agent-env'
 import {
   type AgentRefusal,
   type ClientFor,
@@ -35,20 +41,7 @@ import {
   passCeiling,
   projectFilters,
   signedInHere,
-} from "@lingtai/conductor";
-import type { GitHubClient } from "@lingtai/github";
-// The submodule, not the barrel: these two checks run on the *direct*
-// connection, and the barrel's `log` is the pooled one. Through a pooler is
-// where the suite learned what a dropped connection costs (#157), and an audit
-// that reds on one would hold `lingtai restart`.
-import { createPostgresLogQueries, type LogQueries } from "@lingtai/event-store/queries";
-// The barrel's `log`, which is the store **this machine wrote down** (0056) and
-// opens nothing until something asks it a question. It is what the rows above
-// are asked on a machine whose log is a file; a Postgres machine keeps naming
-// the direct connection, for the reason the import above gives.
-import { log } from "@lingtai/event-store";
-import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, machinePath, recipePath, type Recipe } from "@lingtai/recipe";
-import { type RecordedRefusal, type RuntimeId, isEventType } from "@lingtai/domain";
+} from '@lingtai/conductor'
 import {
   codeCurrency,
   codeRoot,
@@ -61,7 +54,8 @@ import {
   readCodeVersion,
   readControl,
   readStatus,
-} from "@lingtai/daemon";
+} from '@lingtai/daemon'
+import { type RecordedRefusal, type RuntimeId, isEventType } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type StoreChoice,
@@ -71,17 +65,20 @@ import {
   machineDatabaseUrl,
   postgresUrlIfSet,
   storeChoice,
-} from "@lingtai/env";
-import { paint } from "@lingtai/env/colour";
-import { REQUIRED_PERMISSIONS } from "@lingtai/github";
-import { git } from "@lingtai/repo";
-import {
-  RUN_LIMITS,
-  type AuthStatus,
-  type RuntimeCapabilities,
-  createRuntime,
-  everyRuntime,
-} from "@lingtai/agent";
+} from '@lingtai/env'
+import { paint } from '@lingtai/env/colour'
+// The barrel's `log`, which is the store **this machine wrote down** (0056) and
+// opens nothing until something asks it a question. It is what the rows above
+// are asked on a machine whose log is a file; a Postgres machine keeps naming
+// the direct connection, for the reason the import above gives.
+import { log } from '@lingtai/event-store'
+// The submodule, not the barrel: these two checks run on the *direct*
+// connection, and the barrel's `log` is the pooled one. Through a pooler is
+// where the suite learned what a dropped connection costs (#157), and an audit
+// that reds on one would hold `lingtai restart`.
+import { createPostgresLogQueries, type LogQueries } from '@lingtai/event-store/queries'
+import type { GitHubClient } from '@lingtai/github'
+import { REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
   backlogProjection,
   describeShape,
@@ -90,13 +87,12 @@ import {
   readTasks,
   taskViewProjection,
   type Projection,
-} from "@lingtai/projector";
-import { createPublicKey } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
-import pg from "pg";
-import { RUN_UNDER_A_PAUSE } from "./run.ts";
+} from '@lingtai/projector'
+import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, machinePath, recipePath, type Recipe } from '@lingtai/recipe'
+import { git } from '@lingtai/repo'
+import pg from 'pg'
+
+import { RUN_UNDER_A_PAUSE } from './run.ts'
 
 /**
  * `warn` is not a weak `fail`. It means **nothing is wrong and you should know
@@ -106,7 +102,7 @@ import { RUN_UNDER_A_PAUSE } from "./run.ts";
  * `fail` makes doctor red for a file everybody has, and a check that is always
  * red is a check nobody reads.
  */
-export type CheckStatus = "ok" | "warn" | "fail" | "skip";
+export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
 
 /**
  * How far back `subscribers: failures` counts as *recent*.
@@ -115,27 +111,27 @@ export type CheckStatus = "ok" | "warn" | "fail" | "skip";
  * gives: nothing retries a subscriber, so a total would be red for ever over a
  * notifier that broke once in March.
  */
-const A_DAY_MS = 24 * 60 * 60 * 1000;
+const A_DAY_MS = 24 * 60 * 60 * 1000
 
 export interface CheckResult {
-  name: string;
-  status: CheckStatus;
+  name: string
+  status: CheckStatus
   /** What it found — never just a tick. */
-  detail: string;
+  detail: string
   /**
    * True for a check that is *not implemented here*, as opposed to one skipped
    * because something earlier failed. Its detail says why — in terms of the
    * design, naming where the property is proved instead, so that the reason
    * cannot go stale. See `DEFERRED`.
    */
-  deferred?: boolean;
+  deferred?: boolean
   /**
    * True for a failure whose remedy the check itself names as restarting the
    * daemon. `lingtai restart` gates on this report and does not count these:
    * refusing the one command a failure asks for, unless a waiver is typed, is
    * how that waiver becomes a habit that hides the failures it should not (0042).
    */
-  restartAnswers?: boolean;
+  restartAnswers?: boolean
 }
 
 /**
@@ -147,22 +143,22 @@ export interface CheckResult {
  * "same host" is the one relation worth knowing.
  */
 function describeUrl(raw: string): { port: string; database: string; pgbouncer: boolean; host: string } {
-  const u = new URL(raw);
+  const u = new URL(raw)
   return {
-    port: u.port || "5432",
-    database: u.pathname.replace(/^\//, "") || "(default)",
-    pgbouncer: u.searchParams.get("pgbouncer") === "true",
+    port: u.port || '5432',
+    database: u.pathname.replace(/^\//, '') || '(default)',
+    pgbouncer: u.searchParams.get('pgbouncer') === 'true',
     host: u.hostname,
-  };
+  }
 }
 
 async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const c = new pg.Client({ connectionString: url, application_name: "lingtai-doctor" });
-  await c.connect();
+  const c = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
+  await c.connect()
   try {
-    return await fn(c);
+    return await fn(c)
   } finally {
-    await c.end();
+    await c.end()
   }
 }
 
@@ -194,13 +190,14 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
  * about it is `SQLITE_MACHINE`.
  */
 export function storeRow(choice: StoreChoice): CheckResult {
-  const name = "store: the machine's written choice";
-  const shut = "every command that opens the log is refused until this is written — nothing falls back to LINGTAI_DATABASE_URL or database.url (#179, 0056 §2)";
-  if ("refused" in choice) return { name, status: "fail", detail: `${choice.refused} · ${shut}` };
-  if (choice.store === "sqlite") {
-    return { name, status: "ok", detail: `sqlite ← ${choice.from} · ${SQLITE_MACHINE}` };
+  const name = "store: the machine's written choice"
+  const shut =
+    'every command that opens the log is refused until this is written — nothing falls back to LINGTAI_DATABASE_URL or database.url (#179, 0056 §2)'
+  if ('refused' in choice) return { name, status: 'fail', detail: `${choice.refused} · ${shut}` }
+  if (choice.store === 'sqlite') {
+    return { name, status: 'ok', detail: `sqlite ← ${choice.from} · ${SQLITE_MACHINE}` }
   }
-  return { name, status: "ok", detail: `postgres ← ${choice.from}` };
+  return { name, status: 'ok', detail: `postgres ← ${choice.from}` }
 }
 
 /**
@@ -235,22 +232,22 @@ export function storeRow(choice: StoreChoice): CheckResult {
  * tells the two apart, so it is placed before them and never after.
  */
 export async function logReachable(where: string, queries: LogQueries): Promise<CheckResult> {
-  const name = "log: reachable";
+  const name = 'log: reachable'
   try {
-    const streams = await queries.projectStreams("prj-");
+    const streams = await queries.projectStreams('prj-')
     return {
       name,
-      status: "ok",
+      status: 'ok',
       detail: `${where} opened and answered — ${streams.length} project stream(s) in it`,
-    };
+    }
   } catch (err) {
     return {
       name,
-      status: "fail",
+      status: 'fail',
       detail:
         `${where} could not be opened or read — ${(err as Error).message}. ` +
-        "Every command that appends or reads is refused the same way until it can be",
-    };
+        'Every command that appends or reads is refused the same way until it can be',
+    }
   }
 }
 
@@ -290,46 +287,45 @@ export async function logReachable(where: string, queries: LogQueries): Promise<
 export function postgresOnlyRows(): { name: string; because: string }[] {
   return [
     {
-      name: "postgres: pooled connection",
+      name: 'postgres: pooled connection',
       because:
-        "there is no server to connect to — log: reachable above opens the file instead, which is the same question",
+        'there is no server to connect to — log: reachable above opens the file instead, which is the same question',
     },
     {
-      name: "postgres: direct connection is session mode",
+      name: 'postgres: direct connection is session mode',
       because:
-        "session mode is about a pooler handing a LISTEN registration to someone else (0009); a reader of a file " +
-        "is told about an append by polling it (createPollingWaker, #178), so there is no connection here to be in " +
-        "the wrong mode",
+        'session mode is about a pooler handing a LISTEN registration to someone else (0009); a reader of a file ' +
+        'is told about an append by polling it (createPollingWaker, #178), so there is no connection here to be in ' +
+        'the wrong mode',
     },
     {
-      name: "schema: tables",
+      name: 'schema: tables',
       because:
-        "events and checkpoints are created by the store itself on every open (packages/event-store/src/sqlite.ts, " +
-        "packages/projector/src/sqlite.ts), so there is no bootstrap step that could have been missed",
+        'events and checkpoints are created by the store itself on every open (packages/event-store/src/sqlite.ts, ' +
+        'packages/projector/src/sqlite.ts), so there is no bootstrap step that could have been missed',
     },
     {
-      name: "schema: optimistic concurrency",
+      name: 'schema: optimistic concurrency',
       because:
-        "UNIQUE (stream_id, version) is in that same CREATE TABLE and cannot be absent from a file this build opened",
+        'UNIQUE (stream_id, version) is in that same CREATE TABLE and cannot be absent from a file this build opened',
     },
     {
-      name: "schema: append-only",
+      name: 'schema: append-only',
       because:
-        "and nothing stands in for it: UPDATE and DELETE on events are refused by Postgres rules, and a file " +
-        "has no rules — what keeps this log append-only is that the store is the only writer of it",
+        'and nothing stands in for it: UPDATE and DELETE on events are refused by Postgres rules, and a file ' +
+        'has no rules — what keeps this log append-only is that the store is the only writer of it',
     },
     {
-      name: "schema: notify trigger",
-      because:
-        "nothing announces an append from inside the file; a second reader finds out by polling (0055 §3)",
+      name: 'schema: notify trigger',
+      because: 'nothing announces an append from inside the file; a second reader finds out by polling (0055 §3)',
     },
     {
-      name: "schema: payload column",
+      name: 'schema: payload column',
       because:
-        "data is TEXT holding JSON, read with json_extract rather than jsonb operators — there is no column type " +
-        "here that could be the wrong one",
+        'data is TEXT holding JSON, read with json_extract rather than jsonb operators — there is no column type ' +
+        'here that could be the wrong one',
     },
-  ];
+  ]
 }
 
 /**
@@ -340,60 +336,60 @@ export function environment(
   pooled: string | undefined,
   direct: string | undefined,
   standIn = false,
-  source = "LINGTAI_DATABASE_URL",
+  source = 'LINGTAI_DATABASE_URL',
 ): CheckResult {
   if (!pooled || !direct) {
-    const missing = [!pooled && "LINGTAI_DATABASE_URL", !direct && "LINGTAI_DIRECT_DATABASE_URL"].filter(Boolean);
+    const missing = [!pooled && 'LINGTAI_DATABASE_URL', !direct && 'LINGTAI_DIRECT_DATABASE_URL'].filter(Boolean)
     return {
-      name: "environment",
-      status: "fail",
+      name: 'environment',
+      status: 'fail',
       detail:
-        `${missing.join(" and ")} not set, and ~/.lingtai/config.yml names no database.url — ` +
-        "lingtai init writes one, or copy .env.example to .env.local at the repo root",
-    };
+        `${missing.join(' and ')} not set, and ~/.lingtai/config.yml names no database.url — ` +
+        'lingtai init writes one, or copy .env.example to .env.local at the repo root',
+    }
   }
 
-  const p = describeUrl(pooled);
-  const d = describeUrl(direct);
-  const sameHost = p.host === d.host;
+  const p = describeUrl(pooled)
+  const d = describeUrl(direct)
+  const sameHost = p.host === d.host
   const detail =
     `${source} :${p.port} db=${p.database} pgbouncer=${p.pgbouncer} · ` +
     (standIn
-      ? "LINGTAI_DIRECT_DATABASE_URL unset, the pooled one stands in · "
+      ? 'LINGTAI_DIRECT_DATABASE_URL unset, the pooled one stands in · '
       : `LINGTAI_DIRECT_DATABASE_URL :${d.port} db=${d.database} pgbouncer=${d.pgbouncer} · `) +
-    `same host: ${sameHost ? "yes" : "NO"}`;
+    `same host: ${sameHost ? 'yes' : 'NO'}`
 
   // Two URLs against different databases is not a configuration this system has
   // any meaning for: the subscriber would be listening to one log while the
   // writer appended to another.
   if (!sameHost || p.database !== d.database) {
-    return { name: "environment", status: "fail", detail: `${detail} — they must be one database` };
+    return { name: 'environment', status: 'fail', detail: `${detail} — they must be one database` }
   }
   if (d.pgbouncer) {
     return {
-      name: "environment",
-      status: "fail",
+      name: 'environment',
+      status: 'fail',
       detail: standIn
         ? `${detail} — LINGTAI_DATABASE_URL carries pgbouncer=true, so it cannot stand in for the direct one: set LINGTAI_DIRECT_DATABASE_URL`
         : `${detail} — LINGTAI_DIRECT_DATABASE_URL still carries pgbouncer=true`,
-    };
+    }
   }
-  return { name: "environment", status: "ok", detail };
+  return { name: 'environment', status: 'ok', detail }
 }
 
 async function pooledConnection(url: string): Promise<CheckResult> {
   try {
     const version = await withClient(url, async (c) => {
-      const r = await c.query<{ v: string }>("select version() as v");
-      return (r.rows[0]?.v ?? "").split(" on ")[0];
-    });
-    return { name: "postgres: pooled connection", status: "ok", detail: version ?? "connected" };
+      const r = await c.query<{ v: string }>('select version() as v')
+      return (r.rows[0]?.v ?? '').split(' on ')[0]
+    })
+    return { name: 'postgres: pooled connection', status: 'ok', detail: version ?? 'connected' }
   } catch (err) {
     return {
-      name: "postgres: pooled connection",
-      status: "fail",
+      name: 'postgres: pooled connection',
+      status: 'fail',
       detail: (err as Error).message,
-    };
+    }
   }
 }
 
@@ -410,50 +406,50 @@ async function pooledConnection(url: string): Promise<CheckResult> {
  * is in Postgres since #193: every lock is a file (`@lingtai/env/lock`).
  */
 async function directIsSessionMode(url: string, standIn = false): Promise<CheckResult> {
-  const name = "postgres: direct connection is session mode";
-  const listener = new pg.Client({ connectionString: url, application_name: "lingtai-doctor" });
-  const notifier = new pg.Client({ connectionString: url, application_name: "lingtai-doctor" });
+  const name = 'postgres: direct connection is session mode'
+  const listener = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
+  const notifier = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
 
   try {
-    await listener.connect();
-    const heard: string[] = [];
-    listener.on("notification", (m) => void heard.push(m.payload ?? ""));
-    await listener.query("LISTEN lingtai_doctor");
+    await listener.connect()
+    const heard: string[] = []
+    listener.on('notification', (m) => void heard.push(m.payload ?? ''))
+    await listener.query('LISTEN lingtai_doctor')
 
     // Long enough that a transaction pooler would have handed the listener's
     // backend to someone else, taking the LISTEN registration with it.
-    await new Promise((r) => setTimeout(r, 1_500));
+    await new Promise((r) => setTimeout(r, 1_500))
 
-    await notifier.connect();
-    await notifier.query("NOTIFY lingtai_doctor, 'lingtai doctor'");
+    await notifier.connect()
+    await notifier.query("NOTIFY lingtai_doctor, 'lingtai doctor'")
 
-    const deadline = Date.now() + 5_000;
+    const deadline = Date.now() + 5_000
     while (heard.length === 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50))
     }
     if (heard.length === 0) {
       return {
         name,
-        status: "fail",
+        status: 'fail',
         detail:
           (standIn
-            ? "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and " +
-              "LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL. "
-            : "a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. ") +
-          "LISTEN/NOTIFY will fail silently through it (doc/decisions-archive/0009).",
-      };
+            ? 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is unset, and ' +
+              'LINGTAI_DATABASE_URL standing in for it is not session mode: set LINGTAI_DIRECT_DATABASE_URL. '
+            : 'a NOTIFY from a second connection never arrived — LINGTAI_DIRECT_DATABASE_URL is not session mode. ') +
+          'LISTEN/NOTIFY will fail silently through it (doc/decisions-archive/0009).',
+      }
     }
 
     return {
       name,
-      status: "ok",
-      detail: "cross-connection NOTIFY delivered after a 1.5s pause",
-    };
+      status: 'ok',
+      detail: 'cross-connection NOTIFY delivered after a 1.5s pause',
+    }
   } catch (err) {
-    return { name, status: "fail", detail: (err as Error).message };
+    return { name, status: 'fail', detail: (err as Error).message }
   } finally {
-    await listener.end().catch(() => {});
-    await notifier.end().catch(() => {});
+    await listener.end().catch(() => {})
+    await notifier.end().catch(() => {})
   }
 }
 
@@ -468,7 +464,7 @@ async function directIsSessionMode(url: string, standIn = false): Promise<CheckR
 async function schema(url: string): Promise<CheckResult[]> {
   try {
     return await withClient(url, async (c) => {
-      const out: CheckResult[] = [];
+      const out: CheckResult[] = []
 
       // Two, since `#72` dropped `outbox`. The log and the projections'
       // checkpoints are the whole of the schema now, which is the shape 0022
@@ -476,75 +472,75 @@ async function schema(url: string): Promise<CheckResult[]> {
       const tables = await c.query<{ table_name: string }>(
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_name in ('events','checkpoints')`,
-      );
-      const found = tables.rows.map((r) => r.table_name).sort();
+      )
+      const found = tables.rows.map((r) => r.table_name).sort()
       out.push({
-        name: "schema: tables",
-        status: found.length === 2 ? "ok" : "fail",
-        detail: found.length === 2 ? found.join(", ") : `found ${found.join(", ") || "none"} — expected both`,
-      });
+        name: 'schema: tables',
+        status: found.length === 2 ? 'ok' : 'fail',
+        detail: found.length === 2 ? found.join(', ') : `found ${found.join(', ') || 'none'} — expected both`,
+      })
 
       const uq = await c.query(
         `select 1 from pg_indexes where tablename = 'events'
          and indexdef like '%UNIQUE%stream_id%version%'`,
-      );
+      )
       out.push({
-        name: "schema: optimistic concurrency",
-        status: uq.rowCount === 1 ? "ok" : "fail",
+        name: 'schema: optimistic concurrency',
+        status: uq.rowCount === 1 ? 'ok' : 'fail',
         detail:
           uq.rowCount === 1
-            ? "UNIQUE (stream_id, version) present — the whole of the concurrency control"
-            : "UNIQUE (stream_id, version) is MISSING; two workers can claim one work item",
-      });
+            ? 'UNIQUE (stream_id, version) present — the whole of the concurrency control'
+            : 'UNIQUE (stream_id, version) is MISSING; two workers can claim one work item',
+      })
 
       const rules = await c.query<{ rulename: string }>(
         `select rulename from pg_rules where tablename = 'events'
          and rulename in ('lingtai_events_no_update','lingtai_events_no_delete')`,
-      );
-      const ruleNames = rules.rows.map((r) => r.rulename).sort();
+      )
+      const ruleNames = rules.rows.map((r) => r.rulename).sort()
       out.push({
-        name: "schema: append-only",
-        status: ruleNames.length === 2 ? "ok" : "fail",
+        name: 'schema: append-only',
+        status: ruleNames.length === 2 ? 'ok' : 'fail',
         detail:
           ruleNames.length === 2
-            ? "UPDATE and DELETE on events do nothing"
-            : `only ${ruleNames.join(", ") || "no"} rule(s) present — run pnpm --filter @lingtai/event-store db:bootstrap`,
-      });
+            ? 'UPDATE and DELETE on events do nothing'
+            : `only ${ruleNames.join(', ') || 'no'} rule(s) present — run pnpm --filter @lingtai/event-store db:bootstrap`,
+      })
 
       const trig = await c.query(
         `select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
          where c.relname = 'events' and t.tgname = 'lingtai_events_notify' and not t.tgisinternal`,
-      );
+      )
       out.push({
-        name: "schema: notify trigger",
-        status: trig.rowCount === 1 ? "ok" : "fail",
+        name: 'schema: notify trigger',
+        status: trig.rowCount === 1 ? 'ok' : 'fail',
         detail:
           trig.rowCount === 1
-            ? "every append announces itself on the lingtai channel"
-            : "lingtai_events_notify is MISSING; nothing would wake on an append — run db:bootstrap",
-      });
+            ? 'every append announces itself on the lingtai channel'
+            : 'lingtai_events_notify is MISSING; nothing would wake on an append — run db:bootstrap',
+      })
 
       const jsonb = await c.query<{ table_name: string; column_name: string; data_type: string }>(
         `select table_name, column_name, data_type from information_schema.columns
          where table_schema = 'public'
            and (table_name, column_name) in (('events','data'))`,
-      );
-      const wrong = jsonb.rows.filter((r) => r.data_type !== "jsonb");
+      )
+      const wrong = jsonb.rows.filter((r) => r.data_type !== 'jsonb')
       out.push({
-        name: "schema: payload column",
-        status: jsonb.rows.length === 1 && wrong.length === 0 ? "ok" : "fail",
+        name: 'schema: payload column',
+        status: jsonb.rows.length === 1 && wrong.length === 0 ? 'ok' : 'fail',
         detail:
           jsonb.rows.length === 1 && wrong.length === 0
-            ? "events.data is jsonb"
+            ? 'events.data is jsonb'
             : wrong.length > 0
-              ? wrong.map((r) => `${r.table_name}.${r.column_name} is ${r.data_type}`).join(", ")
-              : "events.data is missing",
-      });
+              ? wrong.map((r) => `${r.table_name}.${r.column_name} is ${r.data_type}`).join(', ')
+              : 'events.data is missing',
+      })
 
-      return out;
-    });
+      return out
+    })
   } catch (err) {
-    return [{ name: "schema", status: "fail", detail: (err as Error).message }];
+    return [{ name: 'schema', status: 'fail', detail: (err as Error).message }]
   }
 }
 
@@ -558,24 +554,22 @@ async function projections(
   fetch: () => ReturnType<typeof projectionLag> = () => projectionLag(url),
 ): Promise<CheckResult> {
   try {
-    const lags = await fetch();
+    const lags = await fetch()
     if (lags.length === 0) {
       return {
-        name: "projections: lag",
-        status: "ok",
-        detail: "no projection has a checkpoint yet — nothing is running to fall behind",
-      };
+        name: 'projections: lag',
+        status: 'ok',
+        detail: 'no projection has a checkpoint yet — nothing is running to fall behind',
+      }
     }
-    const detail = lags
-      .map((l) => `${l.name} at ${l.lastSeq}/${l.headSeq} (${l.lag} behind)`)
-      .join(" · ");
+    const detail = lags.map((l) => `${l.name} at ${l.lastSeq}/${l.headSeq} (${l.lag} behind)`).join(' · ')
     // Reported, not failed. With no daemon yet, every projection is behind
     // whenever nothing is running it — that is expected, not broken. Once the
     // conductor runs as a daemon (#27), lag plus a stale `updatedAt` becomes a
     // real failure and this is where it belongs.
-    return { name: "projections: lag", status: "ok", detail };
+    return { name: 'projections: lag', status: 'ok', detail }
   } catch (err) {
-    return { name: "projections: lag", status: "fail", detail: (err as Error).message };
+    return { name: 'projections: lag', status: 'fail', detail: (err as Error).message }
   }
 }
 
@@ -600,20 +594,18 @@ async function projectionShapes(
   url?: string,
   fetch: (p: Projection) => ReturnType<typeof projectionShape> = (p) => projectionShape(p, url),
 ): Promise<CheckResult> {
-  const name = "projections: shape";
+  const name = 'projections: shape'
   try {
     // Every projection, not the first one: `finding_backlog` (#137) has a
     // `create table if not exists` of its own, and the same #84 waiting in it.
-    const shapes = await Promise.all(
-      [taskViewProjection, backlogProjection].map((p) => fetch(p)),
-    );
+    const shapes = await Promise.all([taskViewProjection, backlogProjection].map((p) => fetch(p)))
     return {
       name,
-      status: shapes.every((s) => s.drift.length === 0) ? "ok" : "fail",
-      detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(" · "),
-    };
+      status: shapes.every((s) => s.drift.length === 0) ? 'ok' : 'fail',
+      detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(' · '),
+    }
   } catch (err) {
-    return { name, status: "fail", detail: (err as Error).message };
+    return { name, status: 'fail', detail: (err as Error).message }
   }
 }
 
@@ -668,45 +660,45 @@ async function projectionShapes(
 async function settingsSources(
   fetch: () => Promise<string | null> = async () => {
     try {
-      return await readFile(join(homedir(), ".claude", "settings.json"), "utf8");
+      return await readFile(join(homedir(), '.claude', 'settings.json'), 'utf8')
     } catch {
-      return null;
+      return null
     }
   },
 ): Promise<CheckResult> {
-  const name = "runtime: other settings in scope";
+  const name = 'runtime: other settings in scope'
 
-  const raw = await fetch();
+  const raw = await fetch()
   if (raw === null) {
-    return { name, status: "ok", detail: "no ~/.claude/settings.json — the recipe is the whole story" };
+    return { name, status: 'ok', detail: 'no ~/.claude/settings.json — the recipe is the whole story' }
   }
 
-  let parsed: Record<string, unknown>;
+  let parsed: Record<string, unknown>
   try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw) as Record<string, unknown>
   } catch (err) {
-    return { name, status: "warn", detail: `~/.claude/settings.json does not parse: ${(err as Error).message}` };
+    return { name, status: 'warn', detail: `~/.claude/settings.json does not parse: ${(err as Error).message}` }
   }
 
   // Only the keys that change what a run does. Everything else there is the
   // operator's business and is not worth naming.
-  const carries: string[] = [];
-  if (parsed["hooks"]) carries.push("hooks");
-  if (parsed["permissions"]) carries.push("permissions");
-  if (parsed["mcpServers"] || parsed["enabledMcpjsonServers"]) carries.push("MCP servers");
-  if (parsed["env"]) carries.push("env");
+  const carries: string[] = []
+  if (parsed['hooks']) carries.push('hooks')
+  if (parsed['permissions']) carries.push('permissions')
+  if (parsed['mcpServers'] || parsed['enabledMcpjsonServers']) carries.push('MCP servers')
+  if (parsed['env']) carries.push('env')
 
   if (carries.length === 0) {
-    return { name, status: "ok", detail: "~/.claude/settings.json carries nothing that changes a run" };
+    return { name, status: 'ok', detail: '~/.claude/settings.json carries nothing that changes a run' }
   }
   return {
     name,
-    status: "warn",
+    status: 'warn',
     detail:
-      `~/.claude/settings.json carries ${carries.join(", ")}, and every run sees it. ` +
+      `~/.claude/settings.json carries ${carries.join(', ')}, and every run sees it. ` +
       "Lingtai cannot set HOME (the runtime's credentials live there), so this is " +
-      "reported rather than removed — the recipe alone does not describe a run on this machine.",
-  };
+      'reported rather than removed — the recipe alone does not describe a run on this machine.',
+  }
 }
 
 /**
@@ -729,66 +721,64 @@ async function settingsSources(
  * recipe, and it is a `fail` in exactly that case. Neither row is the other's
  * summary.
  */
-async function runtimeAuth(
-  fetch: () => ReturnType<typeof everyRuntime> = () => everyRuntime(),
-): Promise<CheckResult> {
-  const name = "runtime: signed in";
+async function runtimeAuth(fetch: () => ReturnType<typeof everyRuntime> = () => everyRuntime()): Promise<CheckResult> {
+  const name = 'runtime: signed in'
   // Exactly what a run gets. Not `process.env`.
-  const env = runnableEnv({});
+  const env = runnableEnv({})
   const asked = await Promise.all(
     fetch().map(async (runtime) => ({
       id: runtime.capabilities.id,
       // A runtime that cannot be asked cheaply must not pretend.
       status: runtime.checkAuth ? await runtime.checkAuth(env) : null,
     })),
-  );
+  )
 
-  const signedIn = asked.filter((a) => a.status?.loggedIn === true);
+  const signedIn = asked.filter((a) => a.status?.loggedIn === true)
   const said = asked
-    .map((a) => `${a.id} — ${a.status === null ? "cannot be asked cheaply" : a.status.detail}`)
-    .join(" · ");
+    .map((a) => `${a.id} — ${a.status === null ? 'cannot be asked cheaply' : a.status.detail}`)
+    .join(' · ')
 
-  if (signedIn.length > 0) return { name, status: "ok", detail: said };
+  if (signedIn.length > 0) return { name, status: 'ok', detail: said }
   if (asked.every((a) => a.status === null)) {
-    return { name, status: "skip", detail: said };
+    return { name, status: 'skip', detail: said }
   }
   return {
     name,
-    status: "fail",
+    status: 'fail',
     detail:
       `${said}, in the filtered environment a run gets ` +
-      `(${Object.keys(env).sort().join(", ")}). ` +
+      `(${Object.keys(env).sort().join(', ')}). ` +
       "If you are signed in yourself, the run's environment is missing something the credential " +
-      "store needs — on macOS that is USER, because a keychain item is found by who is asking.",
-  };
+      'store needs — on macOS that is USER, because a keychain item is found by who is asking.',
+  }
 }
 
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
-  const name = "github: app credentials";
+  const name = 'github: app credentials'
   if (!hasGitHubApp(env)) {
     return {
       name,
-      status: "skip",
+      status: 'skip',
       detail:
-        "LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. " +
-        "See doc/decisions-archive/0006-github-app.md.",
-    };
+        'LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. ' +
+        'See doc/decisions-archive/0006-github-app.md.',
+    }
   }
   try {
-    const app = githubApp(env);
+    const app = githubApp(env)
     // Parsing it proves it is a key rather than a path typo or a truncated
     // paste, and does so without the key going anywhere.
-    createPublicKey(app.privateKey);
+    createPublicKey(app.privateKey)
     return {
       name,
-      status: "ok",
+      status: 'ok',
       detail:
         `app ${app.appId}, key from ${app.keySource} · ` +
-        `requires ${REQUIRED_PERMISSIONS.map((p) => `${p.name}:${p.level}`).join(", ")} ` +
-        "(verified per repository by lingtai add)",
-    };
+        `requires ${REQUIRED_PERMISSIONS.map((p) => `${p.name}:${p.level}`).join(', ')} ` +
+        '(verified per repository by lingtai add)',
+    }
   } catch (err) {
-    return { name, status: "fail", detail: (err as Error).message };
+    return { name, status: 'fail', detail: (err as Error).message }
   }
 }
 
@@ -809,27 +799,27 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
  */
 const DEFERRED: { name: string; detail: string }[] = [
   {
-    name: "repository, base branch, submodules",
+    name: 'repository, base branch, submodules',
     detail:
-      "only a clone settles these: every run cuts its branch from origin/<base> in the mirror and " +
-      "initialises submodules from it, and stops there when it cannot. Doctor reads — it does not " +
-      "fetch, clone or check out",
+      'only a clone settles these: every run cuts its branch from origin/<base> in the mirror and ' +
+      'initialises submodules from it, and stops there when it cannot. Doctor reads — it does not ' +
+      'fetch, clone or check out',
   },
   {
-    name: "hook: fail closed",
+    name: 'hook: fail closed',
     detail:
-      "every run proves it immediately before dispatching, which is the check that matters; " +
-      "proving it once at daemon startup as well would only surface a missing binary earlier (#48)",
+      'every run proves it immediately before dispatching, which is the check that matters; ' +
+      'proving it once at daemon startup as well would only surface a missing binary earlier (#48)',
   },
   {
-    name: "github: installation and labels",
+    name: 'github: installation and labels',
     detail:
       "per repository: lingtai add checks the App's permissions before it records anything, so the " +
-      "gap a startup check would look for stops the one command that can act on it. Labels are " +
+      'gap a startup check would look for stops the one command that can act on it. Labels are ' +
       "computed from the work item's state and written whole, and reconcile converges what did not " +
-      "land (#69) — so label drift has an owner rather than needing a check here",
+      'land (#69) — so label drift has an owner rather than needing a check here',
   },
-];
+]
 
 /**
  * The seams `runDoctor` needs besides `load` and `queries` to run the
@@ -844,29 +834,29 @@ const DEFERRED: { name: string; detail: string }[] = [
  */
 export interface DoctorReach {
   /** As `daemonLiveness` and `daemonCurrency` already take it. */
-  status: () => ReturnType<typeof readStatus>;
+  status: () => ReturnType<typeof readStatus>
   /** As `daemonLiveness` already takes it. */
-  pause: () => Promise<Awaited<ReturnType<typeof readControl>> | null>;
-  lags: () => ReturnType<typeof projectionLag>;
-  shapes: (p: Projection) => ReturnType<typeof projectionShape>;
-  lockHolder: () => ReturnType<typeof conductorLockHolder>;
-  orphans: () => ReturnType<typeof findOrphans>;
-  titles: () => ReturnType<typeof readTasks>;
+  pause: () => Promise<Awaited<ReturnType<typeof readControl>> | null>
+  lags: () => ReturnType<typeof projectionLag>
+  shapes: (p: Projection) => ReturnType<typeof projectionShape>
+  lockHolder: () => ReturnType<typeof conductorLockHolder>
+  orphans: () => ReturnType<typeof findOrphans>
+  titles: () => ReturnType<typeof readTasks>
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
-  settings: () => Promise<string | null>;
-  runtimes: () => ReturnType<typeof everyRuntime>;
+  settings: () => Promise<string | null>
+  runtimes: () => ReturnType<typeof everyRuntime>
 }
 
 export interface DoctorReport {
-  results: CheckResult[];
-  ok: number;
-  failed: number;
-  skipped: number;
+  results: CheckResult[]
+  ok: number
+  failed: number
+  skipped: number
   /**
    * Of `skipped`, the ones in `DEFERRED`: not implemented here at all, on any
    * machine.
    */
-  deferred: number;
+  deferred: number
   /**
    * Of `skipped`, the ones about **this machine** — a question that does not
    * apply to the store it runs, or one an earlier failure stopped.
@@ -878,9 +868,9 @@ export interface DoctorReport {
    * you, and folding the two made `0 failed` the only thing the last line said
    * about a machine whose log had never been opened.
    */
-  notChecked: number;
+  notChecked: number
   /** Reported, not wrong. See `CheckStatus`. */
-  warned: number;
+  warned: number
 }
 
 /**
@@ -905,28 +895,26 @@ export async function daemonLiveness(
   /** The control fold. Doctor's own swallows a failure; the suite passes a memory store's. */
   readPause: () => Promise<Awaited<ReturnType<typeof readControl>> | null> = () => readControl().catch(() => null),
 ): Promise<CheckResult> {
-  const status = await read();
+  const status = await read()
   // Read before the early return. A pause is in force whether or not a daemon
   // has ever run, and it is exactly the thing somebody will forget they set —
   // reporting liveness without it would be the same silence this check exists
   // to break.
-  const control = await readPause();
+  const control = await readPause()
   // With what it means for `lingtai run`, which obeys it daemon or none (#166):
   // "why did nothing run" and "why did something run" answered in one row.
-  const paused = control?.paused ? `, paused by ${control.by} (${control.reason}) — ${RUN_UNDER_A_PAUSE}` : "";
+  const paused = control?.paused ? `, paused by ${control.by} (${control.reason}) — ${RUN_UNDER_A_PAUSE}` : ''
   // A third fact beside those two, and independent of both (0030): being
   // current, being paused and being on the way out are three answers, and a
   // daemon that is draining is up, unpaused and going to stop anyway.
-  const asked = control?.shutdown
-    ? `, shutdown asked by ${control.shutdown.by} (${control.shutdown.reason})`
-    : "";
+  const asked = control?.shutdown ? `, shutdown asked by ${control.shutdown.by} (${control.shutdown.reason})` : ''
 
   if (!status) {
     return {
-      name: "daemon: liveness",
-      status: "ok",
+      name: 'daemon: liveness',
+      status: 'ok',
       detail: `no daemon has run — lingtai run works by hand; lingtai daemon takes the queue${paused}${asked}`,
-    };
+    }
   }
 
   // Both of the beacon's fields, through the one function the board reads it
@@ -934,39 +922,39 @@ export async function daemonLiveness(
   // called a daemon that was still starting `not running` — for twelve seconds,
   // in the window just after a restart, which is exactly when somebody is
   // reading this row to decide whether to restart (`#144`).
-  const beat = lastBeat(status);
-  const age = beat.ageMs;
+  const beat = lastBeat(status)
+  const age = beat.ageMs
 
   if (!beat.up) {
     // What it last said, because a stale beacon still knows what the process
     // was doing when it fell silent: `stopping` is a daemon that was told to
     // go, `starting` one that died on the way up and never took work.
-    const last = beat.state === "up" ? "" : `, last said ${beat.state}`;
+    const last = beat.state === 'up' ? '' : `, last said ${beat.state}`
     return {
-      name: "daemon: liveness",
-      status: "ok",
+      name: 'daemon: liveness',
+      status: 'ok',
       // Reported, not failed: a stopped daemon is a choice as often as a
       // crash, and doctor exiting non-zero on it would make the command
       // useless as a restart gate.
       detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid})${last} — not running${paused}${asked}`,
-    };
+    }
   }
 
   // `draining` says stopping; what it is stopping *for* is the pass, and the
   // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
   // was what this said for both, which is the folding #77 argued against.
-  const held = beat.state === "draining" ? await inFlight().catch(() => []) : [];
-  const stopping = beat.state === "draining" ? ` — ${describeInFlight(held)}` : "";
+  const held = beat.state === 'draining' ? await inFlight().catch(() => []) : []
+  const stopping = beat.state === 'draining' ? ` — ${describeInFlight(held)}` : ''
   // The same argument one state along. `starting` is up and taking nothing
   // yet, and saying only `starting` would invite the restart that `#144`'s
   // `not running` invited.
-  const starting = beat.state === "starting" ? " — reconciling; it takes no work until that finishes" : "";
+  const starting = beat.state === 'starting' ? ' — reconciling; it takes no work until that finishes' : ''
 
   return {
-    name: "daemon: liveness",
-    status: "ok",
+    name: 'daemon: liveness',
+    status: 'ok',
     detail: `${beat.state}${stopping}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
-  };
+  }
 }
 
 /**
@@ -1009,41 +997,45 @@ export async function daemonCurrency(
    */
   read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
 ): Promise<CheckResult> {
-  const name = "daemon: currency";
-  const status = await read();
+  const name = 'daemon: currency'
+  const status = await read()
   if (!status) {
-    return { name, status: "ok", detail: "no daemon has run — nothing is holding code open" };
+    return { name, status: 'ok', detail: 'no daemon has run — nothing is holding code open' }
   }
 
-  const beat = lastBeat(status);
+  const beat = lastBeat(status)
   if (!beat.up) {
     // Nothing is holding stale modules if nothing is running. Said rather than
     // omitted, because a check that disappears is one nobody misses.
-    return { name, status: "ok", detail: `no daemon is up (last beat ${Math.round(beat.ageMs / 1000)}s ago) — no process is holding old code` };
+    return {
+      name,
+      status: 'ok',
+      detail: `no daemon is up (last beat ${Math.round(beat.ageMs / 1000)}s ago) — no process is holding old code`,
+    }
   }
 
   if (!status.codeSha) {
     return {
       name,
-      status: "warn",
+      status: 'warn',
       // The state this check was written for, seen from the other side: a
       // daemon old enough to predate the column cannot say what it is running,
       // and that it cannot say is the finding.
       detail:
-        "the running daemon recorded no commit — it started before the beacon carried one, so how far behind it is cannot be known from here. Restart it (pnpm lingtai daemon) and this check can answer",
-    };
+        'the running daemon recorded no commit — it started before the beacon carried one, so how far behind it is cannot be known from here. Restart it (pnpm lingtai daemon) and this check can answer',
+    }
   }
 
-  const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty });
-  const sentence = describeCurrency(currency);
+  const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty })
+  const sentence = describeCurrency(currency)
   if (currency.unknown || currency.behind.length === 0) {
-    return { name, status: "ok", detail: sentence };
+    return { name, status: 'ok', detail: sentence }
   }
   return {
     name,
-    status: "warn",
+    status: 'warn',
     detail: `${sentence}. Unbuilt removes the build, not the restart — restart the daemon to take them`,
-  };
+  }
 }
 
 /**
@@ -1061,33 +1053,33 @@ export async function daemonCurrency(
  * checkout's, which is what turns the message into a diagnosis.
  */
 async function passRefusals(load: typeof loadProjects = loadProjects): Promise<CheckResult> {
-  const name = "conductor: refusals on the log";
-  const projects = await load().catch(() => null);
-  if (projects === null) return { name, status: "skip", detail: "the project streams could not be read" };
+  const name = 'conductor: refusals on the log'
+  const projects = await load().catch(() => null)
+  if (projects === null) return { name, status: 'skip', detail: 'the project streams could not be read' }
 
-  const refusing = projects.filter((p) => p.project !== null && p.refused !== null);
+  const refusing = projects.filter((p) => p.project !== null && p.refused !== null)
   if (refusing.length === 0) {
-    return { name, status: "ok", detail: "no project is refused by the last pass that looked at it" };
+    return { name, status: 'ok', detail: 'no project is refused by the last pass that looked at it' }
   }
 
-  const status = await readStatus().catch(() => null);
-  const daemonUp = status !== null && lastBeat(status).up;
-  const here = (await readCodeVersion()).sha;
+  const status = await readStatus().catch(() => null)
+  const daemonUp = status !== null && lastBeat(status).up
+  const here = (await readCodeVersion()).sha
   const read = await Promise.all(
     refusing.map(async (p) =>
       describeRefusal(p.project!, p.refused!, { daemonUp, here, behind: await isBehind(p.refused!.codeSha, here) }),
     ),
-  );
-  const failing = read.filter((r) => r.status === "fail");
+  )
+  const failing = read.filter((r) => r.status === 'fail')
   return {
     name,
-    status: failing.length > 0 ? "fail" : "warn",
-    detail: read.map((r) => r.detail).join("\n         "),
+    status: failing.length > 0 ? 'fail' : 'warn',
+    detail: read.map((r) => r.detail).join('\n         '),
     // Only when every failing project is one a restart is the remedy for — one
     // refused by code older than this checkout. A refusal by the code here
     // would refuse again after the restart, and still gates it.
     ...(failing.length > 0 && failing.every((r) => r.restartAnswers) ? { restartAnswers: true } : {}),
-  };
+  }
 }
 
 /**
@@ -1096,12 +1088,12 @@ async function passRefusals(load: typeof loadProjects = loadProjects): Promise<C
  * clone never fetched, or no checkout at all, is not proof of being older.
  */
 async function isBehind(sha: string | null, here: string | null): Promise<boolean> {
-  if (!sha || !here || sha === here) return false;
+  if (!sha || !here || sha === here) return false
   try {
-    await git(["merge-base", "--is-ancestor", sha, here], { cwd: codeRoot() });
-    return true;
+    await git(['merge-base', '--is-ancestor', sha, here], { cwd: codeRoot() })
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -1120,38 +1112,37 @@ export function describeRefusal(
   project: string,
   r: RecordedRefusal,
   now: {
-    daemonUp: boolean;
-    here: string | null;
+    daemonUp: boolean
+    here: string | null
     /**
      * The refusing commit is an ancestor of `here`. Only then is a restart onto
      * this checkout the remedy: a refusal by *newer* code is not answered by
      * starting older code, and still gates the restart.
      */
-    behind?: boolean;
+    behind?: boolean
   },
-): { status: "fail" | "warn"; detail: string; restartAnswers: boolean } {
-  const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "an unrecorded commit");
+): { status: 'fail' | 'warn'; detail: string; restartAnswers: boolean } {
+  const short = (sha: string | null) => (sha ? sha.slice(0, 7) : 'an unrecorded commit')
   const head =
     `${project}: refused since seq ${r.seq} (${r.at.toISOString()}) by a process at ${short(r.codeSha)}, ` +
-    `reading ${r.ref ?? "a branch it never reached"} — ${r.detail}.`;
+    `reading ${r.ref ?? 'a branch it never reached'} — ${r.detail}.`
   // The sentence #148 was missing: whether the recipe rows in this report
   // read with the refusing code or with newer code.
-  const differs = Boolean(r.codeSha && now.here && r.codeSha !== now.here);
-  const older = differs && now.behind === true;
-  const witness =
-    differs
-      ? ` This checkout is at ${short(now.here)}, so the recipe rows here read with other code than the ` +
-        "process that refused: if they are ok, the recipe is fine and that process is too old for it — restart it"
-      : r.codeSha && r.codeSha === now.here
-        ? " This checkout is at the same commit, so the recipe rows here read with the code that refused"
-        : " Which code the recipe rows here read with, beside the refusing process's, cannot be said";
+  const differs = Boolean(r.codeSha && now.here && r.codeSha !== now.here)
+  const older = differs && now.behind === true
+  const witness = differs
+    ? ` This checkout is at ${short(now.here)}, so the recipe rows here read with other code than the ` +
+      'process that refused: if they are ok, the recipe is fine and that process is too old for it — restart it'
+    : r.codeSha && r.codeSha === now.here
+      ? ' This checkout is at the same commit, so the recipe rows here read with the code that refused'
+      : " Which code the recipe rows here read with, beside the refusing process's, cannot be said"
   return now.daemonUp
-    ? { status: "fail", detail: `${head}${witness}`, restartAnswers: older }
+    ? { status: 'fail', detail: `${head}${witness}`, restartAnswers: older }
     : {
-        status: "warn",
+        status: 'warn',
         detail: `${head}${witness}. No daemon is up; the next pass records whether it still refuses`,
         restartAnswers: older,
-      };
+      }
 }
 
 /**
@@ -1175,19 +1166,19 @@ export function describeRefusal(
 async function conductorLock(
   fetch: () => ReturnType<typeof conductorLockHolder> = () => conductorLockHolder(),
 ): Promise<CheckResult> {
-  let holder: string | null;
+  let holder: string | null
   try {
-    holder = await fetch();
+    holder = await fetch()
   } catch (err) {
-    return { name: "conductor: lock", status: "ok", detail: `could not be read — ${(err as Error).message}` };
+    return { name: 'conductor: lock', status: 'ok', detail: `could not be read — ${(err as Error).message}` }
   }
   return {
-    name: "conductor: lock",
-    status: "ok",
+    name: 'conductor: lock',
+    status: 'ok',
     detail: holder
       ? `held by ${holder} — lingtai run and lingtai daemon both stand down while it is`
-      : "nobody holds it — the next lingtai run or lingtai daemon conducts",
-  };
+      : 'nobody holds it — the next lingtai run or lingtai daemon conducts',
+  }
 }
 
 /**
@@ -1199,23 +1190,23 @@ async function conductorLock(
 async function orphans(
   fetch: () => ReturnType<typeof findOrphans> = () => findOrphans({ dryRun: true }),
 ): Promise<CheckResult> {
-  const found = await fetch().catch(() => null);
+  const found = await fetch().catch(() => null)
   if (found === null) {
-    return { name: "worktrees: reconciliation", status: "ok", detail: "could not read the worktree directory" };
+    return { name: 'worktrees: reconciliation', status: 'ok', detail: 'could not read the worktree directory' }
   }
   if (found.length === 0) {
-    return { name: "worktrees: reconciliation", status: "ok", detail: "nothing left over" };
+    return { name: 'worktrees: reconciliation', status: 'ok', detail: 'nothing left over' }
   }
   return {
-    name: "worktrees: reconciliation",
-    status: "ok",
+    name: 'worktrees: reconciliation',
+    status: 'ok',
     // Reported, not failed. Leftovers are a normal consequence of a kill, and
     // starting the daemon clears them — a red doctor here would train people
     // to ignore a red doctor.
     detail: `${found.length} left over; lingtai daemon removes them on startup: ${found
       .map((f) => f.stream)
-      .join(", ")}`,
-  };
+      .join(', ')}`,
+  }
 }
 
 /**
@@ -1234,26 +1225,26 @@ async function orphans(
  * replayable, which is the one property the whole system rests on.
  */
 async function readableTypes(queries: LogQueries): Promise<CheckResult> {
-  const name = "log: every type is readable";
-  const rows = await queries.typeCounts().catch(() => null);
-  if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
+  const name = 'log: every type is readable'
+  const rows = await queries.typeCounts().catch(() => null)
+  if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
 
-  const orphaned = rows.filter((r) => !isEventType(r.type));
+  const orphaned = rows.filter((r) => !isEventType(r.type))
   if (orphaned.length === 0) {
-    return { name, status: "ok", detail: `${rows.length} types, all in the catalogue` };
+    return { name, status: 'ok', detail: `${rows.length} types, all in the catalogue` }
   }
   return {
     name,
-    status: "fail",
+    status: 'fail',
     detail:
       `${orphaned.reduce((n, r) => n + r.rows, 0)} row(s) of ${orphaned.length} type(s) this build cannot read — ` +
-      `${orphaned.map((r) => `${r.type} ×${r.rows}`).join(", ")}. ` +
-      "Reading any stream that holds one throws, and a projection rebuild cannot run.",
-  };
+      `${orphaned.map((r) => `${r.type} ×${r.rows}`).join(', ')}. ` +
+      'Reading any stream that holds one throws, and a projection rebuild cannot run.',
+  }
 }
 
 /** What the board calls each issue the two rows below name — `project#issue` to its title. */
-type TitleBook = Map<string, string>;
+type TitleBook = Map<string, string>
 
 /**
  * That book, read from `task_view`.
@@ -1272,8 +1263,8 @@ type TitleBook = Map<string, string>;
 async function issueTitles(
   fetch: () => ReturnType<typeof readTasks> = () => readTasks({ retentionDays: 36_500 }),
 ): Promise<TitleBook> {
-  const cards = await fetch().catch(() => []);
-  return new Map(cards.map((c) => [`${c.project}#${c.issue}`, c.title]));
+  const cards = await fetch().catch(() => [])
+  return new Map(cards.map((c) => [`${c.project}#${c.issue}`, c.title]))
 }
 
 /**
@@ -1285,8 +1276,8 @@ async function issueTitles(
  * one: it is what keeps the fallback a sentence rather than a bare number.
  */
 function say(titles: TitleBook, ref: string, what: string): string {
-  const title = titles.get(ref);
-  return title === undefined ? `${ref} ${what}` : `${ref} ${what} — ${title}`;
+  const title = titles.get(ref)
+  return title === undefined ? `${ref} ${what}` : `${ref} ${what} — ${title}`
 }
 
 /**
@@ -1310,22 +1301,22 @@ function say(titles: TitleBook, ref: string, what: string): string {
  * it says nothing about what the recipe happens to contain today.
  */
 async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
-  const name = "steps: end ran on what landed";
-  const found = await endedWithoutEndActions(queries).catch(() => null);
-  if (found === null) return { name, status: "ok", detail: "no log to read yet" };
+  const name = 'steps: end ran on what landed'
+  const found = await endedWithoutEndActions(queries).catch(() => null)
+  if (found === null) return { name, status: 'ok', detail: 'no log to read yet' }
 
   if (found.length === 0) {
-    return { name, status: "ok", detail: "every landed item with end actions resolved them" };
+    return { name, status: 'ok', detail: 'every landed item with end actions resolved them' }
   }
   return {
     name,
-    status: "fail",
+    status: 'fail',
     detail:
       `${found.length} item(s) landed with actions planned at end and none resolved — ` +
-      `${found.map((f) => say(titles, `${f.project}#${f.issue}`, f.outcome)).join(", ")}. ` +
-      "Their issues were never closed or labelled, and nothing on GitHub says Lingtai " +
-      "touched them: lingtai end replay resolves the step as it should have been.",
-  };
+      `${found.map((f) => say(titles, `${f.project}#${f.issue}`, f.outcome)).join(', ')}. ` +
+      'Their issues were never closed or labelled, and nothing on GitHub says Lingtai ' +
+      'touched them: lingtai end replay resolves the step as it should have been.',
+  }
 }
 
 /**
@@ -1359,39 +1350,37 @@ async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<Check
  * only the last one is the state of the world.
  */
 async function unconverged(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
-  const name = "github: what we said and did not manage";
-  const rows = await queries.unconvergedUpdates().catch(() => null);
-  if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
+  const name = 'github: what we said and did not manage'
+  const rows = await queries.unconvergedUpdates().catch(() => null)
+  if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
   if (rows.length === 0) {
-    return { name, status: "ok", detail: "every issue carries what the log last said about it" };
+    return { name, status: 'ok', detail: 'every issue carries what the log last said about it' }
   }
 
-  const comments = rows.filter((r) => r.change === "comment");
-  const computable = rows.filter((r) => r.change !== "comment");
+  const comments = rows.filter((r) => r.change === 'comment')
+  const computable = rows.filter((r) => r.change !== 'comment')
   const named = (r: { project: string; issue: string; change: string }) =>
-    say(titles, `${r.project}#${r.issue}`, r.change);
+    say(titles, `${r.project}#${r.issue}`, r.change)
 
   if (computable.length === 0) {
     return {
       name,
-      status: "warn",
+      status: 'warn',
       detail:
         `${comments.length} comment(s) the log says were never posted — ` +
-        comments.slice(0, 4).map(named).join(", ") +
-        ". A comment is not computable from state, so nothing will converge it; say it by hand if it still matters.",
-    };
+        comments.slice(0, 4).map(named).join(', ') +
+        '. A comment is not computable from state, so nothing will converge it; say it by hand if it still matters.',
+    }
   }
   return {
     name,
-    status: "warn",
+    status: 'warn',
     detail:
       `${computable.length} issue(s) diverged — ` +
-      computable.slice(0, 4).map(named).join(", ") +
-      ". The next reconcile recomputes and writes the difference (lingtai daemon)" +
-      (comments.length > 0
-        ? `; ${comments.length} comment(s) it cannot, which need a person.`
-        : "."),
-  };
+      computable.slice(0, 4).map(named).join(', ') +
+      '. The next reconcile recomputes and writes the difference (lingtai daemon)' +
+      (comments.length > 0 ? `; ${comments.length} comment(s) it cannot, which need a person.` : '.'),
+  }
 }
 
 /**
@@ -1418,42 +1407,42 @@ async function unconverged(queries: LogQueries, titles: TitleBook): Promise<Chec
  * is the parameter `subscriberFailures` takes.
  */
 async function subscribers(queries: LogQueries): Promise<CheckResult> {
-  const name = "subscribers: failures";
-  const rows = await queries.subscriberFailures(new Date(Date.now() - A_DAY_MS)).catch(() => null);
-  if (rows === null) return { name, status: "ok", detail: "no log to read yet" };
+  const name = 'subscribers: failures'
+  const rows = await queries.subscriberFailures(new Date(Date.now() - A_DAY_MS)).catch(() => null)
+  if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
 
-  const recent = rows.filter((r) => r.recent > 0);
-  const older = rows.reduce((n, r) => n + r.total - r.recent, 0);
+  const recent = rows.filter((r) => r.recent > 0)
+  const older = rows.reduce((n, r) => n + r.total - r.recent, 0)
   if (recent.length === 0) {
     return {
       name,
-      status: "ok",
+      status: 'ok',
       detail:
         older === 0
-          ? "every subscriber returned"
+          ? 'every subscriber returned'
           : `nothing in the last day; ${older} older failure(s) the log still holds`,
-    };
+    }
   }
   return {
     name,
-    status: "warn",
+    status: 'warn',
     detail:
-      `${recent.map((r) => `${r.name} ×${r.recent}`).join(", ")} in the last day — ` +
-      `last: ${recent[0]?.lastReason ?? "?"}. ` +
-      "A subscriber is never retried (0015), so nothing converges this: what it was going to " +
-      "do was not done." +
-      (older > 0 ? ` ${older} older failure(s) besides.` : ""),
-  };
+      `${recent.map((r) => `${r.name} ×${r.recent}`).join(', ')} in the last day — ` +
+      `last: ${recent[0]?.lastReason ?? '?'}. ` +
+      'A subscriber is never retried (0015), so nothing converges this: what it was going to ' +
+      'do was not done.' +
+      (older > 0 ? ` ${older} older failure(s) besides.` : ''),
+  }
 }
 
 /** A client for a reader that asks GitHub nothing; any question it is asked is a bug, said so. */
 const offlineClient = new Proxy({} as GitHubClient, {
   get: (_target, key) => {
     // Not a thenable: an `async` function returning this looks for `then`.
-    if (key === "then" || typeof key === "symbol") return undefined;
-    throw new Error(`no GitHub App configured, so GitHub cannot be asked (${String(key)})`);
+    if (key === 'then' || typeof key === 'symbol') return undefined
+    throw new Error(`no GitHub App configured, so GitHub cannot be asked (${String(key)})`)
   },
-});
+})
 
 /**
  * The client `recipe:` resolves with. The recipe is this machine's file (#180),
@@ -1462,14 +1451,14 @@ const offlineClient = new Proxy({} as GitHubClient, {
  * already says the App is missing.
  */
 export function recipeClientFor(env: NodeJS.ProcessEnv): ClientFor {
-  return hasGitHubApp(env) ? githubClientFor : async () => offlineClient;
+  return hasGitHubApp(env) ? githubClientFor : async () => offlineClient
 }
 
 /** One line per value, `key  value ← where`, indented under the row. */
 export function provenanceLines(provenance: Readonly<Record<string, string>>): string {
   return Object.entries(provenance)
     .map(([key, from]) => `         ${key.padEnd(24)} ${from}\n`)
-    .join("");
+    .join('')
 }
 
 /**
@@ -1491,13 +1480,13 @@ async function projectRecipes(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
 ): Promise<CheckResult[]> {
-  const name = "recipe: resolves for every project";
-  const projects = await load().catch(() => null);
+  const name = 'recipe: resolves for every project'
+  const projects = await load().catch(() => null)
   if (projects === null) {
-    return [{ name, status: "skip", detail: "the project streams could not be read" }];
+    return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
   }
   if (projects.length === 0) {
-    return [{ name, status: "ok", detail: "nothing is registered, so no recipe governs anything" }];
+    return [{ name, status: 'ok', detail: 'nothing is registered, so no recipe governs anything' }]
   }
 
   // **The dispatched runtime is the project's own, not this machine's** (`#313`).
@@ -1512,10 +1501,10 @@ async function projectRecipes(
   // **What this machine can dispatch beyond each project's own** (`#314`). One
   // cached probe for the whole report rather than one per project: the answer is
   // about the machine, and `signedInProbe` remembers it for a minute anyway.
-  const signedIn = await signedInHere();
+  const signedIn = await signedInHere()
   return (await projectFilters(projects, recipeClientFor(env))).map((f) =>
-    recipeRow(f, f.ok ? f.recipe.runtime.agent : "", signedIn),
-  );
+    recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn),
+  )
 }
 
 /**
@@ -1542,10 +1531,10 @@ async function projectRecipes(
  * up: an operator sent to edit a key the line does not have.
  */
 function agentRemedy(refused: AgentRefusal, project: string, dispatched: string): string {
-  return refused.at === "runtime.agent"
+  return refused.at === 'runtime.agent'
     ? `Name runtime.agent: ${dispatched} in ${machinePath()}; it is what this conductor was asked to dispatch`
     : `Sign in to it, or name a runtime this machine has as that action's ${refused.key}: in ` +
-      `${recipePath(project)} — see the runtime: signed in row above`;
+        `${recipePath(project)} — see the runtime: signed in row above`
 }
 
 /**
@@ -1557,45 +1546,41 @@ function agentRemedy(refused: AgentRefusal, project: string, dispatched: string)
  * claim (#180) — so that is a `fail` here, in `runOnce`'s own sentence, and not
  * an `ok` that prints the agent and says nothing of it.
  */
-export function recipeRow(
-  f: ProjectFilter,
-  dispatched: string,
-  signedIn: readonly string[] = [],
-): CheckResult {
-  const wrongAgent = f.ok ? agentRefusal(f, dispatched, signedIn) : null;
+export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readonly string[] = []): CheckResult {
+  const wrongAgent = f.ok ? agentRefusal(f, dispatched, signedIn) : null
   if (f.ok && wrongAgent !== null) {
     return {
       name: `recipe: ${f.project}`,
-      status: "fail",
+      status: 'fail',
       detail:
         `${wrongAgent.sentence} — every run of this project is refused before its claim, and nothing will be taken. ` +
         `${agentRemedy(wrongAgent, f.project, dispatched)}\n` +
         provenanceLines(f.provenance),
-    };
+    }
   }
   return f.ok
-      ? {
-          name: `recipe: ${f.project}`,
-          status: "ok" as const,
-          detail:
-            `${f.configHash.slice(0, 12)} for ${f.ref} · picks up ${f.kinds.join(" > ")} · ` +
-            `excludes ${f.exclude.length > 0 ? f.exclude.join(", ") : "nothing"}\n` +
-            // The resolved recipe and where each value came from (#180): the
-            // recipe file, the machine file, detection or a default. Four
-            // places cannot be read by opening one file, so they are said here.
-            provenanceLines(f.provenance) +
-            // What a pass of this project may cost, from the same function
-            // `lingtai add` and the board's chip call (0039 §3). Doctor is
-            // where an operator looks before starting something, which makes
-            // it the place this number is most worth knowing — and it is the
-            // one number here that is a product rather than a setting.
-            `         a pass: ${passCeiling(f.limits)}`,
-        }
-      : {
-          name: `recipe: ${f.project}`,
-          status: "fail" as const,
-          detail: `${f.problem} — nothing will be taken from this project`,
-        };
+    ? {
+        name: `recipe: ${f.project}`,
+        status: 'ok' as const,
+        detail:
+          `${f.configHash.slice(0, 12)} for ${f.ref} · picks up ${f.kinds.join(' > ')} · ` +
+          `excludes ${f.exclude.length > 0 ? f.exclude.join(', ') : 'nothing'}\n` +
+          // The resolved recipe and where each value came from (#180): the
+          // recipe file, the machine file, detection or a default. Four
+          // places cannot be read by opening one file, so they are said here.
+          provenanceLines(f.provenance) +
+          // What a pass of this project may cost, from the same function
+          // `lingtai add` and the board's chip call (0039 §3). Doctor is
+          // where an operator looks before starting something, which makes
+          // it the place this number is most worth knowing — and it is the
+          // one number here that is a product rather than a setting.
+          `         a pass: ${passCeiling(f.limits)}`,
+      }
+    : {
+        name: `recipe: ${f.project}`,
+        status: 'fail' as const,
+        detail: `${f.problem} — nothing will be taken from this project`,
+      }
 }
 
 /**
@@ -1649,63 +1634,59 @@ export function recipeRow(
  * recipe *and* the adapter, which a field's parse cannot see. A `fail` is how the
  * schema's acceptance stops being silent.
  */
-export function limitsRow(
-  project: string,
-  recipe: Recipe,
-  capabilities: RuntimeCapabilities,
-): CheckResult {
-  const name = `runtime: ${project} limits`;
+export function limitsRow(project: string, recipe: Recipe, capabilities: RuntimeCapabilities): CheckResult {
+  const name = `runtime: ${project} limits`
   // `usd` has no default (recipe.ts), so unlike `turns` and `wall` it can be
   // genuinely absent — and absent is never "ignored": a Codex project with no
   // `runtime.limits.usd` declared has nothing for Codex to fail at holding.
-  const declaredUsd = ceilingOf(recipe).usd;
+  const declaredUsd = ceilingOf(recipe).usd
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
     // The ceiling beside its provenance: this row is about what the recipe
     // says (`#375`) and whether the runtime applies it, and a step's
     // reduction is neither (`#314`).
     turns: String(ceilingOf(recipe).turns),
     wall: ceilingOf(recipe).wall,
-    usd: declaredUsd === undefined ? "none declared" : `$${declaredUsd}`,
-  };
+    usd: declaredUsd === undefined ? 'none declared' : `$${declaredUsd}`,
+  }
   const ignored = RUN_LIMITS.filter(
-    (limit) => (limit !== "usd" || declaredUsd !== undefined) && !capabilities.enforces.includes(limit),
-  );
+    (limit) => (limit !== 'usd' || declaredUsd !== undefined) && !capabilities.enforces.includes(limit),
+  )
   const detail = RUN_LIMITS.map((limit) =>
-    limit === "usd" && declaredUsd === undefined
-      ? "usd — none declared"
+    limit === 'usd' && declaredUsd === undefined
+      ? 'usd — none declared'
       : `${limit} ${declared[limit]} ← ${
-          capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : "not applied"
+          capabilities.enforces.includes(limit) ? `applied by ${capabilities.id}` : 'not applied'
         }`,
-  ).join(" · ");
+  ).join(' · ')
 
-  if (ignored.length === 0) return { name, status: "ok", detail };
+  if (ignored.length === 0) return { name, status: 'ok', detail }
 
-  const applied = RUN_LIMITS.filter((limit) => capabilities.enforces.includes(limit));
+  const applied = RUN_LIMITS.filter((limit) => capabilities.enforces.includes(limit))
   const carries =
-    `${capabilities.id} carries ${ignored.join(" and ")} and bounds nothing ` +
-    `with ${ignored.length === 1 ? "it" : "them"}`;
+    `${capabilities.id} carries ${ignored.join(' and ')} and bounds nothing ` +
+    `with ${ignored.length === 1 ? 'it' : 'them'}`
   // `turns` and `wall` are named at `runtime.agent`, because no edit to the
   // recipe clears them: `turns` is always present and has no spelling for
   // *unbounded*. `usd` has no default (recipe.ts), so unlike those two it
   // clears by deleting the line that declared it — named here rather than
   // folded into "name a runtime", which is not the only lever for `usd`.
-  const namedIgnored = ignored.filter((limit) => limit !== "usd");
+  const namedIgnored = ignored.filter((limit) => limit !== 'usd')
   const lever =
     namedIgnored.length === 0
-      ? "The lever is deleting runtime.limits.usd, or naming a runtime that applies usd"
-      : `The lever is runtime.agent — name a runtime that applies ${namedIgnored.join(" and ")}` +
-        (ignored.includes("usd") ? ". usd also clears by deleting runtime.limits.usd" : "");
+      ? 'The lever is deleting runtime.limits.usd, or naming a runtime that applies usd'
+      : `The lever is runtime.agent — name a runtime that applies ${namedIgnored.join(' and ')}` +
+        (ignored.includes('usd') ? '. usd also clears by deleting runtime.limits.usd' : '')
   return {
     name,
-    status: "fail",
+    status: 'fail',
     detail:
       `${detail} — ${carries}, so the recipe declares a spend nothing will stop. ` +
       // Both are red; which one this is decides what an overspending run costs.
       (applied.length === 0
-        ? "Nothing will stop a run of this project at all. "
-        : `What still stops one is ${applied.join(" and ")}, and not ${ignored.join(" or ")}. `) +
+        ? 'Nothing will stop a run of this project at all. '
+        : `What still stops one is ${applied.join(' and ')}, and not ${ignored.join(' or ')}. `) +
       lever,
-  };
+  }
 }
 
 /**
@@ -1735,9 +1716,9 @@ export function limitsRow(
  * every question worth asking about a broken one turns on it.
  */
 export interface DeclaredExtension {
-  name: string;
-  env: readonly string[];
-  where: "step" | "subscriber";
+  name: string
+  env: readonly string[]
+  where: 'step' | 'subscriber'
 }
 
 /**
@@ -1762,16 +1743,16 @@ export interface DeclaredExtension {
  * afterwards, and takes none of the arithmetic back.
  */
 export function declaredExtensions(recipe: Recipe): DeclaredExtension[] {
-  const out: DeclaredExtension[] = [];
+  const out: DeclaredExtension[] = []
   for (const step of Object.values(recipe.steps)) {
     for (const action of step) {
-      if ("run" in action) out.push({ name: action.name, env: action.env, where: "step" });
+      if ('run' in action) out.push({ name: action.name, env: action.env, where: 'step' })
     }
   }
   for (const subscriber of recipe.subscribers) {
-    out.push({ name: subscriber.name, env: subscriber.env, where: "subscriber" });
+    out.push({ name: subscriber.name, env: subscriber.env, where: 'subscriber' })
   }
-  return out;
+  return out
 }
 
 /**
@@ -1814,19 +1795,19 @@ export function extensionRow(
   recipe: Recipe,
   agentEnv: { names: readonly { name: string; layer: string }[]; merged: Record<string, string>; file: string },
 ): CheckResult {
-  const name = `env: ${project} extensions`;
-  const extensions = declaredExtensions(recipe);
-  const asking = extensions.filter((e) => e.env.length > 0);
+  const name = `env: ${project} extensions`
+  const extensions = declaredExtensions(recipe)
+  const asking = extensions.filter((e) => e.env.length > 0)
 
   if (asking.length === 0) {
     return {
       name,
-      status: "ok",
+      status: 'ok',
       detail:
         extensions.length === 0
-          ? "no extension is declared"
+          ? 'no extension is declared'
           : `${extensions.length} declared, none asking for a variable — each gets PATH and nothing else`,
-    };
+    }
   }
 
   // The production tripwire over what each extension would be handed, which
@@ -1834,42 +1815,42 @@ export function extensionRow(
   // and an extension reads its names from the merged files. Named, never valued.
   for (const extension of asking) {
     try {
-      extensionEnv(agentEnv.merged, extension.env, productionPatterns(recipe.env.refuseHosts));
+      extensionEnv(agentEnv.merged, extension.env, productionPatterns(recipe.env.refuseHosts))
     } catch (err) {
-      return { name, status: "fail", detail: `${extension.name}: ${(err as Error).message}` };
+      return { name, status: 'fail', detail: `${extension.name}: ${(err as Error).message}` }
     }
   }
 
-  const layerOf = new Map(agentEnv.names.map((n) => [n.name, n.layer]));
-  const missing: Record<DeclaredExtension["where"], string[]> = { step: [], subscriber: [] };
+  const layerOf = new Map(agentEnv.names.map((n) => [n.name, n.layer]))
+  const missing: Record<DeclaredExtension['where'], string[]> = { step: [], subscriber: [] }
   const detail = asking
     .map((extension) => {
       const names = extension.env.map((variable) => {
-        const layer = layerOf.get(variable) ?? "not set";
-        if (!(variable in agentEnv.merged)) missing[extension.where].push(variable);
-        return `${variable} ← ${layer === "project file" ? basename(agentEnv.file) : layer}`;
-      });
-      return `${extension.name}: ${names.join(", ")}`;
+        const layer = layerOf.get(variable) ?? 'not set'
+        if (!(variable in agentEnv.merged)) missing[extension.where].push(variable)
+        return `${variable} ← ${layer === 'project file' ? basename(agentEnv.file) : layer}`
+      })
+      return `${extension.name}: ${names.join(', ')}`
     })
-    .join(" · ");
+    .join(' · ')
 
-  const absent = [...new Set([...missing.step, ...missing.subscriber])];
-  if (absent.length === 0) return { name, status: "ok", detail };
+  const absent = [...new Set([...missing.step, ...missing.subscriber])]
+  if (absent.length === 0) return { name, status: 'ok', detail }
 
   // A gate action decides the pass, so one missing name is red however many
   // subscribers are also short: the worst outcome sets the row.
-  const inTheLoop = missing.step.length > 0;
+  const inTheLoop = missing.step.length > 0
   return {
     name,
-    status: inTheLoop ? "fail" : "warn",
+    status: inTheLoop ? 'fail' : 'warn',
     detail:
-      `${detail}\n  ${absent.join(", ")} declared by an extension and not set in either file. ` +
+      `${detail}\n  ${absent.join(', ')} declared by an extension and not set in either file. ` +
       `An extension gets only what it declares (0037 §1), so it would run without them — ` +
       (inTheLoop
         ? `and a step's action verdict is what the loop waits for, so every pass is refused after a worktree and an install: `
         : `a subscriber runs off the log and changes no outcome (0015), so what is lost is the notification, once per event, as a PluginFailed: `) +
       `lingtai env set ${project} ${absent[0]} — it reads the value from stdin, unechoed.`,
-  };
+  }
 }
 
 /**
@@ -1896,51 +1877,51 @@ async function dispatchedAuthRow(
   agent: RuntimeId,
   asked: Map<RuntimeId, AuthStatus | null>,
 ): Promise<CheckResult> {
-  const name = `runtime: ${project} signed in`;
+  const name = `runtime: ${project} signed in`
   if (!asked.has(agent)) {
-    const runtime = createRuntime(agent);
+    const runtime = createRuntime(agent)
     // Exactly what a run gets. Not `process.env`.
-    asked.set(agent, runtime.checkAuth ? await runtime.checkAuth(runnableEnv({})) : null);
+    asked.set(agent, runtime.checkAuth ? await runtime.checkAuth(runnableEnv({})) : null)
   }
-  const status = asked.get(agent) ?? null;
+  const status = asked.get(agent) ?? null
   if (status === null) {
-    return { name, status: "skip", detail: `${agent} cannot be asked cheaply` };
+    return { name, status: 'skip', detail: `${agent} cannot be asked cheaply` }
   }
-  if (status.loggedIn) return { name, status: "ok", detail: `${agent} — ${status.detail}` };
+  if (status.loggedIn) return { name, status: 'ok', detail: `${agent} — ${status.detail}` }
   return {
     name,
-    status: "fail",
+    status: 'fail',
     detail:
       `${agent} reports ${status.detail}, and ${project}'s recipe names it at runtime.agent — ` +
       `so that is what the next pass constructs and spawns. Sign in, or name a runtime this ` +
       `machine has in ${machinePath()}. If you are signed in yourself, the run's environment ` +
       `is missing something the credential store needs — see runtime: signed in.`,
-  };
+  }
 }
 
 export async function declaredEnvironment(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
 ): Promise<CheckResult[]> {
-  const name = "env: declared names, and which layer";
+  const name = 'env: declared names, and which layer'
   // No App is needed: the recipe is this machine's file (#180), and nothing in
   // this row asks GitHub anything.
-  const projects = await load().catch(() => null);
+  const projects = await load().catch(() => null)
   if (projects === null) {
-    return [{ name, status: "skip", detail: "the project streams could not be read" }];
+    return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
   }
   if (projects.length === 0) {
-    return [{ name, status: "ok", detail: "no project has a recipe to declare anything yet" }];
+    return [{ name, status: 'ok', detail: 'no project has a recipe to declare anything yet' }]
   }
 
-  const results: CheckResult[] = [];
+  const results: CheckResult[] = []
   /** One spawn per runtime across every project — see `dispatchedAuthRow`. */
-  const asked = new Map<RuntimeId, AuthStatus | null>();
+  const asked = new Map<RuntimeId, AuthStatus | null>()
   for (const project of projects) {
-    if (!project.project || !project.owner) continue;
-    const label = `env: ${project.project}`;
+    if (!project.project || !project.owner) continue
+    const label = `env: ${project.project}`
     try {
-      const resolved = await currentRecipe(project);
+      const resolved = await currentRecipe(project)
       // Every name either file offers, and which one answered — 0021 makes
       // this load-bearing rather than nice: "the operator is responsible" is
       // only true where the operator can see what is happening. Names only,
@@ -1951,52 +1932,46 @@ export async function declaredEnvironment(
         allow: resolved.recipe.env.allow,
         deny: resolved.recipe.env.deny,
         patterns: productionPatterns(resolved.recipe.env.refuseHosts),
-      });
+      })
 
       if (agentEnv.names.length === 0) {
         results.push({
           name: label,
-          status: "ok",
+          status: 'ok',
           detail: `nothing required · ${basename(agentEnv.file)} is where a value would go`,
-        });
+        })
       } else {
         // A name that resolved but does not reach the agent is worth saying: it
         // is the `deny` half of the recipe doing its job, and it is invisible in
         // the values.
         const detail = agentEnv.names
           .map((n) => {
-            const where = n.layer === "project file" ? basename(agentEnv.file) : n.layer;
-            const held = n.layer !== "not set" && !(n.name in agentEnv.values);
-            return `${n.name} ← ${where}${held ? " (denied)" : ""}`;
+            const where = n.layer === 'project file' ? basename(agentEnv.file) : n.layer
+            const held = n.layer !== 'not set' && !(n.name in agentEnv.values)
+            return `${n.name} ← ${where}${held ? ' (denied)' : ''}`
           })
-          .join(" · ");
+          .join(' · ')
         results.push({
           name: label,
-          status: agentEnv.missing.length > 0 ? "fail" : "ok",
+          status: agentEnv.missing.length > 0 ? 'fail' : 'ok',
           detail: agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail,
-        });
+        })
       }
-      results.push(extensionRow(project.project, resolved.recipe, agentEnv));
+      results.push(extensionRow(project.project, resolved.recipe, agentEnv))
       results.push(
-        limitsRow(
-          project.project,
-          resolved.recipe,
-          createRuntime(resolved.recipe.runtime.agent).capabilities,
-        ),
-      );
+        limitsRow(project.project, resolved.recipe, createRuntime(resolved.recipe.runtime.agent).capabilities),
+      )
       // Whether the runtime named above can actually be started — a different
       // question from whether its declared limits bind, and the one nothing
       // asked between `runtimeAuth` becoming per-machine and this row.
-      results.push(
-        await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked),
-      );
+      results.push(await dispatchedAuthRow(project.project, resolved.recipe.runtime.agent, asked))
     } catch (err) {
       // Includes `ProductionValueError`, which names the variable and the
       // pattern it matched and no part of the value.
-      results.push({ name: label, status: "fail", detail: (err as Error).message });
+      results.push({ name: label, status: 'fail', detail: (err as Error).message })
     }
   }
-  return results;
+  return results
 }
 
 /**
@@ -2021,45 +1996,44 @@ export async function recipeGovernsItsBase(
   env: NodeJS.ProcessEnv,
   load: typeof loadProjects = loadProjects,
 ): Promise<CheckResult[]> {
-  const name = "recipe: the rules and the merge target are one branch";
+  const name = 'recipe: the rules and the merge target are one branch'
   // No App is needed to compare them: the recipe is this machine's file (#180).
 
-  const projects = await load().catch(() => null);
+  const projects = await load().catch(() => null)
   if (projects === null) {
-    return [{ name, status: "skip", detail: "the project streams could not be read" }];
+    return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
   }
   if (projects.length === 0) {
-    return [{ name, status: "ok", detail: "no project has a recorded base to disagree with a recipe yet" }];
+    return [{ name, status: 'ok', detail: 'no project has a recorded base to disagree with a recipe yet' }]
   }
 
-  const results: CheckResult[] = [];
+  const results: CheckResult[] = []
   for (const project of projects) {
-    if (!project.project || !project.owner) continue;
-    const label = `base: ${project.project}`;
+    if (!project.project || !project.owner) continue
+    const label = `base: ${project.project}`
     try {
-      const resolved = await currentRecipe(project);
-      const divergence = baseDivergence(resolved, `${project.owner}/${project.project}`);
+      const resolved = await currentRecipe(project)
+      const divergence = baseDivergence(resolved, `${project.owner}/${project.project}`)
       results.push(
         divergence
-          ? { name: label, status: "fail", detail: divergence }
+          ? { name: label, status: 'fail', detail: divergence }
           : {
               name: label,
-              status: "ok",
+              status: 'ok',
               // The key as this recipe writes it: since `#268` the base may be
               // `worktree:`'s at `admit`, and a row naming the other line is a
               // row that sends a reader to something nothing reads.
               detail:
-                `read from ${resolved.ref}, and ` +
-                `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
+                `read from ${resolved.ref}, and ` + `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
             },
-      );
+      )
     } catch (err) {
       // A skip, not a second failure: an unreadable recipe is already red in the
       // check above, and the comparison genuinely could not be made.
-      results.push({ name: label, status: "skip", detail: `no recipe to compare — ${(err as Error).message}` });
+      results.push({ name: label, status: 'skip', detail: `no recipe to compare — ${(err as Error).message}` })
     }
   }
-  return results;
+  return results
 }
 
 /**
@@ -2091,23 +2065,23 @@ export async function runDoctor(
   load: typeof loadProjects = loadProjects,
   reach: Partial<DoctorReach> = {},
 ): Promise<DoctorReport> {
-  const results: CheckResult[] = [];
+  const results: CheckResult[] = []
 
   results.push({
-    name: "packages load under Node",
-    status: "ok",
+    name: 'packages load under Node',
+    status: 'ok',
     // Not a freebie: to reach this line, Node's type stripping had to load
     // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
     // command imports. A `.js` specifier in a barrel or a constructor parameter
     // property would have stopped it, and neither `tsc` nor a board build
     // notices either. See doc/decisions-archive/0010.
     detail: "every package this command imports loaded under Node's type stripping",
-  });
+  })
 
   // Before the connection rows, because it is the question they assume an
   // answer to: what this machine says it runs.
-  const choice = store();
-  results.push(storeRow(choice));
+  const choice = store()
+  results.push(storeRow(choice))
 
   /**
    * **A machine that wrote `sqlite` is never asked for a connection string.**
@@ -2123,34 +2097,39 @@ export async function runDoctor(
    * either: setup said correct, doctor said broken, and the way out it offered
    * was to abandon the configuration.
    */
-  const fileBacked = !("refused" in choice) && choice.store === "sqlite";
+  const fileBacked = !('refused' in choice) && choice.store === 'sqlite'
 
-  let fromFile: string | undefined;
-  let unreadable: string | undefined;
-  if (!fileBacked && !env["LINGTAI_DATABASE_URL"]) {
+  let fromFile: string | undefined
+  let unreadable: string | undefined
+  if (!fileBacked && !env['LINGTAI_DATABASE_URL']) {
     try {
-      fromFile = machine();
+      fromFile = machine()
     } catch (err) {
-      unreadable = (err as Error).message;
+      unreadable = (err as Error).message
     }
   }
-  const pooled = fileBacked ? undefined : env["LINGTAI_DATABASE_URL"] || fromFile;
+  const pooled = fileBacked ? undefined : env['LINGTAI_DATABASE_URL'] || fromFile
   // Absent, the pooled one stands in (#176) — the rule `directPostgresUrl`
   // follows, so the doctor checks the connection the system will actually use.
-  const standIn = !env["LINGTAI_DIRECT_DATABASE_URL"];
-  const direct = fileBacked ? undefined : env["LINGTAI_DIRECT_DATABASE_URL"] || pooled;
+  const standIn = !env['LINGTAI_DIRECT_DATABASE_URL']
+  const direct = fileBacked ? undefined : env['LINGTAI_DIRECT_DATABASE_URL'] || pooled
   const envResult = fileBacked
     ? {
-        name: "environment",
-        status: "skip" as const,
+        name: 'environment',
+        status: 'skip' as const,
         detail:
-          "not read on this machine — it wrote store: sqlite, so there is no connection string to report on, " +
-          "and the store row above says where the log is",
+          'not read on this machine — it wrote store: sqlite, so there is no connection string to report on, ' +
+          'and the store row above says where the log is',
       }
     : unreadable
-      ? { name: "environment", status: "fail" as const, detail: unreadable }
-      : environment(pooled, direct, standIn && Boolean(pooled), fromFile ? "~/.lingtai/config.yml database.url" : undefined);
-  results.push(envResult);
+      ? { name: 'environment', status: 'fail' as const, detail: unreadable }
+      : environment(
+          pooled,
+          direct,
+          standIn && Boolean(pooled),
+          fromFile ? '~/.lingtai/config.yml database.url' : undefined,
+        )
+  results.push(envResult)
 
   if (fileBacked) {
     // Every row below that is about **a log** rather than about Postgres: each
@@ -2165,86 +2144,86 @@ export async function runDoctor(
     // store runs its own `create table if not exists` — `events` and
     // `daemon_status` — which is how that store is opened at all and how the
     // very next command would open it; not one row goes in.
-    results.push(await logReachable(choice.path, queries));
-    results.push(await projections(undefined, reach.lags));
-    results.push(await projectionShapes(undefined, reach.shapes));
-    results.push(await daemonLiveness(reach.status, reach.pause));
-    results.push(await daemonCurrency(reach.status));
-    results.push(await passRefusals(load));
-    results.push(await conductorLock(reach.lockHolder));
-    results.push(await readableTypes(queries));
-    results.push(await orphans(reach.orphans));
+    results.push(await logReachable(choice.path, queries))
+    results.push(await projections(undefined, reach.lags))
+    results.push(await projectionShapes(undefined, reach.shapes))
+    results.push(await daemonLiveness(reach.status, reach.pause))
+    results.push(await daemonCurrency(reach.status))
+    results.push(await passRefusals(load))
+    results.push(await conductorLock(reach.lockHolder))
+    results.push(await readableTypes(queries))
+    results.push(await orphans(reach.orphans))
     // Read once and handed to both: the two rows below name issues, and a
     // number on its own is homework for whoever is reading them (#258).
-    const titles = await issueTitles(reach.titles);
-    results.push(await unconverged(queries, titles));
-    results.push(await subscribers(queries));
-    results.push(await endStepRan(queries, titles));
+    const titles = await issueTitles(reach.titles)
+    results.push(await unconverged(queries, titles))
+    results.push(await subscribers(queries))
+    results.push(await endStepRan(queries, titles))
     // Named one at a time, each saying why it does not apply and naming the
     // store. See `postgresOnlyRows`.
     for (const row of postgresOnlyRows()) {
       results.push({
         name: row.name,
-        status: "skip",
+        status: 'skip',
         detail: `not asked on this machine: it wrote store: sqlite, and ${row.because}`,
-      });
+      })
     }
-  } else if (envResult.status === "ok" && pooled && direct) {
+  } else if (envResult.status === 'ok' && pooled && direct) {
     // **The direct connection, and not `queries`.** These read the log, and on
     // this machine the log has two connection strings: `log.queries` is the
     // pooled one, and through a pooler a dropped connection turns an audit into
     // a red check that has nothing to do with the log (#157). The rows take a
     // `LogQueries` so that the file-backed branch above can ask them at all;
     // which connection *this* branch hands them is unchanged.
-    const audit = createPostgresLogQueries({ url: direct });
-    results.push(await pooledConnection(pooled));
-    results.push(await directIsSessionMode(direct, standIn));
-    results.push(...(await schema(direct)));
-    results.push(await projections(pooled));
-    results.push(await projectionShapes(pooled));
-    results.push(await daemonLiveness());
+    const audit = createPostgresLogQueries({ url: direct })
+    results.push(await pooledConnection(pooled))
+    results.push(await directIsSessionMode(direct, standIn))
+    results.push(...(await schema(direct)))
+    results.push(await projections(pooled))
+    results.push(await projectionShapes(pooled))
+    results.push(await daemonLiveness())
     // Beside liveness, never folded into it: up and current are two facts, and
     // for thirty-nine minutes only one of them was measured.
-    results.push(await daemonCurrency());
+    results.push(await daemonCurrency())
     // What the conductor refused, from the log — not what this checkout would
     // refuse, which the recipe rows answer, and which is a different question
     // whenever the two are at different commits (#148).
-    results.push(await passRefusals(load));
-    results.push(await conductorLock());
-    results.push(await readableTypes(audit));
-    results.push(await orphans());
+    results.push(await passRefusals(load))
+    results.push(await conductorLock())
+    results.push(await readableTypes(audit))
+    results.push(await orphans())
     // The projection and not the audit connection: this is what the rows are
     // *called*, not what they assert, so it is read where every other
     // projection read here is read (#258).
-    const titles = await issueTitles();
-    results.push(await unconverged(audit, titles));
-    results.push(await subscribers(audit));
-    results.push(await endStepRan(audit, titles));
+    const titles = await issueTitles()
+    results.push(await unconverged(audit, titles))
+    results.push(await subscribers(audit))
+    results.push(await endStepRan(audit, titles))
   } else {
     results.push({
-      name: "postgres",
-      status: "skip",
-      detail: "not attempted — the environment check failed first",
-    });
+      name: 'postgres',
+      status: 'skip',
+      detail: 'not attempted — the environment check failed first',
+    })
   }
 
-  results.push(githubCredentials(env));
-  results.push(...(await projectRecipes(env, load)));
-  results.push(...(await declaredEnvironment(env, load)));
-  results.push(...(await recipeGovernsItsBase(env, load)));
-  results.push(await settingsSources(reach.settings));
-  results.push(await runtimeAuth(reach.runtimes));
-  for (const d of DEFERRED) results.push({ ...d, status: "skip", deferred: true });
+  results.push(githubCredentials(env))
+  results.push(...(await projectRecipes(env, load)))
+  results.push(...(await declaredEnvironment(env, load)))
+  results.push(...(await recipeGovernsItsBase(env, load)))
+  results.push(await settingsSources(reach.settings))
+  results.push(await runtimeAuth(reach.runtimes))
+  for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
 
   return {
     results,
-    ok: results.filter((r) => r.status === "ok").length,
-    failed: results.filter((r) => r.status === "fail").length,
-    skipped: results.filter((r) => r.status === "skip").length,
-    deferred: results.filter((r) => r.status === "skip" && r.deferred === true).length,
-    notChecked: results.filter((r) => r.status === "skip" && r.deferred !== true).length,
-    warned: results.filter((r) => r.status === "warn").length,
-  };
+    ok: results.filter((r) => r.status === 'ok').length,
+    failed: results.filter((r) => r.status === 'fail').length,
+    skipped: results.filter((r) => r.status === 'skip').length,
+    deferred: results.filter((r) => r.status === 'skip' && r.deferred === true).length,
+    notChecked: results.filter((r) => r.status === 'skip' && r.deferred !== true).length,
+    warned: results.filter((r) => r.status === 'warn').length,
+  }
 }
 
 /**
@@ -2259,11 +2238,15 @@ export async function runDoctor(
  * both.
  */
 export async function doctorReport(): Promise<DoctorReport> {
-  const env = doctorEnvironment();
+  const env = doctorEnvironment()
   // `storeChoice()` and not `storeChoice(env)`: the choice is read from the
   // variables really exported into this process, and `doctorEnvironment` hands
   // out a copy carrying what the env files supplied too (0056 §4).
-  return runDoctor(env, () => machineDatabaseUrl(env), () => storeChoice());
+  return runDoctor(
+    env,
+    () => machineDatabaseUrl(env),
+    () => storeChoice(),
+  )
 }
 
 /**
@@ -2279,14 +2262,14 @@ export async function doctorReport(): Promise<DoctorReport> {
  * refusal left off, so every value here is the one that was here before.
  */
 export function doctorEnvironment(from: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env = { ...from };
-  const pooled = postgresUrlIfSet(from);
-  const direct = directUrlIfSet(from);
-  if (pooled) env["DATABASE_URL"] = pooled;
-  else delete env["DATABASE_URL"];
-  if (direct) env["DIRECT_DATABASE_URL"] = direct;
-  else delete env["DIRECT_DATABASE_URL"];
-  return env;
+  const env = { ...from }
+  const pooled = postgresUrlIfSet(from)
+  const direct = directUrlIfSet(from)
+  if (pooled) env['DATABASE_URL'] = pooled
+  else delete env['DATABASE_URL']
+  if (direct) env['DIRECT_DATABASE_URL'] = direct
+  else delete env['DIRECT_DATABASE_URL']
+  return env
 }
 
 /**
@@ -2300,13 +2283,13 @@ export function doctorEnvironment(from: NodeJS.ProcessEnv = process.env): NodeJS
  * dimmed rather than coloured, because it is not a verdict about this system.
  */
 const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
-  ok: { text: "  ok  ", ink: paint.pass },
-  fail: { text: " FAIL ", ink: paint.fail },
+  ok: { text: '  ok  ', ink: paint.pass },
+  fail: { text: ' FAIL ', ink: paint.fail },
   // `note` is amber, and it is the one thing amber is for: a check that passed
   // but wants a person to look at it is a person being waited on.
-  warn: { text: " note ", ink: paint.signal },
-  skip: { text: " skip ", ink: paint.muted },
-};
+  warn: { text: ' note ', ink: paint.signal },
+  skip: { text: ' skip ', ink: paint.muted },
+}
 
 /**
  * **`0 failed` is a claim about what ran**, so the line beside it says what did
@@ -2325,19 +2308,19 @@ const TAG: Record<CheckStatus, { text: string; ink: (s: string) => string }> = {
  * build stopped saying*.
  */
 export function formatReport(report: DoctorReport): string {
-  const notes = report.warned > 0 ? `, ${report.warned} to note` : "";
-  const here = `, ${report.notChecked} not checked here`;
+  const notes = report.warned > 0 ? `, ${report.warned} to note` : ''
+  const here = `, ${report.notChecked} not checked here`
   const lines = report.results.map((r) => {
-    const tag = TAG[r.status];
-    return `${tag.ink(tag.text)} ${r.name}\n         ${r.detail}`;
-  });
-  lines.push("");
+    const tag = TAG[r.status]
+    return `${tag.ink(tag.text)} ${r.name}\n         ${r.detail}`
+  })
+  lines.push('')
   lines.push(
     report.failed === 0
       ? `${paint.pass(`${report.ok} ok`)}${notes}${here}, ${report.deferred} not implemented yet, 0 failed`
       : paint.fail(
           `${report.failed} check(s) FAILED — ${report.ok} ok${notes}${here}, ${report.deferred} not implemented yet`,
         ),
-  );
-  return lines.join("\n");
+  )
+  return lines.join('\n')
 }

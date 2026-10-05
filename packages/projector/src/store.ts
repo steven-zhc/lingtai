@@ -29,24 +29,25 @@
  * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)). This
  * interface is what made that a single edit rather than six.
  */
-import type { Envelope } from "@lingtai/domain";
+import type { Envelope } from '@lingtai/domain'
+
 // Type-only, both ways. `store.ts` names the row shapes the board reads and
 // `task-view.ts` names the context a fold writes through; a cycle of types is
 // erased before Node ever sees it, and keeping the board's card shape beside
 // the fold that produces it is worth more than a file with no edges.
-import type { BacklogEntry, BacklogStatus } from "./backlog.ts";
-import type { TaskCard } from "./task-view.ts";
+import type { BacklogEntry, BacklogStatus } from './backlog.ts'
+import type { TaskCard } from './task-view.ts'
 
 /** A row, as a store hands it back. Column names, not field names. */
-export type ProjectionRow = Record<string, unknown>;
+export type ProjectionRow = Record<string, unknown>
 
 /** One table that exists and does not match the DDL that declares it. */
 export interface ProjectionDrift {
-  table: string;
+  table: string
   /** Declared by the DDL, absent from the live table. The #84 direction. */
-  missing: readonly string[];
+  missing: readonly string[]
   /** In the live table, no longer declared. A `not null` leftover breaks inserts. */
-  unexpected: readonly string[];
+  unexpected: readonly string[]
 }
 
 /**
@@ -68,14 +69,14 @@ export class ProjectionShapeError extends Error {
   // Assigned in the body, not declared as constructor parameters: a parameter
   // property is the one TypeScript form Node's type stripping refuses, and
   // nothing but running it under Node catches that (0010).
-  readonly projection: string;
-  readonly drift: readonly ProjectionDrift[];
+  readonly projection: string
+  readonly drift: readonly ProjectionDrift[]
 
   constructor(projection: string, drift: readonly ProjectionDrift[]) {
-    super(describeDrift(projection, drift));
-    this.name = "ProjectionShapeError";
-    this.projection = projection;
-    this.drift = drift;
+    super(describeDrift(projection, drift))
+    this.name = 'ProjectionShapeError'
+    this.projection = projection
+    this.drift = drift
   }
 }
 
@@ -94,13 +95,13 @@ export class ProjectionShapeError extends Error {
 export function describeDrift(projection: string, drift: readonly ProjectionDrift[]): string {
   const what = drift
     .map((d) => {
-      const bits: string[] = [];
-      if (d.missing.length > 0) bits.push(`missing ${d.missing.join(", ")}`);
-      if (d.unexpected.length > 0) bits.push(`no longer declared: ${d.unexpected.join(", ")}`);
-      return `${d.table} ${bits.join("; ")}`;
+      const bits: string[] = []
+      if (d.missing.length > 0) bits.push(`missing ${d.missing.join(', ')}`)
+      if (d.unexpected.length > 0) bits.push(`no longer declared: ${d.unexpected.join(', ')}`)
+      return `${d.table} ${bits.join('; ')}`
     })
-    .join(" · ");
-  return `${projection} has drifted from its table — ${what}. Replay, never a repair by hand: lingtai projection rebuild ${projection}`;
+    .join(' · ')
+  return `${projection} has drifted from its table — ${what}. Replay, never a repair by hand: lingtai projection rebuild ${projection}`
 }
 
 /**
@@ -128,8 +129,8 @@ export function describeDrift(projection: string, drift: readonly ProjectionDrif
  * value; only a column the row has not got at all is drift.
  */
 export function columnOf(row: ProjectionRow, table: string, column: string): unknown {
-  if (column in row) return row[column];
-  throw new ProjectionShapeError(table, [{ table, missing: [column], unexpected: [] }]);
+  if (column in row) return row[column]
+  throw new ProjectionShapeError(table, [{ table, missing: [column], unexpected: [] }])
 }
 
 /**
@@ -141,12 +142,12 @@ export function columnOf(row: ProjectionRow, table: string, column: string): unk
  * anything not on it reaches SQLite unchanged and fails loudly.
  */
 export interface ProjectionContext {
-  query<T = ProjectionRow>(text: string, values?: readonly unknown[]): Promise<T[]>;
+  query<T = ProjectionRow>(text: string, values?: readonly unknown[]): Promise<T[]>
 }
 
 export interface Projection {
   /** The `checkpoints.name` this projection advances. */
-  readonly name: string;
+  readonly name: string
 
   /**
    * Idempotent DDL for whatever tables this projection owns. Called before every
@@ -158,7 +159,7 @@ export interface Projection {
    * (`shape.ts`). Recording returns no rows, so a `create` that branched on one
    * would be recorded wrong.
    */
-  create(ctx: ProjectionContext): Promise<void>;
+  create(ctx: ProjectionContext): Promise<void>
 
   /**
    * **Removes** everything `create` made — dropped, not emptied.
@@ -172,7 +173,7 @@ export interface Projection {
    * Dropping is what makes the claim in `rebuild` true: a projection's shape is
    * free to change because changing it costs a rebuild rather than a migration.
    */
-  reset(ctx: ProjectionContext): Promise<void>;
+  reset(ctx: ProjectionContext): Promise<void>
 
   /**
    * Folds one batch, in `seq` order.
@@ -182,36 +183,36 @@ export interface Projection {
    * before the runner noticed will re-read the same events, and so will a
    * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
    */
-  apply(events: readonly Envelope[], ctx: ProjectionContext): Promise<void>;
+  apply(events: readonly Envelope[], ctx: ProjectionContext): Promise<void>
 }
 
 export interface ProjectionLag {
-  name: string;
+  name: string
   /** How far this projection has consumed. */
-  lastSeq: bigint;
+  lastSeq: bigint
   /** The log's high-water mark. */
-  headSeq: bigint;
+  headSeq: bigint
   /** Events behind. Zero is caught up. */
-  lag: bigint;
-  updatedAt: Date | null;
+  lag: bigint
+  updatedAt: Date | null
 }
 
 /** What `readTasks` asks of a store, with the retention window already decided. */
 export interface TaskQuery {
-  project?: string;
+  project?: string
   /**
    * How long a landed task stays visible. Resolved by the caller rather than
    * defaulted here, so a store never has to know what the board's default is —
    * and so changing it stays a different query rather than a rebuild.
    */
-  retentionDays: number;
+  retentionDays: number
 }
 
 /** What `readBacklog` asks of a store. Absent `status` reads every status. */
 export interface BacklogQuery {
-  project?: string;
-  status?: BacklogStatus;
-  key?: string;
+  project?: string
+  status?: BacklogStatus
+  key?: string
 }
 
 /**
@@ -233,13 +234,13 @@ export interface ProjectionStore {
    * put first. Together, the checkpoint is simply part of the projection's
    * state, and recovery is "read the checkpoint, carry on".
    */
-  transact<T>(fn: (ctx: ProjectionContext) => Promise<T>): Promise<T>;
+  transact<T>(fn: (ctx: ProjectionContext) => Promise<T>): Promise<T>
 
   /** How far `name` has read. `0n` for a projection with no checkpoint row. */
-  checkpoint(name: string): Promise<bigint>;
+  checkpoint(name: string): Promise<bigint>
 
   /** Moves `name`'s checkpoint to `seq`. Inside the fold's transaction, always. */
-  advance(ctx: ProjectionContext, name: string, seq: bigint): Promise<void>;
+  advance(ctx: ProjectionContext, name: string, seq: bigint): Promise<void>
 
   /**
    * Puts a row down at zero without moving an existing one.
@@ -249,10 +250,10 @@ export interface ProjectionStore {
    * so `lingtai doctor` would report "nothing running" about something that is
    * running fine and merely has nothing to do.
    */
-  register(ctx: ProjectionContext, name: string): Promise<void>;
+  register(ctx: ProjectionContext, name: string): Promise<void>
 
   /** The same, but forces an existing row back to zero. Used by `rebuild`. */
-  rewind(ctx: ProjectionContext, name: string): Promise<void>;
+  rewind(ctx: ProjectionContext, name: string): Promise<void>
 
   /**
    * The columns each of `tables` actually has, absent from the map when the
@@ -262,13 +263,13 @@ export interface ProjectionStore {
    * run on every `lingtai doctor` and at every daemon start — the whole point,
    * because the alternative is finding out when the daemon stops (#84).
    */
-  columnsOf(tables: readonly string[]): Promise<Map<string, ReadonlySet<string>>>;
+  columnsOf(tables: readonly string[]): Promise<Map<string, ReadonlySet<string>>>
 
   /** One projection's lag, whether or not it has a checkpoint row yet. */
-  lag(name: string): Promise<ProjectionLag>;
+  lag(name: string): Promise<ProjectionLag>
 
   /** Every projection that has a checkpoint, by name. What `lingtai doctor` reports. */
-  lags(): Promise<ProjectionLag[]>;
+  lags(): Promise<ProjectionLag[]>
 
   /**
    * The board's cards.
@@ -278,7 +279,7 @@ export interface ProjectionStore {
    * number. A store answers for the ordering as well as the rows: the order is
    * part of what the board reads, not a detail of one dialect.
    */
-  tasks(query: TaskQuery): Promise<TaskCard[]>;
+  tasks(query: TaskQuery): Promise<TaskCard[]>
 
   /**
    * Which projects the board holds cards from, over the same retention window.
@@ -287,11 +288,11 @@ export interface ProjectionStore {
    * one question a filtered read cannot answer: narrowing to one project is
    * what removes the evidence that the others exist.
    */
-  taskProjects(query: Pick<TaskQuery, "retentionDays">): Promise<string[]>;
+  taskProjects(query: Pick<TaskQuery, 'retentionDays'>): Promise<string[]>
 
   /** The finding backlog, oldest first within a project: it is worked from the bottom. */
-  backlog(query: BacklogQuery): Promise<BacklogEntry[]>;
+  backlog(query: BacklogQuery): Promise<BacklogEntry[]>
 
   /** Releases whatever this store holds open. */
-  close(): Promise<void>;
+  close(): Promise<void>
 }

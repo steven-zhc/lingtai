@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 /**
  * The one claim about a pass that needs a world: **which `recipe.yml` judged it.**
  *
@@ -15,10 +19,11 @@
  * needs that world: no `recipe` is passed, so a `runOnce` whose default went
  * back to reading the repository would be handed the disarmed copy and merge.
  */
-import type { GitHubClient } from "@lingtai/github";
-import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
-import { runOnce } from "../src/conduct.ts";
+import type { GitHubClient } from '@lingtai/github'
+import { Effect } from 'effect'
+import { describe, expect, it } from 'vitest'
+
+import { runOnce } from '../src/conduct.ts'
 import {
   PROJECT,
   RECIPE,
@@ -29,11 +34,7 @@ import {
   project,
   runtime,
   withPorts,
-} from "../test/one-pass.ts";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
+} from '../test/one-pass.ts'
 
 /**
  * The governance rule, at the point where it bites: which recipe judges a
@@ -52,36 +53,36 @@ import { join } from "node:path";
  */
 describe("runOnce judges a change by the machine's recipe, not by any file in the repository", () => {
   it("holds a diff that deletes the tamper watch, though the repository's own copy no longer has one", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const ports = fakePorts(did, store, true);
-    const git = ports.repo.git;
+    const store = memoryStore()
+    const did: string[] = []
+    const ports = fakePorts(did, store, true)
+    const git = ports.repo.git
     ports.repo.git = (...call: Parameters<typeof git>) =>
-      call[0][0] === "diff" && call[0][1] === "--name-only"
-        ? git(...call).pipe(Effect.as(".lingtai/config.yaml\npackages/actions/src/watch-action.ts\n"))
-        : git(...call);
+      call[0][0] === 'diff' && call[0][1] === '--name-only'
+        ? git(...call).pipe(Effect.as('.lingtai/config.yaml\npackages/actions/src/watch-action.ts\n'))
+        : git(...call)
 
     const armed = RECIPE.replace(
-      "steps: {}",
+      'steps: {}',
       'steps:\n  proposed:\n    - name: tamper\n      watch: [".lingtai/config.yaml", "packages/actions/**"]\n      then: request-approval',
-    );
+    )
     const client = {
       ...fakeGitHub([], RECIPE),
-      fileAt: async (path: string) => (path !== ".lingtai/config.yaml" ? null : RECIPE),
-    } as unknown as GitHubClient;
+      fileAt: async (path: string) => (path !== '.lingtai/config.yaml' ? null : RECIPE),
+    } as unknown as GitHubClient
 
     // The machine's half: the recipe without `runtime.agent`, and the agent
     // named in `config.yml` so nothing is asked what is signed in.
     // `runtime.limits` stays in the recipe — it is the recipe's own (`#375`).
-    const lingtaiHome = await mkdtemp(join(tmpdir(), "lingtai-home-"));
-    await mkdir(join(lingtaiHome, PROJECT));
+    const lingtaiHome = await mkdtemp(join(tmpdir(), 'lingtai-home-'))
+    await mkdir(join(lingtaiHome, PROJECT))
     await writeFile(
-      join(lingtaiHome, PROJECT, "recipe.yml"),
-      armed.replace(/^runtime:.*$/m, "runtime: { limits: { turns: 10, wall: 2m } }"),
-    );
-    await writeFile(join(lingtaiHome, "config.yml"), "runtime:\n  agent: claude-code\n");
-    const saved = process.env["LINGTAI_HOME"];
-    process.env["LINGTAI_HOME"] = lingtaiHome;
+      join(lingtaiHome, PROJECT, 'recipe.yml'),
+      armed.replace(/^runtime:.*$/m, 'runtime: { limits: { turns: 10, wall: 2m } }'),
+    )
+    await writeFile(join(lingtaiHome, 'config.yml'), 'runtime:\n  agent: claude-code\n')
+    const saved = process.env['LINGTAI_HOME']
+    process.env['LINGTAI_HOME'] = lingtaiHome
 
     const result = await Effect.runPromise(
       runOnce({
@@ -89,23 +90,23 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
         client,
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       }).pipe(Effect.provide(withPorts(ports))),
     ).finally(async () => {
-      if (saved === undefined) delete process.env["LINGTAI_HOME"];
-      else process.env["LINGTAI_HOME"] = saved;
-      await rm(lingtaiHome, { recursive: true, force: true });
-    });
+      if (saved === undefined) delete process.env['LINGTAI_HOME']
+      else process.env['LINGTAI_HOME'] = saved
+      await rm(lingtaiHome, { recursive: true, force: true })
+    })
 
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    expect(result).toMatchObject({ ok: "held", step: "proposed" });
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
     // Held by the machine's watch, which the repository's copy does not have.
-    const asked = (await store.read(result.runId)).filter((e) => e.type === "ApprovalRequested");
-    expect(asked.map((e) => e.data)).toMatchObject([{ step: "proposed", action: "tamper" }]);
-    expect(did).not.toContain("integrate");
-  });
-});
+    const asked = (await store.read(result.runId)).filter((e) => e.type === 'ApprovalRequested')
+    expect(asked.map((e) => e.data)).toMatchObject([{ step: 'proposed', action: 'tamper' }])
+    expect(did).not.toContain('integrate')
+  })
+})

@@ -21,84 +21,86 @@
  * shipped declaration is adding `TELEGRAM_API_ROOT` to its `env:`, which is the
  * only way to point a real process at that server through the same filter.
  */
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { projectEnvPath, resolveAgentEnv } from "@lingtai/agent-env";
-import type { ProjectFilter } from "@lingtai/conductor";
-import { createWorkLoop, type WorkLoop } from "@lingtai/daemon";
-import { SUBSCRIBER_STREAM, workItemStream } from "@lingtai/domain";
-import { boardUrl } from "@lingtai/env";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { resolveRecipe, type Subscriber as SubscriberSpec } from "@lingtai/recipe";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { buildSubscribers, createSubjectResolver } from "../src/subscribers.ts";
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const ROOT = join(import.meta.dirname, "..", "..", "..");
-const PROJECT = `esctesttg${crypto.randomUUID().slice(0, 6)}`;
-const TOKEN = "123456:not-a-real-token";
-const created = new Set<string>();
+import { projectEnvPath, resolveAgentEnv } from '@lingtai/agent-env'
+import type { ProjectFilter } from '@lingtai/conductor'
+import { createWorkLoop, type WorkLoop } from '@lingtai/daemon'
+import { SUBSCRIBER_STREAM, workItemStream } from '@lingtai/domain'
+import { boardUrl } from '@lingtai/env'
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { resolveRecipe, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-let store: EventStore;
-let shipped: SubscriberSpec;
+import { buildSubscribers, createSubjectResolver } from '../src/subscribers.ts'
+
+const ROOT = join(import.meta.dirname, '..', '..', '..')
+const PROJECT = `esctesttg${crypto.randomUUID().slice(0, 6)}`
+const TOKEN = '123456:not-a-real-token'
+const created = new Set<string>()
+
+let store: EventStore
+let shipped: SubscriberSpec
 
 beforeAll(async () => {
-  store = await processEventStore();
-  const resolved = await resolveRecipe(async (path) => readFile(join(ROOT, path), "utf8"), "HEAD");
-  const found = resolved.recipe.subscribers.find((s) => s.name === "telegram");
-  if (!found) throw new Error(".lingtai/config.yaml declares no telegram subscriber");
-  shipped = found;
-});
+  store = await processEventStore()
+  const resolved = await resolveRecipe(async (path) => readFile(join(ROOT, path), 'utf8'), 'HEAD')
+  const found = resolved.recipe.subscribers.find((s) => s.name === 'telegram')
+  if (!found) throw new Error('.lingtai/config.yaml declares no telegram subscriber')
+  shipped = found
+})
 
-let server: Server | undefined;
-let loop: WorkLoop | undefined;
+let server: Server | undefined
+let loop: WorkLoop | undefined
 afterEach(async () => {
-  await loop?.stop();
-  loop = undefined;
-  server?.closeAllConnections();
-  await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
-  server = undefined;
-});
+  await loop?.stop()
+  loop = undefined
+  server?.closeAllConnections()
+  await new Promise<void>((r) => (server ? server.close(() => r()) : r()))
+  server = undefined
+})
 
 async function until<T>(what: () => Promise<T | undefined> | T | undefined, ms = 30_000): Promise<T> {
-  const deadline = Date.now() + ms;
+  const deadline = Date.now() + ms
   for (;;) {
-    const value = await what();
-    if (value !== undefined && value !== false) return value;
-    if (Date.now() > deadline) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 50));
+    const value = await what()
+    if (value !== undefined && value !== false) return value
+    if (Date.now() > deadline) throw new Error('timed out')
+    await new Promise((r) => setTimeout(r, 50))
   }
 }
 
 interface Received {
-  text: string;
-  res: ServerResponse;
+  text: string
+  res: ServerResponse
 }
 
 /** A Bot API on `port` (any, if 0). `hold` keeps a request open instead of answering it. */
 async function botApi(port = 0, hold: (text: string) => boolean = () => false) {
-  const received: Received[] = [];
+  const received: Received[] = []
   server = createServer((req: IncomingMessage, res) => {
-    let raw = "";
-    req.on("data", (c) => (raw += c));
-    req.on("end", () => {
-      const text = (JSON.parse(raw) as { text: string }).text;
-      received.push({ text, res });
-      if (!hold(text)) res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true,"result":{}}');
-    });
-  });
-  await new Promise<void>((r) => server!.listen(port, "127.0.0.1", () => r()));
-  return { received, port: (server.address() as AddressInfo).port };
+    let raw = ''
+    req.on('data', (c) => (raw += c))
+    req.on('end', () => {
+      const text = (JSON.parse(raw) as { text: string }).text
+      received.push({ text, res })
+      if (!hold(text)) res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true,"result":{}}')
+    })
+  })
+  await new Promise<void>((r) => server!.listen(port, '127.0.0.1', () => r()))
+  return { received, port: (server.address() as AddressInfo).port }
 }
 
 async function freePort(): Promise<number> {
-  const s = createServer();
-  await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
-  const { port } = s.address() as AddressInfo;
-  await new Promise<void>((r) => s.close(() => r()));
-  return port;
+  const s = createServer()
+  await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()))
+  const { port } = s.address() as AddressInfo
+  await new Promise<void>((r) => s.close(() => r()))
+  return port
 }
 
 /**
@@ -113,96 +115,96 @@ async function freePort(): Promise<number> {
 const envLines = (port: number, token = true) =>
   [
     ...(token ? [`TELEGRAM_BOT_TOKEN=${TOKEN}`] : []),
-    "TELEGRAM_CHAT_ID=42",
+    'TELEGRAM_CHAT_ID=42',
     `TELEGRAM_API_ROOT=http://127.0.0.1:${port}`,
-    "LINGTAI_DATABASE_URL=postgres://the-log",
-    "",
-  ].join("\n");
+    'LINGTAI_DATABASE_URL=postgres://the-log',
+    '',
+  ].join('\n')
 
 async function started(port: number, spec: Partial<SubscriberSpec> = {}, token = true) {
-  const home = await mkdtemp(join(tmpdir(), "lingtai-telegram-home-"));
-  const file = projectEnvPath(PROJECT, home);
-  await mkdir(join(home, "env"), { recursive: true });
-  await writeFile(file, envLines(port, token));
-  const declared = { ...shipped, env: [...shipped.env, "TELEGRAM_API_ROOT"], ...spec };
+  const home = await mkdtemp(join(tmpdir(), 'lingtai-telegram-home-'))
+  const file = projectEnvPath(PROJECT, home)
+  await mkdir(join(home, 'env'), { recursive: true })
+  await writeFile(file, envLines(port, token))
+  const declared = { ...shipped, env: [...shipped.env, 'TELEGRAM_API_ROOT'], ...spec }
   const { built, unread } = await buildSubscribers({
     filters: [{ project: PROJECT, ok: true, recipe: { subscribers: [declared] } } as unknown as ProjectFilter],
     cwd: ROOT,
     subject: createSubjectResolver(store),
     resolveEnv: (options) => resolveAgentEnv({ ...options, home, machine: {} }),
-  });
-  expect(unread).toEqual([]);
-  loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: async () => {} });
-  await loop.start();
-  return { file };
+  })
+  expect(unread).toEqual([])
+  loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: async () => {} })
+  await loop.start()
+  return { file }
 }
 
-let issue = 0;
+let issue = 0
 /** A work item and a run for it, opened the way `conduct.ts` opens one. */
 async function aRun() {
-  issue += 1;
-  const wi = workItemStream(PROJECT, issue);
-  const runId = `run-${crypto.randomUUID()}`;
-  created.add(wi);
-  created.add(runId);
+  issue += 1
+  const wi = workItemStream(PROJECT, issue)
+  const runId = `run-${crypto.randomUUID()}`
+  created.add(wi)
+  created.add(runId)
   await store.append(runId, 0, [
     {
-      type: "RunStarted",
-      actor: "conductor",
+      type: 'RunStarted',
+      actor: 'conductor',
       data: {
         workItemId: wi,
-        runtime: "claude-code",
-        model: "claude-opus-5",
-        promptVersion: "v1",
-        baseSha: "a".repeat(40),
-        configHash: "b".repeat(12),
-        worktree: "/tmp/wt",
+        runtime: 'claude-code',
+        model: 'claude-opus-5',
+        promptVersion: 'v1',
+        baseSha: 'a'.repeat(40),
+        configHash: 'b'.repeat(12),
+        worktree: '/tmp/wt',
         invocation: null,
       },
     },
-  ]);
-  return { wi, runId, issue };
+  ])
+  return { wi, runId, issue }
 }
 
 const failed = (runId: string, detail: string) =>
-  store.append(runId, 1, [{ type: "RunFailed", actor: "conductor", data: { kind: "crash", detail } }]);
+  store.append(runId, 1, [{ type: 'RunFailed', actor: 'conductor', data: { kind: 'crash', detail } }])
 
 async function failures(): Promise<{ name: string; eventType: string; reason: string }[]> {
   return (await store.read(SUBSCRIBER_STREAM))
-    .filter((e) => e.type === "PluginFailed" && (e.data as { project: string | null }).project === PROJECT)
-    .map((e) => e.data as { name: string; eventType: string; reason: string });
+    .filter((e) => e.type === 'PluginFailed' && (e.data as { project: string | null }).project === PROJECT)
+    .map((e) => e.data as { name: string; eventType: string; reason: string })
 }
 
-describe("the telegram subscriber this repository declares", () => {
-  it("names the five events the ticket lists, and no LINGTAI_ variable", () => {
+describe('the telegram subscriber this repository declares', () => {
+  it('names the five events the ticket lists, and no LINGTAI_ variable', () => {
     expect(new Set(shipped.on)).toEqual(
-      new Set(["WorkItemLanded", "WorkItemBlocked", "RunFailed", "ApprovalRequested", "RunAwaitingInput"]),
-    );
-    expect(shipped.env.filter((n) => n.startsWith("LINGTAI_"))).toEqual([]);
-  });
+      new Set(['WorkItemLanded', 'WorkItemBlocked', 'RunFailed', 'ApprovalRequested', 'RunAwaitingInput']),
+    )
+    expect(shipped.env.filter((n) => n.startsWith('LINGTAI_'))).toEqual([])
+  })
 
-  it("delivers a run-stream event and a work-item event, each with a link to its card", async () => {
-    const api = await botApi();
-    await started(api.port);
-    const run = await aRun();
+  it('delivers a run-stream event and a work-item event, each with a link to its card', async () => {
+    const api = await botApi()
+    await started(api.port)
+    const run = await aRun()
 
-    await failed(run.runId, "session limit");
-    await until(() => api.received.find((r) => r.text.includes("run failed")));
+    await failed(run.runId, 'session limit')
+    await until(() => api.received.find((r) => r.text.includes('run failed')))
     await store.append(run.wi, 0, [
-      { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "5ace763aa0", base: "main" } },
-    ]);
-    await until(() => api.received.find((r) => r.text.includes("landed")));
+      { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: '5ace763aa0', base: 'main' } },
+    ])
+    await until(() => api.received.find((r) => r.text.includes('landed')))
 
     // `boardUrl()`, not a literal: `buildSubscribers` was given no `board`, so
     // the link is the address `@lingtai/env` decides — 17820 unless
     // `~/.lingtai/config.yml` says otherwise (#187) — and the two have to be
     // the same one for a card link to open anything.
-    const card = `${boardUrl()}/task/${encodeURIComponent(run.wi)}`;
+    const card = `${boardUrl()}/task/${encodeURIComponent(run.wi)}`
     expect(api.received.map((r) => r.text)).toEqual([
       `#${run.issue} run failed\ncrash: session limit\n${card}`,
       `#${run.issue} landed\nmerged into main at 5ace763\n${card}`,
-    ]);
-  });
+    ])
+  })
 
   /**
    * This process is the daemon, so what it has exported is the daemon's
@@ -212,36 +214,39 @@ describe("the telegram subscriber this repository declares", () => {
    * be there, whichever layer won.
    */
   it("gets the token from the project's file, not the daemon's environment, and never LINGTAI_DATABASE_URL", async () => {
-    const DAEMONS = "999999:the-daemon's-own-token";
-    const saved = { token: process.env["TELEGRAM_BOT_TOKEN"], only: process.env["TELEGRAM_DAEMON_ONLY"] };
-    process.env["TELEGRAM_BOT_TOKEN"] = DAEMONS;
-    process.env["TELEGRAM_DAEMON_ONLY"] = "from-the-daemon";
+    const DAEMONS = "999999:the-daemon's-own-token"
+    const saved = { token: process.env['TELEGRAM_BOT_TOKEN'], only: process.env['TELEGRAM_DAEMON_ONLY'] }
+    process.env['TELEGRAM_BOT_TOKEN'] = DAEMONS
+    process.env['TELEGRAM_DAEMON_ONLY'] = 'from-the-daemon'
     try {
-      const dir = await mkdtemp(join(tmpdir(), "lingtai-telegram-env-"));
+      const dir = await mkdtemp(join(tmpdir(), 'lingtai-telegram-env-'))
       await started(await freePort(), {
         // Renamed into place, never redirected there: the shell creates the
         // target before `env` writes a byte, and `until` takes the empty file it
         // can read in between as the answer — which failed agent/147's build on
         // nothing agent/147 changed.
-        run: `env > ${join(dir, "env.part")} && mv ${join(dir, "env.part")} ${join(dir, "env.txt")}`,
-        env: [...shipped.env, "TELEGRAM_API_ROOT", "TELEGRAM_DAEMON_ONLY"],
-      });
-      const run = await aRun();
+        run: `env > ${join(dir, 'env.part')} && mv ${join(dir, 'env.part')} ${join(dir, 'env.txt')}`,
+        env: [...shipped.env, 'TELEGRAM_API_ROOT', 'TELEGRAM_DAEMON_ONLY'],
+      })
+      const run = await aRun()
 
-      await failed(run.runId, "x");
-      const seen = await until(() => readFile(join(dir, "env.txt"), "utf8").catch(() => undefined));
+      await failed(run.runId, 'x')
+      const seen = await until(() => readFile(join(dir, 'env.txt'), 'utf8').catch(() => undefined))
 
-      expect(seen).toMatch(new RegExp(`^TELEGRAM_BOT_TOKEN=${TOKEN}$`, "m"));
-      expect(seen).not.toContain(DAEMONS);
-      expect(seen).not.toMatch(/^TELEGRAM_DAEMON_ONLY=/m);
-      expect(seen).not.toMatch(/^LINGTAI_/m);
+      expect(seen).toMatch(new RegExp(`^TELEGRAM_BOT_TOKEN=${TOKEN}$`, 'm'))
+      expect(seen).not.toContain(DAEMONS)
+      expect(seen).not.toMatch(/^TELEGRAM_DAEMON_ONLY=/m)
+      expect(seen).not.toMatch(/^LINGTAI_/m)
     } finally {
-      for (const [name, value] of [["TELEGRAM_BOT_TOKEN", saved.token], ["TELEGRAM_DAEMON_ONLY", saved.only]] as const) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
+      for (const [name, value] of [
+        ['TELEGRAM_BOT_TOKEN', saved.token],
+        ['TELEGRAM_DAEMON_ONLY', saved.only],
+      ] as const) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
       }
     }
-  });
+  })
 
   /**
    * The order an operator meets it in: the daemon is already running when they
@@ -249,45 +254,45 @@ describe("the telegram subscriber this repository declares", () => {
    * file is written behind the running subscriber's back, as that command
    * writes it, and the next event has to be delivered with nothing restarted.
    */
-  it("delivers with a token set after it was built, without a restart", async () => {
-    const api = await botApi();
-    const before = (await failures()).length;
-    const { file } = await started(api.port, {}, false);
+  it('delivers with a token set after it was built, without a restart', async () => {
+    const api = await botApi()
+    const before = (await failures()).length
+    const { file } = await started(api.port, {}, false)
 
-    const first = await aRun();
-    await failed(first.runId, "before the token");
+    const first = await aRun()
+    await failed(first.runId, 'before the token')
     const [missing] = await until(async () => {
-      const f = (await failures()).slice(before);
-      return f.length > 0 ? f : undefined;
-    });
-    expect(missing?.reason).toContain("TELEGRAM_BOT_TOKEN not set");
+      const f = (await failures()).slice(before)
+      return f.length > 0 ? f : undefined
+    })
+    expect(missing?.reason).toContain('TELEGRAM_BOT_TOKEN not set')
 
-    await writeFile(file, envLines(api.port));
-    const second = await aRun();
-    await failed(second.runId, "after the token");
-    await until(() => api.received.find((r) => r.text.includes("after the token")));
-    expect((await failures()).slice(before)).toHaveLength(1);
-  });
+    await writeFile(file, envLines(api.port))
+    const second = await aRun()
+    await failed(second.runId, 'after the token')
+    await until(() => api.received.find((r) => r.text.includes('after the token')))
+    expect((await failures()).slice(before)).toHaveLength(1)
+  })
 
-  it("records an unreachable Telegram as PluginFailed, and delivers the next event once it is back", async () => {
-    const port = await freePort();
-    await started(port);
-    const first = await aRun();
+  it('records an unreachable Telegram as PluginFailed, and delivers the next event once it is back', async () => {
+    const port = await freePort()
+    await started(port)
+    const first = await aRun()
 
-    await failed(first.runId, "while unreachable");
+    await failed(first.runId, 'while unreachable')
     const [failure] = await until(async () => {
-      const f = await failures();
-      return f.some((x) => x.reason.includes("could not reach Telegram")) ? f : undefined;
-    });
-    expect(failure?.name).toBe("telegram");
-    expect(failure?.eventType).toBe("RunFailed");
-    expect(failure?.reason).not.toContain(TOKEN);
+      const f = await failures()
+      return f.some((x) => x.reason.includes('could not reach Telegram')) ? f : undefined
+    })
+    expect(failure?.name).toBe('telegram')
+    expect(failure?.eventType).toBe('RunFailed')
+    expect(failure?.reason).not.toContain(TOKEN)
 
-    const api = await botApi(port);
-    const second = await aRun();
-    await failed(second.runId, "after it came back");
-    await until(() => api.received.find((r) => r.text.includes("after it came back")));
-  });
+    const api = await botApi(port)
+    const second = await aRun()
+    await failed(second.runId, 'after it came back')
+    await until(() => api.received.find((r) => r.text.includes('after it came back')))
+  })
 
   /**
    * Killed while its request is open: the `run:` line is the shipped one behind
@@ -295,21 +300,21 @@ describe("the telegram subscriber this repository declares", () => {
    * `/dev/null` for stdin, and the payload has to reach it — and the Bot API holds the first message until
    * the test has killed the process sending it.
    */
-  it("records an extension killed mid-event, and goes on following the log", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "lingtai-telegram-kill-"));
-    const pidFile = join(dir, "pid");
-    const api = await botApi(0, (text) => text.includes("kill me"));
-    const before = (await failures()).length;
-    await started(api.port, { run: `${shipped.run} <&0 & echo $! > ${pidFile}; wait $!` });
+  it('records an extension killed mid-event, and goes on following the log', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'lingtai-telegram-kill-'))
+    const pidFile = join(dir, 'pid')
+    const api = await botApi(0, (text) => text.includes('kill me'))
+    const before = (await failures()).length
+    await started(api.port, { run: `${shipped.run} <&0 & echo $! > ${pidFile}; wait $!` })
 
-    const first = await aRun();
-    await failed(first.runId, "kill me");
-    await until(() => api.received.find((r) => r.text.includes("kill me")));
-    process.kill(Number((await readFile(pidFile, "utf8")).trim()), "SIGKILL");
+    const first = await aRun()
+    await failed(first.runId, 'kill me')
+    await until(() => api.received.find((r) => r.text.includes('kill me')))
+    process.kill(Number((await readFile(pidFile, 'utf8')).trim()), 'SIGKILL')
 
-    await until(async () => ((await failures()).length > before ? true : undefined));
-    const second = await aRun();
-    await failed(second.runId, "still followed");
-    await until(() => api.received.find((r) => r.text.includes("still followed")));
-  });
-});
+    await until(async () => ((await failures()).length > before ? true : undefined))
+    const second = await aRun()
+    await failed(second.runId, 'still followed')
+    await until(() => api.received.find((r) => r.text.includes('still followed')))
+  })
+})

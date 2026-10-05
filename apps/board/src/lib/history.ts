@@ -27,28 +27,29 @@
  * Pure, and its own module for that reason: `task.ts` reaches the database and
  * GitHub, and what a row *says* is testable without either.
  */
-import type { Envelope, EventType } from "@lingtai/domain";
-import { sourceOfPayloadDocument, type DocumentSource } from "./markdown.ts";
+import type { Envelope, EventType } from '@lingtai/domain'
+
+import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 
 /** One row: the four columns, plus everything the disclosure shows. */
 export interface HistoryLine {
-  at: string;
-  type: string;
+  at: string
+  type: string
   /** The actor, whole. Rendered short with this in the title (#87). */
-  actor: string;
-  summary: string;
+  actor: string
+  summary: string
   /** Global order. The thing a finding cites when it wants to be believed. */
-  seq: string;
-  streamId: string;
-  version: number;
-  schemaVer: number;
+  seq: string
+  streamId: string
+  version: number
+  schemaVer: number
   /**
    * The payload's structure, pretty-printed, with every document lifted out of
    * it and marked where it stood. See `splitPayload`.
    */
-  raw: string;
+  raw: string
   /** The documents that were lifted, in the order the payload holds them. */
-  documents: PayloadDocument[];
+  documents: PayloadDocument[]
 }
 
 /**
@@ -59,11 +60,11 @@ export interface HistoryLine {
  */
 export interface PayloadDocument {
   /** Where it sat in the payload: `prompt`, or `diagnosis.raw` for a nested one. */
-  field: string;
+  field: string
   /** The value itself, with its own newlines. */
-  text: string;
+  text: string
   /** Its size, in the unit `RunPrompted.bytes` already reports. */
-  bytes: number;
+  bytes: number
   /**
    * Who wrote it, which is the only thing that settles how it may be rendered.
    *
@@ -71,11 +72,11 @@ export interface PayloadDocument {
    * document cannot arrive at a renderer having lost its provenance on the way.
    * See `markdown.ts` for the rule and for why `log` is the default.
    */
-  source: DocumentSource;
+  source: DocumentSource
 }
 
-type Payload = Record<string, unknown>;
-type Formatter = (d: Payload) => string;
+type Payload = Record<string, unknown>
+type Formatter = (d: Payload) => string
 
 /**
  * How much free text a row carries before it is cut.
@@ -85,11 +86,13 @@ type Formatter = (d: Payload) => string;
  * defensible because the whole value is in the disclosure — which is the half
  * of "deliberately terse" that #112 and #87 both found missing.
  */
-const CLIP = 160;
+const CLIP = 160
 
 function clip(v: unknown, n = CLIP): string {
-  const s = String(v ?? "").replace(/\s+/g, " ").trim();
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+  const s = String(v ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s
 }
 
 /**
@@ -102,23 +105,23 @@ function clip(v: unknown, n = CLIP): string {
  * any sentence it could still assemble.
  */
 function need(d: Payload, key: string): string {
-  const v = d[key];
-  if (v === null || v === undefined || v === "") throw new Error(`no ${key}`);
-  return String(v);
+  const v = d[key]
+  if (v === null || v === undefined || v === '') throw new Error(`no ${key}`)
+  return String(v)
 }
 
 /** A sha, at the length everything else in this app shows one. */
 function sha(d: Payload, key: string, n = 7): string {
-  return need(d, key).slice(0, n);
+  return need(d, key).slice(0, n)
 }
 
 /** `run-78db72ff-d659-…` → `78db72ff`. The same cut `WorkItemClaimed` made. */
 function runShort(d: Payload, key: string): string {
-  return need(d, key).slice(4, 12);
+  return need(d, key).slice(4, 12)
 }
 
 function list(v: unknown): string {
-  return Array.isArray(v) ? v.map(String).join(", ") : String(v ?? "");
+  return Array.isArray(v) ? v.map(String).join(', ') : String(v ?? '')
 }
 
 /**
@@ -129,14 +132,14 @@ function list(v: unknown): string {
  * into two fields to end.
  */
 function stepAt(d: Payload): string {
-  return `${need(d, "step")} · ${need(d, "action")}`;
+  return `${need(d, 'step')} · ${need(d, 'action')}`
 }
 
 const FORMAT: Partial<Record<EventType, Formatter>> = {
   // ------------------------------------------------------------ work item --
-  WorkItemDiscovered: (d) => `#${need(d, "externalRef")} ${need(d, "kind")} — ${clip(need(d, "title"))}`,
-  WorkItemClaimed: (d) => `run ${runShort(d, "runId")}`,
-  WorkItemReleased: (d) => `run ${runShort(d, "runId")}: ${clip(need(d, "reason"))}`,
+  WorkItemDiscovered: (d) => `#${need(d, 'externalRef')} ${need(d, 'kind')} — ${clip(need(d, 'title'))}`,
+  WorkItemClaimed: (d) => `run ${runShort(d, 'runId')}`,
+  WorkItemReleased: (d) => `run ${runShort(d, 'runId')}: ${clip(need(d, 'reason'))}`,
   /**
    * Which kind of hold, then the question, then the move that was recommended.
    *
@@ -146,27 +149,25 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * block recorded neither, so it prints the question alone, exactly as before.
    */
   WorkItemBlocked: (d) => {
-    const said = [d["needs"] ? `${String(d["needs"])}:` : null, clip(need(d, "question"))];
-    const rec = (d["diagnosis"] as { recommendation?: { action?: string } } | null)?.recommendation;
-    if (rec?.action) said.push(`— recommends ${rec.action}`);
-    return said.filter((s) => s !== null).join(" ");
+    const said = [d['needs'] ? `${String(d['needs'])}:` : null, clip(need(d, 'question'))]
+    const rec = (d['diagnosis'] as { recommendation?: { action?: string } } | null)?.recommendation
+    if (rec?.action) said.push(`— recommends ${rec.action}`)
+    return said.filter((s) => s !== null).join(' ')
   },
-  WorkItemUnblocked: (d) => `${need(d, "by")}: ${clip(d["note"])}`,
-  WorkItemLinked: (d) => `${need(d, "relation")} ${need(d, "otherRef")}`,
-  WorkItemLanded: (d) => `merged as ${sha(d, "mergeCommit")}`,
-  DispatchRefused: (d) =>
-    `${need(d, "runtime")} cannot run ${need(d, "requiredTier")} — missing ${list(d["missing"])}`,
+  WorkItemUnblocked: (d) => `${need(d, 'by')}: ${clip(d['note'])}`,
+  WorkItemLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
+  WorkItemLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
+  DispatchRefused: (d) => `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,
 
   // ------------------------------------------------------------------ run --
   // Four of the five fields it carries; the worktree path is in the payload.
   RunStarted: (d) =>
-    `${need(d, "runtime")} · ${need(d, "model")} · base ${sha(d, "baseSha")} · recipe ${sha(d, "configHash", 12)}`,
-  RunPrompted: (d) => `${need(d, "promptVersion")}, ${need(d, "bytes")} bytes`,
-  RunTouchedFile: (d) => `${need(d, "op")} ${need(d, "path")}`,
-  RunContextExhausted: (d) => `compacted at turn ${need(d, "turn")}`,
-  RunAwaitingInput: (d) => clip(need(d, "prompt")),
-  RunProducedDiff: (d) =>
-    `${need(d, "files")} files +${need(d, "insertions")} −${need(d, "deletions")}`,
+    `${need(d, 'runtime')} · ${need(d, 'model')} · base ${sha(d, 'baseSha')} · recipe ${sha(d, 'configHash', 12)}`,
+  RunPrompted: (d) => `${need(d, 'promptVersion')}, ${need(d, 'bytes')} bytes`,
+  RunTouchedFile: (d) => `${need(d, 'op')} ${need(d, 'path')}`,
+  RunContextExhausted: (d) => `compacted at turn ${need(d, 'turn')}`,
+  RunAwaitingInput: (d) => clip(need(d, 'prompt')),
+  RunProducedDiff: (d) => `${need(d, 'files')} files +${need(d, 'insertions')} −${need(d, 'deletions')}`,
   /**
    * What the claim left on origin, and the account when it left nothing (`#251`).
    *
@@ -196,22 +197,22 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * the opposite of what happened.
    */
   RunRefsPublished: (d) => {
-    const outcome = need(d, "outcome");
-    if (outcome === "nothing-committed") return "nothing committed, so no ref was left";
-    if (outcome === "unrecorded")
-      return `${sha(d, "headSha")} is on origin and nothing records it: ${clip(d["detail"])}`;
-    if (outcome === "arm-only")
-      return `${need(d, "branch")} was not pushed: ${clip(d["detail"])} — ${need(d, "arm")} at ${sha(d, "headSha")} is there`;
-    if (outcome === "refused")
-      return d["headSha"]
-        ? `${need(d, "branch")} at ${sha(d, "headSha")} was not pushed: ${clip(d["detail"])}`
-        : `${need(d, "branch")} was not pushed, and no head was read: ${clip(d["detail"])}`;
-    const where = `${need(d, "branch")} and ${need(d, "arm")} at ${sha(d, "headSha")}`;
-    return outcome === "already-published" ? `already there — ${where}` : where;
+    const outcome = need(d, 'outcome')
+    if (outcome === 'nothing-committed') return 'nothing committed, so no ref was left'
+    if (outcome === 'unrecorded')
+      return `${sha(d, 'headSha')} is on origin and nothing records it: ${clip(d['detail'])}`
+    if (outcome === 'arm-only')
+      return `${need(d, 'branch')} was not pushed: ${clip(d['detail'])} — ${need(d, 'arm')} at ${sha(d, 'headSha')} is there`
+    if (outcome === 'refused')
+      return d['headSha']
+        ? `${need(d, 'branch')} at ${sha(d, 'headSha')} was not pushed: ${clip(d['detail'])}`
+        : `${need(d, 'branch')} was not pushed, and no head was read: ${clip(d['detail'])}`
+    const where = `${need(d, 'branch')} and ${need(d, 'arm')} at ${sha(d, 'headSha')}`
+    return outcome === 'already-published' ? `already there — ${where}` : where
   },
-  RunProposedCompletion: (d) => `head ${sha(d, "headSha")}`,
-  RunFinished: (d) => `${need(d, "turns")} turns, $${Number(d["costUsd"] ?? 0).toFixed(2)}`,
-  RunFailed: (d) => `${need(d, "kind")}: ${clip(d["detail"])}`,
+  RunProposedCompletion: (d) => `head ${sha(d, 'headSha')}`,
+  RunFinished: (d) => `${need(d, 'turns')} turns, $${Number(d['costUsd'] ?? 0).toFixed(2)}`,
+  RunFailed: (d) => `${need(d, 'kind')}: ${clip(d['detail'])}`,
 
   // ----------------------------------------------------------------- gate --
   /**
@@ -220,29 +221,28 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * run had no record on the page that says it should have.
    */
   StepsResolved: (d) => {
-    const steps = d["steps"];
-    if (!Array.isArray(steps) || steps.length === 0) throw new Error("no steps");
+    const steps = d['steps']
+    if (!Array.isArray(steps) || steps.length === 0) throw new Error('no steps')
     return (steps as { step: string; actions: string[] }[])
-      .map((p) => `${p.step} ${p.actions?.length > 0 ? p.actions.join("+") : "—"}`)
-      .join(" · ");
+      .map((p) => `${p.step} ${p.actions?.length > 0 ? p.actions.join('+') : '—'}`)
+      .join(' · ')
   },
   EndActionsResolved: (d) => {
-    const outcome = need(d, "outcome");
-    const actions = d["actions"];
-    if (!Array.isArray(actions) || actions.length === 0) return `${outcome}: nothing to do`;
+    const outcome = need(d, 'outcome')
+    const actions = d['actions']
+    if (!Array.isArray(actions) || actions.length === 0) return `${outcome}: nothing to do`
     // Three shapes, and the fall-through is the labels one: a `refs:` action
     // drawn by it would read `name → ` with nothing after the arrow, which is
     // the row saying an effect ran and not saying which (`#240`).
-    const said = (
-      actions as { name: string; close?: true; labels?: string[]; refs?: true; branch?: boolean }[]
-    ).map((a) =>
-      a.close
-        ? `${a.name} (close)`
-        : a.refs
-          ? `${a.name} (delete ${a.branch ? "the branch and its arms" : "the arms"})`
-          : `${a.name} → ${list(a.labels)}`,
-    );
-    return `${outcome}: ${said.join(" · ")}`;
+    const said = (actions as { name: string; close?: true; labels?: string[]; refs?: true; branch?: boolean }[]).map(
+      (a) =>
+        a.close
+          ? `${a.name} (close)`
+          : a.refs
+            ? `${a.name} (delete ${a.branch ? 'the branch and its arms' : 'the arms'})`
+            : `${a.name} → ${list(a.labels)}`,
+    )
+    return `${outcome}: ${said.join(' · ')}`
   },
   StepRequested: stepAt,
   StepStarted: stepAt,
@@ -261,28 +261,27 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * sentence would invite the reading that the reviewer found nothing.
    */
   StepFailed: (d) => {
-    if (d["unreadable"] === true) return `${stepAt(d)} — the answer could not be read`;
-    const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
-    return n > 0 ? `${stepAt(d)} — ${n} finding${n === 1 ? "" : "s"}` : stepAt(d);
+    if (d['unreadable'] === true) return `${stepAt(d)} — the answer could not be read`
+    const n = Array.isArray(d['findings']) ? (d['findings'] as unknown[]).length : 0
+    return n > 0 ? `${stepAt(d)} — ${n} finding${n === 1 ? '' : 's'}` : stepAt(d)
   },
-  StepNeverRan: (d) => `${stepAt(d)} — never ran: ${clip(d["detail"])}`,
+  StepNeverRan: (d) => `${stepAt(d)} — never ran: ${clip(d['detail'])}`,
   // One line, because the action ran once: 0057 §4's retry is deleted (`#234`),
   // and with it the *attempt 2, no more attempts* this line used to print about
   // a second attempt that never left the starting block.
-  StepDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d["detail"])}`,
+  StepDidNotFinish: (d) => `${stepAt(d)} — did not finish: ${clip(d['detail'])}`,
   // Its own line since `#296`, and the verb is the whole of it: this row read
   // *did not finish* over a question for as long as the two shared an event.
-  StepAsked: (d) => `${stepAt(d)} — asked: ${clip(d["detail"])}`,
-  StepWaived: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
-  ApprovalRequested: (d) => `${stepAt(d)} — ${clip(need(d, "question"))}`,
-  ApprovalGranted: (d) => `${stepAt(d)} — ${need(d, "by")}${d["note"] ? `: ${clip(d["note"])}` : ""}`,
-  ApprovalRevoked: (d) => `${stepAt(d)} — ${need(d, "by")}: ${clip(d["reason"])}`,
+  StepAsked: (d) => `${stepAt(d)} — asked: ${clip(d['detail'])}`,
+  StepWaived: (d) => `${stepAt(d)} — ${need(d, 'by')}: ${clip(d['reason'])}`,
+  ApprovalRequested: (d) => `${stepAt(d)} — ${clip(need(d, 'question'))}`,
+  ApprovalGranted: (d) => `${stepAt(d)} — ${need(d, 'by')}${d['note'] ? `: ${clip(d['note'])}` : ''}`,
+  ApprovalRevoked: (d) => `${stepAt(d)} — ${need(d, 'by')}: ${clip(d['reason'])}`,
 
   // ---------------------------------------------------------- integration --
-  IntegrationAttempted: (d) => `${need(d, "branch")} at ${sha(d, "headSha")}`,
-  IntegrationRefused: (d) => `${need(d, "reason")}: ${clip(d["detail"])}`,
-  IntegrationSucceeded: (d) =>
-    `${need(d, "branch")} → ${need(d, "base")} as ${sha(d, "mergeCommit")}`,
+  IntegrationAttempted: (d) => `${need(d, 'branch')} at ${sha(d, 'headSha')}`,
+  IntegrationRefused: (d) => `${need(d, 'reason')}: ${clip(d['detail'])}`,
+  IntegrationSucceeded: (d) => `${need(d, 'branch')} → ${need(d, 'base')} as ${sha(d, 'mergeCommit')}`,
 
   // --------------------------------------------------------------- repair --
   // Both of a failure's outcomes read on the history, including the one where
@@ -293,30 +292,30 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // pair below is. A refusal buys no run now, so nothing appends either of
   // these — and a row that renders nothing is as unreadable whether or not
   // anything appends the type again.
-  RepairRequested: (d) => `attempt ${need(d, "attempt")} on ${need(d, "reason")}`,
-  RepairDeclined: (d) => `${need(d, "reason")} — ${clip(d["why"])}`,
+  RepairRequested: (d) => `attempt ${need(d, 'attempt')} on ${need(d, 'reason')}`,
+  RepairDeclined: (d) => `${need(d, 'reason')} — ${clip(d['why'])}`,
 
   // ------------------------------------------------------------------ fix --
   // The other purse (0038 §4). A round says how many findings it was bought for,
   // because that is the size of what the fixer was asked to do; the scenarios
   // themselves are in the disclosure, verbatim, where the contract lives.
   FixRequested: (d) => {
-    const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
+    const n = Array.isArray(d['findings']) ? (d['findings'] as unknown[]).length : 0
     // `of` is zero on an event written before the field existed, and the
     // reading of zero is *not recorded* — so the round is named without a
     // denominator rather than as `round 1 of 0`.
-    const of = typeof d["of"] === "number" && d["of"] > 0 ? ` of ${d["of"]}` : "";
-    return `round ${need(d, "round")}${of} for ${need(d, "action")} — ${n} finding${n === 1 ? "" : "s"}`;
+    const of = typeof d['of'] === 'number' && d['of'] > 0 ? ` of ${d['of']}` : ''
+    return `round ${need(d, 'round')}${of} for ${need(d, 'action')} — ${n} finding${n === 1 ? '' : 's'}`
   },
   // The cost is on the row because a fix is bought without being asked again,
   // the same argument `#84` made for a repair's. A default-on agent whose spend
   // appears nowhere is one nobody can audit, and the payload carries it.
   FixApplied: (d) =>
-    `round ${need(d, "round")}: ${d["headSha"] === null ? "committed nothing" : sha(d, "headSha")}` +
-    ` · ${need(d, "turns")} turns` +
-    (typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "") +
-    (d["failure"] === null ? "" : ` · ${clip(d["failure"])}`),
-  FixDeclined: (d) => `${need(d, "action")} — ${clip(d["why"])}`,
+    `round ${need(d, 'round')}: ${d['headSha'] === null ? 'committed nothing' : sha(d, 'headSha')}` +
+    ` · ${need(d, 'turns')} turns` +
+    (typeof d['costUsd'] === 'number' ? ` · $${d['costUsd'].toFixed(2)}` : '') +
+    (d['failure'] === null ? '' : ` · ${clip(d['failure'])}`),
+  FixDeclined: (d) => `${need(d, 'action')} — ${clip(d['why'])}`,
 
   // ---------------------------------------------------------------- route --
   /**
@@ -333,12 +332,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * over a field that adds nothing to it would be rule 2 spent for nothing.
    */
   PassRouted: (d) => {
-    const to = need(d, "to");
-    const chose = d["chose"] === undefined || d["chose"] === to ? null : String(d["chose"]);
-    const ceiling = typeof d["ceiling"] === "string" ? d["ceiling"] : null;
-    const wanted =
-      chose === null ? "" : ` (wanted ${chose}${ceiling === null ? "" : `, ${ceiling} spent`})`;
-    return `${need(d, "from")} → ${to}${wanted} — ${clip(d["why"])}`;
+    const to = need(d, 'to')
+    const chose = d['chose'] === undefined || d['chose'] === to ? null : String(d['chose'])
+    const ceiling = typeof d['ceiling'] === 'string' ? d['ceiling'] : null
+    const wanted = chose === null ? '' : ` (wanted ${chose}${ceiling === null ? '' : `, ${ceiling} spent`})`
+    return `${need(d, 'from')} → ${to}${wanted} — ${clip(d['why'])}`
   },
 
   // -------------------------------------------------------------- restart --
@@ -348,12 +346,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   // they are the only copy — the run they refused is on a stream no later pass
   // reads.
   PassRestarted: (d) => {
-    const n = Array.isArray(d["findings"]) ? (d["findings"] as unknown[]).length : 0;
+    const n = Array.isArray(d['findings']) ? (d['findings'] as unknown[]).length : 0
     return (
-      `restart ${need(d, "restart")} of ${need(d, "of")} — ${need(d, "action")} refused ` +
-      `${need(d, "branch")} after ${need(d, "rounds")} round(s), ` +
-      `${n} finding${n === 1 ? "" : "s"} left live`
-    );
+      `restart ${need(d, 'restart')} of ${need(d, 'of')} — ${need(d, 'action')} refused ` +
+      `${need(d, 'branch')} after ${need(d, 'rounds')} round(s), ` +
+      `${n} finding${n === 1 ? '' : 's'} left live`
+    )
   },
 
   // -------------------------------------------------------------- control --
@@ -363,32 +361,31 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   ConductorStarted: (d) =>
     // A null sha is a copy with no checkout, which the schema allows — said, not
     // a reason to fall back to the raw payload.
-    `${need(d, "by")} started ${d["sha"] == null ? "an unrecorded commit" : sha(d, "sha")}` +
-    `${d["dirty"] === true ? " (worktree dirty)" : ""}` +
-    (d["reason"] ? `: ${clip(d["reason"])}` : ""),
-  ConductorPaused: (d) => `${need(d, "by")}: ${clip(d["reason"])}`,
-  ConductorResumed: (d) => need(d, "by"),
+    `${need(d, 'by')} started ${d['sha'] == null ? 'an unrecorded commit' : sha(d, 'sha')}` +
+    `${d['dirty'] === true ? ' (worktree dirty)' : ''}` +
+    (d['reason'] ? `: ${clip(d['reason'])}` : ''),
+  ConductorPaused: (d) => `${need(d, 'by')}: ${clip(d['reason'])}`,
+  ConductorResumed: (d) => need(d, 'by'),
   // The timeout is on the row because it is the whole difference between a
   // drain that waits for the pass and one that walks away from it (0030 §6).
   ConductorShutdownRequested: (d) =>
-    `${need(d, "by")}: ${clip(d["reason"])}` +
-    (typeof d["timeoutMs"] === "number" ? ` (timeout ${Math.round(d["timeoutMs"] / 1000)}s)` : ""),
+    `${need(d, 'by')}: ${clip(d['reason'])}` +
+    (typeof d['timeoutMs'] === 'number' ? ` (timeout ${Math.round(d['timeoutMs'] / 1000)}s)` : ''),
   // Which request, because a withdrawal lifts that one and no other (0042).
-  ConductorShutdownWithdrawn: (d) => `${need(d, "by")} withdrew request v${need(d, "version")}: ${clip(d["reason"])}`,
+  ConductorShutdownWithdrawn: (d) => `${need(d, 'by')} withdrew request v${need(d, 'version')}: ${clip(d['reason'])}`,
   // Retired, and still read for ever (0019). A row that renders nothing is
   // exactly as unreadable whether or not anything appends the type again.
-  OutboxDelivered: (d) =>
-    `${need(d, "kind")} → ${need(d, "target")}${d["detail"] ? `: ${clip(d["detail"])}` : ""}`,
+  OutboxDelivered: (d) => `${need(d, 'kind')} → ${need(d, 'target')}${d['detail'] ? `: ${clip(d['detail'])}` : ''}`,
   OutboxFailed: (d) =>
-    `${need(d, "kind")} → ${need(d, "target")}: ${clip(d["error"])}${d["permanent"] === true ? " (permanent)" : ""}`,
-  IssueUpdated: (d) => `${need(d, "change")}: ${clip(d["detail"])}`,
-  IssueUpdateFailed: (d) => `${need(d, "change")} refused: ${clip(d["error"])}`,
-  QueueChanged: (d) => `${need(d, "project")}: ${need(d, "reason")}`,
-  RunRequested: (d) => `${need(d, "project")}#${need(d, "issue")} by ${need(d, "by")}`,
+    `${need(d, 'kind')} → ${need(d, 'target')}: ${clip(d['error'])}${d['permanent'] === true ? ' (permanent)' : ''}`,
+  IssueUpdated: (d) => `${need(d, 'change')}: ${clip(d['detail'])}`,
+  IssueUpdateFailed: (d) => `${need(d, 'change')} refused: ${clip(d['error'])}`,
+  QueueChanged: (d) => `${need(d, 'project')}: ${need(d, 'reason')}`,
+  RunRequested: (d) => `${need(d, 'project')}#${need(d, 'issue')} by ${need(d, 'by')}`,
 
   // ---------------------------------------------------------- discussion --
-  DiscussionRequested: (d) => `${need(d, "by")} asked: ${clip(need(d, "question"))}`,
-  DiscussionAsked: (d) => `${need(d, "by")}: ${clip(need(d, "question"))}`,
+  DiscussionRequested: (d) => `${need(d, 'by')} asked: ${clip(need(d, 'question'))}`,
+  DiscussionAsked: (d) => `${need(d, 'by')}: ${clip(need(d, 'question'))}`,
   /**
    * The money and what could not be established, in that order.
    *
@@ -398,41 +395,41 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    * answer would put this assistant one skim away from the same failure.
    */
   DiscussionAnswered: (d) => {
-    const cost = typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "";
-    const failure = typeof d["failure"] === "string" ? d["failure"] : null;
-    if (failure !== null) return `did not answer: ${clip(failure)}${cost}`;
-    const cannot = Array.isArray(d["cannot"]) ? d["cannot"].length : 0;
-    const read = Array.isArray(d["read"]) ? d["read"].length : 0;
-    return `${clip(d["text"], 100)} — ${read} file(s)${cannot > 0 ? `, ${cannot} unanswerable` : ""}${cost}`;
+    const cost = typeof d['costUsd'] === 'number' ? ` · $${d['costUsd'].toFixed(2)}` : ''
+    const failure = typeof d['failure'] === 'string' ? d['failure'] : null
+    if (failure !== null) return `did not answer: ${clip(failure)}${cost}`
+    const cannot = Array.isArray(d['cannot']) ? d['cannot'].length : 0
+    const read = Array.isArray(d['read']) ? d['read'].length : 0
+    return `${clip(d['text'], 100)} — ${read} file(s)${cannot > 0 ? `, ${cannot} unanswerable` : ''}${cost}`
   },
   DiscussionHeld: (d) => {
-    const cost = typeof d["costUsd"] === "number" ? ` · $${d["costUsd"].toFixed(2)}` : "";
-    return `${need(d, "chatId")} → ${need(d, "outcome")}${cost}`;
+    const cost = typeof d['costUsd'] === 'number' ? ` · $${d['costUsd'].toFixed(2)}` : ''
+    return `${need(d, 'chatId')} → ${need(d, 'outcome')}${cost}`
   },
   // Blank is the removal, and the row says so — an edit taken back off the next
   // attempt is a decision somebody made, not the absence of one (#104).
   PromptEdited: (d) => {
-    const text = String(d["text"] ?? "");
-    const hash = typeof d["hash"] === "string" ? ` · human@${d["hash"]}` : "";
-    const on = typeof d["basedOn"] === "string" ? ` on ${d["basedOn"]}` : "";
-    return text.trim() === ""
-      ? `${need(d, "by")} removed the edit from the next run${on}`
-      : `${need(d, "by")} added ${text.length} bytes for the next run${on}${hash}`;
+    const text = String(d['text'] ?? '')
+    const hash = typeof d['hash'] === 'string' ? ` · human@${d['hash']}` : ''
+    const on = typeof d['basedOn'] === 'string' ? ` on ${d['basedOn']}` : ''
+    return text.trim() === ''
+      ? `${need(d, 'by')} removed the edit from the next run${on}`
+      : `${need(d, 'by')} added ${text.length} bytes for the next run${on}${hash}`
   },
 
   // -------------------------------------------------------------- project --
   ProjectConfigured: (d) =>
-    `${need(d, "project")} recipe ${sha(d, "configHash", 12)} from ${d["base"] ?? "(no base recorded)"}`,
+    `${need(d, 'project')} recipe ${sha(d, 'configHash', 12)} from ${d['base'] ?? '(no base recorded)'}`,
   Reconciled: (d) => {
-    const findings = d["findings"];
-    if (!Array.isArray(findings) || findings.length === 0) return "nothing found";
+    const findings = d['findings']
+    if (!Array.isArray(findings) || findings.length === 0) return 'nothing found'
     const said = (findings as { stream: string; action: string }[])
       .slice(0, 3)
       .map((f) => `${f.stream} ${f.action}`)
-      .join(", ");
-    return findings.length > 3 ? `${findings.length} findings: ${said}, …` : said;
+      .join(', ')
+    return findings.length > 3 ? `${findings.length} findings: ${said}, …` : said
   },
-};
+}
 
 /**
  * A payload rendered as itself: every key, including the null ones.
@@ -442,19 +439,19 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
  * absence, which is the whole complaint one level down.
  */
 export function describePayload(data: unknown): string {
-  if (data === null || data === undefined) return "(no payload)";
-  if (typeof data !== "object") return clip(data);
-  const entries = Object.entries(data as Payload);
-  if (entries.length === 0) return "(no payload)";
-  return clip(entries.map(([k, v]) => `${k}=${scalar(v)}`).join(" "), 240);
+  if (data === null || data === undefined) return '(no payload)'
+  if (typeof data !== 'object') return clip(data)
+  const entries = Object.entries(data as Payload)
+  if (entries.length === 0) return '(no payload)'
+  return clip(entries.map(([k, v]) => `${k}=${scalar(v)}`).join(' '), 240)
 }
 
 function scalar(v: unknown): string {
-  if (v === null) return "null";
-  if (v === undefined) return "undefined";
-  if (Array.isArray(v)) return `[${v.map(scalar).join(", ")}]`;
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
+  if (v === null) return 'null'
+  if (v === undefined) return 'undefined'
+  if (Array.isArray(v)) return `[${v.map(scalar).join(', ')}]`
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
 }
 
 /**
@@ -467,17 +464,17 @@ function scalar(v: unknown): string {
  * not a render.
  */
 export function summarise(event: Envelope): string {
-  const data = event.data ?? {};
-  const format = FORMAT[event.type as EventType];
+  const data = event.data ?? {}
+  const format = FORMAT[event.type as EventType]
   if (format) {
     try {
-      const said = format(data as Payload).trim();
-      if (said) return said;
+      const said = format(data as Payload).trim()
+      if (said) return said
     } catch {
       // Fall through to the payload.
     }
   }
-  return describePayload(data);
+  return describePayload(data)
 }
 
 /**
@@ -489,24 +486,24 @@ export function summarise(event: Envelope): string {
  * actor. The whole value goes in the row's `title`.
  */
 export function shortActor(actor: string): string {
-  if (!actor.startsWith("agent:run-")) return actor;
-  return `agent:run-${actor.slice("agent:run-".length, "agent:run-".length + 8)}`;
+  if (!actor.startsWith('agent:run-')) return actor
+  return `agent:run-${actor.slice('agent:run-'.length, 'agent:run-'.length + 8)}`
 }
 
 /** The payload as stored, for the disclosure under every row. */
 export function rawPayload(data: unknown): string {
   try {
-    return JSON.stringify(data ?? null, null, 2);
+    return JSON.stringify(data ?? null, null, 2)
   } catch {
     // Cyclic or otherwise unserialisable — impossible for something read back
     // out of JSONB, and still not a reason for the page to fail.
-    return String(data);
+    return String(data)
   }
 }
 
 /** What stands in the JSON where a document was lifted out of it. */
 function mark(bytes: number): string {
-  return `‹document, ${bytes} bytes — below›`;
+  return `‹document, ${bytes} bytes — below›`
 }
 
 /**
@@ -541,35 +538,32 @@ function mark(bytes: number): string {
  * it and every document is `log`, which is the reading that is never wrong
  * (`markdown.ts`).
  */
-export function splitPayload(
-  data: unknown,
-  type?: string,
-): { raw: string; documents: PayloadDocument[] } {
-  const documents: PayloadDocument[] = [];
+export function splitPayload(data: unknown, type?: string): { raw: string; documents: PayloadDocument[] } {
+  const documents: PayloadDocument[] = []
 
   function lift(value: unknown, path: string): unknown {
-    if (typeof value === "string" && value.includes("\n")) {
-      const bytes = new TextEncoder().encode(value).length;
-      const field = path || "(the payload)";
+    if (typeof value === 'string' && value.includes('\n')) {
+      const bytes = new TextEncoder().encode(value).length
+      const field = path || '(the payload)'
       // A payload that is itself a document has no key to be named by.
-      documents.push({ field, text: value, bytes, source: sourceOfPayloadDocument(type, field) });
-      return mark(bytes);
+      documents.push({ field, text: value, bytes, source: sourceOfPayloadDocument(type, field) })
+      return mark(bytes)
     }
-    if (Array.isArray(value)) return value.map((v, i) => lift(v, `${path}[${i}]`));
-    if (value !== null && typeof value === "object") {
+    if (Array.isArray(value)) return value.map((v, i) => lift(v, `${path}[${i}]`))
+    if (value !== null && typeof value === 'object') {
       return Object.fromEntries(
         Object.entries(value as Payload).map(([k, v]) => [k, lift(v, path ? `${path}.${k}` : k)]),
-      );
+      )
     }
-    return value;
+    return value
   }
 
-  return { raw: rawPayload(lift(data ?? null, "")), documents };
+  return { raw: rawPayload(lift(data ?? null, '')), documents }
 }
 
 /** One event, as a row. */
 export function toLine(event: Envelope): HistoryLine {
-  const { raw, documents } = splitPayload(event.data, event.type);
+  const { raw, documents } = splitPayload(event.data, event.type)
   return {
     at: event.at.toISOString(),
     type: event.type,
@@ -581,5 +575,5 @@ export function toLine(event: Envelope): HistoryLine {
     schemaVer: event.schemaVer,
     raw,
     documents,
-  };
+  }
 }

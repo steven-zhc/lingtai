@@ -28,7 +28,7 @@
  * `baseOf`/`submodulesOf` in `@lingtai/recipe` are the one place that knows
  * which of the two spellings a recipe wrote them in.
  */
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import type { Action, ActionContext, ActionResult } from './action.ts'
 
 /**
  * What the cut answers — three branches, and only two of them happen today.
@@ -47,7 +47,7 @@ export type CutAnswer =
   /** What the step wants answered, in words a person reads (0043). */
   | { readonly asked: string }
   /** `RepoFailed`'s words: no mirror, no base ref, a clone that did not finish. */
-  | { readonly notCut: string };
+  | { readonly notCut: string }
 
 /**
  * The cut, as the only thing this action needs from its caller.
@@ -56,13 +56,13 @@ export type CutAnswer =
  * `AgentActionDeps` and `WatchActionDeps` and a reader meets one convention.
  */
 export interface WorktreeActionDeps {
-  cut(spec: { readonly base: string; readonly submodules: boolean }): Promise<CutAnswer>;
+  cut(spec: { readonly base: string; readonly submodules: boolean }): Promise<CutAnswer>
 }
 
 export interface WorktreeActionSpec {
-  name: string;
+  name: string
   /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
-  base: string;
+  base: string
   /**
    * Whether the tree gets the submodules.
    *
@@ -71,36 +71,36 @@ export interface WorktreeActionSpec {
    * in a way that reads as the agent's fault — so a value nobody wrote is worse
    * than a recipe that will not resolve (`worktreePlugin` in `@lingtai/recipe`).
    */
-  submodules: boolean;
+  submodules: boolean
 }
 
 export function createWorktreeAction(spec: WorktreeActionSpec, deps: WorktreeActionDeps): Action {
   return {
     name: spec.name,
-    kind: "worktree",
+    kind: 'worktree',
 
     async run(context: ActionContext): Promise<ActionResult> {
-      const answer = await deps.cut({ base: spec.base, submodules: spec.submodules });
-      if ("head" in answer) {
+      const answer = await deps.cut({ base: spec.base, submodules: spec.submodules })
+      if ('head' in answer) {
         return {
-          verdict: "passed",
+          verdict: 'passed',
           evidence: `${answer.where} at ${answer.head.slice(0, 7)}, from origin/${spec.base}${
-            spec.submodules ? " with submodules" : ""
+            spec.submodules ? ' with submodules' : ''
           }`,
           findings: [],
           head: answer.head,
-        };
+        }
       }
-      if ("asked" in answer) {
-        return { verdict: "needs-approval", evidence: answer.asked, findings: [] };
+      if ('asked' in answer) {
+        return { verdict: 'needs-approval', evidence: answer.asked, findings: [] }
       }
       return {
         // The head the caller handed in is all a person has, because nothing was
         // cut — and at `admit` that is the base the pass started from.
-        verdict: "did-not-finish",
+        verdict: 'did-not-finish',
         evidence: `${answer.notCut} (nothing was cut at ${context.onSha.slice(0, 12)})`,
         findings: [],
-      };
+      }
     },
-  };
+  }
 }

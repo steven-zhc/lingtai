@@ -43,7 +43,7 @@
  * `hasGitHubApp()` and hands the answer down, so this stays a fold over its
  * arguments and all three states are assertable without an `.env.local`.
  */
-import Link from "next/link";
+import Link from 'next/link'
 
 /**
  * The slot, in its three states.
@@ -52,23 +52,15 @@ import Link from "next/link";
  * reach the wizard*, *the target follows the App* — are claims about markup,
  * and a fold alone cannot catch a state that renders without the link.
  */
-export function Projects({
-  filters,
-  only,
-  app,
-}: {
-  filters: string[];
-  only: string | undefined;
-  app: boolean;
-}) {
+export function Projects({ filters, only, app }: { filters: string[]; only: string | undefined; app: boolean }) {
   // Step 0 is create the App, install it, add a repository; once the App
   // answers, the picker is the rest of it and the first step is done.
-  const where = app ? "/setup/repository" : "/setup/github-app";
-  const why = app ? "add a repository" : "create the GitHub App, then install it";
+  const where = app ? '/setup/repository' : '/setup/github-app'
+  const why = app ? 'add a repository' : 'create the GitHub App, then install it'
 
   // The project this board is showing, or none: with one there is nothing to
   // choose between, with several it is the filter, and `all` is not a project.
-  const inView = filters.length === 1 ? filters[0] : only;
+  const inView = filters.length === 1 ? filters[0] : only
 
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fifth one: the slot already says *there is
@@ -78,7 +70,7 @@ export function Projects({
       <Link className="tab" href={where} title={why}>
         no project configured
       </Link>
-    );
+    )
   }
 
   // A filter, not a caption. With one project there is nothing to choose
@@ -90,15 +82,11 @@ export function Projects({
         <span>{filters[0]}</span>
       ) : (
         <>
-          <Link className={`tab${only === undefined ? " on" : ""}`} href="/">
+          <Link className={`tab${only === undefined ? ' on' : ''}`} href="/">
             all
           </Link>
           {filters.map((p) => (
-            <Link
-              key={p}
-              className={`tab${only === p ? " on" : ""}`}
-              href={`/?project=${encodeURIComponent(p)}`}
-            >
+            <Link key={p} className={`tab${only === p ? ' on' : ''}`} href={`/?project=${encodeURIComponent(p)}`}>
               {p}
             </Link>
           ))}
@@ -124,5 +112,5 @@ export function Projects({
         +
       </Link>
     </span>
-  );
+  )
 }

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 /**
  * What the earlier attempts at a work item did, as a block for the next one's
  * prompt.
@@ -35,10 +37,10 @@
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, Envelope, PayloadOf } from "@lingtai/domain";
-import { createHash } from "node:crypto";
-import type { ArmsOnOrigin } from "./arms.ts";
-import { armBranch } from "./branches.ts";
+import type { AnswerRecord, Envelope, PayloadOf } from '@lingtai/domain'
+
+import type { ArmsOnOrigin } from './arms.ts'
+import { armBranch } from './branches.ts'
 
 /**
  * How much an attempt is told about the ones before it.
@@ -50,11 +52,11 @@ import { armBranch } from "./branches.ts";
  */
 export interface PromptBudget {
   /** Characters of one earlier failure's output quoted verbatim. */
-  evidence: number;
+  evidence: number
   /** Rows the table names before it says "and N earlier". */
-  attempts: number;
+  attempts: number
   /** Findings of a review gate that are listed. */
-  findings: number;
+  findings: number
 }
 
 /**
@@ -69,12 +71,12 @@ export interface PromptBudget {
 export interface AttemptOutcome {
   /** From `RunProducedDiff`. Null when the run committed nothing. */
   produced: {
-    branch: string;
-    headSha: string;
-    files: number;
-    insertions: number;
-    deletions: number;
-  } | null;
+    branch: string
+    headSha: string
+    files: number
+    insertions: number
+    deletions: number
+  } | null
   /**
    * What refused, and what it said.
    *
@@ -82,9 +84,9 @@ export interface AttemptOutcome {
    * ending (`the run itself (timeout)`); `text` is that output verbatim, and
    * the brief quotes its two ends up to `budget.evidence`. Null for a run with no recorded refusal at all.
    */
-  evidence: { what: string; text: string } | null;
+  evidence: { what: string; text: string } | null
   /** From `RunFinished`. Null for a run that never got that far. */
-  receipt: { turns: number; costUsd: number | null } | null;
+  receipt: { turns: number; costUsd: number | null } | null
 }
 
 /**
@@ -97,17 +99,17 @@ export interface AttemptOutcome {
  */
 export interface PriorAttempt {
   /** 1 for the first attempt at this item. The table's left column. */
-  n: number;
-  runId: string;
+  n: number
+  runId: string
   /**
    * How it ended, in the log's own words: `WorkItemReleased.reason`, or the
    * question it was blocked with. Null while a run still holds the item — which
    * a caller reading before its own claim will never see for itself.
    */
-  ended: string | null;
+  ended: string | null
   /** The integrator's refusal, when a repair was requested or declined for it. */
-  refusal: { reason: string; detail: string } | null;
-  outcome: AttemptOutcome | null;
+  refusal: { reason: string; detail: string } | null
+  outcome: AttemptOutcome | null
 }
 
 /**
@@ -118,44 +120,44 @@ export interface PriorAttempt {
  * about to make, so the run asking does not appear in its own history.
  */
 export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
-  const attempts: PriorAttempt[] = [];
-  const byRun = new Map<string, PriorAttempt>();
+  const attempts: PriorAttempt[] = []
+  const byRun = new Map<string, PriorAttempt>()
 
   for (const event of itemEvents) {
     switch (event.type) {
-      case "WorkItemClaimed": {
-        const d = event.data as PayloadOf<"WorkItemClaimed">;
+      case 'WorkItemClaimed': {
+        const d = event.data as PayloadOf<'WorkItemClaimed'>
         // A second claim by the same run is the same attempt claiming again,
         // not a new one — the same reason `WorkItemState.runs` will not list it
         // twice. Nothing writes one today; the guard is about the fold, not
         // about a caller.
-        if (byRun.has(d.runId)) break;
+        if (byRun.has(d.runId)) break
         const attempt: PriorAttempt = {
           n: attempts.length + 1,
           runId: d.runId,
           ended: null,
           refusal: null,
           outcome: null,
-        };
-        attempts.push(attempt);
-        byRun.set(d.runId, attempt);
-        break;
+        }
+        attempts.push(attempt)
+        byRun.set(d.runId, attempt)
+        break
       }
 
-      case "WorkItemReleased": {
-        const d = event.data as PayloadOf<"WorkItemReleased">;
-        const attempt = byRun.get(d.runId);
-        if (attempt) attempt.ended = d.reason;
-        break;
+      case 'WorkItemReleased': {
+        const d = event.data as PayloadOf<'WorkItemReleased'>
+        const attempt = byRun.get(d.runId)
+        if (attempt) attempt.ended = d.reason
+        break
       }
 
-      case "WorkItemBlocked": {
-        const d = event.data as PayloadOf<"WorkItemBlocked">;
-        const attempt = d.runId === null ? undefined : byRun.get(d.runId);
+      case 'WorkItemBlocked': {
+        const d = event.data as PayloadOf<'WorkItemBlocked'>
+        const attempt = d.runId === null ? undefined : byRun.get(d.runId)
         // An attempt that ended by asking a person ended just as much as one
         // that was released, and the question is the reason.
-        if (attempt) attempt.ended = `blocked, asking: ${d.question}`;
-        break;
+        if (attempt) attempt.ended = `blocked, asking: ${d.question}`
+        break
       }
 
       // **Retired, and still read for ever** (0019, `#143`). Nothing appends
@@ -164,20 +166,20 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
       // the release reason only summarises. Dropping the case would make an old
       // ticket's later attempt read as though nothing had refused the one
       // before it.
-      case "RepairRequested":
-      case "RepairDeclined": {
-        const d = event.data as PayloadOf<"RepairRequested">;
-        const attempt = byRun.get(d.runId);
-        if (attempt) attempt.refusal = { reason: d.reason, detail: d.detail };
-        break;
+      case 'RepairRequested':
+      case 'RepairDeclined': {
+        const d = event.data as PayloadOf<'RepairRequested'>
+        const attempt = byRun.get(d.runId)
+        if (attempt) attempt.refusal = { reason: d.reason, detail: d.detail }
+        break
       }
 
       default:
-        break;
+        break
     }
   }
 
-  return attempts;
+  return attempts
 }
 
 /**
@@ -189,47 +191,44 @@ export function priorAttempts(itemEvents: readonly Envelope[]): PriorAttempt[] {
  * gate that started and never returned a verdict — the run died inside it — has
  * no verdict to keep.
  */
-export function attemptOutcome(
-  runEvents: readonly Envelope[],
-  budget: PromptBudget,
-): AttemptOutcome {
-  let produced: AttemptOutcome["produced"] = null;
-  let receipt: AttemptOutcome["receipt"] = null;
-  let evidence: AttemptOutcome["evidence"] = null;
-  let failed: AttemptOutcome["evidence"] = null;
-  const unfinished = new Set<string>();
+export function attemptOutcome(runEvents: readonly Envelope[], budget: PromptBudget): AttemptOutcome {
+  let produced: AttemptOutcome['produced'] = null
+  let receipt: AttemptOutcome['receipt'] = null
+  let evidence: AttemptOutcome['evidence'] = null
+  let failed: AttemptOutcome['evidence'] = null
+  const unfinished = new Set<string>()
 
   for (const event of runEvents) {
     switch (event.type) {
-      case "RunProducedDiff": {
-        const d = event.data as PayloadOf<"RunProducedDiff">;
-        produced = d;
-        break;
+      case 'RunProducedDiff': {
+        const d = event.data as PayloadOf<'RunProducedDiff'>
+        produced = d
+        break
       }
 
-      case "RunFinished": {
-        const d = event.data as PayloadOf<"RunFinished">;
-        receipt = { turns: d.turns, costUsd: d.costUsd };
-        break;
+      case 'RunFinished': {
+        const d = event.data as PayloadOf<'RunFinished'>
+        receipt = { turns: d.turns, costUsd: d.costUsd }
+        break
       }
 
-      case "RunFailed": {
-        const d = event.data as PayloadOf<"RunFailed">;
-        failed = { what: `the run itself (${d.kind})`, text: d.detail };
-        break;
+      case 'RunFailed': {
+        const d = event.data as PayloadOf<'RunFailed'>
+        failed = { what: `the run itself (${d.kind})`, text: d.detail }
+        break
       }
 
-      case "StepStarted": {
-        const d = event.data as PayloadOf<"StepStarted">;
-        unfinished.add(`${d.step}:${d.action}`);
-        break;
+      case 'StepStarted': {
+        const d = event.data as PayloadOf<'StepStarted'>
+        unfinished.add(`${d.step}:${d.action}`)
+        break
       }
 
-      case "StepPassed":
-      case "StepWaived": {
-        const d = event.data as PayloadOf<"StepStarted">;
-        unfinished.delete(`${d.step}:${d.action}`);
-        break;
+      case 'StepPassed':
+      case 'StepWaived': {
+        const d = event.data as PayloadOf<'StepStarted'>
+        unfinished.delete(`${d.step}:${d.action}`)
+        break
       }
 
       /**
@@ -243,10 +242,10 @@ export function attemptOutcome(
        * attempt is being tried again for the same reason a run that never
        * started is, and the failure block for it is empty on purpose.
        */
-      case "StepNeverRan": {
-        const d = event.data as PayloadOf<"StepNeverRan">;
-        unfinished.delete(`${d.step}:${d.action}`);
-        break;
+      case 'StepNeverRan': {
+        const d = event.data as PayloadOf<'StepNeverRan'>
+        unfinished.delete(`${d.step}:${d.action}`)
+        break
       }
 
       /**
@@ -259,10 +258,10 @@ export function attemptOutcome(
        * tell the next one that a review died *inside* this diff — a fact about
        * the diff that nobody established.
        */
-      case "StepDidNotFinish": {
-        const d = event.data as PayloadOf<"StepDidNotFinish">;
-        unfinished.delete(`${d.step}:${d.action}`);
-        break;
+      case 'StepDidNotFinish': {
+        const d = event.data as PayloadOf<'StepDidNotFinish'>
+        unfinished.delete(`${d.step}:${d.action}`)
+        break
       }
 
       /**
@@ -276,53 +275,49 @@ export function attemptOutcome(
        * via `SentBack.asked`, and a fresh attempt is not the reader either of
        * those was written for.
        */
-      case "StepAsked": {
-        const d = event.data as PayloadOf<"StepAsked">;
-        unfinished.delete(`${d.step}:${d.action}`);
-        break;
+      case 'StepAsked': {
+        const d = event.data as PayloadOf<'StepAsked'>
+        unfinished.delete(`${d.step}:${d.action}`)
+        break
       }
 
-      case "StepFailed": {
-        const d = event.data as PayloadOf<"StepFailed">;
-        const what = `${d.step}:${d.action}`;
-        unfinished.delete(what);
+      case 'StepFailed': {
+        const d = event.data as PayloadOf<'StepFailed'>
+        const what = `${d.step}:${d.action}`
+        unfinished.delete(what)
         // A gate's refusal is the most specific thing on the stream, so the last
         // one wins over anything else recorded here.
-        evidence = { what, text: findingsAppended(d.evidence, d.findings, budget.findings) };
-        break;
+        evidence = { what, text: findingsAppended(d.evidence, d.findings, budget.findings) }
+        break
       }
 
       default:
-        break;
+        break
     }
   }
 
-  if (evidence === null) evidence = failed;
+  if (evidence === null) evidence = failed
   if (evidence === null) {
     // The ticket's "which point it died at": a gate that started and never
     // returned a verdict. There is no output to quote — the fact is the finding.
-    const [died] = [...unfinished];
+    const [died] = [...unfinished]
     if (died !== undefined) {
-      evidence = { what: died, text: "it started and never returned a verdict." };
+      evidence = { what: died, text: 'it started and never returned a verdict.' }
     }
   }
 
-  return { produced, evidence, receipt };
+  return { produced, evidence, receipt }
 }
 
 /** A review gate's findings, under its output. Bounded by `budget.findings`. */
-function findingsAppended(
-  output: string,
-  findings: PayloadOf<"StepFailed">["findings"],
-  max: number,
-): string {
-  if (findings.length === 0) return output;
+function findingsAppended(output: string, findings: PayloadOf<'StepFailed'>['findings'], max: number): string {
+  if (findings.length === 0) return output
   const shown = findings.slice(0, max).map((f) => {
-    const at = f.line === null ? f.file : `${f.file}:${f.line}`;
-    return `- [${f.severity}] ${at} — ${f.claim} (${f.failureScenario})`;
-  });
-  const more = findings.length > max ? [`- …and ${findings.length - max} more`] : [];
-  return [output.trimEnd(), "", ...shown, ...more].join("\n");
+    const at = f.line === null ? f.file : `${f.file}:${f.line}`
+    return `- [${f.severity}] ${at} — ${f.claim} (${f.failureScenario})`
+  })
+  const more = findings.length > max ? [`- …and ${findings.length - max} more`] : []
+  return [output.trimEnd(), '', ...shown, ...more].join('\n')
 }
 
 /**
@@ -343,28 +338,28 @@ export function attemptBrief(
   budget: PromptBudget,
   arms: ArmsOnOrigin | null = null,
 ): string {
-  if (attempts.length === 0) return "";
+  if (attempts.length === 0) return ''
 
-  const last = attempts[attempts.length - 1]!;
-  const n = attempts.length;
-  const shown = attempts.slice(-budget.attempts);
-  const hidden = attempts.length - shown.length;
+  const last = attempts[attempts.length - 1]!
+  const n = attempts.length
+  const shown = attempts.slice(-budget.attempts)
+  const hidden = attempts.length - shown.length
 
   const lines = [
-    `## This ticket has been attempted ${n === 1 ? "once" : `${n} times`} already`,
-    "",
-    `This is attempt ${n + 1}. The ${n === 1 ? "one before it" : "ones before it"} ran this same prompt, filled from`,
-    "this same ticket, and produced what follows. Read it before you plan anything:",
-    "repeating the previous attempt costs what it cost and ends where it ended.",
-    "",
-    "| # | run | how it ended | its commits |",
-    "| --- | --- | --- | --- |",
+    `## This ticket has been attempted ${n === 1 ? 'once' : `${n} times`} already`,
+    '',
+    `This is attempt ${n + 1}. The ${n === 1 ? 'one before it' : 'ones before it'} ran this same prompt, filled from`,
+    'this same ticket, and produced what follows. Read it before you plan anything:',
+    'repeating the previous attempt costs what it cost and ends where it ended.',
+    '',
+    '| # | run | how it ended | its commits |',
+    '| --- | --- | --- | --- |',
     ...(hidden > 0 ? [`| … | | ${hidden} earlier attempt(s), omitted | |`] : []),
     ...shown.map((a) => {
-      const ref = armOf(a, arms);
-      return `| ${a.n} | \`${a.runId}\` | ${cell(a.ended ?? "no ending recorded")} | ${ref === null ? "" : `\`${ref}\``} |`;
+      const ref = armOf(a, arms)
+      return `| ${a.n} | \`${a.runId}\` | ${cell(a.ended ?? 'no ending recorded')} | ${ref === null ? '' : `\`${ref}\``} |`
     }),
-  ];
+  ]
 
   // An offer and not an instruction (0072 §5): the ref sits beside how that
   // attempt ended because some were refused for good reasons, and a sentence
@@ -372,74 +367,74 @@ export function attemptBrief(
   // `unit/attempts.test.ts` reads this wording for the verbs it must not use.
   if (shown.some((a) => armOf(a, arms) !== null)) {
     lines.push(
-      "",
+      '',
       "Where a row names a ref, that attempt's commits are on it and readable from this",
-      "worktree — `git show <ref>:<path>`, `git diff HEAD <ref>`. Read them against how",
-      "that attempt ended; whether any of it is worth anything here is yours to judge.",
-    );
+      'worktree — `git show <ref>:<path>`, `git diff HEAD <ref>`. Read them against how',
+      'that attempt ended; whether any of it is worth anything here is yours to judge.',
+    )
   }
 
   if (last.refusal) {
     lines.push(
-      "",
+      '',
       `The integrator refused attempt ${last.n} with **${last.refusal.reason}**:`,
-      "",
-      "```",
+      '',
+      '```',
       clamp(last.refusal.detail, budget.evidence),
-      "```",
-    );
+      '```',
+    )
   }
 
   // Only when the run's own stream was read. A caller that did not read it does
   // not know the attempt produced nothing — it knows nothing — and saying the
   // first would be an invention in a prompt.
-  const produced = last.outcome === null ? undefined : last.outcome.produced;
+  const produced = last.outcome === null ? undefined : last.outcome.produced
   if (produced !== undefined) {
-    lines.push("", `### What attempt ${last.n} produced`, "");
+    lines.push('', `### What attempt ${last.n} produced`, '')
   }
   if (produced === null) {
     lines.push(
-      "Nothing. It committed no change, so there is no branch to build on and this",
-      "attempt starts where the first one did.",
-    );
+      'Nothing. It committed no change, so there is no branch to build on and this',
+      'attempt starts where the first one did.',
+    )
   } else if (produced !== undefined) {
     lines.push(
       `${produced.files} file(s), +${produced.insertions} −${produced.deletions}, committed on \`${produced.branch}\` at \`${produced.headSha.slice(0, 7)}\`.`,
-      "",
-      "**Your worktree is cut fresh from the base branch, so those commits are not in it.**",
+      '',
+      '**Your worktree is cut fresh from the base branch, so those commits are not in it.**',
       `If building on them beats starting over, \`git fetch origin ${produced.branch}\` and take`,
       `what is worth keeping from \`${produced.headSha.slice(0, 7)}\`; if it does not, ignore them. Either way`,
-      "what you push replaces that branch.",
-    );
+      'what you push replaces that branch.',
+    )
   }
 
-  const receipt = last.outcome?.receipt ?? null;
+  const receipt = last.outcome?.receipt ?? null
   if (receipt) {
     lines.push(
-      "",
-      `It spent ${receipt.turns} turn(s)${receipt.costUsd === null ? "" : ` and $${receipt.costUsd.toFixed(2)}`} getting there.`,
-    );
+      '',
+      `It spent ${receipt.turns} turn(s)${receipt.costUsd === null ? '' : ` and $${receipt.costUsd.toFixed(2)}`} getting there.`,
+    )
   }
 
-  const evidence = last.outcome?.evidence ?? null;
+  const evidence = last.outcome?.evidence ?? null
   if (evidence) {
     lines.push(
-      "",
+      '',
       `### What refused attempt ${last.n}`,
-      "",
+      '',
       `\`${evidence.what}\`:`,
-      "",
-      "```",
+      '',
+      '```',
       clamp(evidence.text, budget.evidence),
-      "```",
-      "",
-      "That output is the thing to answer. If it names what an earlier attempt has",
-      "already named, the obvious fix is the one that did not work — say so plainly in",
-      "your final message rather than spending a third attempt on it.",
-    );
+      '```',
+      '',
+      'That output is the thing to answer. If it names what an earlier attempt has',
+      'already named, the obvious fix is the one that did not work — say so plainly in',
+      'your final message rather than spending a third attempt on it.',
+    )
   }
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 /**
@@ -451,9 +446,9 @@ export function attemptBrief(
  * costs nothing.
  */
 function armOf(a: PriorAttempt, arms: ArmsOnOrigin | null): string | null {
-  if (arms === null) return null;
-  const name = armBranch(arms.branch, a.n);
-  return arms.onOrigin.has(name) ? name : null;
+  if (arms === null) return null
+  const name = armBranch(arms.branch, a.n)
+  return arms.onOrigin.has(name) ? name : null
 }
 
 /**
@@ -472,21 +467,21 @@ function armOf(a: PriorAttempt, arms: ArmsOnOrigin | null): string | null {
  * a 40000-character failure* must not read as *a 2000-character failure*.
  */
 export function clamp(text: string, max: number): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= max) return trimmed;
-  const head = Math.ceil(max / 2);
-  const tail = max - head;
-  const elided = trimmed.length - max;
+  const trimmed = text.trim()
+  if (trimmed.length <= max) return trimmed
+  const head = Math.ceil(max / 2)
+  const tail = max - head
+  const elided = trimmed.length - max
   return [
     trimmed.slice(0, head),
     `…elided ${elided} of ${trimmed.length} characters here; the start and the end are shown…`,
-    tail > 0 ? trimmed.slice(-tail) : "",
-  ].join("\n");
+    tail > 0 ? trimmed.slice(-tail) : '',
+  ].join('\n')
 }
 
 /** One line, so a reason with a newline in it cannot break the table. */
 function cell(text: string): string {
-  return text.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim().slice(0, 200);
+  return text.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim().slice(0, 200)
 }
 
 /**
@@ -509,11 +504,11 @@ function cell(text: string): string {
  * is lying about what produced a result.** Empty for every run nobody edited,
  * which is every run so far.
  */
-export function promptVersionFor(base: string, failure: string, human = ""): string {
-  const parts = [base];
-  if (failure !== "") parts.push(`failure@${digest(failure)}`);
-  if (human !== "") parts.push(`human@${editHash(human)}`);
-  return parts.join("+");
+export function promptVersionFor(base: string, failure: string, human = ''): string {
+  const parts = [base]
+  if (failure !== '') parts.push(`failure@${digest(failure)}`)
+  if (human !== '') parts.push(`human@${editHash(human)}`)
+  return parts.join('+')
 }
 
 /**
@@ -525,11 +520,11 @@ export function promptVersionFor(base: string, failure: string, human = ""): str
  * be recomputed.
  */
 export function editHash(text: string): string {
-  return digest(text);
+  return digest(text)
 }
 
 function digest(text: string): string {
-  return createHash("sha256").update(text).digest("hex").slice(0, 12);
+  return createHash('sha256').update(text).digest('hex').slice(0, 12)
 }
 
 /**
@@ -541,12 +536,12 @@ function digest(text: string): string {
  * it an instruction rather than a stray paragraph.
  */
 export function humanBrief(edit: { text: string; by: string } | null): string {
-  if (edit === null || edit.text.trim() === "") return "";
+  if (edit === null || edit.text.trim() === '') return ''
   return `## Added for this attempt by ${edit.by}
 
 ${edit.text.trim()}
 
-It applies to this attempt only. Anything meant to last belongs in the ticket.`;
+It applies to this attempt only. Anything meant to last belongs in the ticket.`
 }
 
 /**
@@ -574,17 +569,17 @@ It applies to this attempt only. Anything meant to last belongs in the ticket.`;
  * the ticket is owed to every attempt at it, so no claim consumes these.
  */
 export function answersBrief(answers: readonly AnswerRecord[]): string {
-  const asked = answers.filter((a) => a.runId === null && a.question !== null);
-  if (asked.length === 0) return "";
+  const asked = answers.filter((a) => a.runId === null && a.question !== null)
+  if (asked.length === 0) return ''
   const lines = [
     `## Decided before any run`,
-    "",
-    "A person was asked, before this ticket was worked, and answered on the record.",
-    "These are decisions, not suggestions: build what was chosen. If the code makes a",
-    "choice impossible, say so plainly in your final message rather than choosing again.",
-  ];
+    '',
+    'A person was asked, before this ticket was worked, and answered on the record.',
+    'These are decisions, not suggestions: build what was chosen. If the code makes a',
+    'choice impossible, say so plainly in your final message rather than choosing again.',
+  ]
   for (const a of asked) {
-    lines.push("", `**Asked:** ${a.question!.trim()}`, "", `**Answered by ${a.by}:** ${a.answer.trim()}`);
+    lines.push('', `**Asked:** ${a.question!.trim()}`, '', `**Answered by ${a.by}:** ${a.answer.trim()}`)
   }
-  return lines.join("\n");
+  return lines.join('\n')
 }

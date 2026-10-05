@@ -1,10 +1,11 @@
 #!/usr/bin/env -S node
-import type { Contract as End } from '../../snapshots/23b6c85a86e41a6df7c4cf1ce29387a439ba4a31c8e4bda9615f63dcf9181684/contract';
-import endContract from '../../snapshots/23b6c85a86e41a6df7c4cf1ce29387a439ba4a31c8e4bda9615f63dcf9181684/contract.json' with { type: 'json' };
-import { Migration, MigrationCLI, col, fn, lit, primaryKey } from '@prisma/orm-postgres/migration';
+import { Migration, MigrationCLI, col, fn, lit, primaryKey } from '@prisma/orm-postgres/migration'
+
+import type { Contract as End } from '../../snapshots/23b6c85a86e41a6df7c4cf1ce29387a439ba4a31c8e4bda9615f63dcf9181684/contract'
+import endContract from '../../snapshots/23b6c85a86e41a6df7c4cf1ce29387a439ba4a31c8e4bda9615f63dcf9181684/contract.json' with { type: 'json' }
 
 export default class M extends Migration<never, End> {
-  override readonly endContractJson = endContract;
+  override readonly endContractJson = endContract
 
   override get operations() {
     return [
@@ -103,8 +104,8 @@ export default class M extends Migration<never, End> {
         index: 'outbox_delivered_at_created_at_idx_e4092e18',
         columns: ['delivered_at', 'created_at'],
       }),
-    ];
+    ]
   }
 }
 
-MigrationCLI.run(import.meta.url, M);
+MigrationCLI.run(import.meta.url, M)

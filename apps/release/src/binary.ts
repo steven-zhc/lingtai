@@ -23,42 +23,43 @@
  * dropped and stay green. It asserts the signature rather than the kill because
  * GitHub's macOS runners exec an unsigned binary that a stock Mac would not.
  */
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { platformName } from "../../cli/src/version.ts";
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+
+import { platformName } from '../../cli/src/version.ts'
 
 export interface BinaryOptions {
   /** A directory `pnpm build` wrote. */
-  dist: string;
+  dist: string
   /** Where the binary goes. Default: `lingtai` inside `dist`. */
-  output?: string;
+  output?: string
   /** Only ever `false` in the test that proves why it is `true`. */
-  sign?: boolean;
+  sign?: boolean
 }
 
 /** The artifact's name on a release: `lingtai-macos-arm64`, and so on. */
 export function artifactName(platform: string = platformName()): string {
-  return `lingtai-${platform}`;
+  return `lingtai-${platform}`
 }
 
 /** Whether this Node can build a SEA without a separate injector. */
 export function canBuildSea(version: string = process.versions.node): boolean {
-  const [major = 0, minor = 0] = version.split(".").map(Number);
-  return major > 25 || (major === 25 && minor >= 5);
+  const [major = 0, minor = 0] = version.split('.').map(Number)
+  return major > 25 || (major === 25 && minor >= 5)
 }
 
-export function buildBinary({ dist, output = join(dist, "lingtai"), sign = true }: BinaryOptions): string {
-  const main = join(dist, "lingtai.cjs");
-  if (!existsSync(main)) throw new Error(`no ${main} — pnpm build writes it first`);
+export function buildBinary({ dist, output = join(dist, 'lingtai'), sign = true }: BinaryOptions): string {
+  const main = join(dist, 'lingtai.cjs')
+  if (!existsSync(main)) throw new Error(`no ${main} — pnpm build writes it first`)
   if (!canBuildSea()) {
-    throw new Error(`node ${process.versions.node} cannot build a SEA; node --build-sea needs 25.5 or later`);
+    throw new Error(`node ${process.versions.node} cannot build a SEA; node --build-sea needs 25.5 or later`)
   }
 
-  const scratch = mkdtempSync(join(tmpdir(), "lingtai-sea-"));
+  const scratch = mkdtempSync(join(tmpdir(), 'lingtai-sea-'))
   try {
-    const config = join(scratch, "sea-config.json");
+    const config = join(scratch, 'sea-config.json')
     writeFileSync(
       config,
       JSON.stringify({
@@ -74,31 +75,33 @@ export function buildBinary({ dist, output = join(dist, "lingtai"), sign = true 
         // the one way a SEA's `import()` reaches a file, and Node flags it as
         // experimental on every start. It is the binary's business, not the
         // person's who typed `lingtai board`.
-        execArgv: ["--disable-warning=ExperimentalWarning"],
+        execArgv: ['--disable-warning=ExperimentalWarning'],
       }),
-    );
-    rmSync(output, { force: true });
-    run(process.execPath, ["--build-sea", config]);
+    )
+    rmSync(output, { force: true })
+    run(process.execPath, ['--build-sea', config])
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true })
   }
 
-  if (sign && process.platform === "darwin") {
-    run("codesign", ["--sign", "-", "--force", output]);
-    run("codesign", ["--verify", output]);
+  if (sign && process.platform === 'darwin') {
+    run('codesign', ['--sign', '-', '--force', output])
+    run('codesign', ['--verify', output])
   }
-  return output;
+  return output
 }
 
 function run(command: string, args: string[]): void {
-  const result = spawnSync(command, args, { encoding: "utf8" });
+  const result = spawnSync(command, args, { encoding: 'utf8' })
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} exited ${result.status}\n${result.stdout}\n${result.stderr}`);
+    throw new Error(`${command} ${args.join(' ')} exited ${result.status}\n${result.stdout}\n${result.stderr}`)
   }
 }
 
 if (process.argv[1] === import.meta.filename) {
-  const at = process.argv.indexOf("--dist");
-  const dist = resolve(at > 0 && process.argv[at + 1] ? process.argv[at + 1]! : join(import.meta.dirname, "../../../dist"));
-  console.log(`built ${buildBinary({ dist })} (${artifactName()})`);
+  const at = process.argv.indexOf('--dist')
+  const dist = resolve(
+    at > 0 && process.argv[at + 1] ? process.argv[at + 1]! : join(import.meta.dirname, '../../../dist'),
+  )
+  console.log(`built ${buildBinary({ dist })} (${artifactName()})`)
 }

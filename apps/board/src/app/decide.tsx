@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * The controls on a card that is waiting on you.
@@ -13,9 +13,11 @@
  * card rendering and the click, so the diff being approved is not the diff that
  * was read. That has to be visible, not swallowed.
  */
-import { useState, useTransition } from "react";
-import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } from "./actions.ts";
-import type { ActionResult } from "@/lib/diff";
+import { useState, useTransition } from 'react'
+
+import type { ActionResult } from '@/lib/diff'
+
+import { answerCard, approveCard, closeCard, requeueCard, runNow, sendAttempt } from './actions.ts'
 
 /**
  * The recommended move, as `WorkItemBlocked.diagnosis.recommendation` named it.
@@ -29,7 +31,7 @@ import type { ActionResult } from "@/lib/diff";
  * (#150). What a person agreeing with a refusal wants is a new run, so it reads
  * as `requeue` — see `primaryMove`.
  */
-export type Recommended = "approve" | "reject" | "requeue" | null;
+export type Recommended = 'approve' | 'reject' | 'requeue' | null
 
 /**
  * Which of the two moves wears the amber. Amber appears once per screen.
@@ -37,8 +39,8 @@ export type Recommended = "approve" | "reject" | "requeue" | null;
  * Not exported: this is a client module, and a server component calling a
  * function from one gets a reference rather than the function.
  */
-function primaryMove(recommended: Recommended | undefined): "approve" | "requeue" {
-  return recommended === "reject" || recommended === "requeue" ? "requeue" : "approve";
+function primaryMove(recommended: Recommended | undefined): 'approve' | 'requeue' {
+  return recommended === 'reject' || recommended === 'requeue' ? 'requeue' : 'approve'
 }
 
 /**
@@ -58,54 +60,54 @@ export function Decide({
   refusing,
   recommended,
 }: {
-  project: string;
-  issue: number;
+  project: string
+  issue: number
   /**
    * The sha the run is *asking* about. `approve()` compares this against the
    * run's own `onSha` — so sending what the run produced instead refused
    * approvals `lingtai approve` accepted (#92).
    */
-  onSha: string;
+  onSha: string
   /**
    * Whether the card knows of a gate that refused, so the reason is asked for
    * before the click rather than after a refusal. A hint, and only that: the
    * server decides from the run, and if it asks for a reason the card did not
    * expect to need, the field opens with its sentence.
    */
-  refusing: boolean;
+  refusing: boolean
   /**
    * What the diagnosis recommends, when it recommends anything. Amber stays on
    * Approve unless the recommendation is to run it again.
    */
-  recommended?: Recommended;
+  recommended?: Recommended
 }) {
-  const [pending, setPending] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [note, setNote] = useState("");
-  const [, startTransition] = useTransition();
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [note, setNote] = useState('')
+  const [, startTransition] = useTransition()
 
   const approve = (withNote: string) => {
     // Optimistic: the button reports the intent straight away.
-    setPending(true);
-    setRefusal(null);
+    setPending(true)
+    setRefusal(null)
     startTransition(async () => {
-      const result: ActionResult = await approveCard({ project, issue, onSha, note: withNote });
-      setPending(false);
+      const result: ActionResult = await approveCard({ project, issue, onSha, note: withNote })
+      setPending(false)
       if (result.ok) {
-        setDone(result.detail);
-        return;
+        setDone(result.detail)
+        return
       }
       // Reverted. The card goes back to undecided and the operator is told the
       // server's actual reason, because "it didn't work" sends them nowhere.
       // A refusal for want of a reason opens the field it wants.
-      if (result.detail.startsWith("reason-required")) setAsking(true);
-      setRefusal(result.detail);
-    });
-  };
+      if (result.detail.startsWith('reason-required')) setAsking(true)
+      setRefusal(result.detail)
+    })
+  }
 
-  if (done) return <p className="decided">{done}</p>;
+  if (done) return <p className="decided">{done}</p>
 
   if (asking) {
     return (
@@ -124,7 +126,7 @@ export function Decide({
         </label>
         <div className="btnrow">
           <button className="btn pri" disabled={!note.trim() || pending} onClick={() => approve(note)}>
-            {pending ? "merging…" : "Approve"}
+            {pending ? 'merging…' : 'Approve'}
           </button>
           <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
             Cancel
@@ -132,23 +134,23 @@ export function Decide({
         </div>
         {refusal ? <p className="refusal">{refusal}</p> : null}
       </div>
-    );
+    )
   }
 
   return (
     <div className="decide">
       <div className="btnrow">
         <button
-          className={primaryMove(recommended) === "approve" ? "btn pri" : "btn"}
+          className={primaryMove(recommended) === 'approve' ? 'btn pri' : 'btn'}
           disabled={pending}
-          onClick={() => (refusing ? setAsking(true) : approve(""))}
+          onClick={() => (refusing ? setAsking(true) : approve(''))}
         >
-          {pending ? "merging…" : "Approve"}
+          {pending ? 'merging…' : 'Approve'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }
 
 /**
@@ -182,8 +184,8 @@ export function Requeue({
   asked = false,
   question = null,
 }: {
-  project: string;
-  issue: number;
+  project: string
+  issue: number
   /**
    * Whether the block is a question asked before any run (#147). Then the move
    * is an *answer* — the same event, through `answer()`, which refuses anything
@@ -195,67 +197,67 @@ export function Requeue({
    * is kept as a reason and never told to an attempt. Without it the only way
    * out of a mistaken question was an answer every later prompt would carry.
    */
-  asked?: boolean;
+  asked?: boolean
   /**
    * The question on screen, whole, when `asked`. The answer is sent with it, so
    * a question withdrawn and asked again since the page was read is refused
    * rather than answered with words meant for the old one.
    */
-  question?: string | null;
+  question?: string | null
   /**
    * A recommendation to run it again — `requeue`, or a `reject` from before
    * #150 — promotes the button to primary (`primaryMove`). Without one the
    * button stays as it was: the move is available, and nothing is telling you
    * to take it.
    */
-  recommended?: Recommended;
+  recommended?: Recommended
 }) {
-  const [pending, setPending] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
   // Which box is open: the requeue's why (or the answer), or a withdrawal's why.
-  const [asking, setAsking] = useState<"primary" | "withdraw" | false>(false);
-  const [note, setNote] = useState("");
-  const withdrawing = asking === "withdraw";
-  const [, startTransition] = useTransition();
+  const [asking, setAsking] = useState<'primary' | 'withdraw' | false>(false)
+  const [note, setNote] = useState('')
+  const withdrawing = asking === 'withdraw'
+  const [, startTransition] = useTransition()
 
-  if (done) return <p className="decided">{done}</p>;
+  if (done) return <p className="decided">{done}</p>
 
   if (!asking) {
     return (
       <div className="decide">
         <div className="btnrow">
           <button
-            className={asked || primaryMove(recommended) === "requeue" ? "btn pri" : "btn"}
-            onClick={() => setAsking("primary")}
+            className={asked || primaryMove(recommended) === 'requeue' ? 'btn pri' : 'btn'}
+            onClick={() => setAsking('primary')}
           >
-            {asked ? "Answer" : "Back to the queue"}
+            {asked ? 'Answer' : 'Back to the queue'}
           </button>
           {asked ? (
-            <button className="btn" onClick={() => setAsking("withdraw")}>
+            <button className="btn" onClick={() => setAsking('withdraw')}>
               Withdraw
             </button>
           ) : null}
         </div>
         {refusal ? <p className="refusal">{refusal}</p> : null}
       </div>
-    );
+    )
   }
 
   return (
     <div className="decide">
       <label className="reason">
-        <span>{withdrawing ? "Why withdraw it?" : asked ? "Your answer" : "Why?"}</span>
+        <span>{withdrawing ? 'Why withdraw it?' : asked ? 'Your answer' : 'Why?'}</span>
         <input
           autoFocus
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder={
             withdrawing
-              ? "asked on the wrong issue — no attempt is told this"
+              ? 'asked on the wrong issue — no attempt is told this'
               : asked
-                ? "every attempt at this ticket is told this"
-                : "main has moved; a fresh branch should merge"
+                ? 'every attempt at this ticket is told this'
+                : 'main has moved; a fresh branch should merge'
           }
         />
       </label>
@@ -264,24 +266,25 @@ export function Requeue({
           className="btn pri"
           disabled={!note.trim() || pending}
           onClick={() => {
-            setPending(true);
-            setRefusal(null);
+            setPending(true)
+            setRefusal(null)
             startTransition(async () => {
-              const result = asked && !withdrawing
-                ? await answerCard({ project, issue, answer: note, question: question ?? "" })
-                : await requeueCard({ project, issue, note });
-              setPending(false);
+              const result =
+                asked && !withdrawing
+                  ? await answerCard({ project, issue, answer: note, question: question ?? '' })
+                  : await requeueCard({ project, issue, note })
+              setPending(false)
               if (result.ok) {
-                setDone(result.detail);
-                return;
+                setDone(result.detail)
+                return
               }
               // Reverted, with the server's own sentence. "It didn't work"
               // sends an operator nowhere.
-              setRefusal(result.detail);
-            });
+              setRefusal(result.detail)
+            })
           }}
         >
-          {pending ? "…" : withdrawing ? "Withdraw" : asked ? "Answer" : "Requeue"}
+          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'Requeue'}
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel
@@ -289,7 +292,7 @@ export function Requeue({
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }
 
 /**
@@ -312,21 +315,15 @@ export function Requeue({
  * `Run now`. A ticket you have decided against is one you decide against while
  * it is waiting, which is most of the time it exists.
  */
-export function Close({
-  project,
-  issue,
-}: {
-  project: string;
-  issue: number;
-}) {
-  const [pending, setPending] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [reason, setReason] = useState("");
-  const [, startTransition] = useTransition();
+export function Close({ project, issue }: { project: string; issue: number }) {
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [reason, setReason] = useState('')
+  const [, startTransition] = useTransition()
 
-  if (done) return <p className="decided">{done}</p>;
+  if (done) return <p className="decided">{done}</p>
 
   if (!asking) {
     return (
@@ -338,7 +335,7 @@ export function Close({
         </div>
         {refusal ? <p className="refusal">{refusal}</p> : null}
       </div>
-    );
+    )
   }
 
   return (
@@ -357,23 +354,23 @@ export function Close({
           className="btn pri"
           disabled={!reason.trim() || pending}
           onClick={() => {
-            setPending(true);
-            setRefusal(null);
+            setPending(true)
+            setRefusal(null)
             startTransition(async () => {
-              const result = await closeCard({ project, issue, reason });
-              setPending(false);
+              const result = await closeCard({ project, issue, reason })
+              setPending(false)
               if (result.ok) {
-                setDone(result.detail);
-                return;
+                setDone(result.detail)
+                return
               }
               // The server's own sentence, for the same reason Requeue keeps
               // it: "already closed" and "changed while closing" send an
               // operator to two different places.
-              setRefusal(result.detail);
-            });
+              setRefusal(result.detail)
+            })
           }}
         >
-          {pending ? "…" : "Close it"}
+          {pending ? '…' : 'Close it'}
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel
@@ -381,7 +378,7 @@ export function Close({
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }
 
 /**
@@ -409,9 +406,9 @@ export function Send({
   attempt,
   primary,
 }: {
-  taskId: string;
+  taskId: string
   /** 1-based, as the outgoing box numbers it. The button says this number. */
-  attempt: number;
+  attempt: number
   /**
    * Whether this is the amber one.
    *
@@ -421,48 +418,44 @@ export function Send({
    * **Amber appears once per screen** (layout notes), and a row with two primary
    * buttons dilutes it exactly as a second decorative use would.
    */
-  primary: boolean;
+  primary: boolean
 }) {
-  const [pending, setPending] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const [left, setLeft] = useState(false);
-  const [, startTransition] = useTransition();
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [left, setLeft] = useState(false)
+  const [, startTransition] = useTransition()
 
-  if (done) return <p className="decided">{done}</p>;
+  if (done) return <p className="decided">{done}</p>
   // Honest about having written nothing. The class is not `decided`, because
   // green here would claim an append that did not happen.
   if (left) {
-    return (
-      <p className="undecided">
-        left blocked — nothing was appended, and it is still waiting on you
-      </p>
-    );
+    return <p className="undecided">left blocked — nothing was appended, and it is still waiting on you</p>
   }
 
   return (
     <div className="decide">
       <div className="btnrow">
         <button
-          className={primary ? "btn pri" : "btn"}
+          className={primary ? 'btn pri' : 'btn'}
           disabled={pending}
           onClick={() => {
-            setPending(true);
-            setRefusal(null);
+            setPending(true)
+            setRefusal(null)
             startTransition(async () => {
-              const result = await sendAttempt({ taskId });
-              setPending(false);
+              const result = await sendAttempt({ taskId })
+              setPending(false)
               if (result.ok) {
-                setDone(result.detail);
-                return;
+                setDone(result.detail)
+                return
               }
               // Reverted, with the server's own sentence: a result shown that
               // did not happen is worse than no result (`decide.tsx`'s trap).
-              setRefusal(result.detail);
-            });
+              setRefusal(result.detail)
+            })
           }}
         >
-          {pending ? "sending…" : `Send attempt ${attempt}`}
+          {pending ? 'sending…' : `Send attempt ${attempt}`}
         </button>
         <button className="btn" disabled={pending} onClick={() => setLeft(true)}>
           Leave blocked
@@ -470,7 +463,7 @@ export function Send({
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }
 
 /**
@@ -496,9 +489,9 @@ export function RunNow({
   holding,
   primary = true,
 }: {
-  project: string;
+  project: string
   /** The issue number as GitHub numbers it, which is what `RunRequested` carries. */
-  issue: string;
+  issue: string
   /**
    * What is holding this item, in one phrase, or null when nothing is.
    *
@@ -506,44 +499,44 @@ export function RunNow({
    * card, `lingtai status` and this button say the same thing about the same
    * hold, which is the property `#100` cost a ticket to establish.
    */
-  holding: string | null;
+  holding: string | null
   /**
    * Whether this is the amber one. **Amber appears once per screen** (layout
    * notes), and on a queued page this is the move — there is no Approve beside
    * it — so it carries it by default.
    */
-  primary?: boolean;
+  primary?: boolean
 }) {
-  const [pending, setPending] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
 
-  if (done) return <p className="decided">{done}</p>;
+  if (done) return <p className="decided">{done}</p>
 
   return (
     <div className="decide">
       <div className="btnrow">
         <button
-          className={primary ? "btn pri" : "btn"}
+          className={primary ? 'btn pri' : 'btn'}
           disabled={pending}
           onClick={() => {
-            setPending(true);
-            setRefusal(null);
+            setPending(true)
+            setRefusal(null)
             startTransition(async () => {
-              const result = await runNow({ project, issue });
-              setPending(false);
+              const result = await runNow({ project, issue })
+              setPending(false)
               if (result.ok) {
-                setDone(result.detail);
-                return;
+                setDone(result.detail)
+                return
               }
               // Reverted, with the server's own sentence: a result shown that
               // did not happen is worse than no result (this file's trap).
-              setRefusal(result.detail);
-            });
+              setRefusal(result.detail)
+            })
           }}
         >
-          {pending ? "asking…" : "Run it now"}
+          {pending ? 'asking…' : 'Run it now'}
         </button>
       </div>
       {/* Under the button rather than on it. What the click does is one fact and
@@ -552,5 +545,5 @@ export function RunNow({
       {holding ? <p className="jumps">{holding}</p> : null}
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }

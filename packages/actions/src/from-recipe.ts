@@ -1,3 +1,4 @@
+import type { Runtime } from '@lingtai/agent'
 /**
  * Turning a step's action list into actions that can run.
  *
@@ -6,20 +7,27 @@
  * supplied it would produce a green board for a change nobody approved — which
  * is worse than a run that will not start.
  */
-import type { RuntimeId, Step } from "@lingtai/domain";
-import type { Runtime } from "@lingtai/agent";
-import { type ActionKind, type StepAction, kindOfAction, kindRefusedAt, parseDuration, whyNoKindAt } from "@lingtai/recipe";
-import { type AgentActionDeps, createAgentAction, createDraftAction } from "./agent-action.ts";
-import { type WorkActionDeps, createWorkAction } from "./work-action.ts";
-import type { Action } from "./action.ts";
-import { createFileAction, type FileActionDeps } from "./file-action.ts";
-import { createFileBriefAction, type FileBriefActionDeps } from "./file-brief-action.ts";
-import { createHumanAction } from "./human-action.ts";
-import { createWatchAction, type WatchActionDeps } from "./watch-action.ts";
-import { createProcessAction } from "./process-action.ts";
-import { createMergeAction, type MergeActionDeps } from "./merge-action.ts";
-import { createQueueAction, type QueueActionDeps } from "./queue-action.ts";
-import { createWorktreeAction, type WorktreeActionDeps } from "./worktree-action.ts";
+import type { RuntimeId, Step } from '@lingtai/domain'
+import {
+  type ActionKind,
+  type StepAction,
+  kindOfAction,
+  kindRefusedAt,
+  parseDuration,
+  whyNoKindAt,
+} from '@lingtai/recipe'
+
+import type { Action } from './action.ts'
+import { type AgentActionDeps, createAgentAction, createDraftAction } from './agent-action.ts'
+import { createFileAction, type FileActionDeps } from './file-action.ts'
+import { createFileBriefAction, type FileBriefActionDeps } from './file-brief-action.ts'
+import { createHumanAction } from './human-action.ts'
+import { createMergeAction, type MergeActionDeps } from './merge-action.ts'
+import { createProcessAction } from './process-action.ts'
+import { createQueueAction, type QueueActionDeps } from './queue-action.ts'
+import { createWatchAction, type WatchActionDeps } from './watch-action.ts'
+import { type WorkActionDeps, createWorkAction } from './work-action.ts'
+import { createWorktreeAction, type WorktreeActionDeps } from './worktree-action.ts'
 
 /**
  * What the actions that are not pure processes need from the caller.
@@ -37,7 +45,7 @@ export interface ActionDeps {
    * declared is applied here, at the seam that holds both the action and the
    * recipe entry, and `runtimeFor` below is how the first of them is answered.
    */
-  agent?: AgentActionDeps;
+  agent?: AgentActionDeps
   /**
    * **Which runtime a step's `agent:` names, constructed** (`#314`, 0070 §7).
    *
@@ -48,7 +56,7 @@ export interface ActionDeps {
    * step until this ticket, because `agentRefusal` had refused any entry naming
    * anything else.
    */
-  runtimeFor?: (id: RuntimeId) => Runtime;
+  runtimeFor?: (id: RuntimeId) => Runtime
   /**
    * The dispatch the `agent:` at `implement` wraps (`#266`).
    *
@@ -58,8 +66,8 @@ export interface ActionDeps {
    * receipt measured — all of which is `conduct.ts`'s and none of which this
    * package can build.
    */
-  work?: WorkActionDeps;
-  watch?: WatchActionDeps;
+  work?: WorkActionDeps
+  watch?: WatchActionDeps
   /**
    * The cut a `worktree:` action runs — `provisionWorktree`, as the conductor
    * already calls it (0065 §2, `#268`).
@@ -70,7 +78,7 @@ export interface ActionDeps {
    * rather than becoming a step that passes having cut nothing — which at
    * `admit` is a pass that briefs an agent on a directory that does not exist.
    */
-  worktree?: WorktreeActionDeps;
+  worktree?: WorktreeActionDeps
   /**
    * The lane a `merge:` action runs — `integrate`, as the conductor already
    * calls it (0065 §2, `#270`).
@@ -80,7 +88,7 @@ export interface ActionDeps {
    * landed nothing — which at `merge` is a pass the board says merged and a
    * branch that is not on the base.
    */
-  merge?: MergeActionDeps;
+  merge?: MergeActionDeps
   /**
    * The take a `queue:` action runs — `runnableNow` and `claimWorkItem`, as the
    * conductor already calls them (0065 §2, `#269`).
@@ -90,7 +98,7 @@ export interface ActionDeps {
    * claimed nothing — which at `claim` is a pass that cuts a worktree and briefs
    * an agent about an item nobody holds.
    */
-  queue?: QueueActionDeps;
+  queue?: QueueActionDeps
   /**
    * The keep a `file:` action runs — the write into the worktree, and the commit
    * where the recipe asked for one (0066 §5, `#300`).
@@ -100,7 +108,7 @@ export interface ActionDeps {
    * which at `design` is a locator on the card pointing at a file that was never
    * written.
    */
-  file?: FileActionDeps;
+  file?: FileActionDeps
   /**
    * The read a `file-brief:` action runs — the other end of the same
    * destination, and what turns a locator back into the document an agent is
@@ -113,7 +121,7 @@ export interface ActionDeps {
    * having read nothing — which at `implement` is the agent dispatched on the
    * brief the plugin was declared to replace, with a card saying it was replaced.
    */
-  fileBrief?: FileBriefActionDeps;
+  fileBrief?: FileBriefActionDeps
   /**
    * The declared names of a `run:` action → the whole environment its process
    * gets ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
@@ -124,26 +132,26 @@ export interface ActionDeps {
    * built has no machine to read — and absent it refuses a `run:` action by
    * name rather than running one with no environment at all.
    */
-  env?: (declared: readonly string[]) => Record<string, string>;
+  env?: (declared: readonly string[]) => Record<string, string>
 }
 
 export class ActionUnavailableError extends Error {
-  override readonly name = "ActionUnavailableError";
-  readonly kind: string;
-  readonly action: string;
+  override readonly name = 'ActionUnavailableError'
+  readonly kind: string
+  readonly action: string
   /** The step it was declared at, when it was a step that decided. */
-  readonly step: Step | null;
+  readonly step: Step | null
 
   constructor(action: string, kind: string, missing: string, step: Step | null = null) {
     super(
       step === null
         ? `the "${action}" action is a "${kind}", and ${missing}. ` +
-            "Refusing to run rather than skipping it: an action that is silently absent is worse than a run that will not start."
+            'Refusing to run rather than skipping it: an action that is silently absent is worse than a run that will not start.'
         : kindRefusedAt(step, kind as ActionKind, action, missing),
-    );
-    this.action = action;
-    this.kind = kind;
-    this.step = step;
+    )
+    this.action = action
+    this.kind = kind
+    this.step = step
   }
 }
 
@@ -199,56 +207,47 @@ function dispatchDeps(
   deps: ActionDeps & { agent: AgentActionDeps },
   action: { agent: RuntimeId; limits?: { turns?: number; wall?: string } },
 ): AgentActionDeps {
-  const base = deps.agent;
+  const base = deps.agent
   return {
     runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
     issue: base.issue,
     diff: base.diff,
     get settingsPath() {
-      return base.settingsPath;
+      return base.settingsPath
     },
     get limits() {
       return {
         turns: action.limits?.turns ?? base.limits.turns,
-        wallMs:
-          action.limits?.wall === undefined ? base.limits.wallMs : parseDuration(action.limits.wall),
+        wallMs: action.limits?.wall === undefined ? base.limits.wallMs : parseDuration(action.limits.wall),
         diffBytes: base.limits.diffBytes,
         usd: base.limits.usd,
-      };
+      }
     },
-  };
+  }
 }
 
-export function actionsFromRecipe(
-  step: Step,
-  actions: readonly StepAction[],
-  deps: ActionDeps = {},
-): Action[] {
+export function actionsFromRecipe(step: Step, actions: readonly StepAction[], deps: ActionDeps = {}): Action[] {
   return actions.flatMap((action) => {
-    const kind = kindOfAction(action);
+    const kind = kindOfAction(action)
 
     // The step's own answer first: "there is no diff at `prepared`" is a
     // better refusal than "no file list was supplied", and it is the true one.
-    const wrongStep = whyNoKindAt(step, kind);
+    const wrongStep = whyNoKindAt(step, kind)
     if (wrongStep !== null) {
-      throw new ActionUnavailableError(action.name, kind, wrongStep, step);
+      throw new ActionUnavailableError(action.name, kind, wrongStep, step)
     }
 
     // The router's, not the pipeline's — and the only cell that is legal here and
     // is no action. `whyNoKindAt` above has already refused it at the other nine
     // steps, so this is `proposed` and nothing else.
-    if ("judge" in action) return [];
+    if ('judge' in action) return []
 
-    if ("run" in action) {
+    if ('run' in action) {
       if (!deps.env) {
         // Refused rather than run with `{}`: without a resolver there is no
         // `PATH` either, so every such action would fail on "command not found"
         // and read as a broken build rather than as an action built wrong.
-        throw new ActionUnavailableError(
-          action.name,
-          kind,
-          "no environment resolver was supplied to actionsFromRecipe",
-        );
+        throw new ActionUnavailableError(action.name, kind, 'no environment resolver was supplied to actionsFromRecipe')
       }
       return createProcessAction({
         name: action.name,
@@ -257,10 +256,10 @@ export function actionsFromRecipe(
         // 0037 §1: the declared set is the whole set. An action that declares
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
-      });
+      })
     }
 
-    if ("agent" in action) {
+    if ('agent' in action) {
       // `action.agent` is the *runtime* since `#245`; the prose is `prompt:`.
       // Reading the old field here would compile and send a runtime's name
       // where a reviewer's instructions belong (0063 §2).
@@ -276,7 +275,7 @@ export function actionsFromRecipe(
         name: action.name,
         prompt: action.prompt,
         ...(action.model === undefined ? {} : { model: action.model }),
-      };
+      }
       // **One key, two actions, and the step is what picks** (`#265`). `agent:`
       // at `design` drafts and everywhere else it reviews, which is 0065 §4's own
       // table — *an `agent:` that drafts* at one step, *a cold reviewer* at the
@@ -291,9 +290,9 @@ export function actionsFromRecipe(
       // runtime and diff. The reviewer built for this step would ask for the diff
       // one step before there is one and return `passed` on it, which is `#61`
       // with a new spelling and the case 0065 §5 removes.
-      if (step === "implement") {
+      if (step === 'implement') {
         if (!deps.work) {
-          throw new ActionUnavailableError(action.name, kind, "no dispatch was supplied to actionsFromRecipe");
+          throw new ActionUnavailableError(action.name, kind, 'no dispatch was supplied to actionsFromRecipe')
         }
         // The dispatch is the conductor's, so `implement` hands the two names on
         // rather than resolving them: `runtimeNamed` and `spendFor` live where
@@ -305,46 +304,44 @@ export function actionsFromRecipe(
             ...(action.limits === undefined ? {} : { limits: action.limits }),
           },
           deps.work,
-        );
+        )
       }
       if (!deps.agent) {
-        throw new ActionUnavailableError(action.name, kind, "no reviewer was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no reviewer was supplied to actionsFromRecipe')
       }
-      const reviewing = dispatchDeps({ ...deps, agent: deps.agent }, action);
-      return step === "design"
-        ? createDraftAction(agent, reviewing)
-        : createAgentAction(agent, reviewing);
+      const reviewing = dispatchDeps({ ...deps, agent: deps.agent }, action)
+      return step === 'design' ? createDraftAction(agent, reviewing) : createAgentAction(agent, reviewing)
     }
 
-    if ("file" in action) {
+    if ('file' in action) {
       if (!deps.file) {
-        throw new ActionUnavailableError(action.name, kind, "no keep was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no keep was supplied to actionsFromRecipe')
       }
-      return createFileAction({ name: action.name, path: action.file }, deps.file);
+      return createFileAction({ name: action.name, path: action.file }, deps.file)
     }
 
-    if ("file-brief" in action) {
+    if ('file-brief' in action) {
       if (!deps.fileBrief) {
-        throw new ActionUnavailableError(action.name, kind, "no read was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no read was supplied to actionsFromRecipe')
       }
       // No field to pass on: what it reads is the locator the `design` step
       // produced, which arrives on `ActionContext.design` rather than out of the
       // recipe (`fileBriefPlugin` in `@lingtai/recipe` is where that is argued).
-      return createFileBriefAction({ name: action.name }, deps.fileBrief);
+      return createFileBriefAction({ name: action.name }, deps.fileBrief)
     }
 
-    if ("watch" in action) {
+    if ('watch' in action) {
       if (!deps.watch) {
-        throw new ActionUnavailableError(action.name, kind, "no file list was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no file list was supplied to actionsFromRecipe')
       }
       // Compiles the globs here, so a bad pattern refuses at configuration time
       // rather than becoming a watch that quietly matches nothing.
-      return createWatchAction({ name: action.name, watch: action.watch, then: action.then }, deps.watch);
+      return createWatchAction({ name: action.name, watch: action.watch, then: action.then }, deps.watch)
     }
 
-    if ("worktree" in action) {
+    if ('worktree' in action) {
       if (!deps.worktree) {
-        throw new ActionUnavailableError(action.name, kind, "no cut was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no cut was supplied to actionsFromRecipe')
       }
       // `base` and `submodules` are both read, and `submodules` is required by
       // `worktreePlugin`'s schema rather than defaulted there: a block that
@@ -353,34 +350,34 @@ export function actionsFromRecipe(
       return createWorktreeAction(
         { name: action.name, base: action.worktree.base, submodules: action.worktree.submodules },
         deps.worktree,
-      );
+      )
     }
 
-    if ("merge" in action) {
+    if ('merge' in action) {
       if (!deps.merge) {
-        throw new ActionUnavailableError(action.name, kind, "no merge lane was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no merge lane was supplied to actionsFromRecipe')
       }
       // `strategy` and nothing else, because the plugin declares nothing else:
       // the base is one value that flows, and a `merge:` block carrying one of
       // its own would manufacture a disagreement between what the pass cut and
       // what it lands (0061 §4, `mergePlugin` in `@lingtai/recipe`).
-      return createMergeAction({ name: action.name, strategy: action.merge.strategy }, deps.merge);
+      return createMergeAction({ name: action.name, strategy: action.merge.strategy }, deps.merge)
     }
 
-    if ("queue" in action) {
+    if ('queue' in action) {
       if (!deps.queue) {
-        throw new ActionUnavailableError(action.name, kind, "no take was supplied to actionsFromRecipe");
+        throw new ActionUnavailableError(action.name, kind, 'no take was supplied to actionsFromRecipe')
       }
       // All four fields, and the far side re-reads none of them: a `claim` that
       // selected over the recipe while the board drew the action's block would be
       // the ticket taken not being the ticket a reading says was taken (`#269`).
-      return createQueueAction({ name: action.name, ...action.queue }, deps.queue);
+      return createQueueAction({ name: action.name, ...action.queue }, deps.queue)
     }
 
-    if ("human" in action) {
+    if ('human' in action) {
       // Needs nothing: it asks, and the answer arrives later on the same
       // stream. The question is the action's own string.
-      return createHumanAction({ name: action.name, question: action.human });
+      return createHumanAction({ name: action.name, question: action.human })
     }
 
     // `close` and `labels` are effects, not verdicts. The check above refuses
@@ -390,8 +387,8 @@ export function actionsFromRecipe(
     throw new ActionUnavailableError(
       action.name,
       kind,
-      "the `end` step resolves its effects rather than running them as actions — see `resolveEndActions`",
+      'the `end` step resolves its effects rather than running them as actions — see `resolveEndActions`',
       step,
-    );
-  });
+    )
+  })
 }

@@ -33,10 +33,10 @@
  * replays is the base the wizard recorded, and it arrives as the hint it is
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
-import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from "@lingtai/domain";
-import { RECIPE_PATH, RecipeMissingError, baseDivergence, baseOf, baseWrittenAt, boundsBesides, kindsOf, limitsFor, parseDuration, recipePath, resolveLocalRecipe, resolveRecipe, type ReadAtRef, type ResolvedRecipe } from "@lingtai/recipe";
-import { signedInHere } from "./projects.ts";
-import { STEPS, type Tier, parsePayload } from "@lingtai/domain";
+import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
+import { STEPS, type Tier, parsePayload } from '@lingtai/domain'
+import { githubApp } from '@lingtai/env'
+import { eventStore } from '@lingtai/event-store'
 import {
   type Installation,
   NotInstalledError,
@@ -44,13 +44,29 @@ import {
   installationForRepo,
   parseSlug,
   permissionGaps,
-} from "@lingtai/github";
-import { githubApp } from "@lingtai/env";
-import { eventStore } from "@lingtai/event-store";
-import { passCeiling } from "./filter.ts";
+} from '@lingtai/github'
+import {
+  RECIPE_PATH,
+  RecipeMissingError,
+  baseDivergence,
+  baseOf,
+  baseWrittenAt,
+  boundsBesides,
+  kindsOf,
+  limitsFor,
+  parseDuration,
+  recipePath,
+  resolveLocalRecipe,
+  resolveRecipe,
+  type ReadAtRef,
+  type ResolvedRecipe,
+} from '@lingtai/recipe'
+
+import { passCeiling } from './filter.ts'
+import { signedInHere } from './projects.ts'
 
 export interface AddOptions {
-  slug: string;
+  slug: string
   /**
    * Where to *read the recipe from* — a bootstrap hint, not the base. The
    * recipe's `repo.base` decides that, and a `--base` disagreeing with it is
@@ -66,12 +82,12 @@ export interface AddOptions {
    * and its advice would name something nobody typed. Remembered, the recipe's
    * `repo.base` is adopted from it exactly as it is from the default branch.
    */
-  base?: { ref: string; named: boolean };
+  base?: { ref: string; named: boolean }
   /**
    * The installation, when the caller has already asked GitHub for it —
    * `recheck` has, and a second request would ask the same question twice.
    */
-  installation?: Installation;
+  installation?: Installation
   /** Containment floor. `guarded` is what the first project runs at (0007). */
 }
 
@@ -88,24 +104,18 @@ export interface AddOptions {
  * is, the recipe decides the base, which is #75's rule and not an exception to
  * it.
  */
-export function resumeOnboarding(recorded: {
-  owner: string;
-  project: string;
-  base: string;
-}): AddOptions {
-  return { slug: `${recorded.owner}/${recorded.project}`, base: { ref: recorded.base, named: false } };
+export function resumeOnboarding(recorded: { owner: string; project: string; base: string }): AddOptions {
+  return { slug: `${recorded.owner}/${recorded.project}`, base: { ref: recorded.base, named: false } }
 }
 
 /** What pressing `Recheck` came to, in the sentences a person reads. */
-export type Rechecked =
-  | { ok: true; detail: string }
-  | { ok: false; installed: boolean; detail: string };
+export type Rechecked = { ok: true; detail: string } | { ok: false; installed: boolean; detail: string }
 
 export interface RecheckDeps {
   /** `installationForRepo` against the App this machine has. */
-  installation: (owner: string, repo: string) => Promise<Installation>;
+  installation: (owner: string, repo: string) => Promise<Installation>
   /** `add`. */
-  register: (options: AddOptions, log: (line: string) => void) => Promise<number>;
+  register: (options: AddOptions, log: (line: string) => void) => Promise<number>
 }
 
 /**
@@ -135,44 +145,41 @@ export async function recheck(
     register: add,
   },
 ): Promise<Rechecked> {
-  const slug = `${recorded.owner}/${recorded.project}`;
-  let installation: Installation;
+  const slug = `${recorded.owner}/${recorded.project}`
+  let installation: Installation
   try {
-    installation = await deps.installation(recorded.owner, recorded.project);
+    installation = await deps.installation(recorded.owner, recorded.project)
   } catch (err) {
-    if (!(err instanceof NotInstalledError)) throw err;
+    if (!(err instanceof NotInstalledError)) throw err
     return {
       ok: false,
       installed: false,
       detail:
         `the GitHub App is not installed on ${slug} — install it on that repository ` +
-        "(Settings → GitHub Apps → Configure), then press Recheck. Nothing was written.",
-    };
+        '(Settings → GitHub Apps → Configure), then press Recheck. Nothing was written.',
+    }
   }
 
-  const said: string[] = [];
-  const code = await deps.register(
-    { ...resumeOnboarding(recorded), installation },
-    (line) => said.push(line),
-  );
-  if (code === 0) return { ok: true, detail: `${recorded.project} is live` };
+  const said: string[] = []
+  const code = await deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line))
+  if (code === 0) return { ok: true, detail: `${recorded.project} is live` }
   // **Everything it said, not the last line.** A permission gap is one line per
   // scope with what each is for; a rule here about which line is the refusal
   // would have to know which failure it was, and would be wrong the first time
   // `add` grows another. This is the transcript a person would have read in
   // the terminal.
-  const why = said.filter((l) => l.trim() !== "").join("\n");
+  const why = said.filter((l) => l.trim() !== '').join('\n')
   return {
     ok: false,
     installed: true,
-    detail: why === "" ? `${recorded.project} could not be registered` : why,
-  };
+    detail: why === '' ? `${recorded.project} could not be registered` : why,
+  }
 }
 
 /** The recipe that governs, or the reason this command will not pick one. */
 export type Governing =
   | { ok: true; resolved: ResolvedRecipe; adoptedFrom: string | null }
-  | { ok: false; refusal: string };
+  | { ok: false; refusal: string }
 
 /**
  * Find the recipe from a branch; take the base from the recipe.
@@ -200,12 +207,12 @@ export async function governing(
   from: { ref: string; named: boolean },
   slug: string,
 ): Promise<Governing> {
-  const resolved = await resolveRecipe(read, from.ref);
-  const declared = baseOf(resolved.recipe);
+  const resolved = await resolveRecipe(read, from.ref)
+  const declared = baseOf(resolved.recipe)
   // The key as this recipe writes it: `repo.base`, or `worktree:`'s at `admit`
   // where the setting has moved onto the step that owns it (`#268`).
-  const wrote = baseWrittenAt(resolved.recipe);
-  if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null };
+  const wrote = baseWrittenAt(resolved.recipe)
+  if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null }
 
   if (from.named) {
     return {
@@ -213,92 +220,92 @@ export async function governing(
       refusal:
         `--base ${from.ref}, but ${RECIPE_PATH} there declares ${wrote}: ${declared}. ` +
         `--base says which branch to read the recipe from; ${wrote} says which branch ` +
-        "it governs, and this command will not overrule either. " +
+        'it governs, and this command will not overrule either. ' +
         `Re-run without --base to take ${declared} from the recipe, ` +
         `or fix ${wrote} on ${from.ref}.`,
-    };
+    }
   }
 
-  let atDeclared: ResolvedRecipe;
+  let atDeclared: ResolvedRecipe
   try {
-    atDeclared = await resolveRecipe(read, declared);
+    atDeclared = await resolveRecipe(read, declared)
   } catch (err) {
     return {
       ok: false,
       refusal:
         `${RECIPE_PATH} on ${from.ref} declares ${wrote}: ${declared}, ` +
         `so the recipe was read from ${declared} — ${(err as Error).message}`,
-    };
+    }
   }
   // The file it points at has to point at itself. A chain is not a bootstrap:
   // one hop is "the default branch is not the base", two is a recipe that
   // disagrees with the branch it is on, which is `baseDivergence` exactly.
-  const divergence = baseDivergence(atDeclared, slug);
-  if (divergence) return { ok: false, refusal: divergence };
-  return { ok: true, resolved: atDeclared, adoptedFrom: from.ref };
+  const divergence = baseDivergence(atDeclared, slug)
+  if (divergence) return { ok: false, refusal: divergence }
+  return { ok: true, resolved: atDeclared, adoptedFrom: from.ref }
 }
 
 export async function add(options: AddOptions, log = console.log): Promise<number> {
-  const { owner, repo } = parseSlug(options.slug);
-  const auth = githubApp();
+  const { owner, repo } = parseSlug(options.slug)
+  const auth = githubApp()
 
   // 1. Is the App installed here at all? This is the question a PAT cannot be
   //    asked, and the reason 0006 chose an App.
-  let installation = options.installation;
+  let installation = options.installation
   try {
-    installation ??= await installationForRepo(auth, owner, repo);
+    installation ??= await installationForRepo(auth, owner, repo)
   } catch (err) {
     if (err instanceof NotInstalledError) {
-      log(err.message);
-      return 1;
+      log(err.message)
+      return 1
     }
-    throw err;
+    throw err
   }
-  log(`installation ${installation.id} on ${installation.account} (${installation.repositorySelection})`);
+  log(`installation ${installation.id} on ${installation.account} (${installation.repositorySelection})`)
 
   // 2. Does it grant what Lingtai actually needs? Named individually, with
   //    what each one is for — a gap here becomes a 403 in the middle of a merge.
-  const gaps = permissionGaps(installation);
+  const gaps = permissionGaps(installation)
   if (gaps.length > 0) {
-    log("the installation is missing permissions:");
-    for (const g of gaps) log(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`);
-    log("Fix them in the App's settings, then re-run.");
-    return 1;
+    log('the installation is missing permissions:')
+    for (const g of gaps) log(`  ${g.name}: have ${g.have}, need ${g.need} — ${g.why}`)
+    log("Fix them in the App's settings, then re-run.")
+    return 1
   }
-  log("permissions: issues, contents, pull requests write; metadata read");
+  log('permissions: issues, contents, pull requests write; metadata read')
 
-  const client = await createGitHubClient({ auth, owner, repo, installation });
-  log(`reading ${recipePath(repo)} — the recipe is this machine's, and nothing is read from the repository (0046 §3)`);
+  const client = await createGitHubClient({ auth, owner, repo, installation })
+  log(`reading ${recipePath(repo)} — the recipe is this machine's, and nothing is read from the repository (0046 §3)`)
 
   // 3. The recipe, and with it the base — which is the recipe's, not this
   //    command's. A `--base` a person typed and the file contradicts is refused
   //    by name rather than overruled (#75); a remembered one is a hint, and the
   //    file's `repo.base` is adopted over it (#163).
-  let resolved: ResolvedRecipe;
+  let resolved: ResolvedRecipe
   try {
-    resolved = await resolveLocalRecipe(repo, { signedIn: signedInHere });
+    resolved = await resolveLocalRecipe(repo, { signedIn: signedInHere })
   } catch (err) {
-    log((err as Error).message);
-    return 1;
+    log((err as Error).message)
+    return 1
   }
   if (options.base?.named && options.base.ref !== baseOf(resolved.recipe)) {
-    const wrote = baseWrittenAt(resolved.recipe);
+    const wrote = baseWrittenAt(resolved.recipe)
     log(
       `--base ${options.base.ref}, but ${recipePath(repo)} declares ${wrote}: ${baseOf(resolved.recipe)}. ` +
         "This command will not overrule either — re-run without --base to take the recipe's, " +
         `or fix ${wrote} in the file.`,
-    );
-    return 1;
+    )
+    return 1
   }
   // Past this point these are one branch, and this one is the file's.
-  const base = baseOf(resolved.recipe);
-  log(`base: ${base} — the recipe's ${baseWrittenAt(resolved.recipe)}`);
+  const base = baseOf(resolved.recipe)
+  log(`base: ${base} — the recipe's ${baseWrittenAt(resolved.recipe)}`)
   for (const [key, from] of Object.entries(resolved.provenance ?? {})) {
-    if (key.startsWith("runtime.")) log(`  ${key.padEnd(24)} ${from}`);
+    if (key.startsWith('runtime.')) log(`  ${key.padEnd(24)} ${from}`)
   }
 
-  const fromSha = await client.refSha(base);
-  log(`recipe: ${recipePath(repo)} for ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`);
+  const fromSha = await client.refSha(base)
+  log(`recipe: ${recipePath(repo)} for ${base}@${fromSha.slice(0, 7)} — hash ${resolved.configHash.slice(0, 12)}`)
   // All ten steps, including the empty ones. Onboarding is the first place a
   // person sees the shape of their workflow, and a step that is not mentioned
   // is exactly the thing that must not be invisible (ADR 0016 §4, 0061 §5).
@@ -309,8 +316,8 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // longer exists. Widening the set to ten (0058 §3) collected on that: this
   // line prints all ten without being touched.
   for (const step of STEPS) {
-    const actions = resolved.recipe.steps[step];
-    log(`  ${step.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(", ") : "(skipped)"}`);
+    const actions = resolved.recipe.steps[step]
+    log(`  ${step.padEnd(9)} ${actions.length ? actions.map((a) => a.name).join(', ') : '(skipped)'}`)
   }
   // Printed here for the reason the empty points above are: a policy that is
   // only visible when it fires is one nobody can audit, and this one spends an
@@ -323,24 +330,26 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
   // a reader everything except the thing being decided: what one pass of this
   // project can cost. One sentence, from `passCeiling`, so this line and the
   // drain's cannot say different things about the same recipe.
-  log(`  ${"a pass".padEnd(9)} ${passCeiling({
-    ...limitsFor(resolved.recipe, "implement"),
-    wallMs: parseDuration(limitsFor(resolved.recipe, "implement").wall),
-    // The steps bounded differently from `implement`, so `lingtai add` answers
-    // *what do `proposed:` and `merge:` say today* about money too (`#314`).
-    steps: boundsBesides(resolved.recipe, "implement"),
-  })}`);
-  log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${kindsOf(resolved.recipe).join(" > ")}`);
+  log(
+    `  ${'a pass'.padEnd(9)} ${passCeiling({
+      ...limitsFor(resolved.recipe, 'implement'),
+      wallMs: parseDuration(limitsFor(resolved.recipe, 'implement').wall),
+      // The steps bounded differently from `implement`, so `lingtai add` answers
+      // *what do `proposed:` and `merge:` say today* about money too (`#314`).
+      steps: boundsBesides(resolved.recipe, 'implement'),
+    })}`,
+  )
+  log(`  runtime ${resolved.recipe.runtime.agent}, kinds ${kindsOf(resolved.recipe).join(' > ')}`)
 
-  log(`  tier ${resolved.recipe.runtime.tier}`);
+  log(`  tier ${resolved.recipe.runtime.tier}`)
 
-  const stream = projectStream(repo);
-  const existing = await eventStore.read(stream);
+  const stream = projectStream(repo)
+  const existing = await eventStore.read(stream)
   await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
     {
-      type: "ProjectConfigured",
-      actor: "conductor",
-      data: parsePayload("ProjectConfigured", {
+      type: 'ProjectConfigured',
+      actor: 'conductor',
+      data: parsePayload('ProjectConfigured', {
         project: repo,
         owner,
         // A copy of the recipe's `repo.base`, not a decision taken beside it
@@ -352,10 +361,10 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
         fromSha,
       }),
     },
-  ]);
+  ])
 
-  log(registrationLine(existing, repo, resolved));
-  return 0;
+  log(registrationLine(existing, repo, resolved))
+  return 0
 }
 
 /**
@@ -370,13 +379,9 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
  * `loadProjects` already draws, asked of the stream as it stood before this
  * append.
  */
-export function registrationLine(
-  prior: readonly Envelope[],
-  repo: string,
-  resolved: ResolvedRecipe,
-): string {
-  const before: ProjectState = reduceProject(prior);
+export function registrationLine(prior: readonly Envelope[], repo: string, resolved: ResolvedRecipe): string {
+  const before: ProjectState = reduceProject(prior)
   return isRegistered(before)
     ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
-    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`;
+    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`
 }

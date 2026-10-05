@@ -26,30 +26,27 @@
  * the log and not a project's lifetime. A total whose window is unstated is a
  * total nobody can use.
  */
-import Link from "next/link";
-import { ledger, loadBoard } from "@/lib/board";
+import Link from 'next/link'
 
-export const dynamic = "force-dynamic";
+import { ledger, loadBoard } from '@/lib/board'
 
-const money = (n: number) => `$${n.toFixed(2)}`;
+export const dynamic = 'force-dynamic'
 
-export default async function Spend({
-  searchParams,
-}: {
-  searchParams: Promise<{ project?: string }>;
-}) {
-  const only = (await searchParams).project;
-  const { columns, limits } = await loadBoard(only);
-  const { rows: byProject, total } = ledger(columns);
+const money = (n: number) => `$${n.toFixed(2)}`
+
+export default async function Spend({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+  const only = (await searchParams).project
+  const { columns, limits } = await loadBoard(only)
+  const { rows: byProject, total } = ledger(columns)
 
   return (
     <main className="detail">
       <div className="bar">
-        <Link className="brand" href={only === undefined ? "/" : `/?project=${encodeURIComponent(only)}`}>
+        <Link className="brand" href={only === undefined ? '/' : `/?project=${encodeURIComponent(only)}`}>
           ← Lingtai
         </Link>
         <span className="sep" />
-        <span className="mono">spend{only === undefined ? "" : ` · ${only}`}</span>
+        <span className="mono">spend{only === undefined ? '' : ` · ${only}`}</span>
       </div>
 
       <div className="detail-body">
@@ -57,14 +54,13 @@ export default async function Spend({
           <h2>
             <span className="hlab">Spend</span>
             <span className="hfact">
-              {total.cards} card(s) on the board{only === undefined ? "" : `, ${only} only`} — not a
-              window over the log
+              {total.cards} card(s) on the board{only === undefined ? '' : `, ${only} only`} — not a window over the log
             </span>
           </h2>
           {total.cards === 0 ? (
             <p className="empty">
               {only === undefined
-                ? "Nothing in the log yet, so nothing has been spent."
+                ? 'Nothing in the log yet, so nothing has been spent.'
                 : `Nothing here for ${only}, so nothing has been spent on it.`}
             </p>
           ) : (
@@ -87,7 +83,7 @@ export default async function Spend({
                     <th scope="row">{p.project}</th>
                     <td>{p.cards}</td>
                     <td>{money(p.work)}</td>
-                    <td>{p.repair === 0 ? "—" : money(p.repair)}</td>
+                    <td>{p.repair === 0 ? '—' : money(p.repair)}</td>
                     <td>{money(p.work + p.repair)}</td>
                   </tr>
                 ))}
@@ -101,7 +97,7 @@ export default async function Spend({
                   <th scope="row">all</th>
                   <td>{total.cards}</td>
                   <td>{money(total.work)}</td>
-                  <td>{total.repair === 0 ? "—" : money(total.repair)}</td>
+                  <td>{total.repair === 0 ? '—' : money(total.repair)}</td>
                   <td>{money(total.work + total.repair)}</td>
                 </tr>
               </tfoot>
@@ -125,9 +121,7 @@ export default async function Spend({
               the drain says (0039 §3), so the page cannot word a recipe
               differently from the CLI. */}
           {limits.length === 0 ? (
-            <p className="empty">
-              No recipe could be read, so nothing here can say what a pass would spend.
-            </p>
+            <p className="empty">No recipe could be read, so nothing here can say what a pass would spend.</p>
           ) : (
             <ul className="policy">
               {limits.map((l) => (
@@ -141,5 +135,5 @@ export default async function Spend({
         </section>
       </div>
     </main>
-  );
+  )
 }

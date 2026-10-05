@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import type { Plugin } from "vite";
-import { configDefaults, defineConfig } from "vitest/config";
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+
+import type { Plugin } from 'vite'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 /**
  * One config, two projects, and the line between them is 0060 §1.
@@ -35,30 +36,30 @@ import { configDefaults, defineConfig } from "vitest/config";
  */
 function appAlias(): Plugin {
   return {
-    name: "lingtai:app-alias",
+    name: 'lingtai:app-alias',
     resolveId(source, importer) {
-      if (!source.startsWith("@/") || !importer) return null;
+      if (!source.startsWith('@/') || !importer) return null
       for (let dir = path.dirname(importer); dir !== path.dirname(dir); dir = path.dirname(dir)) {
-        if (!existsSync(path.join(dir, "package.json"))) continue;
-        return this.resolve(path.join(dir, "src", source.slice(2)), importer, { skipSelf: true });
+        if (!existsSync(path.join(dir, 'package.json'))) continue
+        return this.resolve(path.join(dir, 'src', source.slice(2)), importer, { skipSelf: true })
       }
-      return null;
+      return null
     },
-  };
+  }
 }
 
 const shared = {
   // The apps' `tsconfig` says `jsx: "preserve"` because Next compiles the JSX.
   // There is no Next here, so a `.tsx` test would fail to parse rather than to
   // assert (#101).
-  oxc: { jsx: { runtime: "automatic" as const } },
+  oxc: { jsx: { runtime: 'automatic' as const } },
   plugins: [appAlias()],
-};
+}
 
 // `output: "standalone"` copies `apps/board` into `.next/standalone`, tests
 // included (#183). The include globs below do not reach a nested copy, and this
 // says so where a reader looking for it would look.
-const exclude = [...configDefaults.exclude, "**/.next/**"];
+const exclude = [...configDefaults.exclude, '**/.next/**']
 
 export default defineConfig({
   ...shared,
@@ -67,8 +68,8 @@ export default defineConfig({
       {
         ...shared,
         test: {
-          name: "unit",
-          include: ["{apps,packages}/*/unit/**/*.test.ts?(x)"],
+          name: 'unit',
+          include: ['{apps,packages}/*/unit/**/*.test.ts?(x)'],
           exclude,
           // Chosen, rather than vitest's 5000ms default — which is what refused
           // #215 and #196 on a loaded machine. Nothing here leaves the system,
@@ -81,8 +82,8 @@ export default defineConfig({
       {
         ...shared,
         test: {
-          name: "integration",
-          include: ["{apps,packages}/*/integration/**/*.test.ts?(x)"],
+          name: 'integration',
+          include: ['{apps,packages}/*/integration/**/*.test.ts?(x)'],
           exclude,
           // A Supabase round trip, two `next build`s and a board started from
           // each (`apps/release`), a compiled hook on a real socket. None of it
@@ -102,9 +103,9 @@ export default defineConfig({
           // months it did not (`#242`). What it does keep down is the replay —
           // a round trip per event, and `task_view`'s rebuild past the 60s its
           // own test allows.
-          globalSetup: ["./packages/event-store/test-support/teardown.ts"],
+          globalSetup: ['./packages/event-store/test-support/teardown.ts'],
         },
       },
     ],
   },
-});
+})

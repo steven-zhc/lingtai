@@ -6,68 +6,72 @@
  * `parseDocument`, never through `stringify`, and with the person's own bytes
  * as the text it returns rather than any rendering of the document.
  */
-import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from 'node:fs'
 
-vi.mock("yaml", async (importOriginal) => {
-  const real = await importOriginal<typeof import("yaml")>();
-  return { ...real, stringify: vi.fn(real.stringify), parseDocument: vi.fn(real.parseDocument) };
-});
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const yaml = await import("yaml");
-const { editRecipe } = await import("../src/index.ts");
+vi.mock('yaml', async (importOriginal) => {
+  const real = await importOriginal<typeof import('yaml')>()
+  return { ...real, stringify: vi.fn(real.stringify), parseDocument: vi.fn(real.parseDocument) }
+})
 
-const OWN = readFileSync(new URL("../../../.lingtai/config.yaml", import.meta.url), "utf8");
+const yaml = await import('yaml')
+const { editRecipe } = await import('../src/index.ts')
+
+const OWN = readFileSync(new URL('../../../.lingtai/config.yaml', import.meta.url), 'utf8')
 
 describe("editRecipe's mechanism", () => {
   beforeEach(() => {
-    vi.mocked(yaml.parseDocument).mockClear();
-    vi.mocked(yaml.stringify).mockClear();
-  });
+    vi.mocked(yaml.parseDocument).mockClear()
+    vi.mocked(yaml.stringify).mockClear()
+  })
 
-  it("reads the file through parseDocument, never calls stringify, and never returns a rendering", () => {
-    const toString = vi.spyOn(yaml.Document.prototype, "toString");
+  it('reads the file through parseDocument, never calls stringify, and never returns a rendering', () => {
+    const toString = vi.spyOn(yaml.Document.prototype, 'toString')
     const out = editRecipe(OWN, [
-      { path: ["runtime", "limits", "turns"], value: 200 },
+      { path: ['runtime', 'limits', 'turns'], value: 200 },
       // The lane rather than an approval since `#270`: `editRecipe` parses what it
       // wrote, and `human:` at `merge` is refused by name now. Still this key,
       // because a list this repository's own file writes as `[]` is the one a
       // wholesale replacement can reach without taking a comment with it.
-      { path: ["steps", "merge"], value: [{ name: "land the branch", merge: { strategy: "merge-commit" } }] },
-      { path: ["source", "exclude"], value: ["blocked"].concat((yaml.parse(OWN) as { source: { exclude: string[] } }).source.exclude.slice(1)) },
-    ]);
-    expect(yaml.parseDocument).toHaveBeenCalledWith(OWN);
-    expect(yaml.stringify).not.toHaveBeenCalled();
+      { path: ['steps', 'merge'], value: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }] },
+      {
+        path: ['source', 'exclude'],
+        value: ['blocked'].concat((yaml.parse(OWN) as { source: { exclude: string[] } }).source.exclude.slice(1)),
+      },
+    ])
+    expect(yaml.parseDocument).toHaveBeenCalledWith(OWN)
+    expect(yaml.stringify).not.toHaveBeenCalled()
     // A document may be rendered to find what changed; what is written is never one.
-    expect(toString.mock.results.map((r) => r.value)).not.toContain(out);
-    toString.mockRestore();
-  });
+    expect(toString.mock.results.map((r) => r.value)).not.toContain(out)
+    toString.mockRestore()
+  })
 
   it("returns the person's bytes, not a rendering: formatting no renderer would produce survives an edit elsewhere", () => {
     // Every line here is something `toString()` rewrites: the spacing after a
     // colon, quotes nobody needed, a comment at its own indent, two blank lines,
     // and a flow list with padding.
     const quirky = [
-      "version:   2",
-      "",
-      "",
-      "repo:",
+      'version:   2',
+      '',
+      '',
+      'repo:',
       "    base: 'main'   # four spaces, quoted",
-      "source:",
-      "      # a comment indented past its key",
-      "  kinds: [ bug,   feature ]",
-      "env: { plantAt:   .env.local }",
-      "steps: {}",
-      "runtime:",
-      "  agent: \"claude-code\"",
-      "  limits:",
-      "    turns: 150",
-      "",
-    ].join("\n");
-    expect(yaml.parseDocument(quirky).toString()).not.toBe(quirky);
+      'source:',
+      '      # a comment indented past its key',
+      '  kinds: [ bug,   feature ]',
+      'env: { plantAt:   .env.local }',
+      'steps: {}',
+      'runtime:',
+      '  agent: "claude-code"',
+      '  limits:',
+      '    turns: 150',
+      '',
+    ].join('\n')
+    expect(yaml.parseDocument(quirky).toString()).not.toBe(quirky)
 
-    const out = editRecipe(quirky, [{ path: ["runtime", "limits", "turns"], value: 90 }]);
-    expect(out).toBe(quirky.replace("    turns: 150", "    turns: 90"));
-    expect(yaml.stringify).not.toHaveBeenCalled();
-  });
-});
+    const out = editRecipe(quirky, [{ path: ['runtime', 'limits', 'turns'], value: 90 }])
+    expect(out).toBe(quirky.replace('    turns: 150', '    turns: 90'))
+    expect(yaml.stringify).not.toHaveBeenCalled()
+  })
+})

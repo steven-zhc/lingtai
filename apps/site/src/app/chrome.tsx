@@ -1,7 +1,7 @@
-import Link from "next/link";
+import Link from 'next/link'
 
-export const REPO = "https://github.com/steven-zhc/lingtai";
-export const SITE_URL = "https://lingtai.hczhang.com";
+export const REPO = 'https://github.com/steven-zhc/lingtai'
+export const SITE_URL = 'https://lingtai.hczhang.com'
 
 /**
  * Where `install.sh` is fetched from — the two addresses, and they are not
@@ -19,8 +19,8 @@ export const SITE_URL = "https://lingtai.hczhang.com";
  * (`apps/cli/src/install.ts`'s `RELEASES_API`) — so a domain that moves breaks
  * new installs and nothing else.
  */
-export const INSTALL_URL = `${SITE_URL}/install.sh`;
-export const INSTALL_FALLBACK = `${REPO}/releases/latest/download/install.sh`;
+export const INSTALL_URL = `${SITE_URL}/install.sh`
+export const INSTALL_FALLBACK = `${REPO}/releases/latest/download/install.sh`
 
 /**
  * The bar, and it is the board's bar.
@@ -43,7 +43,7 @@ export function Bar({ note }: { note?: string }) {
       <Link href="/docs/plugins/">Plugins</Link>
       <a href={REPO}>GitHub</a>
     </header>
-  );
+  )
 }
 
 export function Foot() {
@@ -51,15 +51,18 @@ export function Foot() {
     <footer className="foot">
       <div className="wrap foot-layout">
         <p>
-          <b>Lingtai runs on one machine of yours.</b> It owns a Postgres database, a clone of each
-          repository it manages, and the agent processes it starts. There is no hosted service and
-          nothing to sign up for — install the CLI and run <code>lingtai init</code>.
+          <b>Lingtai runs on one machine of yours.</b> It owns a Postgres database, a clone of each repository it
+          manages, and the agent processes it starts. There is no hosted service and nothing to sign up for — install
+          the CLI and run <code>lingtai init</code>.
         </p>
         <p>
-          <b>Built in the open.</b> Source, releases, and issues live on{" "}
-          <a className="link" href={REPO}>GitHub</a>.
+          <b>Built in the open.</b> Source, releases, and issues live on{' '}
+          <a className="link" href={REPO}>
+            GitHub
+          </a>
+          .
         </p>
       </div>
     </footer>
-  );
+  )
 }

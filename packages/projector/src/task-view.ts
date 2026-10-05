@@ -47,10 +47,11 @@
  * assignment is still idempotent, and `readTasks` shows only the run the card
  * names.
  */
-import type { BlockDiagnosis, LabelState, PayloadOf } from "@lingtai/domain";
-import { parseWorkItemStream } from "@lingtai/domain";
-import { withProjectionStore } from "./choose.ts";
-import type { Projection, ProjectionContext } from "./store.ts";
+import type { BlockDiagnosis, LabelState, PayloadOf } from '@lingtai/domain'
+import { parseWorkItemStream } from '@lingtai/domain'
+
+import { withProjectionStore } from './choose.ts'
+import type { Projection, ProjectionContext } from './store.ts'
 
 /**
  * Where a task is.
@@ -61,15 +62,15 @@ import type { Projection, ProjectionContext } from "./store.ts";
  * says it was released or unblocked, or because it has no row at all and
  * GitHub is offering it.
  */
-export type TaskState = LabelState;
+export type TaskState = LabelState
 
-export const TASK_VIEW_TABLE = "task_view";
+export const TASK_VIEW_TABLE = 'task_view'
 
 /** How long a landed task stays on the board. A query, not a rebuild. */
-export const DEFAULT_RETENTION_DAYS = 2;
+export const DEFAULT_RETENTION_DAYS = 2
 
 export const taskViewProjection: Projection = {
-  name: "task_view",
+  name: 'task_view',
 
   async create(ctx) {
     await ctx.query(`
@@ -222,9 +223,9 @@ export const taskViewProjection: Projection = {
         restarts_of  int not null default 0,
 
         updated_seq  bigint not null
-      )`);
-    await ctx.query("create index if not exists task_view_state_idx on task_view (project, state)");
-    await ctx.query("create index if not exists task_view_closed_idx on task_view (closed_at)");
+      )`)
+    await ctx.query('create index if not exists task_view_state_idx on task_view (project, state)')
+    await ctx.query('create index if not exists task_view_closed_idx on task_view (closed_at)')
 
     // Which run belongs to which task. Run events arrive on their own stream and
     // name the task only at WorkItemClaimed or RunStarted.
@@ -232,23 +233,22 @@ export const taskViewProjection: Projection = {
       create table if not exists task_view_run (
         run_id  text primary key,
         task_id text not null
-      )`);
+      )`)
   },
 
   async reset(ctx) {
     // Dropped, not truncated. This table's shape is expected to change, and
     // `create table if not exists` would silently keep the old columns.
-    await ctx.query("drop table if exists task_view");
-    await ctx.query("drop table if exists task_view_run");
+    await ctx.query('drop table if exists task_view')
+    await ctx.query('drop table if exists task_view_run')
   },
 
   async apply(events, ctx) {
     for (const event of events) {
-      const seq = event.seq.toString();
-      const at = event.at;
+      const seq = event.seq.toString()
+      const at = event.at
 
       switch (event.type) {
-
         // ---- the task's own stream ----
 
         /**
@@ -257,27 +257,27 @@ export const taskViewProjection: Projection = {
          * these, and a projection that cannot replay its own history is not a
          * projection.
          */
-        case "WorkItemDiscovered": {
-          const d = event.data as PayloadOf<"WorkItemDiscovered">;
+        case 'WorkItemDiscovered': {
+          const d = event.data as PayloadOf<'WorkItemDiscovered'>
           await upsert(ctx, event.streamId, seq, at, {
             project: d.project,
             issue: d.externalRef,
             title: d.title,
             kind: d.kind,
-            state: "queued",
-          });
-          break;
+            state: 'queued',
+          })
+          break
         }
 
-        case "WorkItemClaimed": {
-          const d = event.data as PayloadOf<"WorkItemClaimed">;
-          await linkRun(ctx, d.runId, event.streamId);
+        case 'WorkItemClaimed': {
+          const d = event.data as PayloadOf<'WorkItemClaimed'>
+          await linkRun(ctx, d.runId, event.streamId)
           // The claim creates the row, not just updates it. With the queue out
           // of the log there is no earlier event to have made one, so an UPDATE
           // here would leave every running and landed task with no row after a
           // rebuild — they would vanish from the board, and GitHub could not
           // supply them because it only lists what is still open.
-          const { project, issue } = splitTaskId(event.streamId);
+          const { project, issue } = splitTaskId(event.streamId)
           // One statement, counting the attempt as it goes. Two statements
           // cannot work here: whichever runs first writes `updated_seq = seq`,
           // and the second is guarded on `updated_seq` being lower, so the
@@ -288,15 +288,15 @@ export const taskViewProjection: Projection = {
             issue,
             title: d.title,
             kind: d.kind,
-            state: "running",
+            state: 'running',
             runId: d.runId,
             attempt: true,
-          });
-          break;
+          })
+          break
         }
 
-        case "WorkItemReleased": {
-          const d = event.data as PayloadOf<"WorkItemReleased">;
+        case 'WorkItemReleased': {
+          const d = event.data as PayloadOf<'WorkItemReleased'>
           // The reason becomes the card's line. A release is an attempt that
           // ended without landing, and it used to leave no mark at all: a run
           // killed from outside fails no gate, so the card came back to Queued
@@ -304,49 +304,49 @@ export const taskViewProjection: Projection = {
           // Clearing `run_id` is also what scopes the gate pills — the card no
           // longer names a run, so it shows no verdicts.
           await set(ctx, event.streamId, seq, at, {
-            state: "queued",
+            state: 'queued',
             run_id: null,
             note: d.reason,
             blocked: false,
             asked: false,
             needs: null,
             diagnosis: null,
-          });
-          break;
+          })
+          break
         }
 
-        case "WorkItemBlocked": {
-          const d = event.data as PayloadOf<"WorkItemBlocked">;
+        case 'WorkItemBlocked': {
+          const d = event.data as PayloadOf<'WorkItemBlocked'>
           // An upsert, because since #147 this can be a task's first event:
           // `lingtai ask` blocks an item before anything has claimed it, and an
           // UPDATE would leave the question on no row — the board would not
           // show it and the queue, which reads this table, would not pass the
           // item over. The same reason `DispatchRefused` upserts.
-          const { project: p, issue: i } = splitTaskId(event.streamId);
+          const { project: p, issue: i } = splitTaskId(event.streamId)
           await upsert(ctx, event.streamId, seq, at, {
             project: p,
             issue: i,
             title: null,
             kind: null,
-            state: "waiting",
-          });
+            state: 'waiting',
+          })
           // The question is still the card's line, unchanged. What the block
           // now *may* carry beside it is which kind of hold it is and a
           // diagnosis; both are null on every block written before #83, and a
           // null one leaves the row exactly as this case has always left it.
           await set(ctx, event.streamId, seq, at, {
-            state: "waiting",
+            state: 'waiting',
             note: d.question,
             blocked: true,
             asked: d.runId === null,
             needs: d.needs,
             diagnosis: d.diagnosis === null ? null : JSON.stringify(d.diagnosis),
-          });
-          break;
+          })
+          break
         }
 
-        case "WorkItemUnblocked": {
-          const d = event.data as PayloadOf<"WorkItemUnblocked">;
+        case 'WorkItemUnblocked': {
+          const d = event.data as PayloadOf<'WorkItemUnblocked'>
           // The answer, beside the question it answered — which is the row's
           // `note` right up until this statement clears it, so both are written
           // in one statement over the row rather than read back first. A
@@ -371,8 +371,8 @@ export const taskViewProjection: Projection = {
                  updated_seq = $2::bigint
              where task_id = $1 and updated_seq <= $2::bigint`,
             [event.streamId, seq, at, d.note, d.by, d.withdrawn === true],
-          );
-          break;
+          )
+          break
         }
 
         /**
@@ -386,9 +386,9 @@ export const taskViewProjection: Projection = {
          * `cost_usd` on the next rebuild, and make an item released for a
          * repair just before a deploy wait out a backoff it was exempt from.
          */
-        case "RepairRequested":
-          await set(ctx, event.streamId, seq, at, { repair_pending: true });
-          break;
+        case 'RepairRequested':
+          await set(ctx, event.streamId, seq, at, { repair_pending: true })
+          break
 
         /**
          * A pass spent its rounds and the ticket is starting over (0040).
@@ -401,16 +401,16 @@ export const taskViewProjection: Projection = {
          * that comes straight back is the whole queue on a repository running
          * one ticket at a time.
          */
-        case "PassRestarted": {
-          const d = event.data as PayloadOf<"PassRestarted">;
-          await set(ctx, event.streamId, seq, at, { restarts: d.restart, restarts_of: d.of });
-          break;
+        case 'PassRestarted': {
+          const d = event.data as PayloadOf<'PassRestarted'>
+          await set(ctx, event.streamId, seq, at, { restarts: d.restart, restarts_of: d.of })
+          break
         }
 
-        case "WorkItemClosed": {
-          const d = event.data as PayloadOf<"WorkItemClosed">;
+        case 'WorkItemClosed': {
+          const d = event.data as PayloadOf<'WorkItemClosed'>
           await set(ctx, event.streamId, seq, at, {
-            state: "closed",
+            state: 'closed',
             // The reason, where `landed` puts the merge commit: it is the whole
             // of what happened, and the only thing anybody will have later.
             note: d.reason,
@@ -423,14 +423,14 @@ export const taskViewProjection: Projection = {
             // nobody is going to do.
             needs: null,
             diagnosis: null,
-          });
-          break;
+          })
+          break
         }
 
-        case "WorkItemLanded": {
-          const d = event.data as PayloadOf<"WorkItemLanded">;
+        case 'WorkItemLanded': {
+          const d = event.data as PayloadOf<'WorkItemLanded'>
           await set(ctx, event.streamId, seq, at, {
-            state: "landed",
+            state: 'landed',
             note: d.mergeCommit,
             closed_at: at,
             awaiting_sha: null,
@@ -440,59 +440,58 @@ export const taskViewProjection: Projection = {
             // the merge would be a failure reported on finished work.
             needs: null,
             diagnosis: null,
-          });
-          break;
+          })
+          break
         }
 
-        case "DispatchRefused": {
-          const d = event.data as PayloadOf<"DispatchRefused">;
+        case 'DispatchRefused': {
+          const d = event.data as PayloadOf<'DispatchRefused'>
           // An upsert, because this can be a task's first event: it refuses
           // before anything is claimed, and nothing is appended when an issue
           // is merely seen. An UPDATE would leave the refusal unreadable, which
           // is the failure it exists to report.
-          const { project: p, issue: i } = splitTaskId(event.streamId);
+          const { project: p, issue: i } = splitTaskId(event.streamId)
           await upsert(ctx, event.streamId, seq, at, {
             project: p,
             issue: i,
             title: null,
             kind: null,
-            state: "waiting",
-          });
+            state: 'waiting',
+          })
           await set(ctx, event.streamId, seq, at, {
-            note: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(", ")}`,
-          });
-          break;
+            note: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}`,
+          })
+          break
         }
 
         // ---- the run's stream ----
 
-        case "RunStarted": {
-          const d = event.data as PayloadOf<"RunStarted">;
-          await linkRun(ctx, event.streamId, d.workItemId);
+        case 'RunStarted': {
+          const d = event.data as PayloadOf<'RunStarted'>
+          await linkRun(ctx, event.streamId, d.workItemId)
           await viaRun(ctx, event.streamId, seq, at, {
-            state: "running",
+            state: 'running',
             run_id: event.streamId,
             base_sha: d.baseSha,
-          });
-          break;
+          })
+          break
         }
 
-
-        case "RunAwaitingInput": {
-          const d = event.data as PayloadOf<"RunAwaitingInput">;
-          await viaRun(ctx, event.streamId, seq, at, { state: "waiting", note: d.prompt });
-          break;
+        case 'RunAwaitingInput': {
+          const d = event.data as PayloadOf<'RunAwaitingInput'>
+          await viaRun(ctx, event.streamId, seq, at, { state: 'waiting', note: d.prompt })
+          break
         }
 
-        case "RunProducedDiff": {
-          const d = event.data as PayloadOf<"RunProducedDiff">;
+        case 'RunProducedDiff': {
+          const d = event.data as PayloadOf<'RunProducedDiff'>
           await viaRun(ctx, event.streamId, seq, at, {
             head_sha: d.headSha,
             files: d.files,
             insertions: d.insertions,
             deletions: d.deletions,
-          });
-          break;
+          })
+          break
         }
 
         /**
@@ -515,10 +514,10 @@ export const taskViewProjection: Projection = {
          * table to carry. `LABEL_STATES`, `labelsFor`, `stateInk` and the
          * board's `COLUMN_OF` move with it.
          */
-        case "RunProposedCompletion": {
-          const d = event.data as PayloadOf<"RunProposedCompletion">;
-          await viaRun(ctx, event.streamId, seq, at, { state: "verifying", head_sha: d.headSha });
-          break;
+        case 'RunProposedCompletion': {
+          const d = event.data as PayloadOf<'RunProposedCompletion'>
+          await viaRun(ctx, event.streamId, seq, at, { state: 'verifying', head_sha: d.headSha })
+          break
         }
 
         /**
@@ -539,8 +538,8 @@ export const taskViewProjection: Projection = {
          * One statement rather than a read-then-write, because which of the two
          * columns to write is a fact the row holds and the projector does not.
          */
-        case "RunFinished": {
-          const d = event.data as PayloadOf<"RunFinished">;
+        case 'RunFinished': {
+          const d = event.data as PayloadOf<'RunFinished'>
           await viaRunQuery(
             ctx,
             event.streamId,
@@ -554,17 +553,17 @@ export const taskViewProjection: Projection = {
                  updated_seq = $2::bigint
              where task_id = $1 and updated_seq <= $2::bigint`,
             [seq, at, d.turns, event.streamId, d.costUsd],
-          );
-          break;
+          )
+          break
         }
 
-        case "RunFailed": {
-          const d = event.data as PayloadOf<"RunFailed">;
+        case 'RunFailed': {
+          const d = event.data as PayloadOf<'RunFailed'>
           await viaRun(ctx, event.streamId, seq, at, {
-            state: "waiting",
+            state: 'waiting',
             note: `${d.kind}: ${d.detail}`,
-          });
-          break;
+          })
+          break
         }
 
         /**
@@ -583,21 +582,21 @@ export const taskViewProjection: Projection = {
          * again. Same bucket, keyed by the run it was spent inside — and since
          * `#143` it is the only thing in it.
          */
-        case "FixRequested": {
-          const d = event.data as PayloadOf<"FixRequested">;
+        case 'FixRequested': {
+          const d = event.data as PayloadOf<'FixRequested'>
           // `of` is zero on every event written before the field existed, and
           // the reading of zero is *not recorded* — so the round is named
           // without a denominator rather than as `round 2 of 0`.
-          const round = d.of > 0 ? `round ${d.round} of ${d.of}` : `round ${d.round}`;
+          const round = d.of > 0 ? `round ${d.round} of ${d.of}` : `round ${d.round}`
           await viaRun(ctx, event.streamId, seq, at, {
-            state: "running",
+            state: 'running',
             note: `fixing ${round}: ${d.findings.length} finding(s) from ${d.action}`,
-          });
-          break;
+          })
+          break
         }
 
-        case "FixApplied": {
-          const d = event.data as PayloadOf<"FixApplied">;
+        case 'FixApplied': {
+          const d = event.data as PayloadOf<'FixApplied'>
           if (d.costUsd !== null) {
             await viaRunQuery(
               ctx,
@@ -612,79 +611,79 @@ export const taskViewProjection: Projection = {
               // Keyed by run and round: a second round inside one run is a
               // second purchase, and keying by run alone would lose the first.
               [seq, at, `${d.runId}#fix${d.round}`, d.costUsd],
-            );
+            )
           }
-          break;
+          break
         }
 
-        case "FixDeclined": {
-          const d = event.data as PayloadOf<"FixDeclined">;
+        case 'FixDeclined': {
+          const d = event.data as PayloadOf<'FixDeclined'>
           await viaRun(ctx, event.streamId, seq, at, {
-            state: "running",
+            state: 'running',
             note: `no fix bought after ${d.round} round(s): ${d.why}`,
-          });
-          break;
+          })
+          break
         }
 
-        case "StepPassed":
-        case "StepFailed":
-        case "StepNeverRan":
-        case "StepDidNotFinish":
-        case "StepAsked":
-        case "StepWaived":
-        case "ApprovalRequested":
-        case "ApprovalGranted":
-        case "ApprovalRevoked": {
+        case 'StepPassed':
+        case 'StepFailed':
+        case 'StepNeverRan':
+        case 'StepDidNotFinish':
+        case 'StepAsked':
+        case 'StepWaived':
+        case 'ApprovalRequested':
+        case 'ApprovalGranted':
+        case 'ApprovalRevoked': {
           // Keyed `run:point:action`. The point is there because two points can
           // run an action of the same name; the run is there because two
           // attempts can run the same point, and without it the second silently
           // inherited the first's verdicts (#78).
-          const d = event.data as { step: string; action: string; onSha: string; question?: string };
-          const verdict = VERDICT[event.type];
-          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict);
-          if (event.type === "ApprovalRequested") {
+          const d = event.data as { step: string; action: string; onSha: string; question?: string }
+          const verdict = VERDICT[event.type]
+          if (verdict) await setStep(ctx, event.streamId, seq, at, `${d.step}:${d.action}`, verdict)
+          if (event.type === 'ApprovalRequested') {
             await viaRun(ctx, event.streamId, seq, at, {
-              state: "waiting",
-              note: (event.data as PayloadOf<"ApprovalRequested">).question,
+              state: 'waiting',
+              note: (event.data as PayloadOf<'ApprovalRequested'>).question,
               // The card may offer Approve, and this is the sha it must send:
               // the one the run is asking about, not the one it produced. A
               // re-request on a repaired head moves this and leaves `head_sha`
               // where it was, which is the divergence #92 is about.
               awaiting_sha: d.onSha,
-            });
+            })
           }
           // Granted spends it; revoked opens it again — the run reducer says the
           // same, and the card has to agree with the thing that will refuse it.
-          if (event.type === "ApprovalGranted") {
-            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: null });
+          if (event.type === 'ApprovalGranted') {
+            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: null })
           }
-          if (event.type === "ApprovalRevoked") {
+          if (event.type === 'ApprovalRevoked') {
             // On the sha the withdrawal names, which is the one the reducer puts
             // the run back to awaiting.
-            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: d.onSha });
+            await viaRun(ctx, event.streamId, seq, at, { awaiting_sha: d.onSha })
           }
-          break;
+          break
         }
 
         // ---- the integration lane ----
 
-        case "IntegrationRefused": {
-          const d = event.data as PayloadOf<"IntegrationRefused">;
+        case 'IntegrationRefused': {
+          const d = event.data as PayloadOf<'IntegrationRefused'>
           await set(ctx, d.workItemId, seq, at, {
-            state: "waiting",
+            state: 'waiting',
             note: `${d.reason}: ${d.detail}`,
             // The approval, if there was one, has been spent on this attempt.
             // The run is back to `gating` and `approve()` refuses it — so the
             // card must stop offering a button that cannot work (#84).
             awaiting_sha: null,
-          });
-          break;
+          })
+          break
         }
 
-        case "IntegrationSucceeded": {
-          const d = event.data as PayloadOf<"IntegrationSucceeded">;
+        case 'IntegrationSucceeded': {
+          const d = event.data as PayloadOf<'IntegrationSucceeded'>
           await set(ctx, d.workItemId, seq, at, {
-            state: "landed",
+            state: 'landed',
             note: d.mergeCommit,
             closed_at: at,
             awaiting_sha: null,
@@ -694,16 +693,16 @@ export const taskViewProjection: Projection = {
             // the merge would be a failure reported on finished work.
             needs: null,
             diagnosis: null,
-          });
-          break;
+          })
+          break
         }
 
         default:
-          break;
+          break
       }
     }
   },
-};
+}
 
 /**
  * What a card counts a gate event as.
@@ -715,28 +714,28 @@ export const taskViewProjection: Projection = {
  * and it went red, and a person said so anyway are three different facts.
  */
 const VERDICT: Record<string, string> = {
-  StepPassed: "passed",
-  StepFailed: "failed",
+  StepPassed: 'passed',
+  StepFailed: 'failed',
   // Neither, and that is the point: the gate's agent never started, so nothing
   // about this diff was judged (#133). Counted as neither passed nor failed, so
   // a card does not wear the red stripe for a review that never happened.
-  StepNeverRan: "never-ran",
+  StepNeverRan: 'never-ran',
   // Neither either, and a different neither: the agent started and ended with
   // no receipt, so nothing about this diff was judged and nothing about the
   // account was learned (0057). Drawn as its own state rather than as a refusal
   // — 0016 §4's rule, which is what `#133` applied one row up.
-  StepDidNotFinish: "did-not-finish",
+  StepDidNotFinish: 'did-not-finish',
   // A third neither, and the only one that is not a fault: the agent stopped and
   // asked something (`#296`, 0058 §3c). Its own state because it is its own
   // sentence to a person — *answer this* rather than *look at this* — which is
   // 0016 §4's rule again, and the reason the card draws it in the held colour
   // rather than in the fail hatch `did-not-finish` wears.
-  StepAsked: "asked",
-  StepWaived: "waived",
-  ApprovalRequested: "pending",
-  ApprovalGranted: "approved",
-  ApprovalRevoked: "pending",
-};
+  StepAsked: 'asked',
+  StepWaived: 'waived',
+  ApprovalRequested: 'pending',
+  ApprovalGranted: 'approved',
+  ApprovalRevoked: 'pending',
+}
 
 // ----------------------------------------------------------------- write ----
 
@@ -750,7 +749,7 @@ const VERDICT: Record<string, string> = {
 function splitTaskId(taskId: string): { project: string; issue: string } {
   // A projection must fold anything the log holds, including an id it cannot
   // parse — hence the fallback rather than a null the caller has to handle.
-  return parseWorkItemStream(taskId) ?? { project: taskId.replace(/^wi-/, ""), issue: "" };
+  return parseWorkItemStream(taskId) ?? { project: taskId.replace(/^wi-/, ''), issue: '' }
 }
 
 async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): Promise<void> {
@@ -758,7 +757,7 @@ async function linkRun(ctx: ProjectionContext, runId: string, taskId: string): P
     `insert into task_view_run (run_id, task_id) values ($1, $2)
      on conflict (run_id) do update set task_id = excluded.task_id`,
     [runId, taskId],
-  );
+  )
 }
 
 /**
@@ -774,18 +773,18 @@ async function upsert(
   seq: string,
   at: Date,
   values: {
-    project: string;
-    issue: string;
+    project: string
+    issue: string
     /** Null when the caller does not know it. Never overwrites one that is known. */
-    title: string | null;
-    kind: string | null;
-    state: TaskState;
-    runId?: string;
+    title: string | null
+    kind: string | null
+    state: TaskState
+    runId?: string
     /** True when this event is a fresh attempt, so the backoff can count it. */
-    attempt?: boolean;
+    attempt?: boolean
   },
 ): Promise<void> {
-  const n = values.attempt ? 1 : 0;
+  const n = values.attempt ? 1 : 0
   await ctx.query(
     // `coalesce` in both directions: a claim that carries no title must not
     // replace a real one with `#155`, and a row created by a claim must still
@@ -821,9 +820,8 @@ async function upsert(
            updated_at = excluded.updated_at,
            updated_seq = excluded.updated_seq
      where task_view.updated_seq < excluded.updated_seq`,
-    [taskId, values.project, values.issue, values.title, values.kind, values.state, at, seq,
-     values.runId ?? null, n],
-  );
+    [taskId, values.project, values.issue, values.title, values.kind, values.state, at, seq, values.runId ?? null, n],
+  )
 }
 
 /**
@@ -839,13 +837,13 @@ async function set(
   at: Date,
   values: Record<string, unknown>,
 ): Promise<void> {
-  const entries = Object.entries(values);
-  const sets = entries.map(([k], i) => `${k} = $${i + 4}`).join(", ");
+  const entries = Object.entries(values)
+  const sets = entries.map(([k], i) => `${k} = $${i + 4}`).join(', ')
   await ctx.query(
     `update task_view set ${sets}, updated_at = $3, updated_seq = $2::bigint
      where task_id = $1 and updated_seq <= $2::bigint`,
     [taskId, seq, at, ...entries.map(([, v]) => v)],
-  );
+  )
 }
 
 /** The same, for an event that arrived on a run's stream. */
@@ -856,14 +854,11 @@ async function viaRun(
   at: Date,
   values: Record<string, unknown>,
 ): Promise<void> {
-  const rows = await ctx.query<{ task_id: string }>(
-    "select task_id from task_view_run where run_id = $1",
-    [runId],
-  );
-  const taskId = rows[0]?.task_id;
+  const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
+  const taskId = rows[0]?.task_id
   // A run whose start was never seen has no row to update. That is a gap in the
   // log, not a reason to invent a task.
-  if (taskId) await set(ctx, taskId, seq, at, values);
+  if (taskId) await set(ctx, taskId, seq, at, values)
 }
 
 /**
@@ -885,13 +880,10 @@ async function viaRunQuery(
   sql: string,
   values: readonly unknown[],
 ): Promise<void> {
-  const rows = await ctx.query<{ task_id: string }>(
-    "select task_id from task_view_run where run_id = $1",
-    [runId],
-  );
-  const taskId = rows[0]?.task_id;
-  if (!taskId) return;
-  await ctx.query(sql, [taskId, ...values]);
+  const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
+  const taskId = rows[0]?.task_id
+  if (!taskId) return
+  await ctx.query(sql, [taskId, ...values])
 }
 
 /**
@@ -910,13 +902,10 @@ async function setStep(
   step: string,
   verdict: string,
 ): Promise<void> {
-  const rows = await ctx.query<{ task_id: string }>(
-    "select task_id from task_view_run where run_id = $1",
-    [runId],
-  );
-  const taskId = rows[0]?.task_id;
-  if (!taskId) return;
-  const key = `${runId}:${step}`;
+  const rows = await ctx.query<{ task_id: string }>('select task_id from task_view_run where run_id = $1', [runId])
+  const taskId = rows[0]?.task_id
+  if (!taskId) return
+  const key = `${runId}:${step}`
   await ctx.query(
     `update task_view
      set verdicts = verdicts || jsonb_build_object($3::text, $4::text),
@@ -924,23 +913,22 @@ async function setStep(
          updated_seq = greatest(updated_seq, $2::bigint)
      where task_id = $1`,
     [taskId, seq, key, verdict, at],
-  );
+  )
 }
-
 
 // ------------------------------------------------------------------ read ----
 
 export interface TaskCard {
-  taskId: string;
-  project: string;
-  issue: string;
-  title: string;
-  kind: string;
-  state: TaskState;
-  tier: string;
-  runId: string | null;
-  turns: number | null;
-  costUsd: number | null;
+  taskId: string
+  project: string
+  issue: string
+  title: string
+  kind: string
+  state: TaskState
+  tier: string
+  runId: string | null
+  turns: number | null
+  costUsd: number | null
   /**
    * Verdicts from the run this card names, and no other. Four counts rather
    * than two, because a person's word is not a gate's: `waived` is an
@@ -958,20 +946,20 @@ export interface TaskCard {
    * exactly as the retired prefix did. These four say only *this run recorded
    * that many*, which was true before that rewrite and is true after it.
    */
-  passed: number;
-  failed: number;
-  waived: number;
-  approved: number;
-  baseSha: string | null;
-  headSha: string | null;
-  files: number | null;
-  insertions: number | null;
-  deletions: number | null;
-  note: string | null;
-  updatedAt: Date;
-  closedAt: Date | null;
-  attempts: number;
-  lastAttemptAt: Date | null;
+  passed: number
+  failed: number
+  waived: number
+  approved: number
+  baseSha: string | null
+  headSha: string | null
+  files: number | null
+  insertions: number | null
+  deletions: number | null
+  note: string | null
+  updatedAt: Date
+  closedAt: Date | null
+  attempts: number
+  lastAttemptAt: Date | null
   /**
    * How many approaches this ticket has abandoned, and the ceiling
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
@@ -982,19 +970,19 @@ export interface TaskCard {
    * away all read as `attempt 3`. Read through `describeArm`, which is what
    * keeps the board and `lingtai status` saying it in the same words.
    */
-  restarts: number;
-  restartsOf: number;
+  restarts: number
+  restartsOf: number
   /**
    * Whether a person is holding a question. `waiting` says which lane the card
    * is in; this says whether there is anything on it to answer.
    */
-  blocked: boolean;
+  blocked: boolean
   /**
    * Which kind of hold it is: a person's `judgement`, or a failure that needs
    * `acknowledgement`. Null on a block that did not say, which is every one
    * written before #83 — and a card with a null here reads as it always did.
    */
-  needs: "judgement" | "acknowledgement" | null;
+  needs: 'judgement' | 'acknowledgement' | null
   /**
    * What happened, what was done about it, and what is recommended.
    *
@@ -1002,19 +990,19 @@ export interface TaskCard {
    * one value, which is what stops the two of them describing the same block
    * differently — the failure this repository keeps finding.
    */
-  diagnosis: BlockDiagnosis | null;
+  diagnosis: BlockDiagnosis | null
   /**
    * Whether the question was asked before any run (`lingtai ask`, #147). Read
    * through `describeWait`, which is what keeps the board and `lingtai status`
    * calling it the same thing.
    */
-  asked: boolean;
+  asked: boolean
   /**
    * The last block a person answered, and what they answered it with — null on
    * a task nobody has answered. `question` is null only for an answer the log
    * holds without a block before it.
    */
-  answer: { question: string | null; answer: string; by: string } | null;
+  answer: { question: string | null; answer: string; by: string } | null
   /**
    * The sha the open question is about, and null when there is none.
    *
@@ -1023,7 +1011,7 @@ export interface TaskCard {
    * the run *produced* (#92). They differ the moment a branch is repaired and
    * approval re-requested on a new head.
    */
-  awaitingSha: string | null;
+  awaitingSha: string | null
   /**
    * Whether a person is being asked something, rather than merely left holding
    * it. `waiting` says where the card sits; this says whether Approve can work.
@@ -1031,7 +1019,7 @@ export interface TaskCard {
    * Read off `awaitingSha` rather than stored beside it, so the card cannot
    * offer Approve without the sha Approve needs.
    */
-  awaitingApproval: boolean;
+  awaitingApproval: boolean
   /**
    * A repair bought and not yet claimed. Exempt from the queue's backoff.
    *
@@ -1039,13 +1027,13 @@ export interface TaskCard {
    * new ticket — and true on one released for a repair before the deploy, which
    * is owed the exemption its repair was bought with.
    */
-  repairPending: boolean;
+  repairPending: boolean
   /**
    * What diagnosis has cost, apart from the work — every round a pass bought to
    * answer a refusal. Null when nothing has been spent on one, which is most
    * cards, and has to read as absence rather than as zero.
    */
-  repairCostUsd: number | null;
+  repairCostUsd: number | null
 }
 
 /**
@@ -1058,8 +1046,8 @@ export interface TaskCard {
  * so the wording is decided once, here, beside the field it is read from.
  */
 export interface HoldLine {
-  part: "needs" | "what" | "did" | "rec";
-  text: string;
+  part: 'needs' | 'what' | 'did' | 'rec'
+  text: string
 }
 
 /**
@@ -1074,28 +1062,25 @@ export interface HoldLine {
  * cannot collapse it should link to the log instead of pasting a hundred lines
  * into a queue listing.
  */
-export function describeHold(card: Pick<TaskCard, "needs" | "diagnosis">): HoldLine[] {
-  const lines: HoldLine[] = [];
+export function describeHold(card: Pick<TaskCard, 'needs' | 'diagnosis'>): HoldLine[] {
+  const lines: HoldLine[] = []
   if (card.needs !== null) {
     lines.push({
-      part: "needs",
-      text:
-        card.needs === "judgement"
-          ? "your judgement is needed"
-          : "a failure needs acknowledging",
-    });
+      part: 'needs',
+      text: card.needs === 'judgement' ? 'your judgement is needed' : 'a failure needs acknowledging',
+    })
   }
-  const d = card.diagnosis;
-  if (d === null) return lines;
-  lines.push({ part: "what", text: d.what });
-  if (d.done !== null) lines.push({ part: "did", text: d.done });
+  const d = card.diagnosis
+  if (d === null) return lines
+  lines.push({ part: 'what', text: d.what })
+  if (d.done !== null) lines.push({ part: 'did', text: d.done })
   if (d.recommendation !== null) {
     lines.push({
-      part: "rec",
+      part: 'rec',
       text: `recommends ${d.recommendation.action} — ${d.recommendation.why}`,
-    });
+    })
   }
-  return lines;
+  return lines
 }
 
 /**
@@ -1123,15 +1108,15 @@ export function describeHold(card: Pick<TaskCard, "needs" | "diagnosis">): HoldL
  * status` both say it, and must say it in the same words.
  */
 export function describeWait(
-  card: Pick<TaskCard, "blocked" | "asked" | "awaitingSha" | "needs">,
-): "waiting for your answer" | "waiting for your review" | null {
-  if (!card.blocked) return null;
-  if (card.asked) return "waiting for your answer";
+  card: Pick<TaskCard, 'blocked' | 'asked' | 'awaitingSha' | 'needs'>,
+): 'waiting for your answer' | 'waiting for your review' | null {
+  if (!card.blocked) return null
+  if (card.asked) return 'waiting for your answer'
   // Before the sha, because a block can now carry both and only one of them is
   // a question to the person: an acknowledgement is `describeHold`'s to word.
-  if (card.needs === "acknowledgement") return null;
-  if (card.awaitingSha !== null) return "waiting for your review";
-  return null;
+  if (card.needs === 'acknowledgement') return null
+  if (card.awaitingSha !== null) return 'waiting for your review'
+  return null
 }
 
 /**
@@ -1153,26 +1138,24 @@ export function describeWait(
  * every pass of it. Together they read *round 2 of 3, restart 1 of 2*, which is
  * what 0040 §3 asks a card to be able to say.
  */
-export function describeArm(card: Pick<TaskCard, "restarts" | "restartsOf">): string | null {
-  if (card.restarts === 0) return null;
+export function describeArm(card: Pick<TaskCard, 'restarts' | 'restartsOf'>): string | null {
+  if (card.restarts === 0) return null
   // `restartsOf` is zero only on a row whose `PassRestarted` predates the
   // field, which cannot exist — the two were written in the same commit. It is
   // still read defensively rather than asserted, because a projection has to
   // fold whatever the log holds.
-  return card.restartsOf > 0
-    ? `restart ${card.restarts} of ${card.restartsOf}`
-    : `restart ${card.restarts}`;
+  return card.restartsOf > 0 ? `restart ${card.restarts} of ${card.restartsOf}` : `restart ${card.restarts}`
 }
 
 export interface ReadTasksOptions {
-  project?: string;
+  project?: string
   /**
    * How long a landed task stays visible. Here rather than in the projection,
    * so changing it is a different query and not a rebuild — and so a rebuild
    * does not depend on when it ran.
    */
-  retentionDays?: number;
-  url?: string;
+  retentionDays?: number
+  url?: string
 }
 
 /**
@@ -1194,7 +1177,7 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
       // default.
       retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
     }),
-  );
+  )
 }
 
 /**
@@ -1211,9 +1194,9 @@ export async function readTasks(options: ReadTasksOptions = {}): Promise<TaskCar
  * been unregistered still appears here for as long as its work does.
  */
 export async function readTaskProjects(
-  options: Pick<ReadTasksOptions, "retentionDays" | "url"> = {},
+  options: Pick<ReadTasksOptions, 'retentionDays' | 'url'> = {},
 ): Promise<string[]> {
   return withProjectionStore({ url: options.url, max: 1 }, (store) =>
     store.taskProjects({ retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS }),
-  );
+  )
 }

@@ -11,7 +11,7 @@
  * A decision about *whether* to merge belongs to `conductor`. Running the merge
  * belongs here.
  */
-export { RepoFailed, git, gitEffect, type GitRunOptions, type TokenSource } from "./git.ts";
+export { RepoFailed, git, gitEffect, type GitRunOptions, type TokenSource } from './git.ts'
 export {
   ensureMirror,
   provisionWorktree,
@@ -21,17 +21,6 @@ export {
   worktreePath,
   type ProvisionOptions,
   type Worktree,
-} from "./worktree.ts";
-export {
-  listAt,
-  mirrorPathFor,
-  readAt,
-  refSha,
-  type MirrorOptions,
-} from "./mirror.ts";
-export {
-  integrate,
-  integrateEffect,
-  type IntegrateOptions,
-  type IntegrateResult,
-} from "./integrate.ts";
+} from './worktree.ts'
+export { listAt, mirrorPathFor, readAt, refSha, type MirrorOptions } from './mirror.ts'
+export { integrate, integrateEffect, type IntegrateOptions, type IntegrateResult } from './integrate.ts'

@@ -6,11 +6,12 @@
  * touched, read or written. Uncommitted work in it is what made a merge fail
  * with no log, no comment and no label — five re-runs and about $29 on #58/#59.
  */
-import { execFile } from "node:child_process";
-import { Data, Effect } from "effect";
-import { promisify } from "node:util";
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
-const exec = promisify(execFile);
+import { Data, Effect } from 'effect'
+
+const exec = promisify(execFile)
 
 /**
  * A token, or something that will produce a current one.
@@ -20,10 +21,10 @@ const exec = promisify(execFile);
  * holding something that expires before the integrator pushes. The string form
  * stays for tests, which do not talk to GitHub at all.
  */
-export type TokenSource = string | (() => Promise<string>);
+export type TokenSource = string | (() => Promise<string>)
 
 export interface GitRunOptions {
-  cwd?: string;
+  cwd?: string
   /**
    * An installation token, passed through `GIT_CONFIG_*` environment variables
    * rather than on the command line or in `.git/config`.
@@ -32,27 +33,27 @@ export interface GitRunOptions {
    * readable from inside the worktree by the agent itself. The environment of a
    * single child process is neither.
    */
-  token?: TokenSource;
-  env?: NodeJS.ProcessEnv;
+  token?: TokenSource
+  env?: NodeJS.ProcessEnv
 }
 
 export async function git(args: string[], options: GitRunOptions = {}): Promise<string> {
-  const env: NodeJS.ProcessEnv = { ...(options.env ?? process.env) };
+  const env: NodeJS.ProcessEnv = { ...(options.env ?? process.env) }
   // Resolved here, per invocation, rather than once by the caller — that is the
   // whole point of accepting a function.
-  const token = typeof options.token === "function" ? await options.token() : options.token;
+  const token = typeof options.token === 'function' ? await options.token() : options.token
   if (token) {
-    const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
-    env["GIT_CONFIG_COUNT"] = "1";
-    env["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraheader";
-    env["GIT_CONFIG_VALUE_0"] = `AUTHORIZATION: basic ${basic}`;
+    const basic = Buffer.from(`x-access-token:${token}`).toString('base64')
+    env['GIT_CONFIG_COUNT'] = '1'
+    env['GIT_CONFIG_KEY_0'] = 'http.https://github.com/.extraheader'
+    env['GIT_CONFIG_VALUE_0'] = `AUTHORIZATION: basic ${basic}`
   }
   // Never prompt: a hung credential prompt inside a daemon is indistinguishable
   // from a slow clone.
-  env["GIT_TERMINAL_PROMPT"] = "0";
+  env['GIT_TERMINAL_PROMPT'] = '0'
 
-  const { stdout } = await exec("git", args, { cwd: options.cwd, env, maxBuffer: 32 * 1024 * 1024 });
-  return stdout.trim();
+  const { stdout } = await exec('git', args, { cwd: options.cwd, env, maxBuffer: 32 * 1024 * 1024 })
+  return stdout.trim()
 }
 
 /**
@@ -67,10 +68,10 @@ export async function git(args: string[], options: GitRunOptions = {}): Promise<
  * One error for the package rather than one per function: the *operation* is a
  * field, so a new call site adds a value and not a type.
  */
-export class RepoFailed extends Data.TaggedError("RepoFailed")<{
+export class RepoFailed extends Data.TaggedError('RepoFailed')<{
   /** `git fetch`, `provision`, `integrate` — what was being attempted. */
-  readonly operation: string;
-  readonly detail: string;
+  readonly operation: string
+  readonly detail: string
 }> {}
 
 /**
@@ -80,12 +81,8 @@ export class RepoFailed extends Data.TaggedError("RepoFailed")<{
  * server action and has no runtime to run an `Effect` in. The boundary 0023
  * drew is the port, not the process.
  */
-export const gitEffect = (
-  args: string[],
-  options: GitRunOptions = {},
-): Effect.Effect<string, RepoFailed> =>
+export const gitEffect = (args: string[], options: GitRunOptions = {}): Effect.Effect<string, RepoFailed> =>
   Effect.tryPromise({
     try: () => git(args, options),
-    catch: (err) =>
-      new RepoFailed({ operation: `git ${args[0] ?? ""}`, detail: (err as Error).message }),
-  });
+    catch: (err) => new RepoFailed({ operation: `git ${args[0] ?? ''}`, detail: (err as Error).message }),
+  })

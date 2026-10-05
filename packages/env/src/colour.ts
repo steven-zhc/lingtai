@@ -36,7 +36,7 @@
  */
 
 /** `ESC`, spelled rather than typed, so no source file holds a control byte. */
-const ESC = "\u001b";
+const ESC = '\u001b'
 
 /**
  * Whether anything written to stdout may carry an escape code.
@@ -55,24 +55,24 @@ const ESC = "\u001b";
  * environment and a daemon that lives for days is never stale about it.
  */
 export function coloured(stream: { isTTY?: boolean } = process.stdout): boolean {
-  if ((process.env["NO_COLOR"] ?? "") !== "") return false;
+  if ((process.env['NO_COLOR'] ?? '') !== '') return false
   // A terminal that says it cannot is believed ahead of anything saying it can.
-  if (process.env["TERM"] === "dumb") return false;
-  const forced = process.env["FORCE_COLOR"] ?? "";
-  if (forced !== "") return forced !== "0";
+  if (process.env['TERM'] === 'dumb') return false
+  const forced = process.env['FORCE_COLOR'] ?? ''
+  if (forced !== '') return forced !== '0'
   // Output gets piped to files and read with `tail` and `grep`, and a log full
   // of `\x1b[31m` is a log nobody can grep.
-  return stream.isTTY === true;
+  return stream.isTTY === true
 }
 
 /** SGR: opened with the codes given, closed with a full reset. */
 function ink(...codes: readonly number[]): (text: string) => string {
-  const open = `${ESC}[${codes.join(";")}m`;
-  return (text: string) => (coloured() ? `${open}${text}${ESC}[0m` : text);
+  const open = `${ESC}[${codes.join(';')}m`
+  return (text: string) => (coloured() ? `${open}${text}${ESC}[0m` : text)
 }
 
 /** The identity, for a fact the palette gives no meaning to. Most facts. */
-export const plain = (text: string): string => text;
+export const plain = (text: string): string => text
 
 /**
  * The assignments, one per meaning the board's palette names.
@@ -106,7 +106,7 @@ export const paint = {
   accent: ink(36),
   /** Ids, ticks and clocks — `--muted`. Dim does more work here than colour. */
   muted: ink(2),
-} as const;
+} as const
 
 /**
  * A task's state, in the colour its lane wears on the board.
@@ -121,22 +121,22 @@ export const paint = {
 export function stateInk(state: string): (text: string) => string {
   switch (state) {
     // `--pass`: the board's Landed lane.
-    case "landed":
-      return paint.pass;
+    case 'landed':
+      return paint.pass
     // `--accent`: the board's `a-run`. `verifying` folds into it here exactly as it
     // does in the listing — from an operator's seat they are the same fact.
-    case "running":
-    case "verifying":
-      return paint.accent;
+    case 'running':
+    case 'verifying':
+      return paint.accent
     // `--signal`: the board's `a-sig`, and the only state that is a person.
-    case "waiting":
-      return paint.signal;
+    case 'waiting':
+      return paint.signal
     // Deliberately plain, and written down rather than left to the default
     // below: `closed` is over and unremarkable, and the one thing it must not
     // do is compete for the eye with the states that still want something.
-    case "closed":
-      return plain;
+    case 'closed':
+      return plain
     default:
-      return plain;
+      return plain
   }
 }

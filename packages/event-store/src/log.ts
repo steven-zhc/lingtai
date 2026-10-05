@@ -30,9 +30,9 @@
  * file is the Postgres half of that pair, and the reason the answer had one
  * place to land instead of three.
  */
-import type { EventStore } from "./event-store.ts";
-import { createPostgresLogQueries, type LogQueries } from "./queries.ts";
-import { createPostgresWaker, type Waker } from "./wake.ts";
+import type { EventStore } from './event-store.ts'
+import { createPostgresLogQueries, type LogQueries } from './queries.ts'
+import { createPostgresWaker, type Waker } from './wake.ts'
 
 // Re-exported so that a caller holding a log names one submodule and not three.
 export type {
@@ -42,37 +42,37 @@ export type {
   SubscriberFailures,
   TypeCount,
   UnconvergedUpdate,
-} from "./queries.ts";
+} from './queries.ts'
 
 export interface Log {
   /** Append and read. */
-  readonly store: EventStore;
+  readonly store: EventStore
   /** The questions that are not a stream read. */
-  readonly queries: LogQueries;
+  readonly queries: LogQueries
   /**
    * A waker for one subscriber. `name` reaches Postgres's `application_name`
    * and means nothing to a poll — a waker promises *something changed, go
    * look*, and how it found out is its own business.
    */
-  waker(name?: string): Waker;
+  waker(name?: string): Waker
 }
 
 export interface PostgresLogOptions {
   /** The store. Passed in so that building a log constructs no second client. */
-  store: EventStore;
+  store: EventStore
   /** Pooled connection for the questions. Defaults to `postgresUrl()`. */
-  url?: string;
+  url?: string
   /**
    * Session-mode connection for the waker. Defaults to `directPostgresUrl()`,
    * and it is a different string for the reason 0009 exists: through a
    * transaction pooler the `LISTEN` registration is handed to someone else
    * between statements and the notification simply never comes.
    */
-  wakeUrl?: string;
+  wakeUrl?: string
 }
 
 export function createPostgresLog(options: PostgresLogOptions): Log {
-  const queries = createPostgresLogQueries(options.url === undefined ? {} : { url: options.url });
+  const queries = createPostgresLogQueries(options.url === undefined ? {} : { url: options.url })
   return {
     store: options.store,
     queries,
@@ -80,7 +80,7 @@ export function createPostgresLog(options: PostgresLogOptions): Log {
       return createPostgresWaker({
         ...(name === undefined ? {} : { name }),
         ...(options.wakeUrl === undefined ? {} : { url: options.wakeUrl }),
-      });
+      })
     },
-  };
+  }
 }

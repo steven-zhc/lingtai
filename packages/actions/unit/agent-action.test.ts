@@ -5,10 +5,12 @@
  * lives or dies by: the reviewer is cold, a finding without a failure scenario
  * is not a finding, and severity is not the reviewer's to soften.
  */
-import type { RunOutcome, RunRequest, Runtime } from "@lingtai/agent";
-import { sessionIdFor } from "@lingtai/agent";
-import { describe, expect, it } from "vitest";
-import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, parsePayload } from "@lingtai/domain";
+import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
+import { sessionIdFor } from '@lingtai/agent'
+import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, parsePayload } from '@lingtai/domain'
+import { describe, expect, it } from 'vitest'
+
+import { NEEDS_INPUT, type Action, type ActionEvent, type ActionFinding, runActionPipeline } from '../src/action.ts'
 import {
   buildDesignPrompt,
   buildReviewPrompt,
@@ -17,15 +19,14 @@ import {
   parseDraft,
   parseFindings,
   verdictFor,
-} from "../src/agent-action.ts";
-import { NEEDS_INPUT, type Action, type ActionEvent, type ActionFinding, runActionPipeline } from "../src/action.ts";
-import { REVIEW_THAT_DID_NOT_PARSE } from "../test/fixtures/review-269-attempt-3.ts";
+} from '../src/agent-action.ts'
+import { REVIEW_THAT_DID_NOT_PARSE } from '../test/fixtures/review-269-attempt-3.ts'
 
-const ISSUE = { ref: "58", title: "alias-aware skill merging", body: "merge skills by alias" };
+const ISSUE = { ref: '58', title: 'alias-aware skill merging', body: 'merge skills by alias' }
 
 /** The recipe's default, written here rather than imported: this file is about
  *  the action's behaviour at *a* bound, not about which bound the schema picks. */
-const DIFF_BYTES = 400_000;
+const DIFF_BYTES = 400_000
 
 const outcome = (over: Partial<RunOutcome> = {}): RunOutcome => ({
   exitCode: 0,
@@ -34,59 +35,59 @@ const outcome = (over: Partial<RunOutcome> = {}): RunOutcome => ({
   costUsd: 0.42,
   text: null,
   failure: null,
-  sessionId: "s",
+  sessionId: 's',
   ...over,
-});
+})
 
 /** Records what it was asked, so the test can assert on the prompt and the id. */
 function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
-  const seen: RunRequest[] = [];
+  const seen: RunRequest[] = []
   return {
     seen,
     capabilities: {
-      id: "claude-code",
+      id: 'claude-code',
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: "guarded",
-      enforces: ["turns", "wall"],
+      providesTier: 'guarded',
+      enforces: ['turns', 'wall'],
     },
     async run(request) {
-      seen.push(request);
-      return reply;
+      seen.push(request)
+      return reply
     },
-  };
+  }
 }
 
-const actionWith = (reply: RunOutcome, diff = "diff --git a/x b/x\n+1", prompt = "") =>
+const actionWith = (reply: RunOutcome, diff = 'diff --git a/x b/x\n+1', prompt = '') =>
   createAgentAction(
-    { name: "review", prompt },
+    { name: 'review', prompt },
     {
       runtime: reviewer(reply),
       issue: async () => ISSUE,
       diff: async () => diff,
-      settingsPath: "/tmp/settings.json",
+      settingsPath: '/tmp/settings.json',
       limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
     },
-  );
+  )
 
-const context = { runId: "run-abc", onSha: "a".repeat(40), cwd: "/tmp/wt", env: {} };
+const context = { runId: 'run-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 
 const finding = (over: Record<string, unknown> = {}) => ({
-  file: "src/x.ts",
+  file: 'src/x.ts',
   line: 42,
-  severity: "blocker",
-  claim: "the guard is not asserted in the write",
-  failureScenario: "two writers interleave and the second overwrites the first",
+  severity: 'blocker',
+  claim: 'the guard is not asserted in the write',
+  failureScenario: 'two writers interleave and the second overwrites the first',
   ...over,
-});
+})
 
-describe("the review prompt", () => {
-  it("carries the ticket and the diff and nothing from the implementer", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES);
+describe('the review prompt', () => {
+  it('carries the ticket and the diff and nothing from the implementer', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES)
 
-    expect(prompt).toContain("#58 — alias-aware skill merging");
-    expect(prompt).toContain("THE-DIFF");
+    expect(prompt).toContain('#58 — alias-aware skill merging')
+    expect(prompt).toContain('THE-DIFF')
     // The structural guarantee is the signature: `buildReviewPrompt` takes the
     // spec, the ticket and the diff, and there is no parameter through which
     // the implementer's output could arrive. Asserting the *word* "transcript"
@@ -94,44 +95,44 @@ describe("the review prompt", () => {
     // prompt says "no transcript", so the assertion failed on the sentence that
     // makes the guarantee. The real risk is the session id, and that is tested
     // against the action rather than the prompt.
-    expect(prompt).toMatch(/nothing else/i);
-  });
+    expect(prompt).toMatch(/nothing else/i)
+  })
 
-  it("fixes the severity rubric rather than leaving it to judgement", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+  it('fixes the severity rubric rather than leaving it to judgement', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES)
 
     // 001 rated silent corruption `major`. The rubric exists to stop that, so
     // the words that correct it have to actually be in the prompt.
-    expect(prompt).toContain("blocker");
-    expect(prompt).toMatch(/silent corruption is a blocker/i);
-    expect(prompt).toMatch(/take the higher one/i);
-  });
+    expect(prompt).toContain('blocker')
+    expect(prompt).toMatch(/silent corruption is a blocker/i)
+    expect(prompt).toMatch(/take the higher one/i)
+  })
 
-  it("names concurrency and check-then-write first", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+  it('names concurrency and check-then-write first', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES)
 
     // All four known defects in 001 were this one shape, and the experiment is
     // explicit that naming it is part of what was tested.
-    expect(prompt).toMatch(/check-then-write/i);
-    expect(prompt).toMatch(/no failure scenario, no finding/i);
-  });
+    expect(prompt).toMatch(/check-then-write/i)
+    expect(prompt).toMatch(/no failure scenario, no finding/i)
+  })
 
   it("appends a recipe's prompt without letting it replace the brief", () => {
-    const spec = { name: "review", prompt: "watch the RLS policies" };
-    const prompt = buildReviewPrompt(spec, ISSUE, "d", DIFF_BYTES);
+    const spec = { name: 'review', prompt: 'watch the RLS policies' }
+    const prompt = buildReviewPrompt(spec, ISSUE, 'd', DIFF_BYTES)
 
-    expect(prompt).toContain("watch the RLS policies");
+    expect(prompt).toContain('watch the RLS policies')
     // A recipe adds strictness and never removes it — the same rule everywhere.
-    expect(prompt).toMatch(/silent corruption is a blocker/i);
-  });
+    expect(prompt).toMatch(/silent corruption is a blocker/i)
+  })
 
-  it("truncates a diff rather than sending an unbounded one", () => {
-    const huge = "x".repeat(DIFF_BYTES + 5_000);
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, huge, DIFF_BYTES);
+  it('truncates a diff rather than sending an unbounded one', () => {
+    const huge = 'x'.repeat(DIFF_BYTES + 5_000)
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, huge, DIFF_BYTES)
 
-    expect(prompt).toContain("[diff truncated at");
-    expect(prompt.length).toBeLessThan(huge.length);
-  });
+    expect(prompt).toContain('[diff truncated at')
+    expect(prompt.length).toBeLessThan(huge.length)
+  })
 
   /**
    * **The one line `#293` adds to the contract**, and it is in the prompt or the
@@ -139,26 +140,26 @@ describe("the review prompt", () => {
    * from the array rather than spelled again, so a third value added there is a
    * red test here and not a reviewer answering a word the parser drops.
    */
-  it("asks a refusing reviewer which kind of refusal it is, in the two words", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+  it('asks a refusing reviewer which kind of refusal it is, in the two words', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES)
 
-    expect(prompt).toMatch(/say what your findings are about/i);
-    for (const word of REFUSED_ABOUT) expect(prompt).toContain(`"${word}"`);
+    expect(prompt).toMatch(/say what your findings are about/i)
+    for (const word of REFUSED_ABOUT) expect(prompt).toContain(`"${word}"`)
     // And that not answering is a real answer — a reviewer told to pick one
     // anyway is a reviewer inventing the number this field exists to measure.
     // The schema (`#369`) makes that answer an explicit `null` rather than an
     // omitted key, so the prompt now says so in those words.
-    expect(prompt).toMatch(/answer `null` whenever you cannot say which/i);
-  });
+    expect(prompt).toMatch(/answer `null` whenever you cannot say which/i)
+  })
 
-  it("says nothing about a re-review when there is nothing to re-check", () => {
+  it('says nothing about a re-review when there is nothing to re-check', () => {
     // Every review before a fix is this one, and it has to be the prompt it was
     // — the block below is an addition and never a rewrite.
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES)
 
-    expect(prompt).not.toContain("must no longer happen");
-  });
-});
+    expect(prompt).not.toContain('must no longer happen')
+  })
+})
 
 /**
  * **`## How to report` is the last thing a reviewer reads, never the middle of
@@ -170,34 +171,34 @@ describe("the review prompt", () => {
  * occurrence, which the tests above already cover in another way.
  */
 describe("the output contract's place in the prompt", () => {
-  it("comes after the diff on a plain review", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES);
+  it('comes after the diff on a plain review', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES)
 
-    const contract = prompt.indexOf("## How to report");
-    expect(contract).toBeGreaterThan(prompt.lastIndexOf("```diff"));
-    expect(contract).toBeGreaterThan(prompt.indexOf("THE-DIFF"));
-  });
+    const contract = prompt.indexOf('## How to report')
+    expect(contract).toBeGreaterThan(prompt.lastIndexOf('```diff'))
+    expect(contract).toBeGreaterThan(prompt.indexOf('THE-DIFF'))
+  })
 
   it("stays after the diff and a recipe's own extras", () => {
     const prompt = buildReviewPrompt(
-      { name: "review", prompt: "watch the RLS policies" },
+      { name: 'review', prompt: 'watch the RLS policies' },
       ISSUE,
-      "THE-DIFF",
+      'THE-DIFF',
       DIFF_BYTES,
-    );
+    )
 
-    const contract = prompt.indexOf("## How to report");
-    expect(contract).toBeGreaterThan(prompt.lastIndexOf("```diff"));
-    expect(contract).toBeGreaterThan(prompt.indexOf("watch the RLS policies"));
-  });
+    const contract = prompt.indexOf('## How to report')
+    expect(contract).toBeGreaterThan(prompt.lastIndexOf('```diff'))
+    expect(contract).toBeGreaterThan(prompt.indexOf('watch the RLS policies'))
+  })
 
-  it("stays after a diff truncated for being over the byte limit", () => {
-    const huge = "x".repeat(DIFF_BYTES + 5_000);
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, huge, DIFF_BYTES);
+  it('stays after a diff truncated for being over the byte limit', () => {
+    const huge = 'x'.repeat(DIFF_BYTES + 5_000)
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, huge, DIFF_BYTES)
 
-    expect(prompt.indexOf("## How to report")).toBeGreaterThan(prompt.lastIndexOf("[diff truncated at"));
-  });
-});
+    expect(prompt.indexOf('## How to report')).toBeGreaterThan(prompt.lastIndexOf('[diff truncated at'))
+  })
+})
 
 /**
  * The re-review, which is the acceptance contract of the fix loop
@@ -210,11 +211,11 @@ describe("the output contract's place in the prompt", () => {
  * produces the outcome, against a scenario written before anybody knew what the
  * fix would be.
  */
-describe("asking the reviewer again after a fix", () => {
+describe('asking the reviewer again after a fix', () => {
   const scenario =
-    "call deliver() while the log file is unreadable; readFile throws, the catch\n" +
-    "swallows it, and the promise resolves as a success";
-  const refused = [finding({ failureScenario: scenario })] as never[];
+    'call deliver() while the log file is unreadable; readFile throws, the catch\n' +
+    'swallows it, and the promise resolves as a success'
+  const refused = [finding({ failureScenario: scenario })] as never[]
 
   /**
    * The recheck block's own text — the slice between its heading and the
@@ -224,69 +225,63 @@ describe("asking the reviewer again after a fix", () => {
    * against this slice, not the prompt as a whole.
    */
   function recheckSlice(prompt: string): string {
-    const start = prompt.indexOf("## Scenarios that must no longer happen");
-    if (start === -1) return "";
-    const end = prompt.indexOf("## The diff", start);
-    return prompt.slice(start, end === -1 ? undefined : end);
+    const start = prompt.indexOf('## Scenarios that must no longer happen')
+    if (start === -1) return ''
+    const end = prompt.indexOf('## The diff', start)
+    return prompt.slice(start, end === -1 ? undefined : end)
   }
 
-  it("quotes every failure scenario verbatim, because the fixer cannot author it", () => {
-    const prompt = buildReviewPrompt(
-      { name: "review", prompt: "" },
-      ISSUE,
-      "THE-FIXED-DIFF",
-      DIFF_BYTES,
-      refused,
-    );
+  it('quotes every failure scenario verbatim, because the fixer cannot author it', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-FIXED-DIFF', DIFF_BYTES, refused)
 
     // Verbatim, line for line. A paraphrase here is a looser criterion than the
     // one the fixer was held to, which is worse than having none.
-    for (const line of scenario.split("\n")) expect(prompt).toContain(line.trim());
-    expect(prompt).toContain("src/x.ts:42");
-    expect(prompt).toContain("blocker");
-  });
+    for (const line of scenario.split('\n')) expect(prompt).toContain(line.trim())
+    expect(prompt).toContain('src/x.ts:42')
+    expect(prompt).toContain('blocker')
+  })
 
-  it("asks whether the sequence still happens, not whether the finding is still reported", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+  it('asks whether the sequence still happens, not whether the finding is still reported', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES, refused)
 
-    expect(prompt).toMatch(/does that sequence still produce that outcome/i);
+    expect(prompt).toMatch(/does that sequence still produce that outcome/i)
     // The Goodhart move, named: deleting the code is the cheap way to make a
     // finding's text go away, and the prompt has to refuse it in as many words.
-    expect(prompt).toMatch(/deleted, renamed, moved or suppressed is not, on its own, a\s+fix/i);
-    expect(prompt).toMatch(/still reachable by \*any\* path is still a finding/i);
-  });
+    expect(prompt).toMatch(/deleted, renamed, moved or suppressed is not, on its own, a\s+fix/i)
+    expect(prompt).toMatch(/still reachable by \*any\* path is still a finding/i)
+  })
 
-  it("keeps the rubric, the checklist and the diff exactly as they were", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-DIFF", DIFF_BYTES, refused);
+  it('keeps the rubric, the checklist and the diff exactly as they were', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-DIFF', DIFF_BYTES, refused)
 
     // Not a second kind of action. A re-review that lost the rubric would rate the
     // fix's own defects the way 001's reviewer rated silent corruption.
-    expect(prompt).toMatch(/silent corruption is a blocker/i);
-    expect(prompt).toMatch(/check-then-write/i);
-    expect(prompt).toContain("THE-DIFF");
-  });
+    expect(prompt).toMatch(/silent corruption is a blocker/i)
+    expect(prompt).toMatch(/check-then-write/i)
+    expect(prompt).toContain('THE-DIFF')
+  })
 
-  it("keeps the output contract after the recheck block and the diff, not between them", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "THE-FIXED-DIFF", DIFF_BYTES, refused);
+  it('keeps the output contract after the recheck block and the diff, not between them', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'THE-FIXED-DIFF', DIFF_BYTES, refused)
 
-    const contract = prompt.indexOf("## How to report");
-    expect(contract).toBeGreaterThan(prompt.indexOf("Scenarios that must no longer happen"));
-    expect(contract).toBeGreaterThan(prompt.lastIndexOf("```diff"));
-  });
+    const contract = prompt.indexOf('## How to report')
+    expect(contract).toBeGreaterThan(prompt.indexOf('Scenarios that must no longer happen'))
+    expect(contract).toBeGreaterThan(prompt.lastIndexOf('```diff'))
+  })
 
   it("says a surviving scenario's verdict goes in the finding, not beside it", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
-    const slice = recheckSlice(prompt);
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES, refused)
+    const slice = recheckSlice(prompt)
 
-    expect(slice).toMatch(/`claim`/);
-    expect(slice).toMatch(/`failureScenario`/);
-  });
+    expect(slice).toMatch(/`claim`/)
+    expect(slice).toMatch(/`failureScenario`/)
+  })
 
-  it("carries none of that recheck wording on a first review", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES);
+  it('carries none of that recheck wording on a first review', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES)
 
-    expect(recheckSlice(prompt)).toBe("");
-  });
+    expect(recheckSlice(prompt)).toBe('')
+  })
 
   /**
    * **The contradiction attempt 1's own review found** (`#368`): a re-review
@@ -295,57 +290,57 @@ describe("asking the reviewer again after a fix", () => {
    * keeps them all — a correct diff refused. Nothing here may read that way,
    * and the empty-list answer has to still be reachable in words.
    */
-  it("never tells the reviewer every verdict is a finding, unqualified", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
-    const slice = recheckSlice(prompt);
+  it('never tells the reviewer every verdict is a finding, unqualified', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES, refused)
+    const slice = recheckSlice(prompt)
 
     // "finding" singular, not "findings list" — the empty-list sentence below
     // says "empty findings list" and must not trip this. No copula required,
     // so "becomes a finding", "belongs in a finding" and "gets its own finding"
     // are caught the same as "is a finding".
-    expect(slice).not.toMatch(/\b(every|each) (verdict|scenario)\b[^.]*\bfinding\b/i);
-  });
+    expect(slice).not.toMatch(/\b(every|each) (verdict|scenario)\b[^.]*\bfinding\b/i)
+  })
 
   it("puts the surviving-scenario bullet before the simply-not-reported one, so the scope isn't overridden", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
-    const bullets = recheckSlice(prompt).split(/\n- /);
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES, refused)
+    const bullets = recheckSlice(prompt).split(/\n- /)
 
-    const reachable = bullets.findIndex((b) => /still reachable/.test(b));
+    const reachable = bullets.findIndex((b) => /still reachable/.test(b))
     // Wrapped across a line break in the prompt, so the check has to tolerate one.
-    const notReported = bullets.findIndex((b) => /simply not\s+reported/.test(b));
-    expect(reachable).toBeGreaterThanOrEqual(0);
-    expect(notReported).toBeGreaterThan(reachable);
-  });
+    const notReported = bullets.findIndex((b) => /simply not\s+reported/.test(b))
+    expect(reachable).toBeGreaterThanOrEqual(0)
+    expect(notReported).toBeGreaterThan(reachable)
+  })
 
-  it("can answer an empty findings list where every scenario is closed and nothing else is wrong", () => {
-    const prompt = buildReviewPrompt({ name: "review", prompt: "" }, ISSUE, "d", DIFF_BYTES, refused);
+  it('can answer an empty findings list where every scenario is closed and nothing else is wrong', () => {
+    const prompt = buildReviewPrompt({ name: 'review', prompt: '' }, ISSUE, 'd', DIFF_BYTES, refused)
 
-    expect(recheckSlice(prompt)).toMatch(/\{"findings":\[\]\}/);
-  });
+    expect(recheckSlice(prompt)).toMatch(/\{"findings":\[\]\}/)
+  })
 
-  it("runs under an id of its own, so it is not asked whether it still agrees with itself", async () => {
-    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+  it('runs under an id of its own, so it is not asked whether it still agrees with itself', async () => {
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
     const action = createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime,
         issue: async () => ISSUE,
-        diff: async () => "a diff",
-        settingsPath: "/tmp/s.json",
+        diff: async () => 'a diff',
+        settingsPath: '/tmp/s.json',
         limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
-    await action.run(context);
-    await action.run({ ...context, onSha: "b".repeat(40), recheck: refused });
+    await action.run(context)
+    await action.run({ ...context, onSha: 'b'.repeat(40), recheck: refused })
 
     // The session id is a function of the run id, so a re-review sharing the
     // first review's id would resume that session — warm, and agreeing with
     // itself by construction.
-    expect(runtime.seen[1]?.runId).not.toBe(runtime.seen[0]?.runId);
-    expect(runtime.seen[1]?.prompt).toContain("Scenarios that must no longer happen");
-    expect(runtime.seen[0]?.prompt).not.toContain("Scenarios that must no longer happen");
-  });
+    expect(runtime.seen[1]?.runId).not.toBe(runtime.seen[0]?.runId)
+    expect(runtime.seen[1]?.prompt).toContain('Scenarios that must no longer happen')
+    expect(runtime.seen[0]?.prompt).not.toContain('Scenarios that must no longer happen')
+  })
 
   /**
    * **The round the id forgot** (`#195`).
@@ -366,12 +361,12 @@ describe("asking the reviewer again after a fix", () => {
    * that the two ids differ: two ids that differ and a review that never ran is
    * the bug, wearing the fix's clothes.
    */
-  it("reviews the round after a refusal that carried no findings, under a session of its own", async () => {
-    const taken = new Set<string>();
-    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+  it('reviews the round after a refusal that carried no findings, under a session of its own', async () => {
+    const taken = new Set<string>()
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
     runtime.run = async (request) => {
-      runtime.seen.push(request);
-      const session = sessionIdFor(request.runId);
+      runtime.seen.push(request)
+      const session = sessionIdFor(request.runId)
       if (taken.has(session)) {
         // `run-9e510ffc`, verbatim: one second, exit 1, nothing on the stream.
         return outcome({
@@ -379,73 +374,73 @@ describe("asking the reviewer again after a fix", () => {
           turns: 0,
           costUsd: null,
           text: null,
-          failure: { kind: "crash", detail: `Error: Session ID ${session} is already in use.` },
-        });
+          failure: { kind: 'crash', detail: `Error: Session ID ${session} is already in use.` },
+        })
       }
-      taken.add(session);
-      return outcome({ text: '{"findings":[]}' });
-    };
+      taken.add(session)
+      return outcome({ text: '{"findings":[]}' })
+    }
     const action = createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime,
         issue: async () => ISSUE,
-        diff: async () => "a diff",
-        settingsPath: "/tmp/s.json",
+        diff: async () => 'a diff',
+        settingsPath: '/tmp/s.json',
         limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
     // One run, two rounds. The head moves because a round is only bought when
     // the fixer committed, and nothing else about the context changes.
-    const first = await action.run({ ...context, onSha: "a".repeat(40) });
-    const second = await action.run({ ...context, onSha: "b".repeat(40), round: 2 });
+    const first = await action.run({ ...context, onSha: 'a'.repeat(40) })
+    const second = await action.run({ ...context, onSha: 'b'.repeat(40), round: 2 })
 
-    expect(first.verdict).toBe("passed");
-    expect(second.verdict).toBe("passed");
-    expect(second.evidence).not.toContain("already in use");
-  });
-});
+    expect(first.verdict).toBe('passed')
+    expect(second.verdict).toBe('passed')
+    expect(second.evidence).not.toContain('already in use')
+  })
+})
 
 describe("reading the reviewer's answer", () => {
-  it("takes findings out of a fenced block, which is what models actually emit", () => {
+  it('takes findings out of a fenced block, which is what models actually emit', () => {
     const { findings, parsed } = parseFindings(
-      "Here is what I found:\n\n```json\n" + JSON.stringify({ findings: [finding()] }) + "\n```\n",
-    );
+      'Here is what I found:\n\n```json\n' + JSON.stringify({ findings: [finding()] }) + '\n```\n',
+    )
 
-    expect(parsed).toBe(true);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.claim).toContain("not asserted in the write");
-  });
+    expect(parsed).toBe(true)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.claim).toContain('not asserted in the write')
+  })
 
-  it("drops a finding with no failure scenario", () => {
+  it('drops a finding with no failure scenario', () => {
     const { findings, parsed } = parseFindings(
       JSON.stringify({
-        findings: [finding(), { file: "a.ts", line: 1, severity: "major", claim: "this feels wrong" }],
+        findings: [finding(), { file: 'a.ts', line: 1, severity: 'major', claim: 'this feels wrong' }],
       }),
-    );
+    )
 
-    expect(parsed).toBe(true);
+    expect(parsed).toBe(true)
     // An observation without a scenario is an opinion, and opinions are what
     // made the old review queue unworkable. The rule is in the prompt; this is
     // what makes it true rather than aspirational.
-    expect(findings).toHaveLength(1);
-  });
+    expect(findings).toHaveLength(1)
+  })
 
-  it("treats an empty list as a real answer, not as a failure to answer", () => {
-    const { findings, parsed } = parseFindings('{"findings":[]}');
+  it('treats an empty list as a real answer, not as a failure to answer', () => {
+    const { findings, parsed } = parseFindings('{"findings":[]}')
 
-    expect(parsed).toBe(true);
-    expect(findings).toEqual([]);
-  });
+    expect(parsed).toBe(true)
+    expect(findings).toEqual([])
+  })
 
-  it("reads an unrecognised severity as the highest, not the lowest", () => {
-    const { findings } = parseFindings(JSON.stringify({ findings: [finding({ severity: "meh" })] }));
+  it('reads an unrecognised severity as the highest, not the lowest', () => {
+    const { findings } = parseFindings(JSON.stringify({ findings: [finding({ severity: 'meh' })] }))
 
     // The rubric exists because severity ran *low*. Guessing downwards on a
     // malformed answer would reintroduce exactly that.
-    expect(findings[0]?.severity).toBe("blocker");
-  });
+    expect(findings[0]?.severity).toBe('blocker')
+  })
 
   /**
    * **And *unrecognised* is decided by `SEVERITIES`, which is where a second
@@ -459,23 +454,23 @@ describe("reading the reviewer's answer", () => {
    * and walking the array rather than naming three members is what makes it a
    * failing test rather than a claim.
    */
-  it("keeps every severity that is on the ladder, whatever the ladder is", () => {
+  it('keeps every severity that is on the ladder, whatever the ladder is', () => {
     for (const severity of SEVERITIES) {
-      const { findings } = parseFindings(JSON.stringify({ findings: [finding({ severity })] }));
+      const { findings } = parseFindings(JSON.stringify({ findings: [finding({ severity })] }))
 
-      expect(findings[0]?.severity, severity).toBe(severity);
+      expect(findings[0]?.severity, severity).toBe(severity)
     }
-  });
+  })
 
-  it("says it could not parse rather than reporting no findings", () => {
+  it('says it could not parse rather than reporting no findings', () => {
     // The difference matters: "nothing wrong" and "I could not read the answer"
     // must not both render as a green action.
-    expect(parseFindings("I looked at it and it seems fine to me.")).toEqual({
+    expect(parseFindings('I looked at it and it seems fine to me.')).toEqual({
       findings: [],
       parsed: false,
-    });
-    expect(parseFindings(null).parsed).toBe(false);
-  });
+    })
+    expect(parseFindings(null).parsed).toBe(false)
+  })
 
   /**
    * **`#262`'s answer, prose and all** (`#272`).
@@ -491,54 +486,54 @@ describe("reading the reviewer's answer", () => {
    * **This punished exactly the behaviour the prompt asks for**: the more
    * precisely a reviewer quotes the code, the more braces its prose carries.
    */
-  it("reads an answer whose prose quotes a brace, because it ends in findings", () => {
+  it('reads an answer whose prose quotes a brace, because it ends in findings', () => {
     const answer = [
-      "I checked every citation in the diff against the files.",
-      "",
+      'I checked every citation in the diff against the files.',
+      '',
       '- `endingOf` at `pass.ts:1473` maps each event to what the table says: `StepPassed` = `{ending:"passed"}`,',
       '  `StepFailed` = `{ending:"failed"}`. Both hold.',
-      "- `StepWork` is at `440` and `StepBody` at `532`, as the diff claims.",
-      "- The package graph holds: nothing new is imported across the seam.",
-      "- All twelve plugins carry a `notBuiltYet` value.",
-      "- The commit body mentions `#231` with no closing verb beside it.",
-      "",
-      "Nothing to report.",
-      "",
+      '- `StepWork` is at `440` and `StepBody` at `532`, as the diff claims.',
+      '- The package graph holds: nothing new is imported across the seam.',
+      '- All twelve plugins carry a `notBuiltYet` value.',
+      '- The commit body mentions `#231` with no closing verb beside it.',
+      '',
+      'Nothing to report.',
+      '',
       '{"findings":[]}',
-    ].join("\n");
+    ].join('\n')
 
-    const { findings, parsed } = parseFindings(answer);
+    const { findings, parsed } = parseFindings(answer)
 
     // `parsed` is the whole point: an empty list is an answer, and this one was
     // read as a refusal for want of knowing where it started.
-    expect(parsed).toBe(true);
-    expect(findings).toEqual([]);
-  });
+    expect(parsed).toBe(true)
+    expect(findings).toEqual([])
+  })
 
-  it("reads a finding under prose that quotes a brace, nested braces and all", () => {
+  it('reads a finding under prose that quotes a brace, nested braces and all', () => {
     // And this is why it is *every* brace rather than `lastIndexOf` alone: the
     // last brace in a non-empty answer opens the last finding, not the object.
     const { findings, parsed } = parseFindings(
       `The ending table says \`{ending:"passed"}\`, which is where this goes wrong.\n\n` +
         JSON.stringify({ findings: [finding()] }),
-    );
+    )
 
-    expect(parsed).toBe(true);
-    expect(findings).toHaveLength(1);
-  });
+    expect(parsed).toBe(true)
+    expect(findings).toHaveLength(1)
+  })
 
-  it("still refuses an answer truncated mid-object", () => {
+  it('still refuses an answer truncated mid-object', () => {
     // `#253`'s attempt 1, where the answer was cut off mid-JSON and was readable
     // only by luck. Scanning every brace must not turn *cannot be read* into a
     // green action: no position in a truncated object parses, and that is the
     // whole of the difference the refusal downstream is for.
     const { findings, parsed } = parseFindings(
       `Here is what I found.\n\n{"findings":[{"file":"pass.ts","line":1473,"severity":"major","claim":"the ending is`,
-    );
+    )
 
-    expect(parsed).toBe(false);
-    expect(findings).toEqual([]);
-  });
+    expect(parsed).toBe(false)
+    expect(findings).toEqual([])
+  })
 
   /**
    * **`#269` attempt 3's own answer, and what it cost** (`#279`).
@@ -555,20 +550,20 @@ describe("reading the reviewer's answer", () => {
    * `#279` changed is that *this* answer and `{"findings":[]}` no longer reach the
    * router as the same thing.
    */
-  it("refuses the answer that was dropped whole, which is a truncation and not a fence", () => {
+  it('refuses the answer that was dropped whole, which is a truncation and not a fence', () => {
     // Not a fenced block and not prose around a brace: there is no fence to strip,
     // an inner `{` is followed by the rest of the array, and the outer one never
     // closes. So every candidate fails and the answer is refused.
-    expect(REVIEW_THAT_DID_NOT_PARSE).not.toContain("```");
-    expect(REVIEW_THAT_DID_NOT_PARSE.startsWith('{"findings":[')).toBe(true);
-    expect(REVIEW_THAT_DID_NOT_PARSE.endsWith("}]")).toBe(true);
+    expect(REVIEW_THAT_DID_NOT_PARSE).not.toContain('```')
+    expect(REVIEW_THAT_DID_NOT_PARSE.startsWith('{"findings":[')).toBe(true)
+    expect(REVIEW_THAT_DID_NOT_PARSE.endsWith('}]')).toBe(true)
 
-    expect(parseFindings(REVIEW_THAT_DID_NOT_PARSE)).toEqual({ findings: [], parsed: false });
+    expect(parseFindings(REVIEW_THAT_DID_NOT_PARSE)).toEqual({ findings: [], parsed: false })
 
     // And the fixture is only worth keeping while that is true of it: one more
     // brace and it parses, which is the thing a tidy-up would quietly do.
-    expect(parseFindings(`${REVIEW_THAT_DID_NOT_PARSE}}`)).toMatchObject({ parsed: true });
-  });
+    expect(parseFindings(`${REVIEW_THAT_DID_NOT_PARSE}}`)).toMatchObject({ parsed: true })
+  })
 
   /**
    * **The reviewer's own classification of its refusal, taken as it was said**
@@ -577,14 +572,14 @@ describe("reading the reviewer's answer", () => {
    * Both words, off `REFUSED_ABOUT` rather than spelled here, for the reason the
    * severity walk above reads `SEVERITIES`.
    */
-  it("takes the two words the reviewer may classify its refusal with", () => {
+  it('takes the two words the reviewer may classify its refusal with', () => {
     for (const about of REFUSED_ABOUT) {
       expect(parseFindings(JSON.stringify({ about, findings: [finding()] }))).toMatchObject({
         parsed: true,
         about,
-      });
+      })
     }
-  });
+  })
 
   /**
    * **Absent is the third state, and nothing here invents a value for it.**
@@ -595,57 +590,57 @@ describe("reading the reviewer's answer", () => {
    * opposite answers, and a repaired one would be counted as a reviewer's when
    * the whole point of the field is the count (0031 §1, `#223`'s own rule).
    */
-  it("leaves the classification absent where the reviewer did not give one of the two", () => {
+  it('leaves the classification absent where the reviewer did not give one of the two', () => {
     const answers = [
       JSON.stringify({ findings: [finding()] }),
-      JSON.stringify({ about: "the lines", findings: [finding()] }),
-      JSON.stringify({ about: "Lines", findings: [finding()] }),
+      JSON.stringify({ about: 'the lines', findings: [finding()] }),
+      JSON.stringify({ about: 'Lines', findings: [finding()] }),
       JSON.stringify({ about: null, findings: [finding()] }),
-      JSON.stringify({ about: ["lines"], findings: [finding()] }),
-    ];
+      JSON.stringify({ about: ['lines'], findings: [finding()] }),
+    ]
 
     for (const answer of answers) {
-      const read = parseFindings(answer);
-      expect(read.parsed).toBe(true);
-      expect(read.findings).toHaveLength(1);
+      const read = parseFindings(answer)
+      expect(read.parsed).toBe(true)
+      expect(read.findings).toHaveLength(1)
       // Absent, not `undefined` under a key: the spread is what carries *did not
       // say* through to the event, and a present key would survive a schema.
-      expect(read).not.toHaveProperty("about");
+      expect(read).not.toHaveProperty('about')
     }
-  });
-});
+  })
+})
 
-describe("the verdict", () => {
-  it("refuses on a blocker or a major, and allows a minor", () => {
-    expect(verdictFor([{ ...finding(), severity: "minor" } as never])).toBe("passed");
-    expect(verdictFor([{ ...finding(), severity: "major" } as never])).toBe("failed");
-    expect(verdictFor([{ ...finding(), severity: "blocker" } as never])).toBe("failed");
-    expect(verdictFor([])).toBe("passed");
-  });
-});
+describe('the verdict', () => {
+  it('refuses on a blocker or a major, and allows a minor', () => {
+    expect(verdictFor([{ ...finding(), severity: 'minor' } as never])).toBe('passed')
+    expect(verdictFor([{ ...finding(), severity: 'major' } as never])).toBe('failed')
+    expect(verdictFor([{ ...finding(), severity: 'blocker' } as never])).toBe('failed')
+    expect(verdictFor([])).toBe('passed')
+  })
+})
 
-describe("the action", () => {
+describe('the action', () => {
   it("runs the reviewer under its own id, never the implementer's", async () => {
-    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
     const action = createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime,
         issue: async () => ISSUE,
-        diff: async () => "a diff",
-        settingsPath: "/tmp/s.json",
+        diff: async () => 'a diff',
+        settingsPath: '/tmp/s.json',
         limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
-    await action.run(context);
+    await action.run(context)
 
     // The session id is a pure function of the run id, so reusing the run's own
     // id would resume the implementer's session — a warm review wearing a cold
     // review's name, and no test would notice.
-    expect(runtime.seen[0]?.runId).not.toBe(context.runId);
-    expect(runtime.seen[0]?.runId).toContain("review");
-  });
+    expect(runtime.seen[0]?.runId).not.toBe(context.runId)
+    expect(runtime.seen[0]?.runId).toContain('review')
+  })
 
   /**
    * **`model:` reaches the spawn, or it is a price nobody is charged** (`#245`,
@@ -663,22 +658,22 @@ describe("the action", () => {
     const deps = (runtime: Runtime) => ({
       runtime,
       issue: async () => ISSUE,
-      diff: async () => "a diff",
-      settingsPath: "/tmp/s.json",
+      diff: async () => 'a diff',
+      settingsPath: '/tmp/s.json',
       limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
-    });
+    })
 
-    const named = reviewer(outcome({ text: '{"findings":[]}' }));
-    await createAgentAction({ name: "review", prompt: "", model: "claude-haiku-4-5" }, deps(named)).run(context);
-    expect(named.seen[0]?.model).toBe("claude-haiku-4-5");
+    const named = reviewer(outcome({ text: '{"findings":[]}' }))
+    await createAgentAction({ name: 'review', prompt: '', model: 'claude-haiku-4-5' }, deps(named)).run(context)
+    expect(named.seen[0]?.model).toBe('claude-haiku-4-5')
 
     // Absent stays absent, rather than becoming a name chosen here: what a
     // runtime defaults to is the runtime's to know, and `in` rather than
     // `toBeUndefined` because the claim is that no key was sent at all.
-    const bare = reviewer(outcome({ text: '{"findings":[]}' }));
-    await createAgentAction({ name: "review", prompt: "" }, deps(bare)).run(context);
-    expect("model" in (bare.seen[0] ?? {})).toBe(false);
-  });
+    const bare = reviewer(outcome({ text: '{"findings":[]}' }))
+    await createAgentAction({ name: 'review', prompt: '' }, deps(bare)).run(context)
+    expect('model' in (bare.seen[0] ?? {})).toBe(false)
+  })
 
   /**
    * The reviewer is eighteen minutes a person used to wait on in the dark
@@ -686,55 +681,53 @@ describe("the action", () => {
    * calls — which no hook reports for it — between the pipeline's start and end.
    */
   it("hands its agent the run's log, tagged with the step and the action", async () => {
-    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
     runtime.run = async (request) => {
-      runtime.seen.push(request);
-      request.log?.note("Read", "src/x.ts");
-      request.log?.note("receipt", "success · 7 turns · $0.42 · exit 0");
-      return outcome({ text: '{"findings":[]}' });
-    };
+      runtime.seen.push(request)
+      request.log?.note('Read', 'src/x.ts')
+      request.log?.note('receipt', 'success · 7 turns · $0.42 · exit 0')
+      return outcome({ text: '{"findings":[]}' })
+    }
     const action = createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime,
         issue: async () => ISSUE,
-        diff: async () => "diff --git a/x b/x\n+1",
-        settingsPath: "/tmp/settings.json",
+        diff: async () => 'diff --git a/x b/x\n+1',
+        settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
-    );
-    const lines: string[] = [];
-    const log = { note: (label: string, detail = "") => void lines.push(`${label} | ${detail}`) };
+    )
+    const lines: string[] = []
+    const log = { note: (label: string, detail = '') => void lines.push(`${label} | ${detail}`) }
 
-    await runActionPipeline({ step: "proposed", actions: [action], context: { ...context, log }, emit: () => {} });
+    await runActionPipeline({ step: 'proposed', actions: [action], context: { ...context, log }, emit: () => {} })
 
-    expect(runtime.seen[0]?.traceTools).toBe(true);
+    expect(runtime.seen[0]?.traceTools).toBe(true)
     expect(lines).toEqual([
-      "proposed:review | started · agent on aaaaaaa",
+      'proposed:review | started · agent on aaaaaaa',
       expect.stringMatching(/^proposed:review \| review  run-abc:review:review:aaaaaaa · \d+ bytes of diff$/),
-      "proposed:review | Read    src/x.ts",
-      "proposed:review | receipt  success · 7 turns · $0.42 · exit 0",
+      'proposed:review | Read    src/x.ts',
+      'proposed:review | receipt  success · 7 turns · $0.42 · exit 0',
       expect.stringMatching(/^proposed:review \| passed · after \d+s$/),
-    ]);
-    expect(lines.some((l) => l.startsWith("agent"))).toBe(false);
-  });
+    ])
+    expect(lines.some((l) => l.startsWith('agent'))).toBe(false)
+  })
 
-  it("passes with no findings", async () => {
-    const result = await actionWith(outcome({ text: '{"findings":[]}' })).run(context);
+  it('passes with no findings', async () => {
+    const result = await actionWith(outcome({ text: '{"findings":[]}' })).run(context)
 
-    expect(result.verdict).toBe("passed");
-    expect(result.findings).toEqual([]);
-  });
+    expect(result.verdict).toBe('passed')
+    expect(result.findings).toEqual([])
+  })
 
-  it("fails with the findings attached, so the card can show them", async () => {
-    const result = await actionWith(
-      outcome({ text: JSON.stringify({ findings: [finding()] }) }),
-    ).run(context);
+  it('fails with the findings attached, so the card can show them', async () => {
+    const result = await actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) })).run(context)
 
-    expect(result.verdict).toBe("failed");
-    expect(result.findings).toHaveLength(1);
-    expect(result.evidence).toContain("src/x.ts:42");
-  });
+    expect(result.verdict).toBe('failed')
+    expect(result.findings).toHaveLength(1)
+    expect(result.evidence).toContain('src/x.ts:42')
+  })
 
   /**
    * The rubric's third tier (#135). A minor does not refuse, so the action passes
@@ -742,53 +735,53 @@ describe("the action", () => {
    * survived only as prose inside `evidence`. Asserted on the event the pipeline
    * emits, because the event is what a program reads back.
    */
-  it("passes on a minor-only review and leaves its findings structured on the event", async () => {
-    const minor = finding({ severity: "minor", line: 313, file: "packages/actions/src/command.ts" });
-    const events: ActionEvent[] = [];
+  it('passes on a minor-only review and leaves its findings structured on the event', async () => {
+    const minor = finding({ severity: 'minor', line: 313, file: 'packages/actions/src/command.ts' })
+    const events: ActionEvent[] = []
     const result = await runActionPipeline({
-      step: "proposed",
+      step: 'proposed',
       actions: [actionWith(outcome({ text: JSON.stringify({ findings: [minor] }) }))],
       context,
       emit: (e) => void events.push(e),
-    });
+    })
 
-    expect(result.ok).toBe(true);
-    const passed = events.at(-1);
-    expect(passed?.type).toBe("StepPassed");
-    if (passed?.type !== "StepPassed") return;
-    expect(passed.data.findings).toEqual([minor]);
+    expect(result.ok).toBe(true)
+    const passed = events.at(-1)
+    expect(passed?.type).toBe('StepPassed')
+    if (passed?.type !== 'StepPassed') return
+    expect(passed.data.findings).toEqual([minor])
     // The prose stays: it is what a person reads.
-    expect(passed.data.evidence).toContain("packages/actions/src/command.ts:313");
-    expect(parsePayload("StepPassed", passed.data)).toEqual(passed.data);
-  });
+    expect(passed.data.evidence).toContain('packages/actions/src/command.ts:313')
+    expect(parsePayload('StepPassed', passed.data)).toEqual(passed.data)
+  })
 
-  it("writes an empty array, not an absent field, on a pass with nothing to say", async () => {
-    const events: ActionEvent[] = [];
+  it('writes an empty array, not an absent field, on a pass with nothing to say', async () => {
+    const events: ActionEvent[] = []
     await runActionPipeline({
-      step: "proposed",
+      step: 'proposed',
       actions: [actionWith(outcome({ text: '{"findings":[]}' }))],
       context,
       emit: (e) => void events.push(e),
-    });
+    })
 
-    const passed = events.at(-1);
-    expect(passed?.type).toBe("StepPassed");
-    expect(passed?.data).toHaveProperty("findings", []);
-  });
+    const passed = events.at(-1)
+    expect(passed?.type).toBe('StepPassed')
+    expect(passed?.data).toHaveProperty('findings', [])
+  })
 
   it("fails when the reviewer's answer cannot be read", async () => {
-    const result = await actionWith(outcome({ text: "looks fine to me" })).run(context);
+    const result = await actionWith(outcome({ text: 'looks fine to me' })).run(context)
 
     // Not passed. A reviewer whose answer is unreadable has reviewed nothing,
     // and a green action for a diff nobody assessed is the failure this whole
     // system exists to remove.
-    expect(result.verdict).toBe("failed");
-    expect(result.evidence).toContain("not readable");
+    expect(result.verdict).toBe('failed')
+    expect(result.evidence).toContain('not readable')
     // And in a word as well as in the sentence (`#279`): `carriesACriterion` one
     // layer up reads fields, not prose, and for four days the only difference
     // between this and a clean review lived in the string above.
-    expect(result.unreadable).toBe(true);
-  });
+    expect(result.unreadable).toBe(true)
+  })
 
   /**
    * **The other half of `#279`, which is `#262` not re-opening.**
@@ -798,43 +791,41 @@ describe("the action", () => {
    * the bug `#262` was filed for, pointed the other way. So the flag is absent on
    * every answer that parsed, whatever it said.
    */
-  it("leaves the flag off an answer it could read, however little it said", async () => {
-    const empty = await actionWith(outcome({ text: '{"findings":[]}' })).run(context);
-    expect(empty.verdict).toBe("passed");
-    expect(empty.unreadable).toBeUndefined();
+  it('leaves the flag off an answer it could read, however little it said', async () => {
+    const empty = await actionWith(outcome({ text: '{"findings":[]}' })).run(context)
+    expect(empty.verdict).toBe('passed')
+    expect(empty.unreadable).toBeUndefined()
 
-    const refused = await actionWith(
-      outcome({ text: JSON.stringify({ findings: [finding()] }) }),
-    ).run(context);
-    expect(refused.verdict).toBe("failed");
-    expect(refused.unreadable).toBeUndefined();
-  });
+    const refused = await actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) })).run(context)
+    expect(refused.verdict).toBe('failed')
+    expect(refused.unreadable).toBeUndefined()
+  })
 
-  it("says on the log that the answer could not be read, and says nothing where it could", async () => {
+  it('says on the log that the answer could not be read, and says nothing where it could', async () => {
     const eventsFor = async (text: string): Promise<ActionEvent[]> => {
-      const events: ActionEvent[] = [];
+      const events: ActionEvent[] = []
       await runActionPipeline({
-        step: "review",
+        step: 'review',
         actions: [actionWith(outcome({ text }))],
         context,
         emit: (e) => void events.push(e),
-      });
-      return events;
-    };
+      })
+      return events
+    }
 
-    const dropped = (await eventsFor(REVIEW_THAT_DID_NOT_PARSE)).at(-1);
-    if (dropped?.type !== "StepFailed") throw new Error("the reviewer's answer was read after all");
-    expect(dropped.data).toHaveProperty("unreadable", true);
+    const dropped = (await eventsFor(REVIEW_THAT_DID_NOT_PARSE)).at(-1)
+    if (dropped?.type !== 'StepFailed') throw new Error("the reviewer's answer was read after all")
+    expect(dropped.data).toHaveProperty('unreadable', true)
     // The schema's, not just the object's: an optional `true` is what the log
     // holds, so a row written with it has to validate.
-    expect(parsePayload("StepFailed", dropped.data)).toEqual(dropped.data);
+    expect(parsePayload('StepFailed', dropped.data)).toEqual(dropped.data)
 
     // **Absent rather than `false`** — the failures with no answer to parse are
     // most of them, and *absent* is what says so without a step over the log.
-    const refused = (await eventsFor(JSON.stringify({ findings: [finding()] }))).at(-1);
-    if (refused?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
-    expect(refused.data).not.toHaveProperty("unreadable");
-  });
+    const refused = (await eventsFor(JSON.stringify({ findings: [finding()] }))).at(-1)
+    if (refused?.type !== 'StepFailed') throw new Error('the reviewer did not refuse')
+    expect(refused.data).not.toHaveProperty('unreadable')
+  })
 
   /**
    * **What `#293` adds and the whole of what it adds**: a refused review says
@@ -847,25 +838,25 @@ describe("the action", () => {
    */
   it("carries the reviewer's classification of its refusal onto the log", async () => {
     for (const about of REFUSED_ABOUT) {
-      const events: ActionEvent[] = [];
-      const text = JSON.stringify({ about, findings: [finding()] });
+      const events: ActionEvent[] = []
+      const text = JSON.stringify({ about, findings: [finding()] })
       const result = await runActionPipeline({
-        step: "review",
+        step: 'review',
         actions: [actionWith(outcome({ text }))],
         context,
         emit: (e) => void events.push(e),
-      });
+      })
 
-      expect(result.results[0]).toMatchObject({ verdict: "failed", about });
+      expect(result.results[0]).toMatchObject({ verdict: 'failed', about })
 
-      const failed = events.at(-1);
-      if (failed?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
-      expect(failed.data).toHaveProperty("about", about);
+      const failed = events.at(-1)
+      if (failed?.type !== 'StepFailed') throw new Error('the reviewer did not refuse')
+      expect(failed.data).toHaveProperty('about', about)
       // The schema's and not just the object's: the query is a fold over stored
       // rows, so a row written with this has to validate as one.
-      expect(parsePayload("StepFailed", failed.data)).toEqual(failed.data);
+      expect(parsePayload('StepFailed', failed.data)).toEqual(failed.data)
     }
-  });
+  })
 
   /**
    * **Absent is what every reviewer that has not been updated produces**, and it
@@ -877,31 +868,31 @@ describe("the action", () => {
    * whose unclassified rows were filled in with a default is a count of the
    * default, and this field exists only to be counted.
    */
-  it("says nothing about the kind of refusal where the reviewer said nothing", async () => {
+  it('says nothing about the kind of refusal where the reviewer said nothing', async () => {
     const saidNothing = [
       JSON.stringify({ findings: [finding()] }),
-      JSON.stringify({ about: "the approach", findings: [finding()] }),
+      JSON.stringify({ about: 'the approach', findings: [finding()] }),
       REVIEW_THAT_DID_NOT_PARSE,
-    ];
+    ]
 
     for (const text of saidNothing) {
-      const events: ActionEvent[] = [];
+      const events: ActionEvent[] = []
       const result = await runActionPipeline({
-        step: "review",
+        step: 'review',
         actions: [actionWith(outcome({ text }))],
         context,
         emit: (e) => void events.push(e),
-      });
+      })
 
-      expect(result.results[0]?.verdict).toBe("failed");
-      expect(result.results[0]).not.toHaveProperty("about");
+      expect(result.results[0]?.verdict).toBe('failed')
+      expect(result.results[0]).not.toHaveProperty('about')
 
-      const failed = events.at(-1);
-      if (failed?.type !== "StepFailed") throw new Error("the reviewer did not refuse");
-      expect(failed.data).not.toHaveProperty("about");
-      expect(parsePayload("StepFailed", failed.data)).toEqual(failed.data);
+      const failed = events.at(-1)
+      if (failed?.type !== 'StepFailed') throw new Error('the reviewer did not refuse')
+      expect(failed.data).not.toHaveProperty('about')
+      expect(parsePayload('StepFailed', failed.data)).toEqual(failed.data)
     }
-  });
+  })
 
   /**
    * **A review that passed refused nothing, so it classified nothing.**
@@ -912,21 +903,19 @@ describe("the action", () => {
    * volunteers `about` beside an empty list, or beside minors that do not stop
    * anything, is answering about a change that is going ahead.
    */
-  it("keeps the classification off a review that did not refuse", async () => {
-    const clean = await actionWith(outcome({ text: '{"about":"approach","findings":[]}' })).run(
-      context,
-    );
-    expect(clean.verdict).toBe("passed");
-    expect(clean).not.toHaveProperty("about");
+  it('keeps the classification off a review that did not refuse', async () => {
+    const clean = await actionWith(outcome({ text: '{"about":"approach","findings":[]}' })).run(context)
+    expect(clean.verdict).toBe('passed')
+    expect(clean).not.toHaveProperty('about')
 
     const minorOnly = await actionWith(
       outcome({
-        text: JSON.stringify({ about: "lines", findings: [finding({ severity: "minor" })] }),
+        text: JSON.stringify({ about: 'lines', findings: [finding({ severity: 'minor' })] }),
       }),
-    ).run(context);
-    expect(minorOnly.verdict).toBe("passed");
-    expect(minorOnly).not.toHaveProperty("about");
-  });
+    ).run(context)
+    expect(minorOnly.verdict).toBe('passed')
+    expect(minorOnly).not.toHaveProperty('about')
+  })
 
   /**
    * **A reviewer that started and did not finish is not a refusal either**
@@ -943,15 +932,15 @@ describe("the action", () => {
    * branch: a timeout here and a crash below. Splitting them would put a second
    * classification at a seam 0031 §1 says may only have one.
    */
-  it("says a reviewer that did not finish judged nothing, with the kind", async () => {
-    const result = await actionWith(
-      outcome({ failure: { kind: "timeout", detail: "no result within 60000ms" } }),
-    ).run(context);
+  it('says a reviewer that did not finish judged nothing, with the kind', async () => {
+    const result = await actionWith(outcome({ failure: { kind: 'timeout', detail: 'no result within 60000ms' } })).run(
+      context,
+    )
 
-    expect(result.verdict).toBe("did-not-finish");
-    expect(result.evidence).toContain("timeout");
-    expect(result.findings).toEqual([]);
-  });
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.evidence).toContain('timeout')
+    expect(result.findings).toEqual([])
+  })
 
   /**
    * The measured one: exit 1 in a second, no receipt on the stream, for a
@@ -964,17 +953,17 @@ describe("the action", () => {
         turns: 0,
         costUsd: null,
         text: null,
-        failure: { kind: "crash", detail: "Error: Session ID 0f1e is already in use." },
+        failure: { kind: 'crash', detail: 'Error: Session ID 0f1e is already in use.' },
       }),
-    ).run(context);
+    ).run(context)
 
-    expect(result.verdict).toBe("did-not-finish");
+    expect(result.verdict).toBe('did-not-finish')
     // Prefixed, unlike `never-ran`'s: the prefix is what says the sentence
     // under it is about the machinery and never about the diff.
-    expect(result.evidence).toContain("the reviewer did not finish (crash)");
-    expect(result.evidence).toContain("already in use");
-    expect(result.findings).toEqual([]);
-  });
+    expect(result.evidence).toContain('the reviewer did not finish (crash)')
+    expect(result.evidence).toContain('already in use')
+    expect(result.findings).toEqual([])
+  })
 
   /**
    * **A quota is not a verdict**, and this is where the two stopped being told
@@ -988,19 +977,19 @@ describe("the action", () => {
    * turns into a conductor standing down instead of a card saying a review action
    * refused this diff.
    */
-  it("says a reviewer that never started judged nothing, rather than refusing", async () => {
-    const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)";
+  it('says a reviewer that never started judged nothing, rather than refusing', async () => {
+    const said = "You've hit your session limit \u00b7 resets 2pm (America/Chicago)"
     const result = await actionWith(
-      outcome({ turns: 0, costUsd: 0, exitCode: 1, failure: { kind: "never-started", detail: said } }),
-    ).run(context);
+      outcome({ turns: 0, costUsd: 0, exitCode: 1, failure: { kind: 'never-started', detail: said } }),
+    ).run(context)
 
-    expect(result.verdict).toBe("never-ran");
+    expect(result.verdict).toBe('never-ran')
     // The runtime's own words, whole and unwrapped: `conduct.ts` reads a reset
     // time out of them, and a prefix like "the reviewer did not finish" would
     // read as a sentence about the diff.
-    expect(result.evidence).toBe(said);
-    expect(result.findings).toEqual([]);
-  });
+    expect(result.evidence).toBe(said)
+    expect(result.findings).toEqual([])
+  })
 
   /**
    * **The runtime forced the schema and could not make an answer fit it after
@@ -1009,22 +998,22 @@ describe("the action", () => {
    * is what dropped it, so this is `unreadable` in `#279`'s sense rather than
    * `did-not-finish`: a `failed` verdict that buys no round (0038 §2).
    */
-  it("fails and marks the answer unreadable when the runtime could not fit it to the schema", async () => {
+  it('fails and marks the answer unreadable when the runtime could not fit it to the schema', async () => {
     const result = await actionWith(
       outcome({
         turns: 3,
         costUsd: 0.08,
         exitCode: 1,
         text: null,
-        failure: { kind: "no-structured-answer", detail: "retried and gave up" },
+        failure: { kind: 'no-structured-answer', detail: 'retried and gave up' },
       }),
-    ).run(context);
+    ).run(context)
 
-    expect(result.verdict).toBe("failed");
-    expect(result.unreadable).toBe(true);
-    expect(result.evidence).toContain("retried and gave up");
-    expect(result.findings).toEqual([]);
-  });
+    expect(result.verdict).toBe('failed')
+    expect(result.unreadable).toBe(true)
+    expect(result.evidence).toContain('retried and gave up')
+    expect(result.findings).toEqual([])
+  })
 
   /**
    * **Every reviewer run sends the schema** (`#369`). The flag is the hard
@@ -1033,21 +1022,21 @@ describe("the action", () => {
    * so the action has to actually send it rather than rely on the prompt's
    * prose, which `CONTRACT` no longer carries the shape rules for.
    */
-  it("sends the findings schema with every review run", async () => {
-    const reply = reviewer(outcome({ text: '{"findings":[]}' }));
+  it('sends the findings schema with every review run', async () => {
+    const reply = reviewer(outcome({ text: '{"findings":[]}' }))
     await createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime: reply,
         issue: async () => ISSUE,
-        diff: async () => "diff --git a/x b/x\n+1",
-        settingsPath: "/tmp/settings.json",
+        diff: async () => 'diff --git a/x b/x\n+1',
+        settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
-    ).run(context);
+    ).run(context)
 
-    expect(reply.seen[0]?.outputSchema).toBe(REVIEW_ANSWER_JSON_SCHEMA);
-  });
+    expect(reply.seen[0]?.outputSchema).toBe(REVIEW_ANSWER_JSON_SCHEMA)
+  })
 
   /**
    * **`outcome.structured` is read directly, and `outcome.text` is not a
@@ -1058,13 +1047,13 @@ describe("the action", () => {
    */
   it("reads the runtime's own parse when it sent one, and ignores the text beside it", async () => {
     const result = await actionWith(
-      outcome({ text: "not json at all", structured: { findings: [finding()], about: null } }),
-    ).run(context);
+      outcome({ text: 'not json at all', structured: { findings: [finding()], about: null } }),
+    ).run(context)
 
-    expect(result.verdict).toBe("failed");
-    expect(result.findings).toHaveLength(1);
-    expect(result.unreadable).toBeUndefined();
-  });
+    expect(result.verdict).toBe('failed')
+    expect(result.findings).toHaveLength(1)
+    expect(result.unreadable).toBeUndefined()
+  })
 
   /**
    * **A `structured` answer with no `findings` array is `unreadable`, and
@@ -1074,55 +1063,55 @@ describe("the action", () => {
    * falling back to `text` would be a second reading of one answer — exactly
    * what the structured path exists to avoid.
    */
-  it("is unreadable when the structured answer has no findings array, and does not fall back to text", async () => {
+  it('is unreadable when the structured answer has no findings array, and does not fall back to text', async () => {
     const result = await actionWith(
       outcome({ text: JSON.stringify({ findings: [finding()] }), structured: { about: null } }),
-    ).run(context);
+    ).run(context)
 
-    expect(result.verdict).toBe("failed");
-    expect(result.unreadable).toBe(true);
-    expect(result.findings).toEqual([]);
-  });
+    expect(result.verdict).toBe('failed')
+    expect(result.unreadable).toBe(true)
+    expect(result.findings).toEqual([])
+  })
 
-  it("does not spend an agent call on an empty diff", async () => {
-    const runtime = reviewer(outcome({ text: '{"findings":[]}' }));
+  it('does not spend an agent call on an empty diff', async () => {
+    const runtime = reviewer(outcome({ text: '{"findings":[]}' }))
     const action = createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime,
         issue: async () => ISSUE,
-        diff: async () => "   \n  ",
-        settingsPath: "/tmp/s.json",
+        diff: async () => '   \n  ',
+        settingsPath: '/tmp/s.json',
         limits: { turns: 1, wallMs: 1, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
-    const result = await action.run(context);
+    const result = await action.run(context)
 
-    expect(result.verdict).toBe("passed");
-    expect(runtime.seen).toHaveLength(0);
-  });
+    expect(result.verdict).toBe('passed')
+    expect(runtime.seen).toHaveLength(0)
+  })
 
-  it("does not fetch the ticket when there is nothing to review", async () => {
-    let fetched = 0;
+  it('does not fetch the ticket when there is nothing to review', async () => {
+    let fetched = 0
     const action = createAgentAction(
-      { name: "review", prompt: "" },
+      { name: 'review', prompt: '' },
       {
         runtime: reviewer(outcome()),
         issue: async () => {
-          fetched += 1;
-          return ISSUE;
+          fetched += 1
+          return ISSUE
         },
-        diff: async () => "",
-        settingsPath: "/tmp/s.json",
+        diff: async () => '',
+        settingsPath: '/tmp/s.json',
         limits: { turns: 1, wallMs: 1, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
-    await action.run(context);
-    expect(fetched).toBe(0);
-  });
-});
+    await action.run(context)
+    expect(fetched).toBe(0)
+  })
+})
 
 /**
  * **The drafting agent's three answers, and the one that is none of them**
@@ -1145,56 +1134,56 @@ describe("the action", () => {
 describe("the drafting agent's answer", () => {
   const drafter = (reply: RunOutcome) =>
     createDraftAction(
-      { name: "draft", prompt: "" },
+      { name: 'draft', prompt: '' },
       {
         runtime: reviewer(reply),
         issue: async () => ISSUE,
-        diff: async () => "",
-        settingsPath: "/tmp/settings.json",
+        diff: async () => '',
+        settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
-  it("is a design when it is a document", async () => {
-    const result = await drafter(outcome({ text: "Put it in `packages/recipe`." })).run(context);
+  it('is a design when it is a document', async () => {
+    const result = await drafter(outcome({ text: 'Put it in `packages/recipe`.' })).run(context)
 
-    expect(result.verdict).toBe("passed");
-    expect(result.document).toBe("Put it in `packages/recipe`.");
-    expect(result.evidence).toContain("packages/recipe");
+    expect(result.verdict).toBe('passed')
+    expect(result.document).toBe('Put it in `packages/recipe`.')
+    expect(result.evidence).toContain('packages/recipe')
     // Neither of the other two, said out loud: this is the state the other two
     // are most likely to be mistaken for.
-    expect(result.because).toBeUndefined();
-    expect(result.unreadable).toBeUndefined();
-  });
+    expect(result.because).toBeUndefined()
+    expect(result.unreadable).toBeUndefined()
+  })
 
-  it("is *this change needs no design* when it is empty", async () => {
-    const result = await drafter(outcome({ text: "  \n " })).run(context);
+  it('is *this change needs no design* when it is empty', async () => {
+    const result = await drafter(outcome({ text: '  \n ' })).run(context)
 
-    expect(result.verdict).toBe("passed");
+    expect(result.verdict).toBe('passed')
     // `""` and not absent: *the agent answered that this change needs none* and
     // *nothing here drafts* are one brief to `implement`, and the key is what
     // `designFrom` tells them apart by.
-    expect(result.document).toBe("");
-    expect(result.evidence).toContain("no design: this change needs none");
-    expect(result.because).toBeUndefined();
-  });
+    expect(result.document).toBe('')
+    expect(result.evidence).toContain('no design: this change needs none')
+    expect(result.because).toBeUndefined()
+  })
 
   it("is a question when it is a question, and that is 0058 §3c's token", async () => {
-    const asked = "The ticket asks for a hold at `merge` and for nothing to hold there. Which wins?";
-    const result = await drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` })).run(context);
+    const asked = 'The ticket asks for a hold at `merge` and for nothing to hold there. Which wins?'
+    const result = await drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` })).run(context)
 
     // `did-not-finish` and not `failed`: the agent judged nothing, so nothing is
     // charged for the asking (0058 §3b), and `because` is what carries it past
     // `goesToTheRouter` to `proposed`.
-    expect(result.verdict).toBe("did-not-finish");
-    expect(result.because).toBe(NEEDS_INPUT);
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.because).toBe(NEEDS_INPUT)
     // The question alone, and no turn count spliced into it: this string is read
     // back to the next design agent as `SentBack.asked`.
-    expect(result.evidence).toBe(asked);
-    expect(result.evidence).not.toContain("turns");
+    expect(result.evidence).toBe(asked)
+    expect(result.evidence).not.toContain('turns')
     // And it is not a document — nothing reaches `implement` from a question.
-    expect(result.document).toBeUndefined();
-  });
+    expect(result.document).toBeUndefined()
+  })
 
   /**
    * **The answer that is both, and the one the prompt makes likely** (`#294`, the
@@ -1211,50 +1200,48 @@ describe("the drafting agent's answer", () => {
    * answered — and the note rides with it, in the one field that reaches both a
    * person's card and the log.
    */
-  it("keeps the design note when the answer is a document and a question", async () => {
-    const note = "## Shape\n\nPut `judgeDeclaredAt` in `judge.ts` and hand it the step's own list.";
-    const asked = "should the hold go at `proposed:` or `merge:`?";
-    const result = await drafter(
-      outcome({ text: `${note}\n\n\`\`\`question\n${asked}\n\`\`\`` }),
-    ).run(context);
+  it('keeps the design note when the answer is a document and a question', async () => {
+    const note = "## Shape\n\nPut `judgeDeclaredAt` in `judge.ts` and hand it the step's own list."
+    const asked = 'should the hold go at `proposed:` or `merge:`?'
+    const result = await drafter(outcome({ text: `${note}\n\n\`\`\`question\n${asked}\n\`\`\`` })).run(context)
 
     // Still a question: the agent asked, so the pass has somewhere to go and
     // nothing is charged for the asking.
-    expect(result.verdict).toBe("did-not-finish");
-    expect(result.because).toBe(NEEDS_INPUT);
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.because).toBe(NEEDS_INPUT)
     // The question leads, because that is what a judge is offered and what a
     // person answers.
-    expect(result.evidence.startsWith(asked)).toBe(true);
+    expect(result.evidence.startsWith(asked)).toBe(true)
     // **And the note the agent was paid to write is not thrown away.**
-    expect(result.evidence).toContain(note);
-    expect(result.evidence).toContain("What it had written before it asked:");
+    expect(result.evidence).toContain(note)
+    expect(result.evidence).toContain('What it had written before it asked:')
     // Still no turn count spliced in: this string is read back as `SentBack.asked`.
-    expect(result.evidence).not.toContain("turns");
-  });
+    expect(result.evidence).not.toContain('turns')
+  })
 
-  it("is `unreadable` when it announced a question and asked none", async () => {
+  it('is `unreadable` when it announced a question and asked none', async () => {
     // The fence opened and never closed: read as a document this is a design note
     // whose first line is a code fence and whose body is the agent's difficulty.
     const result = await drafter(
-      outcome({ text: "```question\nI do not know which of the two readings is meant" }),
-    ).run(context);
+      outcome({ text: '```question\nI do not know which of the two readings is meant' }),
+    ).run(context)
 
-    expect(result.unreadable).toBe(true);
+    expect(result.unreadable).toBe(true)
     // A refusal's verdict, so the flag reaches `StepFailed` and the log can be
     // asked how often this happens — and `design` does not refuse, so the step
     // reports `did-not-finish` and buys nothing (`endingOf`).
-    expect(result.verdict).toBe("failed");
+    expect(result.verdict).toBe('failed')
     // Never a silently empty document, which is the whole of `#279` here.
-    expect(result.document).toBeUndefined();
-    expect(result.evidence).toContain("I do not know which of the two readings is meant");
-  });
+    expect(result.document).toBeUndefined()
+    expect(result.evidence).toContain('I do not know which of the two readings is meant')
+  })
 
-  it("is `unreadable` when the question block is empty", async () => {
-    const result = await drafter(outcome({ text: "```question\n\n```" })).run(context);
+  it('is `unreadable` when the question block is empty', async () => {
+    const result = await drafter(outcome({ text: '```question\n\n```' })).run(context)
 
-    expect(result.unreadable).toBe(true);
-    expect(result.document).toBeUndefined();
-  });
+    expect(result.unreadable).toBe(true)
+    expect(result.document).toBeUndefined()
+  })
 
   /**
    * **`NEEDS_INPUT` is compared here and nowhere above here** (`#296`).
@@ -1269,74 +1256,74 @@ describe("the drafting agent's answer", () => {
    * same action shape, one answer a question and one a crash, and the two fields
    * are never both set.
    */
-  it("leaves a question as `askedAt` and a `StepAsked`, and a crash as neither", async () => {
-    const asked = "which of the two `base` values is meant?";
-    const questions: ActionEvent[] = [];
+  it('leaves a question as `askedAt` and a `StepAsked`, and a crash as neither', async () => {
+    const asked = 'which of the two `base` values is meant?'
+    const questions: ActionEvent[] = []
     const question = await runActionPipeline({
-      step: "design",
+      step: 'design',
       actions: [drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` }))],
       context,
       emit: (e) => void questions.push(e),
-    });
+    })
 
-    expect(question.askedAt).toEqual({ action: "draft", detail: asked });
+    expect(question.askedAt).toEqual({ action: 'draft', detail: asked })
     // And not the other field: a reader that checked `didNotFinishAt` first would
     // otherwise still see a crash where a person was being asked something.
-    expect(question.didNotFinishAt).toBeNull();
-    expect(questions.at(-1)?.type).toBe("StepAsked");
-    expect(questions.at(-1)?.data).toMatchObject({ step: "design", action: "draft", detail: asked });
+    expect(question.didNotFinishAt).toBeNull()
+    expect(questions.at(-1)?.type).toBe('StepAsked')
+    expect(questions.at(-1)?.data).toMatchObject({ step: 'design', action: 'draft', detail: asked })
     // The event is a real one and the schema says so, which is what makes the
     // reset rather than an upcaster the decision it is (`#296`).
-    expect(parsePayload("StepAsked", questions.at(-1)!.data)).toEqual(questions.at(-1)!.data);
+    expect(parsePayload('StepAsked', questions.at(-1)!.data)).toEqual(questions.at(-1)!.data)
 
-    const crashes: ActionEvent[] = [];
+    const crashes: ActionEvent[] = []
     const crash = await runActionPipeline({
-      step: "design",
-      actions: [drafter(outcome({ failure: { kind: "timeout", detail: "no result within 60000ms" } }))],
+      step: 'design',
+      actions: [drafter(outcome({ failure: { kind: 'timeout', detail: 'no result within 60000ms' } }))],
       context,
       emit: (e) => void crashes.push(e),
-    });
+    })
 
-    expect(crash.askedAt).toBeNull();
-    expect(crash.didNotFinishAt).toMatchObject({ action: "draft" });
+    expect(crash.askedAt).toBeNull()
+    expect(crash.didNotFinishAt).toMatchObject({ action: 'draft' })
     // No `because`: the drafting agent that crashed has no word of its own, so
     // `endingOf` spells it `did-not-finish` — and nothing routes on it.
-    expect(crash.didNotFinishAt).not.toHaveProperty("because");
-    expect(crashes.at(-1)?.type).toBe("StepDidNotFinish");
-  });
+    expect(crash.didNotFinishAt).not.toHaveProperty('because')
+    expect(crashes.at(-1)?.type).toBe('StepDidNotFinish')
+  })
 
   /**
    * The parse, read directly, so the three states are one table rather than four
    * dispatches. The action's branches above are what each state *costs*; this is
    * what each answer *is*.
    */
-  it("tells the three apart by what the answer is", () => {
-    expect(parseDraft(null)).toEqual({ kind: "document", document: "" });
-    expect(parseDraft("")).toEqual({ kind: "document", document: "" });
-    expect(parseDraft("a design")).toEqual({ kind: "document", document: "a design" });
-    expect(parseDraft("```question\nwhich?\n```")).toEqual({
-      kind: "question",
-      question: "which?",
-      draft: "",
-    });
+  it('tells the three apart by what the answer is', () => {
+    expect(parseDraft(null)).toEqual({ kind: 'document', document: '' })
+    expect(parseDraft('')).toEqual({ kind: 'document', document: '' })
+    expect(parseDraft('a design')).toEqual({ kind: 'document', document: 'a design' })
+    expect(parseDraft('```question\nwhich?\n```')).toEqual({
+      kind: 'question',
+      question: 'which?',
+      draft: '',
+    })
     // A document that quotes a fenced block is still a document: only the
     // `question` tag announces one.
-    expect(parseDraft("use:\n\n```ts\nconst x = 1\n```")).toMatchObject({ kind: "document" });
+    expect(parseDraft('use:\n\n```ts\nconst x = 1\n```')).toMatchObject({ kind: 'document' })
     // And whatever stood before the fence comes back on `draft`, at every width:
     // one sentence of apology and a whole design note are the same slice, because
     // nothing about the answer tells them apart.
-    expect(parseDraft("I cannot.\n\n```question\nwhich?\n```")).toEqual({
-      kind: "question",
-      question: "which?",
-      draft: "I cannot.",
-    });
-    expect(parseDraft("## Shape\n\nDo it in `judge.ts`.\n\n```question\nwhich?\n```")).toEqual({
-      kind: "question",
-      question: "which?",
-      draft: "## Shape\n\nDo it in `judge.ts`.",
-    });
-  });
-});
+    expect(parseDraft('I cannot.\n\n```question\nwhich?\n```')).toEqual({
+      kind: 'question',
+      question: 'which?',
+      draft: 'I cannot.',
+    })
+    expect(parseDraft('## Shape\n\nDo it in `judge.ts`.\n\n```question\nwhich?\n```')).toEqual({
+      kind: 'question',
+      question: 'which?',
+      draft: '## Shape\n\nDo it in `judge.ts`.',
+    })
+  })
+})
 
 /**
  * **The other half of 0058 §3c's sentence** — *or that step again with state your
@@ -1348,34 +1335,34 @@ describe("the drafting agent's answer", () => {
  * spent, and a person at the end of it anyway. So what it asked and what the
  * judge said travel into the prompt, with the instruction the ADR names.
  */
-describe("the design prompt", () => {
-  it("teaches the three states and the bar between a question and a preference", () => {
-    const prompt = buildDesignPrompt({ name: "draft", prompt: "" }, ISSUE);
+describe('the design prompt', () => {
+  it('teaches the three states and the bar between a question and a preference', () => {
+    const prompt = buildDesignPrompt({ name: 'draft', prompt: '' }, ISSUE)
 
-    expect(prompt).toContain("#58 — alias-aware skill merging");
+    expect(prompt).toContain('#58 — alias-aware skill merging')
     // Empty is still a real answer, and still the common one.
-    expect(prompt).toContain("reply with nothing at all");
+    expect(prompt).toContain('reply with nothing at all')
     // A question is announced, and the block is what announces it.
-    expect(prompt).toContain("```question");
+    expect(prompt).toContain('```question')
     // The bar, which is the line no parse can hold.
-    expect(prompt).toContain("A question is not a doubt");
-    expect(prompt).toContain("have a preference, and the document is where preferences go");
+    expect(prompt).toContain('A question is not a doubt')
+    expect(prompt).toContain('have a preference, and the document is where preferences go')
     // Nothing was sent back, so nothing says it was.
-    expect(prompt).not.toContain("a second time");
-  });
+    expect(prompt).not.toContain('a second time')
+  })
 
-  it("tells an agent sent back here what it asked and to assume instead", () => {
-    const prompt = buildDesignPrompt({ name: "draft", prompt: "" }, ISSUE, {
-      why: "assume the ticket means the first reading",
-      asked: "which of the two readings is meant?",
+  it('tells an agent sent back here what it asked and to assume instead', () => {
+    const prompt = buildDesignPrompt({ name: 'draft', prompt: '' }, ISSUE, {
+      why: 'assume the ticket means the first reading',
+      asked: 'which of the two readings is meant?',
       printed: null,
-    });
+    })
 
-    expect(prompt).toContain("which of the two readings is meant?");
-    expect(prompt).toContain("assume the ticket means the first reading");
-    expect(prompt).toContain("**Do not ask again.**");
-  });
-});
+    expect(prompt).toContain('which of the two readings is meant?')
+    expect(prompt).toContain('assume the ticket means the first reading')
+    expect(prompt).toContain('**Do not ask again.**')
+  })
+})
 
 /**
  * **The bound a `run:` had and an `agent:` did not** (`#298`, 0066 §8).
@@ -1398,35 +1385,32 @@ describe("the design prompt", () => {
  */
 describe("an agent's evidence on the log", () => {
   /** Comfortably above `EVIDENCE_BYTES` and its quarter-sized head. */
-  const BOUND = 12_000;
+  const BOUND = 12_000
 
-  type Step = Parameters<typeof runActionPipeline>[0]["step"];
+  type Step = Parameters<typeof runActionPipeline>[0]['step']
 
   const evidenceOf = async (action: Action, step: Step) => {
-    const events: ActionEvent[] = [];
-    await runActionPipeline({ step, actions: [action], context, emit: (e) => void events.push(e) });
-    const last = events.at(-1);
-    if (last === undefined || !("evidence" in last.data)) throw new Error(`no evidence on ${last?.type}`);
-    return last.data.evidence as string;
-  };
+    const events: ActionEvent[] = []
+    await runActionPipeline({ step, actions: [action], context, emit: (e) => void events.push(e) })
+    const last = events.at(-1)
+    if (last === undefined || !('evidence' in last.data)) throw new Error(`no evidence on ${last?.type}`)
+    return last.data.evidence as string
+  }
 
-  it("clips a review that said far too much, and says that it clipped it", async () => {
+  it('clips a review that said far too much, and says that it clipped it', async () => {
     const many = Array.from({ length: 400 }, (_, i) =>
       finding({ file: `src/f${i}.ts`, line: i, claim: `the guard at ${i} is not asserted in the write` }),
-    );
+    )
 
-    const evidence = await evidenceOf(
-      actionWith(outcome({ text: JSON.stringify({ findings: many }) })),
-      "review",
-    );
+    const evidence = await evidenceOf(actionWith(outcome({ text: JSON.stringify({ findings: many }) })), 'review')
 
-    expect(evidence.length).toBeLessThan(BOUND);
+    expect(evidence.length).toBeLessThan(BOUND)
     // The start is what a reader needs first, and `tail` keeps it.
-    expect(evidence).toContain("src/f0.ts:0");
+    expect(evidence).toContain('src/f0.ts:0')
     // The end is what carries the cost, and it is the last thing appended.
-    expect(evidence).toContain("(7 turns · $0.42)");
-    expect(evidence).toContain("this is not the whole answer");
-  });
+    expect(evidence).toContain('(7 turns · $0.42)')
+    expect(evidence).toContain('this is not the whole answer')
+  })
 
   /**
    * `design` is the case 0066 §8 names, and the worst of them: `createDraftAction`
@@ -1434,45 +1418,45 @@ describe("an agent's evidence on the log", () => {
    * action whole on `result.document` — `WroteTheDesign` is where a design is
    * kept, and clipping the card's copy of it costs nothing.
    */
-  it("clips a design document, and leaves the document itself whole", async () => {
-    const document = Array.from({ length: 4_000 }, (_, i) => `- line ${i} of the design`).join("\n");
+  it('clips a design document, and leaves the document itself whole', async () => {
+    const document = Array.from({ length: 4_000 }, (_, i) => `- line ${i} of the design`).join('\n')
     const drafter = createDraftAction(
-      { name: "draft", prompt: "" },
+      { name: 'draft', prompt: '' },
       {
         runtime: reviewer(outcome({ text: document })),
         issue: async () => ISSUE,
-        diff: async () => "",
-        settingsPath: "/tmp/settings.json",
+        diff: async () => '',
+        settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
       },
-    );
+    )
 
-    const result = await drafter.run(context);
-    expect(result.document).toBe(document);
+    const result = await drafter.run(context)
+    expect(result.document).toBe(document)
 
-    const evidence = await evidenceOf(drafter, "design");
+    const evidence = await evidenceOf(drafter, 'design')
 
-    expect(document.length).toBeGreaterThan(80_000);
-    expect(evidence.length).toBeLessThan(BOUND);
-    expect(evidence).toContain("- line 0 of the design");
-    expect(evidence).toContain("(7 turns · $0.42)");
-    expect(evidence).toContain("this is not the whole answer");
-  });
+    expect(document.length).toBeGreaterThan(80_000)
+    expect(evidence.length).toBeLessThan(BOUND)
+    expect(evidence).toContain('- line 0 of the design')
+    expect(evidence).toContain('(7 turns · $0.42)')
+    expect(evidence).toContain('this is not the whole answer')
+  })
 
   /**
    * The other half, and the one a careless fix breaks: nearly every evidence is
    * short, and a bound that rewrote those would put a clip marker on answers
    * nothing was cut from.
    */
-  it("leaves an evidence that fits exactly as it was", async () => {
+  it('leaves an evidence that fits exactly as it was', async () => {
     const evidence = await evidenceOf(
       actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) })),
-      "review",
-    );
+      'review',
+    )
 
-    expect(evidence).toBe("blocker src/x.ts:42 — the guard is not asserted in the write\n\n(7 turns · $0.42)");
-  });
-});
+    expect(evidence).toBe('blocker src/x.ts:42 — the guard is not asserted in the write\n\n(7 turns · $0.42)')
+  })
+})
 
 /**
  * **`ActionFinding` and the schema cannot diverge, because one declaration is
@@ -1481,33 +1465,33 @@ describe("an agent's evidence on the log", () => {
  * zod object — so a field added to one and not the other is a red test here
  * rather than a runtime discovering it mid-review.
  */
-describe("the schema and ActionFinding cannot diverge", () => {
+describe('the schema and ActionFinding cannot diverge', () => {
   it("has exactly the keys the schema's own finding shape has", () => {
     const full: Required<ActionFinding> = {
-      file: "x.ts",
+      file: 'x.ts',
       line: null,
-      claim: "c",
-      failureScenario: "f",
-      severity: "minor",
-    };
+      claim: 'c',
+      failureScenario: 'f',
+      severity: 'minor',
+    }
     const findingsProp = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).findings as Record<
       string,
       unknown
-    >;
-    const items = findingsProp.items as Record<string, unknown>;
-    const schemaKeys = Object.keys(items.properties as Record<string, unknown>);
+    >
+    const items = findingsProp.items as Record<string, unknown>
+    const schemaKeys = Object.keys(items.properties as Record<string, unknown>)
 
-    expect(Object.keys(full).sort()).toEqual(schemaKeys.sort());
-  });
+    expect(Object.keys(full).sort()).toEqual(schemaKeys.sort())
+  })
 
   it("carries severity's ladder as SEVERITIES, not a copy of it", () => {
     const findingsProp = (REVIEW_ANSWER_JSON_SCHEMA.properties as Record<string, unknown>).findings as Record<
       string,
       unknown
-    >;
-    const items = findingsProp.items as Record<string, unknown>;
-    const severity = (items.properties as Record<string, { enum: readonly string[] }>).severity!;
+    >
+    const items = findingsProp.items as Record<string, unknown>
+    const severity = (items.properties as Record<string, { enum: readonly string[] }>).severity!
 
-    expect(severity.enum).toEqual(SEVERITIES);
-  });
-});
+    expect(severity.enum).toEqual(SEVERITIES)
+  })
+})

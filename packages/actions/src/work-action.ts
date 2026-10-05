@@ -39,9 +39,10 @@
  * choice: `implement` is not one of `REFUSING_STEPS`, so arriving at the router
  * and refusing are different things and only one of them is charged for.
  */
-import type { RuntimeId } from "@lingtai/domain";
-import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult } from "./action.ts";
-import { boundedEvidence } from "./command.ts";
+import type { RuntimeId } from '@lingtai/domain'
+
+import { NEEDS_INPUT, type Action, type ActionContext, type ActionResult } from './action.ts'
+import { boundedEvidence } from './command.ts'
 
 /**
  * What the dispatch answers. The same four arms `Worked` carries in
@@ -56,7 +57,7 @@ export type WorkedAnswer =
   /** 0031 §1's `never-started`: zero turns, zero cost, and about the account. */
   | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
   /** It started and left no receipt — a crash, a spent turn budget, no commit. */
-  | { readonly stopped: string };
+  | { readonly stopped: string }
 
 /**
  * The dispatch, as the only thing this action needs from its caller.
@@ -83,43 +84,43 @@ export type WorkedAnswer =
  */
 export interface WorkDispatch {
   /** Appended to the implementer's brief, never substituted for it. */
-  readonly prompt: string;
+  readonly prompt: string
   /** The recipe's `model:`; absent is the runtime's own default (0063 §2). */
-  readonly model?: string;
+  readonly model?: string
   /** Which runtime; absent is `runtime.agent`, the pass's default (0070 §3). */
-  readonly agent?: RuntimeId;
+  readonly agent?: RuntimeId
   /** What this one call may spend; absent is `runtime.limits` (0070 §5). */
-  readonly limits?: { readonly turns?: number; readonly wall?: string };
+  readonly limits?: { readonly turns?: number; readonly wall?: string }
 }
 
 export interface WorkActionDeps {
-  work(spec: WorkDispatch, context: ActionContext): Promise<WorkedAnswer>;
+  work(spec: WorkDispatch, context: ActionContext): Promise<WorkedAnswer>
 }
 
 export interface WorkActionSpec {
-  name: string;
+  name: string
   /**
    * Appended to the implementer's brief, never substituted for it — the rule
    * `createAgentAction` follows and for the same reason: a project can add what
    * it cares about and cannot remove the ticket, the design or the round it is in.
    */
-  prompt: string;
+  prompt: string
   /**
    * The recipe's `model:`, handed to the runtime as-is — and **absent means the
    * runtime's own default**, so it is passed through absent rather than resolved
    * to a name here (`#245`, 0063 §2).
    */
-  model?: string;
+  model?: string
   /** The recipe's `agent:` — which runtime writes the change (`#314`, 0070 §3). */
-  agent?: RuntimeId;
+  agent?: RuntimeId
   /** The recipe's `limits:` for this one call, where it narrowed the ceiling. */
-  limits?: { readonly turns?: number; readonly wall?: string };
+  limits?: { readonly turns?: number; readonly wall?: string }
 }
 
 export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Action {
   return {
     name: spec.name,
-    kind: "agent",
+    kind: 'agent',
 
     async run(context: ActionContext): Promise<ActionResult> {
       // Spread rather than assigned, each of the three, because absent has to
@@ -134,41 +135,41 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
           ...(spec.limits === undefined ? {} : { limits: spec.limits }),
         },
         context,
-      );
+      )
 
-      if ("committed" in answer) {
+      if ('committed' in answer) {
         return {
-          verdict: "passed",
+          verdict: 'passed',
           evidence: `committed ${answer.committed.slice(0, 7)}`,
           findings: [],
           head: answer.committed,
-        };
+        }
       }
-      if ("asked" in answer) {
+      if ('asked' in answer) {
         // **Not `needs-approval`**, which holds the item for a person. A question
         // from the agent that writes the code is 0058 §3c's: it buys a decision at
         // `proposed`, where there is a round to spend on the answer, and the token
         // that gets it there is this one.
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           because: NEEDS_INPUT,
           evidence: boundedEvidence(answer.asked),
           findings: [],
-        };
+        }
       }
-      if ("neverStarted" in answer) {
+      if ('neverStarted' in answer) {
         // The wall's own words and nothing added, exactly as `createDraftAction`
         // reports the same wall: `standDownConductor` writes the sentence a person
         // reads, and this is the detail it quotes. Which runtime met it is the
         // conductor's — one conductor dispatches one — so a name spliced in here
         // would be the second place it is said.
         return {
-          verdict: "never-ran",
+          verdict: 'never-ran',
           evidence: boundedEvidence(answer.neverStarted.detail),
           findings: [],
-        };
+        }
       }
-      return { verdict: "did-not-finish", evidence: boundedEvidence(answer.stopped), findings: [] };
+      return { verdict: 'did-not-finish', evidence: boundedEvidence(answer.stopped), findings: [] }
     },
-  };
+  }
 }

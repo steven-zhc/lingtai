@@ -36,17 +36,11 @@
  * the meter never updates. It is the recipe's `discuss.limits` now (`#243`),
  * not a constant here — see `@lingtai/recipe`'s `Discuss`.
  */
-import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import {
-  createRuntime,
-  NO_RUN_LOG,
-  openRunLog,
-  RUN_LOG_BEAT_MS,
-  type RunTrace,
-  type Runtime,
-} from "@lingtai/agent";
-import { runnableEnv } from "@lingtai/agent-env";
+import { mkdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+import { createRuntime, NO_RUN_LOG, openRunLog, RUN_LOG_BEAT_MS, type RunTrace, type Runtime } from '@lingtai/agent'
+import { runnableEnv } from '@lingtai/agent-env'
 import {
   FILE_BYTES,
   holdDiscussion,
@@ -56,10 +50,10 @@ import {
   type DiscussionEvidence,
   type DiscussionPorts,
   type ReadableRef,
-} from "@lingtai/conductor/discuss";
-import { githubClientFor } from "@lingtai/conductor/filter";
-import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
-import { runLogPath } from "@lingtai/conductor/run-log";
+} from '@lingtai/conductor/discuss'
+import { githubClientFor } from '@lingtai/conductor/filter'
+import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { runLogPath } from '@lingtai/conductor/run-log'
 import {
   chatStream,
   parseWorkItemStream,
@@ -68,11 +62,11 @@ import {
   CONTROL_STREAM,
   type DiscussionRequest,
   type Envelope,
-} from "@lingtai/domain";
-import { stateDir } from "@lingtai/env";
-import { eventStore } from "@lingtai/event-store";
-import { callFor, DISCUSS_DEFAULTS, type Discuss } from "@lingtai/recipe";
-import { listAt, readAt, refSha } from "@lingtai/repo";
+} from '@lingtai/domain'
+import { stateDir } from '@lingtai/env'
+import { eventStore } from '@lingtai/event-store'
+import { callFor, DISCUSS_DEFAULTS, type Discuss } from '@lingtai/recipe'
+import { listAt, readAt, refSha } from '@lingtai/repo'
 
 /**
  * Every tool, denied.
@@ -85,23 +79,23 @@ import { listAt, readAt, refSha } from "@lingtai/repo";
  * mirror.
  */
 const DENIED = [
-  "Bash",
-  "BashOutput",
-  "KillShell",
-  "Edit",
-  "Write",
-  "NotebookEdit",
-  "Read",
-  "Glob",
-  "Grep",
-  "WebFetch",
-  "WebSearch",
-  "Task",
-];
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Edit',
+  'Write',
+  'NotebookEdit',
+  'Read',
+  'Glob',
+  'Grep',
+  'WebFetch',
+  'WebSearch',
+  'Task',
+]
 
 /** Where a chat's settings and its empty working directory live. */
 export function chatDir(chatId: string, home = stateDir()): string {
-  return join(home, "chats", chatId);
+  return join(home, 'chats', chatId)
 }
 
 /**
@@ -111,16 +105,16 @@ export function chatDir(chatId: string, home = stateDir()): string {
  * a file between two questions is not the directory the next turn runs in.
  */
 async function prepare(chatId: string, home = stateDir()): Promise<{ cwd: string; settingsPath: string }> {
-  const cwd = chatDir(chatId, home);
-  await rm(cwd, { recursive: true, force: true });
-  await mkdir(cwd, { recursive: true, mode: 0o700 });
-  const settingsPath = join(home, "chats", `${chatId}.settings.json`);
+  const cwd = chatDir(chatId, home)
+  await rm(cwd, { recursive: true, force: true })
+  await mkdir(cwd, { recursive: true, mode: 0o700 })
+  const settingsPath = join(home, 'chats', `${chatId}.settings.json`)
   await writeFile(
     settingsPath,
-    `${JSON.stringify({ permissions: { defaultMode: "default", deny: DENIED } }, null, 2)}\n`,
+    `${JSON.stringify({ permissions: { defaultMode: 'default', deny: DENIED } }, null, 2)}\n`,
     { mode: 0o600 },
-  );
-  return { cwd, settingsPath };
+  )
+  return { cwd, settingsPath }
 }
 
 /**
@@ -133,14 +127,14 @@ async function prepare(chatId: string, home = stateDir()): Promise<{ cwd: string
  */
 export function logLines(events: readonly Envelope[], limit: number): string[] {
   const lines = events.map((e) => {
-    const at = e.at.toISOString().slice(0, 19).replace("T", " ");
-    const body = JSON.stringify(e.data ?? {});
+    const at = e.at.toISOString().slice(0, 19).replace('T', ' ')
+    const body = JSON.stringify(e.data ?? {})
     return `${e.seq}  ${at}  ${e.streamId}  ${e.type}  ${e.actor}  ${
       body.length > 400 ? `${body.slice(0, 399)}…` : body
-    }`;
-  });
-  if (lines.length <= limit) return lines;
-  return [`[${lines.length - limit} earlier events elided]`, ...lines.slice(-limit)];
+    }`
+  })
+  if (lines.length <= limit) return lines
+  return [`[${lines.length - limit} earlier events elided]`, ...lines.slice(-limit)]
 }
 
 /**
@@ -152,14 +146,14 @@ export function logLines(events: readonly Envelope[], limit: number): string[] {
  * `RunProducedDiff` is the attempt saying it produced something.
  */
 export function headOf(run: readonly Envelope[]): string | null {
-  let head: string | null = null;
+  let head: string | null = null
   for (const e of run) {
-    const d = (e.data ?? {}) as Record<string, unknown>;
-    if (e.type === "RunProducedDiff" || e.type === "RunProposedCompletion") {
-      if (typeof d["headSha"] === "string") head = d["headSha"];
+    const d = (e.data ?? {}) as Record<string, unknown>
+    if (e.type === 'RunProducedDiff' || e.type === 'RunProposedCompletion') {
+      if (typeof d['headSha'] === 'string') head = d['headSha']
     }
   }
-  return head;
+  return head
 }
 
 /**
@@ -172,50 +166,50 @@ export function headOf(run: readonly Envelope[]): string | null {
  * cloned yet is a fact, and "no file can be read" is the honest brief for it.
  */
 export async function gatherEvidence(request: DiscussionRequest): Promise<DiscussionEvidence> {
-  const parsed = parseWorkItemStream(request.workItemId);
-  const project = parsed?.project ?? "";
-  const own = await eventStore.read(request.workItemId);
-  const item = reduceWorkItem(own);
+  const parsed = parseWorkItemStream(request.workItemId)
+  const project = parsed?.project ?? ''
+  const own = await eventStore.read(request.workItemId)
+  const item = reduceWorkItem(own)
 
-  const runIds = [...item.runs];
-  const streams = await Promise.all(runIds.map((id) => eventStore.read(id)));
+  const runIds = [...item.runs]
+  const streams = await Promise.all(runIds.map((id) => eventStore.read(id)))
 
   // 1-based, in claim order — the same numbering the detail page shows, so a
   // question about "attempt 2" means the attempt the page called 2.
-  const index = request.attempt === null ? -1 : request.attempt - 1;
-  const head = index >= 0 ? headOf(streams[index] ?? []) : null;
+  const index = request.attempt === null ? -1 : request.attempt - 1
+  const head = index >= 0 ? headOf(streams[index] ?? []) : null
 
-  const state = await loadProject(project).catch(() => null);
-  const base = state?.base ?? "main";
+  const state = await loadProject(project).catch(() => null)
+  const base = state?.base ?? 'main'
 
-  let ticket: DiscussionEvidence["ticket"] = null;
-  let ticketProblem: string | null = null;
+  let ticket: DiscussionEvidence['ticket'] = null
+  let ticketProblem: string | null = null
   if (state === null) {
-    ticketProblem = `${project} is not a registered project`;
+    ticketProblem = `${project} is not a registered project`
   } else {
     try {
-      const client = await githubClientFor(state);
-      const live = await client.getIssue(Number(parsed?.issue));
-      ticket = { ref: String(live.number), title: live.title, body: live.body };
+      const client = await githubClientFor(state)
+      const live = await client.getIssue(Number(parsed?.issue))
+      ticket = { ref: String(live.number), title: live.title, body: live.body }
     } catch (err) {
-      ticketProblem = (err as Error).message;
+      ticketProblem = (err as Error).message
     }
   }
 
-  const baseSha = await refSha({ project, ref: base });
-  const refs: ReadableRef[] = [];
+  const baseSha = await refSha({ project, ref: base })
+  const refs: ReadableRef[] = []
   if (baseSha !== null) {
-    const listed = await listAt({ project, ref: base });
-    refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated });
+    const listed = await listAt({ project, ref: base })
+    refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated })
   }
   if (head !== null && (await refSha({ project, ref: head })) !== null) {
-    const listed = await listAt({ project, ref: head });
+    const listed = await listAt({ project, ref: head })
     refs.push({
       ref: `attempt-${request.attempt}`,
       sha: head,
       paths: listed.paths,
       truncated: listed.truncated,
-    });
+    })
   }
 
   return {
@@ -228,11 +222,11 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
     // on `DiscussionAsked` — never left to the assistant to remember.
     reading: readingFor({ attempt: request.attempt, base, baseSha, head }),
     refs,
-  };
+  }
 }
 
 function bySeq(a: Envelope, b: Envelope): number {
-  return a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0;
+  return a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0
 }
 
 /**
@@ -248,7 +242,7 @@ function bySeq(a: Envelope, b: Envelope): number {
 export function discussionAsk(
   runtime: Runtime,
   fixed: { runId: (round: number) => Promise<string>; cwd: string; settingsPath: string; log: RunTrace },
-): DiscussionPorts["ask"] {
+): DiscussionPorts['ask'] {
   return async (prompt, round, call) =>
     runtime.run({
       runId: await fixed.runId(round),
@@ -264,7 +258,7 @@ export function discussionAsk(
       // writes its own stream here (`traceOf`), which is the whole of what
       // makes the box on the board move.
       log: fixed.log,
-    });
+    })
 }
 
 /**
@@ -277,9 +271,9 @@ export async function answerDiscussion(
   request: DiscussionRequest,
   log: (line: string) => void = () => {},
 ): Promise<void> {
-  const project = parseWorkItemStream(request.workItemId)?.project ?? "";
-  const evidence = await gatherEvidence(request);
-  const { cwd, settingsPath } = await prepare(request.chatId);
+  const project = parseWorkItemStream(request.workItemId)?.project ?? ''
+  const evidence = await gatherEvidence(request)
+  const { cwd, settingsPath } = await prepare(request.chatId)
   /**
    * The recipe's own `discuss:`, **asked rather than assumed** (`#313`, `#243`).
    *
@@ -297,7 +291,7 @@ export async function answerDiscussion(
    */
   const discuss: Discuss = await loadProject(project)
     .then((state) => (state === null ? DISCUSS_DEFAULTS : currentRecipe(state).then((r) => r.recipe.discuss)))
-    .catch(() => DISCUSS_DEFAULTS);
+    .catch(() => DISCUSS_DEFAULTS)
   /**
    * **Contained by construction, not by fallback** (`#243`).
    *
@@ -311,11 +305,11 @@ export async function answerDiscussion(
    * this way was already refused when it resolved, before a worktree, before
    * an agent, before any money.
    */
-  const runtime: Runtime = createRuntime(discuss.agent, { tools: "none" });
-  const call = callFor(discuss);
+  const runtime: Runtime = createRuntime(discuss.agent, { tools: 'none' })
+  const call = callFor(discuss)
   // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
   // asked for the commit, so what it was shown cannot drift under it mid-answer.
-  const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]));
+  const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
 
   /**
    * The conversation's trace, as it is produced.
@@ -351,35 +345,35 @@ export async function answerDiscussion(
    * purpose (a run's second attempt adds to the story rather than erasing it) —
    * so it goes first. This turn's trace is this turn's.
    */
-  const path = runLogPath(stateDir(), project, request.chatId);
-  await rm(path, { force: true }).catch(() => {});
-  const trace = await openRunLog({ path }).catch(() => NO_RUN_LOG);
+  const path = runLogPath(stateDir(), project, request.chatId)
+  await rm(path, { force: true }).catch(() => {})
+  const trace = await openRunLog({ path }).catch(() => NO_RUN_LOG)
   // Still here, said on the file itself whether or not there is a line to write:
   // an agent thinking for a minute writes nothing, and neither does a daemon
   // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
   const beat = setInterval(() => {
-    const at = new Date();
-    void utimes(path, at, at).catch(() => {});
-  }, RUN_LOG_BEAT_MS);
-  beat.unref?.();
+    const at = new Date()
+    void utimes(path, at, at).catch(() => {})
+  }, RUN_LOG_BEAT_MS)
+  beat.unref?.()
 
   /** Both places: the daemon's own output, and the file the board follows. */
   const say = (line: string) => {
-    log(line);
-    trace.note("chat", line);
-  };
+    log(line)
+    trace.note('chat', line)
+  }
 
   try {
-    say(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(" · ")}`);
+    say(`discussion ${request.chatId} on ${request.workItemId}: ${evidence.reading.join(' · ')}`)
 
     const held = await holdDiscussion(
       {
         store: eventStore,
         log: say,
         serve: async (ref, path) => {
-          const sha = shas.get(ref);
-          if (sha === undefined) return null;
-          return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES });
+          const sha = shas.get(ref)
+          if (sha === undefined) return null
+          return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES })
         },
         ask: discussionAsk(runtime, {
           // Its own id per round, so nothing resumes a session. `sessionIdFor`
@@ -401,19 +395,19 @@ export async function answerDiscussion(
         call,
         ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
       },
-    );
+    )
 
     say(
-      `discussion ${request.chatId}: ${held.answered ? "answered" : "did not answer"}` +
-        (held.costUsd === null ? "" : ` · $${held.costUsd.toFixed(2)}`),
-    );
+      `discussion ${request.chatId}: ${held.answered ? 'answered' : 'did not answer'}` +
+        (held.costUsd === null ? '' : ` · $${held.costUsd.toFixed(2)}`),
+    )
   } finally {
     // The turn is over, so the file is: see `trace` above. Its record is on the
     // chat's stream and this was only ever the trace beside it (0034 §8), and
     // leaving it would hand the *next* question this one's output as the answer
     // being written for it.
-    clearInterval(beat);
-    await trace.close("delete");
+    clearInterval(beat)
+    await trace.close('delete')
   }
 }
 
@@ -429,31 +423,31 @@ export async function answerDiscussion(
  * bill they did not watch accumulate.
  */
 export async function answerOutstanding(log: (line: string) => void = () => {}): Promise<number> {
-  const control = reduceControl(await eventStore.read(CONTROL_STREAM));
-  const byChat = new Map<string, DiscussionRequest[]>();
+  const control = reduceControl(await eventStore.read(CONTROL_STREAM))
+  const byChat = new Map<string, DiscussionRequest[]>()
   for (const d of control.discussions) {
-    byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d]);
+    byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d])
   }
 
-  let answered = 0;
+  let answered = 0
   for (const [chatId, asks] of byChat) {
     // Until the chat has caught up, not once: two questions can land in one
     // burst, and answering only the first would leave the second waiting for
     // an event that has already been.
     for (;;) {
-      const events = await eventStore.read(chatStream(chatId));
-      if (!outstanding(asks.length, events)) break;
+      const events = await eventStore.read(chatStream(chatId))
+      if (!outstanding(asks.length, events)) break
       // The oldest unanswered one. Answers land in order, so the nth request is
       // outstanding exactly when there are fewer than n answers.
-      const next = asks[events.filter((e) => e.type === "DiscussionAnswered").length];
-      if (!next) break;
+      const next = asks[events.filter((e) => e.type === 'DiscussionAnswered').length]
+      if (!next) break
       await answerDiscussion(next, log).catch((err: unknown) =>
         log(`discussion ${chatId} failed: ${(err as Error).message}`),
-      );
-      answered += 1;
+      )
+      answered += 1
     }
   }
-  return answered;
+  return answered
 }
 
 /**
@@ -465,7 +459,7 @@ export async function answerOutstanding(log: (line: string) => void = () => {}):
  * twice. Two agents for one question is the one way this feature could surprise
  * somebody with a bill, so the answers are serialised rather than raced.
  */
-let queue: Promise<unknown> = Promise.resolve();
+let queue: Promise<unknown> = Promise.resolve()
 
 /**
  * The daemon's handler for one `DiscussionRequested` as it arrives.
@@ -474,14 +468,13 @@ let queue: Promise<unknown> = Promise.resolve();
  * outstandingness: two requests can land in one burst, and answering the one in
  * hand while an earlier one is still unanswered would answer them out of order.
  */
-export async function onDiscussionRequested(
-  event: Envelope,
-  log: (line: string) => void = () => {},
-): Promise<void> {
-  if (event.type !== "DiscussionRequested") return;
-  queue = queue.then(() => answerOutstanding(log)).catch((err: unknown) => {
-    log(`discussions: ${(err as Error).message}`);
-    return 0;
-  });
-  await queue;
+export async function onDiscussionRequested(event: Envelope, log: (line: string) => void = () => {}): Promise<void> {
+  if (event.type !== 'DiscussionRequested') return
+  queue = queue
+    .then(() => answerOutstanding(log))
+    .catch((err: unknown) => {
+      log(`discussions: ${(err as Error).message}`)
+      return 0
+    })
+  await queue
 }

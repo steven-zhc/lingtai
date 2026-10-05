@@ -17,13 +17,13 @@
  * under time pressure against real history, which is the worst moment to also be
  * designing the mechanism.
  */
-import { type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from "./events.ts";
+import { type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from './events.ts'
 
 /** Takes a payload at version *n* and returns it at version *n + 1*. */
-export type Upcaster = (data: unknown) => unknown;
+export type Upcaster = (data: unknown) => unknown
 
 /** `type → fromVersion → upcaster`. Steps must be contiguous. */
-export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>>;
+export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>>
 
 /**
  * **The nine steps that were here are gone, and the reset is what spent them**
@@ -80,7 +80,7 @@ export const UPCASTERS: UpcastRegistry = {
     1: (data) => ({
       findings: ((data as { findings?: object[] }).findings ?? []).map((f) => ({
         ...f,
-        action: "reported",
+        action: 'reported',
       })),
     }),
   },
@@ -104,8 +104,8 @@ export const UPCASTERS: UpcastRegistry = {
      * advisory lock, and neither was ever read off this number.
      */
     2: (data) => {
-      const { leaseUntilMs: _dropped, ...rest } = data as { leaseUntilMs?: unknown };
-      return rest;
+      const { leaseUntilMs: _dropped, ...rest } = data as { leaseUntilMs?: unknown }
+      return rest
     },
   },
   WorkItemBlocked: {
@@ -197,28 +197,28 @@ export const UPCASTERS: UpcastRegistry = {
      * the two fields and never the one that said `diff`.
      */
     1: (data) => {
-      const { attempt: _n, retrying: _more, ...rest } = data as { attempt?: unknown; retrying?: unknown };
-      return rest;
+      const { attempt: _n, retrying: _more, ...rest } = data as { attempt?: unknown; retrying?: unknown }
+      return rest
     },
   },
-};
+}
 
 export class MissingUpcasterError extends Error {
-  override readonly name = "MissingUpcasterError";
-  readonly type: EventType;
-  readonly stored: number;
-  readonly supported: number;
+  override readonly name = 'MissingUpcasterError'
+  readonly type: EventType
+  readonly stored: number
+  readonly supported: number
 
   constructor(type: EventType, stored: number, supported: number) {
     super(
       stored > supported
         ? `${type} is stored at schemaVer ${stored} but this build reads ${supported} — ` +
-            "the writer is newer than the reader"
+            'the writer is newer than the reader'
         : `${type} needs an upcaster from schemaVer ${stored} to reach ${supported}`,
-    );
-    this.type = type;
-    this.stored = stored;
-    this.supported = supported;
+    )
+    this.type = type
+    this.stored = stored
+    this.supported = supported
   }
 }
 
@@ -234,17 +234,17 @@ export function upcast(
   data: unknown,
   registry: UpcastRegistry = UPCASTERS,
 ): unknown {
-  const supported = SCHEMA_VER[type];
-  if (schemaVer === supported) return data;
-  if (schemaVer > supported) throw new MissingUpcasterError(type, schemaVer, supported);
+  const supported = SCHEMA_VER[type]
+  if (schemaVer === supported) return data
+  if (schemaVer > supported) throw new MissingUpcasterError(type, schemaVer, supported)
 
-  let current = data;
+  let current = data
   for (let from = schemaVer; from < supported; from++) {
-    const step = registry[type]?.[from];
-    if (!step) throw new MissingUpcasterError(type, schemaVer, supported);
-    current = step(current);
+    const step = registry[type]?.[from]
+    if (!step) throw new MissingUpcasterError(type, schemaVer, supported)
+    current = step(current)
   }
-  return current;
+  return current
 }
 
 /** Upcast, then validate. What a reader should call instead of `parsePayload`. */
@@ -254,5 +254,5 @@ export function parseStoredPayload<T extends EventType>(
   data: unknown,
   registry: UpcastRegistry = UPCASTERS,
 ): PayloadOf<T> {
-  return parsePayload(type, upcast(type, schemaVer, data, registry));
+  return parsePayload(type, upcast(type, schemaVer, data, registry))
 }

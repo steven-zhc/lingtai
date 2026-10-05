@@ -1,7 +1,9 @@
-import { rm, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
-import { readTasks, type TaskCard } from "@lingtai/projector/task-view";
-import { SNAPSHOT_FILE, takeBoard } from "../src/lib/snapshot.ts";
+import { execFileSync } from 'node:child_process'
+import { rm, writeFile } from 'node:fs/promises'
+
+import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
+
+import { SNAPSHOT_FILE, takeBoard } from '../src/lib/snapshot.ts'
 
 /**
  * Takes the board on the front page.
@@ -30,21 +32,21 @@ import { SNAPSHOT_FILE, takeBoard } from "../src/lib/snapshot.ts";
  * running the build is the one who decided.
  */
 function publishable(): Set<string> {
-  const named = process.env.LINGTAI_SITE_PUBLIC_PROJECTS ?? "";
+  const named = process.env.LINGTAI_SITE_PUBLIC_PROJECTS ?? ''
   return new Set(
     named
-      .split(",")
+      .split(',')
       .map((p) => p.trim())
-      .filter((p) => p !== ""),
-  );
+      .filter((p) => p !== ''),
+  )
 }
 
 /** The commit the log was read at, or null outside a repository. */
 function head(): string | null {
   try {
-    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -63,12 +65,12 @@ function head(): string | null {
  * fabricated screenshot of a real product, which is worse than no hero.
  */
 function stop(why: string, cause: unknown): never {
-  console.error(`snapshot: ${why}`);
-  console.error(`  ${cause instanceof Error ? cause.message : String(cause)}`);
+  console.error(`snapshot: ${why}`)
+  console.error(`  ${cause instanceof Error ? cause.message : String(cause)}`)
   console.error(
-    "  This build is stopping rather than deploying a page whose board is missing for a reason nobody chose. Unset LINGTAI_DATABASE_URL to build the site without a board on purpose.",
-  );
-  process.exit(1);
+    '  This build is stopping rather than deploying a page whose board is missing for a reason nobody chose. Unset LINGTAI_DATABASE_URL to build the site without a board on purpose.',
+  )
+  process.exit(1)
 }
 
 async function main(): Promise<void> {
@@ -77,29 +79,27 @@ async function main(): Promise<void> {
   // this page could lie — real figures under a real date, both of them from a
   // build that is not this one — and a working tree or a CI cache keeps files
   // between builds by default.
-  await rm(SNAPSHOT_FILE, { force: true });
+  await rm(SNAPSHOT_FILE, { force: true })
 
-  const url = process.env.LINGTAI_DATABASE_URL;
-  if (url === undefined || url === "") {
+  const url = process.env.LINGTAI_DATABASE_URL
+  if (url === undefined || url === '') {
     console.log(
-      "snapshot: skipped — no LINGTAI_DATABASE_URL. The site will build, and its board will say it has no snapshot.",
-    );
-    return;
+      'snapshot: skipped — no LINGTAI_DATABASE_URL. The site will build, and its board will say it has no snapshot.',
+    )
+    return
   }
 
-  const open = publishable();
+  const open = publishable()
   if (open.size === 0) {
-    console.log(
-      "snapshot: LINGTAI_SITE_PUBLIC_PROJECTS names no project, so every card will be withheld.",
-    );
+    console.log('snapshot: LINGTAI_SITE_PUBLIC_PROJECTS names no project, so every card will be withheld.')
   }
 
-  const capturedAt = new Date();
-  let tasks: TaskCard[];
+  const capturedAt = new Date()
+  let tasks: TaskCard[]
   try {
-    tasks = await readTasks({ url });
+    tasks = await readTasks({ url })
   } catch (err) {
-    stop("LINGTAI_DATABASE_URL is set and the log could not be read.", err);
+    stop('LINGTAI_DATABASE_URL is set and the log could not be read.', err)
   }
 
   // An empty board is a claim — "this is the queue, and there is nothing in
@@ -113,19 +113,19 @@ async function main(): Promise<void> {
   // "nothing" has been read; a log that refuses the connection has not.
   if (tasks.length === 0) {
     console.log(
-      "snapshot: skipped — `task_view` has no rows. An empty board and an unbuilt projection look identical, and neither is evidence of anything.",
-    );
-    return;
+      'snapshot: skipped — `task_view` has no rows. An empty board and an unbuilt projection look identical, and neither is evidence of anything.',
+    )
+    return
   }
 
-  const snapshot = takeBoard(tasks, { open, capturedAt, commit: head() });
-  await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`);
+  const snapshot = takeBoard(tasks, { open, capturedAt, commit: head() })
+  await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)
 
-  const total = snapshot.totals.cards;
-  const drawn = snapshot.lanes.reduce((n, lane) => n + lane.cards.length, 0);
+  const total = snapshot.totals.cards
+  const drawn = snapshot.lanes.reduce((n, lane) => n + lane.cards.length, 0)
   console.log(
-    `snapshot: ${total} ${total === 1 ? "card" : "cards"} (${snapshot.withheld} withheld), ${drawn} published, at ${snapshot.capturedAt} → ${SNAPSHOT_FILE}`,
-  );
+    `snapshot: ${total} ${total === 1 ? 'card' : 'cards'} (${snapshot.withheld} withheld), ${drawn} published, at ${snapshot.capturedAt} → ${SNAPSHOT_FILE}`,
+  )
 }
 
-await main();
+await main()

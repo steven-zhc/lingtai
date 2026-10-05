@@ -106,8 +106,8 @@
  * `readReset` for it.
  */
 export function parseResetAt(detail: string, now: Date = new Date(), zone?: string): Date | null {
-  const read = readReset(detail, now, zone);
-  return read !== null && "at" in read ? read.at : null;
+  const read = readReset(detail, now, zone)
+  return read !== null && 'at' in read ? read.at : null
 }
 
 /** What a message said about when the wall lifts. */
@@ -123,7 +123,7 @@ type Reset =
   /** A reset was named and nothing usable came out of it — the fragment, clipped. */
   | { readonly named: string }
   /** Nothing in the message was about a reset. */
-  | null;
+  | null
 
 /**
  * Where a message talks about its reset: `resets`, a `resets_at` field,
@@ -132,52 +132,31 @@ type Reset =
  * reset that was named, and saying otherwise is the false sentence #210 is
  * about.
  */
-const RESET_MARKER = /\bresets?\b|\bresets_at\b|\btry again at\b|\btry again in\b/i;
+const RESET_MARKER = /\bresets?\b|\bresets_at\b|\btry again at\b|\btry again in\b/i
 
 /** English month names and their abbreviations, as the runtime writes them. */
-const MONTHS = [
-  "jan",
-  "feb",
-  "mar",
-  "apr",
-  "may",
-  "jun",
-  "jul",
-  "aug",
-  "sep",
-  "oct",
-  "nov",
-  "dec",
-] as const;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as const
 
 function readReset(detail: string, now: Date, zone: string | undefined): Reset {
-  const iso = /\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/.exec(
-    detail,
-  );
-  const clock = iso
-    ? toReset(within(new Date(iso[1]!.replace(" ", "T")), now))
-    : clockReset(detail, now, zone);
-  if (clock) return clock;
+  const iso = /\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/.exec(detail)
+  const clock = iso ? toReset(within(new Date(iso[1]!.replace(' ', 'T')), now)) : clockReset(detail, now, zone)
+  if (clock) return clock
 
-  const marker = RESET_MARKER.exec(detail);
-  if (!marker) return null;
+  const marker = RESET_MARKER.exec(detail)
+  if (!marker) return null
   const named = detail
     .slice(marker.index, marker.index + 60)
-    .split("\n")[0]!
-    .trim();
-  return { named };
+    .split('\n')[0]!
+    .trim()
+  return { named }
 }
 
 /** `at` wrapped as a `Reset`, or `null` when `at` is — so a caller can `return toReset(...)` directly. */
 function toReset(at: Date | null, guessedLatest = false): { at: Date; guessedLatest?: boolean } | null {
-  return at ? (guessedLatest ? { at, guessedLatest } : { at }) : null;
+  return at ? (guessedLatest ? { at, guessedLatest } : { at }) : null
 }
 
-function clockReset(
-  detail: string,
-  now: Date,
-  zone: string | undefined,
-): { at: Date; guessedLatest?: boolean } | null {
+function clockReset(detail: string, now: Date, zone: string | undefined): { at: Date; guessedLatest?: boolean } | null {
   // `resets` or Codex's `try again at`, optionally a month and a day (and a
   // year), optionally `at`, then a time; then a parenthesised zone if the
   // sentence carries one. Deliberately narrow — a looser pattern would start
@@ -188,47 +167,47 @@ function clockReset(
     String.raw`(?:\bresets?\b|\btry again at\b)` +
       String.raw`(?:\s+(?:on\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?,?)?` +
       String.raw`(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?`,
-    "i",
-  ).exec(detail);
-  if (!clock) return null;
+    'i',
+  ).exec(detail)
+  if (!clock) return null
 
   const zoned = /\(([A-Za-z][A-Za-z0-9_+\-]*(?:\/[A-Za-z0-9_+\-]+)*)\)/.exec(
     detail.slice(clock.index + clock[0].length, clock.index + clock[0].length + 40),
-  );
+  )
 
-  let hour = Number(clock[4]);
-  const minute = clock[5] === undefined ? 0 : Number(clock[5]);
-  const meridiem = clock[6]?.toLowerCase();
-  if (minute > 59) return null;
+  let hour = Number(clock[4])
+  const minute = clock[5] === undefined ? 0 : Number(clock[5])
+  const meridiem = clock[6]?.toLowerCase()
+  if (minute > 59) return null
   if (meridiem !== undefined) {
-    if (hour < 1 || hour > 12) return null;
-    hour = (hour % 12) + (meridiem === "pm" ? 12 : 0);
+    if (hour < 1 || hour > 12) return null
+    hour = (hour % 12) + (meridiem === 'pm' ? 12 : 0)
   } else if (hour > 23) {
-    return null;
+    return null
   }
 
-  const inferredZone = zoned?.[1] ?? zone ?? hostZone();
-  if (!knownZone(inferredZone)) return null;
+  const inferredZone = zoned?.[1] ?? zone ?? hostZone()
+  if (!knownZone(inferredZone)) return null
 
-  if (clock[1] === undefined) return toReset(within(nextWallClock(now, inferredZone, hour, minute), now));
+  if (clock[1] === undefined) return toReset(within(nextWallClock(now, inferredZone, hour, minute), now))
 
   // A date names *that* day. It is never rolled forward to the next one, which
   // is right for a bare time and wrong for a date: a date already gone by in
   // the guessed zone is read at the latest instant it could still mean (below)
   // before this gives up on it.
-  const month = MONTHS.indexOf(clock[1].slice(0, 3).toLowerCase() as (typeof MONTHS)[number]) + 1;
-  const day = Number(clock[2]);
-  const thisYear = partsIn(now, inferredZone)["year"]!;
-  const named = clock[3] === undefined ? null : Number(clock[3]);
+  const month = MONTHS.indexOf(clock[1].slice(0, 3).toLowerCase() as (typeof MONTHS)[number]) + 1
+  const day = Number(clock[2])
+  const thisYear = partsIn(now, inferredZone)['year']!
+  const named = clock[3] === undefined ? null : Number(clock[3])
   for (const year of named === null ? [thisYear, thisYear + 1] : [named]) {
     // Date.UTC would read `Feb 30` as the 2nd of March; a day the month does
     // not have is not a date at all.
-    if (day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null;
-    const at = wallClockOn(inferredZone, year, month, day, hour, minute);
+    if (day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null
+    const at = wallClockOn(inferredZone, year, month, day, hour, minute)
     // The next year only for a date with no year that has gone by this one —
     // `resets Jan 2` read on the 30th of December. The week ceiling is what
     // refuses every other reading of it.
-    if (at.getTime() > now.getTime()) return toReset(within(at, now));
+    if (at.getTime() > now.getTime()) return toReset(within(at, now))
 
     // The guessed zone's reading has already passed. When the sentence named
     // no zone of its own, that guess might simply be wrong rather than the
@@ -237,11 +216,11 @@ function clockReset(
     // −12:00 is the westernmost offset in use, so that latest instant is the
     // naive UTC reading plus twelve hours.
     if (zoned === null) {
-      const latest = new Date(Date.UTC(year, month - 1, day, hour, minute) + WESTERNMOST_LAG_MS);
-      if (latest.getTime() > now.getTime()) return toReset(within(latest, now), true);
+      const latest = new Date(Date.UTC(year, month - 1, day, hour, minute) + WESTERNMOST_LAG_MS)
+      if (latest.getTime() > now.getTime()) return toReset(within(latest, now), true)
     }
   }
-  return null;
+  return null
 }
 
 /**
@@ -266,9 +245,9 @@ function clockReset(
  * A variant stretched over a case it is false about is `#133`.
  */
 export type NeverStarted =
-  | { readonly of: "run" }
+  | { readonly of: 'run' }
   /** The point's action, as `point:action` — what the card and the chip name. */
-  | { readonly of: "step"; readonly step: string }
+  | { readonly of: 'step'; readonly step: string }
   /**
    * **The drafting agent, which is the first one a pass can buy** (`#265`) — the
    * `agent:` a recipe declares at `design`, as `design:action`.
@@ -280,43 +259,43 @@ export type NeverStarted =
    * cut a worktree and installed; `{of: "step"}` would say *nothing judged the
    * diff*, and there is no diff at `design`.
    */
-  | { readonly of: "draft"; readonly step: string }
+  | { readonly of: 'draft'; readonly step: string }
   /**
    * The agent a refusal bought (0038), which is the last agent in a pass and
    * meets the same wall the others do. `action` is what refused.
    */
-  | { readonly of: "fix"; readonly action: string; readonly round: number };
+  | { readonly of: 'fix'; readonly action: string; readonly round: number }
 
 /** What each opens with, and whose words the quote at the end is. */
 function subject(what: NeverStarted): { opening: string; whose: string } {
-  if (what.of === "run") {
+  if (what.of === 'run') {
     return {
-      opening: "a run ended without ever starting — no turns taken, nothing spent",
-      whose: "The run said",
-    };
+      opening: 'a run ended without ever starting — no turns taken, nothing spent',
+      whose: 'The run said',
+    }
   }
-  if (what.of === "draft") {
+  if (what.of === 'draft') {
     return {
       opening:
         `the ${what.step} step's agent never started, so nothing drafted the design — ` +
         `the run that reached it did start, and had paid for no agent yet`,
       whose: `The ${what.step} step's agent said`,
-    };
+    }
   }
-  if (what.of === "fix") {
+  if (what.of === 'fix') {
     return {
       opening:
         `the agent bought to fix ${what.action} (round ${what.round}) never started, so nothing ` +
         `answered the refusal — the run that reached it did start, and was paid for`,
-      whose: "The fixing agent said",
-    };
+      whose: 'The fixing agent said',
+    }
   }
   return {
     opening:
       `the ${what.step} step's agent never started, so nothing judged the diff — ` +
       `the run that reached it did start, and was paid for`,
     whose: `The ${what.step} step's agent said`,
-  };
+  }
 }
 
 /**
@@ -334,18 +313,18 @@ function subject(what: NeverStarted): { opening: string; whose: string } {
  * third arrive wearing whichever sentence happened to be first.
  */
 export function standDown(input: {
-  detail: string;
+  detail: string
   /** `source.backoff` in milliseconds, for when the message named no time. */
-  backoffMs: number;
-  what: NeverStarted;
-  now?: Date;
+  backoffMs: number
+  what: NeverStarted
+  now?: Date
   /** The zone a wall clock with no zone of its own is read in. Tests only — production leaves it to `hostZone()`. */
-  zone?: string;
+  zone?: string
 }): { until: Date; reason: string } {
-  const now = input.now ?? new Date();
-  const reset = readReset(input.detail, now, input.zone);
-  const until = reset !== null && "at" in reset ? reset.at : new Date(now.getTime() + input.backoffMs);
-  const said = input.detail.trim().replace(/\s+/g, " ").slice(0, 200);
+  const now = input.now ?? new Date()
+  const reset = readReset(input.detail, now, input.zone)
+  const until = reset !== null && 'at' in reset ? reset.at : new Date(now.getTime() + input.backoffMs)
+  const said = input.detail.trim().replace(/\s+/g, ' ').slice(0, 200)
   // Three branches and not two (#210). A reset that was named and could not be
   // read is a fault in `parseResetAt`, not a fact about the account, and it is
   // said as one — quoting the fragment, so the reader is sent to the string
@@ -353,27 +332,27 @@ export function standDown(input: {
   const from =
     reset === null
       ? "it named no reset time, so this is the recipe's backoff"
-      : "at" in reset
+      : 'at' in reset
         ? reset.guessedLatest
-          ? "read from the message, at the latest instant its unzoned date could mean, because " +
+          ? 'read from the message, at the latest instant its unzoned date could mean, because ' +
             "this host's reading of it had already passed"
-          : "read from the message itself"
+          : 'read from the message itself'
         : `it named a reset time (\`${reset.named}\`) this build could not read, so this is the ` +
-          `recipe's backoff — that is a bug in parseResetAt, not the account`;
-  const { opening, whose } = subject(input.what);
+          `recipe's backoff — that is a bug in parseResetAt, not the account`
+  const { opening, whose } = subject(input.what)
   return {
     until,
     reason:
       `${opening}. ` +
       `Every queued item would meet the same thing, so the conductor is taking no work ` +
-      `until ${until.toISOString()} (${from}). ${whose}: ${said || "nothing at all"}`,
-  };
+      `until ${until.toISOString()} (${from}). ${whose}: ${said || 'nothing at all'}`,
+  }
 }
 
 // ------------------------------------------------------------------ time ----
 
 /** A week out is the longest a reset can honestly be. See `parseResetAt`. */
-const A_WEEK_MS = 7 * 24 * 3_600_000;
+const A_WEEK_MS = 7 * 24 * 3_600_000
 
 /**
  * How much later than a naive UTC reading of a wall clock the same reading can
@@ -382,55 +361,55 @@ const A_WEEK_MS = 7 * 24 * 3_600_000;
  * name, where the sign is inverted from the offset it names, which is a
  * mistake waiting for the next reader of this file.
  */
-const WESTERNMOST_LAG_MS = 12 * 3_600_000;
+const WESTERNMOST_LAG_MS = 12 * 3_600_000
 
 function within(at: Date, now: Date): Date | null {
-  const ms = at.getTime();
-  if (Number.isNaN(ms)) return null;
-  if (ms <= now.getTime()) return null;
-  if (ms - now.getTime() > A_WEEK_MS) return null;
-  return at;
+  const ms = at.getTime()
+  if (Number.isNaN(ms)) return null
+  if (ms <= now.getTime()) return null
+  if (ms - now.getTime() > A_WEEK_MS) return null
+  return at
 }
 
 function hostZone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
   } catch {
-    return "UTC";
+    return 'UTC'
   }
 }
 
 function knownZone(zone: string): boolean {
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: zone });
-    return true;
+    new Intl.DateTimeFormat('en-US', { timeZone: zone })
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
 function partsIn(at: Date, zone: string): Record<string, number> {
-  const format = new Intl.DateTimeFormat("en-US", {
+  const format = new Intl.DateTimeFormat('en-US', {
     timeZone: zone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const parts: Record<string, number> = {};
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  const parts: Record<string, number> = {}
   for (const part of format.formatToParts(at)) {
-    if (part.type !== "literal") parts[part.type] = Number(part.value);
+    if (part.type !== 'literal') parts[part.type] = Number(part.value)
   }
-  return parts;
+  return parts
 }
 
 /** How far `zone` is from UTC at a given instant, in milliseconds. */
 function offsetAt(at: Date, zone: string): number {
-  const p = partsIn(at, zone);
-  return Date.UTC(p["year"]!, p["month"]! - 1, p["day"]!, p["hour"]!, p["minute"]!, p["second"]!) - at.getTime();
+  const p = partsIn(at, zone)
+  return Date.UTC(p['year']!, p['month']! - 1, p['day']!, p['hour']!, p['minute']!, p['second']!) - at.getTime()
 }
 
 /**
@@ -444,16 +423,16 @@ function offsetAt(at: Date, zone: string): number {
  * asymmetry already says is affordable.
  */
 function wallClockOn(zone: string, year: number, month: number, day: number, hour: number, minute: number): Date {
-  const naive = Date.UTC(year, month - 1, day, hour, minute);
-  const once = new Date(naive - offsetAt(new Date(naive), zone));
-  return new Date(naive - offsetAt(once, zone));
+  const naive = Date.UTC(year, month - 1, day, hour, minute)
+  const once = new Date(naive - offsetAt(new Date(naive), zone))
+  return new Date(naive - offsetAt(once, zone))
 }
 
 /** The next instant whose wall clock in `zone` reads `hour:minute`. */
 function nextWallClock(now: Date, zone: string, hour: number, minute: number): Date {
-  const today = partsIn(now, zone);
-  const at = (day: number): Date => wallClockOn(zone, today["year"]!, today["month"]!, day, hour, minute);
-  const candidate = at(today["day"]!);
+  const today = partsIn(now, zone)
+  const at = (day: number): Date => wallClockOn(zone, today['year']!, today['month']!, day, hour, minute)
+  const candidate = at(today['day']!)
   // Date.UTC normalises the overflow, so "the 32nd" is the 1st of next month.
-  return candidate.getTime() > now.getTime() ? candidate : at(today["day"]! + 1);
+  return candidate.getTime() > now.getTime() ? candidate : at(today['day']! + 1)
 }

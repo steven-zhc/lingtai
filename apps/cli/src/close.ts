@@ -1,3 +1,5 @@
+import { userInfo } from 'node:os'
+
 /**
  * `lingtai close <project> --issue <n> "<reason>"` — a ticket nobody is going
  * to do, ended on the log (#151).
@@ -19,46 +21,46 @@
  * No GitHub App configured is a refusal here rather than a quiet half-close,
  * for the same reason `lingtai approve` refuses.
  */
-import { close, loadProject } from "@lingtai/conductor";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient } from "@lingtai/github";
-import { userInfo } from "node:os";
-import { withProjector } from "./projector.ts";
+import { close, loadProject } from '@lingtai/conductor'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { createGitHubClient } from '@lingtai/github'
+
+import { withProjector } from './projector.ts'
 
 export interface CloseCommandOptions {
-  project: string;
-  issue: number;
+  project: string
+  issue: number
   /** Why. Refused when blank — this decision is the one nothing reverses. */
-  reason: string;
-  by?: string;
+  reason: string
+  by?: string
 }
 
 export function closeCommand(options: CloseCommandOptions, log = console.log): Promise<number> {
   return (async () => {
     if (!options.reason.trim()) {
-      log(`lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`);
-      return 2;
+      log(`lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`)
+      return 2
     }
 
-    const project = await loadProject(options.project);
+    const project = await loadProject(options.project)
     if (!project?.owner) {
-      log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
-      return 1;
+      log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+      return 1
     }
     if (!hasGitHubApp()) {
-      log("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
-      return 1;
+      log('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
+      return 1
     }
 
     const client = await createGitHubClient({
       auth: githubApp(),
       owner: project.owner,
       repo: options.project,
-    });
+    })
 
     return withProjector(log, async () => {
       // The local account, as `requeue`, `ask` and the board record it (0007).
-      const by = options.by ?? `human:${userInfo().username}`;
+      const by = options.by ?? `human:${userInfo().username}`
       const outcome = await close({
         project: options.project,
         issue: options.issue,
@@ -66,9 +68,9 @@ export function closeCommand(options: CloseCommandOptions, log = console.log): P
         by,
         state: project,
         client,
-      });
-      log(outcome.detail);
-      return outcome.ok ? 0 : 1;
-    });
-  })();
+      })
+      log(outcome.detail)
+      return outcome.ok ? 0 : 1
+    })
+  })()
 }

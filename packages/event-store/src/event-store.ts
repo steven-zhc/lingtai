@@ -23,7 +23,8 @@ import {
   isRetiredEventType,
   parsePayload,
   parseStoredPayload,
-} from "@lingtai/domain";
+} from '@lingtai/domain'
+
 // **Type-only, and that is the point** (`#157`). This module held
 // `createEventStore(db)` as well, so importing *anything* from it — the
 // `EventStore` interface, `ConcurrencyError` — constructed the process-wide
@@ -33,9 +34,9 @@ import {
 // half that needs one. Since #179 there is no client at import anywhere: the
 // one this process holds is `choose.ts`'s, opened at first use from the store
 // this machine wrote down.
-import type { Db } from "./db.ts";
-import type { CodecTypes } from "./prisma/contract.d.ts";
-import { parseTimestamptz } from "./timestamptz.ts";
+import type { Db } from './db.ts'
+import type { CodecTypes } from './prisma/contract.d.ts'
+import { parseTimestamptz } from './timestamptz.ts'
 
 // ----------------------------------------------------------------- errors ----
 //
@@ -55,10 +56,10 @@ import { parseTimestamptz } from "./timestamptz.ts";
  * so they are deliberately one error rather than two.
  */
 export class ConcurrencyError extends Error {
-  override readonly name = "ConcurrencyError";
-  readonly streamId: string;
-  readonly expectedVersion: number;
-  readonly attemptedVersions: readonly number[];
+  override readonly name = 'ConcurrencyError'
+  readonly streamId: string
+  readonly expectedVersion: number
+  readonly attemptedVersions: readonly number[]
 
   constructor(
     streamId: string,
@@ -68,13 +69,13 @@ export class ConcurrencyError extends Error {
   ) {
     super(
       `${streamId} is no longer at version ${expectedVersion}; ` +
-        `could not append version${attemptedVersions.length > 1 ? "s" : ""} ` +
-        `${attemptedVersions.join(", ")}. Re-read and retry.`,
+        `could not append version${attemptedVersions.length > 1 ? 's' : ''} ` +
+        `${attemptedVersions.join(', ')}. Re-read and retry.`,
       options,
-    );
-    this.streamId = streamId;
-    this.expectedVersion = expectedVersion;
-    this.attemptedVersions = attemptedVersions;
+    )
+    this.streamId = streamId
+    this.expectedVersion = expectedVersion
+    this.attemptedVersions = attemptedVersions
   }
 }
 
@@ -85,12 +86,12 @@ export class ConcurrencyError extends Error {
  * recognise.
  */
 export class UnknownEventTypeError extends Error {
-  override readonly name = "UnknownEventTypeError";
-  readonly type: string;
+  override readonly name = 'UnknownEventTypeError'
+  readonly type: string
 
-  constructor(type: string, where: "append" | "read") {
-    super(`"${type}" is not an event type in @lingtai/domain (on ${where})`);
-    this.type = type;
+  constructor(type: string, where: 'append' | 'read') {
+    super(`"${type}" is not an event type in @lingtai/domain (on ${where})`)
+    this.type = type
   }
 }
 
@@ -101,12 +102,12 @@ export class UnknownEventTypeError extends Error {
  * the write costs nothing and does not require pretending a row is not there.
  */
 export class RetiredEventTypeError extends Error {
-  override readonly name = "RetiredEventTypeError";
-  readonly type: string;
+  override readonly name = 'RetiredEventTypeError'
+  readonly type: string
 
   constructor(type: string) {
-    super(`"${type}" is retired: readable, never appended (doc/decisions-archive/0022-the-seams.md)`);
-    this.type = type;
+    super(`"${type}" is retired: readable, never appended (doc/decisions-archive/0022-the-seams.md)`)
+    this.type = type
   }
 }
 
@@ -122,21 +123,21 @@ export class RetiredEventTypeError extends Error {
  * misinterpreted quietly. Upcasters live in `@lingtai/domain`'s registry.
  */
 export class SchemaVersionUnsupportedError extends Error {
-  override readonly name = "SchemaVersionUnsupportedError";
-  readonly type: string;
-  readonly stored: number;
-  readonly supported: number;
-  readonly seq: bigint;
+  override readonly name = 'SchemaVersionUnsupportedError'
+  readonly type: string
+  readonly stored: number
+  readonly supported: number
+  readonly seq: bigint
 
   constructor(type: string, stored: number, supported: number, seq: bigint) {
     super(
       `event ${seq} (${type}) is schemaVer ${stored}; this build reads ` +
         `${supported} and there is no upcaster. See packages/event-store/src/event-store.ts.`,
-    );
-    this.type = type;
-    this.stored = stored;
-    this.supported = supported;
-    this.seq = seq;
+    )
+    this.type = type
+    this.stored = stored
+    this.supported = supported
+    this.seq = seq
   }
 }
 
@@ -144,15 +145,15 @@ export class SchemaVersionUnsupportedError extends Error {
 
 /** The row shape `db.orm.public.Event` hands back. */
 interface EventRow {
-  seq: bigint;
-  streamId: string;
-  version: number;
-  type: string;
-  schemaVer: number;
-  data: unknown;
-  actor: string;
-  causation: bigint | null;
-  at: string;
+  seq: bigint
+  streamId: string
+  version: number
+  type: string
+  schemaVer: number
+  data: unknown
+  actor: string
+  causation: bigint | null
+  at: string
 }
 
 /**
@@ -165,20 +166,20 @@ interface EventRow {
  * Matching the constraint by name and not merely the SQLSTATE matters: a future
  * unique index on some other column must not be mistaken for a lost race.
  */
-const VERSION_CONSTRAINT = "events_stream_id_version_key";
+const VERSION_CONSTRAINT = 'events_stream_id_version_key'
 
 function isVersionConflict(err: unknown): boolean {
   for (let cur: unknown = err, depth = 0; cur != null && depth < 8; depth++) {
-    const e = cur as { sqlState?: unknown; code?: unknown; constraint?: unknown; cause?: unknown };
-    const sqlState = typeof e.sqlState === "string" ? e.sqlState : e.code;
-    if (sqlState === "23505" && e.constraint === VERSION_CONSTRAINT) return true;
-    cur = e.cause;
+    const e = cur as { sqlState?: unknown; code?: unknown; constraint?: unknown; cause?: unknown }
+    const sqlState = typeof e.sqlState === 'string' ? e.sqlState : e.code
+    if (sqlState === '23505' && e.constraint === VERSION_CONSTRAINT) return true
+    cur = e.cause
   }
-  return false;
+  return false
 }
 
 function toEnvelope(row: EventRow): Envelope {
-  return decodeRow(row, parseTimestamptz(row.at));
+  return decodeRow(row, parseTimestamptz(row.at))
 }
 
 /**
@@ -187,21 +188,21 @@ function toEnvelope(row: EventRow): Envelope {
  * the SQLite store calls this rather than a copy of it. `at` is parsed by the
  * caller, because what a timestamp looks like in storage is the store's.
  */
-export function decodeRow(row: Omit<EventRow, "at">, at: Date): Envelope {
-  if (!isEventType(row.type)) throw new UnknownEventTypeError(row.type, "read");
+export function decodeRow(row: Omit<EventRow, 'at'>, at: Date): Envelope {
+  if (!isEventType(row.type)) throw new UnknownEventTypeError(row.type, 'read')
 
-  let data: unknown;
+  let data: unknown
   try {
     // Upcast, then validate. Validated on the way out as well as in: the store
     // never hands out unvalidated data, because a projection reading a malformed
     // payload would be wrong silently — the whole failure mode this system
     // exists to end.
-    data = parseStoredPayload(row.type, row.schemaVer, row.data);
+    data = parseStoredPayload(row.type, row.schemaVer, row.data)
   } catch (err) {
     if (err instanceof MissingUpcasterError) {
-      throw new SchemaVersionUnsupportedError(row.type, row.schemaVer, SCHEMA_VER[row.type], row.seq);
+      throw new SchemaVersionUnsupportedError(row.type, row.schemaVer, SCHEMA_VER[row.type], row.seq)
     }
-    throw err;
+    throw err
   }
 
   return {
@@ -214,7 +215,7 @@ export function decodeRow(row: Omit<EventRow, "at">, at: Date): Envelope {
     actor: row.actor,
     causation: row.causation,
     at,
-  };
+  }
 }
 
 /**
@@ -226,16 +227,14 @@ export function decodeRow(row: Omit<EventRow, "at">, at: Date): Envelope {
  * SQLite store (#178) for the reason `decodeRow` is.
  */
 export function prepareAppend(streamId: string, expectedVersion: number, events: readonly ToAppend[]) {
-  StreamId.parse(streamId);
+  StreamId.parse(streamId)
   if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
-    throw new RangeError(
-      `expectedVersion must be a non-negative integer, got ${expectedVersion}`,
-    );
+    throw new RangeError(`expectedVersion must be a non-negative integer, got ${expectedVersion}`)
   }
   return events.map((e, i) => {
-    if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, "append");
-    if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type);
-    Actor.parse(e.actor);
+    if (!isEventType(e.type)) throw new UnknownEventTypeError(e.type, 'append')
+    if (isRetiredEventType(e.type)) throw new RetiredEventTypeError(e.type)
+    Actor.parse(e.actor)
     return {
       streamId,
       version: expectedVersion + 1 + i,
@@ -244,11 +243,11 @@ export function prepareAppend(streamId: string, expectedVersion: number, events:
       // The payload column's own input type, taken from the emitted
       // contract rather than hand-written, so a codec change breaks here
       // rather than at runtime. A zod-parsed payload is plain JSON.
-      data: parsePayload(e.type, e.data) as CodecTypes["pg/jsonb@1"]["input"],
+      data: parsePayload(e.type, e.data) as CodecTypes['pg/jsonb@1']['input'],
       actor: e.actor,
       causation: e.causation ?? null,
-    };
-  });
+    }
+  })
 }
 
 // ------------------------------------------------------------------- store ----
@@ -264,21 +263,17 @@ export interface EventStore {
    *
    * Throws `ConcurrencyError` if the stream moved.
    */
-  append(
-    streamId: string,
-    expectedVersion: number,
-    events: readonly ToAppend[],
-  ): Promise<Envelope[]>;
+  append(streamId: string, expectedVersion: number, events: readonly ToAppend[]): Promise<Envelope[]>
 
   /** One stream, in version order, from `fromVersion` (inclusive, default 1). */
-  read(streamId: string, fromVersion?: number): Promise<Envelope[]>;
+  read(streamId: string, fromVersion?: number): Promise<Envelope[]>
 
   /**
    * The global log after `fromSeq` (exclusive), in `seq` order. This is the
    * projection catch-up read; `fromSeq` is a checkpoint's `lastSeq`, and 0n
    * starts from the beginning.
    */
-  readAll(fromSeq: bigint, limit: number): Promise<Envelope[]>;
+  readAll(fromSeq: bigint, limit: number): Promise<Envelope[]>
 }
 
 export function createEventStore(client: Db): EventStore {
@@ -287,19 +282,19 @@ export function createEventStore(client: Db): EventStore {
       // Validate everything before opening a transaction. A rejected payload
       // should cost nothing and, more importantly, a batch must not be able to
       // fail halfway through validation with rows already written.
-      const rows = prepareAppend(streamId, expectedVersion, events);
-      if (rows.length === 0) return [];
+      const rows = prepareAppend(streamId, expectedVersion, events)
+      if (rows.length === 0) return []
 
       try {
         return await client.transaction(async (tx) => {
-          const written: Envelope[] = [];
+          const written: Envelope[] = []
           // Sequentially, not in parallel: the versions inside a batch are
           // ordered, and one transaction has one connection anyway.
           for (const row of rows) {
-            written.push(toEnvelope((await tx.orm.public.Event.create(row)) as EventRow));
+            written.push(toEnvelope((await tx.orm.public.Event.create(row)) as EventRow))
           }
-          return written;
-        });
+          return written
+        })
       } catch (err) {
         if (isVersionConflict(err)) {
           throw new ConcurrencyError(
@@ -307,9 +302,9 @@ export function createEventStore(client: Db): EventStore {
             expectedVersion,
             rows.map((r) => r.version),
             { cause: err },
-          );
+          )
         }
-        throw err;
+        throw err
       }
     },
 
@@ -317,8 +312,8 @@ export function createEventStore(client: Db): EventStore {
       const rows = await client.orm.public.Event.where({ streamId })
         .where((e) => e.version.gte(fromVersion))
         .orderBy((e) => e.version.asc())
-        .all();
-      return rows.map((r) => toEnvelope(r as EventRow));
+        .all()
+      return rows.map((r) => toEnvelope(r as EventRow))
     },
 
     async readAll(fromSeq, limit) {
@@ -336,8 +331,8 @@ export function createEventStore(client: Db): EventStore {
       const rows = await client.orm.public.Event.where((e) => e.seq.gt(fromSeq))
         .orderBy((e) => e.seq.asc())
         .limit(limit)
-        .all();
-      return rows.map((r) => toEnvelope(r as EventRow));
+        .all()
+      return rows.map((r) => toEnvelope(r as EventRow))
     },
-  };
+  }
 }

@@ -12,39 +12,41 @@
  * list and a reason beside it — the skip itself, and whether it still applies,
  * is only known once something runs the suite against a real database (#275).
  */
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
-import { describe, expect, it } from "vitest";
-import { repoRoot } from "@lingtai/env";
-import { ON_POSTGRES } from "../test/postgres.ts";
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, relative } from 'node:path'
+
+import { repoRoot } from '@lingtai/env'
+import { describe, expect, it } from 'vitest'
+
+import { ON_POSTGRES } from '../test/postgres.ts'
 
 /** Every integration test file, repo-relative. */
 function integrationFiles(): { file: string; text: string }[] {
-  const out: { file: string; text: string }[] = [];
-  for (const area of ["packages", "apps"]) {
-    let packages;
+  const out: { file: string; text: string }[] = []
+  for (const area of ['packages', 'apps']) {
+    let packages
     try {
-      packages = readdirSync(join(repoRoot(), area), { withFileTypes: true });
+      packages = readdirSync(join(repoRoot(), area), { withFileTypes: true })
     } catch {
-      continue;
+      continue
     }
     for (const pkg of packages) {
-      if (!pkg.isDirectory()) continue;
-      const dir = join(repoRoot(), area, pkg.name, "integration");
-      let entries;
+      if (!pkg.isDirectory()) continue
+      const dir = join(repoRoot(), area, pkg.name, 'integration')
+      let entries
       try {
-        entries = readdirSync(dir, { withFileTypes: true });
+        entries = readdirSync(dir, { withFileTypes: true })
       } catch {
-        continue;
+        continue
       }
       for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith(".test.ts")) continue;
-        const path = join(dir, entry.name);
-        out.push({ file: relative(repoRoot(), path), text: readFileSync(path, "utf8") });
+        if (!entry.isFile() || !entry.name.endsWith('.test.ts')) continue
+        const path = join(dir, entry.name)
+        out.push({ file: relative(repoRoot(), path), text: readFileSync(path, 'utf8') })
       }
     }
   }
-  return out;
+  return out
 }
 
 /**
@@ -64,37 +66,37 @@ function integrationFiles(): { file: string; text: string }[] {
  * socket open. What actually reaches a server is `pg`'s own client, `createDb`,
  * or a `createPostgres…` factory, and those are what this checks.
  */
-const REACHES_POSTGRES = /from ["']pg["']|\bcreateDb\(|\bcreatePostgres[A-Za-z]*\(/;
+const REACHES_POSTGRES = /from ["']pg["']|\bcreateDb\(|\bcreatePostgres[A-Za-z]*\(/
 
 /** Strips comments, so prose about Postgres is never mistaken for code that reaches it. */
-const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-describe("which integration files still need Postgres", () => {
-  it("finds files to check", () => {
-    expect(integrationFiles().length).toBeGreaterThan(20);
-  });
+describe('which integration files still need Postgres', () => {
+  it('finds files to check', () => {
+    expect(integrationFiles().length).toBeGreaterThan(20)
+  })
 
-  it("lists every file that reaches Postgres, and no file that does not", () => {
-    const files = integrationFiles();
-    const seen = new Set(files.map((f) => f.file));
+  it('lists every file that reaches Postgres, and no file that does not', () => {
+    const files = integrationFiles()
+    const seen = new Set(files.map((f) => f.file))
 
     const unlisted = files
       .filter((f) => REACHES_POSTGRES.test(code(f.text)) && !(f.file in ON_POSTGRES))
-      .map((f) => f.file);
-    expect(unlisted, `reach Postgres but are not in ON_POSTGRES:\n  ${unlisted.join("\n  ")}`).toEqual([]);
+      .map((f) => f.file)
+    expect(unlisted, `reach Postgres but are not in ON_POSTGRES:\n  ${unlisted.join('\n  ')}`).toEqual([])
 
     const stale = Object.keys(ON_POSTGRES).filter((file) => {
-      const found = files.find((f) => f.file === file);
-      return found === undefined || !REACHES_POSTGRES.test(code(found.text));
-    });
-    expect(stale, `listed in ON_POSTGRES but no longer reach Postgres:\n  ${stale.join("\n  ")}`).toEqual([]);
+      const found = files.find((f) => f.file === file)
+      return found === undefined || !REACHES_POSTGRES.test(code(found.text))
+    })
+    expect(stale, `listed in ON_POSTGRES but no longer reach Postgres:\n  ${stale.join('\n  ')}`).toEqual([])
 
-    for (const file of Object.keys(ON_POSTGRES)) expect(seen).toContain(file);
-  });
+    for (const file of Object.keys(ON_POSTGRES)) expect(seen).toContain(file)
+  })
 
-  it("gives every listed file a reason", () => {
+  it('gives every listed file a reason', () => {
     for (const [file, reason] of Object.entries(ON_POSTGRES)) {
-      expect(reason.length, `${file} has no reason`).toBeGreaterThan(0);
+      expect(reason.length, `${file} has no reason`).toBeGreaterThan(0)
     }
-  });
-});
+  })
+})

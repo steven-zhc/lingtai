@@ -21,87 +21,89 @@
  *   fallback pass and does not run here, so a poll that never fired would hang
  *   this test rather than be papered over by it.
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { parsePayload, workItemStream } from "@lingtai/domain";
-import { createSqliteLog, openSqliteLog } from "@lingtai/event-store/sqlite";
-import { afterAll, describe, expect, it } from "vitest";
-import { createProjectionRunner } from "../src/projection.ts";
-import { createSqliteProjectionStore, openSqliteProjections } from "../src/sqlite.ts";
-import { taskViewProjection } from "../src/task-view.ts";
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const dirs: string[] = [];
+import { parsePayload, workItemStream } from '@lingtai/domain'
+import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { afterAll, describe, expect, it } from 'vitest'
+
+import { createProjectionRunner } from '../src/projection.ts'
+import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { taskViewProjection } from '../src/task-view.ts'
+
+const dirs: string[] = []
 
 function freshPath(): string {
-  const dir = mkdtempSync(join(tmpdir(), "lingtai-follows-"));
-  dirs.push(dir);
-  return join(dir, "log.db");
+  const dir = mkdtempSync(join(tmpdir(), 'lingtai-follows-'))
+  dirs.push(dir)
+  return join(dir, 'log.db')
 }
 
 afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 async function eventually(predicate: () => Promise<boolean>, what: string): Promise<void> {
-  const deadline = Date.now() + 4_000;
+  const deadline = Date.now() + 4_000
   while (!(await predicate())) {
-    if (Date.now() > deadline) throw new Error(`timed out after 4s waiting: ${what}`);
-    await new Promise((r) => setTimeout(r, 25));
+    if (Date.now() > deadline) throw new Error(`timed out after 4s waiting: ${what}`)
+    await new Promise((r) => setTimeout(r, 25))
   }
 }
 
-describe("a projection on a machine with no Postgres", () => {
+describe('a projection on a machine with no Postgres', () => {
   it("advances on an append made after it caught up, woken by the log's own poll", async () => {
-    const path = freshPath();
-    const logDb = openSqliteLog(path);
+    const path = freshPath()
+    const logDb = openSqliteLog(path)
     // 25ms rather than `POLL_MS`, so a test does not wait on the real interval.
     // It is the same waker; only the timer is shortened.
-    const log = createSqliteLog({ db: logDb, path, intervalMs: 25 });
-    const into = createSqliteProjectionStore(openSqliteProjections(path));
-    const project = `esctest${crypto.randomUUID().slice(0, 6)}`;
+    const log = createSqliteLog({ db: logDb, path, intervalMs: 25 })
+    const into = createSqliteProjectionStore(openSqliteProjections(path))
+    const project = `esctest${crypto.randomUUID().slice(0, 6)}`
 
     // A log and a place to fold into. Nothing names a waker, and nothing names
     // a store: if the choice were still made beside the log, this would be a
     // `LISTEN` against nothing.
-    const runner = createProjectionRunner({ projection: taskViewProjection, log, into });
+    const runner = createProjectionRunner({ projection: taskViewProjection, log, into })
 
     try {
-      await runner.start();
+      await runner.start()
       // Caught up on an empty log, which is the state a daemon is in for most
       // of its life and the one in which the old code was silently deaf.
-      expect((await runner.lag()).lag).toBe(0n);
+      expect((await runner.lag()).lag).toBe(0n)
 
-      const item = workItemStream(project, 1);
+      const item = workItemStream(project, 1)
       await log.store.append(item, 0, [
         {
-          type: "WorkItemDiscovered",
-          actor: "conductor",
-          data: parsePayload("WorkItemDiscovered", {
+          type: 'WorkItemDiscovered',
+          actor: 'conductor',
+          data: parsePayload('WorkItemDiscovered', {
             project,
-            source: "manual",
-            externalRef: "1",
-            title: "a card that only a nudge can produce",
-            kind: "tech-debt",
+            source: 'manual',
+            externalRef: '1',
+            title: 'a card that only a nudge can produce',
+            kind: 'tech-debt',
             labels: [],
           }),
         },
-      ]);
+      ])
 
       await eventually(
         async () => (await into.tasks({ retentionDays: 30, project })).length === 1,
-        "the card to reach task_view",
-      );
+        'the card to reach task_view',
+      )
 
-      const [card] = await into.tasks({ retentionDays: 30, project });
-      expect(card?.title).toBe("a card that only a nudge can produce");
+      const [card] = await into.tasks({ retentionDays: 30, project })
+      expect(card?.title).toBe('a card that only a nudge can produce')
       // And the checkpoint moved with it, in the same transaction.
-      expect((await runner.lag()).lag).toBe(0n);
-      expect((await runner.lag()).lastSeq).toBe(1n);
+      expect((await runner.lag()).lag).toBe(0n)
+      expect((await runner.lag()).lastSeq).toBe(1n)
     } finally {
-      await runner.close();
-      await into.close();
-      logDb.close();
+      await runner.close()
+      await into.close()
+      logDb.close()
     }
-  });
-});
+  })
+})

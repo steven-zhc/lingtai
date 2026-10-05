@@ -10,10 +10,9 @@
  * *decides*. What the conductor's own keep does with the same three fields is
  * `conduct.ts`'s `keep`.
  */
-import type { Runtime } from "@lingtai/agent";
-import { describe, expect, it } from "vitest";
-import { createFileAction, type KeptAnswer } from "../src/file-action.ts";
-import { createDraftAction } from "../src/agent-action.ts";
+import type { Runtime } from '@lingtai/agent'
+import { describe, expect, it } from 'vitest'
+
 import {
   NO_DESIGN,
   runActionPipeline,
@@ -21,55 +20,56 @@ import {
   type ActionContext,
   type ActionResult,
   type TheDesign,
-} from "../src/action.ts";
-import { actionsFromRecipe } from "../src/from-recipe.ts";
+} from '../src/action.ts'
+import { createDraftAction } from '../src/agent-action.ts'
+import { createFileAction, type KeptAnswer } from '../src/file-action.ts'
+import { actionsFromRecipe } from '../src/from-recipe.ts'
 
-const DOCUMENT = "## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.";
+const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.'
 
 const context = (design?: TheDesign): ActionContext => ({
-  runId: "run-abc",
-  onSha: "a".repeat(40),
-  cwd: "/tmp/wt",
+  runId: 'run-abc',
+  onSha: 'a'.repeat(40),
+  cwd: '/tmp/wt',
   env: {},
   ...(design === undefined ? {} : { design }),
-});
+})
 
 /**
  * A keep that records what it was asked and answers what the test wants, with
  * the ticket beside it — `{{issue}}` in the path is expanded from `ref` before
  * anything is kept (`#310`), so the two are one fake and a case can move either.
  */
-function keeping(answer: KeptAnswer = { at: "doc/design/x.md" }, ref = "310") {
-  const seen: { path: string; document: string }[] = [];
+function keeping(answer: KeptAnswer = { at: 'doc/design/x.md' }, ref = '310') {
+  const seen: { path: string; document: string }[] = []
   return {
     seen,
     keep: async (spec: { path: string; document: string }) => {
-      seen.push(spec);
-      return answer;
+      seen.push(spec)
+      return answer
     },
     issue: async () => ({ ref }),
-  };
+  }
 }
 
-describe("keeping the document the step made", () => {
+describe('keeping the document the step made', () => {
   /**
    * **The whole of 0066 §3 in one assertion.** The action is handed a document
    * on the context, hands it to the keep, and answers with *both* — the document,
    * because `implement` works from it (0069 §2), and the path, which is the
    * locator the log carries instead of the document.
    */
-  it("writes what it was handed and returns the path as the locator", async () => {
-    const kept = keeping();
-    const result = await createFileAction(
-      { name: "keep the design", path: "doc/design/x.md" },
-      kept,
-    ).run(context({ document: DOCUMENT }));
+  it('writes what it was handed and returns the path as the locator', async () => {
+    const kept = keeping()
+    const result = await createFileAction({ name: 'keep the design', path: 'doc/design/x.md' }, kept).run(
+      context({ document: DOCUMENT }),
+    )
 
-    expect(kept.seen).toEqual([{ path: "doc/design/x.md", document: DOCUMENT }]);
-    expect(result.verdict).toBe("passed");
-    expect(result.document).toBe(DOCUMENT);
-    expect(result.locator).toBe("doc/design/x.md");
-  });
+    expect(kept.seen).toEqual([{ path: 'doc/design/x.md', document: DOCUMENT }])
+    expect(result.verdict).toBe('passed')
+    expect(result.document).toBe(DOCUMENT)
+    expect(result.locator).toBe('doc/design/x.md')
+  })
 
   /**
    * **This action's `evidence` is a sentence and not the document**, which is
@@ -82,16 +82,16 @@ describe("keeping the document the step made", () => {
    * the branch* — which is the fact a person reads the card for, because it is
    * the only reason the locator will still resolve after the pass.
    */
-  it("says the size and the path, and never the document", async () => {
+  it('says the size and the path, and never the document', async () => {
     const said = (
-      await createFileAction({ name: "keep it", path: "doc/design/x.md" }, keeping()).run(
+      await createFileAction({ name: 'keep it', path: 'doc/design/x.md' }, keeping()).run(
         context({ document: DOCUMENT }),
       )
-    ).evidence;
+    ).evidence
 
-    expect(said).toBe("wrote a 67 B design to `doc/design/x.md`, committed to the branch");
-    expect(said).not.toContain("Six bodies");
-  });
+    expect(said).toBe('wrote a 67 B design to `doc/design/x.md`, committed to the branch')
+    expect(said).not.toContain('Six bodies')
+  })
 
   /**
    * **A commit moves the tree, and the action is what says so.** `head` is
@@ -101,19 +101,19 @@ describe("keeping the document the step made", () => {
    */
   it("carries the keep's head, and reports none where the keep gave none", async () => {
     const committed = await createFileAction(
-      { name: "keep it", path: "doc/design/x.md" },
-      keeping({ at: "doc/design/x.md", head: "b".repeat(40) }),
-    ).run(context({ document: DOCUMENT }));
-    expect(committed.head).toBe("b".repeat(40));
+      { name: 'keep it', path: 'doc/design/x.md' },
+      keeping({ at: 'doc/design/x.md', head: 'b'.repeat(40) }),
+    ).run(context({ document: DOCUMENT }))
+    expect(committed.head).toBe('b'.repeat(40))
 
     const loose = await createFileAction(
-      { name: "keep it", path: "doc/design/x.md" },
-      keeping({ at: "doc/design/x.md" }),
-    ).run(context({ document: DOCUMENT }));
+      { name: 'keep it', path: 'doc/design/x.md' },
+      keeping({ at: 'doc/design/x.md' }),
+    ).run(context({ document: DOCUMENT }))
     // Absent, and not an explicit `undefined`: `headFrom` reads it with
     // `!== undefined`, so an invented key would advance `onSha` to nothing.
-    expect("head" in loose).toBe(false);
-  });
+    expect('head' in loose).toBe(false)
+  })
 
   /**
    * **Nothing to keep is an answer, and it keeps nothing** (0058 §3: *or nothing,
@@ -125,19 +125,16 @@ describe("keeping the document the step made", () => {
    * `designFrom` reads the drafter's own answer and the destination changes no
    * fact (0069 §5).
    */
-  it("keeps nothing where the drafter answered that none was needed", async () => {
-    const kept = keeping();
-    const result = await createFileAction(
-      { name: "keep it", path: "doc/design/x.md" },
-      kept,
-    ).run(context(NO_DESIGN));
+  it('keeps nothing where the drafter answered that none was needed', async () => {
+    const kept = keeping()
+    const result = await createFileAction({ name: 'keep it', path: 'doc/design/x.md' }, kept).run(context(NO_DESIGN))
 
-    expect(kept.seen).toEqual([]);
-    expect(result.verdict).toBe("passed");
-    expect(result.document).toBeUndefined();
-    expect(result.locator).toBeUndefined();
-    expect(result.evidence).toContain("nothing to keep");
-  });
+    expect(kept.seen).toEqual([])
+    expect(result.verdict).toBe('passed')
+    expect(result.document).toBeUndefined()
+    expect(result.locator).toBeUndefined()
+    expect(result.evidence).toContain('nothing to keep')
+  })
 
   /**
    * **A destination that was handed no design at all did not finish**, and it is
@@ -148,15 +145,12 @@ describe("keeping the document the step made", () => {
    * The recipe cannot reach this — `actionsAt` refuses a `file:` at entry 0 — so
    * what it is about is a context somebody built in code.
    */
-  it("does not finish where nothing handed it a design", async () => {
-    const result = await createFileAction(
-      { name: "keep it", path: "doc/design/x.md" },
-      keeping(),
-    ).run(context());
+  it('does not finish where nothing handed it a design', async () => {
+    const result = await createFileAction({ name: 'keep it', path: 'doc/design/x.md' }, keeping()).run(context())
 
-    expect(result.verdict).toBe("did-not-finish");
-    expect(result.evidence).toContain("nothing handed");
-  });
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.evidence).toContain('nothing handed')
+  })
 
   /**
    * **A write that failed is `did-not-finish` and never `failed`.** `design` is
@@ -164,18 +158,18 @@ describe("keeping the document the step made", () => {
    * refuse with: nothing about the change has been weighed, so no fix round is
    * bought and the pass stops for a person — 0066 §7's second row.
    */
-  it("does not finish where the keep could not write, rather than refusing", async () => {
+  it('does not finish where the keep could not write, rather than refusing', async () => {
     const result = await createFileAction(
-      { name: "keep it", path: "doc/design/x.md" },
-      keeping({ notKept: "EACCES: permission denied" }),
-    ).run(context({ document: DOCUMENT }));
+      { name: 'keep it', path: 'doc/design/x.md' },
+      keeping({ notKept: 'EACCES: permission denied' }),
+    ).run(context({ document: DOCUMENT }))
 
-    expect(result.verdict).toBe("did-not-finish");
-    expect(result.evidence).toContain("EACCES");
-    expect(result.evidence).toContain("doc/design/x.md");
-    expect(result.findings).toEqual([]);
-  });
-});
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.evidence).toContain('EACCES')
+    expect(result.evidence).toContain('doc/design/x.md')
+    expect(result.findings).toEqual([])
+  })
+})
 
 /**
  * **The one thing the plugin could not exist without**, and it is in the pipeline
@@ -189,20 +183,20 @@ describe("keeping the document the step made", () => {
  * 0066 §5 unbuildable.
  */
 describe("the step's own list hands a document forward", () => {
-  const drafting = (result: Partial<ActionResult> & { verdict: ActionResult["verdict"] }): Action => ({
-    name: "shape it",
-    kind: "agent",
-    run: async () => ({ evidence: "drafted", findings: [], ...result }),
-  });
+  const drafting = (result: Partial<ActionResult> & { verdict: ActionResult['verdict'] }): Action => ({
+    name: 'shape it',
+    kind: 'agent',
+    run: async () => ({ evidence: 'drafted', findings: [], ...result }),
+  })
 
   /** Runs a two-entry `design` list and reports what the second was handed. */
   async function handedToTheSecond(first: Action, second: Action) {
     await runActionPipeline({
-      step: "design",
+      step: 'design',
       actions: [first, second],
       context: context(NO_DESIGN),
       emit: () => {},
-    });
+    })
   }
 
   /**
@@ -210,15 +204,19 @@ describe("the step's own list hands a document forward", () => {
    * as `designFrom` reads the results, so the value a later action is handed is
    * the one the step will end with.
    */
-  it("hands a destination what the drafter made", async () => {
-    const seen: (TheDesign | undefined)[] = [];
-    await handedToTheSecond(
-      drafting({ verdict: "passed", document: DOCUMENT }),
-      { name: "keep it", kind: "file", run: async (given) => { seen.push(given.design); return { verdict: "passed", evidence: "kept", findings: [] }; } },
-    );
+  it('hands a destination what the drafter made', async () => {
+    const seen: (TheDesign | undefined)[] = []
+    await handedToTheSecond(drafting({ verdict: 'passed', document: DOCUMENT }), {
+      name: 'keep it',
+      kind: 'file',
+      run: async (given) => {
+        seen.push(given.design)
+        return { verdict: 'passed', evidence: 'kept', findings: [] }
+      },
+    })
 
-    expect(seen).toEqual([{ document: DOCUMENT }]);
-  });
+    expect(seen).toEqual([{ document: DOCUMENT }])
+  })
 
   /**
    * **And it is the last document, with its own locator.** Two destinations are a
@@ -228,31 +226,28 @@ describe("the step's own list hands a document forward", () => {
    * what 0069 §5 refuses, and it would start here if the pair were carried apart.
    */
   it("advances the pair together, so a second destination sees the first's locator", async () => {
-    const seen: (TheDesign | undefined)[] = [];
+    const seen: (TheDesign | undefined)[] = []
     const watching = (name: string, answer: Partial<ActionResult>): Action => ({
       name,
-      kind: "file",
+      kind: 'file',
       run: async (given) => {
-        seen.push(given.design);
-        return { verdict: "passed", evidence: "kept", findings: [], ...answer };
+        seen.push(given.design)
+        return { verdict: 'passed', evidence: 'kept', findings: [], ...answer }
       },
-    });
+    })
     await runActionPipeline({
-      step: "design",
+      step: 'design',
       actions: [
-        drafting({ verdict: "passed", document: DOCUMENT }),
-        watching("the note", { document: DOCUMENT, locator: "doc/design/notes.md" }),
-        watching("and one beside the ticket", { document: DOCUMENT, locator: "doc/design/300.md" }),
+        drafting({ verdict: 'passed', document: DOCUMENT }),
+        watching('the note', { document: DOCUMENT, locator: 'doc/design/notes.md' }),
+        watching('and one beside the ticket', { document: DOCUMENT, locator: 'doc/design/300.md' }),
       ],
       context: context(NO_DESIGN),
       emit: () => {},
-    });
+    })
 
-    expect(seen).toEqual([
-      { document: DOCUMENT },
-      { document: DOCUMENT, locator: "doc/design/notes.md" },
-    ]);
-  });
+    expect(seen).toEqual([{ document: DOCUMENT }, { document: DOCUMENT, locator: 'doc/design/notes.md' }])
+  })
 
   /**
    * **A result that carried no document changes nothing**, which is what keeps
@@ -260,16 +255,20 @@ describe("the step's own list hands a document forward", () => {
    * beside the drafter leaves what the step has made alone, and an action reporting
    * a locator with no document is silent here exactly as it is in `designFrom`.
    */
-  it("leaves the design alone where an action reported none", async () => {
-    const seen: (TheDesign | undefined)[] = [];
-    await handedToTheSecond(
-      drafting({ verdict: "passed", evidence: "checked something" }),
-      { name: "keep it", kind: "file", run: async (given) => { seen.push(given.design); return { verdict: "passed", evidence: "kept", findings: [] }; } },
-    );
+  it('leaves the design alone where an action reported none', async () => {
+    const seen: (TheDesign | undefined)[] = []
+    await handedToTheSecond(drafting({ verdict: 'passed', evidence: 'checked something' }), {
+      name: 'keep it',
+      kind: 'file',
+      run: async (given) => {
+        seen.push(given.design)
+        return { verdict: 'passed', evidence: 'kept', findings: [] }
+      },
+    })
 
-    expect(seen).toEqual([NO_DESIGN]);
-  });
-});
+    expect(seen).toEqual([NO_DESIGN])
+  })
+})
 
 describe("the recipe's own block, built", () => {
   /**
@@ -278,21 +277,19 @@ describe("the recipe's own block, built", () => {
    * the keep comes off `deps.file`. One field beside `name`, which is the shape
    * the decision left — the commit is not the recipe's to answer.
    */
-  it("reads `file:` off the action, with the keep from the deps", async () => {
-    const kept = keeping({ at: "doc/design/300-a-destination.md" });
+  it('reads `file:` off the action, with the keep from the deps', async () => {
+    const kept = keeping({ at: 'doc/design/300-a-destination.md' })
     const [action, ...rest] = actionsFromRecipe(
-      "design",
-      [{ name: "keep the note", file: "doc/design/300-a-destination.md" }],
+      'design',
+      [{ name: 'keep the note', file: 'doc/design/300-a-destination.md' }],
       { file: kept },
-    );
+    )
 
-    expect(rest).toEqual([]);
-    expect(action!.kind).toBe("file");
-    await action!.run(context({ document: DOCUMENT }));
-    expect(kept.seen).toEqual([
-      { path: "doc/design/300-a-destination.md", document: DOCUMENT },
-    ]);
-  });
+    expect(rest).toEqual([])
+    expect(action!.kind).toBe('file')
+    await action!.run(context({ document: DOCUMENT }))
+    expect(kept.seen).toEqual([{ path: 'doc/design/300-a-destination.md', document: DOCUMENT }])
+  })
 
   /**
    * **And absent, it is refused by name rather than keeping nothing quietly.** At
@@ -312,11 +309,11 @@ describe("the recipe's own block, built", () => {
    * why it is a throw and not a verdict, where the escaping expansion is a
    * `did-not-finish` with a sentence on the card.
    */
-  it("refuses a `file:` by name when no keep was supplied", () => {
-    expect(() =>
-      actionsFromRecipe("design", [{ name: "keep it", file: "doc/design/x.md" }], {}),
-    ).toThrow(/no keep was supplied/);
-  });
+  it('refuses a `file:` by name when no keep was supplied', () => {
+    expect(() => actionsFromRecipe('design', [{ name: 'keep it', file: 'doc/design/x.md' }], {})).toThrow(
+      /no keep was supplied/,
+    )
+  })
 
   /**
    * **`{{issue}}` in the path becomes the ticket's ref, and the locator is the
@@ -333,22 +330,18 @@ describe("the recipe's own block, built", () => {
    * Through `actionsFromRecipe`, so the seam is asserted too: the path comes off
    * the recipe as written and the ticket comes off `deps.file`.
    */
-  it("expands `{{issue}}` into the path it keeps at, and into the locator", async () => {
-    const kept = keeping({ at: "doc/design/300.md" }, "300");
-    const [action] = actionsFromRecipe(
-      "design",
-      [{ name: "keep the note", file: "doc/design/{{issue}}.md" }],
-      { file: kept },
-    );
+  it('expands `{{issue}}` into the path it keeps at, and into the locator', async () => {
+    const kept = keeping({ at: 'doc/design/300.md' }, '300')
+    const [action] = actionsFromRecipe('design', [{ name: 'keep the note', file: 'doc/design/{{issue}}.md' }], {
+      file: kept,
+    })
 
-    const result = await action!.run(context({ document: DOCUMENT }));
-    expect(kept.seen).toEqual([{ path: "doc/design/300.md", document: DOCUMENT }]);
-    expect(result.locator).toBe("doc/design/300.md");
-    expect(result.evidence).toBe(
-      "wrote a 67 B design to `doc/design/300.md`, committed to the branch",
-    );
-    expect(result.evidence).not.toContain("{{issue}}");
-  });
+    const result = await action!.run(context({ document: DOCUMENT }))
+    expect(kept.seen).toEqual([{ path: 'doc/design/300.md', document: DOCUMENT }])
+    expect(result.locator).toBe('doc/design/300.md')
+    expect(result.evidence).toBe('wrote a 67 B design to `doc/design/300.md`, committed to the branch')
+    expect(result.evidence).not.toContain('{{issue}}')
+  })
 
   /**
    * **And an expansion that leaves the worktree is refused before anything is
@@ -365,21 +358,19 @@ describe("the recipe's own block, built", () => {
    * and `took.ticket.ref` is `String(issue.number)`. It is a guard for 0036's
    * named evolution to `{{ref}}`, and a store whose refs read `PROJ-123`.
    */
-  it("reports an expansion that escapes, and keeps nothing", async () => {
-    const kept = keeping({ at: "doc/design/x.md" }, "../../etc/passwd");
-    const [action] = actionsFromRecipe(
-      "design",
-      [{ name: "keep the note", file: "doc/design/{{issue}}.md" }],
-      { file: kept },
-    );
+  it('reports an expansion that escapes, and keeps nothing', async () => {
+    const kept = keeping({ at: 'doc/design/x.md' }, '../../etc/passwd')
+    const [action] = actionsFromRecipe('design', [{ name: 'keep the note', file: 'doc/design/{{issue}}.md' }], {
+      file: kept,
+    })
 
-    const result = await action!.run(context({ document: DOCUMENT }));
-    expect(result.verdict).toBe("did-not-finish");
-    expect(result.evidence).toContain('".." segment');
-    expect(result.evidence).toContain("doc/design/{{issue}}.md");
-    expect(kept.seen, "the keep was called with a path that escapes").toEqual([]);
-  });
-});
+    const result = await action!.run(context({ document: DOCUMENT }))
+    expect(result.verdict).toBe('did-not-finish')
+    expect(result.evidence).toContain('".." segment')
+    expect(result.evidence).toContain('doc/design/{{issue}}.md')
+    expect(kept.seen, 'the keep was called with a path that escapes').toEqual([])
+  })
+})
 
 /**
  * **What the log carries after a step that kept, and it is not only the
@@ -400,12 +391,12 @@ describe("the recipe's own block, built", () => {
 describe("what the drafter's own event still carries", () => {
   const runtime = (text: string): Runtime => ({
     capabilities: {
-      id: "claude-code",
+      id: 'claude-code',
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: "guarded",
-      enforces: ["turns", "wall"],
+      providesTier: 'guarded',
+      enforces: ['turns', 'wall'],
     },
     run: async () => ({
       exitCode: 0,
@@ -414,45 +405,42 @@ describe("what the drafter's own event still carries", () => {
       costUsd: 0.42,
       text,
       failure: null,
-      sessionId: "s",
+      sessionId: 's',
     }),
-  });
+  })
 
   const drafter = (text: string): Action =>
     createDraftAction(
-      { name: "shape it", prompt: "" },
+      { name: 'shape it', prompt: '' },
       {
         runtime: runtime(text),
-        issue: async () => ({ ref: "300", title: "a destination", body: "keep the design" }),
-        diff: async () => "",
-        settingsPath: "/tmp/settings.json",
+        issue: async () => ({ ref: '300', title: 'a destination', body: 'keep the design' }),
+        diff: async () => '',
+        settingsPath: '/tmp/settings.json',
         limits: { turns: 40, wallMs: 60_000, diffBytes: 400_000 },
       },
-    );
+    )
 
   it("carries the document, while the destination's event carries the sentence", async () => {
-    const passed: { action: string; evidence: string }[] = [];
+    const passed: { action: string; evidence: string }[] = []
     await runActionPipeline({
-      step: "design",
-      actions: [
-        drafter(DOCUMENT),
-        createFileAction({ name: "keep it", path: "doc/design/x.md" }, keeping()),
-      ],
+      step: 'design',
+      actions: [drafter(DOCUMENT), createFileAction({ name: 'keep it', path: 'doc/design/x.md' }, keeping())],
       context: context(NO_DESIGN),
       emit: (event) => {
-        if (event.type === "StepPassed") {
-          passed.push({ action: event.data.action, evidence: event.data.evidence });
+        if (event.type === 'StepPassed') {
+          passed.push({ action: event.data.action, evidence: event.data.evidence })
         }
       },
-    });
+    })
 
-    expect(passed.map((each) => each.action)).toEqual(["shape it", "keep it"]);
+    expect(passed.map((each) => each.action)).toEqual(['shape it', 'keep it'])
     // The half this key buys: the size and the path, and no document.
-    expect(passed[1]!.evidence).toBe("wrote a 67 B design to `doc/design/x.md`, committed to the branch");
-    expect(passed[1]!.evidence).not.toContain("Six bodies");
+    expect(passed[1]!.evidence).toBe('wrote a 67 B design to `doc/design/x.md`, committed to the branch')
+    expect(passed[1]!.evidence).not.toContain('Six bodies')
     // And the half it does not: the document is on the log anyway, from the
     // action before it — so 0066 §1's third row is bounded (§8) and not gone,
     // and closing it is a change to `createDraftAction`.
-    expect(passed[0]!.evidence).toContain("Six bodies");
-  });
-});
+    expect(passed[0]!.evidence).toContain('Six bodies')
+  })
+})

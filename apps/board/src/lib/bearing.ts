@@ -24,7 +24,7 @@
  * shared between them cannot live in either. And the ordering is the thing a
  * later edit can silently get wrong, so it is asserted directly.
  */
-import type { Health } from "./health.ts";
+import type { Health } from './health.ts'
 
 /**
  * Pass, fail, or neither — never the accent and never amber.
@@ -35,7 +35,7 @@ import type { Health } from "./health.ts";
  * states that are true, temporary and nobody's fault — catching up, or a
  * projection nothing has built yet.
  */
-export type Tone = "pass" | "warn" | "idle";
+export type Tone = 'pass' | 'warn' | 'idle'
 
 /**
  * What the server found out about the code the conductor is holding.
@@ -50,29 +50,29 @@ export type Tone = "pass" | "warn" | "idle";
  */
 export interface CodeNews {
   /** What is wrong, in a few words — null when nothing is. */
-  wrong: string | null;
+  wrong: string | null
   /** What to do about it. Null exactly when `wrong` is. */
-  action: string | null;
+  action: string | null
   /** The whole of it, wrong or not, for the title. */
-  said: string;
+  said: string
 }
 
 export interface Bearing {
-  tone: Tone;
+  tone: Tone
   /** What the dot would say if a dot could speak. Read by a screen reader. */
-  label: string;
+  label: string
   /** The sentence and the action, beside the dot. Null when there is nothing to say. */
-  why: string | null;
+  why: string | null
   /** Both facts, always, on hover. */
-  title: string;
+  title: string
 }
 
 /** How long ago the daemon last said anything, as a phrase. */
 function beating(health: Health): string {
-  const secs = Math.round((health.sinceBeatMs ?? 0) / 1000);
-  if (health.daemon === "up") return `daemon beating ${secs}s ago`;
-  if (health.daemon === "stale") return `no beat for ${secs}s`;
-  return "no daemon has ever run";
+  const secs = Math.round((health.sinceBeatMs ?? 0) / 1000)
+  if (health.daemon === 'up') return `daemon beating ${secs}s ago`
+  if (health.daemon === 'stale') return `no beat for ${secs}s`
+  return 'no daemon has ever run'
 }
 
 /**
@@ -84,7 +84,7 @@ function beating(health: Health): string {
  * else is a variety of *fine, and here is the detail*.
  */
 export function bearing(
-  socket: "connecting" | "open" | "trouble",
+  socket: 'connecting' | 'open' | 'trouble',
   board: Health | null,
   code: CodeNews | null,
 ): Bearing {
@@ -93,80 +93,80 @@ export function bearing(
   // it, including the two that are about the stream rather than the board: the
   // currency is a server prop and is known whether or not the socket is up, and
   // "nothing here is updating" is the moment somebody most wants the other half.
-  const also = (said: string) => (code ? `${said}; ${code.said}` : said);
+  const also = (said: string) => (code ? `${said}; ${code.said}` : said)
 
-  if (socket === "trouble") {
+  if (socket === 'trouble') {
     return {
-      tone: "warn",
-      label: "offline",
-      why: "the event stream is down — reload once it is back",
-      title: also("the event stream is down, so nothing here is updating"),
-    };
+      tone: 'warn',
+      label: 'offline',
+      why: 'the event stream is down — reload once it is back',
+      title: also('the event stream is down, so nothing here is updating'),
+    }
   }
   if (!board) {
     return {
-      tone: "idle",
-      label: socket === "open" ? "asking" : "connecting",
+      tone: 'idle',
+      label: socket === 'open' ? 'asking' : 'connecting',
       why: null,
-      title: also("asking whether this board is current"),
-    };
+      title: also('asking whether this board is current'),
+    }
   }
   if (board.error) {
     return {
-      tone: "warn",
-      label: "unknown",
-      why: "the projection could not be read",
+      tone: 'warn',
+      label: 'unknown',
+      why: 'the projection could not be read',
       title: also(`could not read the projection: ${board.error}`),
-    };
+    }
   }
   if (board.lag === null) {
     return {
-      tone: "idle",
-      label: "no board yet",
-      why: "nothing has been folded yet — run: lingtai daemon",
-      title: also("task_view has never been built"),
-    };
+      tone: 'idle',
+      label: 'no board yet',
+      why: 'nothing has been folded yet — run: lingtai daemon',
+      title: also('task_view has never been built'),
+    }
   }
 
-  const beat = beating(board);
+  const beat = beating(board)
 
   // Behind with nothing coming for it. Since 0022 a `lingtai run` holds a
   // projector of its own, so lag alone is ordinary during a run — the beacon is
   // the whole difference between *catching up* and *nobody is coming*.
-  if (board.lag > 0 && board.daemon !== "up") {
+  if (board.lag > 0 && board.daemon !== 'up') {
     return {
-      tone: "warn",
+      tone: 'warn',
       label: `behind ${board.lag} · no daemon`,
       why: `${board.lag} event(s) unfolded — start one with: lingtai daemon --no-conduct`,
       title: also(`${board.lag} event(s) unfolded and ${beat}`),
-    };
+    }
   }
   // Current, and being advanced by a process running code the repository has
   // moved past. #98's thirty-nine minutes: current and unpaused were both true
   // the whole time, and the fix that had landed could not run.
   if (code?.wrong) {
     return {
-      tone: "warn",
+      tone: 'warn',
       label: code.wrong,
       why: `${code.wrong} — ${code.action}`,
       title: also(board.lag === 0 ? `task_view is at the head — ${beat}` : `catching up — ${beat}`),
-    };
+    }
   }
   if (board.lag > 0) {
     return {
-      tone: "idle",
+      tone: 'idle',
       label: `behind ${board.lag}`,
-      why: "catching up",
+      why: 'catching up',
       title: also(`catching up — ${beat}`),
-    };
+    }
   }
   // Both true. A dot, and not a word: this is the state the bar is in nearly
   // all the time, and a box that is present and quiet in the ordinary case is
   // one nobody reads when it is not.
   return {
-    tone: "pass",
-    label: "current",
+    tone: 'pass',
+    label: 'current',
     why: null,
     title: also(`task_view is at the head — ${beat}`),
-  };
+  }
 }

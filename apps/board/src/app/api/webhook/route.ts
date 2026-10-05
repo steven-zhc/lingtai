@@ -1,3 +1,7 @@
+import { CONTROL_STREAM } from '@lingtai/daemon'
+import { parsePayload } from '@lingtai/domain'
+import { githubWebhookSecret } from '@lingtai/env'
+import { eventStore } from '@lingtai/event-store'
 /**
  * The one endpoint reachable from outside.
  *
@@ -18,25 +22,21 @@
  * regardless, so a webhook that never arrives costs latency and nothing else —
  * which is the property that makes it safe to leave unconfigured.
  */
-import { verifyWebhook, DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER } from "@lingtai/github";
-import { CONTROL_STREAM } from "@lingtai/daemon";
-import { eventStore } from "@lingtai/event-store";
-import { parsePayload } from "@lingtai/domain";
-import { githubWebhookSecret } from "@lingtai/env";
+import { verifyWebhook, DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER } from '@lingtai/github'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request): Promise<Response> {
   // Read per request, from `.env.local` as it is now when the environment does
   // not set it: the setup page writes it there while this board runs (#169).
-  const secret = githubWebhookSecret();
+  const secret = githubWebhookSecret()
   if (!secret) {
     // Not configured is not an error to shout about — the sweep covers it — but
     // returning 200 would tell GitHub the delivery landed when it did not.
-    return new Response("webhooks are not configured", { status: 503 });
+    return new Response('webhooks are not configured', { status: 503 })
   }
 
-  const body = await request.text();
+  const body = await request.text()
   const verdict = verifyWebhook(
     body,
     {
@@ -45,38 +45,38 @@ export async function POST(request: Request): Promise<Response> {
       [DELIVERY_HEADER]: request.headers.get(DELIVERY_HEADER) ?? undefined,
     },
     secret,
-  );
+  )
 
   if (!verdict.ok) {
     // The reason, never the body. An unverified delivery is attacker-controlled
     // and logging it is how a log becomes an injection surface.
-    console.warn(`webhook rejected: ${verdict.reason}`);
-    return new Response(verdict.reason, { status: 401 });
+    console.warn(`webhook rejected: ${verdict.reason}`)
+    return new Response(verdict.reason, { status: 401 })
   }
 
-  if (!verdict.act) return new Response(`ignored: ${verdict.reason}`, { status: 200 });
+  if (!verdict.act) return new Response(`ignored: ${verdict.reason}`, { status: 200 })
 
-  const events = await eventStore.read(CONTROL_STREAM);
+  const events = await eventStore.read(CONTROL_STREAM)
   // GitHub retries on any non-2xx and re-sends the same delivery id. A repeat
   // is nearly harmless — the effect is "ask GitHub again" — but it still wakes
   // the conductor, and waking it four times for one issue is how a rate limit
   // is reached.
   const seen = events.some(
-    (e) => e.type === "QueueChanged" && (e.data as { delivery?: string }).delivery === verdict.delivery,
-  );
-  if (seen) return new Response("already delivered", { status: 200 });
+    (e) => e.type === 'QueueChanged' && (e.data as { delivery?: string }).delivery === verdict.delivery,
+  )
+  if (seen) return new Response('already delivered', { status: 200 })
 
   await eventStore.append(CONTROL_STREAM, events.length, [
     {
-      type: "QueueChanged",
-      actor: "github",
-      data: parsePayload("QueueChanged", {
+      type: 'QueueChanged',
+      actor: 'github',
+      data: parsePayload('QueueChanged', {
         project: verdict.project,
         reason: verdict.reason,
         delivery: verdict.delivery,
       }),
     },
-  ]);
+  ])
 
-  return new Response("ok", { status: 200 });
+  return new Response('ok', { status: 200 })
 }

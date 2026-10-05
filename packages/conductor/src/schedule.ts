@@ -1,3 +1,7 @@
+import type { Runtime } from '@lingtai/agent'
+import { type ProjectState, reduceWorkItem } from '@lingtai/domain'
+import { type EventStore, eventStore } from '@lingtai/event-store'
+import type { GitHubClient } from '@lingtai/github'
 /**
  * Taking the queue, rather than one issue somebody named.
  *
@@ -30,28 +34,25 @@
  * it to an append-only log would make a restart inherit a grudge. A new pass
  * starts fresh, which is what you want after a fix.
  */
-import { parseDuration, type Recipe } from "@lingtai/recipe";
-import { backoffOf, kindsOf, queueOf } from "@lingtai/recipe/settings";
-import type { GitHubClient } from "@lingtai/github";
-import type { Runtime } from "@lingtai/agent";
-import { type EventStore, eventStore } from "@lingtai/event-store";
-import { type ProjectState, reduceWorkItem } from "@lingtai/domain";
-import { runnableNow } from "./discover.ts";
-import { selectRunnable } from "./queue.ts";
-import { type RunOnceResult, runOnce } from "./conduct.ts";
-import type { TokenSource } from "@lingtai/repo";
-import { Effect } from "effect";
-import type { AgentHost, Repo } from "./ports.ts";
+import { parseDuration, type Recipe } from '@lingtai/recipe'
+import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import type { TokenSource } from '@lingtai/repo'
+import { Effect } from 'effect'
+
+import { type RunOnceResult, runOnce } from './conduct.ts'
+import { runnableNow } from './discover.ts'
+import type { AgentHost, Repo } from './ports.ts'
+import { selectRunnable } from './queue.ts'
 
 export interface ScheduleOptions {
-  project: ProjectState;
-  client: GitHubClient;
-  runtime: Runtime;
-  hookBinary: string;
+  project: ProjectState
+  client: GitHubClient
+  runtime: Runtime
+  hookBinary: string
   /** False wires no hooks and skips the smoke test. See `RenderOptions.guard`. */
-  guard?: boolean;
-  prompt: string;
-  promptVersion?: string;
+  guard?: boolean
+  prompt: string
+  promptVersion?: string
   /**
    * What the project will take, and in what order.
    *
@@ -59,23 +60,23 @@ export interface ScheduleOptions {
    * GitHub for the offer itself and needs the exclusions too. Asked rather than
    * stored: a project that reorders its kinds must not need a rebuild.
    */
-  recipe: Recipe;
+  recipe: Recipe
   /**
    * Stop after this many items. Undefined runs until the queue has nothing
    * runnable left.
    *
    * Phase 2's exit criterion is `max: 2`.
    */
-  max?: number;
+  max?: number
   /** False holds every item at the merge instead of landing it. */
-  merge?: boolean;
-  token?: TokenSource;
-  home?: string;
-  store?: EventStore;
-  gitEnv?: NodeJS.ProcessEnv;
-  remote?: string;
+  merge?: boolean
+  token?: TokenSource
+  home?: string
+  store?: EventStore
+  gitEnv?: NodeJS.ProcessEnv
+  remote?: string
   /** Aborts between items. A run already in flight finishes. */
-  signal?: AbortSignal;
+  signal?: AbortSignal
   /**
    * Asked before each item, and a sentence back stops the pass there — logged,
    * and the run in flight, if there was one, has already finished. Null takes
@@ -85,26 +86,26 @@ export interface ScheduleOptions {
    * that works the queue lives as long as the queue does, and a pause issued
    * while its first ticket runs has to stop it taking the second (#166).
    */
-  paused?: () => Promise<string | null>;
-  log?: (line: string) => void;
+  paused?: () => Promise<string | null>
+  log?: (line: string) => void
 }
 
 export type StoppedBecause =
   /** Nothing runnable left. The good ending. */
-  | "empty"
+  | 'empty'
   /** `max` reached. Also the good ending, for a bounded run. */
-  | "max"
+  | 'max'
   /** The caller asked. A run in flight was allowed to finish. */
-  | "aborted"
+  | 'aborted'
   /** `paused` said why before the next item was taken. */
-  | "paused"
+  | 'paused'
   /**
    * Everything still in the queue has already been attempted in this pass.
    * Distinct from `empty` because the queue is *not* empty and saying so
    * matters: it means the passes after this one have work, and a caller that
    * treats it as "all done" would stop too early.
    */
-  | "exhausted"
+  | 'exhausted'
   /**
    * A name the recipe requires has no value, so nothing in this project can
    * run ([ADR 0020](../../../doc/decisions-archive/0020-the-agent-environment-in-layers.md)).
@@ -114,13 +115,13 @@ export type StoppedBecause =
    * and going round the loop to say so once per ticket would print nine
    * identical failures and resolve the recipe nine times to do it.
    */
-  | "env";
+  | 'env'
 
 export interface ScheduleResult {
-  ran: RunOnceResult[];
-  stopped: StoppedBecause;
+  ran: RunOnceResult[]
+  stopped: StoppedBecause
   /** Work items attempted in this pass, in order. */
-  attempted: string[];
+  attempted: string[]
 }
 
 /**
@@ -131,20 +132,18 @@ export interface ScheduleResult {
  * nothing of its own ([0026](../../../doc/decisions-archive/0026-the-conversion-past-the-seam.md)).
  * A host provides `Repo` and `AgentHost` once, around the pass.
  */
-export function runQueue(
-  options: ScheduleOptions,
-): Effect.Effect<ScheduleResult, never, Repo | AgentHost> {
+export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult, never, Repo | AgentHost> {
   return Effect.gen(function* () {
-    const log = options.log ?? (() => {});
-    const ran: RunOnceResult[] = [];
-    const attempted = new Set<string>();
+    const log = options.log ?? (() => {})
+    const ran: RunOnceResult[] = []
+    const attempted = new Set<string>()
     /** Whether this pass has already reported a GitHub that reports no dependencies. */
-    let saidDependenciesUnread = false;
+    let saidDependenciesUnread = false
 
     const finish = (stopped: StoppedBecause): ScheduleResult => {
-      log(`stopped: ${stopped} — ${ran.length} run(s)`);
-      return { ran, stopped, attempted: [...attempted] };
-    };
+      log(`stopped: ${stopped} — ${ran.length} run(s)`)
+      return { ran, stopped, attempted: [...attempted] }
+    }
 
     // Null for a project registered before the name was recorded. Refusing here
     // is better than reading an empty queue and reporting "nothing to do".
@@ -152,22 +151,22 @@ export function runQueue(
     // A defect rather than a typed failure: every caller checks the name before
     // it gets here, so reaching this line means a caller is broken and not that
     // a project is misconfigured.
-    const name = options.project.project;
+    const name = options.project.project
     if (!name) {
-      return yield* Effect.die(new Error("this project has no name recorded — re-run lingtai add"));
+      return yield* Effect.die(new Error('this project has no name recorded — re-run lingtai add'))
     }
 
     for (;;) {
-      if (options.signal?.aborted) return finish("aborted");
+      if (options.signal?.aborted) return finish('aborted')
       if (options.paused) {
-        const asked = options.paused;
-        const why = yield* Effect.promise(() => asked());
+        const asked = options.paused
+        const why = yield* Effect.promise(() => asked())
         if (why !== null) {
-          log(why);
-          return finish("paused");
+          log(why)
+          return finish('paused')
         }
       }
-      if (options.max !== undefined && ran.length >= options.max) return finish("max");
+      if (options.max !== undefined && ran.length >= options.max) return finish('max')
 
       // Asked, every time round the loop. GitHub says what it is offering and
       // the log says what is already claimed; the difference is the queue, minus
@@ -179,15 +178,15 @@ export function runQueue(
       // taken it anyway.
       const offered = yield* Effect.promise(() =>
         runnableNow({ client: options.client, queue: queueOf(options.recipe) }),
-      );
+      )
       // Once, not once round the loop. It is a fact about the repository and
       // the same sentence would be true of every ticket in the queue — the
       // reason the `env` refusal above is reported per project rather than per
       // item. Said at all because silence here is indistinguishable from a
       // repository with no chains in it (#131).
       if (offered.dependenciesUnread !== null && !saidDependenciesUnread) {
-        saidDependenciesUnread = true;
-        log(offered.dependenciesUnread);
+        saidDependenciesUnread = true
+        log(offered.dependenciesUnread)
       }
       const queue = yield* Effect.promise(() =>
         selectRunnable({
@@ -199,28 +198,28 @@ export function runQueue(
           // the same recipe answering the same question about the same pass.
           backoffMs: parseDuration(backoffOf(options.recipe)),
         }),
-      );
-      if (queue.length === 0) return finish("empty");
+      )
+      if (queue.length === 0) return finish('empty')
 
-      const next = queue.find((entry) => !attempted.has(entry.taskId));
+      const next = queue.find((entry) => !attempted.has(entry.taskId))
       if (!next) {
         // The queue has items and every one of them has already been through this
         // pass. Retrying now would be the $29 loop.
-        return finish("exhausted");
+        return finish('exhausted')
       }
 
-      const issue = Number(next.issue);
+      const issue = Number(next.issue)
       if (!Number.isInteger(issue)) {
         // A work item whose reference is not a number cannot be run by a path
         // that nominates issues by number. Marked attempted so the loop moves on
         // rather than seeing it at the top of the queue forever.
-        attempted.add(next.taskId);
-        log(`skipping ${next.taskId}: "${next.issue}" is not an issue number`);
-        continue;
+        attempted.add(next.taskId)
+        log(`skipping ${next.taskId}: "${next.issue}" is not an issue number`)
+        continue
       }
 
-      attempted.add(next.taskId);
-      log(`taking ${next.taskId} — ${next.title}`);
+      attempted.add(next.taskId)
+      log(`taking ${next.taskId} — ${next.title}`)
 
       const result = yield* runOnce({
         project: options.project,
@@ -239,22 +238,22 @@ export function runQueue(
         ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
         ...(options.remote === undefined ? {} : { remote: options.remote }),
         log: options.log,
-      });
+      })
 
-      ran.push(result);
+      ran.push(result)
 
       // Every ending is reported, including the ones that are nobody's fault.
       // A scheduler that only logs successes is the old loop.
-      if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
-      else if (result.ok === "held") log(`held at ${result.step}`);
-      else log(`stopped at ${result.stage}: ${result.detail}`);
+      if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`)
+      else if (result.ok === 'held') log(`held at ${result.step}`)
+      else log(`stopped at ${result.stage}: ${result.detail}`)
 
       // The environment is the project's, not the item's. `runOnce` refused
       // before claiming anything, and the next ticket would be refused for the
       // same reason — so the pass ends here rather than saying it nine times.
-      if (result.ok === false && result.stage === "env") return finish("env");
+      if (result.ok === false && result.stage === 'env') return finish('env')
     }
-  });
+  })
 }
 
 /**
@@ -282,35 +281,32 @@ export function runQueue(
  * nobody was asked anything.
  */
 export interface PassTally {
-  landed: number;
-  held: number;
-  stopped: number;
+  landed: number
+  held: number
+  stopped: number
 }
 
-export async function tallyPass(
-  ran: readonly RunOnceResult[],
-  store: EventStore = eventStore,
-): Promise<PassTally> {
-  const tally: PassTally = { landed: 0, held: 0, stopped: 0 };
+export async function tallyPass(ran: readonly RunOnceResult[], store: EventStore = eventStore): Promise<PassTally> {
+  const tally: PassTally = { landed: 0, held: 0, stopped: 0 }
 
   for (const result of ran) {
     // A refusal before anything was claimed — an unreadable recipe — has no
     // stream to read. It stopped, and there is nowhere else to check.
-    const events = result.workItemId ? await store.read(result.workItemId).catch(() => null) : null;
+    const events = result.workItemId ? await store.read(result.workItemId).catch(() => null) : null
     if (events === null) {
       // Either no work item, or the log could not be read. Fall back to what
       // this process saw rather than lose the summary to a failing read.
-      if (result.ok === true) tally.landed += 1;
-      else if (result.ok === "held") tally.held += 1;
-      else tally.stopped += 1;
-      continue;
+      if (result.ok === true) tally.landed += 1
+      else if (result.ok === 'held') tally.held += 1
+      else tally.stopped += 1
+      continue
     }
 
-    const status = reduceWorkItem(events).lifecycle.status;
-    if (status === "landed") tally.landed += 1;
-    else if (status === "blocked") tally.held += 1;
-    else tally.stopped += 1;
+    const status = reduceWorkItem(events).lifecycle.status
+    if (status === 'landed') tally.landed += 1
+    else if (status === 'blocked') tally.held += 1
+    else tally.stopped += 1
   }
 
-  return tally;
+  return tally
 }

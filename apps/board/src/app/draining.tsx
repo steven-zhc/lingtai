@@ -23,20 +23,20 @@
  * A server component: it reads the beacon and the projection, neither of which
  * belongs on the SSE health tick every open tab drives.
  */
-import { describeInFlight, inFlight, lastBeat, readStatus } from "@lingtai/daemon/control";
+import { describeInFlight, inFlight, lastBeat, readStatus } from '@lingtai/daemon/control'
 
 export async function Draining() {
-  const status = await readStatus().catch(() => null);
-  if (!status) return null;
+  const status = await readStatus().catch(() => null)
+  if (!status) return null
   // A beacon that says `draining` and stopped beating is a daemon that has
   // finished draining — or died mid-drain. Either way `live.tsx` owns that
   // sentence, and this one would be reporting an intention nobody holds.
-  const beat = lastBeat(status);
-  if (!beat.up) return null;
-  if (beat.state !== "draining") return null;
+  const beat = lastBeat(status)
+  if (!beat.up) return null
+  if (beat.state !== 'draining') return null
 
-  const held = await inFlight().catch(() => []);
-  const said = `the conductor is finishing the pass in flight and will then stop; it is taking no new work`;
+  const held = await inFlight().catch(() => [])
+  const said = `the conductor is finishing the pass in flight and will then stop; it is taking no new work`
 
   return (
     <>
@@ -50,5 +50,5 @@ export async function Draining() {
         {describeInFlight(held)}
       </span>
     </>
-  );
+  )
 }

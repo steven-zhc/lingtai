@@ -31,14 +31,9 @@
  * so it can run on every `lingtai doctor` and at every daemon start — which is
  * the whole point, because the alternative is finding out when the daemon stops.
  */
-import { withProjectionStore } from "./choose.ts";
-import { describeDrift } from "./store.ts";
-import type {
-  Projection,
-  ProjectionContext,
-  ProjectionDrift,
-  ProjectionStore,
-} from "./store.ts";
+import { withProjectionStore } from './choose.ts'
+import { describeDrift } from './store.ts'
+import type { Projection, ProjectionContext, ProjectionDrift, ProjectionStore } from './store.ts'
 
 /**
  * Drift — what it is, how it is said, and the error that carries it — is
@@ -47,22 +42,22 @@ import type {
  * (`columnOf`) and this file reaches a store through `choose.ts`: importing it
  * from here would make `sqlite.ts` load `pg`.
  */
-export { ProjectionShapeError, describeDrift, type ProjectionDrift } from "./store.ts";
+export { ProjectionShapeError, describeDrift, type ProjectionDrift } from './store.ts'
 
 export interface ProjectionShape {
-  projection: string;
+  projection: string
   /** Declared, created, and matching. */
-  matched: readonly string[];
+  matched: readonly string[]
   /** Declared and not created yet. Not drift: `create` will make them. */
-  absent: readonly string[];
+  absent: readonly string[]
   /** Declared, created, and different. */
-  drift: readonly ProjectionDrift[];
+  drift: readonly ProjectionDrift[]
 }
 
 /** Table-level clauses that sit where a column name would. */
-const NOT_A_COLUMN = new Set(["primary", "unique", "constraint", "check", "foreign", "exclude", "like"]);
+const NOT_A_COLUMN = new Set(['primary', 'unique', 'constraint', 'check', 'foreign', 'exclude', 'like'])
 
-const CREATE_TABLE = /create\s+table\s+(?:if\s+not\s+exists\s+)?"?([a-z_][a-z0-9_$]*)"?\s*\(/i;
+const CREATE_TABLE = /create\s+table\s+(?:if\s+not\s+exists\s+)?"?([a-z_][a-z0-9_$]*)"?\s*\(/i
 
 /**
  * The body between a `(` and its match, with `--` comments elided.
@@ -71,63 +66,63 @@ const CREATE_TABLE = /create\s+table\s+(?:if\s+not\s+exists\s+)?"?([a-z_][a-z0-9
  * half its columns in prose, and prose has commas in it.
  */
 function body(sql: string, open: number): string | null {
-  let depth = 0;
-  let quoted = false;
-  let out = "";
+  let depth = 0
+  let quoted = false
+  let out = ''
   for (let i = open; i < sql.length; i++) {
-    const c = sql[i]!;
+    const c = sql[i]!
     if (quoted) {
-      out += c;
-      if (c === "'") quoted = false;
-      continue;
+      out += c
+      if (c === "'") quoted = false
+      continue
     }
     if (c === "'") {
-      quoted = true;
-      out += c;
-      continue;
+      quoted = true
+      out += c
+      continue
     }
-    if (c === "-" && sql[i + 1] === "-") {
-      const nl = sql.indexOf("\n", i);
-      if (nl === -1) return null;
-      i = nl - 1;
-      continue;
+    if (c === '-' && sql[i + 1] === '-') {
+      const nl = sql.indexOf('\n', i)
+      if (nl === -1) return null
+      i = nl - 1
+      continue
     }
-    if (c === "(") {
-      depth++;
-      if (depth === 1) continue;
-    } else if (c === ")") {
-      depth--;
-      if (depth === 0) return out;
+    if (c === '(') {
+      depth++
+      if (depth === 1) continue
+    } else if (c === ')') {
+      depth--
+      if (depth === 0) return out
     }
-    out += c;
+    out += c
   }
-  return null;
+  return null
 }
 
 /** Splits on commas that are not inside `numeric(10, 2)` or a string literal. */
 function definitions(inner: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let quoted = false;
-  let cur = "";
+  const parts: string[] = []
+  let depth = 0
+  let quoted = false
+  let cur = ''
   for (const c of inner) {
     if (quoted) {
-      cur += c;
-      if (c === "'") quoted = false;
-      continue;
+      cur += c
+      if (c === "'") quoted = false
+      continue
     }
-    if (c === "'") quoted = true;
-    else if (c === "(") depth++;
-    else if (c === ")") depth--;
-    else if (c === "," && depth === 0) {
-      parts.push(cur);
-      cur = "";
-      continue;
+    if (c === "'") quoted = true
+    else if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (c === ',' && depth === 0) {
+      parts.push(cur)
+      cur = ''
+      continue
     }
-    cur += c;
+    cur += c
   }
-  parts.push(cur);
-  return parts;
+  parts.push(cur)
+  return parts
 }
 
 /**
@@ -137,20 +132,20 @@ function definitions(inner: string): string[] {
  * what makes recording the whole of `create` safe.
  */
 export function declaredColumns(sql: string): { table: string; columns: string[] } | null {
-  const head = CREATE_TABLE.exec(sql);
-  if (!head) return null;
-  const inner = body(sql, head.index + head[0].length - 1);
-  if (inner === null) return null;
+  const head = CREATE_TABLE.exec(sql)
+  if (!head) return null
+  const inner = body(sql, head.index + head[0].length - 1)
+  if (inner === null) return null
 
-  const columns: string[] = [];
+  const columns: string[] = []
   for (const def of definitions(inner)) {
-    const word = /^\s*"?([a-z_][a-z0-9_$]*)"?/i.exec(def);
-    if (!word) continue;
-    const name = word[1]!.toLowerCase();
-    if (NOT_A_COLUMN.has(name)) continue;
-    columns.push(name);
+    const word = /^\s*"?([a-z_][a-z0-9_$]*)"?/i.exec(def)
+    if (!word) continue
+    const name = word[1]!.toLowerCase()
+    if (NOT_A_COLUMN.has(name)) continue
+    columns.push(name)
   }
-  return { table: head[1]!.toLowerCase(), columns };
+  return { table: head[1]!.toLowerCase(), columns }
 }
 
 /**
@@ -162,49 +157,46 @@ export function declaredColumns(sql: string): { table: string; columns: string[]
  * note on `Projection.create`.
  */
 export async function declaredShape(projection: Projection): Promise<Map<string, string[]>> {
-  const declared = new Map<string, string[]>();
+  const declared = new Map<string, string[]>()
   const recorder: ProjectionContext = {
     async query(text: string) {
-      const table = declaredColumns(text);
-      if (table) declared.set(table.table, table.columns);
-      return [];
+      const table = declaredColumns(text)
+      if (table) declared.set(table.table, table.columns)
+      return []
     },
-  };
-  await projection.create(recorder);
-  return declared;
+  }
+  await projection.create(recorder)
+  return declared
 }
 
 /** The comparison, against a store somebody else owns. */
-export async function shapeIn(
-  projection: Projection,
-  store: ProjectionStore,
-): Promise<ProjectionShape> {
-  const declared = await declaredShape(projection);
-  const tables = [...declared.keys()];
+export async function shapeIn(projection: Projection, store: ProjectionStore): Promise<ProjectionShape> {
+  const declared = await declaredShape(projection)
+  const tables = [...declared.keys()]
   if (tables.length === 0) {
-    return { projection: projection.name, matched: [], absent: [], drift: [] };
+    return { projection: projection.name, matched: [], absent: [], drift: [] }
   }
 
-  const live = await store.columnsOf(tables);
+  const live = await store.columnsOf(tables)
 
-  const matched: string[] = [];
-  const absent: string[] = [];
-  const drift: ProjectionDrift[] = [];
+  const matched: string[] = []
+  const absent: string[] = []
+  const drift: ProjectionDrift[] = []
   for (const [table, columns] of declared) {
-    const have = live.get(table);
+    const have = live.get(table)
     // Absent from the catalogue means the table does not exist, and a table
     // that does not exist is not drifted — `create` makes it, at the current
     // shape.
     if (!have) {
-      absent.push(table);
-      continue;
+      absent.push(table)
+      continue
     }
-    const missing = columns.filter((c) => !have.has(c));
-    const unexpected = [...have].filter((c) => !columns.includes(c)).sort();
-    if (missing.length === 0 && unexpected.length === 0) matched.push(table);
-    else drift.push({ table, missing, unexpected });
+    const missing = columns.filter((c) => !have.has(c))
+    const unexpected = [...have].filter((c) => !columns.includes(c)).sort()
+    if (missing.length === 0 && unexpected.length === 0) matched.push(table)
+    else drift.push({ table, missing, unexpected })
   }
-  return { projection: projection.name, matched, absent, drift };
+  return { projection: projection.name, matched, absent, drift }
 }
 
 /**
@@ -213,27 +205,22 @@ export async function shapeIn(
  * Reads the catalogue and nothing else, which is the rule the doctor is built
  * on: a diagnostic that writes to the system of record is the wrong shape.
  */
-export async function projectionShape(
-  projection: Projection,
-  url?: string,
-): Promise<ProjectionShape> {
+export async function projectionShape(projection: Projection, url?: string): Promise<ProjectionShape> {
   // `url` refines a Postgres connection and never picks the store: `lingtai
   // doctor` is the one caller that names one (#214), and a URL in an argument
   // must not open a store this machine did not choose (0056).
-  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) =>
-    shapeIn(projection, store),
-  );
+  return withProjectionStore({ ...(url === undefined ? {} : { url }), max: 1 }, (store) => shapeIn(projection, store))
 }
 
 /** One line for a report: what was compared, and what it found. */
 export function describeShape(shape: ProjectionShape): string {
-  if (shape.drift.length > 0) return describeDrift(shape.projection, shape.drift);
-  const parts: string[] = [];
+  if (shape.drift.length > 0) return describeDrift(shape.projection, shape.drift)
+  const parts: string[] = []
   if (shape.matched.length > 0) {
-    parts.push(`${shape.matched.join(", ")} match the columns the DDL declares`);
+    parts.push(`${shape.matched.join(', ')} match the columns the DDL declares`)
   }
   if (shape.absent.length > 0) {
-    parts.push(`${shape.absent.join(", ")} not created yet — create makes them at the current shape`);
+    parts.push(`${shape.absent.join(', ')} not created yet — create makes them at the current shape`)
   }
-  return parts.join(" · ") || `${shape.projection} declares no tables`;
+  return parts.join(' · ') || `${shape.projection} declares no tables`
 }

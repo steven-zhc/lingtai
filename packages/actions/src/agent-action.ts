@@ -52,14 +52,9 @@
  * outcome*, rather than *is that sentence still in my output*. See
  * `recheckBlock`.
  */
-import type { Runtime } from "@lingtai/agent";
-import {
-  REFUSED_ABOUT,
-  REVIEW_ANSWER_JSON_SCHEMA,
-  SEVERITIES,
-  type RefusedAbout,
-  type Severity,
-} from "@lingtai/domain";
+import type { Runtime } from '@lingtai/agent'
+import { REFUSED_ABOUT, REVIEW_ANSWER_JSON_SCHEMA, SEVERITIES, type RefusedAbout, type Severity } from '@lingtai/domain'
+
 import {
   NEEDS_INPUT,
   type Action,
@@ -67,13 +62,13 @@ import {
   type ActionFinding,
   type ActionResult,
   type SentBack,
-} from "./action.ts";
-import { boundedEvidence } from "./command.ts";
+} from './action.ts'
+import { boundedEvidence } from './command.ts'
 
 export interface AgentActionSpec {
-  name: string;
+  name: string
   /** Appended to the fixed brief. Adds concerns; cannot remove them. */
-  prompt: string;
+  prompt: string
   /**
    * The recipe's `model:`, handed to the runtime as-is — and **absent means the
    * runtime's own default**, so it is passed through absent rather than
@@ -84,19 +79,19 @@ export interface AgentActionSpec {
    * is also why it is not validated — the legal model names are the runtime's
    * to know, and a stale allowlist here would refuse a model that works.
    */
-  model?: string;
+  model?: string
 }
 
 export interface AgentActionDeps {
-  runtime: Runtime;
+  runtime: Runtime
   /** The ticket, exactly as the implementer received it. Fetched lazily so a
    *  recipe without an agent action costs no API call. */
-  issue: () => Promise<{ ref: string; title: string; body: string }>;
+  issue: () => Promise<{ ref: string; title: string; body: string }>
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
-  diff: () => Promise<string>;
+  diff: () => Promise<string>
   /** Rendered outside the worktree, like the implementer's. */
-  settingsPath: string;
+  settingsPath: string
   /**
    * What the reviewer may spend, and what it is given.
    *
@@ -112,7 +107,7 @@ export interface AgentActionDeps {
    * Required rather than defaulted, so the number has one home. How large a
    * diff is normal is a fact about a repository, not about reviewing.
    */
-  limits: { turns: number; wallMs: number; diffBytes: number; usd?: number };
+  limits: { turns: number; wallMs: number; diffBytes: number; usd?: number }
 }
 
 const RUBRIC = `
@@ -127,7 +122,7 @@ Severity is not a judgement call. Use this rubric exactly.
   happens.
 - minor — a real defect that is cosmetic, or so narrow it needs contrivance.
 
-If you are between two levels, take the higher one.`;
+If you are between two levels, take the higher one.`
 
 const CHECKLIST = `
 Look at these first. They are where the defects have actually been.
@@ -144,7 +139,7 @@ Look at these first. They are where the defects have actually been.
    renders the same branch as "there is nothing here". What is the operator
    told, and what do they do next?
 4. **Tests that assert less than they appear to.** A test whose name claims a
-   behaviour and whose assertions would pass with that behaviour broken.`;
+   behaviour and whose assertions would pass with that behaviour broken.`
 
 /**
  * **The last thing the reviewer reads, not the middle of the prompt** (`#368`).
@@ -177,12 +172,12 @@ Rules:
 - Report findings only. Do not propose the fix — a remedy that differs from the
   one eventually taken is not a miss, and prescribing costs you attention you
   should spend finding.
-- An empty findings list is a real answer.`;
+- An empty findings list is a real answer.`
 
 export interface ReviewIssue {
-  ref: string;
-  title: string;
-  body: string;
+  ref: string
+  title: string
+  body: string
 }
 
 /**
@@ -205,15 +200,15 @@ export interface ReviewIssue {
  */
 function recheckBlock(findings: readonly ActionFinding[]): string {
   const items = findings.map((f, i) => {
-    const at = f.line === null ? f.file : `${f.file}:${f.line}`;
+    const at = f.line === null ? f.file : `${f.file}:${f.line}`
     return [
       `${i + 1}. **${f.severity}** · ${at} — ${f.claim}`,
-      "",
-      "   Failure scenario, verbatim:",
-      "",
-      ...f.failureScenario.split("\n").map((line) => `   > ${line}`),
-    ].join("\n");
-  });
+      '',
+      '   Failure scenario, verbatim:',
+      '',
+      ...f.failureScenario.split('\n').map((line) => `   > ${line}`),
+    ].join('\n')
+  })
 
   return `## Scenarios that must no longer happen
 
@@ -221,7 +216,7 @@ An earlier version of this diff was refused for the findings below, and an agent
 has since changed the code with the intention of addressing them. It was given
 these scenarios and nothing else about the review.
 
-${items.join("\n\n")}
+${items.join('\n\n')}
 
 For each one, walk the code as it now stands and answer the only question that
 matters: **does that sequence still produce that outcome?**
@@ -244,7 +239,7 @@ matters: **does that sequence still produce that outcome?**
   first review.
 
 Then review the diff as it now stands for anything else, exactly as you would
-have without this section. The fix is part of the diff and is not above review.`;
+have without this section. The fix is part of the diff and is not above review.`
 }
 
 export function buildReviewPrompt(
@@ -255,9 +250,7 @@ export function buildReviewPrompt(
   recheck: readonly ActionFinding[] = [],
 ): string {
   const clipped =
-    diff.length > limitBytes
-      ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]`
-      : diff;
+    diff.length > limitBytes ? `${diff.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : diff
 
   return `You are reviewing a change you did not write. You have the ticket and the
 diff, and deliberately nothing else — no plan, no transcript, no reasoning from
@@ -276,8 +269,8 @@ ${CHECKLIST}
 ## Severity
 ${RUBRIC}
 
-${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ""}
-${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ""}## The diff
+${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ''}
+${recheck.length > 0 ? `${recheckBlock(recheck)}\n\n` : ''}## The diff
 
 \`\`\`diff
 ${clipped}
@@ -285,13 +278,13 @@ ${clipped}
 
 ## How to report
 ${CONTRACT}
-`;
+`
 }
 
 /** What either reading of an answer produces. Shared so both enforce one rule. */
 interface ReadAnswer {
-  findings: ActionFinding[];
-  parsed: boolean;
+  findings: ActionFinding[]
+  parsed: boolean
   /**
    * **What the reviewer said its refusal was about**, where it said one of the
    * two words, and absent otherwise (`#293`).
@@ -301,7 +294,7 @@ interface ReadAnswer {
    * it makes possible, and a missing answer filled in with a default would be
    * counted as the default.
    */
-  about?: RefusedAbout;
+  about?: RefusedAbout
 }
 
 /**
@@ -314,17 +307,17 @@ interface ReadAnswer {
  * object (`#369`).
  */
 function normaliseAnswer(value: unknown): ReadAnswer {
-  const list = (value as { findings?: unknown })?.findings;
-  if (!Array.isArray(list)) return { findings: [], parsed: false };
+  const list = (value as { findings?: unknown })?.findings
+  if (!Array.isArray(list)) return { findings: [], parsed: false }
 
-  const findings: ActionFinding[] = [];
+  const findings: ActionFinding[] = []
   for (const raw of list) {
-    const f = raw as Partial<ActionFinding>;
+    const f = raw as Partial<ActionFinding>
     // The rule from the prompt, enforced.
-    if (!f?.claim || !f?.failureScenario) continue;
+    if (!f?.claim || !f?.failureScenario) continue
     findings.push({
-      file: String(f.file ?? "(unknown)"),
-      line: typeof f.line === "number" ? f.line : null,
+      file: String(f.file ?? '(unknown)'),
+      line: typeof f.line === 'number' ? f.line : null,
       claim: String(f.claim),
       failureScenario: String(f.failureScenario),
       severity: isSeverity(f.severity)
@@ -334,7 +327,7 @@ function normaliseAnswer(value: unknown): ReadAnswer {
           // `SEVERITIES` is worst first, so the highest is its own head
           // rather than a name spelled again here.
           SEVERITIES[0],
-    });
+    })
   }
   // The reviewer's own classification, taken only where it is one of the two
   // words and never repaired into one: a `severity` off the ladder is raised to
@@ -342,8 +335,8 @@ function normaliseAnswer(value: unknown): ReadAnswer {
   // no equivalent safe direction here — `lines` and `approach` are opposite
   // answers, and inventing either would put a classification at this seam that
   // no reviewer made (0031 §1, `#223`'s own rule).
-  const about = (value as { about?: unknown })?.about;
-  return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) };
+  const about = (value as { about?: unknown })?.about
+  return { findings, parsed: true, ...(isRefusedAbout(about) ? { about } : {}) }
 }
 
 /**
@@ -372,28 +365,28 @@ function normaliseAnswer(value: unknown): ReadAnswer {
  * difference is the only thing the refusal below is for.
  */
 export function parseFindings(text: string | null): ReadAnswer {
-  if (!text) return { findings: [], parsed: false };
+  if (!text) return { findings: [], parsed: false }
 
-  const candidates: string[] = [];
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
-  for (const block of fenced) candidates.push(block.replace(/```(?:json)?/g, "").replace(/```/g, ""));
+  const candidates: string[] = []
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? []
+  for (const block of fenced) candidates.push(block.replace(/```(?:json)?/g, '').replace(/```/g, ''))
   // Last brace first: the outer object's own `{` is reached after the braces
   // nested inside it, so `{"findings":[{…}]}` is not read as its last finding.
-  for (let i = text.length - 1; i >= 0; i--) if (text[i] === "{") candidates.push(text.slice(i));
-  candidates.push(text);
+  for (let i = text.length - 1; i >= 0; i--) if (text[i] === '{') candidates.push(text.slice(i))
+  candidates.push(text)
 
   for (const candidate of candidates) {
-    let value: unknown;
+    let value: unknown
     try {
-      value = JSON.parse(candidate.trim());
+      value = JSON.parse(candidate.trim())
     } catch {
-      continue;
+      continue
     }
-    const result = normaliseAnswer(value);
-    if (result.parsed) return result;
+    const result = normaliseAnswer(value)
+    if (result.parsed) return result
   }
 
-  return { findings: [], parsed: false };
+  return { findings: [], parsed: false }
 }
 
 /**
@@ -413,44 +406,42 @@ export function parseFindings(text: string | null): ReadAnswer {
  * added to the enum lands on one side of this by arithmetic rather than by
  * being listed.
  */
-const BAR: Severity = "minor";
-export function verdictFor(findings: readonly ActionFinding[]): "passed" | "failed" {
-  const bar = SEVERITIES.indexOf(BAR);
-  return findings.some((f) => SEVERITIES.indexOf(f.severity) < bar) ? "failed" : "passed";
+const BAR: Severity = 'minor'
+export function verdictFor(findings: readonly ActionFinding[]): 'passed' | 'failed' {
+  const bar = SEVERITIES.indexOf(BAR)
+  return findings.some((f) => SEVERITIES.indexOf(f.severity) < bar) ? 'failed' : 'passed'
 }
 
 /** Whether the reviewer's word is on the ladder at all. `SEVERITIES` is the ladder. */
 function isSeverity(value: unknown): value is Severity {
-  return (SEVERITIES as readonly unknown[]).includes(value);
+  return (SEVERITIES as readonly unknown[]).includes(value)
 }
 
 /** Whether the reviewer said one of the two words. `REFUSED_ABOUT` is the pair. */
 function isRefusedAbout(value: unknown): value is RefusedAbout {
-  return (REFUSED_ABOUT as readonly unknown[]).includes(value);
+  return (REFUSED_ABOUT as readonly unknown[]).includes(value)
 }
 
 function summarise(findings: readonly ActionFinding[]): string {
-  if (findings.length === 0) return "no findings";
-  return findings
-    .map((f) => `${f.severity} ${f.file}${f.line === null ? "" : `:${f.line}`} — ${f.claim}`)
-    .join("\n");
+  if (findings.length === 0) return 'no findings'
+  return findings.map((f) => `${f.severity} ${f.file}${f.line === null ? '' : `:${f.line}`} — ${f.claim}`).join('\n')
 }
 
 export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
   return {
     name: spec.name,
-    kind: "agent",
+    kind: 'agent',
 
     async run(context: ActionContext): Promise<ActionResult> {
-      const diff = await deps.diff();
+      const diff = await deps.diff()
       if (!diff.trim()) {
         // Nothing to review is not the same as nothing wrong, and saying so is
         // cheaper than an agent call that reads an empty diff.
-        return { verdict: "passed", evidence: "the diff is empty; nothing to review", findings: [] };
+        return { verdict: 'passed', evidence: 'the diff is empty; nothing to review', findings: [] }
       }
 
-      const issue = await deps.issue();
-      const recheck = context.recheck ?? [];
+      const issue = await deps.issue()
+      const recheck = context.recheck ?? []
       // **Not** `context.runId`. The session id is derived from it, so reusing
       // it would resume the implementer's session and make this a warm review
       // wearing a cold review's name.
@@ -477,12 +468,12 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // bought for (`conduct.ts` only continues the loop when the fixer
       // committed), so the commit is what makes each round's review a
       // different reviewer.
-      const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`;
+      const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
       context.log?.note(
-        "review",
+        'review',
         `${reviewId} · ${diff.length} bytes of diff` +
-          (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? "" : "s"}` : ""),
-      );
+          (recheck.length > 0 ? ` · rechecking ${recheck.length} finding${recheck.length === 1 ? '' : 's'}` : ''),
+      )
       const outcome = await deps.runtime.run({
         runId: reviewId,
         cwd: context.cwd,
@@ -503,7 +494,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
         env: context.env,
         limits: deps.limits,
         signal: context.signal,
-      });
+      })
 
       if (outcome.failure) {
         /**
@@ -527,15 +518,15 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * that would not parse leaves turns at zero out of ignorance, which is
          * a crash and must stay one.
          */
-        if (outcome.failure.kind === "never-started") {
+        if (outcome.failure.kind === 'never-started') {
           return {
-            verdict: "never-ran",
+            verdict: 'never-ran',
             // The runtime's own words, whole. `conduct.ts` reads a reset time
             // out of them (0031 §4) and the board shows them as what they are:
             // evidence about the account, never about the diff.
             evidence: boundedEvidence(outcome.failure.detail),
             findings: [],
-          };
+          }
         }
         /**
          * **The runtime forced the schema and could not make an answer fit it
@@ -547,15 +538,15 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * never `did-not-finish`, which would reach `proposed` with the wrong
          * sentence and no `unreadable` for the log to count.
          */
-        if (outcome.failure.kind === "no-structured-answer") {
+        if (outcome.failure.kind === 'no-structured-answer') {
           return {
-            verdict: "failed",
+            verdict: 'failed',
             evidence: boundedEvidence(
               `the reviewer's runtime could not fit its answer to the schema: ${outcome.failure.detail}`,
             ),
             findings: [],
             unreadable: true,
-          };
+          }
         }
         /**
          * **And a reviewer that *started* and did not finish has not reviewed
@@ -583,12 +574,10 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * prefix is what says they are about the machinery.
          */
         return {
-          verdict: "did-not-finish",
-          evidence: boundedEvidence(
-            `the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
-          ),
+          verdict: 'did-not-finish',
+          evidence: boundedEvidence(`the reviewer did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`),
           findings: [],
-        };
+        }
       }
 
       // The runtime's own parse first, where it sent one — `outcome.structured`
@@ -597,7 +586,7 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
       // (`#369`). `parseFindings` runs only where the runtime answered in
       // prose instead.
       const { findings, parsed, about } =
-        outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text);
+        outcome.structured !== undefined ? normaliseAnswer(outcome.structured) : parseFindings(outcome.text)
       if (!parsed) {
         /**
          * A reviewer whose answer cannot be read has not reviewed anything. The
@@ -617,15 +606,15 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * sentence a person is handed and what the log can be asked.
          */
         return {
-          verdict: "failed",
-          evidence: boundedEvidence(`the reviewer's answer was not readable as findings:\n${outcome.text ?? ""}`),
+          verdict: 'failed',
+          evidence: boundedEvidence(`the reviewer's answer was not readable as findings:\n${outcome.text ?? ''}`),
           findings: [],
           unreadable: true,
-        };
+        }
       }
 
-      const verdict = verdictFor(findings);
-      const cost = outcome.costUsd === null ? "" : ` · $${outcome.costUsd.toFixed(2)}`;
+      const verdict = verdictFor(findings)
+      const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
       return {
         verdict,
         evidence: boundedEvidence(`${summarise(findings)}\n\n(${outcome.turns} turns${cost})`),
@@ -644,10 +633,10 @@ export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * Spread, so *the reviewer did not say* stays an absent key — the rule
          * this whole field is under.
          */
-        ...(verdict === "failed" && about !== undefined ? { about } : {}),
-      };
+        ...(verdict === 'failed' && about !== undefined ? { about } : {}),
+      }
     },
-  };
+  }
 }
 
 /**
@@ -762,7 +751,7 @@ nobody reads.
 
 Reply with the document and nothing else, or with the \`question\` block and
 nothing else: no preamble, no summary of what you read, no offer to continue.
-${again === null ? "" : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ""}`;
+${again === null ? '' : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ''}`
 }
 
 /**
@@ -787,12 +776,12 @@ ${again === null ? "" : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also
 function sentBackBlock(again: SentBack): string {
   return `## You are at this step a second time
 
-${again.asked === null ? "" : `You asked:\n\n${again.asked}\n\n`}The answer: ${again.why}
+${again.asked === null ? '' : `You asked:\n\n${again.asked}\n\n`}The answer: ${again.why}
 
 **Do not ask again.** Write the design on a stated assumption: say which reading
 you took and why, in the document, where the agent that writes the code and the
 reviewer that reads it both see it. An assumption on the page is something either
-of them can disagree with; a second question is this ticket stopping twice.`;
+of them can disagree with; a second question is this ticket stopping twice.`
 }
 
 /**
@@ -836,14 +825,14 @@ of them can disagree with; a second question is this ticket stopping twice.`;
  * spelling, so it is refused in its own word rather than passed as an empty one.
  */
 export type Drafted =
-  | { readonly kind: "document"; readonly document: string }
-  | { readonly kind: "question"; readonly question: string; readonly draft: string }
-  | { readonly kind: "unreadable"; readonly answer: string };
+  | { readonly kind: 'document'; readonly document: string }
+  | { readonly kind: 'question'; readonly question: string; readonly draft: string }
+  | { readonly kind: 'unreadable'; readonly answer: string }
 
 /** The fence that announces a question, on its own line, and nothing else does. */
-const OPENS_A_QUESTION = /^[ \t]*```question[ \t]*$/m;
+const OPENS_A_QUESTION = /^[ \t]*```question[ \t]*$/m
 /** The fence that closes it. Any closing fence, because the block holds prose. */
-const CLOSES_THE_FENCE = /^[ \t]*```[ \t]*$/m;
+const CLOSES_THE_FENCE = /^[ \t]*```[ \t]*$/m
 
 /**
  * Which of the three a design agent's answer is. `Drafted` is the argument.
@@ -859,22 +848,22 @@ const CLOSES_THE_FENCE = /^[ \t]*```[ \t]*$/m;
  * one is `unreadable` rather than a document that begins with a code fence.
  */
 export function parseDraft(text: string | null): Drafted {
-  const answer = (text ?? "").trim();
+  const answer = (text ?? '').trim()
   // Before the fence is looked for, because silence is a document and the common
   // one: a question is something the agent did, and it did nothing.
-  if (answer === "") return { kind: "document", document: "" };
+  if (answer === '') return { kind: 'document', document: '' }
 
-  const opened = OPENS_A_QUESTION.exec(answer);
-  if (opened === null) return { kind: "document", document: answer };
+  const opened = OPENS_A_QUESTION.exec(answer)
+  if (opened === null) return { kind: 'document', document: answer }
 
-  const inside = answer.slice(opened.index + opened[0].length);
-  const closed = CLOSES_THE_FENCE.exec(inside);
-  if (closed === null) return { kind: "unreadable", answer };
-  const question = inside.slice(0, closed.index).trim();
-  if (question === "") return { kind: "unreadable", answer };
+  const inside = answer.slice(opened.index + opened[0].length)
+  const closed = CLOSES_THE_FENCE.exec(inside)
+  if (closed === null) return { kind: 'unreadable', answer }
+  const question = inside.slice(0, closed.index).trim()
+  if (question === '') return { kind: 'unreadable', answer }
   // Everything before the fence, and it is not thrown away at any width: a
   // preamble and a whole design note are the same slice.
-  return { kind: "question", question, draft: answer.slice(0, opened.index).trim() };
+  return { kind: 'question', question, draft: answer.slice(0, opened.index).trim() }
 }
 
 /**
@@ -925,16 +914,16 @@ export function parseDraft(text: string | null): Drafted {
 export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
   return {
     name: spec.name,
-    kind: "agent",
+    kind: 'agent',
 
     async run(context: ActionContext): Promise<ActionResult> {
-      const issue = await deps.issue();
+      const issue = await deps.issue()
       // **Not** `context.runId`, for the reviewer's reason one function up: the
       // session id is derived from it, so reusing it would resume the
       // implementer's session — and here it would resume a session that has not
       // happened yet, which is the same mistake read backwards.
-      const draftId = `${context.runId}:design:${spec.name}`;
-      context.log?.note("design", `${draftId} · drafting for #${issue.ref}`);
+      const draftId = `${context.runId}:design:${spec.name}`
+      context.log?.note('design', `${draftId} · drafting for #${issue.ref}`)
       const outcome = await deps.runtime.run({
         runId: draftId,
         cwd: context.cwd,
@@ -949,28 +938,28 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
         env: context.env,
         limits: deps.limits,
         signal: context.signal,
-      });
+      })
 
       if (outcome.failure) {
         // The adapter's classification and never a second reading of it
         // (0031 §1), exactly as the reviewer above: at most one turn, no cost
         // and an error is `never-started`, and everything else started.
-        if (outcome.failure.kind === "never-started") {
-          return { verdict: "never-ran", evidence: boundedEvidence(outcome.failure.detail), findings: [] };
+        if (outcome.failure.kind === 'never-started') {
+          return { verdict: 'never-ran', evidence: boundedEvidence(outcome.failure.detail), findings: [] }
         }
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence: boundedEvidence(
             `the design agent did not finish (${outcome.failure.kind}): ${outcome.failure.detail}`,
           ),
           findings: [],
-        };
+        }
       }
 
-      const drafted = parseDraft(outcome.text);
-      const cost = outcome.costUsd === null ? "" : ` · $${outcome.costUsd.toFixed(2)}`;
+      const drafted = parseDraft(outcome.text)
+      const cost = outcome.costUsd === null ? '' : ` · $${outcome.costUsd.toFixed(2)}`
 
-      if (drafted.kind === "question") {
+      if (drafted.kind === 'question') {
         /**
          * **0058 §3c, reachable** (`#294`). `did-not-finish` and not `failed`: the
          * agent judged nothing, so no round is charged for the asking, and
@@ -998,18 +987,18 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * an empty rule, where it asked and wrote nothing.
          */
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           because: NEEDS_INPUT,
           evidence: boundedEvidence(
-            drafted.draft === ""
+            drafted.draft === ''
               ? drafted.question
               : `${drafted.question}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
           ),
           findings: [],
-        };
+        }
       }
 
-      if (drafted.kind === "unreadable") {
+      if (drafted.kind === 'unreadable') {
         /**
          * The reviewer's branch one function up, in this step's spelling
          * (`#279`): an announced question that was never asked is neither of the
@@ -1025,30 +1014,29 @@ export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps):
          * router, and the pass rests for a person carrying the answer.
          */
         return {
-          verdict: "failed",
+          verdict: 'failed',
           evidence: boundedEvidence(
-            "the design agent announced a question and did not ask one — the `question` block was " +
+            'the design agent announced a question and did not ask one — the `question` block was ' +
               `empty or never closed, so the answer is neither a design nor a question:\n${drafted.answer}`,
           ),
           findings: [],
           unreadable: true,
-        };
+        }
       }
 
-      const document = drafted.document;
+      const document = drafted.document
       return {
-        verdict: "passed",
+        verdict: 'passed',
         // The distinction the board wants and `implement` does not: an empty
         // document and a document are one brief to the agent — it works from
         // the issue either way — and two different things to a person reading
         // what this pass spent its turns on.
         evidence: boundedEvidence(
-          (document === "" ? "no design: this change needs none" : document) +
-            `\n\n(${outcome.turns} turns${cost})`,
+          (document === '' ? 'no design: this change needs none' : document) + `\n\n(${outcome.turns} turns${cost})`,
         ),
         findings: [],
         document,
-      };
+      }
     },
-  };
+  }
 }

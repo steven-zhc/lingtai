@@ -47,32 +47,33 @@
  * how the silence gets in. Read from the base branch, never from an agent's
  * (0005).
  */
-import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from "@lingtai/domain";
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
-import type { GitHubClient } from "@lingtai/github";
-import type { StepAction } from "@lingtai/recipe";
-import { resolveEndActions } from "./end-step.ts";
-import { labelsFor } from "./labels.ts";
-import { tellGitHubAbout } from "./tell.ts";
-import { currentRecipe } from "./projects.ts";
-import type { ResolvedRecipe } from "@lingtai/recipe";
+import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import type { GitHubClient } from '@lingtai/github'
+import type { StepAction } from '@lingtai/recipe'
+import type { ResolvedRecipe } from '@lingtai/recipe'
+
+import { resolveEndActions } from './end-step.ts'
+import { labelsFor } from './labels.ts'
+import { currentRecipe } from './projects.ts'
+import { tellGitHubAbout } from './tell.ts'
 
 export interface CloseOutcome {
-  ok: boolean;
-  workItemId: string;
-  detail: string;
+  ok: boolean
+  workItemId: string
+  detail: string
 }
 
 export async function close(options: {
-  project: string;
-  issue: number;
-  by: string;
+  project: string
+  issue: number
+  by: string
   /**
    * Why, on the record. Required for `requeue`'s reason and one more: this is
    * the only decision that cannot be revisited, so the sentence explaining it
    * is the last thing anybody will have.
    */
-  reason: string;
+  reason: string
   /**
    * The project as Lingtai has it onboarded, and a client on its repository.
    *
@@ -86,67 +87,67 @@ export async function close(options: {
    * point left unresolved is the silence 0016 §4 calls Lingtai's bug, so the
    * two commands a person actually uses both pass them.
    */
-  state?: ProjectState;
-  client?: GitHubClient;
+  state?: ProjectState
+  client?: GitHubClient
   /** The recipe whose `end` point runs. `currentRecipe` — the machine's file — unless a test says otherwise. */
-  recipe?: () => Promise<ResolvedRecipe>;
-  store?: EventStore;
+  recipe?: () => Promise<ResolvedRecipe>
+  store?: EventStore
 }): Promise<CloseOutcome> {
-  const store = options.store ?? eventStore;
-  const workItemId = workItemStream(options.project, options.issue);
+  const store = options.store ?? eventStore
+  const workItemId = workItemStream(options.project, options.issue)
 
   if (!options.reason.trim()) {
-    return { ok: false, workItemId, detail: "a close needs a reason" };
+    return { ok: false, workItemId, detail: 'a close needs a reason' }
   }
 
-  const events = await store.read(workItemId);
-  const item = reduceWorkItem(events);
+  const events = await store.read(workItemId)
+  const item = reduceWorkItem(events)
 
-  if (item.lifecycle.status === "closed") {
-    return { ok: false, workItemId, detail: `${workItemId} is already closed` };
+  if (item.lifecycle.status === 'closed') {
+    return { ok: false, workItemId, detail: `${workItemId} is already closed` }
   }
-  if (item.lifecycle.status === "landed") {
+  if (item.lifecycle.status === 'landed') {
     // Not an error a person needs to work around: it is done, and saying so is
     // more useful than appending a second ending over the first.
-    return { ok: false, workItemId, detail: `${workItemId} landed — there is nothing to close` };
+    return { ok: false, workItemId, detail: `${workItemId} landed — there is nothing to close` }
   }
 
   // Before the close is recorded, so an unreadable recipe refuses rather than
   // appending a terminal whose point silently could not run — `approve`'s rule
   // and its reason (0005, 0044).
-  let end: readonly StepAction[] = [];
+  let end: readonly StepAction[] = []
   if (options.state && options.client) {
     try {
-      const state = options.state;
-      end = (await (options.recipe ?? (() => currentRecipe(state)))()).recipe.steps.end;
+      const state = options.state
+      end = (await (options.recipe ?? (() => currentRecipe(state)))()).recipe.steps.end
     } catch (err) {
       return {
         ok: false,
         workItemId,
         detail: `${(err as Error).message}. Nothing was closed.`,
-      };
+      }
     }
   }
 
   // One transaction. The outcome and what its point resolved to cannot come
   // apart, and the version check that guards the close guards both.
-  const ended = resolveEndActions(events, end, "closed");
+  const ended = resolveEndActions(events, end, 'closed')
   try {
     await store.append(workItemId, item.version, [
       {
-        type: "WorkItemClosed",
+        type: 'WorkItemClosed',
         actor: options.by,
-        data: parsePayload("WorkItemClosed", { by: options.by, reason: options.reason }),
+        data: parsePayload('WorkItemClosed', { by: options.by, reason: options.reason }),
       },
       ...ended,
-    ]);
+    ])
   } catch (err) {
     // Something moved between the read and the append — a pass claimed it, or a
     // gate answered. Say so rather than closing over a decision nobody saw.
     if (err instanceof ConcurrencyError) {
-      return { ok: false, workItemId, detail: `${workItemId} changed while closing — read it again` };
+      return { ok: false, workItemId, detail: `${workItemId} changed while closing — read it again` }
     }
-    throw err;
+    throw err
   }
 
   // Resolved, then done, in that order and never the reverse: the resolution is
@@ -159,10 +160,10 @@ export async function close(options: {
       store,
       github: options.client,
       workItemId,
-      labels: labelsFor("closed"),
+      labels: labelsFor('closed'),
       appended: ended,
-    });
+    })
   }
 
-  return { ok: true, workItemId, detail: `closed by ${options.by} — the queue will not offer it again` };
+  return { ok: true, workItemId, detail: `closed by ${options.by} — the queue will not offer it again` }
 }

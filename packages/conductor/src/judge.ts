@@ -74,9 +74,9 @@
  * reason: a rule about spending money that lives inside an `if` in a
  * 3,000-line file is a rule nobody can check.
  */
-import type { ActionFinding } from "@lingtai/actions";
-import { STEPS, type RuntimeId, type Step } from "@lingtai/domain";
-import { isBuiltInJudge, type BuiltInJudge, type JudgeWhen, type StepAction } from "@lingtai/recipe";
+import type { ActionFinding } from '@lingtai/actions'
+import { STEPS, type RuntimeId, type Step } from '@lingtai/domain'
+import { isBuiltInJudge, type BuiltInJudge, type JudgeWhen, type StepAction } from '@lingtai/recipe'
 
 /**
  * **What the recipe declared for this direction, or null** — the whole of what
@@ -106,7 +106,7 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
     // The key is the discriminator, as everywhere else a `StepAction` is read
     // (`pluginNaming`): `when` alone is `close:`'s and `labels:`' field too, and
     // matching on it is how a judge action once reached `end`'s resolver (`#238`).
-    if (!("judge" in action) || action.when !== when) continue;
+    if (!('judge' in action) || action.when !== when) continue
     return isBuiltInJudge(action.judge)
       ? { built: action.judge, named: action.name }
       : {
@@ -119,9 +119,9 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
           // from being confused — a price is not part of the question.
           ...(action.model === undefined ? {} : { model: action.model }),
           ...(action.limits === undefined ? {} : { limits: action.limits }),
-        };
+        }
   }
-  return null;
+  return null
 }
 
 /**
@@ -148,18 +148,18 @@ export function judgeDeclaredAt(actions: readonly StepAction[], when: JudgeWhen)
 export type Declared =
   | { readonly built: BuiltInJudge; readonly named: string }
   | {
-      readonly runtime: RuntimeId;
-      readonly named: string;
+      readonly runtime: RuntimeId
+      readonly named: string
       /**
        * The recipe's `model:`, absent meaning the runtime's own default
        * (0063 §2) — **the thing `#314` is measured by**. On `#300` this call
        * answered in one turn for $0.42 beside an `implement` of 150 turns and
        * $22.56, and it was the cheap one with no way to ask for a cheap model.
        */
-      readonly model?: string;
+      readonly model?: string
       /** What this one call may spend; absent takes `runtime.limits` (0070 §5). */
-      readonly limits?: { readonly turns?: number; readonly wall?: string };
-    };
+      readonly limits?: { readonly turns?: number; readonly wall?: string }
+    }
 
 /**
  * Where a pass may go from a refusal, and **`human` is not a step**.
@@ -175,8 +175,8 @@ export type Declared =
  * answer falls back to: the one destination that spends nothing and loops
  * never.
  */
-export const DESTINATIONS = ["implement", "claim", "human"] as const;
-export type Destination = (typeof DESTINATIONS)[number];
+export const DESTINATIONS = ['implement', 'claim', 'human'] as const
+export type Destination = (typeof DESTINATIONS)[number]
 
 /**
  * What the workflow knows and the judge does not.
@@ -190,7 +190,7 @@ export type Destination = (typeof DESTINATIONS)[number];
  */
 export interface OfferInput {
   /** The reason the last step gave, which is the direction being decided. */
-  when: JudgeWhen;
+  when: JudgeWhen
   /**
    * **How far the pass actually got** — the step whose action refused.
    *
@@ -200,7 +200,7 @@ export interface OfferInput {
    * `rounds` is left. A judge that knows nothing about `prepared` still cannot
    * choose wrongly, because the wrong answer was never in the set.
    */
-  reached: Step;
+  reached: Step
   /**
    * **What the refused step produced**, which is both the judge's evidence and
    * the workflow's test of whether there is anything to buy an agent for.
@@ -214,16 +214,16 @@ export interface OfferInput {
    */
   refusal: {
     /** The reviewer's, verbatim. Empty for every direction but `findings`. */
-    findings: readonly ActionFinding[];
+    findings: readonly ActionFinding[]
     /** What a command printed, clipped by `command.ts` long before it reaches here. */
-    evidence: string;
-  };
+    evidence: string
+  }
   /** `runtime.limits.rounds` today; `implement`'s universal `rounds:` under 0061 §2. */
-  rounds: number;
-  roundsSpent: number;
+  rounds: number
+  roundsSpent: number
   /** `runtime.limits.restarts` today; `claim`'s universal `restarts:` under 0061 §2. */
-  restarts: number;
-  restartsSpent: number;
+  restarts: number
+  restartsSpent: number
   /**
    * What else on this pass is asking for a person, named, or null.
    *
@@ -233,7 +233,7 @@ export interface OfferInput {
    * what the pass may do, not a judgement about what it should, which is why it
    * is here and not in front of a judge.
    */
-  alsoAsked: string | null;
+  alsoAsked: string | null
 }
 
 /**
@@ -280,13 +280,12 @@ export interface OfferInput {
  * from the set, which is the only property this function is responsible for.
  */
 export function stepsOnOffer(input: OfferInput): readonly Destination[] {
-  if (!carriesACriterion(input)) return ["human"];
-  const offer: Destination[] = [];
-  if (anAgentHasRun(input.reached) && input.roundsSpent < input.rounds) offer.push("implement");
-  if (input.when === "findings" && input.alsoAsked === null && input.restartsSpent < input.restarts)
-    offer.push("claim");
-  offer.push("human");
-  return offer;
+  if (!carriesACriterion(input)) return ['human']
+  const offer: Destination[] = []
+  if (anAgentHasRun(input.reached) && input.roundsSpent < input.rounds) offer.push('implement')
+  if (input.when === 'findings' && input.alsoAsked === null && input.restartsSpent < input.restarts) offer.push('claim')
+  offer.push('human')
+  return offer
 }
 
 /**
@@ -301,9 +300,9 @@ export function stepsOnOffer(input: OfferInput): readonly Destination[] {
  * than a command with no output, which is the more useful of the two truths.
  */
 function carriesACriterion(input: OfferInput): boolean {
-  return input.when === "findings"
-    ? input.refusal.findings.some((finding) => finding.failureScenario.trim() !== "")
-    : input.refusal.evidence.trim() !== "";
+  return input.when === 'findings'
+    ? input.refusal.findings.some((finding) => finding.failureScenario.trim() !== '')
+    : input.refusal.evidence.trim() !== ''
 }
 
 /**
@@ -315,7 +314,7 @@ function carriesACriterion(input: OfferInput): boolean {
  * that enum, and a list here would be a second opinion about the order.
  */
 function anAgentHasRun(reached: Step): boolean {
-  return STEPS.indexOf(reached) >= STEPS.indexOf("implement");
+  return STEPS.indexOf(reached) >= STEPS.indexOf('implement')
 }
 
 /**
@@ -342,24 +341,24 @@ export interface JudgeBrief {
    * The direction, which is the `when:` the judge was written under — 0061 §3's
    * *the refusal's `reason`*, and the two fields below are the words under it.
    */
-  when: JudgeWhen;
+  when: JudgeWhen
   /**
    * What the step printed when it refused, and empty where the findings are the
    * whole of it. `FixInput`'s word for the same string, and the same string.
    */
-  evidence: string;
+  evidence: string
   /** The reviewer's findings, verbatim, and empty for every direction but `findings`. */
-  findings: readonly ActionFinding[];
+  findings: readonly ActionFinding[]
   /** The steps on offer. Never empty: `human` is always in it. */
-  offer: readonly Destination[];
+  offer: readonly Destination[]
   /** Never. The ceiling is `implement`'s and a judge cannot widen what it cannot see. */
-  rounds?: never;
+  rounds?: never
   /** Never. What is spent is the workflow's arithmetic, and it is already in `offer`. */
-  roundsSpent?: never;
+  roundsSpent?: never
   /** Never. The ceiling is `claim`'s, for the same reason. */
-  restarts?: never;
+  restarts?: never
   /** Never, and for the same reason as `roundsSpent`. */
-  restartsSpent?: never;
+  restartsSpent?: never
 }
 
 /**
@@ -385,7 +384,7 @@ export function briefFor(input: OfferInput): JudgeBrief {
     evidence: input.refusal.evidence,
     findings: input.refusal.findings,
     offer: stepsOnOffer(input),
-  };
+  }
 }
 
 /**
@@ -395,7 +394,7 @@ export function briefFor(input: OfferInput): JudgeBrief {
  * whole of the difference between the two kinds — which is why `BuiltIn` below
  * is the synchronous half rather than a flag beside it.
  */
-export type Judge = (brief: JudgeBrief) => Destination | Promise<Destination>;
+export type Judge = (brief: JudgeBrief) => Destination | Promise<Destination>
 
 /**
  * A built-in judge, and **synchronous is the declaration that it spends
@@ -413,7 +412,7 @@ export type Judge = (brief: JudgeBrief) => Destination | Promise<Destination>;
  * promise and `judge: same-worktree` stops being a claim about money and becomes
  * a name somebody has to go and read the implementation of.
  */
-export type BuiltIn = (brief: JudgeBrief) => Destination;
+export type BuiltIn = (brief: JudgeBrief) => Destination
 
 /**
  * The built-ins, one per name the schema accepts.
@@ -440,8 +439,8 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
    * not in the set at all, so this is the set's own shape rather than a
    * preference of the built-in's.
    */
-  "same-worktree": (brief) => (brief.offer.includes("implement") ? "implement" : "human"),
-};
+  'same-worktree': (brief) => (brief.offer.includes('implement') ? 'implement' : 'human'),
+}
 
 /**
  * Which directions a built-in answers, and which cost money.
@@ -465,19 +464,19 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
  * correctly or the loop breaks.
  */
 export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
-  red: "same-worktree",
-  "verify-failed": "same-worktree",
+  red: 'same-worktree',
+  'verify-failed': 'same-worktree',
   conflict: null,
-  "needs-input": null,
+  'needs-input': null,
   findings: null,
-};
+}
 
 /** Where the pass goes, and whether the judge had to be overruled to send it there. */
 export interface Judgement {
   /** The destination. **Always one the brief offered**, whatever the judge said. */
-  next: Destination;
+  next: Destination
   /** Null when the judge answered from the set; the refusal, naming it, when it did not. */
-  refused: string | null;
+  refused: string | null
 }
 
 /**
@@ -502,16 +501,16 @@ export async function askJudge(
   judge: Judge,
   brief: JudgeBrief,
 ): Promise<Judgement> {
-  const answer = await judge(brief);
-  if (brief.offer.includes(answer)) return { next: answer, refused: null };
+  const answer = await judge(brief)
+  if (brief.offer.includes(answer)) return { next: answer, refused: null }
   return {
-    next: "human",
+    next: 'human',
     refused:
       `the "${named}" judge answered "${answer}" for a "${brief.when}" refusal, and that is not ` +
-      `one of the steps it was offered — ${brief.offer.map((step) => `"${step}"`).join(", ")}. ` +
-      "A judge chooses which of the offered steps is next; which steps are on offer is the " +
+      `one of the steps it was offered — ${brief.offer.map((step) => `"${step}"`).join(', ')}. ` +
+      'A judge chooses which of the offered steps is next; which steps are on offer is the ' +
       "workflow's, and it counts the rounds and restarts spent to work them out (0061 §3). " +
-      "The pass is held for a person, because a judge that answered outside the set is not one " +
-      "to ask a second time",
-  };
+      'The pass is held for a person, because a judge that answered outside the set is not one ' +
+      'to ask a second time',
+  }
 }

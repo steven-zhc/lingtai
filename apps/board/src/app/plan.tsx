@@ -23,7 +23,7 @@
  * No state, no click. It is the one thing in this column you only read — which
  * is why it is a server component and why nothing here is a control.
  */
-import type { PlanView } from "@/lib/queued";
+import type { PlanView } from '@/lib/queued'
 
 /**
  * The bounds, on the box's own footer.
@@ -50,9 +50,9 @@ function limits(plan: PlanView): string {
     `${plan.turns} turns`,
     plan.wall,
     plan.tier,
-    plan.rounds === 0 ? "no rounds" : `${plan.rounds} round(s) back`,
-    plan.restarts === 0 ? "then straight to you" : `${plan.restarts} restart(s)`,
-  ].join(" · ");
+    plan.rounds === 0 ? 'no rounds' : `${plan.rounds} round(s) back`,
+    plan.restarts === 0 ? 'then straight to you' : `${plan.restarts} restart(s)`,
+  ].join(' · ')
 }
 
 export function Plan({ plan }: { plan: PlanView | null }) {
@@ -70,23 +70,21 @@ export function Plan({ plan }: { plan: PlanView | null }) {
         // says why. What must not happen is a guessed plan: a page that
         // invented a plan would be inviting somebody to press a button on
         // a description of something else.
-        <p className="empty">
-          The recipe could not be read, so what a run would do here is not known.
-        </p>
+        <p className="empty">The recipe could not be read, so what a run would do here is not known.</p>
       ) : (
         <ol className="steps">
           {plan.steps.map((p) => (
-            <li key={p.step} className={p.skipped ? "step skipped" : "step"}>
+            <li key={p.step} className={p.skipped ? 'step skipped' : 'step'}>
               <span className="mono name">{p.step}</span>
               {p.skipped ? (
                 <span className="pill">skipped</span>
               ) : (
-                <span className="actions">{p.actions.join(", ")}</span>
+                <span className="actions">{p.actions.join(', ')}</span>
               )}
             </li>
           ))}
         </ol>
       )}
     </div>
-  );
+  )
 }

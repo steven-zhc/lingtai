@@ -1,3 +1,7 @@
+import { runnableNow, type SkipReason } from '@lingtai/conductor/discover'
+import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
+import { loadProject } from '@lingtai/conductor/projects'
+import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 /**
  * What a queued item is waiting for, and what happens if you press the button.
  *
@@ -29,18 +33,14 @@
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { STEPS, retiredRepairPending, type Envelope } from "@lingtai/domain";
-import { loadProject } from "@lingtai/conductor/projects";
-import { projectFilter, type StepPlan } from "@lingtai/conductor/filter";
-import { runnableNow, type SkipReason } from "@lingtai/conductor/discover";
-import { backingOff, heldUntil, selectRunnable } from "@lingtai/conductor/queue";
-import { ceilingOf, queueOf } from "@lingtai/recipe/settings";
+import { STEPS, retiredRepairPending, type Envelope } from '@lingtai/domain'
+import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
 
 /** One of the ten steps, and what the recipe runs there. */
 export interface PlannedStep {
-  step: string;
+  step: string
   /** The action names, in the order they run. Empty when nothing is configured. */
-  actions: string[];
+  actions: string[]
   /**
    * Nothing is configured here.
    *
@@ -52,7 +52,7 @@ export interface PlannedStep {
    * about the plan, and a plan with two of its ten steps missing from the
    * page is one nobody can audit.
    */
-  skipped: boolean;
+  skipped: boolean
 }
 
 /**
@@ -63,13 +63,13 @@ export interface PlannedStep {
  */
 export interface PlanView {
   /** All ten, in pass order, including the ones nothing is configured at. */
-  steps: PlannedStep[];
+  steps: PlannedStep[]
   /** `runtime.limits.turns`. */
-  turns: number;
+  turns: number
   /** `runtime.limits.wall`, in the recipe's own words rather than milliseconds. */
-  wall: string;
+  wall: string
   /** `runtime.tier` — how contained the run must be (0007). */
-  tier: string;
+  tier: string
   /**
    * How many times a pass sends the agent back, `runtime.limits.rounds`
    * ([0039](../../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
@@ -79,7 +79,7 @@ export interface PlanView {
    * nobody can audit. Zero is the whole of what `repair.on: false` used to say,
    * and since `#143` the whole of what this repository buys for a refusal.
    */
-  rounds: number;
+  rounds: number
   /**
    * How many passes one ticket may buy, `runtime.limits.restarts`
    * ([0040](../../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
@@ -93,25 +93,25 @@ export interface PlanView {
    *
    * Rendered when it is zero too, for `rounds`' reason and `passCeiling`'s.
    */
-  restarts: number;
+  restarts: number
 }
 
 /** Why GitHub is not offering this issue to the conductor, in words. */
 const NOT_OFFERED: Record<SkipReason, string> = {
-  closed: "the issue is closed",
-  "no-kind": "it carries no label this recipe takes",
-  "excluded-label": "it carries a label this recipe excludes",
-  "already-discovered": "the log already has it",
+  closed: 'the issue is closed',
+  'no-kind': 'it carries no label this recipe takes',
+  'excluded-label': 'it carries a label this recipe excludes',
+  'already-discovered': 'the log already has it',
   // Said as the thing that has to change, not as a state it is in: the ticket
   // moves the moment the last blocker closes, with nothing to clear here (#131).
-  "blocked-by": "an issue it is blocked by is still open",
+  'blocked-by': 'an issue it is blocked by is still open',
   // The assignee, as the recipe's `runtime.assignee` reads it (#181, #373).
-  "assigned-elsewhere": "it is assigned to somebody else",
-  unassigned: "it is assigned to nobody, and this machine takes only its own",
-  "assigned-to-me": "it is assigned to you, and this machine takes only unassigned work",
+  'assigned-elsewhere': 'it is assigned to somebody else',
+  unassigned: 'it is assigned to nobody, and this machine takes only its own',
+  'assigned-to-me': 'it is assigned to you, and this machine takes only unassigned work',
   // No login to compare with, so it is not said whose it is.
-  assigned: "it is assigned, and this machine takes only unassigned work",
-};
+  assigned: 'it is assigned, and this machine takes only unassigned work',
+}
 
 /**
  * Where one item stands in the queue, and what taking it would run.
@@ -128,9 +128,9 @@ export interface QueuedView {
    * Null when it is not in that list: GitHub is not offering it, or something
    * is holding it. Which of those is the next two fields.
    */
-  position: number | null;
+  position: number | null
   /** How many are in line, so `4th of 11` can be said. */
-  inLine: number;
+  inLine: number
   /**
    * Why GitHub is not offering this issue at all, and null when it is.
    *
@@ -138,14 +138,14 @@ export interface QueuedView {
    * backoff is holding comes back on its own, and one carrying `agent:hold`
    * does not. Both were a card that read as *simply next* (`#100`).
    */
-  notOffered: string | null;
+  notOffered: string | null
   /**
    * When the backoff stops holding it, ISO, and null when nothing is.
    *
    * `heldUntil`'s answer and not this file's arithmetic — the rule is the
    * recipe's (0028) and the board does not get to have its own version of it.
    */
-  runnableAt: string | null;
+  runnableAt: string | null
   /**
    * Whether the conductor has been told to take nothing.
    *
@@ -154,7 +154,7 @@ export interface QueuedView {
    * the conductor is stopped, so promising a time would be the more precise of
    * two answers and the wrong one.
    */
-  paused: boolean;
+  paused: boolean
   /**
    * `runnableNow`'s sentence when some listed issues were not checked for a
    * blocker, and null when every one was.
@@ -164,32 +164,32 @@ export interface QueuedView {
    * against a chain, and a page that said only *next* would be the reading
    * #131 exists to remove.
    */
-  dependenciesUnread: string | null;
+  dependenciesUnread: string | null
   /** What pressing the button runs. Null when the recipe could not be read. */
-  plan: PlanView | null;
+  plan: PlanView | null
   /** Why none of this could be answered, when it could not. */
-  problem: string | null;
+  problem: string | null
 }
 
 /** The recipe's plan, as the page states it. Pure, and asserted as such. */
 export function planOf(
   plan: StepPlan,
   runtime: {
-    limits: { turns: number; wall: string; rounds: number; restarts: number };
-    tier: string;
+    limits: { turns: number; wall: string; rounds: number; restarts: number }
+    tier: string
   },
 ): PlanView {
   return {
     steps: STEPS.map((step) => {
-      const actions = (plan.get(step) ?? []).map((a) => a.name);
-      return { step, actions, skipped: actions.length === 0 };
+      const actions = (plan.get(step) ?? []).map((a) => a.name)
+      return { step, actions, skipped: actions.length === 0 }
     }),
     turns: runtime.limits.turns,
     wall: runtime.limits.wall,
     tier: runtime.tier,
     rounds: runtime.limits.rounds,
     restarts: runtime.limits.restarts,
-  };
+  }
 }
 
 /**
@@ -204,18 +204,10 @@ export function planOf(
  * The *rule* is still imported — this supplies its arguments and nothing else,
  * which is the split every fold in `task.ts` makes.
  */
-export function backoffOf(
-  own: readonly Envelope[],
-  backoffMs: number,
-  now: number = Date.now(),
-): Date | null {
-  let lastAttemptAt: Date | null = null;
-  for (const e of own) if (e.type === "WorkItemClaimed") lastAttemptAt = e.at;
-  return heldUntil(
-    { lastAttemptAt, repairPending: retiredRepairPending(own) !== null },
-    backoffMs,
-    now,
-  );
+export function backoffOf(own: readonly Envelope[], backoffMs: number, now: number = Date.now()): Date | null {
+  let lastAttemptAt: Date | null = null
+  for (const e of own) if (e.type === 'WorkItemClaimed') lastAttemptAt = e.at
+  return heldUntil({ lastAttemptAt, repairPending: retiredRepairPending(own) !== null }, backoffMs, now)
 }
 
 function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {
@@ -228,7 +220,7 @@ function refused(problem: string, plan: PlanView | null, paused: boolean): Queue
     dependenciesUnread: null,
     plan,
     problem,
-  };
+  }
 }
 
 /**
@@ -241,21 +233,21 @@ function refused(problem: string, plan: PlanView | null, paused: boolean): Queue
  * The default resolve, exactly as `askProject` does — the machine's file.
  */
 export async function queuedFor(input: {
-  project: string;
+  project: string
   /** The issue number, as GitHub numbers it. */
-  issue: string;
+  issue: string
   /** The item's own events, for the backoff. Empty for one that has never run. */
-  own: readonly Envelope[];
-  paused: boolean;
+  own: readonly Envelope[]
+  paused: boolean
 }): Promise<QueuedView> {
-  const { project, issue, paused } = input;
+  const { project, issue, paused } = input
 
-  const state = await loadProject(project).catch(() => null);
-  if (!state) return refused(`${project} is not a registered project`, null, paused);
+  const state = await loadProject(project).catch(() => null)
+  if (!state) return refused(`${project} is not a registered project`, null, paused)
 
-  const filter = await projectFilter(state);
+  const filter = await projectFilter(state)
   if (!filter.ok) {
-    return refused(`the recipe could not be read: ${filter.problem}`, null, paused);
+    return refused(`the recipe could not be read: ${filter.problem}`, null, paused)
   }
 
   // The plan survives a GitHub that will not answer. Losing *what will happen*
@@ -273,25 +265,25 @@ export async function queuedFor(input: {
     // `agent:` row, which is where it belongs.
     limits: ceilingOf(filter.recipe),
     tier: filter.recipe.runtime.tier,
-  });
-  const until = backoffOf(input.own, filter.backoffMs);
+  })
+  const until = backoffOf(input.own, filter.backoffMs)
 
   try {
-    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) });
+    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) })
     const runnable = await selectRunnable({
       project,
       offered: offered.runnable,
       kinds: filter.kinds,
       backoffMs: filter.backoffMs,
-    });
+    })
 
-    const at = runnable.findIndex((r) => r.issue === issue);
+    const at = runnable.findIndex((r) => r.issue === issue)
     // Offered is one question and in-line is another. An item GitHub offers and
     // the backoff holds is missing from `runnable` and is being offered all the
     // same, so the reason is the hold rather than the offer — saying otherwise
     // is how a held card came to read as one nobody had got to (#95).
-    const listed = offered.runnable.some((o) => o.ref === issue);
-    const skipped = offered.skipped.find((s) => String(s.ref) === issue);
+    const listed = offered.runnable.some((o) => o.ref === issue)
+    const skipped = offered.skipped.find((s) => String(s.ref) === issue)
 
     return {
       position: at < 0 ? null : at + 1,
@@ -300,13 +292,13 @@ export async function queuedFor(input: {
         ? null
         : skipped
           ? NOT_OFFERED[skipped.reason]
-          : "GitHub is not listing it among the open issues",
+          : 'GitHub is not listing it among the open issues',
       runnableAt: until === null ? null : until.toISOString(),
       paused,
       dependenciesUnread: offered.dependenciesUnread,
       plan,
       problem: null,
-    };
+    }
   } catch (err) {
     // The recipe resolved and GitHub still would not answer — a rate limit, a
     // revoked installation. Named rather than dropped, and the plan and the
@@ -314,7 +306,7 @@ export async function queuedFor(input: {
     return {
       ...refused((err as Error).message, plan, paused),
       runnableAt: until === null ? null : until.toISOString(),
-    };
+    }
   }
 }
 
@@ -342,17 +334,17 @@ export async function queuedFor(input: {
  *    is asked cannot come to word it differently again.
  */
 export function holding(view: QueuedView, now: number = Date.now()): string | null {
-  if (view.notOffered !== null) return `GitHub is not offering it — ${view.notOffered}`;
-  if (view.paused) return "paused — nothing will start";
-  if (view.runnableAt !== null) return backingOff(new Date(view.runnableAt), now);
-  return null;
+  if (view.notOffered !== null) return `GitHub is not offering it — ${view.notOffered}`
+  if (view.paused) return 'paused — nothing will start'
+  if (view.runnableAt !== null) return backingOff(new Date(view.runnableAt), now)
+  return null
 }
 
 /** `4th`, `1st`, `22nd`. */
 function ordinal(n: number): string {
-  const rest = n % 100;
-  if (rest >= 11 && rest <= 13) return `${n}th`;
-  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+  const rest = n % 100
+  if (rest >= 11 && rest <= 13) return `${n}th`
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
 }
 
 /**
@@ -367,6 +359,6 @@ function ordinal(n: number): string {
  * a place in a line it is not standing in.
  */
 export function place(view: QueuedView): string | null {
-  if (view.position === null) return null;
-  return `${ordinal(view.position)} of ${view.inLine} in line`;
+  if (view.position === null) return null
+  return `${ordinal(view.position)} of ${view.inLine} in line`
 }

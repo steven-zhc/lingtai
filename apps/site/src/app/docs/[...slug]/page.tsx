@@ -1,6 +1,7 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import type { Metadata } from "next";
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+
 import {
   decidedOn,
   decisionsByNumber,
@@ -14,11 +15,12 @@ import {
   statuses,
   statusParts,
   type StatusPart,
-} from "@/lib/docs";
-import { Bar, Foot } from "../../chrome";
-import { Contents, Status } from "../contents";
-import { Document } from "../document";
-import { DocTree } from "../doctree";
+} from '@/lib/docs'
+
+import { Bar, Foot } from '../../chrome'
+import { Contents, Status } from '../contents'
+import { DocTree } from '../doctree'
+import { Document } from '../document'
 
 /**
  * One document, at the route its path in `doc/` gives it.
@@ -41,25 +43,25 @@ export async function generateStaticParams() {
   // Next's static exporter rejects an empty list for a dynamic route, and
   // `servable()` is never empty while the tutorial is public; the inert slug
   // only matters if `PUBLIC_SLUGS` is ever emptied.
-  const files = await servable();
-  if (files.length === 0) return [{ slug: ["__hidden"] }];
+  const files = await servable()
+  if (files.length === 0) return [{ slug: ['__hidden'] }]
   // `slugOf` and not a `.md` stripped here: a directory's `index.md` is the
   // directory (`plugins/index.md` → `/docs/plugins/`), and a second answer to
   // *what route is this file* would build the page at one path and link to it
   // at the other.
-  return files.map((file) => ({ slug: slugOf(file).split("/") }));
+  return files.map((file) => ({ slug: slugOf(file).split('/') }))
 }
 
-export const dynamicParams = false;
+export const dynamicParams = false
 
-type Params = { params: Promise<{ slug: string[] }> };
+type Params = { params: Promise<{ slug: string[] }> }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const slug = (await params).slug.join("/");
-  if (!(await servable()).some((f) => slugOf(f) === slug)) return {};
-  const doc = await readDoc(slug);
-  if (doc === null) return {};
-  return { title: doc.title, description: ledeOf(doc.body).slice(0, 200) };
+  const slug = (await params).slug.join('/')
+  if (!(await servable()).some((f) => slugOf(f) === slug)) return {}
+  const doc = await readDoc(slug)
+  if (doc === null) return {}
+  return { title: doc.title, description: ledeOf(doc.body).slice(0, 200) }
 }
 
 /**
@@ -71,30 +73,30 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
  * makes. Empty for everything else, and then nothing renders.
  */
 async function decisionStatus(slug: string): Promise<StatusPart[]> {
-  if (!slug.startsWith("decisions/")) return [];
-  const [status, numbers] = await Promise.all([statuses(), decisionsByNumber()]);
-  const said = status.get(slug);
-  if (said === undefined || said === "") return [];
+  if (!slug.startsWith('decisions/')) return []
+  const [status, numbers] = await Promise.all([statuses(), decisionsByNumber()])
+  const said = status.get(slug)
+  if (said === undefined || said === '') return []
   return statusParts(said, (number) => {
-    const target = numbers.get(number);
-    return target === undefined || target === slug ? null : `/docs/${target}/`;
-  });
+    const target = numbers.get(number)
+    return target === undefined || target === slug ? null : `/docs/${target}/`
+  })
 }
 
 export default async function DocPage({ params }: Params) {
-  const slug = (await params).slug.join("/");
-  const [doc, files] = await Promise.all([readDoc(slug), servable()]);
-  if (doc === null || !files.includes(doc.source)) notFound();
+  const slug = (await params).slug.join('/')
+  const [doc, files] = await Promise.all([readDoc(slug), servable()])
+  if (doc === null || !files.includes(doc.source)) notFound()
 
-  const headings = headingsOf(doc.body);
-  const parts = await decisionStatus(slug);
-  const tree = await treeOf();
-  const decided = slug.startsWith("decisions/") ? decidedOn(doc.body) : null;
+  const headings = headingsOf(doc.body)
+  const parts = await decisionStatus(slug)
+  const tree = await treeOf()
+  const decided = slug.startsWith('decisions/') ? decidedOn(doc.body) : null
 
   return (
     <>
       <Bar />
-      <main className={slug === "tutorial" ? "tutorial-page" : undefined}>
+      <main className={slug === 'tutorial' ? 'tutorial-page' : undefined}>
         <div className="wrap doc-wrap">
           <section style={{ paddingTop: 32 }}>
             <p className="kicker">
@@ -110,13 +112,12 @@ export default async function DocPage({ params }: Params) {
                 <Status decided={decided} parts={parts} />
                 <Document slug={doc.slug} source={doc.source} body={doc.body} published={files} />
                 <p className="source">
-                  Rendered from{" "}
+                  Rendered from{' '}
                   <a href={`${GITHUB_BLOB}doc/${doc.source}`}>
                     <code>doc/{doc.source}</code>
-                  </a>{" "}
-                  at build time. The file is the document; this page is a projection of it, and never
-                  a copy — which is why the fix for anything wrong on it is a pull request against
-                  that file.
+                  </a>{' '}
+                  at build time. The file is the document; this page is a projection of it, and never a copy — which is
+                  why the fix for anything wrong on it is a pull request against that file.
                 </p>
               </article>
               <Contents headings={headings} />
@@ -126,5 +127,5 @@ export default async function DocPage({ params }: Params) {
       </main>
       <Foot />
     </>
-  );
+  )
 }

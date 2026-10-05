@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { rm, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
+
 /**
  * The integrator: merge base in, verify, merge out.
  *
@@ -55,44 +59,40 @@
  * blocks, which is the same guarantee written out by hand: correct here, and
  * correct only because one function happened to own both ends of it.
  */
-import { integrationStream } from "@lingtai/domain";
-import { type RefusalReason, parsePayload, reduceIntegration } from "@lingtai/domain";
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
-import { Effect, Either } from "effect";
-import { randomUUID } from "node:crypto";
-import { rm, stat } from "node:fs/promises";
-import { basename } from "node:path";
-import { stateDir } from "@lingtai/env";
-import { RepoFailed, type TokenSource, gitEffect } from "./git.ts";
-import { worktreePath } from "./worktree.ts";
+import { integrationStream } from '@lingtai/domain'
+import { type RefusalReason, parsePayload, reduceIntegration } from '@lingtai/domain'
+import { stateDir } from '@lingtai/env'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { Effect, Either } from 'effect'
+
+import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
+import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
-  project: string;
-  owner: string;
-  repo: string;
-  base: string;
-  branch: string;
-  workItemId: string;
+  project: string
+  owner: string
+  repo: string
+  base: string
+  branch: string
+  workItemId: string
   /** The commit the gates gave their verdicts about. */
-  headSha: string;
+  headSha: string
   /** False when a gate refused. The integrator records it and does not merge. */
-  stepsPassed: boolean;
-  stepDetail?: string;
-  token?: TokenSource;
-  home?: string;
-  gitEnv?: NodeJS.ProcessEnv;
-  store?: EventStore;
+  stepsPassed: boolean
+  stepDetail?: string
+  token?: TokenSource
+  home?: string
+  gitEnv?: NodeJS.ProcessEnv
+  store?: EventStore
   /**
    * Re-run after merging the base in, before merging out. The gates already ran
    * against the agent's head; this is the "does it still work with what landed
    * in the meantime" question, which is a different one.
    */
-  verify?: (cwd: string) => Promise<{ ok: boolean; evidence: string }>;
+  verify?: (cwd: string) => Promise<{ ok: boolean; evidence: string }>
 }
 
-export type IntegrateResult =
-  | { ok: true; mergeCommit: string }
-  | { ok: false; reason: RefusalReason; detail: string };
+export type IntegrateResult = { ok: true; mergeCommit: string } | { ok: false; reason: RefusalReason; detail: string }
 
 /**
  * A push this lane lost and is about to answer itself.
@@ -112,13 +112,13 @@ export type IntegrateResult =
  * `IntegrateResult` that has already been appended.
  */
 interface LostPush {
-  readonly lostThePush: true;
+  readonly lostThePush: true
   /** Git's own words, kept for the refusal that a run of these becomes. */
-  readonly detail: string;
+  readonly detail: string
 }
 
 /** Files whose presence in a diff means a human applies the migration, not the agent. */
-const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i;
+const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i
 
 /**
  * Git's words for *somebody else got there first*.
@@ -129,7 +129,7 @@ const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i;
  * reason (no credentials, no network) is not this, and goes to the unexpected
  * channel where it belongs.
  */
-const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were rejected/i;
+const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were rejected/i
 
 /**
  * How many times a base may move out from under this merge before a person is
@@ -148,7 +148,7 @@ const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|updates were re
  * integration: see `LostPush` for why the ones in the middle say nothing on the
  * log.
  */
-const LOST_PUSHES = 3;
+const LOST_PUSHES = 3
 
 /**
  * How long one of this lane's worktrees may sit untouched before it is a corpse.
@@ -167,7 +167,7 @@ const LOST_PUSHES = 3;
  * that owns the merge — past it, whatever cut the directory is not coming back
  * for it.
  */
-const WORKTREE_IS_ABANDONED_AFTER = 60 * 60 * 1_000;
+const WORKTREE_IS_ABANDONED_AFTER = 60 * 60 * 1_000
 
 /**
  * The promise face, for callers that are not Effect.
@@ -183,14 +183,14 @@ const WORKTREE_IS_ABANDONED_AFTER = 60 * 60 * 1_000;
  * running it here cannot throw.
  */
 export function integrate(options: IntegrateOptions): Promise<IntegrateResult> {
-  return Effect.runPromise(integrateEffect(options));
+  return Effect.runPromise(integrateEffect(options))
 }
 
 export function integrateEffect(options: IntegrateOptions): Effect.Effect<IntegrateResult> {
-  const store = options.store ?? eventStore;
-  const home = options.home ?? stateDir();
-  const stream = integrationStream(options.project, options.base);
-  const run = { token: options.token, env: options.gitEnv };
+  const store = options.store ?? eventStore
+  const home = options.home ?? stateDir()
+  const stream = integrationStream(options.project, options.base)
+  const run = { token: options.token, env: options.gitEnv }
 
   // Every exit goes through one of these two. There is no `return` in this
   // function that does not append first.
@@ -205,45 +205,45 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
   // (#194): the writers it answers for are the integrations themselves, which
   // the lock never excluded from the stream — only from the merge.
   async function append(
-    type: "IntegrationAttempted" | "IntegrationRefused" | "IntegrationSucceeded",
+    type: 'IntegrationAttempted' | 'IntegrationRefused' | 'IntegrationSucceeded',
     data: unknown,
   ): Promise<void> {
-    const payload = { type, actor: "conductor" as const, data: parsePayload(type, data) };
+    const payload = { type, actor: 'conductor' as const, data: parsePayload(type, data) }
     for (let attempt = 0; attempt < 8; attempt++) {
-      const at = reduceIntegration(await store.read(stream)).version;
+      const at = reduceIntegration(await store.read(stream)).version
       try {
-        await store.append(stream, at, [payload]);
-        return;
+        await store.append(stream, at, [payload])
+        return
       } catch (err) {
-        if (!(err instanceof ConcurrencyError)) throw err;
+        if (!(err instanceof ConcurrencyError)) throw err
         // Someone else moved the lane on. Read where it is now and try again.
-        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)))
       }
     }
-    throw new Error(`could not record ${type} on ${stream} after 8 attempts`);
+    throw new Error(`could not record ${type} on ${stream} after 8 attempts`)
   }
 
   const refuse = (reason: RefusalReason, detail: string): Effect.Effect<IntegrateResult> =>
     Effect.promise(async () => {
-      await append("IntegrationRefused", {
+      await append('IntegrationRefused', {
         workItemId: options.workItemId,
         branch: options.branch,
         reason,
         detail: detail.slice(0, 2_000),
-      });
-      return { ok: false, reason, detail } as IntegrateResult;
-    });
+      })
+      return { ok: false, reason, detail } as IntegrateResult
+    })
 
   const succeed = (mergeCommit: string): Effect.Effect<IntegrateResult> =>
     Effect.promise(async () => {
-      await append("IntegrationSucceeded", {
+      await append('IntegrationSucceeded', {
         workItemId: options.workItemId,
         branch: options.branch,
         base: options.base,
         mergeCommit,
-      });
-      return { ok: true, mergeCommit } as IntegrateResult;
-    });
+      })
+      return { ok: true, mergeCommit } as IntegrateResult
+    })
 
   /**
    * The defect channel, and the last thing between a caller and an exception.
@@ -265,17 +265,13 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    * that may return without an event, and only when the log is what is down.
    */
   const unexpected = (defect: unknown): Effect.Effect<IntegrateResult> => {
-    const detail = `the integration failed unexpectedly: ${
-      defect instanceof Error ? defect.message : String(defect)
-    }`;
-    return refuse("conflict", detail).pipe(
-      Effect.catchAllDefect(() =>
-        Effect.succeed({ ok: false, reason: "conflict", detail } as IntegrateResult),
-      ),
-    );
-  };
+    const detail = `the integration failed unexpectedly: ${defect instanceof Error ? defect.message : String(defect)}`
+    return refuse('conflict', detail).pipe(
+      Effect.catchAllDefect(() => Effect.succeed({ ok: false, reason: 'conflict', detail } as IntegrateResult)),
+    )
+  }
 
-  const at = (args: string[], cwd: string) => gitEffect(args, { ...run, cwd });
+  const at = (args: string[], cwd: string) => gitEffect(args, { ...run, cwd })
 
   /**
    * The worktrees of this lane that nothing is coming back for.
@@ -291,26 +287,20 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    */
   const sweepAbandoned = (mirror: string): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const registered = yield* at(["worktree", "list", "--porcelain"], mirror).pipe(
-        Effect.orElseSucceed(() => ""),
-      );
-      for (const line of registered.split("\n")) {
-        if (!line.startsWith("worktree ")) continue;
-        const path = line.slice("worktree ".length).trim();
-        if (!basename(path).startsWith("integrator-")) continue;
-        const cutAt = yield* Effect.promise(
-          async () => (await stat(path).catch(() => null))?.mtimeMs ?? null,
-        );
-        if (cutAt === null || Date.now() - cutAt < WORKTREE_IS_ABANDONED_AFTER) continue;
-        yield* at(["worktree", "remove", "--force", path], mirror).pipe(Effect.ignore);
-        yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(
-          Effect.ignore,
-        );
+      const registered = yield* at(['worktree', 'list', '--porcelain'], mirror).pipe(Effect.orElseSucceed(() => ''))
+      for (const line of registered.split('\n')) {
+        if (!line.startsWith('worktree ')) continue
+        const path = line.slice('worktree '.length).trim()
+        if (!basename(path).startsWith('integrator-')) continue
+        const cutAt = yield* Effect.promise(async () => (await stat(path).catch(() => null))?.mtimeMs ?? null)
+        if (cutAt === null || Date.now() - cutAt < WORKTREE_IS_ABANDONED_AFTER) continue
+        yield* at(['worktree', 'remove', '--force', path], mirror).pipe(Effect.ignore)
+        yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(Effect.ignore)
       }
       // And the registrations with no directory left — git's own job, and the
       // other half of what a killed process leaves behind.
-      yield* at(["worktree", "prune"], mirror).pipe(Effect.ignore);
-    });
+      yield* at(['worktree', 'prune'], mirror).pipe(Effect.ignore)
+    })
 
   /**
    * One merge, computed against the base as it stands and pushed.
@@ -323,10 +313,10 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
     Effect.gen(function* () {
       // The gates' verdict is the integrator's business only in that it refuses.
       if (!options.stepsPassed) {
-        return yield* refuse("verify-failed", options.stepDetail ?? "a step refused this diff");
+        return yield* refuse('verify-failed', options.stepDetail ?? 'a step refused this diff')
       }
 
-      const mirror = `${home}/repos/${options.project}.git`;
+      const mirror = `${home}/repos/${options.project}.git`
       // **One worktree per integration, not one per base.** A fixed
       // `integrator-<base>` was safe only because the lock meant one
       // integration on a base at a time. Nothing serialises them before the
@@ -335,8 +325,8 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       const cwd = worktreePath(
         home,
         options.project,
-        `integrator-${options.base.replace(/\//g, ".")}-${randomUUID().slice(0, 8)}`,
-      );
+        `integrator-${options.base.replace(/\//g, '.')}-${randomUUID().slice(0, 8)}`,
+      )
 
       // Only the two refs this merge is about, rather than `+refs/heads/*`.
       // A wildcard fetch refuses to update any branch checked out in *some other*
@@ -345,21 +335,21 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // one instance.
       yield* at(
         [
-          "fetch",
-          "--prune",
-          "origin",
+          'fetch',
+          '--prune',
+          'origin',
           `+refs/heads/${options.base}:refs/heads/${options.base}`,
           `+refs/heads/${options.branch}:refs/heads/${options.branch}`,
         ],
         mirror,
-      );
+      )
 
       // What an earlier integration was killed in the middle of, before this one
       // adds a directory of its own: see `WORKTREE_IS_ABANDONED_AFTER`. A
       // registration whose directory is already gone is git's own `prune` to
       // clear, and one still standing is this sweep's — nothing else in the
       // system looks at these.
-      yield* sweepAbandoned(mirror);
+      yield* sweepAbandoned(mirror)
 
       // The worktree is disposable; the mirror is the expensive part. Acquired
       // and released as one thing, so no path below has to remember it — and it
@@ -370,82 +360,75 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // integration against the same base would collide with the first on it.
       // Nothing here needs the branch — the merge moves HEAD and the push has
       // always been `HEAD:refs/heads/<base>`.
-      yield* Effect.acquireRelease(
-        at(["worktree", "add", "--force", "--detach", cwd, options.base], mirror),
-        () => at(["worktree", "remove", "--force", cwd], mirror).pipe(Effect.ignore),
-      );
+      yield* Effect.acquireRelease(at(['worktree', 'add', '--force', '--detach', cwd, options.base], mirror), () =>
+        at(['worktree', 'remove', '--force', cwd], mirror).pipe(Effect.ignore),
+      )
 
-      const dirty = yield* at(["status", "--porcelain"], cwd);
+      const dirty = yield* at(['status', '--porcelain'], cwd)
       if (dirty.trim()) {
         // Cannot happen with a worktree Lingtai just cut, which is the point
         // — the check is here so that if it ever does, it is an event and not a
         // mystery. The old loop merged in a checkout it did not own and this was
         // the failure it could not report.
-        return yield* refuse("dirty-base", `the integrator's worktree is not clean:\n${dirty}`);
+        return yield* refuse('dirty-base', `the integrator's worktree is not clean:\n${dirty}`)
       }
 
-      const localBase = yield* at(["rev-parse", options.base], mirror);
-      const remoteBase = yield* at(["rev-parse", `refs/heads/${options.base}`], mirror);
+      const localBase = yield* at(['rev-parse', options.base], mirror)
+      const remoteBase = yield* at(['rev-parse', `refs/heads/${options.base}`], mirror)
       if (localBase !== remoteBase) {
-        return yield* refuse(
-          "unpushed-base",
-          `${options.base} is ${localBase} locally and ${remoteBase} on origin`,
-        );
+        return yield* refuse('unpushed-base', `${options.base} is ${localBase} locally and ${remoteBase} on origin`)
       }
 
-      const ahead = yield* at(["rev-list", "--count", `${options.base}..${options.branch}`], mirror);
+      const ahead = yield* at(['rev-list', '--count', `${options.base}..${options.branch}`], mirror)
       if (Number(ahead) === 0) {
-        return yield* refuse("no-commits", `${options.branch} has nothing ${options.base} does not`);
+        return yield* refuse('no-commits', `${options.branch} has nothing ${options.base} does not`)
       }
 
-      const changed = yield* at(
-        ["diff", "--name-only", `${options.base}...${options.branch}`],
-        mirror,
-      );
-      const migrations = changed.split("\n").filter((f) => f && MIGRATION_GLOB.test(f));
+      const changed = yield* at(['diff', '--name-only', `${options.base}...${options.branch}`], mirror)
+      const migrations = changed.split('\n').filter((f) => f && MIGRATION_GLOB.test(f))
       if (migrations.length > 0) {
         // The hold that caught #117, generalised. A migration is applied by a
         // person who has looked at it, not by a merge.
         return yield* refuse(
-          "pending-migration",
-          `the diff adds migration files, which need applying by hand first:\n${migrations.join("\n")}`,
-        );
+          'pending-migration',
+          `the diff adds migration files, which need applying by hand first:\n${migrations.join('\n')}`,
+        )
       }
 
       // Merge base in first, so a conflict is discovered here rather than
       // halfway through writing to the base branch.
-      const mergedIn = yield* Effect.either(at(["merge", "--no-edit", options.branch], cwd));
+      const mergedIn = yield* Effect.either(at(['merge', '--no-edit', options.branch], cwd))
       if (Either.isLeft(mergedIn)) {
-        const conflicts = yield* at(["diff", "--name-only", "--diff-filter=U"], cwd).pipe(
-          Effect.orElseSucceed(() => ""),
-        );
-        yield* at(["merge", "--abort"], cwd).pipe(
+        const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U'], cwd).pipe(
+          Effect.orElseSucceed(() => ''),
+        )
+        yield* at(['merge', '--abort'], cwd).pipe(
           // Nothing to abort; the merge failed before it started one.
           Effect.ignore,
-        );
+        )
         return yield* refuse(
-          "conflict",
+          'conflict',
           `${options.branch} does not merge into ${options.base}:\n${conflicts || mergedIn.left.detail}`,
-        );
+        )
       }
 
       if (options.verify) {
-        const verify = options.verify;
+        const verify = options.verify
         const verified = yield* Effect.tryPromise({
           try: () => verify(cwd),
-          catch: (err) => new RepoFailed({ operation: "verify", detail: (err as Error).message }),
-        });
+          catch: (err) => new RepoFailed({ operation: 'verify', detail: (err as Error).message }),
+        })
         if (!verified.ok) {
           // The gates ran against the agent's head. This is the different
           // question of whether it still works beside what landed since.
           return yield* refuse(
-            "verify-failed",
+            'verify-failed',
             `verification after merging ${options.base} in failed:\n${verified.evidence}`,
-          );
+          )
         }
       }
 
-      const mergeCommit = yield* at(["rev-parse", "HEAD"], cwd);
+      const mergeCommit = yield* at(['rev-parse', 'HEAD'], cwd)
 
       // ---- the ref update, which is what serialises this lane ----------------
       // Everything above was computed against the base as it stood when this
@@ -457,34 +440,30 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // because nothing is wrong with the branch and nobody's judgement is
       // owed. Only a base that beats every one of those pushes becomes an
       // `IntegrationRefused`, at the loop below — see `LostPush`.
-      const pushed = yield* Effect.either(
-        at(["push", "origin", `HEAD:refs/heads/${options.base}`], cwd),
-      );
+      const pushed = yield* Effect.either(at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd))
       if (Either.isLeft(pushed)) {
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
-        if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left);
-        return { lostThePush: true, detail: pushed.left.detail } satisfies LostPush;
+        if (!PUSH_REJECTED.test(pushed.left.detail)) return yield* Effect.fail(pushed.left)
+        return { lostThePush: true, detail: pushed.left.detail } satisfies LostPush
       }
       // The mirror is Lingtai's own copy of the truth; leaving it stale would
       // make the next integration compute against a base that has moved.
-      yield* at(["fetch", "origin", `+refs/heads/${options.base}:refs/heads/${options.base}`], mirror);
+      yield* at(['fetch', 'origin', `+refs/heads/${options.base}:refs/heads/${options.base}`], mirror)
 
-      return yield* succeed(mergeCommit);
+      return yield* succeed(mergeCommit)
     }).pipe(
       // The typed channel, where the catch-all used to be. A git command that
       // refused anywhere above still leaves an event behind — which is the
       // entire difference from six silent `return 1`s — and now the compiler
       // knows that is the only thing it has to answer for.
-      Effect.catchTag("RepoFailed", (err) =>
-        refuse("conflict", `the integration failed unexpectedly: ${err.detail}`),
-      ),
+      Effect.catchTag('RepoFailed', (err) => refuse('conflict', `the integration failed unexpectedly: ${err.detail}`)),
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type
       // system can see has already been handled one line up.
       Effect.catchAllDefect(unexpected),
     ),
-  );
+  )
 
   /**
    * **A base that moved is answered here, and not by a person.**
@@ -515,28 +494,28 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    */
   return Effect.gen(function* () {
     yield* Effect.promise(() =>
-      append("IntegrationAttempted", {
+      append('IntegrationAttempted', {
         workItemId: options.workItemId,
         branch: options.branch,
         headSha: options.headSha,
       }),
-    );
+    )
 
-    let lastRejection = "";
+    let lastRejection = ''
     for (let push = 0; push <= LOST_PUSHES; push++) {
-      const outcome = yield* attempt;
-      if (!("lostThePush" in outcome)) return outcome;
-      lastRejection = outcome.detail;
+      const outcome = yield* attempt
+      if (!('lostThePush' in outcome)) return outcome
+      lastRejection = outcome.detail
     }
     // Every push lost. Now it is a person's, and the card's move — requeue —
     // is the honest one: the branch is fine and the base is busy.
     return yield* refuse(
-      "push-rejected",
+      'push-rejected',
       `${options.base} moved while ${options.branch} was being merged into it, ` +
         `every one of ${LOST_PUSHES + 1} times; origin rejected the last push:\n${lastRejection}`,
-    );
+    )
     // The append at the top and the refusal just above are appends like any
     // other, and `attempt`'s own handlers are inside it and never see them.
     // This is what covers both — and whatever gets past `attempt`'s.
-  }).pipe(Effect.catchAllDefect(unexpected));
+  }).pipe(Effect.catchAllDefect(unexpected))
 }

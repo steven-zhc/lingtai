@@ -1,13 +1,8 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { loadProjects } from "@lingtai/conductor/projects";
-import {
-  projectRecipe,
-  provenanceRows,
-  sourceOf,
-  underHome,
-  type ProjectRecipe,
-} from "@/lib/recipe";
+import { loadProjects } from '@lingtai/conductor/projects'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+
+import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 
 /**
  * What one project's recipe says today, and which file each value came from
@@ -42,7 +37,7 @@ import {
  * here. *Nothing writes* is a claim about the route, not about what today's
  * markup happens to contain.
  */
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 /**
  * The page, as a fold over its answer.
@@ -52,7 +47,7 @@ export const dynamic = "force-dynamic";
  * — are assertable without a database or a `~/.lingtai/`.
  */
 export function Recipe({ view }: { view: ProjectRecipe }) {
-  const back = `/?project=${encodeURIComponent(view.project)}`;
+  const back = `/?project=${encodeURIComponent(view.project)}`
   return (
     <main className="detail">
       <div className="bar">
@@ -73,9 +68,9 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
             <span className="hfact">
               {view.ok
                 ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next run gets`
-                : view.fault === "recipe"
-                  ? "it could not be read, so nothing will be taken from this project"
-                  : "it could not be resolved, so nothing will be taken from this project"}
+                : view.fault === 'recipe'
+                  ? 'it could not be read, so nothing will be taken from this project'
+                  : 'it could not be resolved, so nothing will be taken from this project'}
             </span>
           </h2>
 
@@ -89,7 +84,7 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                 <div key={row.name}>
                   <dt>{row.name}</dt>
                   <dd>{row.says}</dd>
-                  <dd className="rfrom">← {sourceOf(row, view.provenance) ?? "not said"}</dd>
+                  <dd className="rfrom">← {sourceOf(row, view.provenance) ?? 'not said'}</dd>
                 </div>
               ))}
             </dl>
@@ -106,16 +101,14 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
                reader open that file twice over and find nothing wrong, while
                the one to edit went unnamed. */
             <p className="refusal">
-              {view.fault === "recipe" ? (
+              {view.fault === 'recipe' ? (
                 <>
-                  The recipe at <span className="mono">{underHome(view.at)}</span> could not be read:{" "}
-                  {view.problem}.
+                  The recipe at <span className="mono">{underHome(view.at)}</span> could not be read: {view.problem}.
                 </>
               ) : (
                 <>
-                  The recipe was not resolved, and the fault is in this machine&apos;s{" "}
-                  <span className="mono">{underHome(view.at)}</span> rather than in the recipe:{" "}
-                  {view.problem}.
+                  The recipe was not resolved, and the fault is in this machine&apos;s{' '}
+                  <span className="mono">{underHome(view.at)}</span> rather than in the recipe: {view.problem}.
                 </>
               )}
             </p>
@@ -127,9 +120,9 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
             <h2>
               <span className="hlab">Where every value came from</span>
               <span className="hfact">
-                the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{" "}
-                <span className="mono">config.yml</span>, the preset it{" "}
-                <span className="mono">extends</span>, detection, or a default
+                the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{' '}
+                <span className="mono">config.yml</span>, the preset it <span className="mono">extends</span>,
+                detection, or a default
               </span>
             </h2>
             {/* `lingtai doctor`'s own block, which has printed since #180 and
@@ -149,24 +142,23 @@ export function Recipe({ view }: { view: ProjectRecipe }) {
         ) : null}
 
         <p className="rnote">
-          Read-only. Nothing on this page writes the recipe, and that is deliberate rather than an
-          omission: 0046 §4 retired <span className="mono">tamper</span> because the recipe sits
-          outside every worktree and nothing an agent can reach may write it. Edit{" "}
-          <span className="mono">{underHome(view.at)}</span> and this page says so on the next
-          render — the file is read on every resolve, so a daemon holds nothing stale.
+          Read-only. Nothing on this page writes the recipe, and that is deliberate rather than an omission: 0046 §4
+          retired <span className="mono">tamper</span> because the recipe sits outside every worktree and nothing an
+          agent can reach may write it. Edit <span className="mono">{underHome(view.at)}</span> and this page says so on
+          the next render — the file is read on every resolve, so a daemon holds nothing stale.
         </p>
       </div>
     </main>
-  );
+  )
 }
 
 export default async function RecipePage({ params }: { params: Promise<{ project: string }> }) {
-  const { project } = await params;
-  const name = decodeURIComponent(project);
+  const { project } = await params
+  const name = decodeURIComponent(project)
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
   // here has heard of.
-  const state = (await loadProjects()).find((p) => p.project === name);
-  if (state === undefined) notFound();
-  return <Recipe view={await projectRecipe(state)} />;
+  const state = (await loadProjects()).find((p) => p.project === name)
+  if (state === undefined) notFound()
+  return <Recipe view={await projectRecipe(state)} />
 }

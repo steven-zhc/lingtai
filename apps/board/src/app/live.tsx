@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * Keeps the board current without a refresh, and says whether it worked.
@@ -68,7 +68,7 @@
  * *every append re-renders the board* (#172). The subscription and the dot were
  * two concerns in one component, and only the dot belongs to the board alone.
  */
-import { useRouter } from "next/navigation";
+import { useRouter } from 'next/navigation'
 import {
   createContext,
   useCallback,
@@ -78,9 +78,10 @@ import {
   useState,
   useTransition,
   type ReactNode,
-} from "react";
-import { bearing, type Bearing, type CodeNews } from "@/lib/bearing";
-import type { Health } from "@/lib/health";
+} from 'react'
+
+import { bearing, type Bearing, type CodeNews } from '@/lib/bearing'
+import type { Health } from '@/lib/health'
 
 /**
  * How long to coalesce a burst before re-reading.
@@ -97,37 +98,37 @@ import type { Health } from "@/lib/health";
  * board nobody is looking at does not render at all — and this window keeps
  * doing the one job it was always doing.
  */
-const COALESCE_MS = 250;
+const COALESCE_MS = 250
 
 /**
  * The subscription: re-render this route when the log moves, and report what
  * the stream says about the projection. Shared by `Live` and `Follow`, so there
  * is one way a page stays current and not two that can drift.
  */
-function useFollow(): { socket: "connecting" | "open" | "trouble"; health: Health | null } {
-  const router = useRouter();
-  const [socket, setSocket] = useState<"connecting" | "open" | "trouble">("connecting");
-  const [health, setHealth] = useState<Health | null>(null);
-  const lastSeq = useRef<string>("0");
+function useFollow(): { socket: 'connecting' | 'open' | 'trouble'; health: Health | null } {
+  const router = useRouter()
+  const [socket, setSocket] = useState<'connecting' | 'open' | 'trouble'>('connecting')
+  const [health, setHealth] = useState<Health | null>(null)
+  const lastSeq = useRef<string>('0')
 
   // The render, as a transition, so this component can tell whether one is
   // still running. `router.refresh()` returns nothing and takes as long as the
   // server component does; without this there is no way to ask, and every
   // coalescing window fired a fresh one into a queue behind the last (#112).
-  const [rendering, startRender] = useTransition();
-  const inFlight = useRef(false);
+  const [rendering, startRender] = useTransition()
+  const inFlight = useRef(false)
   /** An append has arrived that this board has not re-read yet. */
-  const stale = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stale = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const reread = useCallback(() => {
-    stale.current = false;
+    stale.current = false
     // Set here and not only in the effect below, which does not run until after
     // paint: a coalescing window that fired in that gap would see `false` and
     // start a second render into the first one's shadow.
-    inFlight.current = true;
-    startRender(() => router.refresh());
-  }, [router]);
+    inFlight.current = true
+    startRender(() => router.refresh())
+  }, [router])
 
   /**
    * **Never two at once, and never for a tab nobody is looking at.**
@@ -143,76 +144,76 @@ function useFollow(): { socket: "connecting" | "open" | "trouble"; health: Healt
    * conditions are events this component is told about, and both wake it.
    */
   const schedule = useCallback(() => {
-    stale.current = true;
-    clearTimeout(timer.current);
+    stale.current = true
+    clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      if (document.hidden || inFlight.current) return;
-      reread();
-    }, COALESCE_MS);
-  }, [reread]);
+      if (document.hidden || inFlight.current) return
+      reread()
+    }, COALESCE_MS)
+  }, [reread])
 
   // The render that was in flight has landed. Anything that arrived while it
   // ran is one re-read, now.
   useEffect(() => {
-    inFlight.current = rendering;
-    if (!rendering && stale.current && !document.hidden) reread();
-  }, [rendering, reread]);
+    inFlight.current = rendering
+    if (!rendering && stale.current && !document.hidden) reread()
+  }, [rendering, reread])
 
   // Coming back to the tab. The board is as old as the last append it ignored.
   useEffect(() => {
     const woken = () => {
-      if (!document.hidden && stale.current && !inFlight.current) reread();
-    };
-    document.addEventListener("visibilitychange", woken);
-    return () => document.removeEventListener("visibilitychange", woken);
-  }, [reread]);
+      if (!document.hidden && stale.current && !inFlight.current) reread()
+    }
+    document.addEventListener('visibilitychange', woken)
+    return () => document.removeEventListener('visibilitychange', woken)
+  }, [reread])
 
   useEffect(() => {
-    const source = new EventSource(`/api/stream?from=${lastSeq.current}`);
+    const source = new EventSource(`/api/stream?from=${lastSeq.current}`)
 
-    source.addEventListener("open", () => setSocket("open"));
+    source.addEventListener('open', () => setSocket('open'))
 
-    source.addEventListener("append", (e) => {
-      setSocket("open");
+    source.addEventListener('append', (e) => {
+      setSocket('open')
       try {
-        const data = JSON.parse((e as MessageEvent).data) as { seq: string };
+        const data = JSON.parse((e as MessageEvent).data) as { seq: string }
         // Kept so a first connection after a sleep resumes from here. The
         // browser handles it on an automatic reconnect via Last-Event-ID.
-        if (data.seq) lastSeq.current = data.seq;
+        if (data.seq) lastSeq.current = data.seq
       } catch {
         // A frame we cannot read still means something changed.
       }
-      schedule();
-    });
+      schedule()
+    })
 
     // The server sends this on connect, on its keep-alive tick, and once a
     // burst of appends has settled. Nothing here polls for it.
-    source.addEventListener("health", (e) => {
-      setSocket("open");
+    source.addEventListener('health', (e) => {
+      setSocket('open')
       try {
-        setHealth(JSON.parse((e as MessageEvent).data) as Health);
+        setHealth(JSON.parse((e as MessageEvent).data) as Health)
       } catch {
         // Keep the last answer rather than blanking the chip.
       }
-    });
+    })
 
-    source.addEventListener("trouble", () => setSocket("trouble"));
+    source.addEventListener('trouble', () => setSocket('trouble'))
 
     // Fires on a dropped connection too; the browser retries on its own, so
     // this reports rather than reconnects.
-    source.addEventListener("error", () => setSocket("trouble"));
+    source.addEventListener('error', () => setSocket('trouble'))
 
     return () => {
-      clearTimeout(timer.current);
-      source.close();
-    };
-  }, [schedule]);
+      clearTimeout(timer.current)
+      source.close()
+    }
+  }, [schedule])
 
-  return { socket, health };
+  return { socket, health }
 }
 
 /** What `Follow` hears, for what is under it. Null outside one. */
-const Followed = createContext<ReturnType<typeof useFollow> | null>(null);
+const Followed = createContext<ReturnType<typeof useFollow> | null>(null)
 
 /**
  * The subscription alone, for a route that has no dot of its own.
@@ -227,8 +228,8 @@ const Followed = createContext<ReturnType<typeof useFollow> | null>(null);
  * promising an answer would appear.
  */
 export function Follow({ children }: { children: ReactNode }) {
-  const followed = useFollow();
-  return <Followed.Provider value={followed}>{children}</Followed.Provider>;
+  const followed = useFollow()
+  return <Followed.Provider value={followed}>{children}</Followed.Provider>
 }
 
 /**
@@ -236,16 +237,13 @@ export function Follow({ children }: { children: ReactNode }) {
  * `Follow` — a render nothing subscribes, like a test's, has no stream to lose.
  */
 export function useFollowing(): boolean {
-  return useContext(Followed)?.socket !== "trouble";
+  return useContext(Followed)?.socket !== 'trouble'
 }
 
 /** `bearing` with no code, or null unless it warns. Pure, for `Following`. */
-export function warning(
-  socket: "connecting" | "open" | "trouble",
-  health: Health | null,
-): Bearing | null {
-  const said = bearing(socket, health, null);
-  return said.tone === "warn" ? said : null;
+export function warning(socket: 'connecting' | 'open' | 'trouble', health: Health | null): Bearing | null {
+  const said = bearing(socket, health, null)
+  return said.tone === 'warn' ? said : null
 }
 
 /**
@@ -257,10 +255,10 @@ export function warning(
  * nobody is folding.
  */
 export function Following() {
-  const followed = useContext(Followed);
-  const said = followed === null ? null : warning(followed.socket, followed.health);
-  if (said === null) return null;
-  const { label, tone, why, title } = said;
+  const followed = useContext(Followed)
+  const said = followed === null ? null : warning(followed.socket, followed.health)
+  if (said === null) return null
+  const { label, tone, why, title } = said
   return (
     <>
       <span className={`dot ${tone}`} role="img" aria-label={label} title={title} />
@@ -268,12 +266,12 @@ export function Following() {
         {why}
       </span>
     </>
-  );
+  )
 }
 
 export function Live({ code }: { code: CodeNews | null }) {
-  const { socket, health } = useFollow();
-  const { label, tone, why, title } = bearing(socket, health, code);
+  const { socket, health } = useFollow()
+  const { label, tone, why, title } = bearing(socket, health, code)
   return (
     <>
       {/* `role="img"` and a label, because the dot is the whole statement in
@@ -288,5 +286,5 @@ export function Live({ code }: { code: CodeNews | null }) {
         </span>
       ) : null}
     </>
-  );
+  )
 }

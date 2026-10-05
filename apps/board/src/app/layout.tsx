@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next'
+import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google'
+
+import './globals.css'
 
 /**
  * The typefaces the design asks for, self-hosted.
@@ -14,22 +15,22 @@ import "./globals.css";
  * which is most of what a local operator console is for.
  */
 const sans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-sans",
-  display: "swap",
-});
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans',
+  display: 'swap',
+})
 
 const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-mono",
-  display: "swap",
-});
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-mono',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: "Lingtai",
-  description: "Event-sourced scheduler for autonomous code agents",
+  title: 'Lingtai',
+  description: 'Event-sourced scheduler for autonomous code agents',
   /**
    * `public/logo.png` and `public/logo-dark.png` are copies of the two files in
    * `doc/` — a Next app serves its own `public/`, and reaching out of the app
@@ -43,16 +44,16 @@ export const metadata: Metadata = {
    */
   icons: {
     icon: [
-      { url: "/logo-dark.png", type: "image/png", media: "(prefers-color-scheme: dark)" },
-      { url: "/logo.png", type: "image/png", media: "(prefers-color-scheme: light)" },
+      { url: '/logo-dark.png', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+      { url: '/logo.png', type: 'image/png', media: '(prefers-color-scheme: light)' },
     ],
   },
-};
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>{children}</body>
     </html>
-  );
+  )
 }

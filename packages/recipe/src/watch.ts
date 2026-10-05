@@ -7,45 +7,45 @@
  * nothing to report, and the two must not be confusable — the whole point of
  * `tamper` is that it fires rarely.
  */
-import picomatch from "picomatch";
+import picomatch from 'picomatch'
 
 export class BadWatchPatternError extends Error {
-  override readonly name = "BadWatchPatternError";
-  readonly step: string;
-  readonly pattern: string;
+  override readonly name = 'BadWatchPatternError'
+  readonly step: string
+  readonly pattern: string
 
   constructor(step: string, pattern: string, cause: string) {
-    super(`the "${step}" step watches "${pattern}", which is not a usable glob: ${cause}`);
-    this.step = step;
-    this.pattern = pattern;
+    super(`the "${step}" step watches "${pattern}", which is not a usable glob: ${cause}`)
+    this.step = step
+    this.pattern = pattern
   }
 }
 
 export interface Watcher {
   /** Every watched path in the list, in the order given. */
-  matches(paths: readonly string[]): string[];
+  matches(paths: readonly string[]): string[]
 }
 
 export function compileWatch(step: string, patterns: readonly string[]): Watcher {
   const compiled = patterns.map((pattern) => {
     if (!pattern.trim()) {
-      throw new BadWatchPatternError(step, pattern, "it is empty");
+      throw new BadWatchPatternError(step, pattern, 'it is empty')
     }
     try {
       // `dot: true` because half of what is worth watching is a dotfile —
       // `.github/workflows/**` and `.lingtai/**` both are, and a matcher
       // that skips them by default would watch nothing while looking correct.
-      return picomatch(pattern, { dot: true });
+      return picomatch(pattern, { dot: true })
     } catch (err) {
-      throw new BadWatchPatternError(step, pattern, (err as Error).message);
+      throw new BadWatchPatternError(step, pattern, (err as Error).message)
     }
-  });
+  })
 
   return {
     matches(paths) {
-      return paths.filter((path) => compiled.some((isMatch) => isMatch(path)));
+      return paths.filter((path) => compiled.some((isMatch) => isMatch(path)))
     },
-  };
+  }
 }
 
 /**
@@ -67,16 +67,16 @@ export function compileWatch(step: string, patterns: readonly string[]): Watcher
  * plainly.
  */
 export const TAMPER_WATCH: readonly string[] = [
-  ".lingtai/**",
-  "package.json",
-  "**/package.json",
-  ".github/workflows/**",
-  "**/vitest.config.*",
-  "**/vite.config.*",
-  "**/jest.config.*",
-  "**/playwright.config.*",
-  "**/tsconfig*.json",
-];
+  '.lingtai/**',
+  'package.json',
+  '**/package.json',
+  '.github/workflows/**',
+  '**/vitest.config.*',
+  '**/vite.config.*',
+  '**/jest.config.*',
+  '**/playwright.config.*',
+  '**/tsconfig*.json',
+]
 
 /**
  * The migration hold: a schema change is applied by a person who has read it.
@@ -86,8 +86,4 @@ export const TAMPER_WATCH: readonly string[] = [
  * configurable; the integrator's is a backstop that no recipe can switch off.
  * A hold that only exists in configuration is one an edit can remove.
  */
-export const MIGRATION_WATCH: readonly string[] = [
-  "**/migrations/**",
-  "**/migration/**",
-  "prisma/**/*.sql",
-];
+export const MIGRATION_WATCH: readonly string[] = ['**/migrations/**', '**/migration/**', 'prisma/**/*.sql']

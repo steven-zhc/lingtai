@@ -1,3 +1,4 @@
+import type { ActionFinding } from '@lingtai/actions'
 /**
  * **An agent, paid for a judgement** — the prompt a runtime judge is given and
  * the reading of what it answers (`#277`).
@@ -30,10 +31,10 @@
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { STEPS } from "@lingtai/domain";
-import type { ActionFinding } from "@lingtai/actions";
-import type { Destination } from "./pass.ts";
-import type { Judging } from "./pass-steps.ts";
+import { STEPS } from '@lingtai/domain'
+
+import type { Judging } from './pass-steps.ts'
+import type { Destination } from './pass.ts'
 
 /**
  * What each offered destination *is*, in the words the agent is asked to choose
@@ -47,22 +48,22 @@ import type { Judging } from "./pass-steps.ts";
  * nothing offers, which is six sentences nobody would ever check.
  */
 const MEANS: Partial<Record<Destination, string>> = {
-  waiting: "stop the pass and put this to a person, with your reasoning on the card",
+  waiting: 'stop the pass and put this to a person, with your reasoning on the card',
   implement:
-    "another round in the worktree that is already cut, with what refused — for when the diff " +
-    "is the right approach and some of its lines are wrong",
+    'another round in the worktree that is already cut, with what refused — for when the diff ' +
+    'is the right approach and some of its lines are wrong',
   claim:
-    "release the ticket and start over from the base, in a fresh worktree — for when the " +
-    "approach itself is wrong and patching these lines would be patching the wrong thing",
+    'release the ticket and start over from the base, in a fresh worktree — for when the ' +
+    'approach itself is wrong and patching these lines would be patching the wrong thing',
   build:
-    "back through the build and the cold reviewer, against the base as it now stands — for a " +
-    "conflict somebody has resolved",
-};
+    'back through the build and the cold reviewer, against the base as it now stands — for a ' +
+    'conflict somebody has resolved',
+}
 
 /** A finding as a judge is shown it: the claim, the scenario behind it, and where. */
 function said(finding: ActionFinding): string {
-  const at = finding.line === null ? finding.file : `${finding.file}:${finding.line}`;
-  return `- **${finding.severity}** ${at} — ${finding.claim}\n  _${finding.failureScenario}_`;
+  const at = finding.line === null ? finding.file : `${finding.file}:${finding.line}`
+  return `- **${finding.severity}** ${at} — ${finding.claim}\n  _${finding.failureScenario}_`
 }
 
 /**
@@ -84,9 +85,7 @@ function said(finding: ActionFinding): string {
  * choosing from is what is left.
  */
 export function judgePrompt(on: Judging): string {
-  const offered = on.offering
-    .map((to) => `- \`${to}\` — ${MEANS[to] ?? `run the \`${to}\` step again`}`)
-    .join("\n");
+  const offered = on.offering.map((to) => `- \`${to}\` — ${MEANS[to] ?? `run the \`${to}\` step again`}`).join('\n')
   return `# Which step is next
 
 A pass over one ticket did not pass. You decide where it goes.
@@ -97,13 +96,13 @@ The reason the step gave is **\`${on.when}\`**.
 
 ${
   on.findings.length > 0
-    ? `The cold reviewer's findings, verbatim:\n\n${on.findings.map(said).join("\n")}`
-    : "The cold reviewer raised no findings."
+    ? `The cold reviewer's findings, verbatim:\n\n${on.findings.map(said).join('\n')}`
+    : 'The cold reviewer raised no findings.'
 }
 
 ${
-  on.evidence.trim() === ""
-    ? "The step printed nothing beyond that."
+  on.evidence.trim() === ''
+    ? 'The step printed nothing beyond that.'
     : `What the step printed:\n\n\`\`\`\n${on.evidence.slice(0, 8_000)}\n\`\`\``
 }
 
@@ -134,15 +133,15 @@ One JSON object, and nothing else that could be read as one:
 {"next": "<one of the destinations above, spelled exactly>", "why": "<one or two sentences>"}
 \`\`\`
 
-\`next\` must be one of ${on.offering.map((to) => `\`${to}\``).join(", ")}. An answer
+\`next\` must be one of ${on.offering.map((to) => `\`${to}\``).join(', ')}. An answer
 naming anything else is refused and the pass is held for a person — you will not
 be asked again, so a destination you are unsure of is worth less than
-\`waiting\` with your reason on it.`;
+\`waiting\` with your reason on it.`
 }
 
 /** A destination the pass has a name for — not necessarily one that was offered. */
 function isDestination(value: unknown): value is Destination {
-  return value === "waiting" || (typeof value === "string" && (STEPS as readonly string[]).includes(value));
+  return value === 'waiting' || (typeof value === 'string' && (STEPS as readonly string[]).includes(value))
 }
 
 /**
@@ -169,31 +168,31 @@ function isDestination(value: unknown): value is Destination {
  * with every round spent.
  */
 export function chosenIn(text: string | null): { readonly next: Destination; readonly why: string } | null {
-  if (!text) return null;
+  if (!text) return null
 
-  const candidates: string[] = [];
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? [];
-  for (const block of fenced) candidates.push(block.replace(/```(?:json)?/g, "").replace(/```/g, ""));
-  for (let i = text.length - 1; i >= 0; i--) if (text[i] === "{") candidates.push(text.slice(i));
-  candidates.push(text);
+  const candidates: string[] = []
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/g) ?? []
+  for (const block of fenced) candidates.push(block.replace(/```(?:json)?/g, '').replace(/```/g, ''))
+  for (let i = text.length - 1; i >= 0; i--) if (text[i] === '{') candidates.push(text.slice(i))
+  candidates.push(text)
 
   for (const candidate of candidates) {
-    let value: unknown;
+    let value: unknown
     try {
-      value = JSON.parse(candidate.trim());
+      value = JSON.parse(candidate.trim())
     } catch {
-      continue;
+      continue
     }
-    const next = (value as { next?: unknown })?.next;
-    if (!isDestination(next)) continue;
-    const why = (value as { why?: unknown })?.why;
+    const next = (value as { next?: unknown })?.next
+    if (!isDestination(next)) continue
+    const why = (value as { why?: unknown })?.why
     return {
       next,
       // Its own words are what `waiting` displays (0043), so a judge that chose
       // and explained nothing still leaves a sentence rather than an empty card.
-      why: typeof why === "string" && why.trim() !== "" ? why.trim() : "it gave no reason",
-    };
+      why: typeof why === 'string' && why.trim() !== '' ? why.trim() : 'it gave no reason',
+    }
   }
 
-  return null;
+  return null
 }

@@ -24,14 +24,14 @@
  * exactly as entitled to it. This is the convenience a first-party extension
  * uses, written so that a third party could use it too.
  */
-import { pathToFileURL } from "node:url";
+import { pathToFileURL } from 'node:url'
 
 /** What the operator is being told, and where to go about it. */
 export interface Notification {
-  title: string;
-  body: string;
+  title: string
+  body: string
   /** The board page for the task this is about. */
-  url: string;
+  url: string
 }
 
 /**
@@ -43,21 +43,21 @@ export interface Notification {
  * `SubscriberPayload` in `@lingtai/actions` for the whole shape.
  */
 export interface NotifiedEvent {
-  type: string;
-  data: unknown;
+  type: string
+  data: unknown
 }
 
 /** The work item the daemon resolved this event to. `#123` and the board link come off it. */
 export interface NotifiedWorkItem {
-  id: string;
-  project: string;
-  issue: string;
+  id: string
+  project: string
+  issue: string
 }
 
 export interface NotifyPayload {
-  event: NotifiedEvent;
-  workItem: NotifiedWorkItem;
-  board: string;
+  event: NotifiedEvent
+  workItem: NotifiedWorkItem
+  board: string
 }
 
 /**
@@ -79,38 +79,38 @@ export interface NotifyPayload {
  * its `on:` line, never this function.
  */
 export function describe(payload: NotifyPayload): Notification {
-  const { event, workItem } = payload;
-  const d = (event.data ?? {}) as Record<string, unknown>;
-  const url = `${payload.board}/task/${encodeURIComponent(workItem.id)}`;
-  const ref = `#${workItem.issue}`;
+  const { event, workItem } = payload
+  const d = (event.data ?? {}) as Record<string, unknown>
+  const url = `${payload.board}/task/${encodeURIComponent(workItem.id)}`
+  const ref = `#${workItem.issue}`
 
   switch (event.type) {
-    case "ApprovalRequested":
-      return { title: `${ref} is waiting on you`, body: String(d["question"] ?? "Approve the merge?"), url };
-    case "WorkItemBlocked":
-      return { title: `${ref} is blocked`, body: String(d["question"] ?? ""), url };
-    case "RunAwaitingInput":
-      return { title: `${ref} is asking`, body: String(d["prompt"] ?? ""), url };
-    case "IntegrationRefused":
+    case 'ApprovalRequested':
+      return { title: `${ref} is waiting on you`, body: String(d['question'] ?? 'Approve the merge?'), url }
+    case 'WorkItemBlocked':
+      return { title: `${ref} is blocked`, body: String(d['question'] ?? ''), url }
+    case 'RunAwaitingInput':
+      return { title: `${ref} is asking`, body: String(d['prompt'] ?? ''), url }
+    case 'IntegrationRefused':
       return {
         title: `${ref} did not merge`,
-        body: `${String(d["reason"] ?? "")}: ${String(d["detail"] ?? "")}`,
+        body: `${String(d['reason'] ?? '')}: ${String(d['detail'] ?? '')}`,
         url,
-      };
-    case "RunFailed":
+      }
+    case 'RunFailed':
       return {
         title: `${ref} run failed`,
-        body: `${String(d["kind"] ?? "")}: ${String(d["detail"] ?? "")}`,
+        body: `${String(d['kind'] ?? '')}: ${String(d['detail'] ?? '')}`,
         url,
-      };
-    case "WorkItemLanded":
+      }
+    case 'WorkItemLanded':
       return {
         title: `${ref} landed`,
-        body: `merged into ${String(d["base"] ?? "")} at ${String(d["mergeCommit"] ?? "").slice(0, 7)}`,
+        body: `merged into ${String(d['base'] ?? '')} at ${String(d['mergeCommit'] ?? '').slice(0, 7)}`,
         url,
-      };
+      }
     default:
-      return { title: ref, body: event.type, url };
+      return { title: ref, body: event.type, url }
   }
 }
 
@@ -123,20 +123,20 @@ export function describe(payload: NotifyPayload): Notification {
  * — a broken contract said out loud, in the log, once per event.
  */
 export function parsePayload(text: string): NotifyPayload {
-  let parsed: unknown;
+  let parsed: unknown
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(text)
   } catch (err) {
-    throw new Error(`stdin was not JSON: ${(err as Error).message}`);
+    throw new Error(`stdin was not JSON: ${(err as Error).message}`)
   }
-  const body = parsed as Partial<NotifyPayload> | null;
-  const event = body?.event;
-  const workItem = body?.workItem;
-  if (!event || typeof event.type !== "string") {
-    throw new Error('stdin carried no event — expected {"event":{"type","data"},"workItem":…}');
+  const body = parsed as Partial<NotifyPayload> | null
+  const event = body?.event
+  const workItem = body?.workItem
+  if (!event || typeof event.type !== 'string') {
+    throw new Error('stdin carried no event — expected {"event":{"type","data"},"workItem":…}')
   }
-  if (!workItem || typeof workItem.id !== "string" || typeof workItem.issue !== "string") {
-    throw new Error('stdin carried no workItem — expected {"id","project","issue"}');
+  if (!workItem || typeof workItem.id !== 'string' || typeof workItem.issue !== 'string') {
+    throw new Error('stdin carried no workItem — expected {"id","project","issue"}')
   }
   return {
     event,
@@ -152,14 +152,14 @@ export function parsePayload(text: string): NotifyPayload {
     // import would be the workspace symlink that breaks it there. The daemon
     // sends the real address in the payload, so this is only reached by a
     // payload that carries none.
-    board: typeof body?.board === "string" ? body.board : "http://127.0.0.1:17820",
-  };
+    board: typeof body?.board === 'string' ? body.board : 'http://127.0.0.1:17820',
+  }
 }
 
 export async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString("utf8");
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks).toString('utf8')
 }
 
 /**
@@ -169,5 +169,5 @@ export async function readStdin(): Promise<string> {
  * module that notified on import would be a module nobody could read from.
  */
 export function isMain(url: string, argv1: string | undefined = process.argv[1]): boolean {
-  return argv1 !== undefined && url === pathToFileURL(argv1).href;
+  return argv1 !== undefined && url === pathToFileURL(argv1).href
 }

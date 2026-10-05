@@ -13,33 +13,35 @@
  * **The spend that left the bar is a ledger now**, and a ledger that does not
  * add up is worse than the chip it replaced.
  */
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import type { TaskCard } from "@lingtai/projector/task-view";
-import { bearing, type CodeNews } from "../src/lib/bearing.ts";
-import type { Health } from "../src/lib/health.ts";
-import { ledger, toCard, toColumns } from "../src/lib/board.ts";
+import { readFileSync } from 'node:fs'
+
+import type { TaskCard } from '@lingtai/projector/task-view'
+import { describe, expect, it } from 'vitest'
+
+import { bearing, type CodeNews } from '../src/lib/bearing.ts'
+import { ledger, toCard, toColumns } from '../src/lib/board.ts'
+import type { Health } from '../src/lib/health.ts'
 
 const board = (over: Partial<Health> = {}): Health => ({
   lag: 0,
-  daemon: "up",
+  daemon: 'up',
   sinceBeatMs: 2_000,
   ...over,
-});
+})
 
 /** A daemon holding code the repository has moved past — `#98`'s thirty-nine minutes. */
 const behind: CodeNews = {
-  wrong: "daemon 4 behind",
-  action: "restart it to take them",
-  said: "running d4fbd1a — 4 commit(s) behind origin/main, which has not taken effect in this process: 0c1a2b3 fix(end)",
-};
+  wrong: 'daemon 4 behind',
+  action: 'restart it to take them',
+  said: 'running d4fbd1a — 4 commit(s) behind origin/main, which has not taken effect in this process: 0c1a2b3 fix(end)',
+}
 
 /** Level with the base: something to say only on hover. */
 const level: CodeNews = {
   wrong: null,
   action: null,
-  said: "running d4fbd1a — level with origin/main",
-};
+  said: 'running d4fbd1a — level with origin/main',
+}
 
 /**
  * Every branch of the fold, once — the list the two properties below are
@@ -52,75 +54,75 @@ const level: CodeNews = {
  * they stopped carrying what it is running.
  */
 const EVERY_STATE: [Parameters<typeof bearing>[0], Health | null][] = [
-  ["trouble", board()],
-  ["connecting", null],
-  ["open", null],
-  ["open", board({ error: "no such relation" })],
-  ["open", board({ lag: null })],
-  ["open", board({ lag: 3, daemon: "never", sinceBeatMs: null })],
-  ["open", board({ lag: 7 })],
-  ["open", board()],
-];
+  ['trouble', board()],
+  ['connecting', null],
+  ['open', null],
+  ['open', board({ error: 'no such relation' })],
+  ['open', board({ lag: null })],
+  ['open', board({ lag: 3, daemon: 'never', sinceBeatMs: null })],
+  ['open', board({ lag: 7 })],
+  ['open', board()],
+]
 
-describe("the health dot", () => {
+describe('the health dot', () => {
   /**
    * The quiet version, which is the state the bar is in nearly all the time:
    * one dot, and no sentence at all. A box that is present and quiet in the
    * ordinary case is one nobody reads when it is not.
    */
-  it("is green and silent when the board is current and the daemon is level", () => {
-    const said = bearing("open", board(), level);
+  it('is green and silent when the board is current and the daemon is level', () => {
+    const said = bearing('open', board(), level)
 
-    expect(said.tone).toBe("pass");
-    expect(said.why).toBeNull();
-  });
+    expect(said.tone).toBe('pass')
+    expect(said.why).toBeNull()
+  })
 
   /**
    * `#64` and `#98` were two chips and are one dot. Folding them must not make
    * either unreachable, so whichever is not the headline is in the title —
    * which is the property that is easy to drop and impossible to see.
    */
-  it("keeps the fact that is not the headline in the title", () => {
-    expect(bearing("open", board(), level).title).toContain("level with origin/main");
-    expect(bearing("open", board({ lag: 0 }), behind).title).toContain("task_view is at the head");
-  });
+  it('keeps the fact that is not the headline in the title', () => {
+    expect(bearing('open', board(), level).title).toContain('level with origin/main')
+    expect(bearing('open', board({ lag: 0 }), behind).title).toContain('task_view is at the head')
+  })
 
   /**
    * Stale code is a fault: `current` and `not paused` were both true for
    * thirty-nine minutes in which the fix that had landed could not run.
    */
-  it("carries the sentence and the action when the daemon holds old code", () => {
-    const said = bearing("open", board(), behind);
+  it('carries the sentence and the action when the daemon holds old code', () => {
+    const said = bearing('open', board(), behind)
 
-    expect(said.tone).toBe("warn");
-    expect(said.why).toContain("daemon 4 behind");
-    expect(said.why).toContain("restart it");
-  });
+    expect(said.tone).toBe('warn')
+    expect(said.why).toContain('daemon 4 behind')
+    expect(said.why).toContain('restart it')
+  })
 
   /**
    * Worst first. A projection nobody is folding is the board lying about the
    * very thing the newer code would be doing, so it beats stale code — and it
    * still says how to fix it.
    */
-  it("puts a projection nobody is advancing ahead of stale code, with both reachable", () => {
-    const said = bearing("open", board({ lag: 12, daemon: "stale", sinceBeatMs: 400_000 }), behind);
+  it('puts a projection nobody is advancing ahead of stale code, with both reachable', () => {
+    const said = bearing('open', board({ lag: 12, daemon: 'stale', sinceBeatMs: 400_000 }), behind)
 
-    expect(said.tone).toBe("warn");
-    expect(said.label).toContain("no daemon");
-    expect(said.why).toContain("lingtai daemon --no-conduct");
-    expect(said.title).toContain("4 commit(s) behind");
-  });
+    expect(said.tone).toBe('warn')
+    expect(said.label).toContain('no daemon')
+    expect(said.why).toContain('lingtai daemon --no-conduct')
+    expect(said.title).toContain('4 commit(s) behind')
+  })
 
   /**
    * Since 0022 a `lingtai run` holds a projector of its own, so lag with a
    * beating daemon is ordinary. It says so rather than raising an alarm.
    */
-  it("does not call catching up a fault", () => {
-    const said = bearing("open", board({ lag: 7 }), level);
+  it('does not call catching up a fault', () => {
+    const said = bearing('open', board({ lag: 7 }), level)
 
-    expect(said.tone).toBe("idle");
-    expect(said.why).toBe("catching up");
-  });
+    expect(said.tone).toBe('idle')
+    expect(said.why).toBe('catching up')
+  })
 
   /**
    * The stream is the reason the numbers under it are stale, so it is the
@@ -128,16 +130,16 @@ describe("the health dot", () => {
    * inversion of the morning `#64` is about: socket open, chip green, board
    * frozen.
    */
-  it("lets a dead stream beat everything under it", () => {
-    expect(bearing("trouble", board(), level).tone).toBe("warn");
-    expect(bearing("trouble", board(), level).why).toContain("event stream is down");
-  });
+  it('lets a dead stream beat everything under it', () => {
+    expect(bearing('trouble', board(), level).tone).toBe('warn')
+    expect(bearing('trouble', board(), level).why).toContain('event stream is down')
+  })
 
   /** Not yet an answer is not a green one. */
-  it("says nothing green before the first health frame arrives", () => {
-    expect(bearing("connecting", null, null).tone).toBe("idle");
-    expect(bearing("open", null, null).tone).toBe("idle");
-  });
+  it('says nothing green before the first health frame arrives', () => {
+    expect(bearing('connecting', null, null).tone).toBe('idle')
+    expect(bearing('open', null, null).tone).toBe('idle')
+  })
 
   /**
    * Every state, including the two that are not about the board at all. A dead
@@ -153,22 +155,22 @@ describe("the health dot", () => {
     for (const [socket, health] of EVERY_STATE) {
       // Level and behind both, because `code.wrong` opens a branch of its own
       // and a branch is where the fact goes missing.
-      expect(bearing(socket, health, level).title).toContain("running d4fbd1a");
-      expect(bearing(socket, health, behind).title).toContain("4 commit(s) behind");
+      expect(bearing(socket, health, level).title).toContain('running d4fbd1a')
+      expect(bearing(socket, health, behind).title).toContain('4 commit(s) behind')
     }
-  });
+  })
 
   /**
    * The dot has no branch that says nothing: a health indicator whose title is
    * empty is one that has quietly stopped being a health indicator.
    */
-  it("always has something to say on hover", () => {
+  it('always has something to say on hover', () => {
     for (const [socket, health] of EVERY_STATE) {
-      expect(bearing(socket, health, level).title.length).toBeGreaterThan(0);
-      expect(bearing(socket, health, null).title.length).toBeGreaterThan(0);
+      expect(bearing(socket, health, level).title.length).toBeGreaterThan(0)
+      expect(bearing(socket, health, null).title.length).toBeGreaterThan(0)
     }
-  });
-});
+  })
+})
 
 /**
  * Amber, and the one thing allowed to wear it.
@@ -183,10 +185,10 @@ describe("the health dot", () => {
  * are amber? The answer has to be one, and it has to be the headline.
  */
 describe("the bar's amber", () => {
-  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8")
+  const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
     // Comments first: this file argues in prose, and `var(--signal)` inside a
     // comment is a sentence about the rule and not a second wearer of it.
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+    .replace(/\/\*[\s\S]*?\*\//g, '')
 
   /**
    * Every selector that paints with `--signal`, paired with the block that
@@ -194,10 +196,10 @@ describe("the bar's amber", () => {
    * braces rather than the first thing in the piece.
    */
   const wearers = css
-    .split("}")
-    .map((piece) => piece.split("{"))
-    .filter((parts) => parts.length > 1 && parts[parts.length - 1]!.includes("var(--signal"))
-    .map((parts) => parts[parts.length - 2]!.trim().replace(/\s+/g, " "));
+    .split('}')
+    .map((piece) => piece.split('{'))
+    .filter((parts) => parts.length > 1 && parts[parts.length - 1]!.includes('var(--signal'))
+    .map((parts) => parts[parts.length - 2]!.trim().replace(/\s+/g, ' '))
 
   /**
    * Every class that can render inside `.bar`: the bar's own markup in
@@ -207,30 +209,30 @@ describe("the bar's amber", () => {
    * confirmation `paused.tsx` opens inside the row.
    */
   const barClasses = (() => {
-    const read = (f: string) => readFileSync(new URL(`../src/app/${f}`, import.meta.url), "utf8");
-    const page = read("page.tsx");
-    const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'));
+    const read = (f: string) => readFileSync(new URL(`../src/app/${f}`, import.meta.url), 'utf8')
+    const page = read('page.tsx')
+    const bar = page.slice(page.indexOf('<div className="bar">'), page.indexOf('<div className="cols">'))
     const sources = [
       bar,
-      read("paused.tsx"),
-      read("draining.tsx"),
-      read("live.tsx"),
+      read('paused.tsx'),
+      read('draining.tsx'),
+      read('live.tsx'),
       // The filter and its `+` (#216). It left `page.tsx` for a file of its
       // own, and a component the bar mounts is the bar's whether or not its
       // markup is still in this slice — which is the `.btn.pri` lesson again.
-      read("projects.tsx"),
-    ];
-    const names = new Set<string>();
+      read('projects.tsx'),
+    ]
+    const names = new Set<string>()
     for (const src of sources) {
       // `className="a b"` and ``className={`a ${x ? " b" : ""}`}`` alike: every
       // bare word inside the attribute's string or template literals.
       for (const attr of src.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)) {
-        const text = (attr[1] ?? attr[2] ?? "").replace(/\$\{|\}|\?|:|["']/g, " ");
-        for (const word of text.split(/\s+/)) if (/^[a-z][a-z0-9-]*$/.test(word)) names.add(word);
+        const text = (attr[1] ?? attr[2] ?? '').replace(/\$\{|\}|\?|:|["']/g, ' ')
+        for (const word of text.split(/\s+/)) if (/^[a-z][a-z0-9-]*$/.test(word)) names.add(word)
       }
     }
-    return names;
-  })();
+    return names
+  })()
 
   /**
    * `#81` put a total on the bar, `#84` put a repair's share beside it, and the
@@ -242,56 +244,60 @@ describe("the bar's amber", () => {
    * still amber on the bar whenever Resume was being confirmed, which is exactly
    * the shape a filter on the selector's text lets through.
    */
-  it("is worn by exactly one thing that can render on the bar, and it is the headline", () => {
+  it('is worn by exactly one thing that can render on the bar, and it is the headline', () => {
     const onTheBar = wearers
-      .flatMap((sel) => sel.split(",").map((s) => s.trim()))
+      .flatMap((sel) => sel.split(',').map((s) => s.trim()))
       .filter((sel) => {
-        const last = sel.replace(/:[a-z-]+(\([^)]*\))?/g, "").split(" ").pop() ?? "";
-        const classes = [...last.matchAll(/\.([a-z][a-z0-9-]*)/g)].map((m) => m[1]!);
-        return classes.length > 0 && classes.every((c) => barClasses.has(c));
-      });
+        const last =
+          sel
+            .replace(/:[a-z-]+(\([^)]*\))?/g, '')
+            .split(' ')
+            .pop() ?? ''
+        const classes = [...last.matchAll(/\.([a-z][a-z0-9-]*)/g)].map((m) => m[1]!)
+        return classes.length > 0 && classes.every((c) => barClasses.has(c))
+      })
 
-    expect(onTheBar).toEqual([".bar .head.sig"]);
-  });
+    expect(onTheBar).toEqual(['.bar .head.sig'])
+  })
 
   /** The guard above is only as good as its reading of the source. */
   it("reads the bar's classes, including the ones its components bring", () => {
-    for (const c of ["bar", "head", "sig", "reading", "dot", "chip", "held", "btn", "why", "filter", "tab", "add"]) {
-      expect(barClasses.has(c)).toBe(true);
+    for (const c of ['bar', 'head', 'sig', 'reading', 'dot', 'chip', 'held', 'btn', 'why', 'filter', 'tab', 'add']) {
+      expect(barClasses.has(c)).toBe(true)
     }
-  });
+  })
 
   /**
    * The chip variant the money wore. Deleted rather than left unused, because a
    * style with no wearer is the style the next chip is quietly added under —
    * which is how eleven objects got onto a row nobody argued about.
    */
-  it("is not still available as a chip for the next one to reach for", () => {
-    expect(css).not.toMatch(/\.chip\.sig\b/);
-  });
+  it('is not still available as a chip for the next one to reach for', () => {
+    expect(css).not.toMatch(/\.chip\.sig\b/)
+  })
 
   /**
    * The dot is pass/fail, which have been separate from the accent since the
    * palette was written. Stated here as the class the dot actually wears, so it
    * is the rendered thing being checked and not the union's spelling.
    */
-  it("is not what the health dot paints with, in any state", () => {
-    const amber = wearers.map((sel) => sel.replace(/\s+/g, ""));
+  it('is not what the health dot paints with, in any state', () => {
+    const amber = wearers.map((sel) => sel.replace(/\s+/g, ''))
     for (const [socket, health] of EVERY_STATE) {
-      expect(amber).not.toContain(`.bar.dot.${bearing(socket, health, level).tone}`);
+      expect(amber).not.toContain(`.bar.dot.${bearing(socket, health, level).tone}`)
     }
-  });
-});
+  })
+})
 
 function task(over: Partial<TaskCard> = {}): TaskCard {
   return {
-    taskId: `wi-${over.project ?? "lingtai"}-${over.issue ?? "1"}`,
-    project: "lingtai",
-    issue: "1",
-    title: "a task",
-    kind: "bug",
-    state: "landed",
-    tier: "guarded",
+    taskId: `wi-${over.project ?? 'lingtai'}-${over.issue ?? '1'}`,
+    project: 'lingtai',
+    issue: '1',
+    title: 'a task',
+    kind: 'bug',
+    state: 'landed',
+    tier: 'guarded',
     runId: null,
     turns: null,
     costUsd: null,
@@ -305,7 +311,7 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     insertions: null,
     deletions: null,
     note: null,
-    updatedAt: new Date("2026-09-10T04:27:22Z"),
+    updatedAt: new Date('2026-09-10T04:27:22Z'),
     closedAt: null,
     attempts: 0,
     lastAttemptAt: null,
@@ -321,27 +327,27 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     restartsOf: 0,
     repairCostUsd: null,
     ...over,
-  };
+  }
 }
 
-describe("the spend the bar handed to a page", () => {
+describe('the spend the bar handed to a page', () => {
   /**
    * `$488.52` was one figure over two repositories, because a figure per
    * repository is a chip per repository. The page has room for the split, and
    * the split is the first thing anybody asks for after the total.
    */
-  it("splits the same money by repository", () => {
+  it('splits the same money by repository', () => {
     const columns = toColumns([
-      toCard(task({ project: "lingtai", issue: "1", costUsd: 2.5, repairCostUsd: 0.75 })),
-      toCard(task({ project: "lingtai", issue: "2", costUsd: 1.5 })),
-      toCard(task({ project: "nextloom-ai-admin", issue: "3", costUsd: 4.0 })),
-    ]);
+      toCard(task({ project: 'lingtai', issue: '1', costUsd: 2.5, repairCostUsd: 0.75 })),
+      toCard(task({ project: 'lingtai', issue: '2', costUsd: 1.5 })),
+      toCard(task({ project: 'nextloom-ai-admin', issue: '3', costUsd: 4.0 })),
+    ])
 
     expect(ledger(columns).rows).toEqual([
-      { project: "lingtai", work: 4.0, repair: 0.75, cards: 2 },
-      { project: "nextloom-ai-admin", work: 4.0, repair: 0, cards: 1 },
-    ]);
-  });
+      { project: 'lingtai', work: 4.0, repair: 0.75, cards: 2 },
+      { project: 'nextloom-ai-admin', work: 4.0, repair: 0, cards: 1 },
+    ])
+  })
 
   /**
    * `#84`'s point has to survive the move: answering a refusal is default-on
@@ -349,11 +355,11 @@ describe("the spend the bar handed to a page", () => {
    * column and never added into the work's.
    */
   it("keeps answering's spend out of the work's, per repository", () => {
-    const { rows } = ledger(toColumns([toCard(task({ project: "lingtai", costUsd: 1.0, repairCostUsd: 9.0 }))]));
+    const { rows } = ledger(toColumns([toCard(task({ project: 'lingtai', costUsd: 1.0, repairCostUsd: 9.0 }))]))
 
-    expect(rows[0]?.work).toBeCloseTo(1.0, 5);
-    expect(rows[0]?.repair).toBeCloseTo(9.0, 5);
-  });
+    expect(rows[0]?.work).toBeCloseTo(1.0, 5)
+    expect(rows[0]?.repair).toBeCloseTo(9.0, 5)
+  })
 
   /**
    * A card can outlive the project that made it, which is why the rows are
@@ -361,19 +367,19 @@ describe("the spend the bar handed to a page", () => {
    * matters — a repository nothing registers any more, whose cards are still on
    * the board.
    */
-  it("puts every card in exactly one row", () => {
+  it('puts every card in exactly one row', () => {
     const { rows, total } = ledger(
       toColumns([
-        toCard(task({ project: "lingtai", issue: "1", costUsd: 2.5, repairCostUsd: 0.75 })),
-        toCard(task({ project: "retired", issue: "2", costUsd: 3.25 })),
+        toCard(task({ project: 'lingtai', issue: '1', costUsd: 2.5, repairCostUsd: 0.75 })),
+        toCard(task({ project: 'retired', issue: '2', costUsd: 3.25 })),
         // Never claimed, so it cost nothing — still a card, and still counted.
-        toCard(task({ project: "retired", issue: "3", costUsd: null })),
+        toCard(task({ project: 'retired', issue: '3', costUsd: null })),
       ]),
-    );
+    )
 
-    expect(rows.map((r) => r.project)).toEqual(["lingtai", "retired"]);
-    expect(total.cards).toBe(3);
-  });
+    expect(rows.map((r) => r.project)).toEqual(['lingtai', 'retired'])
+    expect(total.cards).toBe(3)
+  })
 
   /**
    * **What is printed adds up.** Three repositories at $0.005 each print $0.01
@@ -382,23 +388,23 @@ describe("the spend the bar handed to a page", () => {
    * not happen, and it could, because the rows and the footer were two folds.
    * They are one now, and this is checked on the strings the page renders.
    */
-  it("prints a column that adds up to its printed footer", () => {
+  it('prints a column that adds up to its printed footer', () => {
     const { rows, total } = ledger(
       toColumns(
-        ["a", "b", "c"].map((project, i) =>
+        ['a', 'b', 'c'].map((project, i) =>
           toCard(task({ project, issue: String(i), costUsd: 0.005, repairCostUsd: 0.005 })),
         ),
       ),
-    );
-    const cents = (usd: number) => Math.round(Number(usd.toFixed(2)) * 100);
+    )
+    const cents = (usd: number) => Math.round(Number(usd.toFixed(2)) * 100)
 
-    expect(rows.reduce((n, r) => n + cents(r.work), 0)).toBe(cents(total.work));
-    expect(rows.reduce((n, r) => n + cents(r.repair), 0)).toBe(cents(total.repair));
-    expect(rows.reduce((n, r) => n + cents(r.work + r.repair), 0)).toBe(cents(total.work + total.repair));
-  });
+    expect(rows.reduce((n, r) => n + cents(r.work), 0)).toBe(cents(total.work))
+    expect(rows.reduce((n, r) => n + cents(r.repair), 0)).toBe(cents(total.repair))
+    expect(rows.reduce((n, r) => n + cents(r.work + r.repair), 0)).toBe(cents(total.work + total.repair))
+  })
 
   /** And no row for a repository that has nothing on this board. */
-  it("has nothing to say about a board with nothing on it", () => {
-    expect(ledger(toColumns([]))).toEqual({ rows: [], total: { work: 0, repair: 0, cards: 0 } });
-  });
-});
+  it('has nothing to say about a board with nothing on it', () => {
+    expect(ledger(toColumns([]))).toEqual({ rows: [], total: { work: 0, repair: 0, cards: 0 } })
+  })
+})

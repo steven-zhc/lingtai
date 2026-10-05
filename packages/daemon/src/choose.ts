@@ -25,10 +25,11 @@
  * saying: it runs every `HEARTBEAT_MS` for the life of a daemon, and a handle
  * per beat is a file descriptor leak that no Postgres machine would ever show.
  */
-import { chosenStore } from "@lingtai/env";
-import type { EventStore } from "@lingtai/event-store/store";
-import { createPostgresDaemonStore } from "./postgres.ts";
-import type { DaemonStore } from "./store.ts";
+import { chosenStore } from '@lingtai/env'
+import type { EventStore } from '@lingtai/event-store/store'
+
+import { createPostgresDaemonStore } from './postgres.ts'
+import type { DaemonStore } from './store.ts'
 
 export interface DaemonStoreOptions {
   /**
@@ -37,19 +38,19 @@ export interface DaemonStoreOptions {
    * chose a file. `reconcile` and `converge` carry one through from their own
    * options; nothing else passes one.
    */
-  url?: string;
+  url?: string
   /**
    * The log the control stream lives in. Defaults to the store's own — the
    * process-wide one for Postgres, the same file for SQLite — because a second
    * connection for events this process is already connected for would be held
    * open for nothing.
    */
-  events?: EventStore;
+  events?: EventStore
 }
 
 export async function processDaemonStore(options: DaemonStoreOptions = {}): Promise<DaemonStore> {
-  const choice = chosenStore();
-  if (choice.store === "postgres") {
+  const choice = chosenStore()
+  if (choice.store === 'postgres') {
     // **The written URL, not `directPostgresUrl()`.** The choice carries one
     // URL and `machineDatabaseUrl` says it stands in for both names, because
     // 1.0's store has no pooled/direct split; the one thing that genuinely
@@ -59,11 +60,11 @@ export async function processDaemonStore(options: DaemonStoreOptions = {}): Prom
     return createPostgresDaemonStore({
       url: options.url ?? choice.url,
       ...(options.events === undefined ? {} : { events: options.events }),
-    });
+    })
   }
-  const sqlite = await import("./sqlite.ts");
-  const db = sqlite.openSqliteDaemon(choice.path);
-  return sqlite.createSqliteDaemonStore(db, options.events);
+  const sqlite = await import('./sqlite.ts')
+  const db = sqlite.openSqliteDaemon(choice.path)
+  return sqlite.createSqliteDaemonStore(db, options.events)
 }
 
 /** Opens one, runs `fn`, closes it — unless the caller supplied the store, which is theirs. */
@@ -72,11 +73,11 @@ export async function withDaemonStore<T>(
   options: DaemonStoreOptions,
   fn: (store: DaemonStore) => Promise<T>,
 ): Promise<T> {
-  if (given !== undefined) return fn(given);
-  const store = await processDaemonStore(options);
+  if (given !== undefined) return fn(given)
+  const store = await processDaemonStore(options)
   try {
-    return await fn(store);
+    return await fn(store)
   } finally {
-    await store.close();
+    await store.close()
   }
 }

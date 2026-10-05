@@ -25,35 +25,35 @@
  * GitHub, the kind is a label, so is a hold, and the key is a comment in the
  * body.
  */
-import type { GitHubClient, Issue } from "@lingtai/github";
+import type { GitHubClient, Issue } from '@lingtai/github'
 
 export interface ProposedTicket {
   /**
    * The identity `propose` is idempotent on: the finding's key. A store that is
    * asked twice for the same key answers with the ticket it already has.
    */
-  key: string;
+  key: string
   /** No ticket for this key can be older than this — when a person accepted it. */
-  since: Date;
-  title: string;
+  since: Date
+  title: string
   /** The body a later run is prompted with, if it runs. */
-  body: string;
+  body: string
   /** The recipe's word for what this is — one of `source.kinds`. */
-  kind: string;
+  kind: string
   /** Anything else the ticket should carry, verbatim — `agent:hold`, usually. */
-  labels: readonly string[];
+  labels: readonly string[]
 }
 
 export interface ProposedRef {
   /** The store's own identity for the ticket: `"212"` on GitHub. */
-  externalRef: string;
-  url: string | null;
+  externalRef: string
+  url: string | null
   /** This call wrote the ticket, rather than finding one an earlier call wrote. */
-  created: boolean;
+  created: boolean
 }
 
 export interface TicketStore {
-  readonly source: string;
+  readonly source: string
   /**
    * The ticket for `ticket.key`: the one that exists, or a new one.
    *
@@ -63,74 +63,74 @@ export interface TicketStore {
    * about whether a write landed — which is why repeating is how a failure is
    * answered.
    */
-  propose(ticket: ProposedTicket): Promise<ProposedRef>;
+  propose(ticket: ProposedTicket): Promise<ProposedRef>
   /**
    * Withdraw a ticket this store opened and the log did not record, naming the
    * one that is. Only ever called by the call that `created` it.
    */
-  withdraw(externalRef: string, keptRef: string, why: string): Promise<void>;
+  withdraw(externalRef: string, keptRef: string, why: string): Promise<void>
 }
 
 /** How a GitHub issue says which finding it is. Invisible when rendered. */
 export function keyMarker(key: string): string {
-  return `<!-- lingtai:finding ${key} -->`;
+  return `<!-- lingtai:finding ${key} -->`
 }
 
 /**
  * Clocks disagree, and GitHub's `since` and `created_at` are its own clock. An
  * hour is far wider than any skew and still keeps the listing to recent issues.
  */
-const SKEW_MS = 60 * 60_000;
+const SKEW_MS = 60 * 60_000
 
 /** GitHub issues. `client` is the one the caller already has for the project. */
 export function githubTicketStore(
-  client: Pick<GitHubClient, "createIssue" | "listIssuesSince" | "comment" | "closeIssue">,
+  client: Pick<GitHubClient, 'createIssue' | 'listIssuesSince' | 'comment' | 'closeIssue'>,
 ): TicketStore {
   const ref = (issue: Issue, created: boolean): ProposedRef => ({
     externalRef: String(issue.number),
     url: issue.url,
     created,
-  });
+  })
 
   /** The issue a key belongs to: the oldest one carrying it. */
   async function carrying(key: string, since: Date): Promise<Issue | undefined> {
-    const marker = keyMarker(key);
+    const marker = keyMarker(key)
     const found = (await client.listIssuesSince(new Date(since.getTime() - SKEW_MS)))
       .filter((i) => i.body.includes(marker))
-      .sort((a, b) => a.number - b.number);
-    return found[0];
+      .sort((a, b) => a.number - b.number)
+    return found[0]
   }
 
   async function withdraw(externalRef: string, keptRef: string, why: string): Promise<void> {
-    const n = Number(externalRef);
-    await client.comment(n, `Duplicate of #${keptRef} — ${why}.`);
-    await client.closeIssue(n, "not_planned");
+    const n = Number(externalRef)
+    await client.comment(n, `Duplicate of #${keptRef} — ${why}.`)
+    await client.closeIssue(n, 'not_planned')
   }
 
   return {
-    source: "github-issue",
+    source: 'github-issue',
     withdraw,
 
     async propose(ticket) {
-      const existing = await carrying(ticket.key, ticket.since);
-      if (existing) return ref(existing, false);
+      const existing = await carrying(ticket.key, ticket.since)
+      if (existing) return ref(existing, false)
 
-      const labels = [...new Set([ticket.kind, ...ticket.labels].filter((l) => l.trim() !== ""))];
-      const body = `${ticket.body.trimEnd()}\n\n${keyMarker(ticket.key)}\n`;
-      const opened = await client.createIssue({ title: ticket.title, body, labels });
+      const labels = [...new Set([ticket.kind, ...ticket.labels].filter((l) => l.trim() !== ''))]
+      const body = `${ticket.body.trimEnd()}\n\n${keyMarker(ticket.key)}\n`
+      const opened = await client.createIssue({ title: ticket.title, body, labels })
 
       // Look again. A call that raced this one may have opened its own in the
       // meantime; the older issue is the key's, so the newer withdraws.
-      const first = await carrying(ticket.key, ticket.since);
+      const first = await carrying(ticket.key, ticket.since)
       if (first && first.number < opened.number) {
         await withdraw(
           String(opened.number),
           String(first.number),
-          "two accepts of the same finding opened an issue at once, and the older one is kept",
-        );
-        return ref(first, false);
+          'two accepts of the same finding opened an issue at once, and the older one is kept',
+        )
+        return ref(first, false)
       }
-      return ref(opened, true);
+      return ref(opened, true)
     },
-  };
+  }
 }

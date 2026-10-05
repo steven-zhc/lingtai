@@ -15,8 +15,8 @@
  * the verdicts that match the current head. Nothing has to remember to
  * invalidate anything; a new head simply has no verdicts yet.
  */
-import type { Envelope } from "./envelope.ts";
-import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from "./events.ts";
+import type { Envelope } from './envelope.ts'
+import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
 
 /**
  * `never-ran` is not a verdict about the diff, and is here because the absence
@@ -39,45 +39,45 @@ import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from 
  * machinery — and for a fortnight the difference was a substring of a `because`.
  */
 export type StepVerdict =
-  | "requested"
-  | "running"
-  | "passed"
-  | "failed"
-  | "never-ran"
-  | "did-not-finish"
-  | "asked"
-  | "waived";
+  | 'requested'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'never-ran'
+  | 'did-not-finish'
+  | 'asked'
+  | 'waived'
 
 export interface StepFinding {
-  file: string;
-  line: number | null;
-  claim: string;
+  file: string
+  line: number | null
+  claim: string
   /** No failure scenario, no finding. An observation without one is an opinion. */
-  failureScenario: string;
+  failureScenario: string
   /** The ladder is `SEVERITIES` in `./events.ts` and is not restated here. */
-  severity: Severity;
+  severity: Severity
 }
 
 export interface StepState {
-  step: string;
-  verdict: StepVerdict;
+  step: string
+  verdict: StepVerdict
   /** The commit this verdict is about. A verdict on any other sha is stale. */
-  onSha: string;
-  evidence: string | null;
-  findings: readonly StepFinding[];
+  onSha: string
+  evidence: string | null
+  findings: readonly StepFinding[]
   /** Set for a waiver, and for an approval. A waiver is recorded, never silent. */
-  by: string | null;
-  reason: string | null;
+  by: string | null
+  reason: string | null
 }
 
 export type RunLifecycle =
-  | { status: "pending" }
+  | { status: 'pending' }
   /** The worktree is being made workable. No agent has started. */
-  | { status: "running" }
-  | { status: "awaiting-input"; prompt: string }
-  | { status: "gating"; headSha: string }
-  | { status: "awaiting-approval"; step: string; onSha: string; question: string }
-  | { status: "finished"; exitCode: number; turns: number; durationMs: number; costUsd: number | null }
+  | { status: 'running' }
+  | { status: 'awaiting-input'; prompt: string }
+  | { status: 'gating'; headSha: string }
+  | { status: 'awaiting-approval'; step: string; onSha: string; question: string }
+  | { status: 'finished'; exitCode: number; turns: number; durationMs: number; costUsd: number | null }
   /**
    * `prepare-failed` has no matching `RunFailed` kind, and that is on purpose.
    * The lifecycle is a reading of several events, and a prepare step that
@@ -86,49 +86,49 @@ export type RunLifecycle =
    * ever ran.
    */
   | {
-      status: "failed";
+      status: 'failed'
       /**
        * Every `RunFailed.kind`, and the one the lifecycle adds. Read off the
        * catalogue rather than written out again, so a kind gained there — as
        * `never-started` was (0031 §1) — is a kind a card can already be in.
        */
-      kind: RunFailureKind | "prepare-failed";
-      detail: string;
-    };
+      kind: RunFailureKind | 'prepare-failed'
+      detail: string
+    }
 
-export type RunStatus = RunLifecycle["status"];
+export type RunStatus = RunLifecycle['status']
 
 export interface RunState {
-  lifecycle: RunLifecycle;
+  lifecycle: RunLifecycle
 
-  workItemId: string | null;
-  runtime: RuntimeId | null;
-  model: string | null;
-  promptVersion: string | null;
-  baseSha: string | null;
+  workItemId: string | null
+  runtime: RuntimeId | null
+  model: string | null
+  promptVersion: string | null
+  baseSha: string | null
   /** Hash of the recipe as read from `origin/<base>`, never from the agent's branch. */
-  configHash: string | null;
-  worktree: string | null;
+  configHash: string | null
+  worktree: string | null
   /**
    * How the runtime was actually invoked: the command, the argv, the tier and
    * the limits as applied. Null for a v1 `RunStarted`, and for a runtime that
    * cannot describe its own invocation (#88).
    */
-  invocation: Invocation | null;
+  invocation: Invocation | null
 
   /** Current head of the agent's branch. Changes invalidate gate verdicts. */
-  headSha: string | null;
-  branch: string | null;
-  diff: { files: number; insertions: number; deletions: number } | null;
+  headSha: string | null
+  branch: string | null
+  diff: { files: number; insertions: number; deletions: number } | null
 
   /** Files the agent wrote, in order, so the card can show them live. */
-  touched: readonly { path: string; op: "edit" | "write" | "delete" }[];
+  touched: readonly { path: string; op: 'edit' | 'write' | 'delete' }[]
   /**
    * Turns at which the context was compacted. Compaction means the work item was
    * scoped too large — a metric, not noise.
    */
-  compactedAtTurns: readonly number[];
-  prompts: number;
+  compactedAtTurns: readonly number[]
+  prompts: number
   /**
    * The prompt as handed over, which is the one input to a run that is
    * otherwise unrecoverable (#88).
@@ -138,20 +138,19 @@ export interface RunState {
    * until something records one, and null for a v1 `RunPrompted`, which carried
    * only a length.
    */
-  prompt: string | null;
+  prompt: string | null
 
   /** Latest verdict per gate name, each carrying the sha it was made against. */
-  steps: Readonly<Record<string, StepState>>;
+  steps: Readonly<Record<string, StepState>>
 
+  receipt: { exitCode: number; turns: number; durationMs: number; costUsd: number | null } | null
 
-  receipt: { exitCode: number; turns: number; durationMs: number; costUsd: number | null } | null;
-
-  version: number;
-  lastSeq: bigint | null;
+  version: number
+  lastSeq: bigint | null
 }
 
 export const emptyRun: RunState = {
-  lifecycle: { status: "pending" },
+  lifecycle: { status: 'pending' },
   workItemId: null,
   runtime: null,
   model: null,
@@ -171,7 +170,7 @@ export const emptyRun: RunState = {
   receipt: null,
   version: 0,
   lastSeq: null,
-};
+}
 
 /**
  * The gate verdicts that are actually about the current head.
@@ -181,24 +180,24 @@ export const emptyRun: RunState = {
  * `onSha` is on the event.
  */
 export function stepsOn(state: RunState): StepState[] {
-  if (state.headSha === null) return [];
-  return Object.values(state.steps).filter((g) => g.onSha === state.headSha);
+  if (state.headSha === null) return []
+  return Object.values(state.steps).filter((g) => g.onSha === state.headSha)
 }
 
 function withStep(state: RunState, step: StepState): Readonly<Record<string, StepState>> {
-  return { ...state.steps, [step.step]: step };
+  return { ...state.steps, [step.step]: step }
 }
 
 export function applyRun(state: RunState, event: Envelope): RunState {
-  const at = { version: event.version, lastSeq: event.seq };
+  const at = { version: event.version, lastSeq: event.seq }
 
   switch (event.type) {
-    case "RunStarted": {
-      const d = event.data as PayloadOf<"RunStarted">;
+    case 'RunStarted': {
+      const d = event.data as PayloadOf<'RunStarted'>
       return {
         ...state,
         ...at,
-        lifecycle: { status: "running" },
+        lifecycle: { status: 'running' },
         workItemId: d.workItemId,
         runtime: d.runtime,
         model: d.model,
@@ -207,132 +206,132 @@ export function applyRun(state: RunState, event: Envelope): RunState {
         configHash: d.configHash,
         worktree: d.worktree,
         invocation: d.invocation,
-      };
+      }
     }
 
-    case "RunPrompted": {
-      const d = event.data as PayloadOf<"RunPrompted">;
+    case 'RunPrompted': {
+      const d = event.data as PayloadOf<'RunPrompted'>
       // The count is what it always was; the text is what #88 added. A v1 event
       // has none, and leaving the previous one in place would be a lie about
       // which prompt this run was given.
-      return { ...state, ...at, prompts: state.prompts + 1, prompt: d.prompt };
+      return { ...state, ...at, prompts: state.prompts + 1, prompt: d.prompt }
     }
 
-    case "RunTouchedFile": {
-      const d = event.data as PayloadOf<"RunTouchedFile">;
-      return { ...state, ...at, touched: [...state.touched, d] };
+    case 'RunTouchedFile': {
+      const d = event.data as PayloadOf<'RunTouchedFile'>
+      return { ...state, ...at, touched: [...state.touched, d] }
     }
 
-    case "RunContextExhausted": {
-      const d = event.data as PayloadOf<"RunContextExhausted">;
-      return { ...state, ...at, compactedAtTurns: [...state.compactedAtTurns, d.turn] };
+    case 'RunContextExhausted': {
+      const d = event.data as PayloadOf<'RunContextExhausted'>
+      return { ...state, ...at, compactedAtTurns: [...state.compactedAtTurns, d.turn] }
     }
 
-    case "RunAwaitingInput": {
-      const d = event.data as PayloadOf<"RunAwaitingInput">;
+    case 'RunAwaitingInput': {
+      const d = event.data as PayloadOf<'RunAwaitingInput'>
       // The board lights up instead of the run burning to the wall clock.
-      return { ...state, ...at, lifecycle: { status: "awaiting-input", prompt: d.prompt } };
+      return { ...state, ...at, lifecycle: { status: 'awaiting-input', prompt: d.prompt } }
     }
 
-    case "RunProducedDiff": {
-      const d = event.data as PayloadOf<"RunProducedDiff">;
+    case 'RunProducedDiff': {
+      const d = event.data as PayloadOf<'RunProducedDiff'>
       return {
         ...state,
         ...at,
         branch: d.branch,
         headSha: d.headSha,
         diff: { files: d.files, insertions: d.insertions, deletions: d.deletions },
-        lifecycle: state.lifecycle.status === "awaiting-input" ? { status: "running" } : state.lifecycle,
-      };
+        lifecycle: state.lifecycle.status === 'awaiting-input' ? { status: 'running' } : state.lifecycle,
+      }
     }
 
-    case "RunProposedCompletion": {
-      const d = event.data as PayloadOf<"RunProposedCompletion">;
+    case 'RunProposedCompletion': {
+      const d = event.data as PayloadOf<'RunProposedCompletion'>
       // The moment the gate pipeline fires.
-      return { ...state, ...at, headSha: d.headSha, lifecycle: { status: "gating", headSha: d.headSha } };
+      return { ...state, ...at, headSha: d.headSha, lifecycle: { status: 'gating', headSha: d.headSha } }
     }
 
-    case "RunFinished": {
-      const d = event.data as PayloadOf<"RunFinished">;
+    case 'RunFinished': {
+      const d = event.data as PayloadOf<'RunFinished'>
       return {
         ...state,
         ...at,
         receipt: d,
         lifecycle: {
-          status: "finished",
+          status: 'finished',
           exitCode: d.exitCode,
           turns: d.turns,
           durationMs: d.durationMs,
           costUsd: d.costUsd,
         },
-      };
+      }
     }
 
-    case "RunFailed": {
-      const d = event.data as PayloadOf<"RunFailed">;
-      return { ...state, ...at, lifecycle: { status: "failed", kind: d.kind, detail: d.detail } };
+    case 'RunFailed': {
+      const d = event.data as PayloadOf<'RunFailed'>
+      return { ...state, ...at, lifecycle: { status: 'failed', kind: d.kind, detail: d.detail } }
     }
 
-    case "StepRequested":
-    case "StepStarted": {
-      const d = event.data as PayloadOf<"StepRequested">;
+    case 'StepRequested':
+    case 'StepStarted': {
+      const d = event.data as PayloadOf<'StepRequested'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: event.type === "StepRequested" ? "requested" : "running",
+          verdict: event.type === 'StepRequested' ? 'requested' : 'running',
           onSha: d.onSha,
           evidence: null,
           findings: [],
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "StepPassed": {
-      const d = event.data as PayloadOf<"StepPassed">;
+    case 'StepPassed': {
+      const d = event.data as PayloadOf<'StepPassed'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "passed",
+          verdict: 'passed',
           onSha: d.onSha,
           evidence: d.evidence,
           findings: [],
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "StepFailed": {
-      const d = event.data as PayloadOf<"StepFailed">;
+    case 'StepFailed': {
+      const d = event.data as PayloadOf<'StepFailed'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "failed",
+          verdict: 'failed',
           onSha: d.onSha,
           evidence: d.evidence,
           findings: d.findings,
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "StepNeverRan": {
-      const d = event.data as PayloadOf<"StepNeverRan">;
+    case 'StepNeverRan': {
+      const d = event.data as PayloadOf<'StepNeverRan'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "never-ran",
+          verdict: 'never-ran',
           onSha: d.onSha,
           // The runtime's own sentence: evidence that the agent never started,
           // and never evidence about the diff. There are no findings for the
@@ -342,17 +341,17 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "StepDidNotFinish": {
-      const d = event.data as PayloadOf<"StepDidNotFinish">;
+    case 'StepDidNotFinish': {
+      const d = event.data as PayloadOf<'StepDidNotFinish'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           onSha: d.onSha,
           // The runtime's own sentence about the machinery, never about the
           // diff — `StepNeverRan.detail`'s reason, one row along in 0057's
@@ -362,17 +361,17 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "StepAsked": {
-      const d = event.data as PayloadOf<"StepAsked">;
+    case 'StepAsked': {
+      const d = event.data as PayloadOf<'StepAsked'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "asked",
+          verdict: 'asked',
           onSha: d.onSha,
           // The question, in the agent's own words — and the one `detail` on
           // this fold that is neither about the machinery nor about the diff.
@@ -382,60 +381,60 @@ export function applyRun(state: RunState, event: Envelope): RunState {
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "StepWaived": {
-      const d = event.data as PayloadOf<"StepWaived">;
+    case 'StepWaived': {
+      const d = event.data as PayloadOf<'StepWaived'>
       return {
         ...state,
         ...at,
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "waived",
+          verdict: 'waived',
           onSha: d.onSha,
           evidence: null,
           findings: [],
           by: d.by,
           reason: d.reason,
         }),
-      };
+      }
     }
 
-    case "ApprovalRequested": {
-      const d = event.data as PayloadOf<"ApprovalRequested">;
+    case 'ApprovalRequested': {
+      const d = event.data as PayloadOf<'ApprovalRequested'>
       return {
         ...state,
         ...at,
-        lifecycle: { status: "awaiting-approval", step: `${d.step}:${d.action}`, onSha: d.onSha, question: d.question },
+        lifecycle: { status: 'awaiting-approval', step: `${d.step}:${d.action}`, onSha: d.onSha, question: d.question },
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "requested",
+          verdict: 'requested',
           onSha: d.onSha,
           evidence: null,
           findings: [],
           by: null,
           reason: null,
         }),
-      };
+      }
     }
 
-    case "ApprovalGranted": {
-      const d = event.data as PayloadOf<"ApprovalGranted">;
+    case 'ApprovalGranted': {
+      const d = event.data as PayloadOf<'ApprovalGranted'>
       return {
         ...state,
         ...at,
-        lifecycle: { status: "gating", headSha: d.onSha },
+        lifecycle: { status: 'gating', headSha: d.onSha },
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "passed",
+          verdict: 'passed',
           onSha: d.onSha,
           evidence: null,
           findings: [],
           by: d.by,
           reason: d.note,
         }),
-      };
+      }
     }
 
     /**
@@ -449,35 +448,35 @@ export function applyRun(state: RunState, event: Envelope): RunState {
      * The work item stays blocked either way. Returning it to the queue would
      * let another run claim it and throw the question away.
      */
-    case "ApprovalRevoked": {
-      const d = event.data as PayloadOf<"ApprovalRevoked">;
+    case 'ApprovalRevoked': {
+      const d = event.data as PayloadOf<'ApprovalRevoked'>
       return {
         ...state,
         ...at,
         lifecycle: {
-          status: "awaiting-approval",
+          status: 'awaiting-approval',
           step: `${d.step}:${d.action}`,
           onSha: d.onSha,
           question: `${d.by} withdrew the approval: ${d.reason}`,
         },
         steps: withStep(state, {
           step: `${d.step}:${d.action}`,
-          verdict: "requested",
+          verdict: 'requested',
           onSha: d.onSha,
           evidence: null,
           findings: [],
           by: d.by,
           reason: d.reason,
         }),
-      };
+      }
     }
 
     default:
       // See the note in work-item.ts: ignored, not rejected.
-      return { ...state, ...at };
+      return { ...state, ...at }
   }
 }
 
 export function reduceRun(events: readonly Envelope[]): RunState {
-  return events.reduce(applyRun, emptyRun);
+  return events.reduce(applyRun, emptyRun)
 }

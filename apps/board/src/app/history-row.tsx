@@ -11,9 +11,11 @@
  * because its marks say *below*, and the documents last because they are the
  * tall things.
  */
-import { inWords } from "@lingtai/conductor/queue";
-import { shortActor, type HistoryLine } from "@/lib/history";
-import { DocumentBody } from "./markdown.tsx";
+import { inWords } from '@lingtai/conductor/queue'
+
+import { shortActor, type HistoryLine } from '@/lib/history'
+
+import { DocumentBody } from './markdown.tsx'
 
 /**
  * A document, collapsed, labelled with its field and its size.
@@ -27,7 +29,7 @@ import { DocumentBody } from "./markdown.tsx";
  * typecheck error is made of. Which of the two this is came off the payload
  * with the document (`markdown.ts`); this row does not decide and cannot.
  */
-function Document({ field, text, bytes, source }: HistoryLine["documents"][number]) {
+function Document({ field, text, bytes, source }: HistoryLine['documents'][number]) {
   return (
     <details className="hdoc">
       <summary>
@@ -36,7 +38,7 @@ function Document({ field, text, bytes, source }: HistoryLine["documents"][numbe
       </summary>
       <DocumentBody source={source} text={text} rawClass="hdoctext" />
     </details>
-  );
+  )
 }
 
 export function HistoryRow({ line }: { line: HistoryLine }) {
@@ -74,5 +76,5 @@ export function HistoryRow({ line }: { line: HistoryLine }) {
         <Document key={d.field} {...d} />
       ))}
     </details>
-  );
+  )
 }

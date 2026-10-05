@@ -18,20 +18,20 @@
  * A route and not a page, so the query is gone from the address bar by the time
  * anybody reads the screen. It writes nothing.
  */
-import { setupReturn } from "@lingtai/conductor/pick-repository";
-import { hasGitHubApp, githubApp } from "@lingtai/env";
-import { createAppReader } from "@lingtai/github";
+import { setupReturn } from '@lingtai/conductor/pick-repository'
+import { hasGitHubApp, githubApp } from '@lingtai/env'
+import { createAppReader } from '@lingtai/github'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request): Promise<Response> {
-  const url = new URL(request.url);
+  const url = new URL(request.url)
   const location = hasGitHubApp()
     ? await setupReturn(createAppReader(githubApp()), url.searchParams)
-    : "/setup/repository";
+    : '/setup/repository'
 
   return new Response(null, {
     status: 303,
-    headers: { location: new URL(location, url.origin).toString(), "cache-control": "no-store" },
-  });
+    headers: { location: new URL(location, url.origin).toString(), 'cache-control': 'no-store' },
+  })
 }

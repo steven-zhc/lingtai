@@ -85,8 +85,9 @@
  * with a `/` or a leading `..` in it would otherwise walk out of the worktree
  * through a check that had already said yes.
  */
-import { thePathForThisTicket } from "@lingtai/recipe";
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import { thePathForThisTicket } from '@lingtai/recipe'
+
+import type { Action, ActionContext, ActionResult } from './action.ts'
 
 /**
  * What the keep answers — two branches, because a destination either kept the
@@ -113,7 +114,7 @@ export type KeptAnswer =
    */
   | { readonly at: string; readonly head?: string }
   /** Why it was not written, in words a person reads (0043). */
-  | { readonly notKept: string };
+  | { readonly notKept: string }
 
 /**
  * The keep, as the only thing this action needs from its caller.
@@ -134,9 +135,9 @@ export interface FileActionDeps {
      * `whyThePathEscapes` has refused anything else — both about what a person
      * wrote and about what this ticket made of it.
      */
-    readonly path: string;
-    readonly document: string;
-  }): Promise<KeptAnswer>;
+    readonly path: string
+    readonly document: string
+  }): Promise<KeptAnswer>
 
   /**
    * The ticket this pass is about, for the one placeholder the path takes —
@@ -154,16 +155,16 @@ export interface FileActionDeps {
    * one number, and two expressions that agree today are two things that can
    * drift.
    */
-  issue: () => Promise<{ readonly ref: string }>;
+  issue: () => Promise<{ readonly ref: string }>
 }
 
 export interface FileActionSpec {
-  name: string;
+  name: string
   /**
    * Where the document goes, relative to the worktree — `filePlugin`'s `file:`
    * field, **as written**, with `{{issue}}` still in it. `run` expands it.
    */
-  path: string;
+  path: string
 }
 
 /**
@@ -175,8 +176,8 @@ export interface FileActionSpec {
  * about the document rather than about the unit.
  */
 export function sizeOf(document: string): string {
-  const bytes = Buffer.byteLength(document, "utf8");
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
+  const bytes = Buffer.byteLength(document, 'utf8')
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`
 }
 
 /**
@@ -192,34 +193,34 @@ function notThisTicketsPath(written: string, ref: string, why: string): string {
   return (
     `the design was not kept: \`${written}\` is \`${ref}\`'s path, and that is not a path inside the ` +
     `worktree — ${why}. A \`file:\` expands \`{{issue}}\` into the ticket's ref when the pass runs, and ` +
-    "asks the same question of the answer that the recipe was asked of the string (0066 §6)"
-  );
+    'asks the same question of the answer that the recipe was asked of the string (0066 §6)'
+  )
 }
 
 export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Action {
   return {
     name: spec.name,
-    kind: "file",
+    kind: 'file',
 
     async run(context: ActionContext): Promise<ActionResult> {
       // **First, so that every sentence below names the path the document
       // actually goes to** and not the template a person wrote. The accessor is
       // the ticket the pass already holds, so this costs nothing where there
       // turns out to be nothing to keep.
-      const ref = (await deps.issue()).ref;
-      const expanded = thePathForThisTicket(spec.path, ref);
-      if ("escapes" in expanded) {
+      const ref = (await deps.issue()).ref
+      const expanded = thePathForThisTicket(spec.path, ref)
+      if ('escapes' in expanded) {
         // `did-not-finish` and never `refused`: `design` is not one of
         // `REFUSING_STEPS` (0058 §3), and this action writes rather than judges.
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence: notThisTicketsPath(spec.path, ref, expanded.escapes),
           findings: [],
-        };
+        }
       }
-      const path = expanded.path;
+      const path = expanded.path
 
-      const drafted = context.design;
+      const drafted = context.design
       if (drafted === undefined) {
         // A context nothing filled in, which is one built by hand: `runStep`
         // sets `design` on every verdicts pipeline, and `runActionPipeline`
@@ -228,12 +229,12 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
         // drafter answered that none was needed* are different facts and only
         // the second is an answer (0058 §3).
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence:
             `nothing handed "${spec.name}" a design to keep — a \`file:\` keeps what an earlier action ` +
-            "at the step made, and no pipeline filled `ActionContext.design` in",
+            'at the step made, and no pipeline filled `ActionContext.design` in',
           findings: [],
-        };
+        }
       }
 
       // **Silent where there was nothing to keep**, which is the rule on
@@ -244,25 +245,25 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
       // `locator` on the result, so the drafter's own answer is what crosses to
       // `implement` — a destination that kept nothing says so on `evidence` and
       // changes no fact.
-      if (drafted.document === "") {
+      if (drafted.document === '') {
         return {
-          verdict: "passed",
+          verdict: 'passed',
           evidence: `nothing to keep at \`${path}\` — the design step answered that none was needed`,
           findings: [],
-        };
+        }
       }
 
-      const answer = await deps.keep({ path, document: drafted.document });
-      if ("notKept" in answer) {
+      const answer = await deps.keep({ path, document: drafted.document })
+      if ('notKept' in answer) {
         return {
-          verdict: "did-not-finish",
+          verdict: 'did-not-finish',
           evidence: `the design was not kept at \`${path}\`: ${answer.notKept}`,
           findings: [],
-        };
+        }
       }
 
       return {
-        verdict: "passed",
+        verdict: 'passed',
         // 0066 §3's own sentence: *wrote a 2.4 kB design to `doc/design/x.md`* —
         // the fact a person reads off the card, in place of the document, on the
         // event this action appends. Not on the drafter's, which still carries
@@ -276,7 +277,7 @@ export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Ac
         document: drafted.document,
         locator: answer.at,
         ...(answer.head === undefined ? {} : { head: answer.head }),
-      };
+      }
     },
-  };
+  }
 }

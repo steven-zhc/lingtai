@@ -35,14 +35,14 @@
 // By path rather than by package name, like `notify.ts`: started from the
 // daemon's checkout, which a merge reaches with no `pnpm install`, so a
 // workspace symlink this change introduced would not be there to resolve.
-import { describe, isMain, parsePayload, readStdin } from "../../extension/src/index.ts";
-import { sendMessage } from "./telegram.ts";
+import { describe, isMain, parsePayload, readStdin } from '../../extension/src/index.ts'
+import { sendMessage } from './telegram.ts'
 
 export interface TelegramCommandDeps {
-  read?: () => Promise<string>;
-  env?: Record<string, string | undefined>;
-  fetch?: typeof fetch;
-  log?: (line: string) => void;
+  read?: () => Promise<string>
+  env?: Record<string, string | undefined>
+  fetch?: typeof fetch
+  log?: (line: string) => void
 }
 
 /**
@@ -53,29 +53,29 @@ export interface TelegramCommandDeps {
  * sentence names the command that clears it, in the syntax `lingtai env` takes.
  */
 export async function telegramCommand(deps: TelegramCommandDeps = {}): Promise<number> {
-  const env = deps.env ?? process.env;
-  const log = deps.log ?? ((line: string) => console.error(line));
+  const env = deps.env ?? process.env
+  const log = deps.log ?? ((line: string) => console.error(line))
   try {
-    const missing = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"].filter((name) => !env[name]);
+    const missing = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'].filter((name) => !env[name])
     if (missing.length > 0) {
       throw new Error(
-        `${missing.join(" and ")} not set — declare ${missing.length === 1 ? "it" : "them"} under this ` +
+        `${missing.join(' and ')} not set — declare ${missing.length === 1 ? 'it' : 'them'} under this ` +
           `subscriber's env: and run \`lingtai env set <project> ${missing[0]}\`, which reads the value from stdin`,
-      );
+      )
     }
-    const payload = parsePayload(await (deps.read ?? readStdin)());
+    const payload = parsePayload(await (deps.read ?? readStdin)())
     await sendMessage(
-      { token: env["TELEGRAM_BOT_TOKEN"]!, chatId: env["TELEGRAM_CHAT_ID"]!, apiRoot: env["TELEGRAM_API_ROOT"] },
+      { token: env['TELEGRAM_BOT_TOKEN']!, chatId: env['TELEGRAM_CHAT_ID']!, apiRoot: env['TELEGRAM_API_ROOT'] },
       describe(payload),
       deps.fetch,
-    );
-    return 0;
+    )
+    return 0
   } catch (err) {
-    log(`telegram: ${(err as Error).message}`);
-    return 1;
+    log(`telegram: ${(err as Error).message}`)
+    return 1
   }
 }
 
 if (isMain(import.meta.url)) {
-  process.exitCode = await telegramCommand();
+  process.exitCode = await telegramCommand()
 }

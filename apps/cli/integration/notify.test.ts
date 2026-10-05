@@ -18,156 +18,159 @@
  * `exec` is the only seam, and it is a seam because there is no way to make a
  * working `osascript` refuse.
  */
-import { spawn } from "node:child_process";
-import { cp, mkdtemp, realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { describe as render, parsePayload, type NotifyPayload } from "../../../packages/extension/src/index.ts";
-import { macNotifier, notifyCommand, type Exec } from "../src/notify.ts";
+import { spawn } from 'node:child_process'
+import { cp, mkdtemp, realpath } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+
+import { describe as render, parsePayload, type NotifyPayload } from '../../../packages/extension/src/index.ts'
+import { macNotifier, notifyCommand, type Exec } from '../src/notify.ts'
 
 const payload = (type: string, data: unknown): NotifyPayload => ({
   event: { type, data },
-  workItem: { id: "wi-lingtai-123", project: "lingtai", issue: "123" },
-  board: "http://localhost:3200",
-});
+  workItem: { id: 'wi-lingtai-123', project: 'lingtai', issue: '123' },
+  board: 'http://localhost:3200',
+})
 
 /** Records what was spawned, and answers with whatever the test wants. */
 const recorder = (answer: (bin: string) => number | null = () => 0) => {
-  const calls: { bin: string; args: string[] }[] = [];
+  const calls: { bin: string; args: string[] }[] = []
   const exec: Exec = async (bin, args) => {
-    calls.push({ bin, args });
-    return answer(bin);
-  };
-  return { calls, exec };
-};
+    calls.push({ bin, args })
+    return answer(bin)
+  }
+  return { calls, exec }
+}
 
-describe("what the operator reads", () => {
-  it("asks the question rather than stating the fact", () => {
-    const n = render(payload("ApprovalRequested", { question: "Merge agent/123 into main?" }));
+describe('what the operator reads', () => {
+  it('asks the question rather than stating the fact', () => {
+    const n = render(payload('ApprovalRequested', { question: 'Merge agent/123 into main?' }))
 
-    expect(n.title).toBe("#123 is waiting on you");
-    expect(n.body).toBe("Merge agent/123 into main?");
-  });
+    expect(n.title).toBe('#123 is waiting on you')
+    expect(n.body).toBe('Merge agent/123 into main?')
+  })
 
   /**
    * The card, for an event on a run stream. Nothing in `streamId` says `123`
    * here — the daemon resolved it through the run's `RunStarted` — and this is
    * where that arrives.
    */
-  it("links to the card an event was resolved to, whatever stream it was on", () => {
-    const n = render(payload("RunAwaitingInput", { prompt: "which base?" }));
+  it('links to the card an event was resolved to, whatever stream it was on', () => {
+    const n = render(payload('RunAwaitingInput', { prompt: 'which base?' }))
 
-    expect(n.title).toBe("#123 is asking");
-    expect(n.url).toBe("http://localhost:3200/task/wi-lingtai-123");
-  });
+    expect(n.title).toBe('#123 is asking')
+    expect(n.url).toBe('http://localhost:3200/task/wi-lingtai-123')
+  })
 
-  it("says both halves of a refusal", () => {
-    const n = render(payload("IntegrationRefused", { reason: "conflict", detail: "does not merge" }));
+  it('says both halves of a refusal', () => {
+    const n = render(payload('IntegrationRefused', { reason: 'conflict', detail: 'does not merge' }))
 
-    expect(n.title).toBe("#123 did not merge");
-    expect(n.body).toBe("conflict: does not merge");
-  });
-});
+    expect(n.title).toBe('#123 did not merge')
+    expect(n.body).toBe('conflict: does not merge')
+  })
+})
 
-describe("which channel, and what it does with the link", () => {
-  it("uses terminal-notifier when it is installed, and hands it the card to open", async () => {
-    const { calls, exec } = recorder();
-    const channel = await macNotifier(exec);
-    await channel.send(render(payload("WorkItemBlocked", { question: "which base?" })));
+describe('which channel, and what it does with the link', () => {
+  it('uses terminal-notifier when it is installed, and hands it the card to open', async () => {
+    const { calls, exec } = recorder()
+    const channel = await macNotifier(exec)
+    await channel.send(render(payload('WorkItemBlocked', { question: 'which base?' })))
 
-    expect(channel.name).toBe("terminal-notifier");
-    const sent = calls.find((c) => c.bin === "terminal-notifier");
-    expect(sent?.args).toContain("-open");
-    expect(sent?.args).toContain("http://localhost:3200/task/wi-lingtai-123");
-  });
+    expect(channel.name).toBe('terminal-notifier')
+    const sent = calls.find((c) => c.bin === 'terminal-notifier')
+    expect(sent?.args).toContain('-open')
+    expect(sent?.args).toContain('http://localhost:3200/task/wi-lingtai-123')
+  })
 
   /**
    * `osascript` cannot open a URL on click. The link goes into the message
    * instead of into a startup line nobody reads on the day it matters — which
    * is what the `clickable` flag it replaces was.
    */
-  it("falls back to osascript and writes the link where it can be read", async () => {
-    const { calls, exec } = recorder((bin) => (bin === "which" ? 1 : 0));
-    const channel = await macNotifier(exec);
-    await channel.send(render(payload("WorkItemBlocked", { question: "which base?" })));
+  it('falls back to osascript and writes the link where it can be read', async () => {
+    const { calls, exec } = recorder((bin) => (bin === 'which' ? 1 : 0))
+    const channel = await macNotifier(exec)
+    await channel.send(render(payload('WorkItemBlocked', { question: 'which base?' })))
 
-    expect(channel.name).toBe("osascript");
-    const script = calls.find((c) => c.bin === "osascript")?.args[1] ?? "";
-    expect(script).toContain("http://localhost:3200/task/wi-lingtai-123");
-  });
+    expect(channel.name).toBe('osascript')
+    const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
+    expect(script).toContain('http://localhost:3200/task/wi-lingtai-123')
+  })
 
   /** The body is a question written by an agent, and it goes into an AppleScript string. */
-  it("escapes a body that would otherwise close the AppleScript string", async () => {
-    const { calls, exec } = recorder((bin) => (bin === "which" ? 1 : 0));
-    const channel = await macNotifier(exec);
-    await channel.send(
-      render(payload("WorkItemBlocked", { question: 'ok" & (do shell script "id") & "' })),
-    );
+  it('escapes a body that would otherwise close the AppleScript string', async () => {
+    const { calls, exec } = recorder((bin) => (bin === 'which' ? 1 : 0))
+    const channel = await macNotifier(exec)
+    await channel.send(render(payload('WorkItemBlocked', { question: 'ok" & (do shell script "id") & "' })))
 
-    const script = calls.find((c) => c.bin === "osascript")?.args[1] ?? "";
-    expect(script).not.toMatch(/[^\\]"\s*&/);
-  });
-});
+    const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
+    expect(script).not.toMatch(/[^\\]"\s*&/)
+  })
+})
 
-describe("what the exit code says", () => {
-  const stdin = (value: unknown) => async () => JSON.stringify(value);
+describe('what the exit code says', () => {
+  const stdin = (value: unknown) => async () => JSON.stringify(value)
 
-  it("is 0 when the notification went out", async () => {
-    const { exec } = recorder();
+  it('is 0 when the notification went out', async () => {
+    const { exec } = recorder()
     const code = await notifyCommand({
-      read: stdin(payload("WorkItemBlocked", { question: "which base?" })),
+      read: stdin(payload('WorkItemBlocked', { question: 'which base?' })),
       channelFor: () => macNotifier(exec),
       log: () => {},
-    });
+    })
 
-    expect(code).toBe(0);
-  });
+    expect(code).toBe(0)
+  })
 
   /**
    * The one that was silently impossible before: `osascript` refusing used to
    * be discarded inside `send`, so a notifier that had stopped notifying looked
    * exactly like a quiet week.
    */
-  it("is 1 when the notifier itself refused", async () => {
-    const said: string[] = [];
-    const { exec } = recorder((bin) => (bin === "which" ? 1 : 5));
+  it('is 1 when the notifier itself refused', async () => {
+    const said: string[] = []
+    const { exec } = recorder((bin) => (bin === 'which' ? 1 : 5))
     const code = await notifyCommand({
-      read: stdin(payload("WorkItemBlocked", { question: "which base?" })),
+      read: stdin(payload('WorkItemBlocked', { question: 'which base?' })),
       channelFor: () => macNotifier(exec),
       log: (line) => said.push(line),
-    });
+    })
 
-    expect(code).toBe(1);
-    expect(said.join("\n")).toContain("osascript exited 5");
-  });
+    expect(code).toBe(1)
+    expect(said.join('\n')).toContain('osascript exited 5')
+  })
 
-  it("is 1 when stdin was not the payload, rather than notifying about nothing", async () => {
-    const said: string[] = [];
+  it('is 1 when stdin was not the payload, rather than notifying about nothing', async () => {
+    const said: string[] = []
     const code = await notifyCommand({
       read: async () => '{"event":{"type":"WorkItemBlocked"}}',
       channelFor: () => macNotifier(recorder().exec),
       log: (line) => said.push(line),
-    });
+    })
 
-    expect(code).toBe(1);
-    expect(said.join("\n")).toContain("workItem");
-  });
-});
+    expect(code).toBe(1)
+    expect(said.join('\n')).toContain('workItem')
+  })
+})
 
-describe("parsePayload", () => {
-  it("refuses input that is not JSON, naming what was wrong", () => {
-    expect(() => parsePayload("not json")).toThrow(/stdin was not JSON/);
-  });
+describe('parsePayload', () => {
+  it('refuses input that is not JSON, naming what was wrong', () => {
+    expect(() => parsePayload('not json')).toThrow(/stdin was not JSON/)
+  })
 
-  it("defaults the board rather than refusing over it", () => {
+  it('defaults the board rather than refusing over it', () => {
     const parsed = parsePayload(
-      JSON.stringify({ event: { type: "WorkItemBlocked", data: {} }, workItem: { id: "wi-a-1", project: "a", issue: "1" } }),
-    );
+      JSON.stringify({
+        event: { type: 'WorkItemBlocked', data: {} },
+        workItem: { id: 'wi-a-1', project: 'a', issue: '1' },
+      }),
+    )
 
-    expect(parsed.board).toBe("http://127.0.0.1:17820");
-  });
-});
+    expect(parsed.board).toBe('http://127.0.0.1:17820')
+  })
+})
 
 /**
  * The daemon's checkout gets a merge and no `pnpm install`. So the file the
@@ -175,31 +178,31 @@ describe("parsePayload", () => {
  * with no `node_modules` anywhere above it: an import that needs a workspace
  * symlink fails this with `ERR_MODULE_NOT_FOUND` instead of reaching `main`.
  */
-describe("the command, in a checkout nobody reinstalled", () => {
-  it("loads, and says what was wrong with its input rather than what it could not find", async () => {
-    const ROOT = join(import.meta.dirname, "..", "..", "..");
+describe('the command, in a checkout nobody reinstalled', () => {
+  it('loads, and says what was wrong with its input rather than what it could not find', async () => {
+    const ROOT = join(import.meta.dirname, '..', '..', '..')
     // Real path: macOS's tmpdir is a symlink, and `isMain` compares against the resolved URL.
-    const copy = await realpath(await mkdtemp(join(tmpdir(), "lingtai-notify-uninstalled-")));
-    for (const dir of ["apps/cli/src", "packages/extension/src"]) {
-      await cp(join(ROOT, dir), join(copy, dir), { recursive: true });
+    const copy = await realpath(await mkdtemp(join(tmpdir(), 'lingtai-notify-uninstalled-')))
+    for (const dir of ['apps/cli/src', 'packages/extension/src']) {
+      await cp(join(ROOT, dir), join(copy, dir), { recursive: true })
     }
-    for (const pkg of ["apps/cli", "packages/extension"]) {
-      await cp(join(ROOT, pkg, "package.json"), join(copy, pkg, "package.json"));
+    for (const pkg of ['apps/cli', 'packages/extension']) {
+      await cp(join(ROOT, pkg, 'package.json'), join(copy, pkg, 'package.json'))
     }
 
-    let stderr = "";
+    let stderr = ''
     const code = await new Promise<number | null>((resolve) => {
-      const child = spawn(process.execPath, [join(copy, "apps/cli/src/notify.ts")], {
-        env: { PATH: process.env["PATH"] ?? "" },
-        stdio: ["pipe", "ignore", "pipe"],
-      });
-      child.stderr.on("data", (c) => (stderr += c));
-      child.on("close", resolve);
-      child.stdin.end("not json");
-    });
+      const child = spawn(process.execPath, [join(copy, 'apps/cli/src/notify.ts')], {
+        env: { PATH: process.env['PATH'] ?? '' },
+        stdio: ['pipe', 'ignore', 'pipe'],
+      })
+      child.stderr.on('data', (c) => (stderr += c))
+      child.on('close', resolve)
+      child.stdin.end('not json')
+    })
 
-    expect(stderr).not.toContain("ERR_MODULE_NOT_FOUND");
-    expect(stderr).toContain("stdin was not JSON");
-    expect(code).toBe(1);
-  });
-});
+    expect(stderr).not.toContain('ERR_MODULE_NOT_FOUND')
+    expect(stderr).toContain('stdin was not JSON')
+    expect(code).toBe(1)
+  })
+})

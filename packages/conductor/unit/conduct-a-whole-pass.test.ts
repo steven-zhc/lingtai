@@ -20,11 +20,12 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1: no
  * process, no socket, no network. The fixtures are `test/one-pass.ts`.
  */
-import type { Runtime } from "@lingtai/agent";
-import type { Envelope, ToAppend } from "@lingtai/domain";
-import { STEPS } from "@lingtai/domain";
-import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import type { Runtime } from '@lingtai/agent'
+import type { Envelope, ToAppend } from '@lingtai/domain'
+import { STEPS } from '@lingtai/domain'
+import { Effect } from 'effect'
+import { describe, expect, it } from 'vitest'
+
 import {
   DRAFTED,
   HUMAN_BEFORE_THE_LANE,
@@ -44,9 +45,9 @@ import {
   refusingRuntime,
   runtime,
   streams,
-} from "../test/one-pass.ts";
+} from '../test/one-pass.ts'
 
-describe("the conductor runs a whole pass, with no world to run in", () => {
+describe('the conductor runs a whole pass, with no world to run in', () => {
   /**
    * **`--no-merge` holds, and it holds as the `human:` action it always was**
    * (#20).
@@ -58,11 +59,11 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * assertion that the integrator was never reached is an assertion about the
    * *pass*, not about a branch somebody remembered to write.
    */
-  it("holds at the merge, appends what it decided, and takes the worktree down", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const lines: string[] = [];
+  it('holds at the merge, appends what it decided, and takes the worktree down', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const lines: string[] = []
 
     const result = await once(
       {
@@ -70,31 +71,31 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
         log: (line) => lines.push(line),
       },
       fakePorts(did, store),
-    );
+    )
 
     // Say what it actually did before asserting, so a refusal names its stage
     // rather than reading as `false`.
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
     // And it names the step that held it, which is the merge point — the thing a
     // person is being asked about.
-    if (result.ok !== "held") throw new Error(`landed, and this run asked not to merge`);
-    expect(result.step).toBe("merge");
+    if (result.ok !== 'held') throw new Error(`landed, and this run asked not to merge`)
+    expect(result.step).toBe('merge')
 
     // The decision, as the log records it.
-    const events = await store.read(`wi-${PROJECT}-7`);
-    const item = events.map((e) => e.type);
-    expect(item).toContain("WorkItemClaimed");
-    expect(item).toContain("WorkItemBlocked");
+    const events = await store.read(`wi-${PROJECT}-7`)
+    const item = events.map((e) => e.type)
+    expect(item).toContain('WorkItemClaimed')
+    expect(item).toContain('WorkItemBlocked')
     // Told GitHub inline, and recorded that it did (0022 — no outbox).
-    expect(item.filter((t) => t === "IssueUpdated").length).toBeGreaterThan(0);
+    expect(item.filter((t) => t === 'IssueUpdated').length).toBeGreaterThan(0)
 
     /**
      * **The good hold carries the move it recommends** (#83).
@@ -108,19 +109,19 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
      * one. A step only holds once every step before it passed, and `merge` is
      * the last before `end`, so the sentence is arithmetic here.
      */
-    const asked = events.find((e) => e.type === "WorkItemBlocked")!.data as {
-      needs: string;
-      diagnosis: { recommendation: { action: string; why: string } | null };
-    };
-    expect(asked.needs).toBe("judgement");
-    expect(asked.diagnosis.recommendation?.action).toBe("approve");
-    expect(asked.diagnosis.recommendation?.why).toContain("every step passed");
+    const asked = events.find((e) => e.type === 'WorkItemBlocked')!.data as {
+      needs: string
+      diagnosis: { recommendation: { action: string; why: string } | null }
+    }
+    expect(asked.needs).toBe('judgement')
+    expect(asked.diagnosis.recommendation?.action).toBe('approve')
+    expect(asked.diagnosis.recommendation?.why).toContain('every step passed')
 
     // `working` at the claim, `waiting` once a person is the thing being waited
     // on — and in that order, which is the whole of `#71`. `bug` survives both,
     // because a whole-set write takes the union with somebody else's labels.
-    const labelWrites = said.filter((line) => line.startsWith("labels #7"));
-    expect(labelWrites).toEqual(["labels #7 bug,lingtai:working", "labels #7 bug,lingtai:waiting"]);
+    const labelWrites = said.filter((line) => line.startsWith('labels #7'))
+    expect(labelWrites).toEqual(['labels #7 bug,lingtai:working', 'labels #7 bug,lingtai:waiting'])
 
     /**
      * **Every one of the ten ran, and `end` ran last** — asserted, rather than
@@ -140,36 +141,34 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
      * of its own — and `end` has to be the last of them, because `runPass` runs
      * it after the walk on every ending.
      */
-    const walked = lines.find((line) => line.startsWith("pass: "));
-    expect(walked, `no pass line among:\n${lines.join("\n")}`).toBeDefined();
-    const visits = walked!.slice("pass: ".length).split(" ");
-    expect(visits.map((v) => v.split("=")[0])).toEqual([...STEPS]);
-    expect(visits.at(-1)).toBe("end=passed");
+    const walked = lines.find((line) => line.startsWith('pass: '))
+    expect(walked, `no pass line among:\n${lines.join('\n')}`).toBeDefined()
+    const visits = walked!.slice('pass: '.length).split(' ')
+    expect(visits.map((v) => v.split('=')[0])).toEqual([...STEPS])
+    expect(visits.at(-1)).toBe('end=passed')
     // And the one that did not pass is the merge point, which is where the
     // injected `no-merge` action asked for a person.
-    expect(visits).toContain("merge=held");
+    expect(visits).toContain('merge=held')
 
     // The plan the log records agrees with the walk: ten points, same order, so
     // *declared* and *ran* cannot drift apart unnoticed.
-    const resolved = (await store.read(result.runId)).find((e) => e.type === "StepsResolved")!;
-    expect((resolved.data as { steps: { step: string }[] }).steps.map((p) => p.step)).toEqual([
-      ...STEPS,
-    ]);
+    const resolved = (await store.read(result.runId)).find((e) => e.type === 'StepsResolved')!
+    expect((resolved.data as { steps: { step: string }[] }).steps.map((p) => p.step)).toEqual([...STEPS])
 
-    const run = (await store.read(result.runId)).map((e) => e.type);
-    expect(run).toContain("RunStarted");
-    expect(run).toContain("StepsResolved");
-    expect(run).toContain("RunFinished");
-    expect(run).toContain("RunProducedDiff");
-    expect(run).toContain("RunProposedCompletion");
+    const run = (await store.read(result.runId)).map((e) => e.type)
+    expect(run).toContain('RunStarted')
+    expect(run).toContain('StepsResolved')
+    expect(run).toContain('RunFinished')
+    expect(run).toContain('RunProducedDiff')
+    expect(run).toContain('RunProposedCompletion')
     // The hold, asked for by the action rather than by the caller: `conduct.ts`
     // appends one only where nothing held, and here the `no-merge` action did.
-    expect(run).toContain("ApprovalRequested");
+    expect(run).toContain('ApprovalRequested')
 
     // The worktree is gone, and the integrator was never reached.
-    expect(did).toContain(`provision ${result.runId}`);
-    expect(did).toContain(`remove ${result.runId}`);
-    expect(did).not.toContain("integrate");
+    expect(did).toContain(`provision ${result.runId}`)
+    expect(did).toContain(`remove ${result.runId}`)
+    expect(did).not.toContain('integrate')
 
     // The hook was wired and proved to fail closed before the agent started.
     //
@@ -180,7 +179,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
     // agent may have committed over. The first is that baseline and is deliberately
     // earlier than the smoke test; the ones after it are the receipt and the push,
     // and those are what this ordering is about.
-    expect(did.indexOf("smokeTest")).toBeLessThan(did.lastIndexOf("git rev-parse"));
+    expect(did.indexOf('smokeTest')).toBeLessThan(did.lastIndexOf('git rev-parse'))
     /**
      * **And the step agents' settings were asked of the host, not written here.**
      *
@@ -191,10 +190,10 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
      * removes. A direct call appears nowhere in `did`, which is the whole of
      * why this assertion is the one that would have caught it.
      */
-    expect(did).toContain("unhookedSettings review");
+    expect(did).toContain('unhookedSettings review')
     // The socket was closed, by the scope and not by a `finally`, and before the
     // worktree it outlived — releases run in the reverse of acquisition.
-    expect(did.indexOf("close")).toBeLessThan(did.indexOf(`remove ${result.runId}`));
+    expect(did.indexOf('close')).toBeLessThan(did.indexOf(`remove ${result.runId}`))
 
     /**
      * **The log outlives the worktree, and a run that did not land keeps it.**
@@ -205,12 +204,12 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
      * decided. This one held at the merge for a person — nothing landed, so
      * nothing is deleted.
      */
-    expect(did).toContain(`runLog /tmp/fake-home/runs/${PROJECT}/${result.runId}.log`);
-    expect(did.indexOf(`remove ${result.runId}`)).toBeLessThan(did.indexOf("runLog keep"));
-    expect(did).not.toContain("runLog delete");
+    expect(did).toContain(`runLog /tmp/fake-home/runs/${PROJECT}/${result.runId}.log`)
+    expect(did.indexOf(`remove ${result.runId}`)).toBeLessThan(did.indexOf('runLog keep'))
+    expect(did).not.toContain('runLog delete')
     // And the hook socket's live view reached it.
-    expect(did).toContain("note run finished: 3 turns, 0.42 usd");
-  });
+    expect(did).toContain('note run finished: 3 turns, 0.42 usd')
+  })
 
   /**
    * **`RunFinished` carries what the runtime reported it billed** (#316, 0110
@@ -218,7 +217,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * rather than dropping it on the floor between the adapter and the log.
    */
   it("carries a run's own usage onto RunFinished", async () => {
-    const store = memoryStore();
+    const store = memoryStore()
     const metered: Runtime = {
       ...runtime,
       run: async () => ({
@@ -227,11 +226,11 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         durationMs: 1234,
         costUsd: 0.42,
         failure: null,
-        text: "done",
-        sessionId: "sess-1",
-        usage: [{ model: "claude-sonnet-5", tokens: { fresh: 100, output: 20 } }],
+        text: 'done',
+        sessionId: 'sess-1',
+        usage: [{ model: 'claude-sonnet-5', tokens: { fresh: 100, output: 20 } }],
       }),
-    };
+    }
 
     const result = await once(
       {
@@ -239,26 +238,26 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([]),
         runtime: metered,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts([], store),
-    );
+    )
 
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    const run = await store.read(result.runId);
-    const finished = run.find((e) => e.type === "RunFinished")!;
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
+    const run = await store.read(result.runId)
+    const finished = run.find((e) => e.type === 'RunFinished')!
     expect((finished.data as { usage?: unknown }).usage).toEqual([
-      { model: "claude-sonnet-5", tokens: { fresh: 100, output: 20 } },
-    ]);
-  });
+      { model: 'claude-sonnet-5', tokens: { fresh: 100, output: 20 } },
+    ])
+  })
 
   /** The ordinary stub reports no usage, and the field is absent rather than `[]` or `0`. */
-  it("leaves usage off RunFinished when the runtime reported none", async () => {
-    const store = memoryStore();
+  it('leaves usage off RunFinished when the runtime reported none', async () => {
+    const store = memoryStore()
 
     const result = await once(
       {
@@ -266,20 +265,20 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([]),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts([], store),
-    );
+    )
 
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    const run = await store.read(result.runId);
-    const finished = run.find((e) => e.type === "RunFinished")!;
-    expect((finished.data as { usage?: unknown }).usage).toBeUndefined();
-  });
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
+    const run = await store.read(result.runId)
+    const finished = run.find((e) => e.type === 'RunFinished')!
+    expect((finished.data as { usage?: unknown }).usage).toBeUndefined()
+  })
 
   /**
    * **A person the recipe declared holds the merge, with no `--no-merge`
@@ -310,10 +309,10 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * What is asserted is unchanged: `integrate` was never called and no
    * `WorkItemLanded` is on the item's stream.
    */
-  it("holds at a person the recipe declared before the lane, with no --no-merge anywhere", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+  it('holds at a person the recipe declared before the lane, with no --no-merge anywhere', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
 
     const result = await once(
       {
@@ -321,35 +320,35 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         // No `merge: false`. The recipe is the only thing asking.
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store, true),
-    );
+    )
 
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    if (result.ok !== "held") throw new Error("it merged, and a person had been declared before the lane");
-    expect(result.step).toBe("proposed");
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
+    if (result.ok !== 'held') throw new Error('it merged, and a person had been declared before the lane')
+    expect(result.step).toBe('proposed')
     // **Nothing reached the base branch.** That is the entire ticket.
-    expect(did).not.toContain("integrate");
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
+    expect(did).not.toContain('integrate')
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
 
     // A real pipeline and not a special case: the action the recipe named is what
     // asked, through the same `ApprovalRequested` the flag asks with, bound to the
     // head the steps judged.
-    const [, run] = [...store.streams].find(([id]) => id.startsWith("run-"))!;
-    const asked = run.filter((e) => e.type === "ApprovalRequested");
-    expect(asked).toHaveLength(1);
+    const [, run] = [...store.streams].find(([id]) => id.startsWith('run-'))!
+    const asked = run.filter((e) => e.type === 'ApprovalRequested')
+    expect(asked).toHaveLength(1)
     expect(asked[0]!.data).toMatchObject({
-      step: "proposed",
-      action: "approval",
+      step: 'proposed',
+      action: 'approval',
       onSha: result.headSha,
-    });
-  });
+    })
+  })
 
   /**
    * **Landed → delete**, which is the other half of the rule and the expensive
@@ -361,10 +360,10 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * least marginal value of anything here. What the rule buys is that no timer,
    * no sweeper and no retention period is needed.
    */
-  it("deletes the log of a run that landed, and keeps nothing else to sweep", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+  it('deletes the log of a run that landed, and keeps nothing else to sweep', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
 
     const result = await once(
       {
@@ -372,41 +371,40 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store, true),
-    );
+    )
 
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    expect(result.ok).toBe(true);
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemLanded");
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
+    expect(result.ok).toBe(true)
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
     // **A landed item carries no `lingtai:` label at all** — `labelsFor("landed")`
     // is `[]`, so the last whole-set write is somebody else's labels and nothing
     // of Lingtai's. Being on `main` is not a state Lingtai is waiting on, and the
     // label that said so is removed rather than replaced.
-    expect(said.filter((line) => line.startsWith("labels #7")).at(-1)).toBe("labels #7 bug");
+    expect(said.filter((line) => line.startsWith('labels #7')).at(-1)).toBe('labels #7 bug')
 
     // The decision is taken *after* the integrator, which is the whole reason the
     // log's scope is wider than the worktree's: at the moment the worktree goes,
     // whether the run landed is not yet a fact about the world.
-    expect(did.indexOf("integrate")).toBeLessThan(did.indexOf("runLog delete"));
-    expect(did).not.toContain("runLog keep");
+    expect(did.indexOf('integrate')).toBeLessThan(did.indexOf('runLog delete'))
+    expect(did).not.toContain('runLog keep')
     // And the merge lane was reached by the `merge` step, which means every step
     // before it passed — the sequence, asserted from outside it.
-    expect(did.indexOf(`provision ${result.runId}`)).toBeLessThan(did.indexOf("integrate"));
-  });
+    expect(did.indexOf(`provision ${result.runId}`)).toBeLessThan(did.indexOf('integrate'))
+  })
 
   /**
    * Which action a `StepRequested` is about, so a fixture can refuse one append
    * and not every one. `claim`'s take is the first the pipeline writes since
    * `#269`, and the two cases below are about different halves of that.
    */
-  const requestedFor = (event: ToAppend): string =>
-    (event.data as { action?: string }).action ?? "";
+  const requestedFor = (event: ToAppend): string => (event.data as { action?: string }).action ?? ''
 
   /**
    * **A store that refused an append is not a step's verdict about the change.**
@@ -434,19 +432,19 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * another conductor's item given back. That is a different rule, so it is a
    * different case.
    */
-  it("releases the item when the store refused an append the pass made, rather than holding a person", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+  it('releases the item when the store refused an append the pass made, rather than holding a person', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === "StepRequested" && requestedFor(e) === "approval")) {
-          throw new Error("terminating connection due to administrator command");
+        if (events.some((e) => e.type === 'StepRequested' && requestedFor(e) === 'approval')) {
+          throw new Error('terminating connection due to administrator command')
         }
-        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+        return store.append(streamId, expected, events) as Promise<Envelope[]>
       },
-    };
+    }
 
     const result = await once(
       {
@@ -454,30 +452,30 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store: refusing,
       },
       fakePorts(did, refusing, true),
-    );
+    )
 
     // The defect channel, and not a step's ending believed.
-    expect(result).toMatchObject({ ok: false, stage: "unexpected" });
-    expect((result as { detail: string }).detail).toContain("terminating connection");
+    expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
+    expect((result as { detail: string }).detail).toContain('terminating connection')
 
-    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
-    expect(types).toContain("WorkItemReleased");
+    const types = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)
+    expect(types).toContain('WorkItemReleased')
     // Nobody is waiting on a person over a database blip.
-    expect(types).not.toContain("WorkItemBlocked");
+    expect(types).not.toContain('WorkItemBlocked')
     // And the issue says so: `lingtai:working` is off it again, which is what a
     // whole-set write of `labelsFor("queued")` — no label of Lingtai's — leaves.
-    expect(said.filter((line) => line.startsWith("labels #7"))).toEqual([
-      "labels #7 bug,lingtai:working",
-      "labels #7 bug",
-    ]);
-  });
+    expect(said.filter((line) => line.startsWith('labels #7'))).toEqual([
+      'labels #7 bug,lingtai:working',
+      'labels #7 bug',
+    ])
+  })
   /**
    * **A run that took nothing releases nothing** (`#269`).
    *
@@ -497,18 +495,18 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * and the run says so.
    */
   it("appends nothing to an item it never claimed, when the take's own row was refused", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === "StepRequested" && requestedFor(e) === "take the ticket")) {
-          throw new Error("terminating connection due to administrator command");
+        if (events.some((e) => e.type === 'StepRequested' && requestedFor(e) === 'take the ticket')) {
+          throw new Error('terminating connection due to administrator command')
         }
-        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+        return store.append(streamId, expected, events) as Promise<Envelope[]>
       },
-    };
+    }
 
     const result = await once(
       {
@@ -516,25 +514,25 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store: refusing,
       },
       fakePorts(did, refusing, true),
-    );
+    )
 
-    expect(result).toMatchObject({ ok: false, stage: "unexpected" });
-    expect((result as { detail: string }).detail).toContain("terminating connection");
+    expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
+    expect((result as { detail: string }).detail).toContain('terminating connection')
 
     // Nothing was claimed, so nothing is released and nothing is blocked — the
     // stream is as empty as it was before the pass started.
-    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([]);
+    expect(await store.read(`wi-${PROJECT}-7`)).toEqual([])
     // And the issue is not relabelled, either to `lingtai:working` or back out of
     // it: a whole-set write here is the one that would stamp on somebody else.
-    expect(said.filter((line) => line.startsWith("labels #7"))).toEqual([]);
-  });
+    expect(said.filter((line) => line.startsWith('labels #7'))).toEqual([])
+  })
 
   /**
    * **And the route's own row is the one append that must never cost the ending
@@ -557,38 +555,37 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * which is the mechanical round `BUILT_IN_FOR` answers, and lands on the round
    * it bought.
    */
-  it("lands though the store refused the row that says why it bought a round", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+  it('lands though the store refused the row that says why it bought a round', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
     const refusing: typeof store = {
       ...store,
       append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
-        if (events.some((e) => e.type === "PassRouted")) {
-          throw new Error("terminating connection due to administrator command");
+        if (events.some((e) => e.type === 'PassRouted')) {
+          throw new Error('terminating connection due to administrator command')
         }
-        return store.append(streamId, expected, events) as Promise<Envelope[]>;
+        return store.append(streamId, expected, events) as Promise<Envelope[]>
       },
-    };
+    }
 
-    const ports = fakePorts(did, refusing, true);
+    const ports = fakePorts(did, refusing, true)
     /** The lane refuses once — the one reason a round is bought for — and then merges. */
-    let lane = 0;
+    let lane = 0
     ports.repo.integrate = () =>
       Effect.sync(() => {
-        did.push("integrate");
-        lane += 1;
+        did.push('integrate')
+        lane += 1
         return lane === 1
-          ? ({ ok: false, reason: "verify-failed", detail: "the base moved under it" } as never)
-          : ({ ok: true, mergeCommit: "c".repeat(40) } as never);
-      });
+          ? ({ ok: false, reason: 'verify-failed', detail: 'the base moved under it' } as never)
+          : ({ ok: true, mergeCommit: 'c'.repeat(40) } as never)
+      })
     // And the agent the round buys commits something, or the pass stops at
     // `implement` with nothing to merge and never reaches the lane again: the
     // fixture's `rev-parse` answers one sha for ever, and a round that left the
     // head where it was is a round with no diff in it (`fix round 1: no commit`).
-    const git = ports.repo.git;
-    ports.repo.git = (args, o) =>
-      args[0] === "rev-parse" && lane > 0 ? Effect.succeed("d".repeat(40)) : git(args, o);
+    const git = ports.repo.git
+    ports.repo.git = (args, o) => (args[0] === 'rev-parse' && lane > 0 ? Effect.succeed('d'.repeat(40)) : git(args, o))
 
     const result = await once(
       {
@@ -596,36 +593,36 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store: refusing,
       },
       ports,
-    );
+    )
 
     // The change went in, which is the whole assertion: the ending survived the
     // refusal of the row about it.
     // Say what it actually did first, as the hold above does, so a stop names its
     // step rather than reading as a mismatched object.
-    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
-    expect(result).toMatchObject({ ok: true, mergeCommit: "c".repeat(40) });
-    expect(lane).toBe(2);
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+    expect(result).toMatchObject({ ok: true, mergeCommit: 'c'.repeat(40) })
+    expect(lane).toBe(2)
 
-    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type);
-    expect(item).toContain("WorkItemLanded");
-    expect(item).not.toContain("WorkItemReleased");
+    const item = (await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)
+    expect(item).toContain('WorkItemLanded')
+    expect(item).not.toContain('WorkItemReleased')
 
     // The row is not on the run's stream, and the run log says so in the words a
     // person reading a trace gets — which is all that was lost.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    expect(run.map((e) => e.type)).not.toContain("PassRouted");
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    expect(run.map((e) => e.type)).not.toContain('PassRouted')
     expect(
-      did.some((line) => line.startsWith("note route merge \u2192 implement:") && line.includes("same-worktree")),
-    ).toBe(true);
-    expect(did.some((line) => line.startsWith("note route the 1 route(s) were not appended"))).toBe(true);
-  });
+      did.some((line) => line.startsWith('note route merge \u2192 implement:') && line.includes('same-worktree')),
+    ).toBe(true)
+    expect(did.some((line) => line.startsWith('note route the 1 route(s) were not appended'))).toBe(true)
+  })
 
   /**
    * **The cut is a plugin's, and the three shapes a recipe can be in cut the same
@@ -645,15 +642,15 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * pass on this machine at the first step that needs a tree.
    */
   it.each([
-    { what: "`admit: []`, as both recipes on this machine have it", steps: cutAtAdmit("[]") },
-    { what: "no `admit:` key at all", steps: RECIPE },
+    { what: '`admit: []`, as both recipes on this machine have it', steps: cutAtAdmit('[]') },
+    { what: 'no `admit:` key at all', steps: RECIPE },
     {
-      what: "the `worktree:` block a person pastes",
-      steps: cutAtAdmit("\n    - name: cut the branch\n      worktree: { base: main, submodules: false }"),
+      what: 'the `worktree:` block a person pastes',
+      steps: cutAtAdmit('\n    - name: cut the branch\n      worktree: { base: main, submodules: false }'),
     },
-  ])("cuts from origin/main with $what", async ({ steps }) => {
-    const store = memoryStore();
-    const did: string[] = [];
+  ])('cuts from origin/main with $what', async ({ steps }) => {
+    const store = memoryStore()
+    const did: string[] = []
 
     const result = await once(
       {
@@ -661,19 +658,19 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([], steps),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
+    )
 
-    expect(did).toContain("cut from origin/main");
-    expect(did.filter((line) => line.startsWith("cut from"))).toHaveLength(1);
-    expect(did).toContain(`provision ${result.runId}`);
-  });
+    expect(did).toContain('cut from origin/main')
+    expect(did.filter((line) => line.startsWith('cut from'))).toHaveLength(1)
+    expect(did).toContain(`provision ${result.runId}`)
+  })
 
   /**
    * **A hold composes and a default substitutes, and at `merge` the order is what
@@ -698,42 +695,39 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * merge either way (§2: a default substitutes), so the append cannot put a hold
    * after a landing there.
    */
-  it("asks before a lane the recipe declared itself, under --no-merge", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
+  it('asks before a lane the recipe declared itself, under --no-merge', async () => {
+    const store = memoryStore()
+    const did: string[] = []
 
     const result = await once(
       {
         project,
-        client: fakeGitHub(
-          [],
-          landAtMerge("\n    - name: land the branch\n      merge: { strategy: merge-commit }"),
-        ),
+        client: fakeGitHub([], landAtMerge('\n    - name: land the branch\n      merge: { strategy: merge-commit }')),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         // The recipe lands, and the flag says not this time.
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       // `true`, so a pipeline that let the hold past would really call the lane.
       fakePorts(did, store, true),
-    );
+    )
 
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
-    if (result.ok !== "held") throw new Error("it merged, and --no-merge had been passed");
-    expect(result.step).toBe("merge");
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
+    if (result.ok !== 'held') throw new Error('it merged, and --no-merge had been passed')
+    expect(result.step).toBe('merge')
     // **The whole of it**: the declared lane is in the list, the injected hold is
     // ahead of it, and nothing reached the base branch.
-    expect(did).not.toContain("integrate");
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
+    expect(did).not.toContain('integrate')
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const asked = run.filter((e) => e.type === "ApprovalRequested");
-    expect(asked.map((e) => (e.data as { action: string }).action)).toEqual(["no-merge"]);
-  });
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const asked = run.filter((e) => e.type === 'ApprovalRequested')
+    expect(asked.map((e) => (e.data as { action: string }).action)).toEqual(['no-merge'])
+  })
 
   /**
    * **The lane is a plugin's, and the three shapes a recipe can be in land the same
@@ -752,15 +746,15 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * `integrate` and records the landing.
    */
   it.each([
-    { what: "`merge: []`, as both recipes on this machine have it", steps: landAtMerge("[]") },
-    { what: "no `merge:` key at all", steps: RECIPE },
+    { what: '`merge: []`, as both recipes on this machine have it', steps: landAtMerge('[]') },
+    { what: 'no `merge:` key at all', steps: RECIPE },
     {
-      what: "the `merge:` block a person pastes",
-      steps: landAtMerge("\n    - name: land the branch\n      merge: { strategy: merge-commit }"),
+      what: 'the `merge:` block a person pastes',
+      steps: landAtMerge('\n    - name: land the branch\n      merge: { strategy: merge-commit }'),
     },
-  ])("lands onto main with $what", async ({ steps }) => {
-    const store = memoryStore();
-    const did: string[] = [];
+  ])('lands onto main with $what', async ({ steps }) => {
+    const store = memoryStore()
+    const did: string[] = []
 
     const result = await once(
       {
@@ -768,22 +762,22 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([], steps),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store, true),
-    );
+    )
 
-    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
     // Once, and by the lane: two `integrate` calls would be 0065 §7's half-migrated
     // step, which at this one is the branch on `main` twice.
-    expect(did.filter((line) => line === "integrate")).toHaveLength(1);
-    expect(result.mergeCommit).toBe("c".repeat(40));
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemLanded");
-  });
+    expect(did.filter((line) => line === 'integrate')).toHaveLength(1)
+    expect(result.mergeCommit).toBe('c'.repeat(40))
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
+  })
 
   /**
    * **A declared `merge:` produces a verdict**, which is `#268`'s first major
@@ -794,41 +788,38 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * step runs what is declared there, so the pair below is the whole proof: the
    * lane was planned, and it ran.
    */
-  it("records a declared `merge:` as planned and then passes it", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
+  it('records a declared `merge:` as planned and then passes it', async () => {
+    const store = memoryStore()
+    const did: string[] = []
 
     const result = await once(
       {
         project,
-        client: fakeGitHub(
-          [],
-          landAtMerge("\n    - name: land the branch\n      merge: { strategy: merge-commit }"),
-        ),
+        client: fakeGitHub([], landAtMerge('\n    - name: land the branch\n      merge: { strategy: merge-commit }')),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store, true),
-    );
+    )
 
-    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const planned = run.find((event) => event.type === "StepsResolved");
-    expect(JSON.stringify(planned?.data)).toContain("land the branch");
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const planned = run.find((event) => event.type === 'StepsResolved')
+    expect(JSON.stringify(planned?.data)).toContain('land the branch')
     const verdicts = run
-      .filter((event) => event.type === "StepStarted" || event.type === "StepPassed")
+      .filter((event) => event.type === 'StepStarted' || event.type === 'StepPassed')
       .map(
         (event) =>
           `${event.type} ${(event.data as { step: string; action: string }).step}:${(event.data as { action: string }).action}`,
-      );
-    expect(verdicts).toContain("StepStarted merge:land the branch");
-    expect(verdicts).toContain("StepPassed merge:land the branch");
-  });
+      )
+    expect(verdicts).toContain('StepStarted merge:land the branch')
+    expect(verdicts).toContain('StepPassed merge:land the branch')
+  })
 
   /**
    * **A declared `design:` produces a verdict too**, and it is the first step whose
@@ -851,15 +842,15 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * dispatch never read it, which is an agent run a recipe pays for and no reader
    * sees — `#61`'s silence with the money spent before it.
    */
-  it("drafts at `design` when the recipe declares one, and hands it to the implementer", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
+  it('drafts at `design` when the recipe declares one, and hands it to the implementer', async () => {
+    const store = memoryStore()
+    const did: string[] = []
     /** Every prompt dispatched, so the implementer's can be read back. */
-    const prompts: { runId: string; prompt: string }[] = [];
+    const prompts: { runId: string; prompt: string }[] = []
     const drafting: Runtime = {
       ...runtime,
       run: async (request) => {
-        prompts.push({ runId: request.runId, prompt: request.prompt });
+        prompts.push({ runId: request.runId, prompt: request.prompt })
         return {
           exitCode: 0,
           turns: 3,
@@ -868,11 +859,11 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
           failure: null,
           // The document at `design`, and the implementer's decline message
           // everywhere else — one runtime, as `runOnce` has (`one-pass.ts`).
-          text: "Put it in `packages/recipe`, beside `whyNoKindAt`.",
-          sessionId: "sess-1",
-        };
+          text: 'Put it in `packages/recipe`, beside `whyNoKindAt`.',
+          sessionId: 'sess-1',
+        }
       },
-    };
+    }
 
     const result = await once(
       {
@@ -880,26 +871,25 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([], DRAFTED),
         runtime: drafting,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store, true),
-    );
+    )
 
-    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`);
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const planned = run.find((event) => event.type === "StepsResolved");
-    expect(JSON.stringify(planned?.data)).toContain("draft");
+    if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const planned = run.find((event) => event.type === 'StepsResolved')
+    expect(JSON.stringify(planned?.data)).toContain('draft')
     const passed = run.find(
-      (event) =>
-        event.type === "StepPassed" && (event.data as { step: string }).step === "design",
-    );
-    expect(passed?.data).toMatchObject({ step: "design", action: "draft" });
+      (event) => event.type === 'StepPassed' && (event.data as { step: string }).step === 'design',
+    )
+    expect(passed?.data).toMatchObject({ step: 'design', action: 'draft' })
     // The document, and a person's sentence about what it cost beside it.
-    expect((passed?.data as { evidence: string }).evidence).toContain("beside `whyNoKindAt`");
+    expect((passed?.data as { evidence: string }).evidence).toContain('beside `whyNoKindAt`')
 
     /**
      * **And the implementer was handed it**, which is the half nothing did before.
@@ -908,22 +898,20 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
      * under `<runId>:design:<name>` so its session cannot be the implementer's, so
      * the run's own id is the implementing one.
      */
-    const implementing = prompts.find((each) => each.runId === result.runId);
-    expect(implementing, `no dispatch under ${result.runId}: ${JSON.stringify(prompts)}`).toBeDefined();
-    expect(implementing!.prompt).toContain("## The design, written for this run before any code");
-    expect(implementing!.prompt).toContain("beside `whyNoKindAt`");
+    const implementing = prompts.find((each) => each.runId === result.runId)
+    expect(implementing, `no dispatch under ${result.runId}: ${JSON.stringify(prompts)}`).toBeDefined()
+    expect(implementing!.prompt).toContain('## The design, written for this run before any code')
+    expect(implementing!.prompt).toContain('beside `whyNoKindAt`')
     // The ticket is still what was asked for, which is what the block says it is.
-    expect(implementing!.prompt).toContain("the ticket is what was asked for");
+    expect(implementing!.prompt).toContain('the ticket is what was asked for')
     // A runtime was dispatched, under an id of its own so the session cannot be
     // the implementer's (`createDraftAction`) — and the run log says so under the
     // pipeline's own `<step>:<action>` tag.
-    expect(
-      did.some((line) => line.startsWith("note design:draft") && line.includes("drafting for #7")),
-    ).toBe(true);
+    expect(did.some((line) => line.startsWith('note design:draft') && line.includes('drafting for #7'))).toBe(true)
     // And the implementer still ran and still left the receipt, which is the half
     // 0065 §7 is about: the step before it does not stand in for one.
-    expect(run.map((e) => e.type)).toContain("RunProposedCompletion");
-  });
+    expect(run.map((e) => e.type)).toContain('RunProposedCompletion')
+  })
 
   /**
    * **A design agent can ask, and the question reaches a person** (`#294`,
@@ -954,15 +942,14 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * to answer outlives it.
    */
   it("carries a design agent's question to a person when nothing at `proposed` answers it", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const asked =
-      "The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?";
+    const store = memoryStore()
+    const did: string[] = []
+    const asked = 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?'
     /** Answers a question at `design` and a document nowhere — `design` is all `DRAFTED` declares. */
     const asking: Runtime = {
       ...runtime,
       run: async (request) =>
-        request.runId.includes(":design:")
+        request.runId.includes(':design:')
           ? {
               exitCode: 0,
               turns: 2,
@@ -970,7 +957,7 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
               costUsd: 0.21,
               failure: null,
               text: `\`\`\`question\n${asked}\n\`\`\``,
-              sessionId: "sess-design",
+              sessionId: 'sess-design',
             }
           : {
               exitCode: 0,
@@ -978,10 +965,10 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
               durationMs: 1234,
               costUsd: 0.42,
               failure: null,
-              text: "done",
-              sessionId: "sess-1",
+              text: 'done',
+              sessionId: 'sess-1',
             },
-    };
+    }
 
     const result = await once(
       {
@@ -989,47 +976,50 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([], DRAFTED),
         runtime: asking,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store, true),
-    );
+    )
 
     // The step that stopped it is `design` and not the router: what a person reads
     // is the step that did not pass, and where it was sent is `routes` (`take`).
-    expect(result).toMatchObject({ ok: "held", step: "design" });
+    expect(result).toMatchObject({ ok: 'held', step: 'design' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const stopped = run.find((e) => e.type === "StepAsked")!;
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const stopped = run.find((e) => e.type === 'StepAsked')!
     // The token is not on this event — it is what the *action* said, and what the
     // log carries is the words. The routing it bought is the assertion below.
-    expect(stopped.data).toMatchObject({ step: "design", action: "draft" });
-    expect((stopped.data as { detail: string }).detail).toBe(asked);
+    expect(stopped.data).toMatchObject({ step: 'design', action: 'draft' })
+    expect((stopped.data as { detail: string }).detail).toBe(asked)
     // And the event a crash writes is not on this stream at all, which is the
     // whole of what the split bought a reader of it.
-    expect(run.filter((e) => e.type === "StepDidNotFinish")).toEqual([]);
+    expect(run.filter((e) => e.type === 'StepDidNotFinish')).toEqual([])
 
     // **And a person has it.** `WorkItemBlocked` is what the card reads, and
     // `raw` is the arriving step's own detail — the question, whole.
-    const blocked = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === "WorkItemBlocked")!
-      .data as { needs: string; question: string; diagnosis: { raw: string } };
-    expect(blocked.diagnosis.raw).toBe(asked);
-    expect(blocked.question).toContain(asked);
+    const blocked = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
+      needs: string
+      question: string
+      diagnosis: { raw: string }
+    }
+    expect(blocked.diagnosis.raw).toBe(asked)
+    expect(blocked.question).toContain(asked)
     // **And what it needs is a judgement, not an acknowledgement** (the fix
     // round). `describeHold` renders this field as the hold's first line, and
     // *a failure needs acknowledging* is the wrong sentence over a step that did
     // not fail and is waiting for an answer.
-    expect(blocked.needs).toBe("judgement");
+    expect(blocked.needs).toBe('judgement')
 
     // Nothing was written and nothing landed: a question costs the pass and no
     // round, which is the half 0058 §3b calls *arriving at the router and refusing
     // are different things*.
-    expect(run.map((e) => e.type)).not.toContain("RunProposedCompletion");
-    expect(did).not.toContain("integrate");
-  });
+    expect(run.map((e) => e.type)).not.toContain('RunProposedCompletion')
+    expect(did).not.toContain('integrate')
+  })
 
   /**
    * **A commit made before `implement` is not `implement`'s receipt** (`#265`, 0057
@@ -1049,8 +1039,8 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * implementer that commits nothing — and what it must produce is the stop.
    */
   it("does not read a commit made before `implement` as the implementer's receipt", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
+    const store = memoryStore()
+    const did: string[] = []
 
     const result = await once(
       {
@@ -1058,41 +1048,38 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([], DRAFTED),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       // `provision` cuts at `a`*40 and the tree is at `d`*40 when `implement`
       // starts: the step before it committed. The implementer does not.
-      fakePorts(did, store, true, { at: "d".repeat(40), implementerCommits: false }),
-    );
+      fakePorts(did, store, true, { at: 'd'.repeat(40), implementerCommits: false }),
+    )
 
     // The drafting step is the one that ran and passed — the setup this is about,
     // not a pass that failed earlier for some other reason.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    expect(
-      run.some(
-        (e) => e.type === "StepPassed" && (e.data as { step: string }).step === "design",
-      ),
-    ).toBe(true);
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    expect(run.some((e) => e.type === 'StepPassed' && (e.data as { step: string }).step === 'design')).toBe(true)
 
     // And `implement` stops, because *this* agent left no receipt. Held rather
     // than released: 0057 §2's class buys no round and asks a person, and there is
     // nothing about the account here for the conductor to stand down over.
-    expect(result).toMatchObject({ ok: "held", step: "implement" });
-    const blocked = (await store.read(`wi-${PROJECT}-7`)).find(
-      (e) => e.type === "WorkItemBlocked",
-    )!.data as { needs: string; diagnosis: { raw: string } };
-    expect(blocked.needs).toBe("acknowledgement");
-    expect(blocked.diagnosis.raw).toContain("produced no commits");
+    expect(result).toMatchObject({ ok: 'held', step: 'implement' })
+    const blocked = (await store.read(`wi-${PROJECT}-7`)).find((e) => e.type === 'WorkItemBlocked')!.data as {
+      needs: string
+      diagnosis: { raw: string }
+    }
+    expect(blocked.needs).toBe('acknowledgement')
+    expect(blocked.diagnosis.raw).toContain('produced no commits')
     // The claim that would have been false: nothing proposes the drafting agent's
     // commit as this run's completion, and nothing lands.
-    expect(run.map((e) => e.type)).not.toContain("RunProposedCompletion");
-    expect(did).not.toContain("integrate");
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain("WorkItemLanded");
-  });
+    expect(run.map((e) => e.type)).not.toContain('RunProposedCompletion')
+    expect(did).not.toContain('integrate')
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
+  })
 
   /**
    * **A declared `worktree:` produces a verdict, which is `#268`'s first major
@@ -1110,38 +1097,44 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * construction. `admit:cut the branch` is the key `task_view` and the board both
    * use, and the pair below is the whole proof: it was planned, and it ran.
    */
-  it("records a declared `worktree:` as planned and then passes it", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
+  it('records a declared `worktree:` as planned and then passes it', async () => {
+    const store = memoryStore()
+    const did: string[] = []
 
     await once(
       {
         project,
-        client: fakeGitHub([], cutAtAdmit("\n    - name: cut the branch\n      worktree: { base: main, submodules: true }")),
+        client: fakeGitHub(
+          [],
+          cutAtAdmit('\n    - name: cut the branch\n      worktree: { base: main, submodules: true }'),
+        ),
         runtime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
+    )
 
     // The declaration is what reached the cut, submodules included — the value
     // `repo.submodules: false` two blocks up no longer answers for it.
-    expect(did).toContain("cut from origin/main with submodules");
+    expect(did).toContain('cut from origin/main with submodules')
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const planned = run.find((event) => event.type === "StepsResolved");
-    expect(JSON.stringify(planned?.data)).toContain("cut the branch");
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const planned = run.find((event) => event.type === 'StepsResolved')
+    expect(JSON.stringify(planned?.data)).toContain('cut the branch')
     const verdicts = run
-      .filter((event) => event.type === "StepStarted" || event.type === "StepPassed")
-      .map((event) => `${event.type} ${(event.data as { step: string; action: string }).step}:${(event.data as { action: string }).action}`);
-    expect(verdicts).toContain("StepStarted admit:cut the branch");
-    expect(verdicts).toContain("StepPassed admit:cut the branch");
-  });
+      .filter((event) => event.type === 'StepStarted' || event.type === 'StepPassed')
+      .map(
+        (event) =>
+          `${event.type} ${(event.data as { step: string; action: string }).step}:${(event.data as { action: string }).action}`,
+      )
+    expect(verdicts).toContain('StepStarted admit:cut the branch')
+    expect(verdicts).toContain('StepPassed admit:cut the branch')
+  })
 
   /**
    * **The judge the recipe declared is asked, and the round it asks for is
@@ -1163,27 +1156,27 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * person, which is the ceiling still bounding a declared judge (0064 §7).
    */
   it("buys the round a declared judge asked for, from the recipe's own `proposed:`", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const ports = fakePorts(did, store);
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ports = fakePorts(did, store)
 
     /** How many times each of the two agents ran, told apart by the run id. */
-    const ran = { implement: 0, review: 0 };
+    const ran = { implement: 0, review: 0 }
     const counting: typeof refusingRuntime = {
       ...refusingRuntime,
       run: async (request) => {
-        const reviewing = request.runId.includes(":review:");
-        ran[reviewing ? "review" : "implement"] += 1;
-        return refusingRuntime.run(request);
+        const reviewing = request.runId.includes(':review:')
+        ran[reviewing ? 'review' : 'implement'] += 1
+        return refusingRuntime.run(request)
       },
-    };
+    }
     // The round's agent has to commit something, or the pass stops at `implement`
     // with nothing to review: the fixture answers one sha for ever, and a round
     // that left the head where it was is a round with no diff in it.
-    const git = ports.repo.git;
+    const git = ports.repo.git
     ports.repo.git = (args, o) =>
-      args[0] === "rev-parse" && ran.review > 0 ? Effect.succeed("d".repeat(40)) : git(args, o);
+      args[0] === 'rev-parse' && ran.review > 0 ? Effect.succeed('d'.repeat(40)) : git(args, o)
 
     const result = await once(
       {
@@ -1191,44 +1184,49 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said, JUDGED),
         runtime: counting,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       ports,
-    );
+    )
 
     // The round was bought: a second implementing agent ran, and a second review
     // read what it wrote.
-    expect(ran).toEqual({ implement: 2, review: 2 });
+    expect(ran).toEqual({ implement: 2, review: 2 })
 
     // And the route says who chose, by the name of the entry in the recipe — the
     // line a person edits, not the built-in a person would have to grep for.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const routed = run.filter((e) => e.type === "PassRouted").map((e) => e.data as {
-      from: string;
-      to: string;
-      chose: string;
-      why: string;
-      ceiling: string | null;
-    });
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const routed = run
+      .filter((e) => e.type === 'PassRouted')
+      .map(
+        (e) =>
+          e.data as {
+            from: string
+            to: string
+            chose: string
+            why: string
+            ceiling: string | null
+          },
+      )
     expect(routed.map((row) => `${row.from} \u2192 ${row.to}`)).toEqual([
-      "proposed \u2192 implement",
-      "proposed \u2192 waiting",
-    ]);
-    expect(routed[0]!.why).toContain('"the lines, until the rounds are spent" judge');
-    expect(routed[0]!.why).toContain("the recipe declares `judge: same-worktree`");
-    expect(routed[0]!.ceiling).toBeNull();
+      'proposed \u2192 implement',
+      'proposed \u2192 waiting',
+    ])
+    expect(routed[0]!.why).toContain('"the lines, until the rounds are spent" judge')
+    expect(routed[0]!.why).toContain('the recipe declares `judge: same-worktree`')
+    expect(routed[0]!.ceiling).toBeNull()
     // The second arrival wanted the same round and there was none: a declared
     // judge is bounded by the workflow's numbers and never above them (0064 §7).
-    expect(routed[1]).toMatchObject({ chose: "implement", to: "waiting", ceiling: "rounds" });
+    expect(routed[1]).toMatchObject({ chose: 'implement', to: 'waiting', ceiling: 'rounds' })
 
     // So the pass rests with a person at the router, and the item says so.
-    expect(result).toMatchObject({ ok: "held", step: "proposed" });
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemBlocked");
-  });
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemBlocked')
+  })
 
   /**
    * **And a declared *runtime* judge is dispatched, twice on one pass** (`#277`).
@@ -1253,37 +1251,35 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * restart, `waiting` is the only step on offer, and paying a model to pick the
    * only item on a list has judged nothing.
    */
-  it("dispatches a runtime judge, with a session of its own each time it is asked", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const ports = fakePorts(did, store);
+  it('dispatches a runtime judge, with a session of its own each time it is asked', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ports = fakePorts(did, store)
 
-    const ran: string[] = [];
+    const ran: string[] = []
     const judging: typeof refusingRuntime = {
       ...refusingRuntime,
       run: async (request) => {
-        ran.push(request.runId);
-        if (!request.runId.includes(":judge:")) return refusingRuntime.run(request);
+        ran.push(request.runId)
+        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
         // The judge reads the findings and answers in the pass's own vocabulary;
         // `implement` is *the lines*, which is the round the arrival can pay for.
         return {
           ...(await refusingRuntime.run(request)),
           text: '```json\n{"next": "implement", "why": "the seam is right, two of its lines are wrong"}\n```',
-        };
+        }
       },
-    };
+    }
     // **A different head per round**, or the second one is a round with no diff
     // in it: `conduct.ts` only continues the loop where the fixing agent
     // committed, and the fixture answers one sha for ever. The judgements are
     // what count the rounds here, because each is asked before the round it buys.
-    const git = ports.repo.git;
+    const git = ports.repo.git
     ports.repo.git = (args, o) => {
-      const rounds = ran.filter((id) => id.includes(":judge:")).length;
-      return args[0] === "rev-parse" && rounds > 0
-        ? Effect.succeed(`${"d".repeat(39)}${rounds}`)
-        : git(args, o);
-    };
+      const rounds = ran.filter((id) => id.includes(':judge:')).length
+      return args[0] === 'rev-parse' && rounds > 0 ? Effect.succeed(`${'d'.repeat(39)}${rounds}`) : git(args, o)
+    }
 
     const result = await once(
       {
@@ -1291,41 +1287,41 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
         runtime: judging,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       ports,
-    );
+    )
 
     // Asked twice — once per arrival that had something to choose between — and
     // never with the same session, which is the whole of the case.
-    const asked = ran.filter((id) => id.includes(":judge:"));
-    expect(asked).toHaveLength(2);
-    expect(new Set(asked).size).toBe(2);
-    for (const id of asked) expect(id).toContain(":judge:findings:");
+    const asked = ran.filter((id) => id.includes(':judge:'))
+    expect(asked).toHaveLength(2)
+    expect(new Set(asked).size).toBe(2)
+    for (const id of asked) expect(id).toContain(':judge:findings:')
 
     // The round each answer asked for was bought: three agents implemented and
     // three reviews read what they wrote.
-    expect(ran.filter((id) => id.includes(":review:"))).toHaveLength(3);
+    expect(ran.filter((id) => id.includes(':review:'))).toHaveLength(3)
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
     const routed = run
-      .filter((e) => e.type === "PassRouted")
-      .map((e) => e.data as { to: string; chose: string; why: string; ceiling: string | null });
-    expect(routed.map((row) => row.to)).toEqual(["implement", "implement", "waiting"]);
+      .filter((e) => e.type === 'PassRouted')
+      .map((e) => e.data as { to: string; chose: string; why: string; ceiling: string | null })
+    expect(routed.map((row) => row.to)).toEqual(['implement', 'implement', 'waiting'])
     // The judge's own words are on the card, with what they cost beside them —
     // `PassRouted.why` is the record, because there is no event of its own.
-    expect(routed[0]!.why).toContain("two of its lines are wrong");
-    expect(routed[0]!.why).toContain("5 turns");
+    expect(routed[0]!.why).toContain('two of its lines are wrong')
+    expect(routed[0]!.why).toContain('5 turns')
     // And the third was never asked: nothing was on offer to choose between.
-    expect(routed[2]!.why).toContain("the only step on offer");
-    expect(routed[2]!.ceiling).toBeNull();
+    expect(routed[2]!.why).toContain('the only step on offer')
+    expect(routed[2]!.ceiling).toBeNull()
 
-    expect(result).toMatchObject({ ok: "held", step: "proposed" });
-  });
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
+  })
 
   /**
    * **Two runtimes in one pass** — the claim `#314` exists to be testable by,
@@ -1353,18 +1349,18 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    *   pass's wall.
    */
   it("dispatches the runtime a step named, with that step's own model and bound", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const asked: { id: string; model: string | undefined; turns: number }[] = [];
-    const recording = (id: "claude-code" | "codex"): Runtime => ({
+    const store = memoryStore()
+    const did: string[] = []
+    const asked: { id: string; model: string | undefined; turns: number }[] = []
+    const recording = (id: 'claude-code' | 'codex'): Runtime => ({
       capabilities: { ...runtime.capabilities, id },
       run: async (request) => {
-        asked.push({ id, model: request.model, turns: request.limits.turns });
-        return runtime.run(request);
+        asked.push({ id, model: request.model, turns: request.limits.turns })
+        return runtime.run(request)
       },
-    });
-    const claude = recording("claude-code");
-    const codex = recording("codex");
+    })
+    const claude = recording('claude-code')
+    const codex = recording('codex')
 
     const result = await once(
       {
@@ -1376,30 +1372,30 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         runtimeFor: () => codex,
         // `codex` is named at a step, so the pass asks what this machine has.
         // Answered rather than probed: a probe is a process (0060 §1).
-        signedIn: async () => ["codex"],
+        signedIn: async () => ['codex'],
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    )
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
 
     // The implementer ran on the pass's own runtime at the ceiling's turns; the
     // reviewer ran on the one its line named, at its own.
     expect(asked).toEqual([
-      { id: "claude-code", model: undefined, turns: 10 },
-      { id: "codex", model: "gpt-5-codex", turns: 4 },
-    ]);
+      { id: 'claude-code', model: undefined, turns: 10 },
+      { id: 'codex', model: 'gpt-5-codex', turns: 4 },
+    ])
 
     // And the log says which runtime wrote the change, which is still the first.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const started = run.find((e) => e.type === "RunStarted")!.data as { runtime: string };
-    expect(started.runtime).toBe("claude-code");
-  });
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const started = run.find((e) => e.type === 'RunStarted')!.data as { runtime: string }
+    expect(started.runtime).toBe('claude-code')
+  })
 
   /**
    * **A `judge:` names a model, and the dispatch uses it** — the measurement
@@ -1412,18 +1408,18 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
    * event of its own by decision (*what it cost is in the sentence*), so a model
    * the sentence does not carry is a saving nobody can prove afterwards.
    */
-  it("buys a judgement from the model the judge: named, and says which", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const models: (string | undefined)[] = [];
+  it('buys a judgement from the model the judge: named, and says which', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const models: (string | undefined)[] = []
     const judging: Runtime = {
       ...refusingRuntime,
       run: async (request) => {
-        if (!request.runId.includes(":judge:")) return refusingRuntime.run(request);
-        models.push(request.model);
-        return { ...(await refusingRuntime.run(request)), text: "implement — the lines are fixable" };
+        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
+        models.push(request.model)
+        return { ...(await refusingRuntime.run(request)), text: 'implement — the lines are fixable' }
       },
-    };
+    }
 
     const result = await once(
       {
@@ -1431,19 +1427,19 @@ describe("the conductor runs a whole pass, with no world to run in", () => {
         client: fakeGitHub([], JUDGED_BY_A_CHEAP_AGENT),
         runtime: judging,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
-    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`);
+    )
+    if (result.ok === false) throw new Error(`stopped at ${result.stage}: ${result.detail}`)
 
-    expect(models).toEqual(["haiku"]);
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    const routed = run.filter((e) => e.type === "PassRouted").map((e) => e.data as { why: string });
-    expect(routed[0]!.why).toContain("claude-code (haiku)");
-  });
-});
+    expect(models).toEqual(['haiku'])
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    const routed = run.filter((e) => e.type === 'PassRouted').map((e) => e.data as { why: string })
+    expect(routed[0]!.why).toContain('claude-code (haiku)')
+  })
+})

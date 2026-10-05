@@ -42,25 +42,26 @@
  * imports a type from `fix.ts`, so anything importing a *name* from here was
  * importing the whole fix machinery to get a string.
  */
-import type { WorkItemState } from "@lingtai/domain";
-import type { FixOn } from "./fix.ts";
+import type { WorkItemState } from '@lingtai/domain'
+
+import type { FixOn } from './fix.ts'
 
 export type RestartDecision =
   | { restart: true; n: number; of: number }
   /** `why` is a sentence for the card, naming the rule that refused. */
-  | { restart: false; why: string };
+  | { restart: false; why: string }
 
 export interface RestartInput {
   /** What still refuses now that the rounds are over. */
   refusal: {
-    action: string;
+    action: string
     /**
      * Which shape of refusal stopped the pass.
      *
      * Load-bearing rather than informational: only `findings` is a judgement,
      * and only a judgement is worth a second approach. See `decideRestart`.
      */
-    on: FixOn;
+    on: FixOn
     /**
      * True when the **ceiling** is what stopped the rounds.
      *
@@ -69,12 +70,12 @@ export interface RestartInput {
      * gate that refused with nothing to hold one to, also ends a pass with a
      * live refusal and neither is answered by starting over.
      */
-    exhausted: boolean;
-  };
+    exhausted: boolean
+  }
   /** `runtime.limits.restarts`. Zero is the default and is today's behaviour. */
-  restarts: number;
+  restarts: number
   /** The work item, folded. Carries the bound: `restarts`. */
-  item: WorkItemState;
+  item: WorkItemState
   /**
    * What else on this pass is asking for a person, named, or null.
    *
@@ -82,7 +83,7 @@ export interface RestartInput {
    * the item would throw their question away, and none of them is a question a
    * fresh pass answers — so they win, and the sentence says who.
    */
-  alsoAsked: string | null;
+  alsoAsked: string | null
 }
 
 /**
@@ -96,14 +97,11 @@ export interface RestartInput {
  * what stopped it, is anybody else waiting, and only then the bound.
  */
 export function decideRestart(input: RestartInput): RestartDecision {
-  const { refusal, restarts, item, alsoAsked } = input;
-  const no = (why: string): RestartDecision => ({ restart: false, why });
+  const { refusal, restarts, item, alsoAsked } = input
+  const no = (why: string): RestartDecision => ({ restart: false, why })
 
   if (restarts === 0) {
-    return no(
-      "this project's recipe hands a pass whose rounds are spent to a person " +
-        "(runtime.limits.restarts: 0)",
-    );
+    return no("this project's recipe hands a pass whose rounds are spent to a person " + '(runtime.limits.restarts: 0)')
   }
 
   /**
@@ -122,17 +120,17 @@ export function decideRestart(input: RestartInput): RestartDecision {
    * the recipe: no number a project writes down should be able to make a
    * typecheck error buy a fresh worktree.
    */
-  if (refusal.on !== "findings") {
+  if (refusal.on !== 'findings') {
     // Named as what it is rather than as *not a judgement*, because the two
     // are read by a person and they are not the same failure: a build that
     // stayed red is a fact, and a base that keeps moving is a race.
     return no(
-      (refusal.on === "conflict"
+      (refusal.on === 'conflict'
         ? `\`${refusal.action}\` is a base that moved rather than a judgement`
         : `\`${refusal.action}\` is a check that stayed red rather than a judgement`) +
-        ", and for one of those the work is still there — starting over would throw " +
-        "away a branch whose remedy is mechanical (0039 §2)",
-    );
+        ', and for one of those the work is still there — starting over would throw ' +
+        'away a branch whose remedy is mechanical (0039 §2)',
+    )
   }
 
   /**
@@ -152,26 +150,23 @@ export function decideRestart(input: RestartInput): RestartDecision {
    */
   if (!refusal.exhausted) {
     return no(
-      "the rounds were not spent — an agent declined, or the refusal carried nothing " +
-        "to hold one to — and a second approach answers neither",
-    );
+      'the rounds were not spent — an agent declined, or the refusal carried nothing ' +
+        'to hold one to — and a second approach answers neither',
+    )
   }
 
   if (alsoAsked !== null) {
-    return no(
-      `${alsoAsked} is asking for a person as well, and releasing the item would ` +
-        "throw that question away",
-    );
+    return no(`${alsoAsked} is asking for a person as well, and releasing the item would ` + 'throw that question away')
   }
 
   if (item.restarts.length >= restarts) {
     return no(
       `the ceiling of ${restarts} restart(s) for this item is spent, and the ` +
         `${refusal.action} reviewer still refuses`,
-    );
+    )
   }
 
-  return { restart: true, n: item.restarts.length + 1, of: restarts };
+  return { restart: true, n: item.restarts.length + 1, of: restarts }
 }
 
 /**
@@ -184,14 +179,9 @@ export function decideRestart(input: RestartInput): RestartDecision {
  * that the last approach was abandoned rather than merely failing. That is the
  * whole of what a restart adds to a prompt: nothing new, one honest row.
  */
-export function restartReason(input: {
-  action: string;
-  rounds: number;
-  n: number;
-  of: number;
-}): string {
+export function restartReason(input: { action: string; rounds: number; n: number; of: number }): string {
   return (
     `the ${input.action} reviewer still refused after ${input.rounds} round(s), so this ` +
     `approach is abandoned and the ticket starts over — restart ${input.n} of ${input.of}`
-  );
+  )
 }

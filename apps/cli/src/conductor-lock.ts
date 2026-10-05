@@ -24,15 +24,15 @@
  * returns on several paths, and a lock nobody releases keeps the next conductor
  * out until the process dies.
  */
-import { DAEMON_LOCK_KEY, acquireDaemonLock, createFileLocker } from "@lingtai/daemon";
-import { Context, Data, Effect, Layer } from "effect";
+import { DAEMON_LOCK_KEY, acquireDaemonLock, createFileLocker } from '@lingtai/daemon'
+import { Context, Data, Effect, Layer } from 'effect'
 
 /**
  * Somebody else is conducting. `holder` is the name, pid and host it recorded —
  * `lingtai daemon pid 5123 on studio`.
  */
-export class ConductorBusy extends Data.TaggedError("ConductorBusy")<{
-  readonly holder: string | null;
+export class ConductorBusy extends Data.TaggedError('ConductorBusy')<{
+  readonly holder: string | null
 }> {}
 
 /**
@@ -43,20 +43,20 @@ export class ConductorBusy extends Data.TaggedError("ConductorBusy")<{
  * reporting an unreachable log as "another conductor holds it" would send
  * somebody hunting for a process that does not exist.
  */
-export class LockUnreadable extends Data.TaggedError("LockUnreadable")<{
-  readonly detail: string;
+export class LockUnreadable extends Data.TaggedError('LockUnreadable')<{
+  readonly detail: string
 }> {}
 
-export class ConductorLock extends Context.Tag("lingtai/cli/ConductorLock")<
+export class ConductorLock extends Context.Tag('lingtai/cli/ConductorLock')<
   ConductorLock,
   { readonly key: string }
 >() {}
 
 export interface ConductorLockOptions {
   /** The suite's own key, so a test does not fight the operator's daemon. */
-  key?: string;
+  key?: string
   /** Recorded beside the lock, so the next caller is told what has it. */
-  name?: string;
+  name?: string
 }
 
 export const ConductorLockLive = (
@@ -69,7 +69,7 @@ export const ConductorLockLive = (
         try: () =>
           acquireDaemonLock({
             locker: createFileLocker(),
-            name: options.name ?? "lingtai run",
+            name: options.name ?? 'lingtai run',
             ...(options.key === undefined ? {} : { key: options.key }),
           }),
         catch: (err) => new LockUnreadable({ detail: (err as Error).message }),
@@ -82,4 +82,4 @@ export const ConductorLockLive = (
       // refusals raised after it was taken.
       (lock) => Effect.promise(() => lock.release()),
     ).pipe(Effect.as({ key: options.key ?? DAEMON_LOCK_KEY })),
-  );
+  )

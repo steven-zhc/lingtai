@@ -53,9 +53,10 @@
  * wants. **Rejecting is not waiting**: that boundary voids the promise, and no
  * pass, action or queue pass is behind it.
  */
-import { type Envelope, workItemStream } from "@lingtai/domain";
-import { parseDuration, type Subscriber as SubscriberSpec } from "@lingtai/recipe";
-import { startCommand } from "./command.ts";
+import { type Envelope, workItemStream } from '@lingtai/domain'
+import { parseDuration, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
+
+import { startCommand } from './command.ts'
 
 /**
  * How long a subscriber's process may take before it is killed.
@@ -68,9 +69,9 @@ import { startCommand } from "./command.ts";
  * the two would race and the failure recorded would be whichever timer fired
  * first, which is not a fact about anything.
  */
-export const SUBSCRIBER_COMMAND_TIMEOUT = "2m";
+export const SUBSCRIBER_COMMAND_TIMEOUT = '2m'
 /** Read off the label rather than written twice, so the two cannot say different things. */
-export const SUBSCRIBER_COMMAND_TIMEOUT_MS = parseDuration(SUBSCRIBER_COMMAND_TIMEOUT);
+export const SUBSCRIBER_COMMAND_TIMEOUT_MS = parseDuration(SUBSCRIBER_COMMAND_TIMEOUT)
 
 /**
  * The work item an event is about, however it was found out.
@@ -80,9 +81,9 @@ export const SUBSCRIBER_COMMAND_TIMEOUT_MS = parseDuration(SUBSCRIBER_COMMAND_TI
  * somebody else should not have to reconstruct `wi-{project}-{n}` to make one.
  */
 export interface EventSubject {
-  id: string;
-  project: string;
-  issue: string;
+  id: string
+  project: string
+  issue: string
 }
 
 /**
@@ -97,21 +98,21 @@ export interface EventSubject {
 export interface SubscriberPayload {
   event: {
     /** Decimal, as a string. `bigint` has no JSON representation. */
-    seq: string;
-    streamId: string;
-    version: number;
-    type: string;
-    schemaVer: number;
-    actor: string;
-    causation: string | null;
+    seq: string
+    streamId: string
+    version: number
+    type: string
+    schemaVer: number
+    actor: string
+    causation: string | null
     /** ISO-8601, UTC. */
-    at: string;
-    data: unknown;
-  };
+    at: string
+    data: unknown
+  }
   /** The work item it is about — never null, because an event without one is never delivered. */
-  workItem: EventSubject;
+  workItem: EventSubject
   /** Where the board is, so a subscriber can link without knowing the deployment. */
-  board: string;
+  board: string
 }
 
 /**
@@ -123,17 +124,17 @@ export interface SubscriberPayload {
  */
 export interface Subscriber {
   /** As the recipe named it. It is what `PluginFailed` records. */
-  readonly name: string;
+  readonly name: string
   /** The project whose recipe declared it. */
-  readonly project: string;
+  readonly project: string
   /** Starts the command, and resolves without one for an event it is not owed. */
-  deliver(event: Envelope): Promise<void>;
+  deliver(event: Envelope): Promise<void>
 }
 
 export interface SubscriberOptions {
   /** The project whose recipe declared it. It hears about that project and nothing else. */
-  project: string;
-  spec: SubscriberSpec;
+  project: string
+  spec: SubscriberSpec
   /**
    * Which work item an event is about, or null for one that belongs to no
    * repository.
@@ -143,9 +144,9 @@ export interface SubscriberOptions {
    * for every append would make following the log more expensive the more
    * subscribers exist.
    */
-  subject: (event: Envelope) => Promise<EventSubject | null>;
+  subject: (event: Envelope) => Promise<EventSubject | null>
   /** Where the command runs. There is no worktree for an event, so this is the daemon's own. */
-  cwd: string;
+  cwd: string
   /**
    * Every credential it gets — the names declared beside it, plus `runnableEnv`'s six (0037 §1).
    *
@@ -154,22 +155,22 @@ export interface SubscriberOptions {
    * put in the env file after startup reaches the next event without a
    * restart. A rejection rejects `deliver`, and so is a `PluginFailed`.
    */
-  env: Record<string, string> | (() => Promise<Record<string, string>>);
-  board: string;
+  env: Record<string, string> | (() => Promise<Record<string, string>>)
+  board: string
 }
 
 export function createSubscriber(options: SubscriberOptions): Subscriber {
-  const { spec } = options;
-  const on = new Set(spec.on);
+  const { spec } = options
+  const on = new Set(spec.on)
 
   return {
     name: spec.name,
     project: options.project,
 
     async deliver(event) {
-      if (!on.has(event.type)) return;
-      const workItem = await options.subject(event);
-      if (workItem === null || workItem.project !== options.project) return;
+      if (!on.has(event.type)) return
+      const workItem = await options.subject(event)
+      if (workItem === null || workItem.project !== options.project) return
 
       const payload: SubscriberPayload = {
         event: {
@@ -185,8 +186,8 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
         },
         workItem,
         board: options.board,
-      };
-      const env = typeof options.env === "function" ? await options.env() : options.env;
+      }
+      const env = typeof options.env === 'function' ? await options.env() : options.env
 
       await new Promise<void>((resolve, reject) => {
         startCommand(
@@ -202,13 +203,13 @@ export function createSubscriber(options: SubscriberOptions): Subscriber {
           // failure goes: this is the only reader of a subscriber's exit code
           // in the system, and all it does is choose which way to settle.
           (outcome) => (outcome.ok ? resolve() : reject(new Error(outcome.evidence))),
-        );
-      });
+        )
+      })
     },
-  };
+  }
 }
 
 /** `wi-{project}-{n}` and its two halves, from the halves. */
 export function subjectOf(project: string, issue: string): EventSubject {
-  return { id: workItemStream(project, issue), project, issue };
+  return { id: workItemStream(project, issue), project, issue }
 }

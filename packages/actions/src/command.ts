@@ -40,43 +40,43 @@
  * **The buffer is bounded, not just the evidence.** A runaway process can print
  * faster than anything reads it.
  */
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import type { Readable, Writable } from "node:stream";
+import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import type { Readable, Writable } from 'node:stream'
 
 /** How much of the output a card gets. Enough to act on, bounded. */
-export const EVIDENCE_LINES = 60;
-export const EVIDENCE_BYTES = 8_000;
+export const EVIDENCE_LINES = 60
+export const EVIDENCE_BYTES = 8_000
 
 /** Above this, older output is dropped while the command is still running. */
-const BUFFER_BYTES = 2_000_000;
+const BUFFER_BYTES = 2_000_000
 
 export interface CommandOutcome {
-  ok: boolean;
+  ok: boolean
   /** What a person reads. On failure, the log tail. */
-  evidence: string;
+  evidence: string
   /** Distinguished from a non-zero exit, deliberately. */
-  timedOut: boolean;
-  durationMs: number;
+  timedOut: boolean
+  durationMs: number
   /** Null when the process never ran, or was killed before exiting. */
-  exitCode: number | null;
+  exitCode: number | null
   /**
    * What the command wrote to `LINGTAI_RESULT`, parsed. Absent unless the
    * caller named a `resultPath` *and* the command wrote valid JSON to it —
    * which no plain `run:` does, and which never decides `ok` on its own.
    */
-  result?: unknown;
+  result?: unknown
 }
 
 export interface RunCommandOptions {
   /** Through a shell: a recipe writes `pnpm lint && pnpm test`, and splitting
    *  that correctly is not this file's job. */
-  run: string;
-  timeoutMs: number;
+  run: string
+  timeoutMs: number
   /** How the timeout is written in the recipe, for the message. `15m`, not `900000`. */
-  timeoutLabel?: string;
+  timeoutLabel?: string
   /** The worktree. Commands run where the agent worked, never anywhere else. */
-  cwd: string;
+  cwd: string
   /**
    * The child's **whole** environment — nothing is inherited from this process.
    *
@@ -84,8 +84,8 @@ export interface RunCommandOptions {
    * declared beside it, plus `runnableEnv`'s six (0037 §1). The caller decides;
    * what this file guarantees is that it does not add to what it was given.
    */
-  env: Record<string, string>;
-  signal?: AbortSignal;
+  env: Record<string, string>
+  signal?: AbortSignal
   /**
    * Handed to the command as JSON on stdin, which is then closed. Omitted, the
    * child gets `/dev/null` exactly as before.
@@ -94,7 +94,7 @@ export interface RunCommandOptions {
    * `RunPrompted` in this log carried `bytes: 4555`, and an environment is both
    * size-limited and legible to anyone running `ps` (0037 §4).
    */
-  payload?: unknown;
+  payload?: unknown
   /**
    * Where the command may write an answer richer than its exit code. Named to
    * the child in `LINGTAI_RESULT`, and read back into `result`.
@@ -104,7 +104,7 @@ export interface RunCommandOptions {
    * file from a fresh one. Absent, the child sees no `LINGTAI_RESULT` at all —
    * so a command cannot inherit a meaning from a run it was not part of.
    */
-  resultPath?: string;
+  resultPath?: string
 }
 
 /**
@@ -117,8 +117,7 @@ export interface RunCommandOptions {
  * and leaves its body showing, rather than swallowing the output after it. A
  * lone C1 ST byte reaches here as U+FFFD, since the chunk is decoded as UTF-8.
  */
-const ESCAPES =
-  /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x00-\x1f\x9c�]*(?:\x07|\x1b\\|\x9c|�)|[ -/]*[0-~])/g;
+const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x00-\x1f\x9c�]*(?:\x07|\x1b\\|\x9c|�)|[ -/]*[0-~])/g
 
 /**
  * The output as text, with the terminal's escape sequences taken out
@@ -132,7 +131,7 @@ const ESCAPES =
  * counted in it, and a fifth of that window was going to bytes nobody can read.
  */
 export function plain(text: string): string {
-  return text.replace(ESCAPES, "");
+  return text.replace(ESCAPES, '')
 }
 
 /**
@@ -154,25 +153,25 @@ export function plain(text: string): string {
  * it far outside the last 60 lines.
  */
 export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTES): string {
-  const trimmed = plain(text).trimEnd();
-  if (!trimmed) return "";
-  const all = trimmed.split("\n");
-  if (all.length <= lines && trimmed.length <= bytes) return trimmed;
+  const trimmed = plain(text).trimEnd()
+  if (!trimmed) return ''
+  const all = trimmed.split('\n')
+  if (all.length <= lines && trimmed.length <= bytes) return trimmed
 
-  const last = all.slice(-lines).join("\n");
-  const end = last.length <= bytes ? last : last.slice(-bytes);
-  const from = trimmed.length - end.length;
-  let first = 0;
+  const last = all.slice(-lines).join('\n')
+  const end = last.length <= bytes ? last : last.slice(-bytes)
+  const from = trimmed.length - end.length
+  let first = 0
   for (let used = 0; first < lines && used + all[first]!.length + 1 <= Math.min(bytes / 4, from); first++) {
-    used += all[first]!.length + 1;
+    used += all[first]!.length + 1
   }
-  if (first === 0) return last.length <= bytes ? last : `…${end}`;
-  const head = all.slice(0, first).join("\n");
+  if (first === 0) return last.length <= bytes ? last : `…${end}`
+  const head = all.slice(0, first).join('\n')
   // Between the two: the newline after the start, and the one before the end
   // when the end begins at a line.
-  const elided = from - head.length - 1 - (trimmed[from - 1] === "\n" ? 1 : 0);
-  if (elided <= 0) return trimmed;
-  return [head, `…${elided} characters elided here; the start and the end are kept…`, end].join("\n");
+  const elided = from - head.length - 1 - (trimmed[from - 1] === '\n' ? 1 : 0)
+  if (elided <= 0) return trimmed
+  return [head, `…${elided} characters elided here; the start and the end are kept…`, end].join('\n')
 }
 
 /**
@@ -212,9 +211,9 @@ export function tail(text: string, lines = EVIDENCE_LINES, bytes = EVIDENCE_BYTE
  * reading a card must not come away thinking they have the whole answer.
  */
 export function boundedEvidence(text: string): string {
-  const clipped = tail(text);
-  if (clipped === plain(text).trimEnd()) return clipped;
-  return `${clipped}\n\n…clipped to ${EVIDENCE_LINES} lines and ${EVIDENCE_BYTES} bytes; this is not the whole answer…`;
+  const clipped = tail(text)
+  if (clipped === plain(text).trimEnd()) return clipped
+  return `${clipped}\n\n…clipped to ${EVIDENCE_LINES} lines and ${EVIDENCE_BYTES} bytes; this is not the whole answer…`
 }
 
 /**
@@ -222,7 +221,7 @@ export function boundedEvidence(text: string): string {
  * this is the caller an action uses.
  */
 export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> {
-  return new Promise<CommandOutcome>((resolve) => spawnCommand(options, resolve));
+  return new Promise<CommandOutcome>((resolve) => spawnCommand(options, resolve))
 }
 
 /**
@@ -262,63 +261,60 @@ export function startCommand(
 ): void {
   spawnCommand(options, (outcome) => {
     try {
-      void Promise.resolve(report?.(outcome)).catch(() => {});
+      void Promise.resolve(report?.(outcome)).catch(() => {})
     } catch {
       // A `report` that throws before its promise exists. Same fate, one line
       // earlier.
     }
-  });
+  })
 }
 
 /**
  * The spawning both callers share. Whether the core waits is the only
  * difference between them, so it is the only thing above this line.
  */
-function spawnCommand(
-  options: RunCommandOptions,
-  report: (outcome: CommandOutcome) => void,
-): void {
-  const started = Date.now();
-  const child = spawnChild(options);
+function spawnCommand(options: RunCommandOptions, report: (outcome: CommandOutcome) => void): void {
+  const started = Date.now()
+  const child = spawnChild(options)
 
-  let out = "";
-  let settled = false;
+  let out = ''
+  let settled = false
   /** When the process ended, so reading the result file is not billed to it. */
-  let endedAt: number | null = null;
+  let endedAt: number | null = null
   const collect = (chunk: Buffer) => {
-    out += chunk.toString();
-    if (out.length > BUFFER_BYTES) out = out.slice(-BUFFER_BYTES / 2);
-  };
-  child.stdout.on("data", collect);
-  child.stderr.on("data", collect);
+    out += chunk.toString()
+    if (out.length > BUFFER_BYTES) out = out.slice(-BUFFER_BYTES / 2)
+  }
+  child.stdout.on('data', collect)
+  child.stderr.on('data', collect)
 
-  const finish = (outcome: Omit<CommandOutcome, "durationMs">) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timer);
-    options.signal?.removeEventListener("abort", onAbort);
-    report({ ...outcome, durationMs: (endedAt ?? Date.now()) - started });
-  };
+  const finish = (outcome: Omit<CommandOutcome, 'durationMs'>) => {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', onAbort)
+    report({ ...outcome, durationMs: (endedAt ?? Date.now()) - started })
+  }
 
   const timer = setTimeout(() => {
-    child.kill("SIGTERM");
+    child.kill('SIGTERM')
     // A process that ignores SIGTERM still has to go, or the run leaks it.
-    setTimeout(() => child.kill("SIGKILL"), 5_000).unref?.();
+    setTimeout(() => child.kill('SIGKILL'), 5_000).unref?.()
     finish({
       ok: false,
       timedOut: true,
       exitCode: null,
       evidence: `timed out after ${options.timeoutLabel ?? `${options.timeoutMs}ms`}\n\n${tail(out)}`,
-    });
-  }, options.timeoutMs);
+    })
+  }, options.timeoutMs)
 
   const onAbort = () => {
-    child.kill("SIGTERM");
-    finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` });
-  };
-  options.signal?.addEventListener("abort", onAbort, { once: true });
+    child.kill('SIGTERM')
+    finish({ ok: false, timedOut: false, exitCode: null, evidence: `aborted\n\n${tail(out)}` })
+  }
+  options.signal?.addEventListener('abort', onAbort, { once: true })
 
-  child.on("error", (err) =>
+  child.on('error', (err) =>
     finish({
       ok: false,
       timedOut: false,
@@ -327,12 +323,12 @@ function spawnCommand(
       // saying which command is the whole difference from "spawn ENOENT".
       evidence: `could not run "${options.run}": ${err.message}`,
     }),
-  );
+  )
 
   const settleOnExit = async (code: number | null) => {
-    const took = `${(((endedAt ?? Date.now()) - started) / 1000).toFixed(1)}s`;
-    const { result, problem } = await readResult(options.resultPath);
-    const note = problem ? `\n\n${problem}` : "";
+    const took = `${(((endedAt ?? Date.now()) - started) / 1000).toFixed(1)}s`
+    const { result, problem } = await readResult(options.resultPath)
+    const note = problem ? `\n\n${problem}` : ''
     if (code === 0) {
       finish({
         ok: true,
@@ -340,8 +336,8 @@ function spawnCommand(
         exitCode: 0,
         result,
         evidence: `${options.run} exited 0 in ${took}${note}`,
-      });
-      return;
+      })
+      return
     }
     finish({
       ok: false,
@@ -351,16 +347,16 @@ function spawnCommand(
       // stdout is still what a person reads, unchanged. The result file is the
       // structured channel precisely so that taking one does not cost the other.
       evidence: `${options.run} exited ${code} after ${took}${note}\n\n${tail(out)}`,
-    });
-  };
+    })
+  }
 
-  child.on("close", (code) => {
-    if (settled) return;
-    endedAt = Date.now();
+  child.on('close', (code) => {
+    if (settled) return
+    endedAt = Date.now()
     // The clock stops when the process does: a slow disk is not a timeout.
-    clearTimeout(timer);
-    void settleOnExit(code);
-  });
+    clearTimeout(timer)
+    void settleOnExit(code)
+  })
 }
 
 /**
@@ -375,12 +371,8 @@ function spawnCommand(
  * its streams — and the no-payload branch stays byte-for-byte the spawn every
  * `run:` in every recipe already gets, which is the constraint (0037 §4).
  */
-function spawnChild(
-  options: RunCommandOptions,
-): ChildProcessByStdio<Writable | null, Readable, Readable> {
-  const env = options.resultPath
-    ? { ...options.env, LINGTAI_RESULT: options.resultPath }
-    : options.env;
+function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | null, Readable, Readable> {
+  const env = options.resultPath ? { ...options.env, LINGTAI_RESULT: options.resultPath } : options.env
 
   if (options.payload === undefined) {
     // stdin is `/dev/null`, as it has always been: a reader gets EOF, not a hang.
@@ -388,22 +380,22 @@ function spawnChild(
       shell: true,
       cwd: options.cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
   }
 
   const child = spawn(options.run, {
     shell: true,
     cwd: options.cwd,
     env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
   // A command that never reads stdin closes the pipe under us — that is every
   // `run:` in every recipe today, and it is not a failure of anything. The exit
   // code is still the exit code.
-  child.stdin.on("error", () => {});
-  child.stdin.end(`${JSON.stringify(options.payload)}\n`);
-  return child;
+  child.stdin.on('error', () => {})
+  child.stdin.end(`${JSON.stringify(options.payload)}\n`)
+  return child
 }
 
 /**
@@ -419,24 +411,24 @@ function spawnChild(
  * one.
  */
 async function readResult(path?: string): Promise<{ result?: unknown; problem?: string }> {
-  if (!path) return {};
+  if (!path) return {}
 
-  let text: string;
+  let text: string
   try {
-    text = await readFile(path, "utf8");
+    text = await readFile(path, 'utf8')
   } catch {
     // Never written is the normal case, not an error to report.
-    return {};
+    return {}
   }
-  if (!text.trim()) return {};
+  if (!text.trim()) return {}
 
   try {
-    return { result: JSON.parse(text) as unknown };
+    return { result: JSON.parse(text) as unknown }
   } catch (err) {
     return {
       problem: `LINGTAI_RESULT (${path}) is not JSON, so the exit code decides: ${
         err instanceof Error ? err.message : String(err)
       }`,
-    };
+    }
   }
 }

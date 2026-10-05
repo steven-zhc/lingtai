@@ -12,22 +12,23 @@
  * it. What this must never do is put any part of the response in a log line or
  * a URL: two of the six values GitHub returns are secrets.
  */
-import { creation } from "@lingtai/conductor/create-app";
-import { actor } from "@/lib/actor";
+import { creation } from '@lingtai/conductor/create-app'
 
-export const dynamic = "force-dynamic";
+import { actor } from '@/lib/actor'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request): Promise<Response> {
-  const url = new URL(request.url);
+  const url = new URL(request.url)
   await creation.finish({
-    code: url.searchParams.get("code"),
-    state: url.searchParams.get("state"),
+    code: url.searchParams.get('code'),
+    state: url.searchParams.get('state'),
     by: actor(),
-  });
+  })
 
   return new Response(null, {
     // 303: whatever this was, what follows is a GET of the screen.
     status: 303,
-    headers: { location: new URL("/setup/github-app", url.origin).toString(), "cache-control": "no-store" },
-  });
+    headers: { location: new URL('/setup/github-app', url.origin).toString(), 'cache-control': 'no-store' },
+  })
 }

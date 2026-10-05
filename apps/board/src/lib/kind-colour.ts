@@ -39,15 +39,15 @@
  * would call amber, orange or gold cannot slip through — the collision is what
  * matters, not the exact token.
  */
-const AMBER_FROM = 20;
-const AMBER_TO = 55;
+const AMBER_FROM = 20
+const AMBER_TO = 55
 
 /**
  * Below this a colour reads as grey whatever its hue is, so a nominally amber
  * hue at this saturation is not amber to anybody looking at it, and refusing it
  * would cost a legible dot for nothing.
  */
-const AMBER_MIN_SATURATION = 0.2;
+const AMBER_MIN_SATURATION = 0.2
 
 /**
  * The luminance band, from 3:1 against both grounds.
@@ -57,8 +57,8 @@ const AMBER_MIN_SATURATION = 0.2;
  * 0.05) >= 3` gives the ceiling. A dot is a small non-text mark, which is what
  * 3:1 is the threshold for.
  */
-const LUM_MIN = 0.14;
-const LUM_MAX = 0.3;
+const LUM_MIN = 0.14
+const LUM_MAX = 0.3
 
 /**
  * The colour to draw a kind's dot in, or null for "draw no dot".
@@ -69,71 +69,66 @@ const LUM_MAX = 0.3;
  * any of this existed.
  */
 export function kindDot(color: string | null | undefined): string | null {
-  const rgb = parseHex(color);
-  if (rgb === null) return null;
+  const rgb = parseHex(color)
+  if (rgb === null) return null
 
-  const { h, s, l } = toHsl(rgb);
-  if (s >= AMBER_MIN_SATURATION && h >= AMBER_FROM && h <= AMBER_TO) return null;
+  const { h, s, l } = toHsl(rgb)
+  if (s >= AMBER_MIN_SATURATION && h >= AMBER_FROM && h <= AMBER_TO) return null
 
-  const lum = luminance(rgb);
-  if (lum >= LUM_MIN && lum <= LUM_MAX) return toHex(rgb);
+  const lum = luminance(rgb)
+  if (lum >= LUM_MIN && lum <= LUM_MAX) return toHex(rgb)
 
   // Hue and saturation are the repository's and do not move. Lightness is the
   // only axis touched, and only as far as the band's near edge — a colour that
   // is barely too pale comes back barely darker.
-  return toHex(atLuminance(h, s, lum < LUM_MIN ? LUM_MIN + 0.005 : LUM_MAX - 0.005));
+  return toHex(atLuminance(h, s, lum < LUM_MIN ? LUM_MIN + 0.005 : LUM_MAX - 0.005))
 }
 
 interface Rgb {
-  r: number;
-  g: number;
-  b: number;
+  r: number
+  g: number
+  b: number
 }
 
 /** `#rrggbb`, as `client.ts` normalises GitHub's answer to. Anything else is null. */
 function parseHex(color: string | null | undefined): Rgb | null {
-  if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return null;
+  if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return null
   return {
     r: Number.parseInt(color.slice(1, 3), 16) / 255,
     g: Number.parseInt(color.slice(3, 5), 16) / 255,
     b: Number.parseInt(color.slice(5, 7), 16) / 255,
-  };
+  }
 }
 
 function toHex({ r, g, b }: Rgb): string {
   const part = (c: number) =>
     Math.round(Math.min(1, Math.max(0, c)) * 255)
       .toString(16)
-      .padStart(2, "0");
-  return `#${part(r)}${part(g)}${part(b)}`;
+      .padStart(2, '0')
+  return `#${part(r)}${part(g)}${part(b)}`
 }
 
 /** WCAG relative luminance, which is what a contrast ratio is computed from. */
 function luminance({ r, g, b }: Rgb): number {
-  const linear = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  const linear = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
 }
 
 function toHsl({ r, g, b }: Rgb): { h: number; s: number; l: number } {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-  if (d === 0) return { h: 0, s: 0, l };
-  const s = d / (1 - Math.abs(2 * l - 1));
-  const h =
-    max === r
-      ? 60 * (((g - b) / d + 6) % 6)
-      : max === g
-        ? 60 * ((b - r) / d + 2)
-        : 60 * ((r - g) / d + 4);
-  return { h, s, l };
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  const d = max - min
+  if (d === 0) return { h: 0, s: 0, l }
+  const s = d / (1 - Math.abs(2 * l - 1))
+  const h = max === r ? 60 * (((g - b) / d + 6) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4)
+  return { h, s, l }
 }
 
 function fromHsl(h: number, s: number, l: number): Rgb {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = l - c / 2
   const [r, g, b] =
     h < 60
       ? [c, x, 0]
@@ -145,8 +140,8 @@ function fromHsl(h: number, s: number, l: number): Rgb {
             ? [0, x, c]
             : h < 300
               ? [x, 0, c]
-              : [c, 0, x];
-  return { r: r + m, g: g + m, b: b + m };
+              : [c, 0, x]
+  return { r: r + m, g: g + m, b: b + m }
 }
 
 /**
@@ -158,14 +153,14 @@ function fromHsl(h: number, s: number, l: number): Rgb {
  * hex digit of the target.
  */
 function atLuminance(h: number, s: number, target: number): Rgb {
-  let lo = 0;
-  let hi = 1;
-  let rgb = fromHsl(h, s, 0.5);
+  let lo = 0
+  let hi = 1
+  let rgb = fromHsl(h, s, 0.5)
   for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2;
-    rgb = fromHsl(h, s, mid);
-    if (luminance(rgb) < target) lo = mid;
-    else hi = mid;
+    const mid = (lo + hi) / 2
+    rgb = fromHsl(h, s, mid)
+    if (luminance(rgb) < target) lo = mid
+    else hi = mid
   }
-  return rgb;
+  return rgb
 }

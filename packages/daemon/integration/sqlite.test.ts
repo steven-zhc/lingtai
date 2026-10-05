@@ -16,69 +16,71 @@
  * stopped daemon from one that never started, pauses and resumes the conductor
  * and reads the log's head — with nothing installed.
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { createSqliteDaemonStore, openSqliteDaemon } from "../src/sqlite.ts";
-import { describeDaemonStoreContract, type DaemonFixture } from "../test/contract.ts";
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const dirs: string[] = [];
+import { afterAll, describe, expect, it } from 'vitest'
+
+import { createSqliteDaemonStore, openSqliteDaemon } from '../src/sqlite.ts'
+import { describeDaemonStoreContract, type DaemonFixture } from '../test/contract.ts'
+
+const dirs: string[] = []
 
 function freshPath(): string {
-  const dir = mkdtempSync(join(tmpdir(), "lingtai-daemon-"));
-  dirs.push(dir);
-  return join(dir, "log.db");
+  const dir = mkdtempSync(join(tmpdir(), 'lingtai-daemon-'))
+  dirs.push(dir)
+  return join(dir, 'log.db')
 }
 
 afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
-describeDaemonStoreContract("sqlite", async (): Promise<DaemonFixture> => {
-  const path = freshPath();
+describeDaemonStoreContract('sqlite', async (): Promise<DaemonFixture> => {
+  const path = freshPath()
   // The beacon and the log in one file, which is what makes `head()` and the
   // control stream the same system's — the arrangement `events` and
   // `daemon_status` have in Postgres.
-  const db = openSqliteDaemon(path);
-  const store = createSqliteDaemonStore(db);
-  const seconds: { close(): Promise<void> }[] = [];
-  const project = `esctest-sqlite-${crypto.randomUUID().slice(0, 8)}`;
+  const db = openSqliteDaemon(path)
+  const store = createSqliteDaemonStore(db)
+  const seconds: { close(): Promise<void> }[] = []
+  const project = `esctest-sqlite-${crypto.randomUUID().slice(0, 8)}`
 
   return {
     store,
     async another() {
       // A second connection to the same file: another process, as far as the
       // row is concerned.
-      const s = createSqliteDaemonStore(openSqliteDaemon(path));
-      seconds.push(s);
-      return s;
+      const s = createSqliteDaemonStore(openSqliteDaemon(path))
+      seconds.push(s)
+      return s
     },
     async forget() {
-      db.exec("DELETE FROM daemon_status");
+      db.exec('DELETE FROM daemon_status')
     },
     prefix: `wi-${project}-%`,
     stream: (issue) => `wi-${project}-${issue}`,
     async close() {
-      for (const s of seconds.splice(0)) await s.close().catch(() => {});
-      await store.close();
+      for (const s of seconds.splice(0)) await s.close().catch(() => {})
+      await store.close()
     },
-  };
-});
+  }
+})
 
-describe("sqlite: what only this store answers for", () => {
-  it("reads null from a file that has no beacon table, rather than throwing", async () => {
+describe('sqlite: what only this store answers for', () => {
+  it('reads null from a file that has no beacon table, rather than throwing', async () => {
     // *No daemon has ever run* — the same answer Postgres gives for `relation
     // does not exist`, which `lingtai doctor` prints as "no daemon has run".
     // A store is asked this on a machine where nothing has started yet, so it
     // is an ordinary answer and not an error to show a person.
-    const db = openSqliteDaemon(freshPath());
-    const store = createSqliteDaemonStore(db);
+    const db = openSqliteDaemon(freshPath())
+    const store = createSqliteDaemonStore(db)
     try {
-      db.exec("DROP TABLE daemon_status");
-      expect(await store.status()).toBeNull();
+      db.exec('DROP TABLE daemon_status')
+      expect(await store.status()).toBeNull()
     } finally {
-      await store.close();
+      await store.close()
     }
-  });
-});
+  })
+})

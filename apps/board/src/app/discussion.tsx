@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * The discussion box, inside the decision column.
@@ -54,15 +54,17 @@
  * that did not happen is worse than no result, so every action reverts on
  * refusal and says the server's own sentence.
  */
-import { useEffect, useRef, useState, useTransition } from "react";
-import { askDiscussion, concludeChat } from "./actions.ts";
-import { useFollowing } from "./live.tsx";
-import { useLogTail, type TailState } from "./run-log.tsx";
-import type { DiscussionView } from "@/lib/task";
+import { useEffect, useRef, useState, useTransition } from 'react'
+
+import type { DiscussionView } from '@/lib/task'
+
+import { askDiscussion, concludeChat } from './actions.ts'
+import { useFollowing } from './live.tsx'
+import { useLogTail, type TailState } from './run-log.tsx'
 
 /** `$1.20`, or nothing at all when no figure was reported. See `costUsd`. */
 function meter(costUsd: number | null): string | null {
-  return costUsd === null ? null : `$${costUsd.toFixed(2)}`;
+  return costUsd === null ? null : `$${costUsd.toFixed(2)}`
 }
 
 /**
@@ -84,12 +86,12 @@ function meter(costUsd: number | null): string | null {
  * gets — so a first question in flight says `asked` and waits for the number.
  */
 function openMeter(open: DiscussionView): string {
-  const messages = open.turns.length;
+  const messages = open.turns.length
   return [
-    `this conversation ${meter(open.costUsd) ?? (open.waiting ? "asked" : "no figure")}`,
-    `${messages} message${messages === 1 ? "" : "s"}`,
-    "no limit",
-  ].join(" · ");
+    `this conversation ${meter(open.costUsd) ?? (open.waiting ? 'asked' : 'no figure')}`,
+    `${messages} message${messages === 1 ? '' : 's'}`,
+    'no limit',
+  ].join(' · ')
 }
 
 /**
@@ -103,22 +105,22 @@ function openMeter(open: DiscussionView): string {
  */
 function closedMeter(discussions: readonly DiscussionView[]): string {
   if (discussions.length === 0) {
-    return "reads the log, the ticket and the code — it cannot run anything";
+    return 'reads the log, the ticket and the code — it cannot run anything'
   }
-  const spend = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0);
-  return `${discussions.length} held${spend > 0 ? ` · $${spend.toFixed(2)}` : ""} · no limit`;
+  const spend = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0)
+  return `${discussions.length} held${spend > 0 ? ` · $${spend.toFixed(2)}` : ''} · no limit`
 }
 
-const HELD: Record<NonNullable<DiscussionView["held"]>, string> = {
-  prompt: "used for the next run",
-  ticket: "added to the ticket",
-  none: "closed",
-};
+const HELD: Record<NonNullable<DiscussionView['held']>, string> = {
+  prompt: 'used for the next run',
+  ticket: 'added to the ticket',
+  none: 'closed',
+}
 
 /** A question this page sent, and how many turns the fold held when it was sent. */
 export interface Echo {
-  question: string;
-  turns: number;
+  question: string
+  turns: number
 }
 
 /**
@@ -133,12 +135,12 @@ export interface Echo {
  * Not matched on its text: the same question asked twice is two turns.
  */
 export function echoing(discussions: readonly DiscussionView[], echo: Echo | null): string | null {
-  if (echo === null) return null;
-  return turnsIn(discussions) > echo.turns ? null : echo.question;
+  if (echo === null) return null
+  return turnsIn(discussions) > echo.turns ? null : echo.question
 }
 
 function turnsIn(discussions: readonly DiscussionView[]): number {
-  return discussions.reduce((n, d) => n + d.turns.length, 0);
+  return discussions.reduce((n, d) => n + d.turns.length, 0)
 }
 
 /**
@@ -180,53 +182,48 @@ function turnsIn(discussions: readonly DiscussionView[]): number {
  * `following` false the answer lands on the log and nothing re-renders, so the
  * sentence says to reload rather than to wait (#172).
  */
-export function traceSays(
-  state: TailState,
-  lines: number,
-  writing: boolean | null = null,
-  following = true,
-): string {
-  if (!following && state !== "reading") {
+export function traceSays(state: TailState, lines: number, writing: boolean | null = null, following = true): string {
+  if (!following && state !== 'reading') {
     return (
-      "this page stopped following the log, so the answer will not appear here on its own — reload to see it. " +
-      "The question is on the log, and asking again would buy a second one"
-    );
+      'this page stopped following the log, so the answer will not appear here on its own — reload to see it. ' +
+      'The question is on the log, and asking again would buy a second one'
+    )
   }
   switch (state) {
-    case "reading":
+    case 'reading':
       if (writing === false) {
         return (
-          "nothing is writing this trace, so nothing is answering this now · what is here is what a daemon wrote " +
-          "before it stopped. The question is answered when a conducting daemon starts, and asking again would buy a second one"
-        );
+          'nothing is writing this trace, so nothing is answering this now · what is here is what a daemon wrote ' +
+          'before it stopped. The question is answered when a conducting daemon starts, and asking again would buy a second one'
+        )
       }
       return lines === 0
-        ? "the daemon has started on this — nothing written yet"
-        : `answering · ${lines} line${lines === 1 ? "" : "s"} so far`;
-    case "queued":
+        ? 'the daemon has started on this — nothing written yet'
+        : `answering · ${lines} line${lines === 1 ? '' : 's'} so far`
+    case 'queued':
       return (
-        "no daemon has started on this yet. The question is on the log and is answered " +
-        "when one runs; the answer appears here when it lands, and asking again would buy a second one"
-      );
-    case "removed":
-    case "landed":
-    case "did not land":
+        'no daemon has started on this yet. The question is on the log and is answered ' +
+        'when one runs; the answer appears here when it lands, and asking again would buy a second one'
+      )
+    case 'removed':
+    case 'landed':
+    case 'did not land':
       // The trace ended. That is an answer being recorded, or a daemon starting
       // this turn over after one died — and this page cannot tell which, so it
       // says what it is doing about both.
       return (
-        "the trace this page was following has ended · the answer appears here when it is " +
-        "recorded, and if a daemon starts this turn over its trace appears here instead"
-      );
-    case "trouble":
-    case "gone":
+        'the trace this page was following has ended · the answer appears here when it is ' +
+        'recorded, and if a daemon starts this turn over its trace appears here instead'
+      )
+    case 'trouble':
+    case 'gone':
       // The trace's follow failed, not the turn and not the page's. The answer
       // re-renders the page when it is appended whether or not anything here is
       // tailing the trace; a page that stopped following is handled above.
-      return "this page stopped following the answer as it is written — it still appears here when it lands; reload to follow it again";
-    case "off":
-    case "waiting":
-      return "waiting for the daemon to answer";
+      return 'this page stopped following the answer as it is written — it still appears here when it lands; reload to follow it again'
+    case 'off':
+    case 'waiting':
+      return 'waiting for the daemon to answer'
   }
 }
 
@@ -243,28 +240,28 @@ export function Trace({
   writing = null,
   following = true,
 }: {
-  lines: readonly string[];
-  state: TailState;
+  lines: readonly string[]
+  state: TailState
   /** Whether the file's writer is still touching it, as the route last said. See `traceSays`. */
-  writing?: boolean | null;
+  writing?: boolean | null
   /** Whether the page still re-renders on append. See `traceSays`. */
-  following?: boolean;
+  following?: boolean
 }) {
-  const tail = useRef<HTMLDivElement | null>(null);
+  const tail = useRef<HTMLDivElement | null>(null)
 
   // Pinned to the bottom of its own scroller, which is where the newest line
   // is. The box's height is `.chat`'s and does not grow with this — a pane that
   // grew with its content would have pushed the moves off the screen when they
   // sat under it, and still pushes the input box.
   useEffect(() => {
-    tail.current?.scrollTo({ top: tail.current.scrollHeight });
-  }, [lines]);
+    tail.current?.scrollTo({ top: tail.current.scrollHeight })
+  }, [lines])
 
   // **The answer grows under a caret** (#152), and only while something could
   // be writing it: a trace nobody is touching (`writing === false`) or one that
   // has ended is not a cursor, and a blinking one there would say *answering*
   // over a sentence that says it is not.
-  const caret = state === "reading" && writing !== false;
+  const caret = state === 'reading' && writing !== false
 
   return (
     <>
@@ -275,7 +272,7 @@ export function Trace({
         <div className="chattrace" ref={tail}>
           {/* Never markdown and never a paragraph: it is a log (design §6). */}
           <pre className="hdoctext">
-            {lines.join("\n")}
+            {lines.join('\n')}
             {caret ? <span className="caret" aria-hidden="true" /> : null}
           </pre>
         </div>
@@ -283,7 +280,7 @@ export function Trace({
         <span className="caret" aria-hidden="true" />
       ) : null}
     </>
-  );
+  )
 }
 
 /**
@@ -321,9 +318,9 @@ export function Trace({
  * print the first question's trace under the second, called live.
  */
 function Thinking({ chatId }: { chatId: string }) {
-  const { lines, state, writing } = useLogTail(chatId, true, true);
-  const following = useFollowing();
-  return <Trace lines={lines} state={state} writing={writing} following={following} />;
+  const { lines, state, writing } = useLogTail(chatId, true, true)
+  const following = useFollowing()
+  return <Trace lines={lines} state={state} writing={writing} following={following} />
 }
 
 /**
@@ -335,15 +332,7 @@ function Thinking({ chatId }: { chatId: string }) {
  * when the page has stopped following the log that moment never comes, so it
  * says to reload instead of to wait.
  */
-export function Echoed({
-  question,
-  busy,
-  following = true,
-}: {
-  question: string;
-  busy: boolean;
-  following?: boolean;
-}) {
+export function Echoed({ question, busy, following = true }: { question: string; busy: boolean; following?: boolean }) {
   return (
     <div className="chatturn" data-echo="">
       <div className="bubble asked">
@@ -352,13 +341,13 @@ export function Echoed({
       </div>
       <p className="chatwait">
         {busy
-          ? "asking…"
+          ? 'asking…'
           : following
-            ? "on the log · waiting for the daemon to answer"
-            : "on the log · this page stopped following it — reload to see the answer"}
+            ? 'on the log · waiting for the daemon to answer'
+            : 'on the log · this page stopped following it — reload to see the answer'}
       </p>
     </div>
-  );
+  )
 }
 
 /**
@@ -374,31 +363,31 @@ export function Echoed({
  * both are read.
  */
 export function canAsk(busy: boolean, question: string): boolean {
-  return !busy && question.trim() !== "";
+  return !busy && question.trim() !== ''
 }
 
 /** The pair's top edge on the page rather than in the window, so scrolling does not move it. */
 export function pairTop(rectTop: number, scrollY: number): number {
-  return Math.round(rectTop + scrollY);
+  return Math.round(rectTop + scrollY)
 }
 
 export function onAskKey(
   event: {
-    key: string;
-    shiftKey: boolean;
-    isComposing?: boolean;
-    keyCode?: number;
-    preventDefault: () => void;
+    key: string
+    shiftKey: boolean
+    isComposing?: boolean
+    keyCode?: number
+    preventDefault: () => void
   },
   busy: boolean,
   question: string,
   ask: () => void,
 ): void {
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
   // Never a newline, whether or not it asks: a busy box that took the Enter as
   // text would send it with the next question.
-  event.preventDefault();
-  if (canAsk(busy, question)) ask();
+  event.preventDefault()
+  if (canAsk(busy, question)) ask()
 }
 
 export function Discussion({
@@ -407,32 +396,32 @@ export function Discussion({
   discussions,
   quiet = false,
 }: {
-  taskId: string;
+  taskId: string
   /** The attempt a new question is about — the newest one, or null. */
-  attempt: number | null;
-  discussions: DiscussionView[];
+  attempt: number | null
+  discussions: DiscussionView[]
   /**
    * No brass in the box. Brass is *a person is being waited on*, and while an
    * item is running nobody is, so on that page Ask and a proposal's buttons are
    * ordinary buttons (#152). They still work; nothing is asking you to press
    * them.
    */
-  quiet?: boolean;
+  quiet?: boolean
 }) {
-  const pri = quiet ? "btn" : "btn pri";
-  const [question, setQuestion] = useState("");
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [echo, setEcho] = useState<Echo | null>(null);
-  const following = useFollowing();
-  const [, startTransition] = useTransition();
-  const conversation = useRef<HTMLDivElement | null>(null);
+  const pri = quiet ? 'btn' : 'btn pri'
+  const [question, setQuestion] = useState('')
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [echo, setEcho] = useState<Echo | null>(null)
+  const following = useFollowing()
+  const [, startTransition] = useTransition()
+  const conversation = useRef<HTMLDivElement | null>(null)
 
   // The one still going, if any. A second conversation is opened by asking a
   // question when there is none open, which is why there is no New button: the
   // box is the New button.
-  const open = discussions.find((d) => d.held === null) ?? null;
-  const echoed = echoing(discussions, echo);
+  const open = discussions.find((d) => d.held === null) ?? null
+  const echoed = echoing(discussions, echo)
 
   /**
    * The reply is at the bottom of its own scroller, and that is where the box
@@ -459,32 +448,30 @@ export function Discussion({
    * under an unanswered turn grows the turn by up to 9rem — and that is the
    * observer below.
    */
-  const shown = discussions
-    .map(
-      (d) =>
-        `${d.chatId}:${d.turns.length}:${d.turns.filter((t) => t.answer !== null).length}:${d.held ?? ""}`,
-    )
-    .join("|") + (echoed === null ? "" : "|echo");
+  const shown =
+    discussions
+      .map((d) => `${d.chatId}:${d.turns.length}:${d.turns.filter((t) => t.answer !== null).length}:${d.held ?? ''}`)
+      .join('|') + (echoed === null ? '' : '|echo')
   /** Whether the reader is at the end, so growth follows them and never pulls them back. */
-  const atEnd = useRef(true);
+  const atEnd = useRef(true)
   useEffect(() => {
-    const pane = conversation.current;
-    if (!pane) return;
-    pane.scrollTo({ top: pane.scrollHeight });
-    atEnd.current = true;
+    const pane = conversation.current
+    if (!pane) return
+    pane.scrollTo({ top: pane.scrollHeight })
+    atEnd.current = true
 
     // **Growth the key cannot see** (#132): the trace mounting under a turn, and
     // its box growing to its bound. Watched on the chats themselves, because a
     // scroller's own box does not change size when its content does. Only while
     // the reader is at the end — somebody who scrolled up to reread is left
     // where they are.
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof ResizeObserver === 'undefined') return
     const follow = new ResizeObserver(() => {
-      if (atEnd.current) pane.scrollTo({ top: pane.scrollHeight });
-    });
-    for (const child of Array.from(pane.children)) follow.observe(child);
-    return () => follow.disconnect();
-  }, [shown]);
+      if (atEnd.current) pane.scrollTo({ top: pane.scrollHeight })
+    })
+    for (const child of Array.from(pane.children)) follow.observe(child)
+    return () => follow.disconnect()
+  }, [shown])
 
   /**
    * Where the pair starts, handed to `.spair` as `--pair-top` (#173). The pair
@@ -494,51 +481,51 @@ export function Discussion({
    * room *under* the moves instead, and CSS alone cannot know how tall they are.
    * Measured again when anything on the page changes size.
    */
-  const root = useRef<HTMLDivElement | null>(null);
+  const root = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    const pair = root.current?.closest<HTMLElement>(".spair");
-    if (!pair) return;
+    const pair = root.current?.closest<HTMLElement>('.spair')
+    if (!pair) return
     const measure = () =>
-      pair.style.setProperty("--pair-top", `${pairTop(pair.getBoundingClientRect().top, window.scrollY)}px`);
-    measure();
-    window.addEventListener("resize", measure);
-    const page = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    page?.observe(document.body);
+      pair.style.setProperty('--pair-top', `${pairTop(pair.getBoundingClientRect().top, window.scrollY)}px`)
+    measure()
+    window.addEventListener('resize', measure)
+    const page = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    page?.observe(document.body)
     return () => {
-      window.removeEventListener("resize", measure);
-      page?.disconnect();
-    };
-  }, []);
+      window.removeEventListener('resize', measure)
+      page?.disconnect()
+    }
+  }, [])
 
-  const input = useRef<HTMLTextAreaElement | null>(null);
+  const input = useRef<HTMLTextAreaElement | null>(null)
   // Grows with what is typed, to the bound `.chatask textarea` sets, and then
   // scrolls in itself — so a long question takes room from the conversation
   // only up to a point (#173).
   useEffect(() => {
-    const box = input.current;
-    if (!box) return;
-    box.style.height = "auto";
-    box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
-  }, [question]);
+    const box = input.current
+    if (!box) return
+    box.style.height = 'auto'
+    box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`
+  }, [question])
 
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
-    setBusy(true);
-    setRefusal(null);
+    setBusy(true)
+    setRefusal(null)
     startTransition(async () => {
-      const result = await action();
-      setBusy(false);
+      const result = await action()
+      setBusy(false)
       if (result.ok) {
-        setQuestion("");
-        return;
+        setQuestion('')
+        return
       }
       // A refused ask did not happen, so its words come back off the pane.
-      setEcho(null);
-      setRefusal(result.detail);
-    });
-  };
+      setEcho(null)
+      setRefusal(result.detail)
+    })
+  }
 
   const ask = () => {
-    setEcho({ question, turns: turnsIn(discussions) });
+    setEcho({ question, turns: turnsIn(discussions) })
     run(() =>
       askDiscussion({
         taskId,
@@ -546,19 +533,17 @@ export function Discussion({
         question,
         ...(open === null ? {} : { chatId: open.chatId }),
       }),
-    );
-  };
+    )
+  }
 
   return (
-    <div ref={root} className={quiet ? "chat quiet" : "chat"}>
+    <div ref={root} className={quiet ? 'chat quiet' : 'chat'}>
       <p className="chathead">
         <span className="chatname">discussion</span>
         {/* Live without a poller: every append re-renders this page
             (`Follow`, in `live.tsx`), so the figure on screen is the figure on
             the log. */}
-        <span className="chatfact">
-          {open === null ? closedMeter(discussions) : openMeter(open)}
-        </span>
+        <span className="chatfact">{open === null ? closedMeter(discussions) : openMeter(open)}</span>
       </p>
 
       {/* The conversation, in its own scroller. The box has one height and this
@@ -568,147 +553,143 @@ export function Discussion({
         className="chatscroll"
         ref={conversation}
         onScroll={(event) => {
-          const pane = event.currentTarget;
+          const pane = event.currentTarget
           // A pixel of slack: fractional scroll positions never reach exactly.
-          atEnd.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight <= 1;
+          atEnd.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight <= 1
         }}
       >
-      {discussions.map((d) => (
-        <div key={d.chatId} className={d.held === null ? "chatlog" : "chatlog done"}>
-          {d.turns.map((t, i) => (
-            <div key={t.at} className="chatturn">
-              {/* **Turns, not a transcript** (#152): who said it, and a bubble
+        {discussions.map((d) => (
+          <div key={d.chatId} className={d.held === null ? 'chatlog' : 'chatlog done'}>
+            {d.turns.map((t, i) => (
+              <div key={t.at} className="chatturn">
+                {/* **Turns, not a transcript** (#152): who said it, and a bubble
                   each. The question is the person's and the answer is the
                   assistant's, and a reader scanning up the pane reads the
                   authors before the words. */}
-              <div className="bubble asked">
-                <p className="chatwho">{t.by}</p>
-                <p className="chatq">{t.question}</p>
-              </div>
+                <div className="bubble asked">
+                  <p className="chatwho">{t.by}</p>
+                  <p className="chatq">{t.question}</p>
+                </div>
 
-              {/* Lingtai's sentence, not the assistant's, and shown before the
+                {/* Lingtai's sentence, not the assistant's, and shown before the
                   answer for that reason — between the two bubbles, in neither.
                   An attempt that left no branch is a fact about what was read;
                   leaving it to the answer to mention is exactly what killed
                   #89's repair. */}
-              {t.reading.length > 0 ? (
-                <ul className="chatreading">
-                  {t.reading.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              ) : null}
+                {t.reading.length > 0 ? (
+                  <ul className="chatreading">
+                    {t.reading.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
 
-              <div className="bubble answer">
-              <p className="chatwho">assistant</p>
-              {t.answer === null ? (
-                // Only the turn being answered follows the chat's trace; see
-                // `Thinking`. A later one waits its turn, and says so.
-                i === d.turns.findIndex((u) => u.answer === null) ? (
-                  <Thinking chatId={d.chatId} />
-                ) : (
-                  <p className="chatwait" data-trace="behind">
-                    asked after the question above · answered once that one is, and its trace appears here then
-                  </p>
-                )
-              ) : (
-                <>
-                  {t.answer.failure ? (
-                    <p className="chatfail">{t.answer.failure}</p>
-                  ) : null}
-                  {/* Raw. An answer is a log's document by `markdown.tsx`'s
+                <div className="bubble answer">
+                  <p className="chatwho">assistant</p>
+                  {t.answer === null ? (
+                    // Only the turn being answered follows the chat's trace; see
+                    // `Thinking`. A later one waits its turn, and says so.
+                    i === d.turns.findIndex((u) => u.answer === null) ? (
+                      <Thinking chatId={d.chatId} />
+                    ) : (
+                      <p className="chatwait" data-trace="behind">
+                        asked after the question above · answered once that one is, and its trace appears here then
+                      </p>
+                    )
+                  ) : (
+                    <>
+                      {t.answer.failure ? <p className="chatfail">{t.answer.failure}</p> : null}
+                      {/* Raw. An answer is a log's document by `markdown.tsx`'s
                       rule — nobody wrote it in a box that says markdown — and
                       the default there is never rendered. */}
-                  {t.answer.text ? <p className="chata">{t.answer.text}</p> : null}
+                      {t.answer.text ? <p className="chata">{t.answer.text}</p> : null}
 
-                  {t.answer.cannot.length > 0 ? (
-                    <ul className="chatcannot">
-                      {t.answer.cannot.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  ) : null}
+                      {t.answer.cannot.length > 0 ? (
+                        <ul className="chatcannot">
+                          {t.answer.cannot.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
 
-                  <p className="chatmeta">
-                    {t.answer.read.length > 0 ? (
-                      <span className="chatread" title={t.answer.read.join("\n")}>
-                        read {t.answer.read.length} file(s)
-                      </span>
-                    ) : (
-                      <span className="chatread">read no files</span>
-                    )}
-                    {meter(t.answer.costUsd) ? (
-                      <span className="chatcost">{meter(t.answer.costUsd)}</span>
-                    ) : null}
-                  </p>
+                      <p className="chatmeta">
+                        {t.answer.read.length > 0 ? (
+                          <span className="chatread" title={t.answer.read.join('\n')}>
+                            read {t.answer.read.length} file(s)
+                          </span>
+                        ) : (
+                          <span className="chatread">read no files</span>
+                        )}
+                        {meter(t.answer.costUsd) ? <span className="chatcost">{meter(t.answer.costUsd)}</span> : null}
+                      </p>
 
-                  {/* The proposal, and the two places it can go. Nothing is
+                      {/* The proposal, and the two places it can go. Nothing is
                       written until one of these is clicked — the assistant
                       proposes, a person decides (0033 §2). */}
-                  {t.answer.proposal && d.held === null ? (
-                    <div className="chatprop">
-                      <p className="chatpropkind">
-                        {t.answer.proposal.kind === "prompt"
-                          ? "proposed for the next run"
-                          : "proposed for the ticket"}
-                      </p>
-                      <p className="chatproptext">{t.answer.proposal.text}</p>
-                      <div className="btnrow">
-                        <button
-                          className={t.answer.proposal.kind === "prompt" ? pri : "btn"}
-                          disabled={busy}
-                          onClick={() =>
-                            run(() =>
-                              concludeChat({
-                                taskId,
-                                chatId: d.chatId,
-                                outcome: "prompt",
-                                text: t.answer?.proposal?.text ?? "",
-                              }),
-                            )
-                          }
-                        >
-                          Use for the next run
-                        </button>
-                        <button
-                          className={t.answer.proposal.kind === "ticket" ? pri : "btn"}
-                          disabled={busy}
-                          onClick={() =>
-                            run(() =>
-                              concludeChat({
-                                taskId,
-                                chatId: d.chatId,
-                                outcome: "ticket",
-                                text: t.answer?.proposal?.text ?? "",
-                              }),
-                            )
-                          }
-                        >
-                          Add to the ticket
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </>
-              )}
+                      {t.answer.proposal && d.held === null ? (
+                        <div className="chatprop">
+                          <p className="chatpropkind">
+                            {t.answer.proposal.kind === 'prompt'
+                              ? 'proposed for the next run'
+                              : 'proposed for the ticket'}
+                          </p>
+                          <p className="chatproptext">{t.answer.proposal.text}</p>
+                          <div className="btnrow">
+                            <button
+                              className={t.answer.proposal.kind === 'prompt' ? pri : 'btn'}
+                              disabled={busy}
+                              onClick={() =>
+                                run(() =>
+                                  concludeChat({
+                                    taskId,
+                                    chatId: d.chatId,
+                                    outcome: 'prompt',
+                                    text: t.answer?.proposal?.text ?? '',
+                                  }),
+                                )
+                              }
+                            >
+                              Use for the next run
+                            </button>
+                            <button
+                              className={t.answer.proposal.kind === 'ticket' ? pri : 'btn'}
+                              disabled={busy}
+                              onClick={() =>
+                                run(() =>
+                                  concludeChat({
+                                    taskId,
+                                    chatId: d.chatId,
+                                    outcome: 'ticket',
+                                    text: t.answer?.proposal?.text ?? '',
+                                  }),
+                                )
+                              }
+                            >
+                              Add to the ticket
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
-          {/* A follow-up, echoed in the conversation it continues. */}
-          {echoed !== null && d.chatId === open?.chatId ? (
+            {/* A follow-up, echoed in the conversation it continues. */}
+            {echoed !== null && d.chatId === open?.chatId ? (
+              <Echoed question={echoed} busy={busy} following={following} />
+            ) : null}
+
+            {d.held !== null ? <p className="chatheld">{HELD[d.held]}</p> : null}
+          </div>
+        ))}
+        {/* A first question opens a conversation the fold does not have yet. */}
+        {echoed !== null && open === null ? (
+          <div className="chatlog">
             <Echoed question={echoed} busy={busy} following={following} />
-          ) : null}
-
-          {d.held !== null ? <p className="chatheld">{HELD[d.held]}</p> : null}
-        </div>
-      ))}
-      {/* A first question opens a conversation the fold does not have yet. */}
-      {echoed !== null && open === null ? (
-        <div className="chatlog">
-          <Echoed question={echoed} busy={busy} following={following} />
-        </div>
-      ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="chatask">
@@ -731,17 +712,11 @@ export function Discussion({
               ask,
             )
           }
-          placeholder={
-            open === null ? "why did attempt 2 not produce a branch?" : "ask a follow-up"
-          }
+          placeholder={open === null ? 'why did attempt 2 not produce a branch?' : 'ask a follow-up'}
         />
         <div className="btnrow">
-          <button
-            className={pri}
-            disabled={!canAsk(busy, question)}
-            onClick={ask}
-          >
-            {busy ? "asking…" : "Ask"}
+          <button className={pri} disabled={!canAsk(busy, question)} onClick={ask}>
+            {busy ? 'asking…' : 'Ask'}
           </button>
           {/* Closing with neither artefact is an ending and not an absence: a
               question answered that needed nothing written down is the
@@ -750,11 +725,7 @@ export function Discussion({
             <button
               className="btn"
               disabled={busy}
-              onClick={() =>
-                run(() =>
-                  concludeChat({ taskId, chatId: open.chatId, outcome: "none", text: "" }),
-                )
-              }
+              onClick={() => run(() => concludeChat({ taskId, chatId: open.chatId, outcome: 'none', text: '' }))}
             >
               Close
             </button>
@@ -764,5 +735,5 @@ export function Discussion({
 
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }

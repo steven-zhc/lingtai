@@ -1,3 +1,42 @@
+import { spawn } from 'node:child_process'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+
+import {
+  NEEDS_INPUT,
+  NO_DESIGN,
+  type Action,
+  type ActionContext,
+  type ActionEvent,
+  type CutAnswer,
+  type KeptAnswer,
+  type LandAnswer,
+  type MergeStrategy,
+  type TakeAnswer,
+  type WorkDispatch,
+  actionsFromRecipe,
+  createHumanAction,
+  createMergeAction,
+  createQueueAction,
+  createWorkAction,
+  createWorktreeAction,
+} from '@lingtai/actions'
+import { NO_RUN_LOG, type RunLog, type Runtime, createRuntime, missingForTier, taggedTrace } from '@lingtai/agent'
+import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
+import { type Tier, parsePayload, retiredRepairPending } from '@lingtai/domain'
+import {
+  CONTROL_STREAM,
+  type RuntimeId,
+  type Step,
+  type ToAppend,
+  reduceControl,
+  reduceWorkItem,
+  workItemStream,
+} from '@lingtai/domain'
+import type { ProjectState } from '@lingtai/domain'
+import { stateDir } from '@lingtai/env'
+import { type EventStore, eventStore } from '@lingtai/event-store'
+import type { GitHubClient } from '@lingtai/github'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -128,72 +167,24 @@ import {
   type QueueSettings,
   type ResolvedRecipe,
   type StepAction,
-} from "@lingtai/recipe";
-import { currentRecipe } from "./projects.ts";
-import { readWhatAFileKept } from "./file-port.ts";
-import { type Tier, parsePayload, retiredRepairPending } from "@lingtai/domain";
-import {
-  NEEDS_INPUT,
-  NO_DESIGN,
-  type Action,
-  type ActionContext,
-  type ActionEvent,
-  type CutAnswer,
-  type KeptAnswer,
-  type LandAnswer,
-  type MergeStrategy,
-  type TakeAnswer,
-  type WorkDispatch,
-  actionsFromRecipe,
-  createHumanAction,
-  createMergeAction,
-  createQueueAction,
-  createWorkAction,
-  createWorktreeAction,
-} from "@lingtai/actions";
-import type { GitHubClient } from "@lingtai/github";
-import {
-  NO_RUN_LOG,
-  type RunLog,
-  type Runtime,
-  createRuntime,
-  missingForTier,
-  taggedTrace,
-} from "@lingtai/agent";
-import { type EventStore, eventStore } from "@lingtai/event-store";
-import { claimWorkItem, releaseWorkItem } from "./claim.ts";
-import { diagnoseRefusal } from "./attribution.ts";
-import { fixBrief } from "./fix.ts";
-import { agentBranch, armBranch } from "./branches.ts";
-import { armsOnOrigin } from "./arms.ts";
-import { restartReason } from "./restart.ts";
-import { type NeverStarted, standDown } from "./never-started.ts";
-import { signedInHere } from "./projects.ts";
-import { priorAttempts } from "./attempts.ts";
-// The one composer, shared with the board. See `prompt.ts` for why it is not
-// here any more.
-import { buildCommands, nextPrompt, renderPrompt } from "./prompt.ts";
-import {
-  CONTROL_STREAM,
-  type RuntimeId,
-  type Step,
-  type ToAppend,
-  reduceControl,
-  reduceWorkItem,
-  workItemStream,
-} from "@lingtai/domain";
-import { runnableNow, type TicketSource } from "./discover.ts";
-import type { TerminalOutcome } from "./end-step.ts";
-import { stepsResolved } from "./steps-resolved.ts";
-import { labelsFor } from "./labels.ts";
-import { tellGitHubAbout } from "./tell.ts";
-import {
-  type Ceilings,
-  type PassResult,
-  type StepReached,
-  outcomeOf,
-  runPass,
-} from "./pass.ts";
+} from '@lingtai/recipe'
+import { isBuiltInJudge } from '@lingtai/recipe'
+import { worktreePath, type TokenSource, type Worktree } from '@lingtai/repo'
+import { Data, Effect, Either } from 'effect'
+
+import { armsOnOrigin } from './arms.ts'
+import { priorAttempts } from './attempts.ts'
+import { diagnoseRefusal } from './attribution.ts'
+import { agentBranch, armBranch } from './branches.ts'
+import { claimWorkItem, releaseWorkItem } from './claim.ts'
+import { runnableNow, type TicketSource } from './discover.ts'
+import type { TerminalOutcome } from './end-step.ts'
+import { readWhatAFileKept } from './file-port.ts'
+import { fixBrief } from './fix.ts'
+import { chosenIn, judgePrompt } from './judge-agent.ts'
+import { type Declared, judgeDeclaredAt } from './judge.ts'
+import { labelsFor } from './labels.ts'
+import { type NeverStarted, standDown } from './never-started.ts'
 import {
   type Brief,
   type Claimed,
@@ -202,28 +193,25 @@ import {
   type PassPorts,
   type Worked,
   bodiesFor,
-} from "./pass-steps.ts";
-import { isBuiltInJudge } from "@lingtai/recipe";
-import { type Declared, judgeDeclaredAt } from "./judge.ts";
-import { chosenIn, judgePrompt } from "./judge-agent.ts";
-
-import type { ProjectState } from "@lingtai/domain";
-import { extensionEnv, productionPatterns, runnableEnv } from "@lingtai/agent-env";
-import { stateDir } from "@lingtai/env";
-import { worktreePath, type TokenSource, type Worktree } from "@lingtai/repo";
-import { Data, Effect, Either } from "effect";
-import { AgentHost, Repo } from "./ports.ts";
-import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { RUN_LOG_END, runLogEnd, runLogPath } from "./run-log.ts";
+} from './pass-steps.ts'
+import { type Ceilings, type PassResult, type StepReached, outcomeOf, runPass } from './pass.ts'
+import { AgentHost, Repo } from './ports.ts'
+import { currentRecipe } from './projects.ts'
+import { signedInHere } from './projects.ts'
+// The one composer, shared with the board. See `prompt.ts` for why it is not
+// here any more.
+import { buildCommands, nextPrompt, renderPrompt } from './prompt.ts'
+import { restartReason } from './restart.ts'
+import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
+import { stepsResolved } from './steps-resolved.ts'
+import { tellGitHubAbout } from './tell.ts'
 
 export const changedFilesArgs = (baseSha: string): string[] => [
-  "diff",
-  "--name-only",
-  "--no-renames",
+  'diff',
+  '--name-only',
+  '--no-renames',
   `${baseSha}...HEAD`,
-];
+]
 
 /**
  * A refused `agent:`: the sentence both callers print, and **which** `agent:`
@@ -245,9 +233,9 @@ export interface AgentRefusal {
    * dispatched, so its remedy is signing in or naming another, never repeating
    * `runtime.agent`.
    */
-  sentence: string;
+  sentence: string
   /** Where that `agent:` is written, which is the file whose line must change. */
-  at: "runtime.agent" | "step";
+  at: 'runtime.agent' | 'step'
   /**
    * **Which key on that line names the runtime** (`#277`).
    *
@@ -259,7 +247,7 @@ export interface AgentRefusal {
    * line does not have. The file is the same either way, which is what `at`
    * carries and why this is a field beside it rather than a third value of it.
    */
-  key: "agent" | "judge";
+  key: 'agent' | 'judge'
 }
 
 /**
@@ -293,52 +281,52 @@ export interface AgentRefusal {
  * is added.
  */
 export function agentRefusal(
-  resolved: Pick<ResolvedRecipe, "recipe" | "provenance">,
+  resolved: Pick<ResolvedRecipe, 'recipe' | 'provenance'>,
   dispatched: string,
   signedIn: readonly string[] = [],
 ): AgentRefusal | null {
-  const named = resolved.recipe.runtime.agent;
+  const named = resolved.recipe.runtime.agent
   if (named !== dispatched) {
-    const from = resolved.provenance?.["runtime.agent"];
+    const from = resolved.provenance?.['runtime.agent']
     return {
-      at: "runtime.agent",
-      key: "agent",
-      sentence: `runtime.agent is ${named}${from ? ` (${from})` : ""}, and this conductor runs ${dispatched}`,
-    };
+      at: 'runtime.agent',
+      key: 'agent',
+      sentence: `runtime.agent is ${named}${from ? ` (${from})` : ''}, and this conductor runs ${dispatched}`,
+    }
   }
   for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
     for (const action of actions) {
       // A built-in judge names no runtime — it is a function — so it is not a
       // second dispatch and nothing about it can disagree with this one.
-      const second: { key: AgentRefusal["key"]; wants: string } | null =
-        "agent" in action
-          ? { key: "agent", wants: action.agent }
-          : "judge" in action && !isBuiltInJudge(action.judge)
-            ? { key: "judge", wants: action.judge }
-            : null;
-      if (second === null || second.wants === dispatched) continue;
+      const second: { key: AgentRefusal['key']; wants: string } | null =
+        'agent' in action
+          ? { key: 'agent', wants: action.agent }
+          : 'judge' in action && !isBuiltInJudge(action.judge)
+            ? { key: 'judge', wants: action.judge }
+            : null
+      if (second === null || second.wants === dispatched) continue
       // **Dispatched, not refused, since `#314`.** A runtime that is merely not
       // the pass's default is a thing the recipe is allowed to say; `runtimeFor`
       // builds it and the step runs on it.
-      if (signedIn.includes(second.wants)) continue;
+      if (signedIn.includes(second.wants)) continue
       return {
-        at: "step",
+        at: 'step',
         key: second.key,
         sentence:
           `steps.${step}'s "${action.name}" action names ${second.key} ${second.wants}, ` +
           `and nothing on this machine is signed in to ${second.wants}`,
-      };
+      }
     }
   }
-  return null;
+  return null
 }
 
 export interface RunOnceOptions {
-  project: ProjectState;
-  client: GitHubClient;
+  project: ProjectState
+  client: GitHubClient
   /** The recipe this run obeys. `currentRecipe` — the machine's file — unless a test says otherwise. */
-  recipe?: () => Promise<ResolvedRecipe>;
-  runtime: Runtime;
+  recipe?: () => Promise<ResolvedRecipe>
+  runtime: Runtime
   /**
    * **How a runtime a *step* named is built** — `createRuntime` unless a test
    * says otherwise (`#314`, 0070 §7).
@@ -351,7 +339,7 @@ export interface RunOnceOptions {
    * calls after resolving would change a field every one of those tests passes
    * through, to save one read (`apps/cli/src/run.ts`'s own argument, kept).
    */
-  runtimeFor?: (id: RuntimeId) => Runtime;
+  runtimeFor?: (id: RuntimeId) => Runtime
   /**
    * **What this machine is signed in to**, asked only where a step names a
    * runtime other than the pass's own (`#314`, 0070 §7).
@@ -362,22 +350,22 @@ export interface RunOnceOptions {
    * what keeps the probe out of the half of the suite that may not spawn
    * (0060 §1).
    */
-  signedIn?: () => Promise<readonly RuntimeId[]>;
+  signedIn?: () => Promise<readonly RuntimeId[]>
   /** The issue to work. Phase 1 nominates by number rather than taking the queue. */
-  issue: number;
+  issue: number
   /** Absolute path to the compiled `lingtai-hook`. */
-  hookBinary: string;
+  hookBinary: string
   /** False wires no hooks and skips the smoke test. See `RenderOptions.guard`. */
-  guard?: boolean;
+  guard?: boolean
   /** The ticket prompt. Versioned, and recorded on every `RunPrompted`. */
-  prompt: string;
-  promptVersion?: string;
-  token?: TokenSource;
-  home?: string;
-  store?: EventStore;
-  gitEnv?: NodeJS.ProcessEnv;
+  prompt: string
+  promptVersion?: string
+  token?: TokenSource
+  home?: string
+  store?: EventStore
+  gitEnv?: NodeJS.ProcessEnv
   /** Overrides the clone source. The tests point it at a local repository. */
-  remote?: string;
+  remote?: string
   /**
    * False stops after the gates, with the branch pushed and every verdict
    * recorded, and asks a person for the merge.
@@ -390,8 +378,8 @@ export interface RunOnceOptions {
    * bound to `onSha` like any other verdict, so a force-push invalidates it by
    * arithmetic rather than by anyone remembering to.
    */
-  merge?: boolean;
-  log?: (line: string) => void;
+  merge?: boolean
+  log?: (line: string) => void
 }
 
 export type RunOnceResult =
@@ -401,18 +389,18 @@ export type RunOnceResult =
    * not `ok: false` with a stage — nothing refused, and calling it a failure
    * would be the kind of convenient fiction the log exists to prevent.
    */
-  | { ok: "held"; workItemId: string; runId: string; headSha: string; step: string }
-  | { ok: false; workItemId: string | null; runId: string | null; stage: string; detail: string };
+  | { ok: 'held'; workItemId: string; runId: string; headSha: string; step: string }
+  | { ok: false; workItemId: string | null; runId: string | null; stage: string; detail: string }
 
 /** A defect's own words. Wanted by the publish and by the release above it. */
 function whyOf(defect: unknown): string {
-  return defect instanceof Error ? defect.message : String(defect);
+  return defect instanceof Error ? defect.message : String(defect)
 }
 
 function said(detail: string, n = 300): string {
-  const one = detail.replace(/\s+/g, " ").trim();
-  if (one === "") return "no detail was recorded";
-  return one.length > n ? `${one.slice(0, n - 1)}…` : one;
+  const one = detail.replace(/\s+/g, ' ').trim()
+  if (one === '') return 'no detail was recorded'
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one
 }
 
 /** How a runtime is spawned for the fail-closed smoke test. */
@@ -422,15 +410,14 @@ function runBinary(
   stdin: string,
 ): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(bin, { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (c) => (stderr += c.toString()));
-    child.on("close", (code) => resolve({ code, stderr }));
-    child.on("error", (err) => resolve({ code: null, stderr: err.message }));
-    child.stdin.end(stdin);
-  });
+    const child = spawn(bin, { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] })
+    let stderr = ''
+    child.stderr.on('data', (c) => (stderr += c.toString()))
+    child.on('close', (code) => resolve({ code, stderr }))
+    child.on('error', (err) => resolve({ code: null, stderr: err.message }))
+    child.stdin.end(stdin)
+  })
 }
-
 
 /**
  * What a pass left the tree at, read off the visits.
@@ -440,7 +427,7 @@ function runBinary(
  * head a person is shown on a card. Empty where nothing was cut.
  */
 function headReached(steps: readonly StepReached[]): string {
-  return steps.reduce<string>((sha, visit) => visit.ending.head ?? sha, "");
+  return steps.reduce<string>((sha, visit) => visit.ending.head ?? sha, '')
 }
 
 /**
@@ -450,17 +437,17 @@ function headReached(steps: readonly StepReached[]): string {
  * the step's *own* work having refused rather than a declared action, which
  * `pass-steps.ts` says at each of the bodies that set it.
  */
-function whatRefused(stopped: PassResult["stoppedAt"]): string | null {
-  if (stopped === null) return null;
-  return "at" in stopped.ending ? stopped.ending.at : null;
+function whatRefused(stopped: PassResult['stoppedAt']): string | null {
+  if (stopped === null) return null
+  return 'at' in stopped.ending ? stopped.ending.at : null
 }
 
 /** What a step said when it did not pass, in the words a person reads (0043). */
-function detailOf(ending: PassResult["stoppedAt"]): string {
-  if (ending === null) return "";
-  const said = ending.ending;
-  if ("detail" in said) return said.detail;
-  return "question" in said ? said.question : said.ending;
+function detailOf(ending: PassResult['stoppedAt']): string {
+  if (ending === null) return ''
+  const said = ending.ending
+  if ('detail' in said) return said.detail
+  return 'question' in said ? said.question : said.ending
 }
 
 /**
@@ -471,20 +458,18 @@ function detailOf(ending: PassResult["stoppedAt"]): string {
  * everything under it: the five gate points are ten steps, the sequence is
  * `runPass`'s, and this is the caller the pass was written to be called by.
  */
-export function runOnce(
-  options: RunOnceOptions,
-): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
+export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
   return Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
     // parameter was standing in for.
-    const repo = yield* Repo;
-    const host = yield* AgentHost;
+    const repo = yield* Repo
+    const host = yield* AgentHost
 
-    const store = options.store ?? eventStore;
-    const home = options.home ?? stateDir();
-    const log = options.log ?? (() => {});
-    const project = options.project.project!;
-    const basePromptVersion = options.promptVersion ?? "ticket@1";
+    const store = options.store ?? eventStore
+    const home = options.home ?? stateDir()
+    const log = options.log ?? (() => {})
+    const project = options.project.project!
+    const basePromptVersion = options.promptVersion ?? 'ticket@1'
 
     /**
      * An append at whatever version the stream is at, and nothing else.
@@ -498,9 +483,9 @@ export function runOnce(
      * `appendNow`.
      */
     const appendAt = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
-      const at = (await store.read(stream)).length;
-      await store.append(stream, at, events);
-    };
+      const at = (await store.read(stream)).length
+      await store.append(stream, at, events)
+    }
 
     /**
      * The same append, **remembered when the store refuses it**.
@@ -524,15 +509,15 @@ export function runOnce(
      * written: the pass is re-raised into the defect channel the moment it
      * returns (see `unappended`), rather than having its report believed.
      */
-    let unappended: unknown = null;
+    let unappended: unknown = null
     const appendNow = async (stream: string, events: readonly ToAppend[]): Promise<void> => {
       try {
-        await appendAt(stream, events);
+        await appendAt(stream, events)
       } catch (defect) {
-        unappended ??= defect;
-        throw defect;
+        unappended ??= defect
+        throw defect
       }
-    };
+    }
 
     /**
      * The same, at a version the caller already holds rather than one read here.
@@ -544,18 +529,14 @@ export function runOnce(
      * of these arrives as *the `implement` step threw* unless this says
      * otherwise.
      */
-    const appendFrom = async (
-      stream: string,
-      version: number,
-      events: readonly ToAppend[],
-    ): Promise<void> => {
+    const appendFrom = async (stream: string, version: number, events: readonly ToAppend[]): Promise<void> => {
       try {
-        await store.append(stream, version, events);
+        await store.append(stream, version, events)
       } catch (defect) {
-        unappended ??= defect;
-        throw defect;
+        unappended ??= defect
+        throw defect
       }
-    };
+    }
 
     // ---- 1. the recipe, from this machine -----------------------------------
     // `~/.lingtai/<project>/recipe.yml` (0046 §3, #180), the same read every
@@ -567,18 +548,18 @@ export function runOnce(
         // fall back to a default.
         catch: (err) => (err as Error).message,
       }),
-    );
+    )
     if (Either.isLeft(recipeAt)) {
-      return { ok: false, workItemId: null, runId: null, stage: "recipe", detail: recipeAt.left };
+      return { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: recipeAt.left }
     }
-    const resolved = recipeAt.right;
-    const recipe = resolved.recipe;
+    const resolved = recipeAt.right
+    const recipe = resolved.recipe
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
     // decisions, and nothing here repairs a recorded decision silently (0024 §3).
-    const divergence = baseDivergence(resolved, `${options.client.owner}/${options.client.repo}`);
+    const divergence = baseDivergence(resolved, `${options.client.owner}/${options.client.repo}`)
     if (divergence) {
-      return { ok: false, workItemId: null, runId: null, stage: "recipe", detail: divergence };
+      return { ok: false, workItemId: null, runId: null, stage: 'recipe', detail: divergence }
     }
     // The agent the recipe resolved to is the agent that runs, or nothing runs
     // (0046 §3). Before the claim, for the same reason as the refusals around it.
@@ -591,38 +572,38 @@ export function runOnce(
      * recipe did not use. Empty also means `agentRefusal`'s loop below never
      * reads the list, so the two facts stay one branch.
      */
-    const secondRuntimes = new Set<RuntimeId>();
+    const secondRuntimes = new Set<RuntimeId>()
     for (const actions of Object.values(recipe.steps)) {
       for (const action of actions) {
-        if ("agent" in action) secondRuntimes.add(action.agent);
-        else if ("judge" in action && !isBuiltInJudge(action.judge)) secondRuntimes.add(action.judge);
+        if ('agent' in action) secondRuntimes.add(action.agent)
+        else if ('judge' in action && !isBuiltInJudge(action.judge)) secondRuntimes.add(action.judge)
       }
     }
-    secondRuntimes.delete(options.runtime.capabilities.id as RuntimeId);
+    secondRuntimes.delete(options.runtime.capabilities.id as RuntimeId)
     const dispatchable: readonly string[] =
       secondRuntimes.size === 0
         ? []
-        : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)());
-    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchable);
+        : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)())
+    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchable)
     if (wrongAgent !== null) {
       return {
         ok: false,
         workItemId: null,
         runId: null,
-        stage: "recipe",
+        stage: 'recipe',
         // **Per-step dispatch is built, so the remedy is no longer *name the
         // other one*** (`#314`, 0070 §7). The `runtime.agent` half is still an
         // assertion that the caller picked correctly — `conduct.ts` constructs
         // from that very field — and the step half is now about signing in
         // rather than about what this conductor happens to run.
         detail:
-          wrongAgent.at === "runtime.agent"
+          wrongAgent.at === 'runtime.agent'
             ? `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it`
             : `${wrongAgent.sentence} — nothing was claimed. Sign in to it, or name a runtime this machine has`,
-      };
+      }
     }
     // Safe now, and only now: past the refusal these two are the same branch.
-    const base = baseOf(recipe);
+    const base = baseOf(recipe)
     /**
      * **`runtime.limits` — the ceiling, and the default under every dispatch**
      * (`#314`, 0070 §5).
@@ -633,7 +614,7 @@ export function runOnce(
      * dispatch that declares nothing gets, and `spendFor` is where one that
      * declares something narrows it.
      */
-    const ceiling = ceilingOf(recipe);
+    const ceiling = ceilingOf(recipe)
     /**
      * **What one call may spend**: the dispatch's own `limits:` where the recipe
      * wrote one, and the ceiling where it did not (0070 §5).
@@ -651,7 +632,7 @@ export function runOnce(
       // `strictObject` that refuses `usd` by name, so there is nothing a step
       // could narrow here (`#370`).
       usd: ceiling.usd,
-    });
+    })
     /**
      * **The runtime a step named, dispatched** (`#314`, 0070 §7).
      *
@@ -670,16 +651,16 @@ export function runOnce(
      * save one read (`apps/cli/src/run.ts`'s own argument).
      */
     const runtimeNamed = (() => {
-      const made = new Map<RuntimeId, Runtime>([[options.runtime.capabilities.id, options.runtime]]);
+      const made = new Map<RuntimeId, Runtime>([[options.runtime.capabilities.id, options.runtime]])
       return (id: RuntimeId): Runtime => {
-        const kept = made.get(id);
-        if (kept !== undefined) return kept;
-        const built = (options.runtimeFor ?? createRuntime)(id);
-        made.set(id, built);
-        return built;
-      };
-    })();
-    log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`);
+        const kept = made.get(id)
+        if (kept !== undefined) return kept
+        const built = (options.runtimeFor ?? createRuntime)(id)
+        made.set(id, built)
+        return built
+      }
+    })()
+    log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`)
 
     // ---- 2. the environment, before anything is claimed ---------------------
     // A declared name with no value refuses the whole project for this pass: no
@@ -697,17 +678,17 @@ export function runOnce(
         patterns: productionPatterns(recipe.env.refuseHosts),
         home,
       }),
-    );
+    )
     if (Either.isLeft(asked)) {
-      return { ok: false, workItemId: null, runId: null, stage: "env", detail: asked.left.detail };
+      return { ok: false, workItemId: null, runId: null, stage: 'env', detail: asked.left.detail }
     }
-    const env = asked.right;
+    const env = asked.right
     if (env.refusal) {
-      return { ok: false, workItemId: null, runId: null, stage: "env", detail: env.refusal };
+      return { ok: false, workItemId: null, runId: null, stage: 'env', detail: env.refusal }
     }
     log(
-      `env: ${env.names.length === 0 ? "nothing declared" : env.names.map((n) => `${n.name} from ${n.layer}`).join(", ")}`,
-    );
+      `env: ${env.names.length === 0 ? 'nothing declared' : env.names.map((n) => `${n.name} from ${n.layer}`).join(', ')}`,
+    )
 
     /**
      * The environment of one extension — every `run:` action's, and nothing
@@ -717,7 +698,7 @@ export function runOnce(
      * put one project's credential in every extension's process.
      */
     const envForExtension = (declared: readonly string[]): Record<string, string> =>
-      runnableEnv(extensionEnv(env.merged, declared, productionPatterns(recipe.env.refuseHosts)).values);
+      runnableEnv(extensionEnv(env.merged, declared, productionPatterns(recipe.env.refuseHosts)).values)
 
     // The tripwire over every extension's declared values, here and not only
     // when `envForExtension` is first called: a denied production value would
@@ -725,23 +706,21 @@ export function runOnce(
     const extensionRefusal = Either.try(() => {
       for (const step of Object.values(recipe.steps)) {
         for (const action of step) {
-          if ("run" in action) extensionEnv(env.merged, action.env, productionPatterns(recipe.env.refuseHosts));
+          if ('run' in action) extensionEnv(env.merged, action.env, productionPatterns(recipe.env.refuseHosts))
         }
       }
       for (const subscriber of recipe.subscribers) {
-        extensionEnv(env.merged, subscriber.env, productionPatterns(recipe.env.refuseHosts));
+        extensionEnv(env.merged, subscriber.env, productionPatterns(recipe.env.refuseHosts))
       }
-    });
+    })
     if (Either.isLeft(extensionRefusal)) {
       const detail =
-        extensionRefusal.left instanceof Error
-          ? extensionRefusal.left.message
-          : String(extensionRefusal.left);
-      return { ok: false, workItemId: null, runId: null, stage: "env", detail };
+        extensionRefusal.left instanceof Error ? extensionRefusal.left.message : String(extensionRefusal.left)
+      return { ok: false, workItemId: null, runId: null, stage: 'env', detail }
     }
 
     // ---- 3. capability matching, before anything is claimed -----------------
-    const tier: Tier = resolved.tier;
+    const tier: Tier = resolved.tier
     /**
      * **Asked of every runtime this pass will dispatch, not only the default**
      * (`#314`, 0070 §8).
@@ -756,9 +735,9 @@ export function runOnce(
      */
     const refusedBy = [options.runtime.capabilities.id, ...secondRuntimes]
       .map((id) => ({ id, missing: missingForTier(runtimeNamed(id as RuntimeId).capabilities, tier) }))
-      .find((each) => each.missing.length > 0);
-    const missing = refusedBy?.missing ?? [];
-    const workItemId = workItemStream(project, options.issue);
+      .find((each) => each.missing.length > 0)
+    const missing = refusedBy?.missing ?? []
+    const workItemId = workItemStream(project, options.issue)
 
     if (missing.length > 0) {
       // Never silently downgrade. The refusal is an event on the work item so the
@@ -766,27 +745,27 @@ export function runOnce(
       yield* Effect.promise(() =>
         appendNow(workItemId, [
           {
-            type: "DispatchRefused",
-            actor: "conductor",
-            data: parsePayload("DispatchRefused", {
+            type: 'DispatchRefused',
+            actor: 'conductor',
+            data: parsePayload('DispatchRefused', {
               requiredTier: tier,
               runtime: refusedBy?.id ?? options.runtime.capabilities.id,
               missing,
             }),
           },
         ]),
-      );
+      )
       return {
         ok: false,
         workItemId,
         runId: null,
-        stage: "dispatch",
-        detail: `${refusedBy?.id ?? options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(", ")}`,
-      };
+        stage: 'dispatch',
+        detail: `${refusedBy?.id ?? options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(', ')}`,
+      }
     }
 
-    const runId = `run-${crypto.randomUUID()}`;
-    const branch = agentBranch(options.issue);
+    const runId = `run-${crypto.randomUUID()}`
+    const branch = agentBranch(options.issue)
     /**
      * **Where the pass works, known before it starts.**
      *
@@ -795,7 +774,7 @@ export function runOnce(
      * before `admit` has cut there: `claim` and `admit` have no cell open, so
      * there is no plugin to run in a directory that does not exist yet.
      */
-    const cwd = worktreePath(home, project, runId);
+    const cwd = worktreePath(home, project, runId)
 
     /**
      * The item's stream as it was before this claim, read once.
@@ -807,26 +786,26 @@ export function runOnce(
      * the agent. It is also where the restarts already spent are counted, which
      * is what `Ceilings.restartsLeft` is.
      */
-    const before = yield* Effect.promise(() => store.read(workItemId));
-    const folded = reduceWorkItem(before);
-    const edit = folded.pendingPrompt;
-    if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`);
+    const before = yield* Effect.promise(() => store.read(workItemId))
+    const folded = reduceWorkItem(before)
+    const edit = folded.pendingPrompt
+    if (edit) log(`carrying a prompt edit from ${edit.by} (${edit.text.length} bytes)`)
     /**
      * A repair the old code bought, released, and never claimed — **only on a log
      * written before `#143`**. Honoured rather than dropped: it was bought
      * already, so honouring it spends nothing new.
      */
-    const repairOf = retiredRepairPending(before);
+    const repairOf = retiredRepairPending(before)
     if (repairOf) {
-      log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt}), bought before #143`);
+      log(`repairing ${repairOf.reason} from ${repairOf.after} (attempt ${repairOf.attempt}), bought before #143`)
     }
-    const previous = priorAttempts(before).at(-1);
-    const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null;
+    const previous = priorAttempts(before).at(-1)
+    const lastRun = previous ? yield* Effect.promise(() => store.read(previous.runId)) : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
-    const arms = previous ? yield* Effect.promise(() => armsOnOrigin(options.client, branch)) : null;
+    const arms = previous ? yield* Effect.promise(() => armsOnOrigin(options.client, branch)) : null
     if (previous && arms === null) {
-      log(`could not list ${branch}'s arms on origin — the brief names none`);
+      log(`could not list ${branch}'s arms on origin — the brief names none`)
     }
     const next = nextPrompt({
       base: basePromptVersion,
@@ -834,12 +813,12 @@ export function runOnce(
       item: before,
       lastRun,
       arms,
-    });
-    const promptVersion = next.version;
+    })
+    const promptVersion = next.version
     if (previous) {
-      log(`attempt ${next.attempt}: ${previous.runId} ended — ${previous.ended ?? "no ending recorded"}`);
+      log(`attempt ${next.attempt}: ${previous.runId} ended — ${previous.ended ?? 'no ending recorded'}`)
     }
-    const arm = armBranch(branch, next.attempt);
+    const arm = armBranch(branch, next.attempt)
 
     /**
      * **What the back edges may spend** (0061 §3, and 0040's two dimensions).
@@ -856,9 +835,9 @@ export function runOnce(
     const ceilings: Ceilings = {
       rounds: ceiling.rounds,
       restartsLeft: Math.max(0, ceiling.restarts - folded.restarts.length),
-    };
+    }
 
-    let released = false;
+    let released = false
     /**
      * **The stream `end` resolves onto**, or null where this pass is about no item
      * (`#269`).
@@ -872,7 +851,7 @@ export function runOnce(
      * ever hold the item* is what the release is gated on, and a local of the scope
      * is a question the release cannot ask.
      */
-    let onStream: string | null = null;
+    let onStream: string | null = null
     /**
      * What `end` resolved, so the issue is told what the item recorded.
      *
@@ -892,7 +871,7 @@ export function runOnce(
      * **What actually reached the stream, never what was going to.** Each ending
      * sets it after its own append has returned — see `endPlan`.
      */
-    let endResolved: readonly ToAppend[] = [];
+    let endResolved: readonly ToAppend[] = []
     /**
      * **What `end` resolved, held until the append that makes its outcome true.**
      *
@@ -920,7 +899,7 @@ export function runOnce(
      * `releaseWorkItem` owns its own read and version — and there the order is
      * what carries the rule: the release first, the resolution after it.
      */
-    let endPlan: readonly ToAppend[] = [];
+    let endPlan: readonly ToAppend[] = []
     /**
      * Which of the four endings the pass reached, or null while it is walking.
      *
@@ -930,7 +909,7 @@ export function runOnce(
      * carried in on the release that follows it — that is the orphan row again,
      * arriving by the defect handler instead of by the window.
      */
-    let endedAs: TerminalOutcome | null = null;
+    let endedAs: TerminalOutcome | null = null
     /**
      * How a run that did not land gives the item back.
      *
@@ -967,7 +946,7 @@ export function runOnce(
      */
     const release = (reason: string): Effect.Effect<void> =>
       Effect.suspend(() => {
-        if (released) return Effect.void;
+        if (released) return Effect.void
         /**
          * **A run that took nothing releases nothing** (`#269`).
          *
@@ -987,45 +966,45 @@ export function runOnce(
          * a fourth case.
          */
         if (onStream === null) {
-          log(`nothing to release: ${reason}`);
-          released = true;
-          return Effect.void;
+          log(`nothing to release: ${reason}`)
+          released = true
+          return Effect.void
         }
-        released = true;
+        released = true
         return Effect.tryPromise({
           try: async () => {
             /** Whether the release reached the log — the gate on the append after it. */
-            let backInTheQueue = true;
+            let backInTheQueue = true
             await releaseWorkItem(workItemId, runId, reason, store).catch((err: unknown) => {
-              backInTheQueue = false;
-              log(`the item was not released: ${whyOf(err)}`);
-            });
-            if (backInTheQueue && endedAs === "failed" && endPlan.length > 0) {
+              backInTheQueue = false
+              log(`the item was not released: ${whyOf(err)}`)
+            })
+            if (backInTheQueue && endedAs === 'failed' && endPlan.length > 0) {
               try {
-                await appendAt(workItemId, endPlan);
-                endResolved = endPlan;
+                await appendAt(workItemId, endPlan)
+                endResolved = endPlan
               } catch (defect) {
                 // Said rather than raised: the run has already ended and the item
                 // is already back, and a throw here would replace the reason it
                 // ended with the reason the bookkeeping did.
-                log(`end actions not recorded: ${whyOf(defect)}`);
+                log(`end actions not recorded: ${whyOf(defect)}`)
               }
             }
             await tellGitHubAbout({
               store,
               github: options.client,
               workItemId,
-              labels: labelsFor("queued"),
+              labels: labelsFor('queued'),
               appended: endResolved,
-            });
+            })
           },
           catch: (err) => err,
         }).pipe(
           // A release is the last thing a failing run does, and one that threw
           // would replace the reason the run ended with the reason the cleanup did.
           Effect.ignore,
-        );
-      });
+        )
+      })
 
     /**
      * The conductor stops, because the item backing off is the wrong instrument
@@ -1038,34 +1017,34 @@ export function runOnce(
     const standDownConductor = (what: NeverStarted, detail: string): Effect.Effect<void> =>
       Effect.promise(async () => {
         const it =
-          what.of === "run"
-            ? "a run"
-            : what.of === "step" || what.of === "draft"
+          what.of === 'run'
+            ? 'a run'
+            : what.of === 'step' || what.of === 'draft'
               ? `the ${what.step} step's agent`
-              : `the fixing agent for ${what.action}`;
-        const events = await store.read(CONTROL_STREAM);
-        const control = reduceControl(events);
+              : `the fixing agent for ${what.action}`
+        const events = await store.read(CONTROL_STREAM)
+        const control = reduceControl(events)
         if (control.paused) {
-          log(`${it} never started; the conductor is already paused — ${control.reason ?? "no reason given"}`);
-          return;
+          log(`${it} never started; the conductor is already paused — ${control.reason ?? 'no reason given'}`)
+          return
         }
         const { until, reason } = standDown({
           detail,
           what,
           backoffMs: parseDuration(backoffOf(recipe)),
-        });
+        })
         await store.append(CONTROL_STREAM, events.length, [
           {
-            type: "ConductorPaused",
-            actor: "conductor",
-            data: parsePayload("ConductorPaused", {
-              by: "lingtai",
+            type: 'ConductorPaused',
+            actor: 'conductor',
+            data: parsePayload('ConductorPaused', {
+              by: 'lingtai',
               reason,
               until: until.toISOString(),
             }),
           },
-        ]);
-        log(`${it} never started — conductor paused until ${until.toISOString()}`);
+        ])
+        log(`${it} never started — conductor paused until ${until.toISOString()}`)
       }).pipe(
         // A pause that would not append must not replace the reason the run ended
         // with the reason the pause failed.
@@ -1074,7 +1053,7 @@ export function runOnce(
             log(`could not pause the conductor: ${defect instanceof Error ? defect.message : String(defect)}`),
           ),
         ),
-      );
+      )
 
     /**
      * The outermost scope, and it is the log's (0034 §4).
@@ -1091,7 +1070,7 @@ export function runOnce(
        * place, beside the `WorkItemLanded` append, which is the only sentence
        * here that means it.
        */
-      let didLand = false;
+      let didLand = false
       /**
        * The merge commit the lane produced, for the caller's `ok: true`.
        *
@@ -1099,10 +1078,10 @@ export function runOnce(
        * the compiler cannot see that it ran, so narrowing the `let` at the read
        * would make it `never`.
        */
-      let mergeCommit: string | null = null;
-      const landedAt = (): string | null => mergeCommit;
+      let mergeCommit: string | null = null
+      const landedAt = (): string | null => mergeCommit
       /** The tree, once `admit`'s `worktree:` action has cut it. */
-      let worktree: Worktree | null = null;
+      let worktree: Worktree | null = null
       /**
        * That tree, for the step that briefs an agent on it — or a throw naming
        * what did not run.
@@ -1122,13 +1101,13 @@ export function runOnce(
           throw new Error(
             "the `implement` step has no worktree — `admit`'s `worktree:` action did not cut one, " +
               "and the spine says it did. This is the pass's own bookkeeping and not a judgement " +
-              "about the change.",
-          );
+              'about the change.',
+          )
         }
-        return worktree;
-      };
+        return worktree
+      }
       /** The item, once `claim`'s `queue:` action has taken it. */
-      let took: Claimed | null = null;
+      let took: Claimed | null = null
       /**
        * The settings file every declared `agent:` runs under, once `admit`'s port
        * has written it.
@@ -1143,7 +1122,7 @@ export function runOnce(
        * unhooked settings file per pass. See `cut` for why it is written there
        * rather than above the pass.
        */
-      let reviewSettingsPath = "";
+      let reviewSettingsPath = ''
       /**
        * **How many judgements this pass has bought**, and it is in the session id
        * (`#277`).
@@ -1163,7 +1142,7 @@ export function runOnce(
        * after it — so the commit is not the thing that differs, and the number of
        * times this pass has paid for a judgement is.
        */
-      let judgements = 0;
+      let judgements = 0
       /**
        * A reached ceiling's own words, where that is what stopped the agent —
        * turns or dollars (`#370`), carrying which.
@@ -1176,7 +1155,7 @@ export function runOnce(
        * so the distinction is kept here rather than pushed into a vocabulary
        * the pass would then have to carry.
        */
-      let ceilingHit: { kind: "out-of-turns" | "out-of-usd"; detail: string } | null = null;
+      let ceilingHit: { kind: 'out-of-turns' | 'out-of-usd'; detail: string } | null = null
       /**
        * **Which agent met the account-wide wall, where `implement` reports one.**
        *
@@ -1195,13 +1174,13 @@ export function runOnce(
        * Null until a round's agent is the one refused, so the first dispatch's
        * wall is still `{of: "run"}` and says so.
        */
-      let fixWall: { action: string; round: number } | null = null;
+      let fixWall: { action: string; round: number } | null = null
       /**
        * Read through a call and not off the variable, for `landedAt`'s reason:
        * `fixRound` is a port and the compiler cannot see that it ran, so
        * narrowing the `let` at the read below would make it `never`.
        */
-      const wallMetBy = (): { action: string; round: number } | null => fixWall;
+      const wallMetBy = (): { action: string; round: number } | null => fixWall
 
       /**
        * The run's log, and the keep-or-delete that ends it.
@@ -1238,40 +1217,40 @@ export function runOnce(
        * a pass that is passed over or loses the race still writes nothing at all,
        * and what it buffered goes with the closure.
        */
-      let opened: RunLog | null = null;
+      let opened: RunLog | null = null
       /** Notes taken before there was a file, in the order they were written. */
-      let beforeTheOpen: { label: string; detail: string | undefined }[] = [];
+      let beforeTheOpen: { label: string; detail: string | undefined }[] = []
       const runLog: RunLog = {
         get path() {
-          return opened?.path ?? "";
+          return opened?.path ?? ''
         },
         note: (label, detail) => {
-          if (opened === null) beforeTheOpen.push({ label, detail });
-          else opened.note(label, detail);
+          if (opened === null) beforeTheOpen.push({ label, detail })
+          else opened.note(label, detail)
         },
         close: async (fate) => {
-          await opened?.close(fate);
+          await opened?.close(fate)
         },
-      };
+      }
       /** Called by `claim`'s `queue:` action, and only once it holds the item. */
       const openTheRunLog = async (): Promise<void> => {
         opened = await Effect.runPromise(
           host.runLog({ path: runLogPath(home, project, runId) }).pipe(
             Effect.catchAll((err) =>
               Effect.sync(() => {
-                log(`no run log: ${err.detail}`);
-                return NO_RUN_LOG satisfies RunLog;
+                log(`no run log: ${err.detail}`)
+                return NO_RUN_LOG satisfies RunLog
               }),
             ),
           ),
-        );
+        )
         // The sentence that says which run this is, first — then what was written
         // while there was nowhere to write it, in the order it was written.
-        runLog.note("run", `${runId} · ${workItemId} · ${branch} → ${base}`);
-        const held = beforeTheOpen;
-        beforeTheOpen = [];
-        for (const { label, detail } of held) runLog.note(label, detail);
-      };
+        runLog.note('run', `${runId} · ${workItemId} · ${branch} → ${base}`)
+        const held = beforeTheOpen
+        beforeTheOpen = []
+        for (const { label, detail } of held) runLog.note(label, detail)
+      }
       /**
        * Released last, because it is registered first — the same ordering the
        * `acquireRelease` this replaces gave, and for the same reason: the fate
@@ -1281,14 +1260,14 @@ export function runOnce(
        */
       yield* Effect.addFinalizer(() =>
         Effect.promise(async () => {
-          if (opened === null) return;
+          if (opened === null) return
           // The sentence, and the label a reader recognises it by: `#110`
           // follows this from another process and has nothing else to tell *the
           // writer has finished* from *the writer is thinking*.
-          runLog.note(RUN_LOG_END, runLogEnd(didLand));
-          await runLog.close(didLand ? "delete" : "keep");
+          runLog.note(RUN_LOG_END, runLogEnd(didLand))
+          await runLog.close(didLand ? 'delete' : 'keep')
         }),
-      );
+      )
 
       /**
        * **The worktree's release, and it is unconditional** (0039 §1).
@@ -1301,28 +1280,28 @@ export function runOnce(
        * a worktree that was never there, which is a no-op and is cheaper than a
        * flag somebody has to keep true.
        */
-      yield* Effect.addFinalizer(() => repo.remove({ project, runId, home }));
+      yield* Effect.addFinalizer(() => repo.remove({ project, runId, home }))
 
       /** A git command in the worktree, which is where all of them run. */
-      const gitHere = (args: string[]) =>
-        repo.git(args, { token: options.token, env: options.gitEnv, cwd });
+      const gitHere = (args: string[]) => repo.git(args, { token: options.token, env: options.gitEnv, cwd })
       /** …as a promise, for the ports. A failure here is a defect, not a verdict. */
-      const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)));
-      const gitAsked = (args: string[]) => Effect.runPromise(Effect.either(gitHere(args)));
+      const gitOrDie = (args: string[]) => Effect.runPromise(Effect.orDie(gitHere(args)))
+      const gitAsked = (args: string[]) => Effect.runPromise(Effect.either(gitHere(args)))
 
-      const baseShaOr = (fallback: string) => worktree?.baseSha ?? fallback;
+      const baseShaOr = (fallback: string) => worktree?.baseSha ?? fallback
 
       const numstat = async () => {
-        const stat = await gitOrDie(["diff", "--numstat", `${baseShaOr("HEAD")}..HEAD`]).catch(
-          () => "",
-        );
-        const rows = stat.split("\n").filter(Boolean).map((l) => l.split("\t"));
+        const stat = await gitOrDie(['diff', '--numstat', `${baseShaOr('HEAD')}..HEAD`]).catch(() => '')
+        const rows = stat
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => l.split('\t'))
         return {
           files: rows.length,
           insertions: rows.reduce((n, r) => n + (Number(r[0]) || 0), 0),
           deletions: rows.reduce((n, r) => n + (Number(r[1]) || 0), 0),
-        };
-      };
+        }
+      }
 
       /**
        * What origin last had for this branch, as far as this pass knows. Starts
@@ -1330,9 +1309,9 @@ export function runOnce(
        * pushed: a lease that does not move is a lease this pass breaks itself on
        * its second round.
        */
-      let lease: string | null = null;
+      let lease: string | null = null
       /** The head this pass has already published, so nothing pushes it twice. */
-      let published: string | null = null;
+      let published: string | null = null
       /**
        * The head **`arm` itself is on origin at**, or null while it is on none.
        *
@@ -1354,14 +1333,14 @@ export function runOnce(
        * pushed strictly *before* the append for exactly this reason: *a push
        * that is refused must leave no arm on the log.*
        */
-      let armPublished: string | null = null;
+      let armPublished: string | null = null
       /**
        * What the run's own stream has already been told this claim produced, as
        * `<ref>@<head>`. A key and not a flag, because `arm-only` corrects an
        * answer an earlier call has already given (`#251`).
        */
-      let recordedDiff: string | null = null;
-      const producedKey = (ref: string, head: string) => `${ref}@${head}`;
+      let recordedDiff: string | null = null
+      const producedKey = (ref: string, head: string) => `${ref}@${head}`
 
       /**
        * **The account of the publish, on the log rather than only in the file**
@@ -1376,30 +1355,24 @@ export function runOnce(
        * missing explanation of a ref that is there.
        */
       const noteRefs = async (
-        outcome:
-          | "published"
-          | "nothing-committed"
-          | "already-published"
-          | "arm-only"
-          | "refused"
-          | "unrecorded",
+        outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded',
         headSha: string | null,
         detail: string | null,
       ): Promise<void> => {
         try {
           await appendAt(runId, [
             {
-              type: "RunRefsPublished",
-              actor: "conductor",
-              data: parsePayload("RunRefsPublished", { branch, arm, headSha, outcome, detail }),
+              type: 'RunRefsPublished',
+              actor: 'conductor',
+              data: parsePayload('RunRefsPublished', { branch, arm, headSha, outcome, detail }),
             },
-          ]);
+          ])
         } catch (defect) {
-          const why = whyOf(defect);
-          runLog.note("push", `the account of ${outcome} was not appended — ${why}`);
-          log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`);
+          const why = whyOf(defect)
+          runLog.note('push', `the account of ${outcome} was not appended — ${why}`)
+          log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`)
         }
-      };
+      }
 
       /**
        * The counts, against the ref that actually holds them — so the next
@@ -1413,33 +1386,30 @@ export function runOnce(
        * it the commits, against every later attempt.
        */
       const recordDiff = async (ref: string, head: string): Promise<void> => {
-        if (recordedDiff === producedKey(ref, head)) return;
-        const counted = await numstat();
+        if (recordedDiff === producedKey(ref, head)) return
+        const counted = await numstat()
         const row: ToAppend = {
-          type: "RunProducedDiff",
-          actor: "conductor",
-          data: parsePayload("RunProducedDiff", { branch: ref, headSha: head, ...counted }),
-        };
+          type: 'RunProducedDiff',
+          actor: 'conductor',
+          data: parsePayload('RunProducedDiff', { branch: ref, headSha: head, ...counted }),
+        }
         try {
-          await appendAt(runId, [row]);
+          await appendAt(runId, [row])
         } catch (first) {
           try {
-            await appendAt(runId, [row]);
+            await appendAt(runId, [row])
           } catch (again) {
-            const why = `${whyOf(first)}, and again — ${whyOf(again)}`;
-            runLog.note(
-              "push",
-              `${ref} at ${head.slice(0, 7)} is on origin and was not recorded — ${why}`,
-            );
-            log(`RunProducedDiff (${ref}) was refused by the store twice: ${why}`);
-            await noteRefs("unrecorded", head, `${ref} — ${why}`);
-            return;
+            const why = `${whyOf(first)}, and again — ${whyOf(again)}`
+            runLog.note('push', `${ref} at ${head.slice(0, 7)} is on origin and was not recorded — ${why}`)
+            log(`RunProducedDiff (${ref}) was refused by the store twice: ${why}`)
+            await noteRefs('unrecorded', head, `${ref} — ${why}`)
+            return
           }
         }
         // After the append and never before it (`#251`): a key set in advance
         // marks the answer given by the append that did not give it.
-        recordedDiff = producedKey(ref, head);
-      };
+        recordedDiff = producedKey(ref, head)
+      }
 
       /**
        * **What this claim leaves behind, whatever ending it had** (0062 §1).
@@ -1451,20 +1421,20 @@ export function runOnce(
        * branch is a worse lie than the absence.
        */
       const publishWhatIsCommitted = async (): Promise<string | null> => {
-        if (worktree === null) return null;
-        const tree = worktree;
+        if (worktree === null) return null
+        const tree = worktree
         try {
-          const at = await gitAsked(["rev-parse", "HEAD"]);
+          const at = await gitAsked(['rev-parse', 'HEAD'])
           if (Either.isLeft(at)) {
-            runLog.note("push", `${branch} was not pushed — ${at.left.detail}`);
-            await noteRefs("refused", null, at.left.detail);
-            return at.left.detail;
+            runLog.note('push', `${branch} was not pushed — ${at.left.detail}`)
+            await noteRefs('refused', null, at.left.detail)
+            return at.left.detail
           }
-          const head = at.right;
+          const head = at.right
           if (head === tree.baseSha) {
-            runLog.note("push", `nothing to push — ${branch} is still at the base`);
-            await noteRefs("nothing-committed", null, null);
-            return null;
+            runLog.note('push', `nothing to push — ${branch} is still at the base`)
+            await noteRefs('nothing-committed', null, null)
+            return null
           }
           /**
            * **Both refs, because the row says both and a restart names the
@@ -1489,60 +1459,58 @@ export function runOnce(
            * forced arm is the whole point of the second trip.
            */
           if (head === published && head === armPublished) {
-            await noteRefs("already-published", head, null);
+            await noteRefs('already-published', head, null)
             // And the record is asked for again (`#251`): a store that was down
             // for the earlier attempts may be up by the time the scope unwinds.
-            await recordDiff(branch, head);
-            return null;
+            await recordDiff(branch, head)
+            return null
           }
           const pushed = await gitAsked([
-            "push",
-            `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-            "origin",
+            'push',
+            `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`,
+            'origin',
             `HEAD:refs/heads/${branch}`,
             `+HEAD:refs/heads/${arm}`,
-          ]);
+          ])
           if (Either.isLeft(pushed)) {
             // **One exit code for two refspecs, so a failure is asked which**
             // (`#251`). `git push` is not atomic: origin takes the forced arm,
             // rejects the leased `agent/<n>`, and exits non-zero with the commits
             // on origin. Forced and at the same head, this second push is a no-op
             // where the arm already went and fails again where the transport broke.
-            const armAlone = await gitAsked(["push", "origin", `+HEAD:refs/heads/${arm}`]);
+            const armAlone = await gitAsked(['push', 'origin', `+HEAD:refs/heads/${arm}`])
             if (Either.isRight(armAlone)) {
               runLog.note(
-                "push",
+                'push',
                 `${branch} was not pushed — ${pushed.left.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
-              );
+              )
               // The arm is up even though the command exited non-zero, which is
               // the whole point of asking it separately.
-              armPublished = head;
-              await noteRefs("arm-only", head, pushed.left.detail);
-              await recordDiff(arm, head);
-              return pushed.left.detail;
+              armPublished = head
+              await noteRefs('arm-only', head, pushed.left.detail)
+              await recordDiff(arm, head)
+              return pushed.left.detail
             }
-            runLog.note("push", `${branch} was not pushed — ${pushed.left.detail}`);
-            await noteRefs("refused", head, pushed.left.detail);
-            return pushed.left.detail;
+            runLog.note('push', `${branch} was not pushed — ${pushed.left.detail}`)
+            await noteRefs('refused', head, pushed.left.detail)
+            return pushed.left.detail
           }
-          lease = head;
-          published = head;
-          armPublished = head;
-          runLog.note("push", `${branch} and ${arm} at ${head.slice(0, 7)}`);
-          await noteRefs("published", head, null);
-          await recordDiff(branch, head);
-          return null;
+          lease = head
+          published = head
+          armPublished = head
+          runLog.note('push', `${branch} and ${arm} at ${head.slice(0, 7)}`)
+          await noteRefs('published', head, null)
+          await recordDiff(branch, head)
+          return null
         } catch (defect) {
-          const why = whyOf(defect);
-          runLog.note("push", `the publish itself failed — ${why}`);
-          await noteRefs("refused", null, why);
-          return why;
+          const why = whyOf(defect)
+          runLog.note('push', `the publish itself failed — ${why}`)
+          await noteRefs('refused', null, why)
+          return why
         }
-      };
+      }
 
-      yield* Effect.addFinalizer(() =>
-        didLand ? Effect.void : Effect.promise(publishWhatIsCommitted),
-      );
+      yield* Effect.addFinalizer(() => (didLand ? Effect.void : Effect.promise(publishWhatIsCommitted)))
 
       // ---- the ports ---------------------------------------------------------
       // Eight methods, and every one of them wraps rather than reimplements —
@@ -1569,8 +1537,8 @@ export function runOnce(
         // the item the pass before had landed. It is here rather than in `claim`'s
         // body because the action runs *before* the body: a reset written there
         // would wipe what this had just taken (`pass-steps.ts`).
-        took = null;
-        onStream = null;
+        took = null
+        onStream = null
         // The four values off the action and never off `recipe` here, so that the
         // ticket this takes is the one the reading of the recipe says it took
         // (`queueOf`, and `defaultsAt` below where a recipe declares nothing).
@@ -1578,20 +1546,19 @@ export function runOnce(
         // source go through one value typed by it, not by the wider
         // `GitHubClient` — swapping the source later is then a one-line change
         // here rather than one at each call site.
-        const tickets: TicketSource = options.client;
-        const found = await runnableNow({ client: tickets, queue, only: [options.issue] });
-        const runnable = found.runnable.find((r) => r.ref === String(options.issue));
+        const tickets: TicketSource = options.client
+        const found = await runnableNow({ client: tickets, queue, only: [options.issue] })
+        const runnable = found.runnable.find((r) => r.ref === String(options.issue))
         if (!runnable) {
           return {
-            passedOver:
-              found.skipped.find((s) => s.ref === options.issue)?.reason ?? "not runnable",
-          };
+            passedOver: found.skipped.find((s) => s.ref === options.issue)?.reason ?? 'not runnable',
+          }
         }
         // The ticket, fetched once, before anything that reads it: the
         // implementer's brief and the cold reviewer both want it, and a run still
         // costs one call for it.
-        const issue = await tickets.getIssue(options.issue);
-        let claim;
+        const issue = await tickets.getIssue(options.issue)
+        let claim
         try {
           // The claim carries what the task is, because it is now the only place a
           // title enters the log at all.
@@ -1600,31 +1567,31 @@ export function runOnce(
             store,
             title: runnable.title,
             kind: runnable.kind,
-          });
+          })
         } catch (error) {
           // The one decline that leaves a stream behind, and `end` resolves
           // against it: the append may have committed, so the item may be held by
           // this run and somebody has to be told about it.
-          onStream = workItemId;
-          return { mayHold: { workItemId, detail: whyOf(error) } };
+          onStream = workItemId
+          return { mayHold: { workItemId, detail: whyOf(error) } }
         }
-        if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) };
+        if (!claim.ok) return { notClaimed: JSON.stringify(claim.refusal) }
         // **Set on the line the append committed, and before anything that can
         // fail** (`#269`). It is the whole of *this run may hold the item*, which
         // is what `release` below is gated on — so a throw between here and the
         // return must not be able to leave the item claimed with nothing willing
         // to give it back.
-        onStream = workItemId;
-        log(`claimed ${workItemId} as ${runId}`);
+        onStream = workItemId
+        log(`claimed ${workItemId} as ${runId}`)
         // **The run's account starts here**, because until this line there is no
         // run to account for: see `runLog`. A `passedOver` or a lost race above
         // returns having opened nothing.
-        await openTheRunLog();
+        await openTheRunLog()
         took = {
           workItemId,
           kind: runnable.kind,
           ticket: { ref: String(issue.number), title: issue.title, body: issue.body },
-        };
+        }
         // The issue says what the log says, from here on. Inline rather than
         // queued (0022): a call that does not land is written down and converged
         // later rather than retried.
@@ -1632,10 +1599,10 @@ export function runOnce(
           store,
           github: options.client,
           workItemId,
-          labels: labelsFor("running"),
-        });
-        return { taken: { workItemId, kind: runnable.kind } };
-      };
+          labels: labelsFor('running'),
+        })
+        return { taken: { workItemId, kind: runnable.kind } }
+      }
 
       /**
        * `admit` — cut the worktree, at the base **the action names**.
@@ -1653,10 +1620,7 @@ export function runOnce(
        * has been written yet — so it is `notCut`, which the action reports as
        * 0057's class rather than as a refusal buying a round to fix a repository.
        */
-      const cut = async (spec: {
-        readonly base: string;
-        readonly submodules: boolean;
-      }): Promise<CutAnswer> => {
+      const cut = async (spec: { readonly base: string; readonly submodules: boolean }): Promise<CutAnswer> => {
         /**
          * The cold reviewer's own settings, with no hook in them. `wiring`'s
          * settings and `wiring.env` are one thing and the `agent` gate had only
@@ -1688,13 +1652,11 @@ export function runOnce(
          * with nothing cut, which is true, and the item is then blocked or
          * released by the ending like any other machine fact.
          */
-        const settings = await Effect.runPromise(
-          Effect.either(host.unhookedSettings({ runId, label: "review", home })),
-        );
+        const settings = await Effect.runPromise(Effect.either(host.unhookedSettings({ runId, label: 'review', home })))
         if (Either.isLeft(settings)) {
-          return { notCut: `the cold reviewer had no settings: ${settings.left.detail}` };
+          return { notCut: `the cold reviewer had no settings: ${settings.left.detail}` }
         }
-        reviewSettingsPath = settings.right;
+        reviewSettingsPath = settings.right
 
         const provisioned = await Effect.runPromise(
           Effect.either(
@@ -1714,16 +1676,16 @@ export function runOnce(
               gitEnv: options.gitEnv,
             }),
           ),
-        );
-        if (Either.isLeft(provisioned)) return { notCut: provisioned.left.detail };
-        worktree = provisioned.right;
-        lease = provisioned.right.remoteHead;
-        log(`worktree ${provisioned.right.path} at ${provisioned.right.baseSha.slice(0, 7)}`);
+        )
+        if (Either.isLeft(provisioned)) return { notCut: provisioned.left.detail }
+        worktree = provisioned.right
+        lease = provisioned.right.remoteHead
+        log(`worktree ${provisioned.right.path} at ${provisioned.right.baseSha.slice(0, 7)}`)
         // `head` is the whole of what moves `onSha`, and the action puts it on
         // its result for the pass to read (`ActionResult.head`). The `Worktree`
         // itself stays here, where the finalizer that removes it already is.
-        return { head: provisioned.right.baseSha, where: provisioned.right.path };
-      };
+        return { head: provisioned.right.baseSha, where: provisioned.right.path }
+      }
 
       /**
        * **An agent, paid for a judgement** — the dispatch a `judge: claude-code`
@@ -1766,18 +1728,15 @@ export function runOnce(
        * about; there is no `JudgeAsked` to fold and the route is already the
        * record of what was decided.
        */
-      const askTheAgent = async (
-        declared: Extract<Declared, { runtime: RuntimeId }>,
-        on: Judging,
-      ): Promise<Judged> => {
-        const named = declared.named;
-        const held = (why: string): Judged => ({ next: "waiting", named, why });
+      const askTheAgent = async (declared: Extract<Declared, { runtime: RuntimeId }>, on: Judging): Promise<Judged> => {
+        const named = declared.named
+        const held = (why: string): Judged => ({ next: 'waiting', named, why })
         if (on.offering.length < 2) {
           return held(
             `the "${named}" judge was not asked about this "${on.when}": \`${on.offering[0]}\` was ` +
-              "the only step on offer, and an agent paid to pick the only item on a list has " +
-              "judged nothing",
-          );
+              'the only step on offer, and an agent paid to pick the only item on a list has ' +
+              'judged nothing',
+          )
         }
 
         // **The runtime the entry named, dispatched** (`#314`). It used to be
@@ -1786,23 +1745,21 @@ export function runOnce(
         // entry that disagreed, so the two always agreed. They need not now, and
         // this is the reading that makes `judge: codex` beside `agent:
         // claude-code` a thing the recipe can say.
-        const dispatched = runtimeNamed(declared.runtime);
-        const runtime = dispatched.capabilities.id;
+        const dispatched = runtimeNamed(declared.runtime)
+        const runtime = dispatched.capabilities.id
         // **The model is in the sentence or it is nowhere.** A judge has no event
         // of its own by decision — *what it cost is in the sentence* — so a
         // `judge:` whose whole point is a cheap model must say which one it
         // bought here, where `PassRouted.why` and the run log can be read after
         // the fact (`#314`, 0070 §2).
-        const asKnown = `${runtime}${declared.model === undefined ? "" : ` (${declared.model})`}`;
-        const settings = await Effect.runPromise(
-          Effect.either(host.unhookedSettings({ runId, label: "judge", home })),
-        );
+        const asKnown = `${runtime}${declared.model === undefined ? '' : ` (${declared.model})`}`
+        const settings = await Effect.runPromise(Effect.either(host.unhookedSettings({ runId, label: 'judge', home })))
         if (Either.isLeft(settings)) {
-          return held(`the "${named}" judge had no settings: ${settings.left.detail}`);
+          return held(`the "${named}" judge had no settings: ${settings.left.detail}`)
         }
-        judgements += 1;
-        log(`judging a "${on.when}" with ${asKnown} — ${named}`);
-        runLog.note("judge", `${on.when}: asking ${asKnown}`);
+        judgements += 1
+        log(`judging a "${on.when}" with ${asKnown} — ${named}`)
+        runLog.note('judge', `${on.when}: asking ${asKnown}`)
 
         const outcome = await Effect.runPromise(
           Effect.scoped(
@@ -1810,7 +1767,7 @@ export function runOnce(
               const abort = yield* Effect.acquireRelease(
                 Effect.sync(() => new AbortController()),
                 (controller) => Effect.sync(() => controller.abort()),
-              );
+              )
               return yield* Effect.promise(() =>
                 dispatched
                   .run({
@@ -1839,22 +1796,22 @@ export function runOnce(
                     turns: 0,
                     durationMs: 0,
                     costUsd: null,
-                    failure: { kind: "crash" as const, detail: (err as Error).message },
+                    failure: { kind: 'crash' as const, detail: (err as Error).message },
                     text: null,
-                    sessionId: "",
+                    sessionId: '',
                     usage: undefined,
                   })),
-              );
+              )
             }),
           ),
-        );
+        )
 
         // **Who was asked is part of what it cost** (`#314`). This string is the
         // whole record of a judgement — there is no `JudgeAsked` to fold — and a
         // `judge:` bought from a cheap model is one whose model has to be
         // readable on `PassRouted.why` afterwards, or the saving is unprovable.
-        const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? "" : `, $${outcome.costUsd.toFixed(2)}`}`;
-        runLog.note("judge", `${on.when}: ${outcome.failure?.kind ?? "answered"} · ${spent}`);
+        const spent = `${asKnown} · ${outcome.turns} turns${outcome.costUsd === null ? '' : `, $${outcome.costUsd.toFixed(2)}`}`
+        runLog.note('judge', `${on.when}: ${outcome.failure?.kind ?? 'answered'} · ${spent}`)
         /**
          * **A quota wall is the account's, so it stops the conductor rather than
          * this item** (0031 §3) — the third depth that wall is met at, after the
@@ -1865,7 +1822,7 @@ export function runOnce(
          * spent without an answer — did start, is about this pass, and is a
          * person's: that is the `held` below.
          */
-        if (outcome.failure?.kind === "never-started") {
+        if (outcome.failure?.kind === 'never-started') {
           return {
             neverStarted: {
               agent: runtime,
@@ -1873,26 +1830,26 @@ export function runOnce(
               // of them (0031 §4) and the pause chip shows them as what they are.
               detail: outcome.failure.detail,
             },
-          };
+          }
         }
         if (outcome.failure) {
           return held(
             `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
               `${outcome.failure.detail} — so the pass is held for a person (${spent})`,
-          );
+          )
         }
-        const chose = chosenIn(outcome.text);
+        const chose = chosenIn(outcome.text)
         if (chose === null) {
           return held(
             `the "${named}" judge's answer was not readable as one of the steps it was offered ` +
-              `(${spent}):\n${(outcome.text ?? "").slice(0, 2_000)}`,
-          );
+              `(${spent}):\n${(outcome.text ?? '').slice(0, 2_000)}`,
+          )
         }
         // Held to the offer by `judged` in `pass-steps.ts` and never here — a
         // destination the set did not contain is refused by name there, with the
         // ceiling that took it away, which is the one place that knows both.
-        return { next: chose.next, named, why: `the "${named}" judge: ${chose.why} (${spent})` };
-      };
+        return { next: chose.next, named, why: `the "${named}" judge: ${chose.why} (${spent})` }
+      }
 
       /**
        * `proposed` — **the judge the recipe declared for this direction** (`#274`,
@@ -1921,13 +1878,13 @@ export function runOnce(
        * handed is what the counting already left.
        */
       const judge = async (on: Judging): Promise<Judged> => {
-        const declared = judgeDeclaredAt(recipe.steps.proposed, on.when);
-        if (declared === null) return { noJudge: true };
-        return "built" in declared ? declared : askTheAgent(declared, on);
-      };
+        const declared = judgeDeclaredAt(recipe.steps.proposed, on.when)
+        if (declared === null) return { noJudge: true }
+        return 'built' in declared ? declared : askTheAgent(declared, on)
+      }
 
       /** `end` — the work item's own stream, read this late on purpose. */
-      const readEnd = (stream: string) => store.read(stream);
+      const readEnd = (stream: string) => store.read(stream)
 
       /**
        * `end` — what the step resolved, held for the append that makes its
@@ -1947,8 +1904,8 @@ export function runOnce(
        * step further on.
        */
       const recordEnd = async (_stream: string, _at: number, plan: readonly ToAppend[]) => {
-        endPlan = plan;
-      };
+        endPlan = plan
+      }
 
       /**
        * `merge` — the branch on the remote, then the lane.
@@ -1979,26 +1936,23 @@ export function runOnce(
        * reached only where every step before it passed, so a lane told otherwise
        * would be a lane told something the pass cannot be in a position to say.
        */
-      const land = async (on: {
-        readonly strategy: MergeStrategy;
-        readonly onSha: string;
-      }): Promise<LandAnswer> => {
+      const land = async (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Promise<LandAnswer> => {
         const pushed = await gitAsked([
-          "push",
-          `--force-with-lease=refs/heads/${branch}:${lease ?? ""}`,
-          "origin",
+          'push',
+          `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`,
+          'origin',
           `HEAD:refs/heads/${branch}`,
-        ]);
+        ])
         if (Either.isLeft(pushed)) {
-          return { notMerged: { reason: "push-rejected", detail: pushed.left.detail } };
+          return { notMerged: { reason: 'push-rejected', detail: pushed.left.detail } }
         }
-        lease = on.onSha;
+        lease = on.onSha
         // The branch and not the arm: the lane is about to merge this ref, and
         // an arm written for a landing is one 0062 §4's sweep takes back off.
         // A lane that refuses leaves the arm to the end-of-pass publish, which
         // asks about `armPublished` and not only about this
         // (`publishWhatIsCommitted`).
-        published = on.onSha;
+        published = on.onSha
 
         const result = await Effect.runPromise(
           repo.integrate({
@@ -2015,13 +1969,13 @@ export function runOnce(
             gitEnv: options.gitEnv,
             store,
           }),
-        );
+        )
         if (result.ok) {
-          mergeCommit = result.mergeCommit;
-          return { merged: result.mergeCommit };
+          mergeCommit = result.mergeCommit
+          return { merged: result.mergeCommit }
         }
-        return { notMerged: { reason: result.reason, detail: result.detail } };
-      };
+        return { notMerged: { reason: result.reason, detail: result.detail } }
+      }
 
       /**
        * `design` — the document into the worktree, and onto the branch (0066 §5,
@@ -2063,16 +2017,13 @@ export function runOnce(
        * that then failed is `notKept`, because the evidence says *committed to the
        * branch* and that has to be true where it says it.
        */
-      const keep = async (spec: {
-        readonly path: string;
-        readonly document: string;
-      }): Promise<KeptAnswer> => {
-        const at = join(cwd, spec.path);
+      const keep = async (spec: { readonly path: string; readonly document: string }): Promise<KeptAnswer> => {
+        const at = join(cwd, spec.path)
         try {
-          await mkdir(dirname(at), { recursive: true });
-          await writeFile(at, spec.document.endsWith("\n") ? spec.document : `${spec.document}\n`, "utf8");
+          await mkdir(dirname(at), { recursive: true })
+          await writeFile(at, spec.document.endsWith('\n') ? spec.document : `${spec.document}\n`, 'utf8')
         } catch (error) {
-          return { notKept: (error as Error).message };
+          return { notKept: (error as Error).message }
         }
 
         // `-f`, so a project whose own `.gitignore` covers the path it asked for
@@ -2081,31 +2032,31 @@ export function runOnce(
         // exits 0, and this keep would then report a commit it did not make.
         // Narrow by construction — the argument is the one path just written,
         // and `--only` below keeps the commit to it too.
-        const added = await gitAsked(["add", "-f", "--", spec.path]);
-        if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` };
+        const added = await gitAsked(['add', '-f', '--', spec.path])
+        if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` }
         // `--quiet` implies `--exit-code`, so a *right* here is *nothing staged*
         // and a left is a difference to commit — the one place in this file where
         // the failing branch is the ordinary one.
-        const staged = await gitAsked(["diff", "--cached", "--quiet", "--", spec.path]);
+        const staged = await gitAsked(['diff', '--cached', '--quiet', '--', spec.path])
         if (Either.isLeft(staged)) {
           // `--only`, so a commit at `design` cannot pick up anything else the
           // worktree happens to be holding: what this action is answering for is
           // the one path it wrote.
           const committed = await gitAsked([
-            "commit",
-            "-m",
+            'commit',
+            '-m',
             `docs(design): the shape for #${options.issue}`,
-            "--only",
-            "--",
+            '--only',
+            '--',
             spec.path,
-          ]);
+          ])
           if (Either.isLeft(committed)) {
-            return { notKept: `git commit refused it: ${committed.left.detail}` };
+            return { notKept: `git commit refused it: ${committed.left.detail}` }
           }
         }
-        const head = await gitAsked(["rev-parse", "HEAD"]);
-        return Either.isLeft(head) ? { at: spec.path } : { at: spec.path, head: head.right };
-      };
+        const head = await gitAsked(['rev-parse', 'HEAD'])
+        return Either.isLeft(head) ? { at: spec.path } : { at: spec.path, head: head.right }
+      }
 
       /**
        * `implement` — the design back off the path a `file:` kept it at (0066 §4,
@@ -2121,7 +2072,7 @@ export function runOnce(
        * moved with the code it is about; the filesystem is handed in, and is
        * still `readFile` and nothing else.
        */
-      const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, "utf8") });
+      const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, 'utf8') })
 
       /**
        * **The ticket, for every plugin that writes part of it down** — the one
@@ -2137,7 +2088,7 @@ export function runOnce(
        * Read when the action runs and not here, so `took` is the claim this pass
        * made rather than whatever it was before `claim`.
        */
-      const issue = async () => took?.ticket ?? { ref: String(options.issue), title: "", body: "" };
+      const issue = async () => took?.ticket ?? { ref: String(options.issue), title: '', body: '' }
 
       /**
        * What a declared plugin needs in order to run — the things only a caller
@@ -2153,13 +2104,13 @@ export function runOnce(
         agent: {
           runtime: options.runtime,
           issue,
-          diff: () => gitOrDie(["diff", `${baseShaOr("HEAD")}...HEAD`]),
+          diff: () => gitOrDie(['diff', `${baseShaOr('HEAD')}...HEAD`]),
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
           // which is at `design`, `review`, `proposed` or `merge` — so always
           // after `cut`, and since `#265` the first of those is the very next step.
           get settingsPath() {
-            return reviewSettingsPath;
+            return reviewSettingsPath
           },
           // The ceiling, and the default: a `review` whose `agent:` declares a
           // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
@@ -2182,8 +2133,8 @@ export function runOnce(
         runtimeFor: runtimeNamed,
         watch: {
           changedFiles: async () => {
-            const names = await gitOrDie(changedFilesArgs(baseShaOr("HEAD")));
-            return names.split("\n").filter(Boolean);
+            const names = await gitOrDie(changedFilesArgs(baseShaOr('HEAD')))
+            return names.split('\n').filter(Boolean)
           },
         },
         // The fourth, and the one that makes rather than judges: `admit`'s
@@ -2226,7 +2177,7 @@ export function runOnce(
         // `implement` is briefed with the document the pass is already carrying,
         // exactly as it was before this existed.
         fileBrief: { read },
-      };
+      }
 
       /**
        * **`--no-merge`, and a repair bought before `#143`, as the `human:` action
@@ -2246,25 +2197,25 @@ export function runOnce(
        * what they let past. `heldBeforeTheLane` is that placement.
        */
       const alsoHeldAtMerge = (): Action[] => {
-        const held: Action[] = [];
+        const held: Action[] = []
         if (repairOf !== null) {
           held.push(
             createHumanAction({
-              name: "repair",
+              name: 'repair',
               question: `A repair for ${repairOf.reason}. Merge ${branch} into ${base}?`,
             }),
-          );
+          )
         }
         if (options.merge === false) {
           held.push(
             createHumanAction({
-              name: "no-merge",
+              name: 'no-merge',
               question: `Merge ${branch} into ${base}? Every step passed, and this run was asked not to merge.`,
             }),
-          );
+          )
         }
-        return held;
-      };
+        return held
+      }
 
       /**
        * **What runs at a step the recipe says nothing about** — that step's
@@ -2357,20 +2308,13 @@ export function runOnce(
        * what the printed block is for.
        */
       const defaultsAt = (step: Step): readonly Action[] => {
-        if (step === "claim") {
-          return [
-            createQueueAction({ name: "take the ticket", ...queueOf(recipe) }, { take }),
-          ];
+        if (step === 'claim') {
+          return [createQueueAction({ name: 'take the ticket', ...queueOf(recipe) }, { take })]
         }
-        if (step === "admit") {
-          return [
-            createWorktreeAction(
-              { name: "cut the branch", base, submodules: submodulesOf(recipe) },
-              { cut },
-            ),
-          ];
+        if (step === 'admit') {
+          return [createWorktreeAction({ name: 'cut the branch', base, submodules: submodulesOf(recipe) }, { cut })]
         }
-        if (step === "implement") {
+        if (step === 'implement') {
           /**
            * **The agent that writes the change, where the recipe names none**
            * (0065 §1, `#266`).
@@ -2387,28 +2331,28 @@ export function runOnce(
            * reviewer follows — so the default adding nothing is the default
            * changing nothing.
            */
-          return [createWorkAction({ name: "write the change", prompt: "" }, { work: dispatch })];
+          return [createWorkAction({ name: 'write the change', prompt: '' }, { work: dispatch })]
         }
-        if (step === "merge") {
+        if (step === 'merge') {
           // The strategy `mergePlugin`'s schema defaults to, because `integrate`
           // offers one — and no base, for the reason that plugin declares none:
           // the base is one value that flows, and `land` above already has it, so
           // *the default merge* and *a pasted block that says what the default
           // did* cannot land onto different branches (0061 §4).
-          return [createMergeAction({ name: "land the branch", strategy: "merge-commit" }, { land })];
+          return [createMergeAction({ name: 'land the branch', strategy: 'merge-commit' }, { land })]
         }
-        return [];
-      };
+        return []
+      }
 
       const actionsAt = (step: Step, actions: readonly StepAction[]): readonly Action[] => {
-        const declared = actionsFromRecipe(step, actions, stepDeps);
+        const declared = actionsFromRecipe(step, actions, stepDeps)
         // **A default replaces what would have run; a hold composes with it**
         // (0065 §3). That is why `alsoHeldAtMerge` stays outside the substitution
         // and composes either way: `--no-merge` holds a recipe that declares
         // nothing at `merge` exactly as it holds one that declares a person.
-        const running = declared.length > 0 ? declared : defaultsAt(step);
-        return step === "merge" ? heldBeforeTheLane(running) : running;
-      };
+        const running = declared.length > 0 ? declared : defaultsAt(step)
+        return step === 'merge' ? heldBeforeTheLane(running) : running
+      }
 
       /**
        * **Where a hold at `merge` goes once the lane is in the list** (`#270`).
@@ -2433,13 +2377,11 @@ export function runOnce(
        * then the lane, and the index it finds is the last entry or nothing.
        */
       const heldBeforeTheLane = (running: readonly Action[]): readonly Action[] => {
-        const held = alsoHeldAtMerge();
-        if (held.length === 0) return running;
-        const lands = running.findIndex((action) => action.kind === "merge");
-        return lands === -1
-          ? [...running, ...held]
-          : [...running.slice(0, lands), ...held, ...running.slice(lands)];
-      };
+        const held = alsoHeldAtMerge()
+        if (held.length === 0) return running
+        const lands = running.findIndex((action) => action.kind === 'merge')
+        return lands === -1 ? [...running, ...held] : [...running.slice(0, lands), ...held, ...running.slice(lands)]
+      }
 
       /**
        * Every event the pipeline produces, in order, before the next action starts.
@@ -2453,11 +2395,11 @@ export function runOnce(
         await appendNow(runId, [
           {
             type: event.type,
-            actor: "conductor",
+            actor: 'conductor',
             data: parsePayload(event.type, event.data),
           } as ToAppend,
-        ]);
-      };
+        ])
+      }
 
       /**
        * `implement`, the first time — the hook, the agent, and the receipt.
@@ -2489,10 +2431,10 @@ export function runOnce(
        * nothing gets the prompt it got before this key existed, byte for byte.
        */
       const alsoSays = (prompt: string, extra: string): string =>
-        extra === "" ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`;
+        extra === '' ? prompt : `${prompt}\n\n## Also for this project\n\n${extra}\n`
 
       const firstDispatch = async (brief: Brief, spec: WorkDispatch): Promise<Worked> => {
-        const tree = cutTree();
+        const tree = cutTree()
         /**
          * **Where this agent found the tree** — and the whole of what the receipt
          * below is measured against (`#265`).
@@ -2514,35 +2456,31 @@ export function runOnce(
          * true: prose in a prompt is not a guard, and the agent that ignores it is
          * exactly the one the guard is for.
          */
-        const startedAt = await gitOrDie(["rev-parse", "HEAD"]);
-        const wired = await Effect.runPromise(
-          Effect.either(host.wire({ runId, hookBinary: options.hookBinary, home })),
-        );
-        if (Either.isLeft(wired)) return { stopped: `the hook was not wired: ${wired.left.detail}` };
-        const wiring = wired.right;
+        const startedAt = await gitOrDie(['rev-parse', 'HEAD'])
+        const wired = await Effect.runPromise(Effect.either(host.wire({ runId, hookBinary: options.hookBinary, home })))
+        if (Either.isLeft(wired)) return { stopped: `the hook was not wired: ${wired.left.detail}` }
+        const wiring = wired.right
 
-        const smoke = await Effect.runPromise(
-          Effect.either(host.smokeTest(options.hookBinary, runBinary)),
-        );
+        const smoke = await Effect.runPromise(Effect.either(host.smokeTest(options.hookBinary, runBinary)))
         if (Either.isLeft(smoke)) {
-          return { stopped: `the hook's smoke test did not run: ${smoke.left.detail}` };
+          return { stopped: `the hook's smoke test did not run: ${smoke.left.detail}` }
         }
-        if (!smoke.right.ok) return { stopped: `the hook did not fail closed: ${smoke.right.detail}` };
+        if (!smoke.right.ok) return { stopped: `the hook did not fail closed: ${smoke.right.detail}` }
 
         // The action's own bound where it declared one (`#314`). A fix round is
         // this same `implement` entry again, so a narrowed `implement` bounds the
         // rounds too — which is what makes `passCeiling`'s *then N round(s)*
         // arithmetic true of the narrowed figure rather than of the ceiling.
-        const spend = spendFor(spec.limits);
-        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id);
-        const agentEnv = runnableEnv({ ...env.values, ...wiring.env });
+        const spend = spendFor(spec.limits)
+        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
+        const agentEnv = runnableEnv({ ...env.values, ...wiring.env })
         const spawned = dispatched.invocation?.({
           runId,
           cwd: tree.path,
           settingsPath: wiring.settingsPath,
           env: agentEnv,
           limits: spend,
-        });
+        })
 
         const ran = await Effect.runPromise(
           Effect.either(
@@ -2552,19 +2490,16 @@ export function runOnce(
                   socketPath: wiring.socketPath,
                   store,
                   onDecision: (_r, hook, verdict, call) =>
-                    runLog.note(
-                      call.tool === "" ? hook : call.tool,
-                      `${verdict.padEnd(6)}${call.target}`,
-                    ),
-                  onLifecycle: (_r, hook) => runLog.note("hook", hook),
-                });
+                    runLog.note(call.tool === '' ? hook : call.tool, `${verdict.padEnd(6)}${call.target}`),
+                  onLifecycle: (_r, hook) => runLog.note('hook', hook),
+                })
 
                 yield* Effect.promise(() =>
                   appendNow(runId, [
                     {
-                      type: "RunStarted",
-                      actor: "conductor",
-                      data: parsePayload("RunStarted", {
+                      type: 'RunStarted',
+                      actor: 'conductor',
+                      data: parsePayload('RunStarted', {
                         workItemId,
                         // **The runtime that actually ran, not the pass's
                         // default** (`#314`). This field answers *which runtime
@@ -2576,7 +2511,7 @@ export function runOnce(
                         // The recipe's `model:` where it named one, and the
                         // runtime's own default where it did not (0063 §2) —
                         // which is what the empty string has always meant here.
-                        model: spec.model ?? "",
+                        model: spec.model ?? '',
                         promptVersion,
                         baseSha: tree.baseSha,
                         configHash: resolved.configHash,
@@ -2587,28 +2522,26 @@ export function runOnce(
                       }),
                     },
                   ]),
-                );
+                )
                 yield* Effect.promise(() =>
                   appendNow(runId, [
                     {
-                      type: "StepsResolved",
-                      actor: "conductor",
-                      data: parsePayload("StepsResolved", stepsResolved(runId, resolved)),
+                      type: 'StepsResolved',
+                      actor: 'conductor',
+                      data: parsePayload('StepsResolved', stepsResolved(runId, resolved)),
                     },
                   ]),
-                );
+                )
 
                 yield* Effect.acquireRelease(
-                  Effect.promise(async () =>
-                    server.register(runId, (await store.read(runId)).length, promptVersion),
-                  ),
+                  Effect.promise(async () => server.register(runId, (await store.read(runId)).length, promptVersion)),
                   () => Effect.sync(() => void server.unregister(runId)),
-                );
+                )
 
                 const abort = yield* Effect.acquireRelease(
                   Effect.sync(() => new AbortController()),
                   (controller) => Effect.sync(() => controller.abort()),
-                );
+                )
 
                 const outcome = yield* Effect.promise(() =>
                   dispatched.run({
@@ -2647,31 +2580,31 @@ export function runOnce(
                     limits: spend,
                     signal: abort.signal,
                   }),
-                );
-                yield* Effect.promise(() => server.flush(runId).catch(() => {}));
-                return { outcome, version: server.get(runId)?.version ?? 1 };
+                )
+                yield* Effect.promise(() => server.flush(runId).catch(() => {}))
+                return { outcome, version: server.get(runId)?.version ?? 1 }
               }),
             ),
           ),
-        );
+        )
         if (Either.isLeft(ran)) {
-          return { stopped: `the hook socket was not served: ${ran.left.detail}` };
+          return { stopped: `the hook socket was not served: ${ran.left.detail}` }
         }
-        const { outcome, version } = ran.right;
+        const { outcome, version } = ran.right
 
         if (outcome.failure) {
-          runLog.note("run", `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`);
+          runLog.note('run', `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`)
           // **Both, for a run stopped at a ceiling, whose receipt is its spend.**
           // A `RunFinished` there is not a contradiction: turns were taken and
           // money was spent, and the ending is what `RunFailed` says. True of
           // `out-of-usd` for the same reason it is of `out-of-turns` (`#370`).
           const receipt: ToAppend[] =
-            outcome.failure.kind === "out-of-turns" || outcome.failure.kind === "out-of-usd"
+            outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd'
               ? [
                   {
-                    type: "RunFinished",
-                    actor: "conductor",
-                    data: parsePayload("RunFinished", {
+                    type: 'RunFinished',
+                    actor: 'conductor',
+                    data: parsePayload('RunFinished', {
                       exitCode: outcome.exitCode ?? 1,
                       turns: outcome.turns,
                       durationMs: outcome.durationMs,
@@ -2680,34 +2613,34 @@ export function runOnce(
                     }),
                   },
                 ]
-              : [];
+              : []
           await appendFrom(runId, version, [
             ...receipt,
             {
-              type: "RunFailed",
-              actor: "conductor",
-              data: parsePayload("RunFailed", outcome.failure),
+              type: 'RunFailed',
+              actor: 'conductor',
+              data: parsePayload('RunFailed', outcome.failure),
             },
-          ]);
-          if (outcome.failure.kind === "never-started") {
+          ])
+          if (outcome.failure.kind === 'never-started') {
             return {
               neverStarted: {
                 agent: options.runtime.capabilities.id,
                 detail: outcome.failure.detail,
               },
-            };
+            }
           }
-          if (outcome.failure.kind === "out-of-turns" || outcome.failure.kind === "out-of-usd") {
-            ceilingHit = { kind: outcome.failure.kind, detail: outcome.failure.detail };
+          if (outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd') {
+            ceilingHit = { kind: outcome.failure.kind, detail: outcome.failure.detail }
           }
-          return { stopped: `${outcome.failure.kind}: ${outcome.failure.detail}` };
+          return { stopped: `${outcome.failure.kind}: ${outcome.failure.detail}` }
         }
 
         await appendFrom(runId, version, [
           {
-            type: "RunFinished",
-            actor: "conductor",
-            data: parsePayload("RunFinished", {
+            type: 'RunFinished',
+            actor: 'conductor',
+            data: parsePayload('RunFinished', {
               exitCode: outcome.exitCode ?? 0,
               turns: outcome.turns,
               durationMs: outcome.durationMs,
@@ -2715,27 +2648,27 @@ export function runOnce(
               ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
             }),
           },
-        ]);
-        log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`);
-        runLog.note("run", `finished: ${outcome.turns} turns, ${outcome.costUsd ?? "unknown"} usd`);
+        ])
+        log(`run finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
+        runLog.note('run', `finished: ${outcome.turns} turns, ${outcome.costUsd ?? 'unknown'} usd`)
 
-        const head = await gitOrDie(["rev-parse", "HEAD"]);
+        const head = await gitOrDie(['rev-parse', 'HEAD'])
         // **The commit is the receipt** (0057 §2), and it is *this* agent's commit:
         // `startedAt` and not `tree.baseSha`, so a step before this one that left a
         // commit of its own cannot stand in for one. An agent that ran and committed
         // nothing left no receipt, and the pass stops rather than buying a round to
         // fix a diff that does not exist.
-        if (head === startedAt) return { stopped: "the agent produced no commits" };
-        await recordDiff(branch, head);
+        if (head === startedAt) return { stopped: 'the agent produced no commits' }
+        await recordDiff(branch, head)
         await appendNow(runId, [
           {
-            type: "RunProposedCompletion",
-            actor: "conductor",
-            data: parsePayload("RunProposedCompletion", { headSha: head }),
+            type: 'RunProposedCompletion',
+            actor: 'conductor',
+            data: parsePayload('RunProposedCompletion', { headSha: head }),
           },
-        ]);
-        return { committed: head };
-      };
+        ])
+        return { committed: head }
+      }
 
       /**
        * `implement`, a second time — **and the round was already bought.**
@@ -2753,30 +2686,30 @@ export function runOnce(
        */
       const fixRound = async (
         brief: Brief,
-        again: NonNullable<Brief["again"]>,
+        again: NonNullable<Brief['again']>,
         spec: WorkDispatch,
       ): Promise<Worked> => {
         // The same entry's runtime and bound as the run it is a round of: a fix
         // is `implement` again, and buying it from a different agent than the one
         // that wrote the code would be a warm review's mistake spelled backwards.
-        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id);
-        const tree = cutTree();
-        const round = brief.context.round ?? 1;
-        const findings = brief.context.recheck ?? [];
-        const from = again.printed?.step ?? "proposed";
-        const said = again.printed?.detail ?? again.asked ?? again.why;
+        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
+        const tree = cutTree()
+        const round = brief.context.round ?? 1
+        const findings = brief.context.recheck ?? []
+        const from = again.printed?.step ?? 'proposed'
+        const said = again.printed?.detail ?? again.asked ?? again.why
         const refusal =
           findings.length > 0
-            ? ({ on: "findings", findings } as const)
-            : from === "merge"
-              ? ({ on: "conflict", base, paths: said } as const)
-              : ({ on: "output", output: said } as const);
+            ? ({ on: 'findings', findings } as const)
+            : from === 'merge'
+              ? ({ on: 'conflict', base, paths: said } as const)
+              : ({ on: 'output', output: said } as const)
 
         await appendNow(runId, [
           {
-            type: "FixRequested",
-            actor: "conductor",
-            data: parsePayload("FixRequested", {
+            type: 'FixRequested',
+            actor: 'conductor',
+            data: parsePayload('FixRequested', {
               runId,
               round,
               of: ceiling.rounds,
@@ -2785,25 +2718,25 @@ export function runOnce(
               findings,
             }),
           },
-        ]);
-        log(`fixing ${from} — round ${round} of ${ceiling.rounds}`);
-        runLog.note("fix", `round ${round} for ${from}`);
+        ])
+        log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
+        runLog.note('fix', `round ${round} for ${from}`)
 
         const settings = await Effect.runPromise(
           Effect.either(host.unhookedSettings({ runId, label: `fix-${round}`, home })),
-        );
+        )
         if (Either.isLeft(settings)) {
-          return { stopped: `the fixing agent had no settings: ${settings.left.detail}` };
+          return { stopped: `the fixing agent had no settings: ${settings.left.detail}` }
         }
 
-        const underReview = await gitOrDie(["diff", `${tree.baseSha}...HEAD`]);
+        const underReview = await gitOrDie(['diff', `${tree.baseSha}...HEAD`])
         const fixed = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
               const abort = yield* Effect.acquireRelease(
                 Effect.sync(() => new AbortController()),
                 (controller) => Effect.sync(() => controller.abort()),
-              );
+              )
               return yield* Effect.promise(() =>
                 dispatched
                   .run({
@@ -2834,24 +2767,24 @@ export function runOnce(
                     turns: 0,
                     durationMs: 0,
                     costUsd: null,
-                    failure: { kind: "crash" as const, detail: (err as Error).message },
+                    failure: { kind: 'crash' as const, detail: (err as Error).message },
                     text: null,
-                    sessionId: "",
+                    sessionId: '',
                     usage: undefined,
                   })),
-              );
+              )
             }),
           ),
-        );
+        )
 
-        const after = await gitOrDie(["rev-parse", "HEAD"]);
-        const committed = after !== brief.context.onSha;
+        const after = await gitOrDie(['rev-parse', 'HEAD'])
+        const committed = after !== brief.context.onSha
 
         await appendNow(runId, [
           {
-            type: "FixApplied",
-            actor: "conductor",
-            data: parsePayload("FixApplied", {
+            type: 'FixApplied',
+            actor: 'conductor',
+            data: parsePayload('FixApplied', {
               runId,
               round,
               headSha: committed ? after : null,
@@ -2861,32 +2794,32 @@ export function runOnce(
               ...(fixed.usage === undefined ? {} : { usage: fixed.usage }),
             }),
           },
-        ]);
+        ])
         runLog.note(
-          "fix",
-          `round ${round}: ${committed ? after.slice(0, 7) : "no commit"}` +
-            ` · ${fixed.turns} turns, ${fixed.costUsd ?? "unknown"} usd` +
-            (fixed.failure ? ` · ${fixed.failure.kind}` : ""),
-        );
+          'fix',
+          `round ${round}: ${committed ? after.slice(0, 7) : 'no commit'}` +
+            ` · ${fixed.turns} turns, ${fixed.costUsd ?? 'unknown'} usd` +
+            (fixed.failure ? ` · ${fixed.failure.kind}` : ''),
+        )
 
-        if (fixed.failure?.kind === "never-started") {
+        if (fixed.failure?.kind === 'never-started') {
           // Whose wall it was, for the sentence the pause carries (`fixWall`).
-          fixWall = { action: from, round };
+          fixWall = { action: from, round }
           return {
             neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
-          };
+          }
         }
         if (!committed) {
           return {
             stopped: fixed.failure
               ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
-                "so there is nothing new for the review to read"
-              : "the fixing agent committed nothing, so there is nothing new for the review to read",
-          };
+                'so there is nothing new for the review to read'
+              : 'the fixing agent committed nothing, so there is nothing new for the review to read',
+          }
         }
-        await recordDiff(branch, after);
-        return { committed: after };
-      };
+        await recordDiff(branch, after)
+        return { committed: after }
+      }
 
       /**
        * **What the `agent:` at `implement` wraps** (`#266`) — and the brief is
@@ -2911,22 +2844,19 @@ export function runOnce(
       const dispatch = async (spec: WorkDispatch, context: ActionContext): Promise<Worked> => {
         if (took === null) {
           throw new Error(
-            "the `implement` step has no item — the step that makes it did not run, " +
+            'the `implement` step has no item — the step that makes it did not run, ' +
               "and the spine says it did. This is the pass's own bookkeeping and not a " +
-              "judgement about the change.",
-          );
+              'judgement about the change.',
+          )
         }
         const brief: Brief = {
           ticket: took.ticket,
           design: context.design ?? NO_DESIGN,
           again: context.again ?? null,
           context,
-        };
-        return brief.again === null
-          ? firstDispatch(brief, spec)
-          : fixRound(brief, brief.again, spec);
-      };
-
+        }
+        return brief.again === null ? firstDispatch(brief, spec) : fixRound(brief, brief.again, spec)
+      }
 
       // **Six, and none of `cut`, `take`, `land` or `draft` is one of them**:
       // `admit`'s work is a `worktree:` action (`#268`), `claim`'s is a `queue:`
@@ -2946,7 +2876,7 @@ export function runOnce(
         judge,
         readEnd,
         recordEnd,
-      };
+      }
 
       // ---- the pass ----------------------------------------------------------
       // Ten steps, and the claim is the first of them. Everything above this line
@@ -2961,13 +2891,13 @@ export function runOnce(
            * at zero and `recheck` at nothing, and the loop rebuilds all three per
            * visit (`contextFor`).
            */
-          context: { runId, onSha: "", cwd, env: runnableEnv(env.values), log: runLog },
+          context: { runId, onSha: '', cwd, env: runnableEnv(env.values), log: runLog },
           emit,
           actionsAt,
           bodies: bodiesFor(ports),
           ceilings,
         }),
-      );
+      )
 
       /**
        * **A store that refused an append is not a step's verdict about the
@@ -2988,11 +2918,11 @@ export function runOnce(
        * it is about (`appendNow`).
        */
       if (unappended !== null) {
-        log(`the store refused an append during the pass: ${whyOf(unappended)}`);
-        return yield* Effect.die(unappended);
+        log(`the store refused an append during the pass: ${whyOf(unappended)}`)
+        return yield* Effect.die(unappended)
       }
 
-      log(`pass: ${pass.steps.map((v) => `${v.step}=${v.ending.ending}`).join(" ")}`);
+      log(`pass: ${pass.steps.map((v) => `${v.step}=${v.ending.ending}`).join(' ')}`)
       /**
        * **Every decision the router made, on the log** (`#271`).
        *
@@ -3021,7 +2951,7 @@ export function runOnce(
        * this class of caller is for (`appendNow`'s own doc).
        */
       for (const route of pass.routes) {
-        runLog.note("route", `${route.from} → ${route.to}: ${route.why}`);
+        runLog.note('route', `${route.from} → ${route.to}: ${route.why}`)
       }
       if (pass.routes.length > 0) {
         yield* Effect.promise(async () => {
@@ -3029,9 +2959,9 @@ export function runOnce(
             await appendAt(
               runId,
               pass.routes.map((route) => ({
-                type: "PassRouted" as const,
-                actor: "conductor",
-                data: parsePayload("PassRouted", {
+                type: 'PassRouted' as const,
+                actor: 'conductor',
+                data: parsePayload('PassRouted', {
                   from: route.from,
                   chose: route.chose,
                   to: route.to,
@@ -3039,20 +2969,20 @@ export function runOnce(
                   ceiling: route.ceiling,
                 }),
               })),
-            );
+            )
           } catch (defect) {
-            const why = whyOf(defect);
-            runLog.note("route", `the ${pass.routes.length} route(s) were not appended — ${why}`);
-            log(`PassRouted was refused by the store: ${why}`);
+            const why = whyOf(defect)
+            runLog.note('route', `the ${pass.routes.length} route(s) were not appended — ${why}`)
+            log(`PassRouted was refused by the store: ${why}`)
           }
-        });
+        })
       }
 
-      const outcome = outcomeOf(pass);
+      const outcome = outcomeOf(pass)
       // For `release`, which is declared above this scope and has to know which
       // outcome the plan it is holding is about (`endedAs`).
-      endedAs = outcome;
-      const headSha = headReached(pass.steps);
+      endedAs = outcome
+      const headSha = headReached(pass.steps)
       /**
        * **The refs go before the question, and this line is what makes that
        * true** (`#250`, 0062 §1).
@@ -3074,10 +3004,8 @@ export function runOnce(
        * and it travels onto the card rather than being swallowed — the person is
        * still owed the question, and is told the branch is not there.
        */
-      const notPushed =
-        outcome === "landed" ? null : yield* Effect.promise(publishWhatIsCommitted);
-      const unpushed =
-        notPushed === null ? "" : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`;
+      const notPushed = outcome === 'landed' ? null : yield* Effect.promise(publishWhatIsCommitted)
+      const unpushed = notPushed === null ? '' : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`
       /**
        * **What a person can be asked to merge: the head this pass put on origin
        * for `branch`, or null where it put none there.**
@@ -3105,18 +3033,14 @@ export function runOnce(
        * is what the old engine did on both endings that reach a person without a
        * commit.
        */
-      const onOrigin = published;
-      const stopped = pass.stoppedAt;
+      const onOrigin = published
+      const stopped = pass.stoppedAt
       /** What the router decided last, which is what sent a pass to a person. */
-      const lastRoute = pass.routes.at(-1) ?? null;
+      const lastRoute = pass.routes.at(-1) ?? null
       /** Every finding the pass's plugins raised, for a card and for a restart. */
-      const findings = pass.steps.flatMap((visit) =>
-        visit.results.flatMap((result) => result.findings),
-      );
+      const findings = pass.steps.flatMap((visit) => visit.results.flatMap((result) => result.findings))
       /** How many rounds the pass actually bought — a route back into the spine. */
-      const roundsSpent = pass.routes.filter(
-        (route) => route.to !== "waiting" && route.to !== "claim",
-      ).length;
+      const roundsSpent = pass.routes.filter((route) => route.to !== 'waiting' && route.to !== 'claim').length
 
       /**
        * The three things a person is owed, in one place.
@@ -3127,61 +3051,60 @@ export function runOnce(
        * already — `diagnoseRefusal` — and it is used rather than restated.
        */
       const blocked = () => {
-        const said_ = whatIsWaitingOnYou();
+        const said_ = whatIsWaitingOnYou()
         return notPushed === null
           ? said_
           : // **Git's own words reach the card, on every shape of the question.**
             // A rescue starts from knowing whether the commits reached origin, and
             // the three returns below each compose their own `what` — so the
             // sentence is appended once, here, rather than three times there.
-            { ...said_, diagnosis: { ...said_.diagnosis, what: `${said_.diagnosis.what}${unpushed}` } };
-      };
+            { ...said_, diagnosis: { ...said_.diagnosis, what: `${said_.diagnosis.what}${unpushed}` } }
+      }
 
       const whatIsWaitingOnYou = () => {
-        const at = stopped?.step ?? "proposed";
-        const ending = stopped?.ending.ending ?? "routed";
-        const why = stopped === null ? (lastRoute?.why ?? "the pass was held for a person") : detailOf(stopped);
+        const at = stopped?.step ?? 'proposed'
+        const ending = stopped?.ending.ending ?? 'routed'
+        const why = stopped === null ? (lastRoute?.why ?? 'the pass was held for a person') : detailOf(stopped)
         const question =
           stopped === null
             ? `${branch} into ${base} is waiting on you. ${said(why, 400)}`
-            : `the \`${at}\` step ${ending}: ${said(why, 400)}`;
-        if (stopped?.step === "merge" && stopped.ending.ending === "refused") {
+            : `the \`${at}\` step ${ending}: ${said(why, 400)}`
+        if (stopped?.step === 'merge' && stopped.ending.ending === 'refused') {
           return {
             question: `${stopped.ending.because}: ${said(why, 400)}`,
-            needs: "acknowledgement" as const,
+            needs: 'acknowledgement' as const,
             diagnosis: diagnoseRefusal({
               reason: stopped.ending.because,
               detail: why,
               branch,
               base,
             }),
-          };
+          }
         }
         if (ceilingHit !== null) {
-          const isUsd = ceilingHit.kind === "out-of-usd";
+          const isUsd = ceilingHit.kind === 'out-of-usd'
           return {
             question: `${ceilingHit.kind}: ${said(ceilingHit.detail)}`,
-            needs: "acknowledgement" as const,
+            needs: 'acknowledgement' as const,
             diagnosis: {
               what: isUsd
-                ? `the run reached the recipe's dollar ceiling ($${limitsFor(recipe, "implement").usd}) and was ` +
+                ? `the run reached the recipe's dollar ceiling ($${limitsFor(recipe, 'implement').usd}) and was ` +
                   `stopped: ${said(ceilingHit.detail)}. The limit is a scope alarm — the ticket asks for more ` +
-                  "than one run should cost."
-                : `the run reached the recipe's turn limit (${limitsFor(recipe, "implement").turns}) and was stopped: ` +
+                  'than one run should cost.'
+                : `the run reached the recipe's turn limit (${limitsFor(recipe, 'implement').turns}) and was stopped: ` +
                   `${said(ceilingHit.detail)}. The limit is a scope alarm — the ticket asks for more than ` +
-                  "one run should do.",
+                  'one run should do.',
               done: null,
               raw: ceilingHit.detail,
               recommendation: {
-                action: "requeue" as const,
+                action: 'requeue' as const,
                 why: isUsd
-                  ? "narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, " +
-                    "it buys another run to the same limit"
-                  : "narrow or split the ticket first; requeued as written, it buys another run to " +
-                    "the same limit",
+                  ? 'narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, ' +
+                    'it buys another run to the same limit'
+                  : 'narrow or split the ticket first; requeued as written, it buys another run to ' + 'the same limit',
               },
             },
-          };
+          }
         }
         return {
           question,
@@ -3208,18 +3131,16 @@ export function runOnce(
            * and none of the three answers a question.
            */
           needs:
-            stopped === null ||
-            stopped.ending.ending === "held" ||
-            stopped.ending.ending === "asked"
-              ? ("judgement" as const)
-              : ("acknowledgement" as const),
+            stopped === null || stopped.ending.ending === 'held' || stopped.ending.ending === 'asked'
+              ? ('judgement' as const)
+              : ('acknowledgement' as const),
           diagnosis: {
             what:
-              `${branch} is at ${headSha.slice(0, 7) || "the base"} and ` +
+              `${branch} is at ${headSha.slice(0, 7) || 'the base'} and ` +
               (stopped === null
                 ? `\`proposed\` held it for a person: ${said(why, 400)}`
                 : `the \`${at}\` step ${ending}: ${said(why, 400)}`) +
-              (roundsSpent > 0 ? ` ${roundsSpent} of ${ceiling.rounds} rounds were spent.` : ""),
+              (roundsSpent > 0 ? ` ${roundsSpent} of ${ceiling.rounds} rounds were spent.` : ''),
             done: repairOf ? `a repair for ${repairOf.reason} produced this diff` : null,
             raw: why,
             /**
@@ -3246,16 +3167,15 @@ export function runOnce(
              */
             recommendation:
               findings.length === 0 &&
-              (stopped === null ||
-                (stopped.step === "merge" && stopped.ending.ending === "held"))
+              (stopped === null || (stopped.step === 'merge' && stopped.ending.ending === 'held'))
                 ? {
-                    action: "approve" as const,
-                    why: "every step passed on this diff; approving merges what this run produced",
+                    action: 'approve' as const,
+                    why: 'every step passed on this diff; approving merges what this run produced',
                   }
                 : null,
           },
-        };
-      };
+        }
+      }
 
       /**
        * **`claim` took nothing, so there is no item here to write on** — and
@@ -3295,32 +3215,30 @@ export function runOnce(
        * nothing is carried out, so the pass that does reach an ending resolves it
        * (`endPlan`, `release`).
        */
-      if (stopped?.step === "claim") {
-        const why = detailOf(stopped);
-        const mayHold =
-          stopped.ending.ending === "did-not-finish" &&
-          stopped.ending.because === "claim-unconfirmed";
-        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`);
-        released = true;
-        log(`nothing claimed: ${said(why)}`);
+      if (stopped?.step === 'claim') {
+        const why = detailOf(stopped)
+        const mayHold = stopped.ending.ending === 'did-not-finish' && stopped.ending.because === 'claim-unconfirmed'
+        if (mayHold) yield* release(`the claim was not confirmed: ${said(why)}`)
+        released = true
+        log(`nothing claimed: ${said(why)}`)
         return {
           ok: false,
           workItemId,
           runId,
-          stage: "claim",
+          stage: 'claim',
           detail: why,
-        } satisfies RunOnceResult;
+        } satisfies RunOnceResult
       }
 
       // ---- landed -------------------------------------------------------------
-      const merged = landedAt();
-      if (outcome === "landed" && merged !== null) {
+      const merged = landedAt()
+      if (outcome === 'landed' && merged !== null) {
         yield* Effect.promise(() =>
           appendNow(workItemId, [
             {
-              type: "WorkItemLanded",
-              actor: "conductor",
-              data: parsePayload("WorkItemLanded", { mergeCommit: merged, base }),
+              type: 'WorkItemLanded',
+              actor: 'conductor',
+              data: parsePayload('WorkItemLanded', { mergeCommit: merged, base }),
             },
             // **In the same append as the landing, so the two cannot come apart**
             // (`end-step.ts`, `endPlan`). The pass resolved this against `landed`
@@ -3329,23 +3247,23 @@ export function runOnce(
             // unreachable rather than merely unlikely.
             ...endPlan,
           ]),
-        );
-        endResolved = endPlan;
+        )
+        endResolved = endPlan
         // What is left is telling the issue, which reads the plan that was just
         // appended rather than the stream.
-        released = true;
+        released = true
         yield* Effect.promise(() =>
           tellGitHubAbout({
             store,
             github: options.client,
             workItemId,
-            labels: labelsFor("landed"),
+            labels: labelsFor('landed'),
             appended: endResolved,
           }),
-        );
-        log(`landed ${merged.slice(0, 7)} on ${base}`);
-        didLand = true;
-        return { ok: true, workItemId, runId, mergeCommit: merged } satisfies RunOnceResult;
+        )
+        log(`landed ${merged.slice(0, 7)} on ${base}`)
+        didLand = true
+        return { ok: true, workItemId, runId, mergeCommit: merged } satisfies RunOnceResult
       }
 
       // ---- requeued: a second approach was bought (0040) -----------------------
@@ -3373,32 +3291,32 @@ export function runOnce(
        * restart is consumed, the reason there already carries `unpushed`, and the
        * item comes back through the backoff with its ceiling intact.
        */
-      const armIsUp = armPublished !== null && armPublished === headSha;
-      if (pass.rested === "requeued" && !armIsUp) {
+      const armIsUp = armPublished !== null && armPublished === headSha
+      if (pass.rested === 'requeued' && !armIsUp) {
         runLog.note(
-          "restart",
-          `no restart was recorded — ${arm} is not on origin at ${headSha.slice(0, 7) || "the base"}`,
-        );
-        log(`not starting over — ${arm} was not published, so no restart is spent`);
+          'restart',
+          `no restart was recorded — ${arm} is not on origin at ${headSha.slice(0, 7) || 'the base'}`,
+        )
+        log(`not starting over — ${arm} was not published, so no restart is spent`)
       }
-      if (pass.rested === "requeued" && armIsUp) {
-        const restart = folded.restarts.length + 1;
+      if (pass.rested === 'requeued' && armIsUp) {
+        const restart = folded.restarts.length + 1
         const reason = restartReason({
-          action: lastRoute?.from ?? "review",
+          action: lastRoute?.from ?? 'review',
           rounds: roundsSpent,
           n: restart,
           of: ceiling.restarts,
-        });
+        })
         yield* Effect.promise(() =>
           appendNow(workItemId, [
             {
-              type: "PassRestarted",
-              actor: "conductor",
-              data: parsePayload("PassRestarted", {
+              type: 'PassRestarted',
+              actor: 'conductor',
+              data: parsePayload('PassRestarted', {
                 runId,
                 restart,
                 of: ceiling.restarts,
-                action: lastRoute?.from ?? "review",
+                action: lastRoute?.from ?? 'review',
                 rounds: roundsSpent,
                 // The arm and not `agent/<n>`: this approach stays fetchable when
                 // the next claim overwrites the branch (0062 §2).
@@ -3408,17 +3326,17 @@ export function runOnce(
               }),
             },
           ]),
-        );
-        log(`starting over — restart ${restart} of ${ceiling.restarts}`);
-        runLog.note("restart", reason);
-        yield* release(reason);
-        return { ok: false, workItemId, runId, stage: "restart", detail: reason } satisfies RunOnceResult;
+        )
+        log(`starting over — restart ${restart} of ${ceiling.restarts}`)
+        runLog.note('restart', reason)
+        yield* release(reason)
+        return { ok: false, workItemId, runId, stage: 'restart', detail: reason } satisfies RunOnceResult
       }
 
       // ---- blocked: a person now holds it -------------------------------------
-      if (outcome === "blocked") {
-        const held = stopped?.ending.ending === "held";
-        const said_ = blocked();
+      if (outcome === 'blocked') {
+        const held = stopped?.ending.ending === 'held'
+        const said_ = blocked()
         /**
          * **Something judged this diff and said no** — the second half of when a
          * person may be offered *merge it anyway*, and the half `onOrigin` cannot
@@ -3449,7 +3367,7 @@ export function runOnce(
          * by the pipeline, which is what `held` excludes — and the request is only
          * worth making where origin is holding something to merge (`onOrigin`).
          */
-        const judged = stopped === null || stopped.ending.ending === "refused";
+        const judged = stopped === null || stopped.ending.ending === 'refused'
         if (!held && judged && onOrigin !== null) {
           /**
            * **The request is named for itself, never for the action that
@@ -3470,15 +3388,15 @@ export function runOnce(
            * The pointer travels in the question instead, which is what a person
            * reads.
            */
-          const refusedBy = whatRefused(stopped);
+          const refusedBy = whatRefused(stopped)
           yield* Effect.promise(() =>
             appendNow(runId, [
               {
-                type: "ApprovalRequested",
-                actor: "conductor",
-                data: parsePayload("ApprovalRequested", {
-                  step: stopped?.step ?? "proposed",
-                  action: stopped === null ? "judge" : "unfixed",
+                type: 'ApprovalRequested',
+                actor: 'conductor',
+                data: parsePayload('ApprovalRequested', {
+                  step: stopped?.step ?? 'proposed',
+                  action: stopped === null ? 'judge' : 'unfixed',
                   runId,
                   // What is on origin, never what the walk last reported: see
                   // `onOrigin`. The two are the same sha wherever a declared
@@ -3488,21 +3406,21 @@ export function runOnce(
                   onSha: onOrigin,
                   question:
                     `Merge ${branch} into ${base} anyway? ${said_.question}` +
-                    (refusedBy === null ? "" : ` (\`${refusedBy}\`)`),
+                    (refusedBy === null ? '' : ` (\`${refusedBy}\`)`),
                   artifacts: [`${branch}@${onOrigin}`],
                 }),
               },
             ]),
-          );
+          )
         }
         yield* Effect.promise(() =>
           appendNow(workItemId, [
             {
-              type: "WorkItemBlocked",
-              actor: "conductor",
-              data: parsePayload("WorkItemBlocked", {
+              type: 'WorkItemBlocked',
+              actor: 'conductor',
+              data: parsePayload('WorkItemBlocked', {
                 question: said_.question,
-                needsFrom: "human",
+                needsFrom: 'human',
                 runId,
                 needs: said_.needs,
                 diagnosis: said_.diagnosis,
@@ -3513,27 +3431,27 @@ export function runOnce(
             // does not carry is the same orphan one ending along (`endPlan`).
             ...endPlan,
           ]),
-        );
-        endResolved = endPlan;
-        released = true;
+        )
+        endResolved = endPlan
+        released = true
         yield* Effect.promise(() =>
           tellGitHubAbout({
             store,
             github: options.client,
             workItemId,
             question: said_.question,
-            labels: labelsFor("waiting"),
+            labels: labelsFor('waiting'),
             appended: endResolved,
           }),
-        );
-        log(`held at ${headSha.slice(0, 7) || "the base"} — ${said_.question}`);
+        )
+        log(`held at ${headSha.slice(0, 7) || 'the base'} — ${said_.question}`)
         return {
-          ok: "held",
+          ok: 'held',
           workItemId,
           runId,
           headSha,
-          step: stopped?.step ?? "proposed",
-        } satisfies RunOnceResult;
+          step: stopped?.step ?? 'proposed',
+        } satisfies RunOnceResult
       }
 
       // ---- failed: the item goes back to the queue -----------------------------
@@ -3541,9 +3459,9 @@ export function runOnce(
       // `never-ran` met something account-wide, so every queued item would meet it
       // identically: the item is released like any other failure and nothing else
       // is taken until the pause lifts.
-      if (stopped?.ending.ending === "never-ran") {
-        const at = stopped.ending.at;
-        const round = wallMetBy();
+      if (stopped?.ending.ending === 'never-ran') {
+        const at = stopped.ending.at
+        const round = wallMetBy()
         yield* standDownConductor(
           // A `never-ran` at `implement` is the *run's* wall — **unless the agent
           // there was a round's rather than the implementer's**, which is the one
@@ -3565,46 +3483,46 @@ export function runOnce(
           // no row — and the pause has to name it. Its own variant rather than
           // `{of: "step"}`'s, because that sentence ends *nothing judged the diff*
           // and there is no diff one step before `implement`.
-          round !== null && stopped.step === "implement"
-            ? { of: "fix", action: round.action, round: round.round }
-            : stopped.step === "implement"
-              ? { of: "run" }
-              : stopped.step === "design"
-                ? { of: "draft", step: `design:${at ?? "agent"}` }
-                : { of: "step", step: `${stopped.step}:${at ?? "agent"}` },
+          round !== null && stopped.step === 'implement'
+            ? { of: 'fix', action: round.action, round: round.round }
+            : stopped.step === 'implement'
+              ? { of: 'run' }
+              : stopped.step === 'design'
+                ? { of: 'draft', step: `design:${at ?? 'agent'}` }
+                : { of: 'step', step: `${stopped.step}:${at ?? 'agent'}` },
           stopped.ending.detail,
-        );
+        )
       }
       const reason =
         stopped === null
           ? `the pass ended without landing and without asking anybody${unpushed}`
-          : `the \`${stopped.step}\` step ${stopped.ending.ending}: ${said(detailOf(stopped))}${unpushed}`;
-      yield* release(reason);
+          : `the \`${stopped.step}\` step ${stopped.ending.ending}: ${said(detailOf(stopped))}${unpushed}`
+      yield* release(reason)
       return {
         ok: false,
         workItemId,
         runId,
-        stage: stopped?.step ?? "pass",
+        stage: stopped?.step ?? 'pass',
         detail: stopped === null ? reason : detailOf(stopped),
-      } satisfies RunOnceResult;
-    });
+      } satisfies RunOnceResult
+    })
 
     return yield* Effect.scoped(claimed).pipe(
       Effect.catchAllDefect((defect) => {
-        const detail = defect instanceof Error ? defect.message : String(defect);
+        const detail = defect instanceof Error ? defect.message : String(defect)
         return release(`unexpected failure: ${detail}`).pipe(
           Effect.as({
             ok: false as const,
             workItemId,
             runId,
-            stage: "unexpected",
+            stage: 'unexpected',
             detail,
           }),
-        );
+        )
       }),
       // A run that was interrupted still has to give the item back. `release` is
       // idempotent, so the paths above that already released are unaffected.
-      Effect.ensuring(release("the run was interrupted")),
-    );
-  });
+      Effect.ensuring(release('the run was interrupted')),
+    )
+  })
 }

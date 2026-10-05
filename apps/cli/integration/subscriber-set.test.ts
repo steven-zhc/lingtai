@@ -10,118 +10,118 @@
  * The recipe read is the seam: `reread` and `filters` are what `projectFilters`
  * would have answered, and nothing else is stood in for.
  */
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { ProjectFilter } from "@lingtai/conductor";
-import { boardUrl } from "@lingtai/env";
-import { describe, expect, it } from "vitest";
-import { boardAddress, createSubscriberSet } from "../src/subscribers.ts";
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const unread = (project: string): ProjectFilter => ({ project, ok: false, problem: "network is unreachable" });
+import type { ProjectFilter } from '@lingtai/conductor'
+import { boardUrl } from '@lingtai/env'
+import { describe, expect, it } from 'vitest'
+
+import { boardAddress, createSubscriberSet } from '../src/subscribers.ts'
+
+const unread = (project: string): ProjectFilter => ({ project, ok: false, problem: 'network is unreachable' })
 
 const declaring = (project: string): ProjectFilter =>
   ({
     project,
     ok: true,
     recipe: {
-      subscribers: [
-        { name: "desktop", on: ["ApprovalRequested", "WorkItemBlocked"], run: "true", env: [] },
-      ],
+      subscribers: [{ name: 'desktop', on: ['ApprovalRequested', 'WorkItemBlocked'], run: 'true', env: [] }],
     },
-  }) as unknown as ProjectFilter;
+  }) as unknown as ProjectFilter
 
 const options = {
   cwd: process.cwd(),
   subject: async () => null,
   resolveEnv: (async () => ({ merged: {} })) as never,
-};
+}
 
-describe("a recipe that could not be read at startup", () => {
-  it("is said to be unread, not declared none", async () => {
+describe('a recipe that could not be read at startup', () => {
+  it('is said to be unread, not declared none', async () => {
     const set = await createSubscriberSet({
       ...options,
-      filters: [unread("lingtai")],
-      reread: async () => [unread("lingtai")],
-    });
+      filters: [unread('lingtai')],
+      reread: async () => [unread('lingtai')],
+    })
 
-    const lines = set.describe();
-    expect(set.subscribers()).toEqual([]);
-    expect(lines.join("\n")).not.toContain("no subscriber declared");
-    expect(lines.join("\n")).toContain("lingtai unknown");
-    expect(lines.join("\n")).toContain("network is unreachable");
-  });
+    const lines = set.describe()
+    expect(set.subscribers()).toEqual([])
+    expect(lines.join('\n')).not.toContain('no subscriber declared')
+    expect(lines.join('\n')).toContain('lingtai unknown')
+    expect(lines.join('\n')).toContain('network is unreachable')
+  })
 
-  it("is built on a later pass, once the recipe reads", async () => {
-    let reachable = false;
-    const said: string[] = [];
+  it('is built on a later pass, once the recipe reads', async () => {
+    let reachable = false
+    const said: string[] = []
     const set = await createSubscriberSet({
       ...options,
-      filters: [unread("lingtai")],
+      filters: [unread('lingtai')],
       reread: async (projects) => projects.map((p) => (reachable ? declaring(p) : unread(p))),
       log: (line) => said.push(line),
-    });
+    })
 
-    await set.retry();
-    expect(set.subscribers()).toEqual([]);
+    await set.retry()
+    expect(set.subscribers()).toEqual([])
 
-    reachable = true;
-    await set.retry();
-    expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(["lingtai/desktop"]);
-    expect(said.join("\n")).toContain("subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked");
-    expect(set.describe().join("\n")).not.toContain("unknown");
-  });
+    reachable = true
+    await set.retry()
+    expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(['lingtai/desktop'])
+    expect(said.join('\n')).toContain('subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked')
+    expect(set.describe().join('\n')).not.toContain('unknown')
+  })
 
-  it("does not ask again about a project that was read", async () => {
-    let asked = 0;
+  it('does not ask again about a project that was read', async () => {
+    let asked = 0
     const set = await createSubscriberSet({
       ...options,
-      filters: [declaring("lingtai")],
+      filters: [declaring('lingtai')],
       reread: async () => {
-        asked += 1;
-        return [];
+        asked += 1
+        return []
       },
-    });
+    })
 
-    await set.retry();
-    expect(asked).toBe(0);
-    expect(set.subscribers()).toHaveLength(1);
-  });
+    await set.retry()
+    expect(asked).toBe(0)
+    expect(set.subscribers()).toHaveLength(1)
+  })
 
   /**
    * Beside a project that declares one, a project that declares none still gets
    * its own line: `admin` was told through `DEFAULT_SUBSCRIPTIONS` before, and
    * its silence now has to be said rather than look like a quiet week.
    */
-  it("names a project that declares none, even when another project declares one", async () => {
-    const quiet = { project: "admin", ok: true, recipe: { subscribers: [] } } as unknown as ProjectFilter;
+  it('names a project that declares none, even when another project declares one', async () => {
+    const quiet = { project: 'admin', ok: true, recipe: { subscribers: [] } } as unknown as ProjectFilter
     const set = await createSubscriberSet({
       ...options,
-      filters: [declaring("lingtai"), quiet],
+      filters: [declaring('lingtai'), quiet],
       reread: async () => [],
-    });
+    })
 
-    const lines = set.describe().join("\n");
-    expect(lines).toContain("subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked");
-    expect(lines).toContain("admin declares none");
-  });
+    const lines = set.describe().join('\n')
+    expect(lines).toContain('subscriber lingtai/desktop on ApprovalRequested, WorkItemBlocked')
+    expect(lines).toContain('admin declares none')
+  })
 
   /** The per-project env failure: said, not followed by "no subscriber declared". */
-  it("says so when the env files could not be read, rather than declaring none", async () => {
+  it('says so when the env files could not be read, rather than declaring none', async () => {
     const set = await createSubscriberSet({
       ...options,
       resolveEnv: (async () => {
-        throw new Error("EACCES");
+        throw new Error('EACCES')
       }) as never,
-      filters: [declaring("lingtai")],
+      filters: [declaring('lingtai')],
       reread: async () => [],
-    });
+    })
 
-    const lines = set.describe().join("\n");
-    expect(lines).not.toContain("no subscriber declared");
-    expect(lines).toContain("EACCES");
-  });
-});
+    const lines = set.describe().join('\n')
+    expect(lines).not.toContain('no subscriber declared')
+    expect(lines).toContain('EACCES')
+  })
+})
 
 /**
  * A `board.port` that is not a port number (#187).
@@ -135,30 +135,30 @@ describe("a recipe that could not be read at startup", () => {
  * `service status`, and conducting nothing for ever: no `WorkLoop`, no claim,
  * no `ConductorStarted`, and a `lingtai shutdown` nothing would ever read.
  */
-describe("a board.port that is not a port number", () => {
+describe('a board.port that is not a port number', () => {
   const badPort = (): string => {
-    const home = mkdtempSync(join(tmpdir(), "lingtai-home-"));
-    writeFileSync(join(home, "config.yml"), "board:\n  port: 8o80\n");
-    return home;
-  };
+    const home = mkdtempSync(join(tmpdir(), 'lingtai-home-'))
+    writeFileSync(join(home, 'config.yml'), 'board:\n  port: 8o80\n')
+    return home
+  }
 
   it("is a card link on the default port, and never a throw out of the daemon's startup", async () => {
-    const was = process.env["LINGTAI_HOME"];
-    process.env["LINGTAI_HOME"] = badPort();
+    const was = process.env['LINGTAI_HOME']
+    process.env['LINGTAI_HOME'] = badPort()
     try {
       // The read it is a `try` around, so this test says what it is about.
-      expect(() => boardUrl()).toThrow(/not a port number/);
-      expect(boardAddress()).toBe("http://127.0.0.1:17820");
+      expect(() => boardUrl()).toThrow(/not a port number/)
+      expect(boardAddress()).toBe('http://127.0.0.1:17820')
       // And the daemon's own call: no `board` is passed at that call site.
       const set = await createSubscriberSet({
         ...options,
-        filters: [declaring("lingtai")],
+        filters: [declaring('lingtai')],
         reread: async () => [],
-      });
-      expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(["lingtai/desktop"]);
+      })
+      expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(['lingtai/desktop'])
     } finally {
-      if (was === undefined) delete process.env["LINGTAI_HOME"];
-      else process.env["LINGTAI_HOME"] = was;
+      if (was === undefined) delete process.env['LINGTAI_HOME']
+      else process.env['LINGTAI_HOME'] = was
     }
-  });
-});
+  })
+})

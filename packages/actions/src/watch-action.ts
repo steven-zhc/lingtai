@@ -24,65 +24,66 @@
  * that says "held: tamper" sends the reader somewhere else to find out why, and
  * that is the failure the board exists to remove.
  */
-import { compileWatch, type Watcher } from "@lingtai/recipe";
-import type { Action, ActionContext, ActionResult } from "./action.ts";
+import { compileWatch, type Watcher } from '@lingtai/recipe'
+
+import type { Action, ActionContext, ActionResult } from './action.ts'
 
 export interface WatchActionSpec {
-  name: string;
-  watch: readonly string[];
-  then: "request-approval" | "fail";
+  name: string
+  watch: readonly string[]
+  then: 'request-approval' | 'fail'
 }
 
 export interface WatchActionDeps {
   /** Paths in the diff, relative to the repository root. Supplied by the caller
    *  for the same reason the reviewer's diff is: this package has no git. */
-  changedFiles: () => Promise<string[]>;
+  changedFiles: () => Promise<string[]>
   /** Said back to the operator on a match. Defaults are per-action below. */
-  advice?: string;
+  advice?: string
 }
 
 /** What to do about it, when the action's name is one that ships with Lingtai. */
 const ADVICE: Record<string, string> = {
   tamper:
-    "These decide what the other actions actually check, so a change to them is a " +
-    "change to the verification itself. Read the diff before approving.",
+    'These decide what the other actions actually check, so a change to them is a ' +
+    'change to the verification itself. Read the diff before approving.',
   migrations:
-    "Apply the migration by hand first, then approve. A merge does not run it, " +
-    "and a branch that lands ahead of its schema is the expensive kind of broken.",
-};
+    'Apply the migration by hand first, then approve. A merge does not run it, ' +
+    'and a branch that lands ahead of its schema is the expensive kind of broken.',
+}
 
 export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps): Action {
   // Compiled once, when the action is built — which is also `lingtai doctor` time, so
   // a bad pattern is a configuration error rather than an action that silently
   // matches nothing.
-  const watcher: Watcher = compileWatch(spec.name, spec.watch);
+  const watcher: Watcher = compileWatch(spec.name, spec.watch)
 
   return {
     name: spec.name,
-    kind: "watch",
+    kind: 'watch',
 
     async run(_context: ActionContext): Promise<ActionResult> {
-      const changed = await deps.changedFiles();
-      const hits = watcher.matches(changed);
+      const changed = await deps.changedFiles()
+      const hits = watcher.matches(changed)
 
       if (hits.length === 0) {
         return {
-          verdict: "passed",
-          evidence: `nothing in the diff matches ${spec.watch.join(", ")}`,
+          verdict: 'passed',
+          evidence: `nothing in the diff matches ${spec.watch.join(', ')}`,
           findings: [],
-        };
+        }
       }
 
-      const advice = deps.advice ?? ADVICE[spec.name] ?? "Read these before approving.";
-      const listed = hits.slice(0, 20).join("\n");
-      const more = hits.length > 20 ? `\n…and ${hits.length - 20} more` : "";
-      const evidence = `${spec.name} matched ${hits.length} file(s):\n${listed}${more}\n\n${advice}`;
+      const advice = deps.advice ?? ADVICE[spec.name] ?? 'Read these before approving.'
+      const listed = hits.slice(0, 20).join('\n')
+      const more = hits.length > 20 ? `\n…and ${hits.length - 20} more` : ''
+      const evidence = `${spec.name} matched ${hits.length} file(s):\n${listed}${more}\n\n${advice}`
 
       return {
-        verdict: spec.then === "fail" ? "failed" : "needs-approval",
+        verdict: spec.then === 'fail' ? 'failed' : 'needs-approval',
         evidence,
         findings: [],
-      };
+      }
     },
-  };
+  }
 }

@@ -126,15 +126,16 @@
  * and the whole of what the ticket asks for; the effects never decide whether
  * the ending happened, and neither does this file's failure to resolve them.
  */
-import type { ActionContext, ActionFinding, TheDesign } from "@lingtai/actions";
-import type { Envelope, Step, ToAppend } from "@lingtai/domain";
+import type { ActionContext, ActionFinding, TheDesign } from '@lingtai/actions'
+import type { Envelope, Step, ToAppend } from '@lingtai/domain'
+import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
 // definition of them is a drift nobody would notice.
-import type { Worktree } from "@lingtai/repo";
-import type { BuiltInJudge, JudgeWhen } from "@lingtai/recipe";
-import { type TerminalOutcome, resolveEndActions } from "./end-step.ts";
-import { BUILT_IN_FOR } from "./judge.ts";
+import type { Worktree } from '@lingtai/repo'
+
+import { type TerminalOutcome, resolveEndActions } from './end-step.ts'
+import { BUILT_IN_FOR } from './judge.ts'
 import {
   NEEDS_INPUT,
   NOT_BUILT_YET,
@@ -149,16 +150,16 @@ import {
   type StepReached,
   type StepRefused,
   type StepRouted,
-} from "./pass.ts";
+} from './pass.ts'
 
 // -------------------------------------------------- what a pass is about ----
 
 /** The issue, as an agent is briefed on it. `#` and the body, and nothing else. */
 export interface Ticket {
   /** The issue number, as a string — `discover.ts`'s `ref`. */
-  readonly ref: string;
-  readonly title: string;
-  readonly body: string;
+  readonly ref: string
+  readonly title: string
+  readonly body: string
 }
 
 /**
@@ -170,10 +171,10 @@ export interface Ticket {
  */
 export interface Claimed {
   /** `wi-<project>-<issue>` — `workItemStream`, and where `end` appends. */
-  readonly workItemId: string;
-  readonly ticket: Ticket;
+  readonly workItemId: string
+  readonly ticket: Ticket
   /** Which kind the recipe matched it as, which is what ordered the queue. */
-  readonly kind: string;
+  readonly kind: string
 }
 
 /**
@@ -196,7 +197,7 @@ export interface Claimed {
  */
 export interface Asked {
   /** What the step wants answered, in words a person reads (0043). */
-  readonly asked: string;
+  readonly asked: string
 }
 
 /**
@@ -230,7 +231,7 @@ export interface Asked {
  * `ActionContext.again` — so it has to be a name that package can see, and
  * `pass.ts` is where the fold that computes it lives (`sentBackTo`).
  */
-export type { SentBack };
+export type { SentBack }
 
 /**
  * **The step started and left no receipt** — 0057 §2, and the pass stops.
@@ -241,7 +242,7 @@ export type { SentBack };
  * separation is two endings rather than two values of one `because`.
  */
 export interface Stopped {
-  readonly stopped: string;
+  readonly stopped: string
 }
 
 /**
@@ -268,7 +269,7 @@ export interface Stopped {
  * `agent` is which runtime refused, because 0041 §3 asks for it by name.
  */
 export interface NeverStarted {
-  readonly neverStarted: { readonly agent: string; readonly detail: string };
+  readonly neverStarted: { readonly agent: string; readonly detail: string }
 }
 
 // ----------------------------------------------------------- the ports ----
@@ -276,14 +277,11 @@ export interface NeverStarted {
 /** What the one agent at `implement` did in that worktree. */
 export type Worked =
   /** The commit it left the worktree at — the whole of what moves `onSha`. */
-  | { readonly committed: string }
-  | Asked
-  | NeverStarted
-  | Stopped;
+  { readonly committed: string } | Asked | NeverStarted | Stopped
 
 /** What an agent at `design` or `implement` is handed. */
 export interface Brief {
-  readonly ticket: Ticket;
+  readonly ticket: Ticket
   /**
    * The design — the document, and where whatever kept it says it is.
    *
@@ -298,7 +296,7 @@ export interface Brief {
    * is what a pass with no `design:` is handed, so a caller cannot forget the
    * empty case into an absent one.
    */
-  readonly design: TheDesign;
+  readonly design: TheDesign
   /**
    * **Why this step is being run a second time**, or `null` on the way through.
    *
@@ -308,13 +306,13 @@ export interface Brief {
    * the judge said that*, or *`build` printed this* — and a port that ignores it
    * dispatches the brief that produced the failure.
    */
-  readonly again: SentBack | null;
+  readonly again: SentBack | null
   /**
    * This visit's — the head it is working from, the round it is in, and the
    * findings that round was bought on (0038 §2), which an agent on a fix round is
    * asked about by name.
    */
-  readonly context: ActionContext;
+  readonly context: ActionContext
 }
 
 /**
@@ -341,13 +339,13 @@ export interface Brief {
  */
 export interface Judging {
   /** The direction — the reason the step that did not pass gave. */
-  readonly when: JudgeWhen;
+  readonly when: JudgeWhen
   /** The destinations on offer. Never empty: `waiting` is always one of them. */
-  readonly offering: readonly Destination[];
+  readonly offering: readonly Destination[]
   /** The reviewer's findings, verbatim — the whole of the `findings` direction. */
-  readonly findings: readonly ActionFinding[];
+  readonly findings: readonly ActionFinding[]
   /** What the step printed when it did not pass; the question, for `needs-input`. */
-  readonly evidence: string;
+  readonly evidence: string
 }
 
 /**
@@ -357,7 +355,7 @@ export interface Judging {
  * the body computes `offering` from the `Offer` it was handed, so a call site
  * that passed its own would be a set the answer was not held to.
  */
-type Arrival = Omit<Judging, "offering"> & {
+type Arrival = Omit<Judging, 'offering'> & {
   /**
    * **That the step's answer could not be read at all**, which is not a thin
    * judgement and must not read as one (`#279`).
@@ -371,8 +369,8 @@ type Arrival = Omit<Judging, "offering"> & {
    * `offering`, `when`. A field added to `Judging` fails there by name, which is
    * the whole reason that assertion is a key set rather than a spot check.
    */
-  readonly unreadable: boolean;
-};
+  readonly unreadable: boolean
+}
 
 /**
  * What the recipe's `judge:` for that direction answered, or that it declared
@@ -395,11 +393,11 @@ type Arrival = Omit<Judging, "offering"> & {
 export type Judged =
   | {
       /** Which of the offered steps is next. Held to `offering` by the body. */
-      readonly next: Destination;
+      readonly next: Destination
       /** The name a recipe wrote, so a refusal can say which entry to fix. */
-      readonly named: string;
+      readonly named: string
       /** The judge's own words, which is what `waiting` displays (0043). */
-      readonly why: string;
+      readonly why: string
     }
   | {
       /**
@@ -414,9 +412,9 @@ export type Judged =
        * `next` for a built-in would be a second copy of that rule with the
        * card's own distinction missing from it.
        */
-      readonly built: BuiltInJudge;
+      readonly built: BuiltInJudge
       /** The entry's `name:`, so the sentence says which line of the recipe chose. */
-      readonly named: string;
+      readonly named: string
     }
   /**
    * **The judge's dispatch met something account-wide, so the conductor stops
@@ -436,7 +434,7 @@ export type Judged =
    * §3 was written about.
    */
   | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
-  | { readonly noJudge: true };
+  | { readonly noJudge: true }
 
 /**
  * A step's own work, as the pass asks for it — for the **four** steps that have
@@ -479,7 +477,7 @@ export interface PassPorts {
    * runs, and an item this run may be holding is one somebody has to be told
    * about.
    */
-  onStream(): string | null;
+  onStream(): string | null
   /**
    * `proposed` — **which of the offered steps the recipe's `judge:` for this
    * direction answers**, or that it declared none.
@@ -514,7 +512,7 @@ export interface PassPorts {
    * conclusion a `switch` reaches. What a recipe *did* declare is asked, whichever
    * direction it is, because a declared judge nothing calls is `#61` again.
    */
-  judge(on: Judging): Promise<Judged>;
+  judge(on: Judging): Promise<Judged>
   /**
    * `end` — the work item's own stream.
    *
@@ -524,7 +522,7 @@ export interface PassPorts {
    * does the append expect. The step is also the last thing a pass does, so a
    * stream read at the claim would be nine steps stale.
    */
-  readEnd(workItemId: string): Promise<readonly Envelope[]>;
+  readEnd(workItemId: string): Promise<readonly Envelope[]>
   /**
    * `end` — **what the step resolved, on the item's own stream, at the version
    * the read gave.**
@@ -564,7 +562,7 @@ export interface PassPorts {
    * is a fact and belongs on the log, and doing is I/O that must not be able to
    * undo it.
    */
-  recordEnd(workItemId: string, at: number, plan: readonly ToAppend[]): Promise<void>;
+  recordEnd(workItemId: string, at: number, plan: readonly ToAppend[]): Promise<void>
 }
 
 /**
@@ -581,7 +579,7 @@ export interface PassPorts {
  * branches on it, because the item's own stream says what was resolved and what
  * was not, and a repair reads that rather than a token.
  */
-export const END_UNRESOLVED = "end-unresolved";
+export const END_UNRESOLVED = 'end-unresolved'
 
 // --------------------------------------------------------- what refused ----
 
@@ -615,15 +613,15 @@ export const END_UNRESOLVED = "end-unresolved";
  * where they go today.
  */
 function directionOf(arriving: StepReached): JudgeWhen | null {
-  const ending = arriving.ending;
+  const ending = arriving.ending
   // The one report with anywhere to go, and its own ending since `#296`: this is
   // the last place `NEEDS_INPUT` is written down in the conductor, and it is a
   // name in the recipe's `when:` vocabulary rather than a branch on a string.
-  if (ending.ending === "asked") return NEEDS_INPUT;
-  if (ending.ending !== "refused") return null;
-  if (arriving.step !== "merge") return "red";
-  if (ending.because === "conflict") return "conflict";
-  return ending.because === "verify-failed" ? "verify-failed" : null;
+  if (ending.ending === 'asked') return NEEDS_INPUT
+  if (ending.ending !== 'refused') return null
+  if (arriving.step !== 'merge') return 'red'
+  if (ending.because === 'conflict') return 'conflict'
+  return ending.because === 'verify-failed' ? 'verify-failed' : null
 }
 
 /**
@@ -660,8 +658,8 @@ function directionOf(arriving: StepReached): JudgeWhen | null {
  * the caller is what consults the offer.
  */
 const MECHANICALLY: Record<BuiltInJudge, { readonly wants: Destination; readonly orElse: Destination }> = {
-  "same-worktree": { wants: "implement", orElse: "waiting" },
-};
+  'same-worktree': { wants: 'implement', orElse: 'waiting' },
+}
 
 /**
  * Whether the arrival carries something an agent could be held to.
@@ -692,9 +690,9 @@ const MECHANICALLY: Record<BuiltInJudge, { readonly wants: Destination; readonly
  * different facts behind one `false`, which is the shape the bug had.
  */
 function carriesACriterion(on: Arrival): boolean {
-  return on.when === "findings"
-    ? on.findings.some((finding) => finding.failureScenario.trim() !== "")
-    : on.evidence.trim() !== "";
+  return on.when === 'findings'
+    ? on.findings.some((finding) => finding.failureScenario.trim() !== '')
+    : on.evidence.trim() !== ''
 }
 
 /**
@@ -716,14 +714,14 @@ function carriesACriterion(on: Arrival): boolean {
  * that refused on a blocker and also filed two minors has said three things about
  * one diff, and the agent that is sent back should be told all three.
  */
-function reviewRefused(reached: readonly StepReached[]): Omit<Arrival, "when"> | null {
-  const reviewed = reached.findLast((visit) => visit.step === "review");
-  if (reviewed === undefined) return null;
+function reviewRefused(reached: readonly StepReached[]): Omit<Arrival, 'when'> | null {
+  const reviewed = reached.findLast((visit) => visit.step === 'review')
+  if (reviewed === undefined) return null
   // By verdict rather than by position, which is `evidenceFrom`'s reason: the
   // pipeline stops at the first action that did not pass, so the one that refused
   // is the only result with that verdict and is also the last.
-  const refused = reviewed.results.filter((result) => result.verdict === "failed").at(-1);
-  if (refused === undefined) return null;
+  const refused = reviewed.results.filter((result) => result.verdict === 'failed').at(-1)
+  if (refused === undefined) return null
   return {
     findings: reviewed.results.flatMap((result) => result.findings),
     evidence: refused.evidence,
@@ -732,34 +730,33 @@ function reviewRefused(reached: readonly StepReached[]): Omit<Arrival, "when"> |
     // and it is read off the same result the evidence is, so *what refused* and
     // *whether it could be read* cannot come from two different reviewers.
     unreadable: refused.unreadable === true,
-  };
+  }
 }
 
 /**
  * What the step that did not pass said, as the judge is shown it — and one thing
  * it is not shown: `unreadable` is answered before any judge is asked (`#279`).
  */
-function whatArrived(arriving: StepReached): Omit<Arrival, "when"> {
-  const ending = arriving.ending;
+function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
+  const ending = arriving.ending
   return {
     findings: arriving.results.flatMap((result) => result.findings),
     // Every arriving ending has one — `StepRefused` and `StepAsked` are the only
     // two the loop routes — and it is the words a person reads beside the
     // judge's (0043).
-    evidence: "detail" in ending ? ending.detail : "",
+    evidence: 'detail' in ending ? ending.detail : '',
     // `reviewRefused`'s rule at the other door: by verdict, off the action that
     // stopped the pipeline. Only an `agent:` action has an answer to parse, and
     // `agentPlugin.at` puts one at `merge` as well as at `review`, so the routing
     // arrivals are asked the same question the way through is (`#279`).
-    unreadable:
-      arriving.results.filter((result) => result.verdict === "failed").at(-1)?.unreadable === true,
-  };
+    unreadable: arriving.results.filter((result) => result.verdict === 'failed').at(-1)?.unreadable === true,
+  }
 }
 
 /** The reason the arriving step gave, for a sentence about it. */
 function reasonOf(arriving: StepReached): string {
-  const ending = arriving.ending;
-  return "because" in ending ? ending.because : ending.ending;
+  const ending = arriving.ending
+  return 'because' in ending ? ending.because : ending.ending
 }
 
 /**
@@ -772,13 +769,13 @@ function reasonOf(arriving: StepReached): string {
  */
 function toAPerson(why: string, chose?: Destination): StepRouted {
   return chose === undefined
-    ? { ending: "routed", to: "waiting", why }
-    : { ending: "routed", to: "waiting", why, chose };
+    ? { ending: 'routed', to: 'waiting', why }
+    : { ending: 'routed', to: 'waiting', why, chose }
 }
 
 /** The offered steps, for a sentence a person or a judge reads. */
 function listing(offering: readonly Destination[]): string {
-  return offering.map((step) => `"${step}"`).join(", ");
+  return offering.map((step) => `"${step}"`).join(', ')
 }
 
 /**
@@ -800,8 +797,8 @@ function listing(offering: readonly Destination[]): string {
  * works. `RouteTaken.chose` records what was wanted there; the sentence does not.
  */
 function becauseSpent(wanted: Destination, offer: Offer): string {
-  const ceiling = ceilingFor(wanted, offer);
-  return ceiling === null ? "" : ` — it wanted \`${wanted}\`, and \`${ceiling}\` is spent`;
+  const ceiling = ceilingFor(wanted, offer)
+  return ceiling === null ? '' : ` — it wanted \`${wanted}\`, and \`${ceiling}\` is spent`
 }
 
 /**
@@ -828,11 +825,11 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * that `design` and `implement` answer the same wall the same way: a body that
    * spelled it out at one of them is a body that can be changed at one of them.
    */
-  const stoodDown = (wall: NeverStarted["neverStarted"]): StepNeverRan => ({
-    ending: "never-ran",
+  const stoodDown = (wall: NeverStarted['neverStarted']): StepNeverRan => ({
+    ending: 'never-ran',
     at: wall.agent,
     detail: wall.detail,
-  });
+  })
 
   /**
    * **One arrival at `proposed`, answered** — and the only place a round is bought.
@@ -868,11 +865,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
    * `#277`: the one arrival that dispatches one can meet the account-wide wall
    * every other dispatch can, and 0031 §3's answer to it is not a route.
    */
-  const judged = async (
-    arrival: Arrival,
-    offer: Offer,
-    about: string,
-  ): Promise<StepRouted | StepNeverRan> => {
+  const judged = async (arrival: Arrival, offer: Offer, about: string): Promise<StepRouted | StepNeverRan> => {
     /**
      * **Nothing was read, which is not the same as nothing being said** (`#279`).
      *
@@ -894,19 +887,19 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     if (arrival.unreadable) {
       return toAPerson(
         `${about} could not be read at all — the answer did not parse as findings, so nothing ` +
-          "structured came out of it however much the reviewer said. That is the machinery " +
-          "losing a judgement rather than a reviewer declining to make one, and it buys no " +
-          "round either: an answer nobody can read is not a criterion (0038 §2). The answer " +
+          'structured came out of it however much the reviewer said. That is the machinery ' +
+          'losing a judgement rather than a reviewer declining to make one, and it buys no ' +
+          'round either: an answer nobody can read is not a criterion (0038 §2). The answer ' +
           "itself is on the step's own `StepFailed`, clipped, and whole in that attempt's " +
-          "agent transcript; the pass is held for a person, who can read both",
-      );
+          'agent transcript; the pass is held for a person, who can read both',
+      )
     }
     if (!carriesACriterion(arrival)) {
       return toAPerson(
         `${about} carries nothing an agent could be held to — ` +
-          `${arrival.when === "findings" ? "no finding with a failure scenario" : "no output"} — so ` +
-          "no round is worth buying and the pass is held for a person (0038 §2)",
-      );
+          `${arrival.when === 'findings' ? 'no finding with a failure scenario' : 'no output'} — so ` +
+          'no round is worth buying and the pass is held for a person (0038 §2)',
+      )
     }
     // The affordable half and never the `Offer` — a judge answers *which of
     // these*, and what the ceilings took away is not its business (`Judging`).
@@ -914,13 +907,13 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     // `unreadable` is dropped rather than spread: it is the pass's own fact about
     // whether there was an answer, it has already been answered above, and a
     // judge's brief is the three fields and the set and nothing else.
-    const { unreadable: _read, ...judging } = arrival;
-    const on: Judging = { ...judging, offering: offer.affordable };
-    const answer = await ports.judge(on);
+    const { unreadable: _read, ...judging } = arrival
+    const on: Judging = { ...judging, offering: offer.affordable }
+    const answer = await ports.judge(on)
     // Before the answer is read as one, because a judge that never started did
     // not answer: 0031 §3, at the third depth the same wall is met at.
-    if ("neverStarted" in answer) return stoodDown(answer.neverStarted);
-    if ("next" in answer) {
+    if ('neverStarted' in answer) return stoodDown(answer.neverStarted)
+    if ('next' in answer) {
       if (!on.offering.includes(answer.next)) {
         return toAPerson(
           `the "${answer.named}" judge answered "${answer.next}" for ${about}, and that is not one ` +
@@ -930,15 +923,15 @@ export function bodiesFor(ports: PassPorts): StepBodies {
             // from a `claim` that was never on a mechanical direction's offer.
             `${becauseSpent(answer.next, offer)}. A judge chooses which of the ` +
             "offered steps is next; which steps are on offer is the workflow's, and it counts the " +
-            "rounds and restarts spent to work them out (0061 §3). The pass is held for a person, " +
-            "because a judge that answered outside the set is not one to ask a second time",
+            'rounds and restarts spent to work them out (0061 §3). The pass is held for a person, ' +
+            'because a judge that answered outside the set is not one to ask a second time',
           // The judge's answer is on the log as what was chosen, and `to` says a
           // person got it instead: an overruled judge and a judge that asked for a
           // person are not the same thing to read back.
           answer.next,
-        );
+        )
       }
-      return { ending: "routed", to: answer.next, why: answer.why };
+      return { ending: 'routed', to: answer.next, why: answer.why }
     }
 
     /**
@@ -951,20 +944,20 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * arrival the default leaves for a person, so the rule is applied once, here,
      * where `chose` and the spent ceiling are recorded (`#271`).
      */
-    const declared = "built" in answer ? answer : null;
-    const built = declared?.built ?? BUILT_IN_FOR[on.when];
+    const declared = 'built' in answer ? answer : null
+    const built = declared?.built ?? BUILT_IN_FOR[on.when]
     if (built === null) {
       return toAPerson(
         `no \`judge:\` is declared for a "${on.when}" and there is no built-in that answers one, ` +
           `so ${about} is held for a person rather than the workflow choosing from ` +
           `${listing(on.offering)} on its own (0061 §3)`,
-      );
+      )
     }
-    const mechanical = MECHANICALLY[built];
-    const afforded = on.offering.includes(mechanical.wants);
-    const next = afforded ? mechanical.wants : mechanical.orElse;
+    const mechanical = MECHANICALLY[built]
+    const afforded = on.offering.includes(mechanical.wants)
+    const next = afforded ? mechanical.wants : mechanical.orElse
     return {
-      ending: "routed",
+      ending: 'routed',
       to: next,
       // What it would have answered with everything on offer, so that a
       // `waiting` the rounds bought and a `waiting` somebody chose are two
@@ -985,13 +978,13 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         // which is the direction 0061 §3 calls the judgement.
         (declared === null
           ? `the "${built}" judge on ${about}: a "${on.when}" is mechanical — the work is still ` +
-            "there and the remedy is to fix it where it stands"
+            'there and the remedy is to fix it where it stands'
           : `the "${declared.named}" judge on ${about}: the recipe declares ` +
             `\`judge: ${built}\` for a "${on.when}"`) +
         ` — and of ${listing(on.offering)} it ` +
-        `chose \`${next}\`${afforded ? "" : becauseSpent(mechanical.wants, offer)}`,
-    };
-  };
+        `chose \`${next}\`${afforded ? '' : becauseSpent(mechanical.wants, offer)}`,
+    }
+  }
 
   return {
     ...NOT_BUILT_YET,
@@ -1027,7 +1020,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * clear in `#265` — it is read off `design`'s own visit, and a pass that has
      * not reached that step has no visit to read.
      */
-    claim: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    claim: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * Start work on it — **and this is the fourth of the ten whose body is
@@ -1057,7 +1050,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `REFUSING_STEPS`, so a `failed` verdict here could not become a refusal
      * either.
      */
-    admit: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    admit: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * The tree is ready to be worked in — **and this is the one of the six whose
@@ -1088,7 +1081,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * no key for — this body gets a port and an ending, and the type already
      * permits the refusal: `prepared` is one of `REFUSING_STEPS`.
      */
-    prepared: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    prepared: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * A document, before any code — **or nothing, which is an answer** (0058 §3)
@@ -1125,7 +1118,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * §2), and `endingOf` reports each in the step's own terms without this body
      * being reached at all.
      */
-    design: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    design: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * One agent, in that worktree — **and this is the last of the ten whose body
@@ -1162,7 +1155,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * It cannot refuse, and that is 0058 §3b's rectangle: arriving at the router
      * and refusing are different things, and only one of them is charged for.
      */
-    implement: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    implement: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * **Its own step, and a red one skips `review`.**
@@ -1188,7 +1181,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `runActionPipeline` before any body, and returns the pipeline's ending
      * without reaching the body when it did not pass.
      */
-    build: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    build: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * Reads the diff, returns findings — **and judges nothing** (0058 §3).
@@ -1212,7 +1205,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * nothing to the round it buys, and `carriesACriterion` is where that is now
      * answered instead.
      */
-    review: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    review: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * **The only step that routes** (0058 §3), and the one that spends what a
@@ -1246,22 +1239,18 @@ export function bodiesFor(ports: PassPorts): StepBodies {
     // same account-wide wall every other agent does, and 0031 §3's answer is
     // the conductor's rather than a route. `goesToTheRouter` already refuses
     // it, so it ends the pass here and nothing loops.
-    proposed: async ({
-      arriving,
-      offering,
-      reached,
-    }): Promise<StepPassed | StepRouted | StepNeverRan> => {
+    proposed: async ({ arriving, offering, reached }): Promise<StepPassed | StepRouted | StepNeverRan> => {
       if (arriving === null) {
-        const said = reviewRefused(reached);
+        const said = reviewRefused(reached)
         // Nothing the reviewer said stops this. The findings at or below the bar
         // are on `review`'s own visit and are the `backlog:` plugin's business,
         // not a reason to hold a change back.
-        if (said === null) return { ending: "passed" };
-        return await judged({ when: "findings", ...said }, offering, "`review`'s findings");
+        if (said === null) return { ending: 'passed' }
+        return await judged({ when: 'findings', ...said }, offering, "`review`'s findings")
       }
-      const when = directionOf(arriving);
+      const when = directionOf(arriving)
       if (when === null) {
-        const arrived = whatArrived(arriving);
+        const arrived = whatArrived(arriving)
         /**
          * **An unreadable answer here is the machinery's, and this branch is how
          * it would have been missed** (`#279`).
@@ -1278,24 +1267,24 @@ export function bodiesFor(ports: PassPorts): StepBodies {
         if (arrived.unreadable) {
           return toAPerson(
             `the \`${arriving.step}\` step's answer could not be read at all — it did not parse ` +
-              "as findings, so nothing structured came out of it however much the action said. " +
-              "That is the machinery losing a judgement rather than a step declining to make " +
+              'as findings, so nothing structured came out of it however much the action said. ' +
+              'That is the machinery losing a judgement rather than a step declining to make ' +
               "one, and it buys no round either (0038 §2). The answer is on that step's own " +
               "`StepFailed`, clipped, and whole in the attempt's agent transcript; the pass is " +
-              "held for a person, who can read both",
-          );
+              'held for a person, who can read both',
+          )
         }
         return toAPerson(
           `the \`${arriving.step}\` step reported "${reasonOf(arriving)}", which is not a ` +
-            "direction any `judge:` answers — it stops the lane before the diff is what is in " +
-            "doubt — so the pass is held for a person rather than buying a round for it",
-        );
+            'direction any `judge:` answers — it stops the lane before the diff is what is in ' +
+            'doubt — so the pass is held for a person rather than buying a round for it',
+        )
       }
       return await judged(
         { when, ...whatArrived(arriving) },
         offering,
         `the \`${arriving.step}\` step's ${arriving.ending.ending}`,
-      );
+      )
     },
 
     /**
@@ -1328,7 +1317,7 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * It reports no `head`. A merge commit is on the base branch and the worktree
      * did not move, and `LeftTheTreeAt` is a fact about the tree.
      */
-    merge: async (): Promise<StepPassed> => ({ ending: "passed" }),
+    merge: async (): Promise<StepPassed> => ({ ending: 'passed' }),
 
     /**
      * Runs on every ending and cannot refuse — **and the effects never decide
@@ -1360,23 +1349,23 @@ export function bodiesFor(ports: PassPorts): StepBodies {
      * `EndActionsResolved` records.
      */
     end: async ({ actions, outcome }): Promise<StepPassed | StepDidNotFinish> => {
-      const workItemId = ports.onStream();
-      if (workItemId === null) return { ending: "passed" };
+      const workItemId = ports.onStream()
+      if (workItemId === null) return { ending: 'passed' }
       // Which of the step's three acts did not finish, for the person reading
       // `detail`. The plan is empty until `resolveEndActions` has answered, so a
       // `read` that threw cannot be mistaken for a recorded nothing.
-      let act = "read";
+      let act = 'read'
       try {
-        const events = await ports.readEnd(workItemId);
-        act = "resolve";
-        const plan = resolveEndActions(events, actions, outcome);
-        if (plan.length === 0) return { ending: "passed" };
-        act = "record";
-        await ports.recordEnd(workItemId, events.length, plan);
-        return { ending: "passed" };
+        const events = await ports.readEnd(workItemId)
+        act = 'resolve'
+        const plan = resolveEndActions(events, actions, outcome)
+        if (plan.length === 0) return { ending: 'passed' }
+        act = 'record'
+        await ports.recordEnd(workItemId, events.length, plan)
+        return { ending: 'passed' }
       } catch (error) {
         return {
-          ending: "did-not-finish",
+          ending: 'did-not-finish',
           because: END_UNRESOLVED,
           // No action asked it: the step's own work did — the same reason
           // `asking` and `noReceipt` above are `null` here.
@@ -1384,8 +1373,8 @@ export function bodiesFor(ports: PassPorts): StepBodies {
           detail:
             `${workItemId} reached \`${outcome}\` and its \`end\` effects were not resolved — ` +
             `\`${act}\` threw: ${error instanceof Error ? error.message : String(error)}`,
-        };
+        }
       }
     },
-  };
+  }
 }

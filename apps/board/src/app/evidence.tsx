@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * Everything you need to decide, on the card.
@@ -20,34 +20,36 @@
  * grammar bundle into a local operator console, and the value of that against
  * its weight has not been argued for. Said plainly rather than quietly skipped.
  */
-import Link from "next/link";
-import { useState, useTransition } from "react";
-import { loadDiff } from "./actions.ts";
-import type { DiffFile } from "@/lib/diff";
+import Link from 'next/link'
+import { useState, useTransition } from 'react'
+
+import type { DiffFile } from '@/lib/diff'
+
+import { loadDiff } from './actions.ts'
 
 export interface StepEvidence {
-  step: string;
-  state: string;
-  current: boolean;
-  evidence: string | null;
+  step: string
+  state: string
+  current: boolean
+  evidence: string | null
   findings: {
-    file: string;
-    line: number | null;
-    claim: string;
-    failureScenario: string;
-    severity: string;
-  }[];
+    file: string
+    line: number | null
+    claim: string
+    failureScenario: string
+    severity: string
+  }[]
 }
 
-function Findings({ findings }: { findings: StepEvidence["findings"] }) {
+function Findings({ findings }: { findings: StepEvidence['findings'] }) {
   return (
     <ul className="findings">
       {findings.map((f, i) => (
         <li key={`${f.file}:${f.line}:${i}`}>
-          <span className={`pill ${f.severity === "minor" ? "" : "fail"}`}>{f.severity}</span>{" "}
+          <span className={`pill ${f.severity === 'minor' ? '' : 'fail'}`}>{f.severity}</span>{' '}
           <span className="fpath">
             {f.file}
-            {f.line === null ? "" : `:${f.line}`}
+            {f.line === null ? '' : `:${f.line}`}
           </span>
           <p className="claim">{f.claim}</p>
           {/* The half that makes it a finding. Without it this is an opinion,
@@ -56,15 +58,13 @@ function Findings({ findings }: { findings: StepEvidence["findings"] }) {
         </li>
       ))}
     </ul>
-  );
+  )
 }
 
 function DiffView({ files, truncated }: { files: DiffFile[]; truncated: boolean }) {
   return (
     <div className="diffview">
-      {truncated ? (
-        <p className="note">Showing the first {files.length} files. The rest are not rendered.</p>
-      ) : null}
+      {truncated ? <p className="note">Showing the first {files.length} files. The rest are not rendered.</p> : null}
       {files.map((file) => (
         <details key={file.path} className="dfile">
           <summary>
@@ -78,23 +78,23 @@ function DiffView({ files, truncated }: { files: DiffFile[]; truncated: boolean 
           <pre className="dbody">
             {file.lines.map((line, i) => (
               <span key={i} className={`dl ${lineClass(line)}`}>
-                {line || " "}
-                {"\n"}
+                {line || ' '}
+                {'\n'}
               </span>
             ))}
           </pre>
         </details>
       ))}
     </div>
-  );
+  )
 }
 
 function lineClass(line: string): string {
-  if (line.startsWith("@@")) return "hunk";
-  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ")) return "meta";
-  if (line.startsWith("+")) return "add";
-  if (line.startsWith("-")) return "del";
-  return "";
+  if (line.startsWith('@@')) return 'hunk'
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta'
+  if (line.startsWith('+')) return 'add'
+  if (line.startsWith('-')) return 'del'
+  return ''
 }
 
 export function Evidence({
@@ -103,30 +103,28 @@ export function Evidence({
   headSha,
   steps,
 }: {
-  project: string;
-  baseSha: string | null;
-  headSha: string;
-  steps: StepEvidence[];
+  project: string
+  baseSha: string | null
+  headSha: string
+  steps: StepEvidence[]
 }) {
-  const [diff, setDiff] = useState<{ files: DiffFile[]; truncated: boolean } | null>(null);
-  const [diffError, setDiffError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [diff, setDiff] = useState<{ files: DiffFile[]; truncated: boolean } | null>(null)
+  const [diffError, setDiffError] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
 
-  const interesting = steps.filter((g) => g.evidence || g.findings.length > 0);
+  const interesting = steps.filter((g) => g.evidence || g.findings.length > 0)
 
   return (
     <div className="evidence">
       {interesting.map((g) => (
         <details key={g.step} className="gdetail">
           <summary>
-            <span className={`pill ${g.state === "passed" ? "pass" : g.state === "failed" ? "fail" : "hold"}`}>
+            <span className={`pill ${g.state === 'passed' ? 'pass' : g.state === 'failed' ? 'fail' : 'hold'}`}>
               {g.step}
             </span>
             <span className="gsum">
-              {g.findings.length > 0
-                ? `${g.findings.length} finding${g.findings.length === 1 ? "" : "s"}`
-                : g.state}
-              {g.current ? "" : " · about an earlier commit"}
+              {g.findings.length > 0 ? `${g.findings.length} finding${g.findings.length === 1 ? '' : 's'}` : g.state}
+              {g.current ? '' : ' · about an earlier commit'}
             </span>
           </summary>
           {g.findings.length > 0 ? <Findings findings={g.findings} /> : null}
@@ -134,7 +132,7 @@ export function Evidence({
               a minor is a batch a person works when they choose to, which is
               neither question the bar answers (the-bar.md). So it is offered
               where a minor is read — on a gate that passed with one. */}
-          {g.state === "passed" && g.findings.some((f) => f.severity === "minor") ? (
+          {g.state === 'passed' && g.findings.some((f) => f.severity === 'minor') ? (
             <p className="note">
               A passing step's minors wait in the <Link href="/backlog">backlog</Link>, to be opened as an issue or
               declined.
@@ -155,9 +153,9 @@ export function Evidence({
               className="btn"
               onClick={() =>
                 startTransition(async () => {
-                  const result = await loadDiff({ project, baseSha, headSha });
-                  if (result.ok) setDiff({ files: result.files, truncated: result.truncated });
-                  else setDiffError(result.detail);
+                  const result = await loadDiff({ project, baseSha, headSha })
+                  if (result.ok) setDiff({ files: result.files, truncated: result.truncated })
+                  else setDiffError(result.detail)
                 })
               }
             >
@@ -168,5 +166,5 @@ export function Evidence({
         )
       ) : null}
     </div>
-  );
+  )
 }

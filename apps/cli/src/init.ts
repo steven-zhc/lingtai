@@ -65,14 +65,14 @@
  * outside this file is reached through `InitWorld`, so a test drives every step
  * and every interruption with no database, network or browser.
  */
-import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { createInterface } from "node:readline/promises";
-import { join } from "node:path";
-import { Document, isMap, parseDocument } from "yaml";
-import { askEveryRuntime } from "@lingtai/agent/auth";
-import { RuntimeId } from "@lingtai/domain";
-import { runnableEnv } from "@lingtai/agent-env";
+import { spawn, spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createInterface } from 'node:readline/promises'
+
+import { runnableEnv } from '@lingtai/agent-env'
+import { askEveryRuntime } from '@lingtai/agent/auth'
+import { RuntimeId } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type StoreChosen,
@@ -81,11 +81,13 @@ import {
   redactUrl,
   stateDir,
   storeChoice,
-} from "@lingtai/env";
-import { createFileLocker, type HeldLock } from "@lingtai/env/lock";
-import { paint } from "@lingtai/env/colour";
-import { type SchemaOutcome, createSchema } from "@lingtai/event-store/schema";
-import { boardLock, builtBoardDir, serveBoard } from "./board.ts";
+} from '@lingtai/env'
+import { paint } from '@lingtai/env/colour'
+import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
+import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
+import { Document, isMap, parseDocument } from 'yaml'
+
+import { boardLock, builtBoardDir, serveBoard } from './board.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -97,22 +99,22 @@ import { boardLock, builtBoardDir, serveBoard } from "./board.ts";
  * `lingtai init`, which is the one command whose job is to say which agents this
  * machine has. `RuntimeId` is the enum; `askEveryRuntime` walks it.
  */
-export type RuntimeName = RuntimeId;
+export type RuntimeName = RuntimeId
 
 export interface RuntimeFound {
-  id: RuntimeName;
-  installed: boolean;
-  signedIn: boolean;
+  id: RuntimeName
+  installed: boolean
+  signedIn: boolean
   /** What the runtime said, verbatim. */
-  detail: string;
+  detail: string
 }
 
-export type DatabaseCheck = { ok: true; schema: SchemaOutcome } | { ok: false; why: string };
+export type DatabaseCheck = { ok: true; schema: SchemaOutcome } | { ok: false; why: string }
 
 export type AppCheck =
   | { configured: false }
   | { configured: true; ok: true; slug: string; owner: string }
-  | { configured: true; ok: false; why: string };
+  | { configured: true; ok: false; why: string }
 
 export interface InitWorld {
   /**
@@ -120,54 +122,54 @@ export interface InitWorld {
    * so a test drives the real reader by handing it a `LINGTAI_HOME` of its own
    * and, where it means the exported variable, a `LINGTAI_DATABASE_URL`.
    */
-  env: NodeJS.ProcessEnv;
-  log: (line: string) => void;
+  env: NodeJS.ProcessEnv
+  log: (line: string) => void
   /** One line from the person. Null when nobody is at a terminal to answer. */
-  ask: (question: string) => Promise<string | null>;
+  ask: (question: string) => Promise<string | null>
   /** `git --version`, or null when there is no git. */
-  git: () => Promise<string | null>;
+  git: () => Promise<string | null>
   /** Every runtime, asked whether it is installed and signed in. */
-  runtimes: () => Promise<RuntimeFound[]>;
+  runtimes: () => Promise<RuntimeFound[]>
   /** Connect, and create the tables where there are none. */
-  database: (url: string) => Promise<DatabaseCheck>;
+  database: (url: string) => Promise<DatabaseCheck>
   /** The App this machine is configured with, asked with a real call. */
-  app: () => Promise<AppCheck>;
+  app: () => Promise<AppCheck>
   /** Resolves once an App is configured and answers — written by the board's first screen. */
-  appeared: () => Promise<{ slug: string; owner: string }>;
+  appeared: () => Promise<{ slug: string; owner: string }>
   /**
    * A Lingtai board already answering on this port — the machine's own, from
    * `lingtai board` or the service — as its URL, or null. Asked before one is
    * started, since a second on the same port is refused.
    */
-  boardAt: (port: number) => Promise<string | null>;
+  boardAt: (port: number) => Promise<string | null>
   /** Serve the board; the process stays up for it. */
-  board: (port: number) => Promise<{ url: string } | { refused: string }>;
+  board: (port: number) => Promise<{ url: string } | { refused: string }>
   /** Open a browser. False when none could be. */
-  open: (url: string) => Promise<boolean>;
+  open: (url: string) => Promise<boolean>
 }
 
 const USAGE =
-  "lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]";
+  'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
-type StoreFlag = "postgres" | "sqlite";
+type StoreFlag = 'postgres' | 'sqlite'
 
 // ---------------------------------------------------------- config.yml --
 
 export function configPath(env: NodeJS.ProcessEnv): string {
-  return join(stateDir(env), "config.yml");
+  return join(stateDir(env), 'config.yml')
 }
 
 /** The machine file as a document, so a write keeps every comment and key it did not choose. */
 function readConfig(path: string): Document | { refused: string } {
-  if (!existsSync(path)) return new Document({});
-  const doc = parseDocument(readFileSync(path, "utf8"));
+  if (!existsSync(path)) return new Document({})
+  const doc = parseDocument(readFileSync(path, 'utf8'))
   if (doc.errors.length > 0) {
-    return { refused: `${path} does not parse as YAML (${doc.errors[0]!.message}) — fix it and run lingtai init again` };
+    return { refused: `${path} does not parse as YAML (${doc.errors[0]!.message}) — fix it and run lingtai init again` }
   }
-  if (doc.contents === null) return new Document({});
-  if (!isMap(doc.contents)) return { refused: `${path} is not a mapping — fix it and run lingtai init again` };
-  return doc;
+  if (doc.contents === null) return new Document({})
+  if (!isMap(doc.contents)) return { refused: `${path} is not a mapping — fix it and run lingtai init again` }
+  return doc
 }
 
 /**
@@ -176,11 +178,11 @@ function readConfig(path: string): Document | { refused: string } {
  * password.
  */
 function writeConfig(path: string, doc: Document, home: string): void {
-  mkdirSync(home, { recursive: true });
-  const partial = `${path}.${process.pid}.partial`;
-  writeFileSync(partial, doc.toString(), { mode: 0o600 });
-  chmodSync(partial, 0o600);
-  renameSync(partial, path);
+  mkdirSync(home, { recursive: true })
+  const partial = `${path}.${process.pid}.partial`
+  writeFileSync(partial, doc.toString(), { mode: 0o600 })
+  chmodSync(partial, 0o600)
+  renameSync(partial, path)
 }
 
 /**
@@ -189,135 +191,149 @@ function writeConfig(path: string, doc: Document, home: string): void {
  * `@lingtai/env`'s, because the store's own refusals quote a `database.url`
  * too — one redaction, so there is one place a password could escape from.
  */
-export { redactUrl as redact } from "@lingtai/env";
+export { redactUrl as redact } from '@lingtai/env'
 
 // ------------------------------------------------------------ the command --
 
 function parseArgs(argv: readonly string[]): { flags: Record<string, string> } | { refused: string } {
-  const flags: Record<string, string> = {};
+  const flags: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
-    const name = argv[i]!;
-    if (!["--store", "--database-url", "--agent", "--port"].includes(name)) return { refused: `${USAGE} — no ${name}` };
-    const value = argv[i + 1];
-    if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` };
-    flags[name.slice(2)] = value;
-    i++;
+    const name = argv[i]!
+    if (!['--store', '--database-url', '--agent', '--port'].includes(name)) return { refused: `${USAGE} — no ${name}` }
+    const value = argv[i + 1]
+    if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
+    flags[name.slice(2)] = value
+    i++
   }
-  return { flags };
+  return { flags }
 }
 
-function refuse(world: Pick<InitWorld, "log">, line: string, code = 1): number {
-  world.log(paint.fail(line));
-  return code;
+function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
+  world.log(paint.fail(line))
+  return code
 }
 
 export async function initCommand(argv: readonly string[], world: InitWorld): Promise<number> {
-  const parsed = parseArgs(argv);
-  if ("refused" in parsed) return refuse(world, parsed.refused, 2);
-  const { flags } = parsed;
-  const asked = flags["port"] === undefined ? null : Number(flags["port"]);
-  if (asked !== null && (!Number.isInteger(asked) || asked <= 0)) return refuse(world, `${USAGE} — --port takes a port number`, 2);
-  const named = flags["store"] ?? null;
-  if (named !== null && named !== "sqlite" && named !== "postgres") return refuse(world, `${USAGE} — --store takes sqlite or postgres`, 2);
+  const parsed = parseArgs(argv)
+  if ('refused' in parsed) return refuse(world, parsed.refused, 2)
+  const { flags } = parsed
+  const asked = flags['port'] === undefined ? null : Number(flags['port'])
+  if (asked !== null && (!Number.isInteger(asked) || asked <= 0))
+    return refuse(world, `${USAGE} — --port takes a port number`, 2)
+  const named = flags['store'] ?? null
+  if (named !== null && named !== 'sqlite' && named !== 'postgres')
+    return refuse(world, `${USAGE} — --store takes sqlite or postgres`, 2)
   // Two stores named in one command: neither is guessed at, and nothing is written (#345).
-  if (named === "sqlite" && flags["database-url"] !== undefined) {
-    return refuse(world, `${USAGE} — --store sqlite and --database-url name two different stores. Nothing was written`, 2);
+  if (named === 'sqlite' && flags['database-url'] !== undefined) {
+    return refuse(
+      world,
+      `${USAGE} — --store sqlite and --database-url name two different stores. Nothing was written`,
+      2,
+    )
   }
 
-  const home = stateDir(world.env);
-  const path = configPath(world.env);
+  const home = stateDir(world.env)
+  const path = configPath(world.env)
 
   // ---- look -----------------------------------------------------------------
-  world.log(paint.accent("looking before asking"));
-  const git = await world.git();
-  world.log(git ? `  git          ${git}` : paint.fail("  git          not on PATH"));
-  const runtimes = await world.runtimes();
+  world.log(paint.accent('looking before asking'))
+  const git = await world.git()
+  world.log(git ? `  git          ${git}` : paint.fail('  git          not on PATH'))
+  const runtimes = await world.runtimes()
   for (const r of runtimes) {
-    const state = !r.installed ? "not installed" : r.signedIn ? r.detail : `installed, not signed in — ${r.detail}`;
-    world.log(`  ${r.id.padEnd(12)} ${state}`);
+    const state = !r.installed ? 'not installed' : r.signedIn ? r.detail : `installed, not signed in — ${r.detail}`
+    world.log(`  ${r.id.padEnd(12)} ${state}`)
   }
-  world.log(`  ${"home".padEnd(12)} ${home} — ${describeHome(home, path)}`);
+  world.log(`  ${'home'.padEnd(12)} ${home} — ${describeHome(home, path)}`)
   if (!git) {
-    return refuse(world, "git is not on PATH — the mirror and the worktrees are git. Install it and run lingtai init again; nothing was written");
+    return refuse(
+      world,
+      'git is not on PATH — the mirror and the worktrees are git. Install it and run lingtai init again; nothing was written',
+    )
   }
 
-  const config = readConfig(path);
-  if ("refused" in config) return refuse(world, config.refused);
+  const config = readConfig(path)
+  if ('refused' in config) return refuse(world, config.refused)
 
   // ---- the store ------------------------------------------------------------
-  const store = await chooseStore(world, config, path, home, flags["database-url"] ?? null, named);
-  if (store !== null) return store;
+  const store = await chooseStore(world, config, path, home, flags['database-url'] ?? null, named)
+  if (store !== null) return store
 
   // ---- the agent ------------------------------------------------------------
-  const agent = await chooseAgent(world, config, path, home, runtimes, flags["agent"] ?? null);
-  if (agent !== null) return agent;
+  const agent = await chooseAgent(world, config, path, home, runtimes, flags['agent'] ?? null)
+  if (agent !== null) return agent
 
   // ---- the App --------------------------------------------------------------
-  const app = await world.app();
+  const app = await world.app()
   if (app.configured && !app.ok) {
     return refuse(
       world,
       `the GitHub App configured here does not answer — ${app.why}. A second App is not created beside it: ` +
-        "fix its credentials, or remove them, and run lingtai init again",
-    );
+        'fix its credentials, or remove them, and run lingtai init again',
+    )
   }
   world.log(
     app.configured
       ? paint.pass(`app          ${app.slug}, owned by ${app.owner} — it answered`)
       : "app          none yet — the board's first screen creates it through GitHub's manifest flow",
-  );
+  )
 
   // ---- the board, on the wizard ---------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of
   // the same file `readConfig` above refuses by name, and a file that does not
   // parse should say so once, in its own words, rather than through the port.
-  const port = asked ?? boardPort(world.env);
+  const port = asked ?? boardPort(world.env)
   // A board already up is this machine's, and the wizard is on it: a re-run uses it rather than failing on its port.
-  const running = await world.boardAt(port);
-  const board = running !== null ? { url: running } : await world.board(port);
-  if ("refused" in board) {
-    return refuse(world, `the board did not start — ${board.refused}. Everything chosen above is kept, and lingtai init again continues from here`);
+  const running = await world.boardAt(port)
+  const board = running !== null ? { url: running } : await world.board(port)
+  if ('refused' in board) {
+    return refuse(
+      world,
+      `the board did not start — ${board.refused}. Everything chosen above is kept, and lingtai init again continues from here`,
+    )
   }
-  const wizard = `${board.url}${app.configured ? "/setup/repository" : "/setup/github-app"}`;
+  const wizard = `${board.url}${app.configured ? '/setup/repository' : '/setup/github-app'}`
   world.log(
     (await world.open(wizard))
       ? paint.pass(`opened ${wizard}`)
       : paint.signal(`no browser could be opened here — open ${wizard}`),
-  );
+  )
   if (!app.configured) {
-    world.log(paint.signal("waiting for the App — press Create on that page, and GitHub brings you back"));
-    const made = await world.appeared();
-    world.log(paint.pass(`app          ${made.slug}, owned by ${made.owner} — it answered`));
-    world.log(`next, install it and pick a repository: ${board.url}/setup/repository`);
+    world.log(paint.signal('waiting for the App — press Create on that page, and GitHub brings you back'))
+    const made = await world.appeared()
+    world.log(paint.pass(`app          ${made.slug}, owned by ${made.owner} — it answered`))
+    world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
   }
   world.log(
     running !== null
       ? paint.muted(`the board was already running at ${running} — this started none`)
-      : paint.muted("the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again"),
-  );
-  return 0;
+      : paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again'),
+  )
+  return 0
 }
 
 function describeHome(home: string, path: string): string {
-  if (!existsSync(home)) return "nothing yet";
-  const said: string[] = [existsSync(path) ? "config.yml" : "no config.yml"];
+  if (!existsSync(home)) return 'nothing yet'
+  const said: string[] = [existsSync(path) ? 'config.yml' : 'no config.yml']
   try {
-    const entries = readdirSync(home, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
-    const projects = entries.filter((name) => existsSync(join(home, name, "recipe.yml")));
-    said.push(projects.length > 0 ? `projects: ${projects.join(", ")}` : "no projects");
-    if (entries.includes("versions")) {
-      const versions = readdirSync(join(home, "versions")).filter((v) => !v.startsWith("."));
-      said.push(`versions: ${versions.join(", ") || "none"}`);
+    const entries = readdirSync(home, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+    const projects = entries.filter((name) => existsSync(join(home, name, 'recipe.yml')))
+    said.push(projects.length > 0 ? `projects: ${projects.join(', ')}` : 'no projects')
+    if (entries.includes('versions')) {
+      const versions = readdirSync(join(home, 'versions')).filter((v) => !v.startsWith('.'))
+      said.push(`versions: ${versions.join(', ') || 'none'}`)
     }
   } catch {
     // An unreadable home says only what the file check could.
   }
-  return said.join(" · ");
+  return said.join(' · ')
 }
 
 function describeSchema(schema: SchemaOutcome): string {
-  if (schema.created) return `tables created (${schema.applied.length} steps)`;
-  return schema.repaired.length > 0 ? `tables present; put back ${schema.repaired.join(", ")}` : "tables present";
+  if (schema.created) return `tables created (${schema.applied.length} steps)`
+  return schema.repaired.length > 0 ? `tables present; put back ${schema.repaired.join(', ')}` : 'tables present'
 }
 
 /**
@@ -339,120 +355,125 @@ async function chooseStore(
 ): Promise<number | null> {
   // `--store sqlite` is refused, before anything else is looked at, wherever
   // the machine would not obey it — writing it there would be #215 again.
-  if (named === "sqlite") {
-    const refused = sqliteRefused(world, config, path);
-    if (refused !== null) return refuse(world, refused);
+  if (named === 'sqlite') {
+    const refused = sqliteRefused(world, config, path)
+    if (refused !== null) return refuse(world, refused)
   }
 
   // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
   // and nothing is written for it: it is the process's answer, not the file's,
   // and this command does not own the process a daemon will be started in.
-  const preset = storeChoice(world.env);
-  if (!("refused" in preset) && preset.where === "environment" && preset.store === "postgres") {
+  const preset = storeChoice(world.env)
+  if (!('refused' in preset) && preset.where === 'environment' && preset.store === 'postgres') {
     // `--store postgres` naming a database the exported URL does not is a
     // choice this process would not obey: refused, rather than connecting to
     // the other one and reporting it as though it were what was asked.
-    if (named === "postgres" && flag !== null && flag.trim() !== preset.url) {
+    if (named === 'postgres' && flag !== null && flag.trim() !== preset.url) {
       return refuse(
         world,
         `--store postgres --database-url ${redactUrl(flag)}, but ${preset.from} names ${redactUrl(preset.url)}, and ` +
-          "an exported URL wins over the file (0056 §3). Unset it, or leave out --database-url. Nothing was written",
-      );
+          'an exported URL wins over the file (0056 §3). Unset it, or leave out --database-url. Nothing was written',
+      )
     }
-    const check = await world.database(preset.url);
+    const check = await world.database(preset.url)
     if (!check.ok) {
       return refuse(
         world,
         `the database ${preset.from} names, ${redactUrl(preset.url)}, does not answer — ${check.why}. ` +
           "It is not this command's to replace: fix it, or remove it, and run lingtai init again",
-      );
+      )
     }
-    world.log(paint.pass(`store        ${describeStore(preset)} · ${describeSchema(check.schema)}`));
-    return null;
+    world.log(paint.pass(`store        ${describeStore(preset)} · ${describeSchema(check.schema)}`))
+    return null
   }
 
   // `--store postgres` names the store and the URL comes from `--database-url`.
   // Without one there is nothing to connect to, and the question it would fall
   // back on is not a Postgres question: its empty answer is SQLite.
-  if (named === "postgres" && (flag === null || flag.trim() === "")) {
-    return refuse(world, `${USAGE} — --store postgres takes --database-url <postgres url>, or an exported LINGTAI_DATABASE_URL. Nothing was written`, 2);
+  if (named === 'postgres' && (flag === null || flag.trim() === '')) {
+    return refuse(
+      world,
+      `${USAGE} — --store postgres takes --database-url <postgres url>, or an exported LINGTAI_DATABASE_URL. Nothing was written`,
+      2,
+    )
   }
 
-  let candidate = flag;
+  let candidate = flag
   // The inherited URL below is tried **once**. Taking it again on the next pass
   // would be a loop that never reaches the question, since what makes it
   // inheritable — a `url` with no `store` — is still true after it failed.
-  let inherited = false;
+  let inherited = false
   for (;;) {
     if (candidate === null) {
-      const settled = storeChoice(world.env);
-      if (!("refused" in settled)) {
-        if (settled.store === "sqlite") return sqliteChosen(world, settled);
-        const check = await world.database(settled.url);
+      const settled = storeChoice(world.env)
+      if (!('refused' in settled)) {
+        if (settled.store === 'sqlite') return sqliteChosen(world, settled)
+        const check = await world.database(settled.url)
         if (check.ok) {
-          world.log(paint.pass(`store        ${describeStore(settled)} · ${describeSchema(check.schema)}`));
-          return null;
+          world.log(paint.pass(`store        ${describeStore(settled)} · ${describeSchema(check.schema)}`))
+          return null
         }
-        world.log(paint.fail(`store        ${describeStore(settled)} does not answer — ${check.why}`));
-      } else if (settled.because === "unreadable") {
+        world.log(paint.fail(`store        ${describeStore(settled)} does not answer — ${check.why}`))
+      } else if (settled.because === 'unreadable') {
         // `readConfig` refused this already; it is here because the two readers
         // are separate and one of them must not be the only one that looks.
-        return refuse(world, settled.refused);
+        return refuse(world, settled.refused)
       } else {
         // *Nothing chosen* is the question this command is about to ask, so it
         // is asked rather than reported — a refusal naming `lingtai init` is
         // absurd inside `lingtai init`. The other two are a file being
         // repaired, and what was wrong with it is said before asking again.
-        if (settled.because !== "nothing chosen") world.log(paint.fail(settled.refused));
+        if (settled.because !== 'nothing chosen') world.log(paint.fail(settled.refused))
         // A machine set up before the store was a written value (#186) has a
         // `database.url` and no `store`. That URL is the choice nobody
         // recorded: it is verified and recorded, not asked for a second time.
-        const older = config.getIn(["database", "url"]);
-        if (!inherited && settled.because === "nothing chosen" && typeof older === "string" && older !== "") {
-          candidate = older;
-          inherited = true;
+        const older = config.getIn(['database', 'url'])
+        if (!inherited && settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
+          candidate = older
+          inherited = true
         }
       }
     }
     if (candidate === null) {
       // `--store sqlite` is the empty answer, given in advance: the same write,
       // by the same lines below, and no terminal needed to give it (#345).
-      const answer = named === "sqlite" ? "" : await world.ask(paint.signal("a Postgres URL for the log — empty for SQLite: "));
+      const answer =
+        named === 'sqlite' ? '' : await world.ask(paint.signal('a Postgres URL for the log — empty for SQLite: '))
       if (answer === null) {
-        return refuse(world, `nobody is at a terminal to say which store — ${USAGE}. Nothing was written`);
+        return refuse(world, `nobody is at a terminal to say which store — ${USAGE}. Nothing was written`)
       }
-      candidate = answer.trim();
+      candidate = answer.trim()
     }
-    if (candidate === "") {
+    if (candidate === '') {
       // The SQLite choice, written — and `database.url` removed in the same
       // write. Left behind it would go on selecting Postgres under a screen
       // that had just said SQLite, which is the whole of #215.
-      config.setIn(["database", "store"], "sqlite");
-      config.deleteIn(["database", "url"]);
-      writeConfig(path, config, home);
-      const read = confirm(world, path, "sqlite");
-      return typeof read === "number" ? read : sqliteChosen(world, read);
+      config.setIn(['database', 'store'], 'sqlite')
+      config.deleteIn(['database', 'url'])
+      writeConfig(path, config, home)
+      const read = confirm(world, path, 'sqlite')
+      return typeof read === 'number' ? read : sqliteChosen(world, read)
     }
     if (!/^postgres(ql)?:\/\//.test(candidate)) {
-      world.log(paint.fail(`that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written`));
+      world.log(paint.fail(`that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written`))
     } else {
-      const check = await world.database(candidate);
+      const check = await world.database(candidate)
       if (check.ok) {
-        config.setIn(["database", "store"], "postgres");
-        config.setIn(["database", "url"], candidate);
-        writeConfig(path, config, home);
-        const read = confirm(world, path, "postgres");
-        if (typeof read === "number") return read;
-        world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`));
-        return null;
+        config.setIn(['database', 'store'], 'postgres')
+        config.setIn(['database', 'url'], candidate)
+        writeConfig(path, config, home)
+        const read = confirm(world, path, 'postgres')
+        if (typeof read === 'number') return read
+        world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`))
+        return null
       }
-      world.log(paint.fail(`${redactUrl(candidate)} does not answer — ${check.why}. Nothing was written`));
+      world.log(paint.fail(`${redactUrl(candidate)} does not answer — ${check.why}. Nothing was written`))
     }
     // `--store postgres` whose URL failed stops here. Going round again would
     // reach whatever the file already says — SQLite, on a machine that chose
     // it — or a question whose empty answer is the store it did not name.
-    if (named === "postgres") return refuse(world, "--store postgres, and its --database-url was not taken — see above");
-    candidate = null;
+    if (named === 'postgres') return refuse(world, '--store postgres, and its --database-url was not taken — see above')
+    candidate = null
   }
 }
 
@@ -475,29 +496,29 @@ async function chooseStore(
  * `store: sqlite` beside a `url` is **not** refused: that is the half-state the
  * documented switch leaves, and the empty answer completes it in the same way.
  */
-function sqliteRefused(world: Pick<InitWorld, "env">, config: Document, path: string): string | null {
-  const read = storeChoice(world.env);
+function sqliteRefused(world: Pick<InitWorld, 'env'>, config: Document, path: string): string | null {
+  const read = storeChoice(world.env)
   // The way through, and it works with no terminal: the edit leaves the
   // two-keys half-state, which `--store sqlite` completes.
   const edit =
-    "another store is a new, empty log rather than this one moved (0055 §3), so changing it is an edit and not a " +
-    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`;
-  if (!("refused" in read) && read.where === "environment" && read.store === "postgres") {
+    'another store is a new, empty log rather than this one moved (0055 §3), so changing it is an edit and not a ' +
+    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`
+  if (!('refused' in read) && read.where === 'environment' && read.store === 'postgres') {
     return (
       `--store sqlite, but ${read.from}, and an exported URL wins over the file (0056 §3) — this machine would ` +
-      "say SQLite and run Postgres. Unset it, or leave out --store sqlite. Nothing was written"
-    );
+      'say SQLite and run Postgres. Unset it, or leave out --store sqlite. Nothing was written'
+    )
   }
-  if (("refused" in read && read.because === "no url") || (!("refused" in read) && read.store === "postgres")) {
-    return `--store sqlite, but ${path} already says database.store: postgres — ${edit}`;
+  if (('refused' in read && read.because === 'no url') || (!('refused' in read) && read.store === 'postgres')) {
+    return `--store sqlite, but ${path} already says database.store: postgres — ${edit}`
   }
   // A `url` with no store this command can read beside it — none, or a value
   // that is neither name — is what the question would adopt as Postgres (#186).
-  const older = config.getIn(["database", "url"]);
-  if ("refused" in read && read.because === "nothing chosen" && typeof older === "string" && older !== "") {
-    return `--store sqlite, but ${path} names database.url: ${redactUrl(older)} and no valid database.store beside it — ${edit}`;
+  const older = config.getIn(['database', 'url'])
+  if ('refused' in read && read.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
+    return `--store sqlite, but ${path} names database.url: ${redactUrl(older)} and no valid database.store beside it — ${edit}`
   }
-  return null;
+  return null
 }
 
 /**
@@ -508,12 +529,15 @@ function sqliteRefused(world: Pick<InitWorld, "env">, config: Document, path: st
  * first place. A disagreement between them is that defect, so it is a refusal
  * naming both rather than a line nobody would read.
  */
-function confirm(world: InitWorld, path: string, expected: "postgres" | "sqlite"): StoreChosen | number {
-  const read = storeChoice(world.env);
-  if ("refused" in read || read.store !== expected) {
-    return refuse(world, `${expected} was written to ${path}, and reading it back does not say so — ${describeStore(read)}`);
+function confirm(world: InitWorld, path: string, expected: 'postgres' | 'sqlite'): StoreChosen | number {
+  const read = storeChoice(world.env)
+  if ('refused' in read || read.store !== expected) {
+    return refuse(
+      world,
+      `${expected} was written to ${path}, and reading it back does not say so — ${describeStore(read)}`,
+    )
   }
-  return read;
+  return read
 }
 
 /**
@@ -534,10 +558,10 @@ function confirm(world: InitWorld, path: string, expected: "postgres" | "sqlite"
  * The claim itself is `SQLITE_MACHINE`, said in one place. Muted rather than
  * amber: nothing here needs doing.
  */
-function sqliteChosen(world: Pick<InitWorld, "log">, choice: StoreChosen): null {
-  world.log(paint.pass(`store        ${describeStore(choice)}`));
-  world.log(paint.muted(SQLITE_MACHINE));
-  return null;
+function sqliteChosen(world: Pick<InitWorld, 'log'>, choice: StoreChosen): null {
+  world.log(paint.pass(`store        ${describeStore(choice)}`))
+  world.log(paint.muted(SQLITE_MACHINE))
+  return null
 }
 
 /** Null once an agent is settled; an exit code when it cannot be. */
@@ -549,29 +573,29 @@ async function chooseAgent(
   runtimes: readonly RuntimeFound[],
   flag: string | null,
 ): Promise<number | null> {
-  const signedIn = runtimes.filter((r) => r.signedIn).map((r) => r.id);
-  const named = config.getIn(["runtime", "agent"]);
+  const signedIn = runtimes.filter((r) => r.signedIn).map((r) => r.id)
+  const named = config.getIn(['runtime', 'agent'])
 
-  if (typeof named === "string" && (flag === null || flag === named)) {
+  if (typeof named === 'string' && (flag === null || flag === named)) {
     if ((signedIn as string[]).includes(named)) {
-      world.log(paint.pass(`agent        ${named} ← ${path} · signed in`));
-      return null;
+      world.log(paint.pass(`agent        ${named} ← ${path} · signed in`))
+      return null
     }
-    world.log(paint.fail(`agent        ${named} ← ${path} is not signed in — ${detailOf(runtimes, named)}`));
+    world.log(paint.fail(`agent        ${named} ← ${path} is not signed in — ${detailOf(runtimes, named)}`))
     // Back to the choice, and asked even when one other is signed in: that one is not what was written.
-    return ask(world, config, path, home, runtimes, signedIn, null);
+    return ask(world, config, path, home, runtimes, signedIn, null)
   }
 
   if (signedIn.length === 1 && (flag === null || flag === signedIn[0])) {
-    return write(world, config, path, home, signedIn[0]!, "detected — the only runtime signed in");
+    return write(world, config, path, home, signedIn[0]!, 'detected — the only runtime signed in')
   }
-  return ask(world, config, path, home, runtimes, signedIn, flag);
+  return ask(world, config, path, home, runtimes, signedIn, flag)
 }
 
 function detailOf(runtimes: readonly RuntimeFound[], id: string): string {
-  const found = runtimes.find((r) => r.id === id);
-  if (!found) return "Lingtai has no runtime by that name";
-  return found.installed ? found.detail : "not installed";
+  const found = runtimes.find((r) => r.id === id)
+  if (!found) return 'Lingtai has no runtime by that name'
+  return found.installed ? found.detail : 'not installed'
 }
 
 async function ask(
@@ -586,70 +610,66 @@ async function ask(
   if (signedIn.length === 0) {
     const each = runtimes.map((r) =>
       r.installed ? `${r.id} is installed and not signed in (${r.detail})` : `${r.id} is not installed`,
-    );
+    )
     return refuse(
       world,
-      `no agent runtime is signed in on this machine — ${each.join("; ")}. Sign in to one and run lingtai init again; ` +
-        "whether it is paid for is between you and its provider. Nothing was written",
-    );
+      `no agent runtime is signed in on this machine — ${each.join('; ')}. Sign in to one and run lingtai init again; ` +
+        'whether it is paid for is between you and its provider. Nothing was written',
+    )
   }
   if (flag !== null) {
-    if ((signedIn as string[]).includes(flag)) return write(world, config, path, home, flag as RuntimeName, "--agent");
-    world.log(paint.fail(`--agent ${flag} is not signed in here — ${detailOf(runtimes, flag)}`));
+    if ((signedIn as string[]).includes(flag)) return write(world, config, path, home, flag as RuntimeName, '--agent')
+    world.log(paint.fail(`--agent ${flag} is not signed in here — ${detailOf(runtimes, flag)}`))
   }
   for (;;) {
-    const options = signedIn.map((id, i) => `${i + 1}) ${id}`).join("  ");
-    const answer = await world.ask(paint.signal(`${signedIn.join(" and ")} can run here — which one? ${options}: `));
+    const options = signedIn.map((id, i) => `${i + 1}) ${id}`).join('  ')
+    const answer = await world.ask(paint.signal(`${signedIn.join(' and ')} can run here — which one? ${options}: `))
     if (answer === null) {
-      return refuse(world, `nobody is at a terminal to choose — ${USAGE}. Lingtai does not pick one silently; nothing was written`);
+      return refuse(
+        world,
+        `nobody is at a terminal to choose — ${USAGE}. Lingtai does not pick one silently; nothing was written`,
+      )
     }
-    const trimmed = answer.trim();
-    const picked = signedIn.find((id, i) => trimmed === id || trimmed === String(i + 1));
-    if (picked !== undefined) return write(world, config, path, home, picked, "chosen");
-    world.log(paint.fail(`"${trimmed}" is not one of ${signedIn.join(", ")}`));
+    const trimmed = answer.trim()
+    const picked = signedIn.find((id, i) => trimmed === id || trimmed === String(i + 1))
+    if (picked !== undefined) return write(world, config, path, home, picked, 'chosen')
+    world.log(paint.fail(`"${trimmed}" is not one of ${signedIn.join(', ')}`))
   }
 }
 
-function write(
-  world: InitWorld,
-  config: Document,
-  path: string,
-  home: string,
-  agent: RuntimeName,
-  why: string,
-): null {
-  config.setIn(["runtime", "agent"], agent);
-  writeConfig(path, config, home);
-  world.log(paint.pass(`agent        ${agent} → ${path} · ${why}`));
-  return null;
+function write(world: InitWorld, config: Document, path: string, home: string, agent: RuntimeName, why: string): null {
+  config.setIn(['runtime', 'agent'], agent)
+  writeConfig(path, config, home)
+  world.log(paint.pass(`agent        ${agent} → ${path} · ${why}`))
+  return null
 }
 
 // ------------------------------------------------------------- live world --
 
 /** The board lock this process holds while `lingtai init` serves one. See `board` below. */
-let kept: HeldLock | null = null;
+let kept: HeldLock | null = null
 
 export function liveInitWorld(): InitWorld {
   return {
     env: process.env,
     log: (line) => console.log(line),
     ask: async (question) => {
-      if (!process.stdin.isTTY) return null;
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      if (!process.stdin.isTTY) return null
+      const rl = createInterface({ input: process.stdin, output: process.stdout })
       // Ctrl+C at a question: every earlier answer is already written, and this one was not.
-      rl.on("SIGINT", () => {
-        console.log("\nstopped at the question — its answer was not written, and lingtai init again asks it here");
-        process.exit(130);
-      });
+      rl.on('SIGINT', () => {
+        console.log('\nstopped at the question — its answer was not written, and lingtai init again asks it here')
+        process.exit(130)
+      })
       try {
-        return await rl.question(question);
+        return await rl.question(question)
       } finally {
-        rl.close();
+        rl.close()
       }
     },
     git: async () => {
-      const said = spawnSync("git", ["--version"], { encoding: "utf8" });
-      return said.status === 0 ? said.stdout.trim() : null;
+      const said = spawnSync('git', ['--version'], { encoding: 'utf8' })
+      return said.status === 0 ? said.stdout.trim() : null
     },
     runtimes: async () => {
       // Keyed by id in `auth.ts`, not zipped positionally here: the pair of
@@ -661,83 +681,85 @@ export function liveInitWorld(): InitWorld {
         installed: !/ENOENT/.test(status.detail),
         signedIn: status.loggedIn,
         detail: status.detail,
-      }));
+      }))
     },
     database: async (url) => {
-      const pg = (await import("pg")).default;
-      const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 });
+      const pg = (await import('pg')).default
+      const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })
       try {
-        await client.connect();
-        return { ok: true, schema: await createSchema(client) };
+        await client.connect()
+        return { ok: true, schema: await createSchema(client) }
       } catch (err) {
-        return { ok: false, why: (err as Error).message || String(err) };
+        return { ok: false, why: (err as Error).message || String(err) }
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => {})
       }
     },
     app: liveApp,
     appeared: async () => {
       for (;;) {
-        const app = await liveApp();
-        if (app.configured && app.ok) return { slug: app.slug, owner: app.owner };
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const app = await liveApp()
+        if (app.configured && app.ok) return { slug: app.slug, owner: app.owner }
+        await new Promise((resolve) => setTimeout(resolve, 2000))
       }
     },
     boardAt: async (port) => {
-      const url = `http://127.0.0.1:${port}`;
+      const url = `http://127.0.0.1:${port}`
       try {
         // The board's own title, so a port some other server holds is not mistaken for it.
-        const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) });
-        return (await res.text()).includes("<title>Lingtai</title>") ? url : null;
+        const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
+        return (await res.text()).includes('<title>Lingtai</title>') ? url : null
       } catch {
-        return null;
+        return null
       }
     },
     board: async (port) => {
-      const host = "127.0.0.1";
+      const host = '127.0.0.1'
       // The same lock `lingtai board start` takes (#187), and for the same
       // reason: a board this process serves and no lock names is one that
       // `lingtai board status` calls nobody's and `lingtai board stop` cannot
       // stop. Held for as long as this process serves — `kept` is module scope
       // so nothing collects the handle out from under the lock.
-      const taken = await createFileLocker().tryLock(boardLock(port), `board on ${port}`);
+      const taken = await createFileLocker().tryLock(boardLock(port), `board on ${port}`)
       if (!taken.ok) {
-        return { refused: `a board is already on ${port} — held by ${taken.holder ?? "a holder that has not named itself"}` };
+        return {
+          refused: `a board is already on ${port} — held by ${taken.holder ?? 'a holder that has not named itself'}`,
+        }
       }
-      kept = taken.lock;
+      kept = taken.lock
       try {
-        await serveBoard({ dir: builtBoardDir(), port, host });
+        await serveBoard({ dir: builtBoardDir(), port, host })
       } catch (err) {
-        await kept.release();
-        kept = null;
-        return { refused: (err as Error).message };
+        await kept.release()
+        kept = null
+        return { refused: (err as Error).message }
       }
-      return { url: `http://${host}:${port}` };
+      return { url: `http://${host}:${port}` }
     },
     open: (url) =>
       new Promise((resolve) => {
-        const opener = process.platform === "darwin" ? "open" : "xdg-open";
-        const child = spawn(opener, [url], { stdio: "ignore", detached: true });
-        child.once("error", () => resolve(false));
-        child.once("spawn", () => {
-          child.unref();
-          resolve(true);
-        });
+        const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
+        const child = spawn(opener, [url], { stdio: 'ignore', detached: true })
+        child.once('error', () => resolve(false))
+        child.once('spawn', () => {
+          child.unref()
+          resolve(true)
+        })
       }),
-  };
+  }
 }
 
 /** `GET /app` with the App's own JWT — the call that proves the id and the key belong together. */
 async function liveApp(): Promise<AppCheck> {
-  const env = await import("@lingtai/env");
-  if (!env.hasGitHubApp()) return { configured: false };
+  const env = await import('@lingtai/env')
+  if (!env.hasGitHubApp()) return { configured: false }
   try {
-    const github = await import("@lingtai/github");
-    const credentials = env.githubApp();
-    const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey });
-    const app = await reader.request<{ slug: string; owner: { login: string } }>("GET", "/app", "app");
-    return { configured: true, ok: true, slug: app.slug, owner: app.owner.login };
+    const github = await import('@lingtai/github')
+    const credentials = env.githubApp()
+    const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
+    const app = await reader.request<{ slug: string; owner: { login: string } }>('GET', '/app', 'app')
+    return { configured: true, ok: true, slug: app.slug, owner: app.owner.login }
   } catch (err) {
-    return { configured: true, ok: false, why: (err as Error).message };
+    return { configured: true, ok: false, why: (err as Error).message }
   }
 }

@@ -1,6 +1,7 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
-import path from "node:path";
-import { DOCS_PUBLIC, docRoot, HTML_DOCS } from "../src/lib/docs.ts";
+import { copyFile, mkdir, rm } from 'node:fs/promises'
+import path from 'node:path'
+
+import { DOCS_PUBLIC, docRoot, HTML_DOCS } from '../src/lib/docs.ts'
 
 /**
  * Carries the documents that are already HTML into the export.
@@ -16,22 +17,21 @@ import { DOCS_PUBLIC, docRoot, HTML_DOCS } from "../src/lib/docs.ts";
  * This runs before `next dev` and before `next build`, so the copy is never
  * older than the build that serves it.
  */
-const out = path.resolve(process.cwd(), "public/doc");
+const out = path.resolve(process.cwd(), 'public/doc')
 
 // Remove yesterday's generated copies first. Turning publication off must not
 // leave an old `/doc/architecture.html` in the next export.
-await rm(out, { recursive: true, force: true });
+await rm(out, { recursive: true, force: true })
 
 if (DOCS_PUBLIC) {
-  await mkdir(out, { recursive: true });
+  await mkdir(out, { recursive: true })
   for (const doc of HTML_DOCS) {
     // No try: a missing `architecture.html` means the projection is pointing at
     // a document that no longer exists, and a build that quietly serves a
     // dangling link is how documentation starts lying.
-    await copyFile(path.join(docRoot, doc.file), path.join(out, doc.file));
+    await copyFile(path.join(docRoot, doc.file), path.join(out, doc.file))
   }
-  console.log(`doc-assets: ${HTML_DOCS.map((d) => d.file).join(", ")} → public/doc/`);
+  console.log(`doc-assets: ${HTML_DOCS.map((d) => d.file).join(', ')} → public/doc/`)
 } else {
-  console.log("doc-assets: hidden until DOCS_PUBLIC is enabled");
+  console.log('doc-assets: hidden until DOCS_PUBLIC is enabled')
 }
-

@@ -1,6 +1,6 @@
-import { readdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import path from "node:path";
+import { existsSync } from 'node:fs'
+import { readdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
 
 /**
  * The docs are a projection of `doc/`, and never a copy.
@@ -34,23 +34,23 @@ import path from "node:path";
  */
 function nearestRepoRoot(from: string): string {
   for (let dir = path.resolve(from); dir !== path.dirname(dir); dir = path.dirname(dir)) {
-    if (existsSync(path.join(dir, "doc", "README.md"))) return dir;
+    if (existsSync(path.join(dir, 'doc', 'README.md'))) return dir
   }
-  return path.resolve(from, "../..");
+  return path.resolve(from, '../..')
 }
 
-export const repoRoot = nearestRepoRoot(process.cwd());
-export const docRoot = path.join(repoRoot, "doc");
+export const repoRoot = nearestRepoRoot(process.cwd())
+export const docRoot = path.join(repoRoot, 'doc')
 
 /** Where a file that is not projected is read instead. */
-export const GITHUB_BLOB = "https://github.com/steven-zhc/lingtai/blob/main/";
+export const GITHUB_BLOB = 'https://github.com/steven-zhc/lingtai/blob/main/'
 
 /**
  * The repository docs stay private to the build until their information
  * architecture is ready for visitors. Flip this one switch to restore the
  * generated index, document routes, and carried HTML drawings together.
  */
-export const DOCS_PUBLIC = false;
+export const DOCS_PUBLIC = false
 
 /**
  * What is public while `DOCS_PUBLIC` is off: the tutorial, which is the way in for
@@ -63,25 +63,25 @@ export const DOCS_PUBLIC = false;
  * Everything that would otherwise 404 on the site — a link from the tutorial to
  * `guide.md`, say — resolves to the file on GitHub instead (`resolveHref`).
  */
-export const PUBLIC_SLUGS = ["tutorial", "plugins"];
+export const PUBLIC_SLUGS = ['tutorial', 'plugins']
 
 export function isPublicSlug(slug: string): boolean {
-  return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`));
+  return PUBLIC_SLUGS.some((each) => slug === each || slug.startsWith(`${each}/`))
 }
 
 /** The files the site serves right now, relative to `doc/`. */
 export async function servable(): Promise<string[]> {
-  const all = await published();
-  return DOCS_PUBLIC ? all : all.filter((f) => isPublicSlug(slugOf(f)));
+  const all = await published()
+  return DOCS_PUBLIC ? all : all.filter((f) => isPublicSlug(slugOf(f)))
 }
 
 export interface Section {
-  id: string;
-  label: string;
+  id: string
+  label: string
   /** One line: what this section is for, on the docs index. */
-  note: string;
+  note: string
   /** Which files it takes, relative to `doc/`. */
-  files: string[] | { dir: string };
+  files: string[] | { dir: string }
 }
 
 /**
@@ -100,32 +100,32 @@ export interface Section {
  */
 export const SECTIONS: Section[] = [
   {
-    id: "guides",
-    label: "Guides",
-    note: "Written to be read in order. Start at the tutorial.",
-    files: ["tutorial.md", "guide.md", "operating.md", "reference.md", "design.md", "roadmap.md"],
+    id: 'guides',
+    label: 'Guides',
+    note: 'Written to be read in order. Start at the tutorial.',
+    files: ['tutorial.md', 'guide.md', 'operating.md', 'reference.md', 'design.md', 'roadmap.md'],
   },
   {
-    id: "plugins",
-    label: "Plugins",
+    id: 'plugins',
+    label: 'Plugins',
     // No backticks: a note is rendered as the text it is, beside the section's
     // heading, and the other three read as sentences rather than as markdown.
-    note: "One page per recipe key — what it does, which steps it may be declared at, and what a real one looks like. The parent page lists the twelve and is read off the closed set rather than kept by hand.",
-    files: { dir: "plugins" },
+    note: 'One page per recipe key — what it does, which steps it may be declared at, and what a real one looks like. The parent page lists the twelve and is read off the closed set rather than kept by hand.',
+    files: { dir: 'plugins' },
   },
   {
-    id: "decisions",
-    label: "Decisions",
-    note: "One decision per file, with its context and its consequences. Append-only in spirit — a decision that turns out wrong gets a superseding file, not an edit.",
-    files: { dir: "decisions" },
+    id: 'decisions',
+    label: 'Decisions',
+    note: 'One decision per file, with its context and its consequences. Append-only in spirit — a decision that turns out wrong gets a superseding file, not an edit.',
+    files: { dir: 'decisions' },
   },
   {
-    id: "experiments",
-    label: "Experiments",
-    note: "Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument.",
-    files: { dir: "experiments" },
+    id: 'experiments',
+    label: 'Experiments',
+    note: 'Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument.',
+    files: { dir: 'experiments' },
   },
-];
+]
 
 /**
  * Some documents are drawings, and a drawing is not markdown.
@@ -142,11 +142,27 @@ export const SECTIONS: Section[] = [
  * not to this list is one every link silently sends to GitHub instead.
  */
 export const HTML_DOCS = [
-  { file: "architecture.html", label: "Architecture", note: "One page, six diagrams: which process am I in, who appends to the log, who is told when it changes, and where each piece of state lives." },
-  { file: "architecture.zh.html", label: "架构", note: "The architecture page, in Chinese. A change to either belongs in both." },
-  { file: "the-pass.html", label: "The Pass", note: "One pass from claim to end, and where a refusal goes. Draws 0039, which is accepted and not yet built — the two places it is ahead of the code are marked on it." },
-  { file: "the-pass.zh.html", label: "一趟 pass", note: "The pass page, in Chinese. Both are generated from one geometry, so a change belongs in both." },
-];
+  {
+    file: 'architecture.html',
+    label: 'Architecture',
+    note: 'One page, six diagrams: which process am I in, who appends to the log, who is told when it changes, and where each piece of state lives.',
+  },
+  {
+    file: 'architecture.zh.html',
+    label: '架构',
+    note: 'The architecture page, in Chinese. A change to either belongs in both.',
+  },
+  {
+    file: 'the-pass.html',
+    label: 'The Pass',
+    note: 'One pass from claim to end, and where a refusal goes. Draws 0039, which is accepted and not yet built — the two places it is ahead of the code are marked on it.',
+  },
+  {
+    file: 'the-pass.zh.html',
+    label: '一趟 pass',
+    note: 'The pass page, in Chinese. Both are generated from one geometry, so a change belongs in both.',
+  },
+]
 
 /**
  * The six the front page can offer once `DOCS_PUBLIC` is enabled, and no more.
@@ -160,61 +176,61 @@ export const HTML_DOCS = [
  */
 export const FRONT_PAGE_DOCS = [
   {
-    title: "Tutorial",
-    href: "/docs/tutorial/",
-    source: "tutorial.md",
-    note: "From a clone to a merged ticket, on your own repository.",
+    title: 'Tutorial',
+    href: '/docs/tutorial/',
+    source: 'tutorial.md',
+    note: 'From a clone to a merged ticket, on your own repository.',
   },
   {
-    title: "Architecture",
-    href: "/doc/architecture.html",
-    source: "architecture.html",
-    note: "Six diagrams answering which process am I in, who appends to the log, and where each piece of state lives.",
+    title: 'Architecture',
+    href: '/doc/architecture.html',
+    source: 'architecture.html',
+    note: 'Six diagrams answering which process am I in, who appends to the log, and where each piece of state lives.',
   },
   {
-    title: "Reference",
-    href: "/docs/reference/",
-    source: "reference.md",
-    note: "Every term, every event, every recipe key, and what each default is for.",
+    title: 'Reference',
+    href: '/docs/reference/',
+    source: 'reference.md',
+    note: 'Every term, every event, every recipe key, and what each default is for.',
   },
   {
-    title: "Operating",
-    href: "/docs/operating/",
-    source: "operating.md",
-    note: "Running it day to day: pausing, shutting down, watching a run, and what to do when one is stuck.",
+    title: 'Operating',
+    href: '/docs/operating/',
+    source: 'operating.md',
+    note: 'Running it day to day: pausing, shutting down, watching a run, and what to do when one is stuck.',
   },
   {
-    title: "Decisions",
-    href: "/docs/#decisions",
-    source: "decisions",
-    note: "One decision per file, with its context and its consequences. A decision that turns out wrong gets a superseding file, not an edit.",
+    title: 'Decisions',
+    href: '/docs/#decisions',
+    source: 'decisions',
+    note: 'One decision per file, with its context and its consequences. A decision that turns out wrong gets a superseding file, not an edit.',
   },
   {
-    title: "Experiments",
-    href: "/docs/#experiments",
-    source: "experiments",
-    note: "Things actually run against real data, with their results — including the ones that did not work.",
+    title: 'Experiments',
+    href: '/docs/#experiments',
+    source: 'experiments',
+    note: 'Things actually run against real data, with their results — including the ones that did not work.',
   },
-];
+]
 
 export interface DocPage {
   /** The route under `/docs/`, and the file's path under `doc/` without `.md`. */
-  slug: string;
+  slug: string
   /** Its own `# ` heading, which is what the file calls itself. */
-  title: string;
+  title: string
   /** Path relative to `doc/`, so a page can say where it came from. */
-  source: string;
-  body: string;
+  source: string
+  body: string
 }
 
 export interface DocEntry {
-  slug: string;
-  title: string;
-  source: string;
+  slug: string
+  title: string
+  source: string
   /** The first paragraph, for the index. Empty when the file opens on a heading. */
-  lede: string;
+  lede: string
   /** The date the file states, which for a decision is when it was decided. */
-  decided: string | null;
+  decided: string | null
 }
 
 /**
@@ -234,28 +250,28 @@ export interface DocEntry {
  * allow-list is what it silently omits, and nothing here is omitted silently.
  */
 async function markdownIn(dir: string): Promise<string[]> {
-  const full = path.join(docRoot, dir);
-  if (!existsSync(full)) return [];
-  const names = await readdir(full);
+  const full = path.join(docRoot, dir)
+  if (!existsSync(full)) return []
+  const names = await readdir(full)
   return names
-    .filter((n) => n.endsWith(".md") && !n.startsWith("_"))
+    .filter((n) => n.endsWith('.md') && !n.startsWith('_'))
     .sort()
-    .map((n) => `${dir}/${n}`);
+    .map((n) => `${dir}/${n}`)
 }
 
 /** Every file a section takes, relative to `doc/`, in the order it takes them. */
 export async function filesOf(section: Section): Promise<string[]> {
   if (Array.isArray(section.files)) {
-    return section.files.filter((f) => existsSync(path.join(docRoot, f)));
+    return section.files.filter((f) => existsSync(path.join(docRoot, f)))
   }
-  return markdownIn(section.files.dir);
+  return markdownIn(section.files.dir)
 }
 
 /** Every published file, relative to `doc/`. */
 export async function published(): Promise<string[]> {
-  const all: string[] = [];
-  for (const section of SECTIONS) all.push(...(await filesOf(section)));
-  return all;
+  const all: string[] = []
+  for (const section of SECTIONS) all.push(...(await filesOf(section)))
+  return all
 }
 
 /**
@@ -267,18 +283,18 @@ export async function published(): Promise<string[]> {
  * dropping it.
  */
 export async function unpublished(): Promise<string[]> {
-  const taken = new Set(await published());
-  const found: string[] = [];
+  const taken = new Set(await published())
+  const found: string[] = []
   const walk = async (dir: string) => {
-    const here = path.join(docRoot, dir);
+    const here = path.join(docRoot, dir)
     for (const entry of await readdir(here, { withFileTypes: true })) {
-      const rel = dir ? `${dir}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) await walk(rel);
-      else if (entry.name.endsWith(".md") && rel !== "README.md" && !taken.has(rel)) found.push(rel);
+      const rel = dir ? `${dir}/${entry.name}` : entry.name
+      if (entry.isDirectory()) await walk(rel)
+      else if (entry.name.endsWith('.md') && rel !== 'README.md' && !taken.has(rel)) found.push(rel)
     }
-  };
-  await walk("");
-  return found.sort();
+  }
+  await walk('')
+  return found.sort()
 }
 
 /**
@@ -291,7 +307,7 @@ export async function unpublished(): Promise<string[]> {
  * is no second table saying which slugs are directories.
  */
 export function slugOf(file: string): string {
-  return file.replace(/\/index\.md$/, "").replace(/\.md$/, "");
+  return file.replace(/\/index\.md$/, '').replace(/\.md$/, '')
 }
 
 /** The file a slug came from. Null when the slug names nothing in `doc/`. */
@@ -300,23 +316,23 @@ export function fileOf(slug: string): string | null {
   // segment, and `..` in one is how a static export ends up with a page whose
   // content is `/etc/passwd`.
   for (const file of [`${slug}.md`, `${slug}/index.md`]) {
-    const full = path.resolve(docRoot, file);
-    if (!full.startsWith(docRoot + path.sep)) return null;
-    if (existsSync(full)) return file;
+    const full = path.resolve(docRoot, file)
+    if (!full.startsWith(docRoot + path.sep)) return null
+    if (existsSync(full)) return file
   }
-  return null;
+  return null
 }
 
 export async function readDoc(slug: string): Promise<DocPage | null> {
-  const file = fileOf(slug);
-  if (file === null) return null;
-  const body = await readFile(path.join(docRoot, file), "utf8");
-  return { slug, title: titleOf(body, slug), source: file, body };
+  const file = fileOf(slug)
+  if (file === null) return null
+  const body = await readFile(path.join(docRoot, file), 'utf8')
+  return { slug, title: titleOf(body, slug), source: file, body }
 }
 
 export function titleOf(body: string, fallback: string): string {
-  const heading = /^#\s+(.+)$/m.exec(body);
-  return heading?.[1]?.trim() ?? fallback;
+  const heading = /^#\s+(.+)$/m.exec(body)
+  return heading?.[1]?.trim() ?? fallback
 }
 
 /**
@@ -327,34 +343,34 @@ export function titleOf(body: string, fallback: string): string {
  * exists: a summary maintained beside a document is a second copy of it.
  */
 export function ledeOf(body: string): string {
-  const afterTitle = body.replace(/^#\s+.+$/m, "");
+  const afterTitle = body.replace(/^#\s+.+$/m, '')
   for (const block of afterTitle.split(/\n\s*\n/)) {
-    const text = block.trim();
-    if (text === "" || text.startsWith("#") || text.startsWith("|") || text.startsWith("```")) continue;
-    if (text.startsWith(">") || text.startsWith("-") || text.startsWith("*")) continue;
-    return flatten(text);
+    const text = block.trim()
+    if (text === '' || text.startsWith('#') || text.startsWith('|') || text.startsWith('```')) continue
+    if (text.startsWith('>') || text.startsWith('-') || text.startsWith('*')) continue
+    return flatten(text)
   }
-  return "";
+  return ''
 }
 
 /** Markdown inline syntax removed, so a lede can sit in a `<p>` as plain text. */
 function flatten(text: string): string {
   return text
-    .replace(/\s+/g, " ")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[*_`]/g, "")
-    .trim();
+    .replace(/\s+/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`]/g, '')
+    .trim()
 }
 
 export async function entriesOf(section: Section): Promise<DocEntry[]> {
-  const files = await filesOf(section);
+  const files = await filesOf(section)
   return Promise.all(
     files.map(async (file) => {
-      const body = await readFile(path.join(docRoot, file), "utf8");
-      const slug = slugOf(file);
-      return { slug, title: titleOf(body, slug), source: file, lede: ledeOf(body), decided: decidedOn(body) };
+      const body = await readFile(path.join(docRoot, file), 'utf8')
+      const slug = slugOf(file)
+      return { slug, title: titleOf(body, slug), source: file, lede: ledeOf(body), decided: decidedOn(body) }
     }),
-  );
+  )
 }
 
 /**
@@ -377,20 +393,20 @@ export async function entriesOf(section: Section): Promise<DocEntry[]> {
  * file is in rather than to the route it is served at.
  */
 export function resolveHref(from: string, href: string, isPublished: (file: string) => boolean): string {
-  if (href === "" || /^[a-z]+:/i.test(href) || href.startsWith("#") || href.startsWith("//")) return href;
+  if (href === '' || /^[a-z]+:/i.test(href) || href.startsWith('#') || href.startsWith('//')) return href
 
-  const fromDir = path.posix.dirname(from);
-  const [target = "", hash] = href.split("#", 2);
-  const suffix = hash === undefined ? "" : `#${hash}`;
+  const fromDir = path.posix.dirname(from)
+  const [target = '', hash] = href.split('#', 2)
+  const suffix = hash === undefined ? '' : `#${hash}`
   // Relative to the document, then relative to `doc/`. A path that climbs out
   // of `doc/` — `../../packages/...`, which several ADRs use — comes back with
   // a leading `../` and is a repository path, not a doc path.
-  const rel = path.posix.normalize(path.posix.join(fromDir === "." ? "" : fromDir, target));
+  const rel = path.posix.normalize(path.posix.join(fromDir === '.' ? '' : fromDir, target))
 
-  if (rel.startsWith("../")) return GITHUB_BLOB + rel.replace(/^(\.\.\/)+/, "") + suffix;
-  if (rel.endsWith(".md") && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`;
-  if (DOCS_PUBLIC && HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`;
-  return `${GITHUB_BLOB}doc/${rel}${suffix}`;
+  if (rel.startsWith('../')) return GITHUB_BLOB + rel.replace(/^(\.\.\/)+/, '') + suffix
+  if (rel.endsWith('.md') && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`
+  if (DOCS_PUBLIC && HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`
+  return `${GITHUB_BLOB}doc/${rel}${suffix}`
 }
 
 /**
@@ -403,17 +419,17 @@ export function resolveHref(from: string, href: string, isPublished: (file: stri
  * repository about which decisions are in force.
  */
 export async function statuses(): Promise<Map<string, string>> {
-  const readme = path.join(docRoot, "README.md");
-  if (!existsSync(readme)) return new Map();
-  const body = await readFile(readme, "utf8");
-  const rows = body.matchAll(/^\|\s*\[[^\]]*\]\(([^)]+\.md)\)\s*\|([^|]*)\|([^|]*)\|/gm);
-  const out = new Map<string, string>();
+  const readme = path.join(docRoot, 'README.md')
+  if (!existsSync(readme)) return new Map()
+  const body = await readFile(readme, 'utf8')
+  const rows = body.matchAll(/^\|\s*\[[^\]]*\]\(([^)]+\.md)\)\s*\|([^|]*)\|([^|]*)\|/gm)
+  const out = new Map<string, string>()
   for (const row of rows) {
-    const [, file, , status] = row;
-    if (file === undefined || status === undefined) continue;
-    out.set(slugOf(file), flatten(status));
+    const [, file, , status] = row
+    if (file === undefined || status === undefined) continue
+    out.set(slugOf(file), flatten(status))
   }
-  return out;
+  return out
 }
 
 /**
@@ -434,16 +450,16 @@ export function slugify(text: string): string {
   return text
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
-    .replace(/\s/gu, "-");
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
+    .replace(/\s/gu, '-')
 }
 
 export interface Heading {
-  depth: number;
-  text: string;
-  id: string;
+  depth: number
+  text: string
+  id: string
   /** 1-based, so the renderer can match a heading to its element by position. */
-  line: number;
+  line: number
 }
 
 /**
@@ -466,37 +482,37 @@ export interface Heading {
  * in the rendered HTML the same ids. See `Document`.
  */
 export function headingsOf(body: string): Heading[] {
-  const out: Heading[] = [];
-  const seen = new Map<string, number>();
-  const lines = body.split("\n");
-  let fence: string | null = null;
+  const out: Heading[] = []
+  const seen = new Map<string, number>()
+  const lines = body.split('\n')
+  let fence: string | null = null
 
   for (let index = 0; index < lines.length; index += 1) {
-    const raw = lines[index] ?? "";
-    const marker = /^\s{0,3}(```+|~~~+)/.exec(raw)?.[1];
+    const raw = lines[index] ?? ''
+    const marker = /^\s{0,3}(```+|~~~+)/.exec(raw)?.[1]
     if (marker !== undefined) {
-      if (fence === null) fence = marker;
-      else if (marker.startsWith(fence[0] ?? "")) fence = null;
-      continue;
+      if (fence === null) fence = marker
+      else if (marker.startsWith(fence[0] ?? '')) fence = null
+      continue
     }
-    if (fence !== null) continue;
+    if (fence !== null) continue
 
-    const heading = /^(#{2,4})\s+(.+?)\s*#*\s*$/.exec(raw);
-    const hashes = heading?.[1];
-    const label = heading?.[2];
-    if (hashes === undefined || label === undefined) continue;
+    const heading = /^(#{2,4})\s+(.+?)\s*#*\s*$/.exec(raw)
+    const hashes = heading?.[1]
+    const label = heading?.[2]
+    if (hashes === undefined || label === undefined) continue
 
-    const text = flatten(label);
-    const base = slugify(text);
+    const text = flatten(label)
+    const base = slugify(text)
     // GitHub's own de-duplication: a second `## Done when` in one file is
     // `#done-when-1`. Two headings sharing an id would send both contents
     // entries to the first one.
-    const nth = seen.get(base) ?? 0;
-    seen.set(base, nth + 1);
-    out.push({ depth: hashes.length, text, id: nth === 0 ? base : `${base}-${nth}`, line: index + 1 });
+    const nth = seen.get(base) ?? 0
+    seen.set(base, nth + 1)
+    out.push({ depth: hashes.length, text, id: nth === 0 ? base : `${base}-${nth}`, line: index + 1 })
   }
 
-  return out;
+  return out
 }
 
 /**
@@ -510,8 +526,8 @@ export function headingsOf(body: string): Heading[] {
  * than guessing.
  */
 export function decidedOn(body: string): string | null {
-  const head = body.split("\n").slice(0, 12).join("\n");
-  return /\b(20\d{2}-\d{2}-\d{2})\b/.exec(head)?.[1] ?? null;
+  const head = body.split('\n').slice(0, 12).join('\n')
+  return /\b(20\d{2}-\d{2}-\d{2})\b/.exec(head)?.[1] ?? null
 }
 
 /**
@@ -521,18 +537,18 @@ export function decidedOn(body: string): string | null {
  * links to it without either file being edited.
  */
 export async function decisionsByNumber(): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  for (const file of await markdownIn("decisions")) {
-    const number = /(\d{4})-/.exec(path.posix.basename(file))?.[1];
-    if (number !== undefined) out.set(number, slugOf(file));
+  const out = new Map<string, string>()
+  for (const file of await markdownIn('decisions')) {
+    const number = /(\d{4})-/.exec(path.posix.basename(file))?.[1]
+    if (number !== undefined) out.set(number, slugOf(file))
   }
-  return out;
+  return out
 }
 
 export interface StatusPart {
-  text: string;
+  text: string
   /** Set when this part is a decision number the site has a page for. */
-  href?: string;
+  href?: string
 }
 
 /**
@@ -543,23 +559,20 @@ export interface StatusPart {
  * not told where to has been told the least useful half of it — and being able
  * to follow *what replaced this* is the whole reason the ADRs are append-only.
  */
-export function statusParts(
-  status: string,
-  hrefOf: (number: string) => string | null,
-): StatusPart[] {
-  const out: StatusPart[] = [];
+export function statusParts(status: string, hrefOf: (number: string) => string | null): StatusPart[] {
+  const out: StatusPart[] = []
   for (const piece of status.split(/(\d{4})/)) {
-    if (piece === "") continue;
-    const href = /^\d{4}$/.test(piece) ? hrefOf(piece) : null;
-    out.push(href === null ? { text: piece } : { text: piece, href });
+    if (piece === '') continue
+    const href = /^\d{4}$/.test(piece) ? hrefOf(piece) : null
+    out.push(href === null ? { text: piece } : { text: piece, href })
   }
-  return out;
+  return out
 }
 
 export interface TreeGroup {
-  id: string;
-  label: string;
-  entries: { slug: string; title: string }[];
+  id: string
+  label: string
+  entries: { slug: string; title: string }[]
 }
 
 /**
@@ -572,18 +585,18 @@ export interface TreeGroup {
  * first in its group, because it is the page that lists the others.
  */
 export async function treeOf(): Promise<TreeGroup[]> {
-  const served = new Set((await servable()).map((file) => slugOf(file)));
-  const groups: TreeGroup[] = [];
+  const served = new Set((await servable()).map((file) => slugOf(file)))
+  const groups: TreeGroup[] = []
   for (const section of SECTIONS) {
-    const entries = (await entriesOf(section)).filter((entry) => served.has(entry.slug));
-    if (entries.length === 0) continue;
-    const index = Array.isArray(section.files) ? null : section.files.dir;
-    entries.sort((a, b) => Number(b.slug === index) - Number(a.slug === index));
+    const entries = (await entriesOf(section)).filter((entry) => served.has(entry.slug))
+    if (entries.length === 0) continue
+    const index = Array.isArray(section.files) ? null : section.files.dir
+    entries.sort((a, b) => Number(b.slug === index) - Number(a.slug === index))
     groups.push({
       id: section.id,
       label: section.label,
-      entries: entries.map((entry) => ({ slug: entry.slug, title: entry.title.replace(/`/g, "") })),
-    });
+      entries: entries.map((entry) => ({ slug: entry.slug, title: entry.title.replace(/`/g, '') })),
+    })
   }
-  return groups;
+  return groups
 }

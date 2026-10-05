@@ -1,3 +1,5 @@
+import type { Envelope } from '@lingtai/domain'
+import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * The attempt that is still going opens itself, and its log opens with it.
  *
@@ -11,16 +13,15 @@
  * reading, and every finished one is closed and reads nothing, which is the
  * original reason intact.
  */
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import type { Envelope } from "@lingtai/domain";
-import { foldRun, type Claim } from "../src/lib/task.ts";
-import { Attempt } from "../src/app/task/[id]/page.tsx";
+import { describe, expect, it } from 'vitest'
 
-let seq = 0n;
+import { Attempt } from '../src/app/task/[id]/page.tsx'
+import { foldRun, type Claim } from '../src/lib/task.ts'
+
+let seq = 0n
 
 function e(streamId: string, type: string, data: unknown): Envelope {
-  seq += 1n;
+  seq += 1n
   return {
     seq,
     streamId,
@@ -28,38 +29,38 @@ function e(streamId: string, type: string, data: unknown): Envelope {
     type,
     schemaVer: 1,
     data,
-    actor: "conductor",
+    actor: 'conductor',
     causation: null,
-    at: new Date("2026-09-10T07:46:00Z"),
-  };
+    at: new Date('2026-09-10T07:46:00Z'),
+  }
 }
 
-const RUN = "run-33333333-0000-0000-0000-000000000000";
-const SHA = "c".repeat(40);
-const claim = (): Claim => ({ runId: RUN, at: "2026-09-10T07:40:00.000Z", repair: false, released: null });
+const RUN = 'run-33333333-0000-0000-0000-000000000000'
+const SHA = 'c'.repeat(40)
+const claim = (): Claim => ({ runId: RUN, at: '2026-09-10T07:40:00.000Z', repair: false, released: null })
 
 /** Started and nothing since: `outcomeOf`'s `running`. */
-const running = () => foldRun(claim(), 2, [e(RUN, "RunStarted", { baseSha: SHA })]);
+const running = () => foldRun(claim(), 2, [e(RUN, 'RunStarted', { baseSha: SHA })])
 
 /** Started and finished: the ordinary attempt, and the one that stays shut. */
 const finished = () =>
   foldRun(claim(), 2, [
-    e(RUN, "RunStarted", { baseSha: SHA }),
-    e(RUN, "RunFinished", { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
-  ]);
+    e(RUN, 'RunStarted', { baseSha: SHA }),
+    e(RUN, 'RunFinished', { turns: 12, durationMs: 60_000, costUsd: 1, exitCode: 0 }),
+  ])
 
 const render = (run: ReturnType<typeof running>) =>
-  renderToStaticMarkup(<Attempt run={run} alone={false} deciding={false} />);
+  renderToStaticMarkup(<Attempt run={run} alone={false} deciding={false} />)
 
-describe("the attempt in flight", () => {
-  it("is open, and its log is open and following", () => {
-    const html = render(running());
-    expect(html).toContain('id="attempt-2"');
+describe('the attempt in flight', () => {
+  it('is open, and its log is open and following', () => {
+    const html = render(running())
+    expect(html).toContain('id="attempt-2"')
     // Both disclosures: the attempt, and the log inside it. The `details` for
     // the log carries `open` because `RunLog` was told this run is live.
-    expect(html).toContain('<details class="attempt" id="attempt-2" open=""');
-    expect(html).toContain('<details class="alog" open=""');
-  });
+    expect(html).toContain('<details class="attempt" id="attempt-2" open=""')
+    expect(html).toContain('<details class="alog" open=""')
+  })
 
   /**
    * The same run, on a page whose item is running: its log is rank 2 there
@@ -67,19 +68,19 @@ describe("the attempt in flight", () => {
    * on the same file.
    */
   it("points up to the page's own log when the item is running on it", () => {
-    const html = renderToStaticMarkup(<Attempt run={running()} alone={false} deciding={false} followed />);
-    expect(html).not.toContain('class="alog"');
-    expect(html).toContain("being followed at the top of this page");
-  });
+    const html = renderToStaticMarkup(<Attempt run={running()} alone={false} deciding={false} followed />)
+    expect(html).not.toContain('class="alog"')
+    expect(html).toContain('being followed at the top of this page')
+  })
 
-  it("leaves every finished attempt closed, and reading nothing", () => {
-    const html = render(finished());
-    expect(html).not.toContain('<details class="attempt" id="attempt-2" open=""');
-    expect(html).not.toContain('<details class="alog" open=""');
+  it('leaves every finished attempt closed, and reading nothing', () => {
+    const html = render(finished())
+    expect(html).not.toContain('<details class="attempt" id="attempt-2" open=""')
+    expect(html).not.toContain('<details class="alog" open=""')
     // The summary says so in as many words: no connection has been opened.
-    expect(html).toContain("not reading");
-  });
-});
+    expect(html).toContain('not reading')
+  })
+})
 
 /**
  * The first paint, and only the first paint.
@@ -92,9 +93,9 @@ describe("the attempt in flight", () => {
  * that reimplemented the rule beside the rule would assert its own copy and
  * pass with `latch.tsx` reverted, which is worse than the gap it covers.
  */
-describe("the disclosure the page hands the server", () => {
-  it("is open for a run in flight and shut for one that is over", () => {
-    expect(render(running())).toContain('<details class="attempt" id="attempt-2" open=""');
-    expect(render(finished())).not.toContain("open=\"\"");
-  });
-});
+describe('the disclosure the page hands the server', () => {
+  it('is open for a run in flight and shut for one that is over', () => {
+    expect(render(running())).toContain('<details class="attempt" id="attempt-2" open=""')
+    expect(render(finished())).not.toContain('open=""')
+  })
+})

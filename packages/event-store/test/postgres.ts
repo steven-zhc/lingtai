@@ -18,23 +18,23 @@
  * SQLite: the skip is visible in vitest's own count, where a silent pass would
  * not be.
  */
-import { dbVar } from "@lingtai/env";
+import { dbVar } from '@lingtai/env'
 
 export const ON_POSTGRES: Record<string, string> = {
-  "packages/event-store/integration/event-store.test.ts": "two clients racing an append",
-  "packages/conductor/integration/claim.test.ts": "two clients racing a claim",
-  "packages/event-store/integration/subscribe.test.ts": "createPostgresWaker — LISTEN/NOTIFY",
-  "packages/event-store/integration/queries.test.ts": "the Postgres side of the queries contract",
-  "packages/projector/integration/projection.test.ts": "the Postgres projection store and projectionShape",
-  "packages/daemon/integration/daemon-store.test.ts": "createPostgresDaemonStore",
-  "packages/daemon/integration/beacon.test.ts": "the Postgres beacon",
-  "packages/projector/integration/task-view.test.ts":
-    "seed() inserts a retired event type with a raw, Postgres-syntax `::jsonb` statement, and every case reads what it wrote",
-  "apps/cli/integration/doctor.test.ts":
+  'packages/event-store/integration/event-store.test.ts': 'two clients racing an append',
+  'packages/conductor/integration/claim.test.ts': 'two clients racing a claim',
+  'packages/event-store/integration/subscribe.test.ts': 'createPostgresWaker — LISTEN/NOTIFY',
+  'packages/event-store/integration/queries.test.ts': 'the Postgres side of the queries contract',
+  'packages/projector/integration/projection.test.ts': 'the Postgres projection store and projectionShape',
+  'packages/daemon/integration/daemon-store.test.ts': 'createPostgresDaemonStore',
+  'packages/daemon/integration/beacon.test.ts': 'the Postgres beacon',
+  'packages/projector/integration/task-view.test.ts':
+    'seed() inserts a retired event type with a raw, Postgres-syntax `::jsonb` statement, and every case reads what it wrote',
+  'apps/cli/integration/doctor.test.ts':
     "only its 'against the real database' describe — session mode, the pooler rows, and Phase 0's green check",
-  "packages/conductor/integration/queue.test.ts":
-    "only one case — readAttempt()/drop() read and clean task_view with a raw, Postgres-only pg.Client",
-};
+  'packages/conductor/integration/queue.test.ts':
+    'only one case — readAttempt()/drop() read and clean task_view with a raw, Postgres-only pg.Client',
+}
 
 /**
  * Whether this process can reach the Postgres the files above need — read
@@ -45,5 +45,5 @@ export const ON_POSTGRES: Record<string, string> = {
  * do, so this agrees with them about which variable answers in a test.
  */
 export function postgresUnderTest(from: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(from[dbVar("DATABASE_URL", from)]);
+  return Boolean(from[dbVar('DATABASE_URL', from)])
 }

@@ -1,3 +1,16 @@
+import { githubClientFor, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
+import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import {
+  applyWorkItem,
+  chatStream,
+  emptyWorkItem,
+  reduceControl,
+  CONTROL_STREAM,
+  parseWorkItemStream,
+  type BlockDiagnosis,
+  type Envelope,
+  type WorkItemLifecycle,
+} from '@lingtai/domain'
 /**
  * One task, folded from its streams on demand.
  *
@@ -35,50 +48,38 @@
  * *says* about a run is testable without a database — the same split
  * `history.ts` makes one level down.
  */
-import { eventStore } from "@lingtai/event-store";
-import {
-  applyWorkItem,
-  chatStream,
-  emptyWorkItem,
-  reduceControl,
-  CONTROL_STREAM,
-  parseWorkItemStream,
-  type BlockDiagnosis,
-  type Envelope,
-  type WorkItemLifecycle,
-} from "@lingtai/domain";
-import { currentRecipe, loadProject } from "@lingtai/conductor/projects";
-import { githubClientFor, projectFilter, type StepPlan } from "@lingtai/conductor/filter";
+import { eventStore } from '@lingtai/event-store'
 // For the one distinction a message cannot carry: `status === 404` is GitHub
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
-import { GitHubError } from "@lingtai/github";
-import { issueUrl } from "./board.ts";
-import { elapsed, foldProgress, type RunProgress } from "./progress.ts";
-import { type HistoryLine, toLine } from "./history.ts";
-import { outgoingFor, type OutgoingView } from "./prompt.ts";
-import { queuedFor, type QueuedView } from "./queued.ts";
-import { recipeOfRun, type RunRecipe } from "./recipe.ts";
+import { GitHubError } from '@lingtai/github'
+
+import { issueUrl } from './board.ts'
+import { type HistoryLine, toLine } from './history.ts'
+import { elapsed, foldProgress, type RunProgress } from './progress.ts'
+import { outgoingFor, type OutgoingView } from './prompt.ts'
+import { queuedFor, type QueuedView } from './queued.ts'
+import { recipeOfRun, type RunRecipe } from './recipe.ts'
 
 export interface Finding {
-  file: string;
-  line: number | null;
-  claim: string;
-  failureScenario: string;
-  severity: string;
+  file: string
+  line: number | null
+  claim: string
+  failureScenario: string
+  severity: string
 }
 
 export interface StepVerdict {
-  step: string;
-  state: string;
+  step: string
+  state: string
   /**
    * False when the verdict was made against a commit that is no longer the
    * head. A force-push revokes nothing; it makes every verdict about a
    * different diff.
    */
-  current: boolean;
-  evidence: string | null;
-  findings: Finding[];
+  current: boolean
+  evidence: string | null
+  findings: Finding[]
 }
 
 /**
@@ -106,15 +107,15 @@ export interface StepVerdict {
  * holding.
  */
 export interface TicketView {
-  project: string;
+  project: string
   /** The issue number, as GitHub numbers it. */
-  ref: string;
-  title: string | null;
-  kind: string | null;
-  labels: string[];
+  ref: string
+  title: string | null
+  kind: string | null
+  labels: string[]
   /** From GitHub, or built from the owner the project stream recorded. */
-  url: string | null;
-  body: string | null;
+  url: string | null
+  body: string | null
   /**
    * Whether this issue exists: **true**, **false**, or **null for "I could not
    * ask"**.
@@ -132,7 +133,7 @@ export interface TicketView {
    * says *this does not exist* when it means *I cannot tell* is exactly the
    * flattening this field exists to end.
    */
-  found: boolean | null;
+  found: boolean | null
   /**
    * Why the body and the labels are not here, when they are not.
    *
@@ -141,7 +142,7 @@ export interface TicketView {
    * reason tells them apart — the same argument #76 made about an empty Queued
    * column.
    */
-  problem: string | null;
+  problem: string | null
 }
 
 /**
@@ -153,10 +154,10 @@ export interface TicketView {
  * run ever finishing. Both used to render as an attempt that was simply
  * missing, which is the same complaint `skipped` answers one level up.
  */
-export type RunState = "claimed" | "running" | "released" | "finished" | "failed";
+export type RunState = 'claimed' | 'running' | 'released' | 'finished' | 'failed'
 
 export interface RunOutcome {
-  state: RunState;
+  state: RunState
   /**
    * What the log said beside the word: a failure's `kind`, a non-zero exit, the
    * release's reason. Null when the word is the whole of it.
@@ -165,13 +166,13 @@ export interface RunOutcome {
    * down in this attempt's own history, and printing it twice is how two copies
    * of one fact come to disagree.
    */
-  detail: string | null;
+  detail: string | null
 }
 
 /** A path the agent touched, and what it did to it. */
 export interface TouchedFile {
-  path: string;
-  op: string;
+  path: string
+  op: string
 }
 
 /**
@@ -181,19 +182,19 @@ export interface TouchedFile {
  * justification is that the log holds the exact bytes that were sent.
  */
 export interface PromptView {
-  version: string;
-  bytes: number;
+  version: string
+  bytes: number
   /** Null for a v1 `RunPrompted`, which recorded the length and not the document. */
-  text: string | null;
+  text: string | null
 }
 
 /** One attempt, whole. */
 export interface RunView {
-  runId: string;
+  runId: string
   /** 1-based, in the order this item's claims were made. */
-  attempt: number;
+  attempt: number
   /** When the claim landed, ISO. */
-  at: string;
+  at: string
   /**
    * True when this attempt is the one a `RepairRequested` bought.
    *
@@ -209,30 +210,30 @@ export interface RunView {
    * second attempt that *was* a repair, and reading it as ordinary work would
    * move real money into the wrong figure.
    */
-  repair: boolean;
-  baseSha: string | null;
-  headSha: string | null;
+  repair: boolean
+  baseSha: string | null
+  headSha: string | null
   /**
    * The recipe this run was given, as `StepsResolved` hashed it. Null where the
    * stream has no `StepsResolved`, which is a run whose recipe nothing can
    * prove (#190).
    */
-  configHash: string | null;
+  configHash: string | null
   /**
    * The recipe the page shows beside this attempt's gate actions, and whether
    * it is provably this run's — see `RunRecipe`. Absent where nothing asked:
    * a fold on its own has no GitHub to ask, and `loadTask` fills it in.
    */
-  recipe?: RunRecipe;
+  recipe?: RunRecipe
   /** From `RunFinished`. Null until it lands, and for a run that never got there. */
-  turns: number | null;
-  costUsd: number | null;
-  durationMs: number | null;
-  outcome: RunOutcome;
+  turns: number | null
+  costUsd: number | null
+  durationMs: number | null
+  outcome: RunOutcome
   /** Every path, once, in the order it was first touched. */
-  files: TouchedFile[];
-  diff: { branch: string; files: number; insertions: number; deletions: number } | null;
-  prompt: PromptView | null;
+  files: TouchedFile[]
+  diff: { branch: string; files: number; insertions: number; deletions: number } | null
+  prompt: PromptView | null
   /**
    * The sha an open approval is *asking* about, and null when nothing is asked.
    *
@@ -242,8 +243,8 @@ export interface RunView {
    * (#92). The same rule `task_view.awaiting_sha` folds, read off the run's own
    * stream because that is where the approval events land.
    */
-  awaitingSha: string | null;
-  steps: StepVerdict[];
+  awaitingSha: string | null
+  steps: StepVerdict[]
   /**
    * Where this attempt got to, as the board's rail reads it — all ten steps,
    * one verdict per action, and the phase in flight with its bound. Null for a
@@ -259,7 +260,7 @@ export interface RunView {
    * stayed a second opinion — two folds over one stream is how they came
    * apart.
    */
-  progress: RunProgress | null;
+  progress: RunProgress | null
 }
 
 /**
@@ -284,17 +285,17 @@ export interface RunView {
  * person who is supposed to be the limit unable to see what they are limiting.
  */
 export interface Totals {
-  attempts: number;
-  turns: number;
-  durationMs: number;
+  attempts: number
+  turns: number
+  durationMs: number
   /** What the work cost. */
-  costUsd: number;
+  costUsd: number
   /** What diagnosing it cost. */
-  repairUsd: number;
+  repairUsd: number
   /** How many conversations have been held about this item. */
-  discussions: number;
+  discussions: number
   /** What asking cost. */
-  discussionUsd: number;
+  discussionUsd: number
   /**
    * What this ticket has cost, whole: the work, the repairs and the asking.
    *
@@ -307,7 +308,7 @@ export interface Totals {
    * one fold. A component that added its own would be the second copy of the
    * arithmetic the layout notes refuse a summary band for.
    */
-  totalUsd: number;
+  totalUsd: number
 }
 
 /**
@@ -320,15 +321,15 @@ export interface Totals {
  */
 export interface Deciding {
   /** 1-based, and an anchor: the ledger marks this attempt and opens it. */
-  attempt: number;
+  attempt: number
   /** `proposed / build`, or the attempt's own outcome when no gate refused. */
-  source: string;
+  source: string
   /** One line. Clipped, because the whole of it is one click away. */
-  line: string;
+  line: string
 }
 
 /** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
-export type StandingState = "queued" | "running" | "blocked" | "landed" | "closed";
+export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'closed'
 
 /**
  * Why this task is not moving — the answer the page never gave.
@@ -350,7 +351,7 @@ export type StandingState = "queued" | "running" | "blocked" | "landed" | "close
  * the block renders without it.
  */
 export interface StandingView {
-  state: StandingState;
+  state: StandingState
   /**
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
@@ -363,7 +364,7 @@ export interface StandingView {
    * has sat open for a week. The card refuses the render clock for exactly
    * this reason (`BoardCard.updatedAt`) and so does this.
    */
-  since: string | null;
+  since: string | null
   /**
    * Whether a person is the thing being waited on.
    *
@@ -371,9 +372,9 @@ export interface StandingView {
    * means *a human is being waited on* and nothing else in the palette does, so
    * a running item's block is drawn in neutrals (layout notes).
    */
-  onYou: boolean;
+  onYou: boolean
   /** Who is being waited on, in words: `waiting on you`, `an agent is working`, … */
-  who: string;
+  who: string
   /**
    * The question, as its one deciding line. Null when nothing was asked.
    *
@@ -390,41 +391,41 @@ export interface StandingView {
    * history row for the event itself. One deciding line plus a pointer is
    * design §2 applied to the question as well as to the evidence.
    */
-  question: string | null;
+  question: string | null
   /** `judgement` or `acknowledgement`; null on every block written before #83. */
-  needs: "judgement" | "acknowledgement" | null;
+  needs: 'judgement' | 'acknowledgement' | null
   /** What happened, what was done, what is recommended. Null until #83 fills it. */
-  diagnosis: BlockDiagnosis | null;
+  diagnosis: BlockDiagnosis | null
   /** Which attempt produced this state, 1-based, and null when none has. */
-  attempt: number | null;
+  attempt: number | null
   /** How many there have been, so `attempt 2 of 2` can be said. */
-  attempts: number;
-  runId: string | null;
+  attempts: number
+  runId: string | null
   /**
    * The sha an open question is about — what Approve must send, and null when
    * there is nothing Approve could do (#84). Requeue is offered either way
    * (#150).
    */
-  awaitingSha: string | null;
+  awaitingSha: string | null
   /**
    * Whether the block is a question asked before any run (`lingtai ask`, #147).
    * Read off the lifecycle and not `runId` above, which falls back to the last
    * attempt there was. Then the moves are Answer and Withdraw: Send would hand
    * the question to `requeue()`, which withdraws it.
    */
-  asked: boolean;
+  asked: boolean
   /**
    * That question whole, when `asked` — `question` above is clipped to a line,
    * and Answer sends this so `answer()` can refuse one that has since changed.
    */
-  askedQuestion: string | null;
+  askedQuestion: string | null
   /** What that attempt produced, for a waiver, which is a verdict about the diff. */
-  headSha: string | null;
+  headSha: string | null
   /**
    * The verdicts that refused, by `point:action`. Whether to ask for a reason
    * before Approve; `approve()` reads the gates it waives off the run (#150).
    */
-  failed: string[];
+  failed: string[]
   /**
    * The failed verdict whose evidence `diagnosis.raw` is, by `point:action` — and
    * null when the quote is not any gate's words.
@@ -435,8 +436,8 @@ export interface StandingView {
    * build gate's name, which is a cause the words never had (#132). So the name
    * is only given where the gate's own evidence is what was quoted.
    */
-  saidBy: string | null;
-  deciding: Deciding | null;
+  saidBy: string | null
+  deciding: Deciding | null
 }
 
 /**
@@ -459,10 +460,10 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
       raw.includes(`[${f.severity}] ${f.line === null ? f.file : `${f.file}:${f.line}`} — ${f.claim}`),
     )
   ) {
-    return true;
+    return true
   }
-  const said = (verdict.evidence ?? "").trim();
-  return said === "" ? raw.trim() === "" : raw.includes(said);
+  const said = (verdict.evidence ?? '').trim()
+  return said === '' ? raw.trim() === '' : raw.includes(said)
 }
 
 /**
@@ -474,19 +475,22 @@ function quotes(raw: string, verdict: StepVerdict): boolean {
  * appended while the hold stands, and none of them is the hold starting.
  */
 const LIFECYCLE_MOVES = new Set([
-  "WorkItemClaimed",
-  "WorkItemReleased",
-  "WorkItemBlocked",
-  "WorkItemUnblocked",
-  "WorkItemLanded",
-]);
+  'WorkItemClaimed',
+  'WorkItemReleased',
+  'WorkItemBlocked',
+  'WorkItemUnblocked',
+  'WorkItemLanded',
+])
 
 /** The first line that says anything, clipped. The rest is in the attempt. */
 function oneLine(text: string | null): string | null {
-  if (text === null) return null;
-  const line = text.split("\n").find((l) => l.trim().length > 0)?.trim();
-  if (!line) return null;
-  return line.length > 140 ? `${line.slice(0, 139)}…` : line;
+  if (text === null) return null
+  const line = text
+    .split('\n')
+    .find((l) => l.trim().length > 0)
+    ?.trim()
+  if (!line) return null
+  return line.length > 140 ? `${line.slice(0, 139)}…` : line
 }
 
 /**
@@ -516,13 +520,13 @@ function refusalOn(run: RunView): Deciding | null {
    * pass both stop there, 0041 §4), so when there is one it is the ending, and
    * any refusal beside it is history.
    */
-  const never = [...run.steps].reverse().find((g) => g.state === "never-ran");
+  const never = [...run.steps].reverse().find((g) => g.state === 'never-ran')
   if (never) {
     return {
       attempt: run.attempt,
-      source: never.step.replace(":", " / "),
-      line: `never ran — nothing judged this diff: ${oneLine(never.evidence) ?? "no detail was recorded"}`,
-    };
+      source: never.step.replace(':', ' / '),
+      line: `never ran — nothing judged this diff: ${oneLine(never.evidence) ?? 'no detail was recorded'}`,
+    }
   }
 
   /**
@@ -538,15 +542,13 @@ function refusalOn(run: RunView): Deciding | null {
    * The sentence says the machinery and never the diff: *did not finish*, not
    * *refused*.
    */
-  const unfinished = [...run.steps].reverse().find((g) => g.state === "did-not-finish");
+  const unfinished = [...run.steps].reverse().find((g) => g.state === 'did-not-finish')
   if (unfinished) {
     return {
       attempt: run.attempt,
-      source: unfinished.step.replace(":", " / "),
-      line:
-        "did not finish — nothing judged this diff: " +
-        (oneLine(unfinished.evidence) ?? "no detail was recorded"),
-    };
+      source: unfinished.step.replace(':', ' / '),
+      line: 'did not finish — nothing judged this diff: ' + (oneLine(unfinished.evidence) ?? 'no detail was recorded'),
+    }
   }
 
   /**
@@ -562,27 +564,27 @@ function refusalOn(run: RunView): Deciding | null {
    * while the two shared an ending, asks a person to acknowledge a failure that
    * did not happen instead of answering what was asked.
    */
-  const question = [...run.steps].reverse().find((g) => g.state === "asked");
+  const question = [...run.steps].reverse().find((g) => g.state === 'asked')
   if (question) {
     return {
       attempt: run.attempt,
-      source: question.step.replace(":", " / "),
-      line: "asked — " + (oneLine(question.evidence) ?? "no question was recorded"),
-    };
+      source: question.step.replace(':', ' / '),
+      line: 'asked — ' + (oneLine(question.evidence) ?? 'no question was recorded'),
+    }
   }
 
-  const refused = [...run.steps].reverse().find((g) => g.state === "failed");
+  const refused = [...run.steps].reverse().find((g) => g.state === 'failed')
   if (refused) {
     return {
       attempt: run.attempt,
-      source: refused.step.replace(":", " / "),
-      line: oneLine(refused.evidence) ?? run.outcome.detail ?? "refused, and said nothing",
-    };
+      source: refused.step.replace(':', ' / '),
+      line: oneLine(refused.evidence) ?? run.outcome.detail ?? 'refused, and said nothing',
+    }
   }
 
-  const detail = oneLine(run.outcome.detail);
-  if (detail === null) return null;
-  return { attempt: run.attempt, source: run.outcome.state, line: detail };
+  const detail = oneLine(run.outcome.detail)
+  if (detail === null) return null
+  return { attempt: run.attempt, source: run.outcome.state, line: detail }
 }
 
 /**
@@ -603,35 +605,35 @@ function refusalOn(run: RunView): Deciding | null {
  */
 function decidingOf(runs: readonly RunView[], named: RunView | null): Deciding | null {
   if (named !== null) {
-    const own = refusalOn(named);
-    if (own !== null) return own;
+    const own = refusalOn(named)
+    if (own !== null) return own
   }
 
-  const before = named === null ? runs : runs.slice(0, runs.indexOf(named));
+  const before = named === null ? runs : runs.slice(0, runs.indexOf(named))
   for (const run of [...before].reverse()) {
-    const refused = refusalOn(run);
-    if (refused !== null) return refused;
+    const refused = refusalOn(run)
+    if (refused !== null) return refused
   }
-  return null;
+  return null
 }
 
 function whoWaits(life: WorkItemLifecycle): string {
   switch (life.status) {
-    case "blocked":
-      if (life.needsFrom === "external") return "waiting on something outside Lingtai";
+    case 'blocked':
+      if (life.needsFrom === 'external') return 'waiting on something outside Lingtai'
       // The two a person can tell apart at a glance (#147): nothing has run, or
       // a run is holding something. `describeWait` words the card's chip the
       // same way; this page has the fold rather than the row, so it asks it.
-      if (life.runId === null) return "waiting for your answer";
-      return "waiting on you";
-    case "claimed":
-      return "an agent is working";
-    case "landed":
-      return `merged into ${life.base}`;
+      if (life.runId === null) return 'waiting for your answer'
+      return 'waiting on you'
+    case 'claimed':
+      return 'an agent is working'
+    case 'landed':
+      return `merged into ${life.base}`
     default:
       // Not stuck. The reading #94 got wrong: an item nobody is holding comes
       // back on its own, and the page has to say so in as many words.
-      return "waiting for a conductor to take it";
+      return 'waiting for a conductor to take it'
   }
 }
 
@@ -643,27 +645,25 @@ function whoWaits(life: WorkItemLifecycle): string {
  * envelopes and nothing else.
  */
 export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): StandingView {
-  let item = emptyWorkItem;
-  let since = own[0]?.at ?? null;
+  let item = emptyWorkItem
+  let since = own[0]?.at ?? null
   for (const e of own) {
-    item = applyWorkItem(item, e);
-    if (LIFECYCLE_MOVES.has(e.type)) since = e.at;
+    item = applyWorkItem(item, e)
+    if (LIFECYCLE_MOVES.has(e.type)) since = e.at
   }
 
-  const life = item.lifecycle;
+  const life = item.lifecycle
   const named =
-    life.status === "blocked" || life.status === "claimed"
-      ? runs.find((r) => r.runId === life.runId)
-      : undefined;
+    life.status === 'blocked' || life.status === 'claimed' ? runs.find((r) => r.runId === life.runId) : undefined
   // The attempt the state names, or the last one there was. A released item is
   // queued *because of* what its last attempt did, and a landed one merged what
   // its last attempt produced; neither event carries a run id.
-  const run = named ?? runs.at(-1) ?? null;
-  const blocked = life.status === "blocked";
-  const raw = blocked ? (life.diagnosis?.raw ?? null) : null;
+  const run = named ?? runs.at(-1) ?? null
+  const blocked = life.status === 'blocked'
+  const raw = blocked ? (life.diagnosis?.raw ?? null) : null
 
   return {
-    state: life.status === "claimed" ? "running" : life.status === "backlog" ? "queued" : life.status,
+    state: life.status === 'claimed' ? 'running' : life.status === 'backlog' ? 'queued' : life.status,
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
@@ -680,14 +680,13 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
     asked: blocked && life.runId === null,
     askedQuestion: blocked && life.runId === null ? life.question : null,
     headSha: run?.headSha ?? null,
-    failed: run?.steps.filter((g) => g.state === "failed").map((g) => g.step) ?? [],
+    failed: run?.steps.filter((g) => g.state === 'failed').map((g) => g.step) ?? [],
     saidBy:
       raw === null
         ? null
-        : ([...(run?.steps ?? [])].reverse().find((g) => g.state === "failed" && quotes(raw, g))
-            ?.step ?? null),
+        : ([...(run?.steps ?? [])].reverse().find((g) => g.state === 'failed' && quotes(raw, g))?.step ?? null),
     deciding: decidingOf(runs, run),
-  };
+  }
 }
 
 /**
@@ -701,19 +700,19 @@ export function standingOf(own: readonly Envelope[], runs: readonly RunView[]): 
  * believed, and the ranges of two groups may legitimately overlap.
  */
 export interface HistoryGroup {
-  streamId: string;
+  streamId: string
   /** The attempt this stream is, or null for the item's own. */
-  attempt: number | null;
+  attempt: number | null
   /** `attempt 2`, or `the ticket`. */
-  label: string;
+  label: string
   /** Inclusive, as the store numbers them. */
-  from: string;
-  to: string;
-  lines: HistoryLine[];
+  from: string
+  to: string
+  lines: HistoryLine[]
 }
 
 export interface TaskDetail {
-  taskId: string;
+  taskId: string
   /**
    * Why it is not moving, above everything else. See `StandingView`.
    *
@@ -721,13 +720,13 @@ export interface TaskDetail {
    * opens it is that a card has stopped, and the answer used to be at the
    * bottom of an 80-row history or nowhere.
    */
-  standing: StandingView;
+  standing: StandingView
   /** Null only when the id is not `wi-<project>-<n>`. */
-  ticket: TicketView | null;
+  ticket: TicketView | null
   /** Every attempt, oldest first. Empty when nothing has been dispatched. */
-  runs: RunView[];
+  runs: RunView[]
   /** Every conversation held about this item, oldest first. */
-  discussions: DiscussionView[];
+  discussions: DiscussionView[]
   /**
    * What the next attempt will be handed, and null when there will not be one.
    *
@@ -736,7 +735,7 @@ export interface TaskDetail {
    * something the code cannot do. See `prompt.ts` for what composing it costs
    * and why it is composed by the conductor's own function rather than here.
    */
-  outgoing: OutgoingView | null;
+  outgoing: OutgoingView | null
   /**
    * Where it is in line and what taking it would run — and null in every other
    * state.
@@ -745,24 +744,24 @@ export interface TaskDetail {
    * Queued column is not one: an issue nobody has run has no stream, so being
    * queued is a fact about GitHub (0012). See `queued.ts`.
    */
-  queued: QueuedView | null;
-  totals: Totals;
+  queued: QueuedView | null
+  totals: Totals
   /**
    * Everything, in order, for the question a summary did not anticipate — and
    * still the last thing on the page. Structure may lead a reader to it;
    * nothing may replace it.
    */
-  history: HistoryGroup[];
+  history: HistoryGroup[]
 }
 
 // ----------------------------------------------------------- discussions ----
 
 /** One exchange: what was asked, what was readable, and what came back. */
 export interface DiscussionTurnView {
-  question: string;
-  by: string;
+  question: string
+  by: string
   /** ISO, from the envelope. */
-  at: string;
+  at: string
   /**
    * Lingtai's own sentence about what could be read — including a branch that
    * was not there.
@@ -772,35 +771,35 @@ export interface DiscussionTurnView {
    * reading `main` cannot make this page forget it too, which is the whole
    * reason the field is on the ask.
    */
-  reading: string[];
+  reading: string[]
   answer: {
-    text: string;
+    text: string
     /** `main:packages/…` — every file that was served. */
-    read: string[];
+    read: string[]
     /** What it said it could not establish without a command it does not have. */
-    cannot: string[];
-    proposal: { kind: "prompt" | "ticket"; text: string } | null;
-    costUsd: number | null;
+    cannot: string[]
+    proposal: { kind: 'prompt' | 'ticket'; text: string } | null
+    costUsd: number | null
     /** Set when it did not finish. The turn still cost what it cost. */
-    failure: string | null;
-  } | null;
+    failure: string | null
+  } | null
 }
 
 /** One conversation, whole. */
 export interface DiscussionView {
-  chatId: string;
+  chatId: string
   /** The attempt it was asked about, or null for the item as a whole. */
-  attempt: number | null;
-  turns: DiscussionTurnView[];
+  attempt: number | null
+  turns: DiscussionTurnView[]
   /**
    * The meter (0033 §4). Null when nothing has reported a figure — which is not
    * the same as free, and is why `RunFinished.costUsd` is nullable too.
    */
-  costUsd: number | null;
+  costUsd: number | null
   /** True while a question has no answer: the daemon has not got to it yet. */
-  waiting: boolean;
+  waiting: boolean
   /** Which artefact it produced, once it was closed. Null while it is open. */
-  held: "prompt" | "ticket" | "none" | null;
+  held: 'prompt' | 'ticket' | 'none' | null
 }
 
 /**
@@ -809,45 +808,41 @@ export interface DiscussionView {
  * Pure, like every other fold here, so what the panel *says* about a
  * conversation is testable without a database.
  */
-export function foldChat(
-  chatId: string,
-  events: readonly Envelope[],
-  held: DiscussionView["held"],
-): DiscussionView {
-  const turns: DiscussionTurnView[] = [];
-  let attempt: number | null = null;
-  let cost: number | null = null;
+export function foldChat(chatId: string, events: readonly Envelope[], held: DiscussionView['held']): DiscussionView {
+  const turns: DiscussionTurnView[] = []
+  let attempt: number | null = null
+  let cost: number | null = null
 
   for (const e of events) {
-    const d = (e.data ?? {}) as Record<string, unknown>;
-    if (e.type === "DiscussionAsked") {
-      if (typeof d["attempt"] === "number") attempt = d["attempt"];
+    const d = (e.data ?? {}) as Record<string, unknown>
+    if (e.type === 'DiscussionAsked') {
+      if (typeof d['attempt'] === 'number') attempt = d['attempt']
       turns.push({
-        question: String(d["question"] ?? ""),
-        by: String(d["by"] ?? ""),
+        question: String(d['question'] ?? ''),
+        by: String(d['by'] ?? ''),
         at: e.at.toISOString(),
-        reading: Array.isArray(d["reading"]) ? d["reading"].map(String) : [],
+        reading: Array.isArray(d['reading']) ? d['reading'].map(String) : [],
         answer: null,
-      });
-      continue;
+      })
+      continue
     }
-    if (e.type !== "DiscussionAnswered") continue;
-    const turn = turns[turns.length - 1];
-    if (!turn || turn.answer !== null) continue;
-    const costUsd = typeof d["costUsd"] === "number" ? d["costUsd"] : null;
-    if (costUsd !== null) cost = (cost ?? 0) + costUsd;
-    const proposal = d["proposal"] as { kind?: unknown; text?: unknown } | null | undefined;
+    if (e.type !== 'DiscussionAnswered') continue
+    const turn = turns[turns.length - 1]
+    if (!turn || turn.answer !== null) continue
+    const costUsd = typeof d['costUsd'] === 'number' ? d['costUsd'] : null
+    if (costUsd !== null) cost = (cost ?? 0) + costUsd
+    const proposal = d['proposal'] as { kind?: unknown; text?: unknown } | null | undefined
     turn.answer = {
-      text: String(d["text"] ?? ""),
-      read: Array.isArray(d["read"]) ? d["read"].map(String) : [],
-      cannot: Array.isArray(d["cannot"]) ? d["cannot"].map(String) : [],
+      text: String(d['text'] ?? ''),
+      read: Array.isArray(d['read']) ? d['read'].map(String) : [],
+      cannot: Array.isArray(d['cannot']) ? d['cannot'].map(String) : [],
       proposal:
-        proposal && (proposal.kind === "prompt" || proposal.kind === "ticket")
-          ? { kind: proposal.kind, text: String(proposal.text ?? "") }
+        proposal && (proposal.kind === 'prompt' || proposal.kind === 'ticket')
+          ? { kind: proposal.kind, text: String(proposal.text ?? '') }
           : null,
       costUsd,
-      failure: typeof d["failure"] === "string" ? d["failure"] : null,
-    };
+      failure: typeof d['failure'] === 'string' ? d['failure'] : null,
+    }
   }
 
   return {
@@ -857,7 +852,7 @@ export function foldChat(
     costUsd: cost,
     waiting: turns.some((t) => t.answer === null),
     held,
-  };
+  }
 }
 
 /**
@@ -872,57 +867,54 @@ export function chatIdsFor(
   control: readonly { chatId: string; workItemId: string }[],
   own: readonly Envelope[],
   taskId: string,
-): { chatId: string; held: DiscussionView["held"] }[] {
-  const order: string[] = [];
+): { chatId: string; held: DiscussionView['held'] }[] {
+  const order: string[] = []
   for (const d of control) {
-    if (d.workItemId === taskId && !order.includes(d.chatId)) order.push(d.chatId);
+    if (d.workItemId === taskId && !order.includes(d.chatId)) order.push(d.chatId)
   }
-  const held = new Map<string, DiscussionView["held"]>();
+  const held = new Map<string, DiscussionView['held']>()
   for (const e of own) {
-    if (e.type !== "DiscussionHeld") continue;
-    const d = (e.data ?? {}) as Record<string, unknown>;
-    const chatId = String(d["chatId"] ?? "");
-    const outcome = d["outcome"];
-    if (!order.includes(chatId)) order.push(chatId);
-    held.set(
-      chatId,
-      outcome === "prompt" || outcome === "ticket" || outcome === "none" ? outcome : "none",
-    );
+    if (e.type !== 'DiscussionHeld') continue
+    const d = (e.data ?? {}) as Record<string, unknown>
+    const chatId = String(d['chatId'] ?? '')
+    const outcome = d['outcome']
+    if (!order.includes(chatId)) order.push(chatId)
+    held.set(chatId, outcome === 'prompt' || outcome === 'ticket' || outcome === 'none' ? outcome : 'none')
   }
-  return order.map((chatId) => ({ chatId, held: held.get(chatId) ?? null }));
+  return order.map((chatId) => ({ chatId, held: held.get(chatId) ?? null }))
 }
 
 /** A claim, as the item's own stream recorded it. */
 export interface Claim {
-  runId: string;
+  runId: string
   /** ISO, from the envelope: the log's own time and not a field on the payload. */
-  at: string;
-  repair: boolean;
+  at: string
+  repair: boolean
   /** The reason the claim was given back, or null while it is still held. */
-  released: string | null;
+  released: string | null
 }
 
 const VERDICT: Record<string, string> = {
-  StepRequested: "pending",
-  StepStarted: "running",
-  StepPassed: "passed",
-  StepFailed: "failed",
+  StepRequested: 'pending',
+  StepStarted: 'running',
+  StepPassed: 'passed',
+  StepFailed: 'failed',
   /** No verdict, because the agent never started (#133) — not a refusal, and
    *  not a gate still running, which is what the absence of a line said. */
-  StepNeverRan: "never-ran",
+  StepNeverRan: 'never-ran',
   /** No verdict either, and not the same absence: the agent started and ended
    *  with no receipt, which is local and ends the pass (0057 §1–3; §4's retry
    *  is deleted, `#234`). */
-  StepDidNotFinish: "did-not-finish",
+  StepDidNotFinish: 'did-not-finish',
   /** No verdict either, and a question rather than a fault: the agent stopped and
    *  asked something, which reaches `proposed` and may end at a person (`#296`,
    *  0058 §3c). */
-  StepAsked: "asked",
-  StepWaived: "waived",
-  ApprovalRequested: "pending",
-  ApprovalGranted: "passed",
-  ApprovalRevoked: "pending",
-};
+  StepAsked: 'asked',
+  StepWaived: 'waived',
+  ApprovalRequested: 'pending',
+  ApprovalGranted: 'passed',
+  ApprovalRevoked: 'pending',
+}
 
 /**
  * Every claim this item made, oldest first.
@@ -938,26 +930,26 @@ const VERDICT: Record<string, string> = {
  * it bought.
  */
 export function claimsOf(own: readonly Envelope[]): Claim[] {
-  const claims: Claim[] = [];
-  let pendingRepair = false;
+  const claims: Claim[] = []
+  let pendingRepair = false
 
   for (const e of own) {
-    const d = (e.data ?? {}) as Record<string, unknown>;
-    if (e.type === "RepairRequested") pendingRepair = true;
-    if (e.type === "WorkItemClaimed") {
-      const runId = String(d["runId"] ?? "");
+    const d = (e.data ?? {}) as Record<string, unknown>
+    if (e.type === 'RepairRequested') pendingRepair = true
+    if (e.type === 'WorkItemClaimed') {
+      const runId = String(d['runId'] ?? '')
       if (runId && !claims.some((c) => c.runId === runId)) {
-        claims.push({ runId, at: e.at.toISOString(), repair: pendingRepair, released: null });
+        claims.push({ runId, at: e.at.toISOString(), repair: pendingRepair, released: null })
       }
-      pendingRepair = false;
+      pendingRepair = false
     }
-    if (e.type === "WorkItemReleased") {
-      const held = claims.find((c) => c.runId === String(d["runId"] ?? ""));
-      if (held) held.released = String(d["reason"] ?? "") || "released";
+    if (e.type === 'WorkItemReleased') {
+      const held = claims.find((c) => c.runId === String(d['runId'] ?? ''))
+      if (held) held.released = String(d['reason'] ?? '') || 'released'
     }
   }
 
-  return claims;
+  return claims
 }
 
 /**
@@ -981,93 +973,93 @@ export function foldRun(
    */
   { plan, over = false }: { plan?: StepPlan; over?: boolean } = {},
 ): RunView {
-  let baseSha: string | null = null;
-  let headSha: string | null = null;
-  let configHash: string | null = null;
-  let turns: number | null = null;
-  let costUsd: number | null = null;
-  let durationMs: number | null = null;
-  let exitCode: number | null = null;
-  let failure: string | null = null;
-  let started = false;
-  let finished = false;
-  let prompt: PromptView | null = null;
-  let diff: RunView["diff"] = null;
-  let awaitingSha: string | null = null;
+  let baseSha: string | null = null
+  let headSha: string | null = null
+  let configHash: string | null = null
+  let turns: number | null = null
+  let costUsd: number | null = null
+  let durationMs: number | null = null
+  let exitCode: number | null = null
+  let failure: string | null = null
+  let started = false
+  let finished = false
+  let prompt: PromptView | null = null
+  let diff: RunView['diff'] = null
+  let awaitingSha: string | null = null
   /** Keyed by path: an agent touches one file many times and the page wants the file. */
-  const files = new Map<string, TouchedFile>();
-  const steps = new Map<string, StepVerdict>();
+  const files = new Map<string, TouchedFile>()
+  const steps = new Map<string, StepVerdict>()
 
   for (const e of run) {
-    const d = (e.data ?? {}) as Record<string, unknown>;
+    const d = (e.data ?? {}) as Record<string, unknown>
     switch (e.type) {
-      case "RunStarted":
-        started = true;
-        baseSha = String(d["baseSha"] ?? "") || null;
-        break;
+      case 'RunStarted':
+        started = true
+        baseSha = String(d['baseSha'] ?? '') || null
+        break
       // `StepsResolved` and not `RunStarted`, though both carry the hash: the
       // gates on this page are the ones it named, so it is the one the recipe
       // beside them has to answer to (#190).
-      case "StepsResolved":
-        configHash = String(d["configHash"] ?? "") || null;
-        break;
-      case "RunPrompted":
+      case 'StepsResolved':
+        configHash = String(d['configHash'] ?? '') || null
+        break
+      case 'RunPrompted':
         prompt = {
-          version: String(d["promptVersion"] ?? ""),
-          bytes: Number(d["bytes"] ?? 0),
-          text: typeof d["prompt"] === "string" ? d["prompt"] : null,
-        };
-        break;
-      case "RunTouchedFile": {
-        const path = String(d["path"] ?? "");
+          version: String(d['promptVersion'] ?? ''),
+          bytes: Number(d['bytes'] ?? 0),
+          text: typeof d['prompt'] === 'string' ? d['prompt'] : null,
+        }
+        break
+      case 'RunTouchedFile': {
+        const path = String(d['path'] ?? '')
         // The last op wins: a file written and then deleted is a deletion, and
         // what the reader wants is what became of the file rather than the
         // order the agent got there in.
-        if (path) files.set(path, { path, op: String(d["op"] ?? "") });
-        break;
+        if (path) files.set(path, { path, op: String(d['op'] ?? '') })
+        break
       }
-      case "RunProducedDiff":
-        headSha = String(d["headSha"] ?? "") || null;
+      case 'RunProducedDiff':
+        headSha = String(d['headSha'] ?? '') || null
         diff = {
-          branch: String(d["branch"] ?? ""),
-          files: Number(d["files"] ?? 0),
-          insertions: Number(d["insertions"] ?? 0),
-          deletions: Number(d["deletions"] ?? 0),
-        };
-        break;
-      case "RunProposedCompletion":
-        headSha = String(d["headSha"] ?? "") || null;
-        break;
-      case "RunFinished":
-        finished = true;
-        turns = Number(d["turns"] ?? 0);
-        durationMs = Number(d["durationMs"] ?? 0);
+          branch: String(d['branch'] ?? ''),
+          files: Number(d['files'] ?? 0),
+          insertions: Number(d['insertions'] ?? 0),
+          deletions: Number(d['deletions'] ?? 0),
+        }
+        break
+      case 'RunProposedCompletion':
+        headSha = String(d['headSha'] ?? '') || null
+        break
+      case 'RunFinished':
+        finished = true
+        turns = Number(d['turns'] ?? 0)
+        durationMs = Number(d['durationMs'] ?? 0)
         // Nullable in the catalogue, and a null is not a zero: a run whose cost
         // was never reported has not been shown to be free.
-        costUsd = d["costUsd"] === null || d["costUsd"] === undefined ? null : Number(d["costUsd"]);
-        exitCode = Number(d["exitCode"] ?? 0);
-        break;
-      case "RunFailed":
-        failure = String(d["kind"] ?? "") || "failed";
-        break;
+        costUsd = d['costUsd'] === null || d['costUsd'] === undefined ? null : Number(d['costUsd'])
+        exitCode = Number(d['exitCode'] ?? 0)
+        break
+      case 'RunFailed':
+        failure = String(d['kind'] ?? '') || 'failed'
+        break
       // The three that decide whether anything is being asked. Requested opens
       // the question, granted spends it, revoked opens it again on the sha the
       // withdrawal names — the same three lines `task_view` folds, so the page
       // and the card cannot come to disagree about whether Approve can work.
-      case "ApprovalRequested":
-      case "ApprovalRevoked":
-        awaitingSha = String(d["onSha"] ?? "") || null;
-        break;
-      case "ApprovalGranted":
-        awaitingSha = null;
-        break;
+      case 'ApprovalRequested':
+      case 'ApprovalRevoked':
+        awaitingSha = String(d['onSha'] ?? '') || null
+        break
+      case 'ApprovalGranted':
+        awaitingSha = null
+        break
     }
 
-    const verdict = VERDICT[e.type];
-    if (verdict && typeof d["step"] === "string") {
+    const verdict = VERDICT[e.type]
+    if (verdict && typeof d['step'] === 'string') {
       // `point:action` — see task-view. Two points may run an action of the
       // same name, and the page has to show both.
-      const key = `${String(d["step"])}:${String(d["action"] ?? "")}`;
+      const key = `${String(d['step'])}:${String(d['action'] ?? '')}`
       steps.set(key, {
         step: key,
         state: verdict,
@@ -1078,21 +1070,21 @@ export function foldRun(
         // renamed at the seam, because `Evidence` shows only gates that said
         // something (`evidence.tsx:114`): reading the wrong key would drop the
         // one gate that stopped the run off the page ADR 0041 §2 wrote it for.
-        evidence: (d["evidence"] as string) ?? (d["detail"] as string) ?? null,
-        findings: (d["findings"] as Finding[]) ?? [],
-      });
+        evidence: (d['evidence'] as string) ?? (d['detail'] as string) ?? null,
+        findings: (d['findings'] as Finding[]) ?? [],
+      })
     }
   }
 
   for (const g of steps.values()) {
     const onSha = run.find(
       (e) => (e.data as { step?: string })?.step === g.step && (e.data as { onSha?: string })?.onSha,
-    );
-    const sha = (onSha?.data as { onSha?: string } | undefined)?.onSha ?? null;
-    g.current = headSha === null || sha === null || sha === headSha;
+    )
+    const sha = (onSha?.data as { onSha?: string } | undefined)?.onSha ?? null
+    g.current = headSha === null || sha === null || sha === headSha
   }
 
-  const all = [...steps.values()];
+  const all = [...steps.values()]
 
   return {
     runId: claim.runId,
@@ -1114,7 +1106,7 @@ export function foldRun(
     // The plan the conductor wrote down when this run started is read inside
     // the fold, and so are the states 0016 §4 needs kept apart.
     progress: foldProgress(run, plan, over),
-  };
+  }
 }
 
 /**
@@ -1127,30 +1119,27 @@ export function foldRun(
  * appended anything.
  */
 function outcomeOf(seen: {
-  failure: string | null;
-  finished: boolean;
-  exitCode: number | null;
-  started: boolean;
-  released: string | null;
+  failure: string | null
+  finished: boolean
+  exitCode: number | null
+  started: boolean
+  released: string | null
 }): RunOutcome {
-  if (seen.failure !== null) return { state: "failed", detail: seen.failure };
+  if (seen.failure !== null) return { state: 'failed', detail: seen.failure }
   if (seen.finished) {
-    const bad = seen.exitCode !== null && seen.exitCode !== 0;
-    return { state: "finished", detail: bad ? `exit ${seen.exitCode}` : null };
+    const bad = seen.exitCode !== null && seen.exitCode !== 0
+    return { state: 'finished', detail: bad ? `exit ${seen.exitCode}` : null }
   }
-  if (seen.released !== null) return { state: "released", detail: seen.released };
-  if (seen.started) return { state: "running", detail: null };
-  return { state: "claimed", detail: "nothing on its stream" };
+  if (seen.released !== null) return { state: 'released', detail: seen.released }
+  if (seen.started) return { state: 'running', detail: null }
+  return { state: 'claimed', detail: 'nothing on its stream' }
 }
 
 /** What the attempts cost, added up. See `Totals`. */
-export function totalsOf(
-  runs: readonly RunView[],
-  discussions: readonly DiscussionView[] = [],
-): Totals {
-  const costUsd = runs.reduce((n, r) => n + (r.repair ? 0 : (r.costUsd ?? 0)), 0);
-  const repairUsd = runs.reduce((n, r) => n + (r.repair ? (r.costUsd ?? 0) : 0), 0);
-  const discussionUsd = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0);
+export function totalsOf(runs: readonly RunView[], discussions: readonly DiscussionView[] = []): Totals {
+  const costUsd = runs.reduce((n, r) => n + (r.repair ? 0 : (r.costUsd ?? 0)), 0)
+  const repairUsd = runs.reduce((n, r) => n + (r.repair ? (r.costUsd ?? 0) : 0), 0)
+  const discussionUsd = discussions.reduce((n, d) => n + (d.costUsd ?? 0), 0)
   return {
     attempts: runs.length,
     turns: runs.reduce((n, r) => n + (r.turns ?? 0), 0),
@@ -1160,7 +1149,7 @@ export function totalsOf(
     discussions: discussions.length,
     discussionUsd,
     totalUsd: costUsd + repairUsd + discussionUsd,
-  };
+  }
 }
 
 /**
@@ -1189,24 +1178,24 @@ export function totalsOf(
  * `0 discussions` is furniture.
  */
 export function totalsFact(totals: Totals): string | null {
-  if (totals.attempts === 0 && totals.discussions === 0) return null;
-  const held = totals.discussions;
+  if (totals.attempts === 0 && totals.discussions === 0) return null
+  const held = totals.discussions
   const split = [
     totals.costUsd > 0 ? `$${totals.costUsd.toFixed(2)} work` : null,
     totals.repairUsd > 0 ? `$${totals.repairUsd.toFixed(2)} repair` : null,
     totals.discussionUsd > 0 ? `$${totals.discussionUsd.toFixed(2)} asking` : null,
-  ].filter((s): s is string => s !== null);
+  ].filter((s): s is string => s !== null)
 
   return [
     totals.totalUsd > 0 ? `$${totals.totalUsd.toFixed(2)}` : null,
-    `${totals.attempts} attempt${totals.attempts === 1 ? "" : "s"}` +
-      (held > 0 ? ` + ${held} discussion${held === 1 ? "" : "s"}` : ""),
+    `${totals.attempts} attempt${totals.attempts === 1 ? '' : 's'}` +
+      (held > 0 ? ` + ${held} discussion${held === 1 ? '' : 's'}` : ''),
     totals.turns > 0 ? `${totals.turns} turns` : null,
     totals.durationMs > 0 ? elapsed(totals.durationMs) : null,
     ...(split.length > 1 ? split : []),
   ]
     .filter((s): s is string => s !== null)
-    .join(" · ");
+    .join(' · ')
 }
 
 /**
@@ -1216,32 +1205,29 @@ export function totalsFact(totals: Totals): string | null {
  * actually happened, in order, with who did it*, and the grouping is a way in
  * rather than a filter.
  */
-export function groupHistory(
-  events: readonly Envelope[],
-  attempts: ReadonlyMap<string, number>,
-): HistoryGroup[] {
+export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<string, number>): HistoryGroup[] {
   // Insertion order is first-seq order, which is the order the groups read in.
-  const groups = new Map<string, HistoryGroup>();
+  const groups = new Map<string, HistoryGroup>()
 
   for (const e of [...events].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0))) {
-    let group = groups.get(e.streamId);
+    let group = groups.get(e.streamId)
     if (!group) {
-      const attempt = attempts.get(e.streamId) ?? null;
+      const attempt = attempts.get(e.streamId) ?? null
       group = {
         streamId: e.streamId,
         attempt,
-        label: attempt === null ? "the ticket" : `attempt ${attempt}`,
+        label: attempt === null ? 'the ticket' : `attempt ${attempt}`,
         from: String(e.seq),
         to: String(e.seq),
         lines: [],
-      };
-      groups.set(e.streamId, group);
+      }
+      groups.set(e.streamId, group)
     }
-    group.lines.push(toLine(e));
-    group.to = String(e.seq);
+    group.lines.push(toLine(e))
+    group.to = String(e.seq)
   }
 
-  return [...groups.values()];
+  return [...groups.values()]
 }
 
 /**
@@ -1254,26 +1240,26 @@ export function groupHistory(
  * costs the body and not the page.
  */
 async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<TicketView | null> {
-  const parsed = parseWorkItemStream(taskId);
-  if (!parsed) return null;
-  const { project, issue } = parsed;
+  const parsed = parseWorkItemStream(taskId)
+  if (!parsed) return null
+  const { project, issue } = parsed
 
-  let title: string | null = null;
-  let kind: string | null = null;
-  let labels: string[] = [];
+  let title: string | null = null
+  let kind: string | null = null
+  let labels: string[] = []
   for (const e of own) {
-    const d = (e.data ?? {}) as Record<string, unknown>;
+    const d = (e.data ?? {}) as Record<string, unknown>
     // `WorkItemDiscovered` is the queue's own event and predates 0012; a claim
     // carries the same two fields precisely so a rebuilt projection has them.
-    if (e.type === "WorkItemDiscovered" || e.type === "WorkItemClaimed") {
-      title = (d["title"] as string | null) ?? title;
-      kind = (d["kind"] as string | null) ?? kind;
-      if (Array.isArray(d["labels"])) labels = d["labels"] as string[];
+    if (e.type === 'WorkItemDiscovered' || e.type === 'WorkItemClaimed') {
+      title = (d['title'] as string | null) ?? title
+      kind = (d['kind'] as string | null) ?? kind
+      if (Array.isArray(d['labels'])) labels = d['labels'] as string[]
     }
   }
 
-  const state = await loadProject(project).catch(() => null);
-  const base = { project, ref: issue, title, kind, labels };
+  const state = await loadProject(project).catch(() => null)
+  const base = { project, ref: issue, title, kind, labels }
   if (!state) {
     // A definite absence rather than an unanswered question. Lingtai's own
     // register is the authority on which projects it has, so an id naming one
@@ -1285,16 +1271,16 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
       url: null,
       body: null,
       problem: `${project} is not a registered project`,
-    };
+    }
   }
 
   // Buildable without GitHub, and worth building: a link to the issue is the
   // thing the page exists to save a trip for, and it does not need an answer.
   // The same shape the cards link to, said once (`board.ts`).
-  const url = issueUrl(state.owner, project, issue);
+  const url = issueUrl(state.owner, project, issue)
   try {
-    const client = await githubClientFor(state);
-    const live = await client.getIssue(Number(issue));
+    const client = await githubClientFor(state)
+    const live = await client.getIssue(Number(issue))
     return {
       ...base,
       found: true,
@@ -1307,15 +1293,15 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
       url: live.url,
       body: live.body,
       problem: null,
-    };
+    }
   } catch (err) {
     // **The one question this catch has to answer twice.** A 404 from GitHub is
     // an answer — there is no such issue — and everything else is the absence of
     // one. Collapsing the two is what made `wi-lingtai-99999` and a repository
     // behind a rate limit render identically, and only the first of them is a
     // page that should not exist (#113).
-    const missing = err instanceof GitHubError && err.status === 404;
-    return { ...base, found: missing ? false : null, url, body: null, problem: (err as Error).message };
+    const missing = err instanceof GitHubError && err.status === 404
+    return { ...base, found: missing ? false : null, url, body: null, problem: (err as Error).message }
   }
 }
 
@@ -1335,10 +1321,10 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
  * that answer; it is the absence of one, and it renders a page that says so.
  */
 export function exists(own: readonly Envelope[], ticket: TicketView | null): boolean {
-  if (own.length > 0) return true;
+  if (own.length > 0) return true
   // `null` is an id that is not `wi-<project>-<n>` — there is no issue behind
   // it to have an opinion about, so nothing could ever have offered it.
-  return ticket !== null && ticket.found !== false;
+  return ticket !== null && ticket.found !== false
 }
 
 /**
@@ -1351,10 +1337,10 @@ export function exists(own: readonly Envelope[], ticket: TicketView | null): boo
  * drawn as no denominator rather than as zero.
  */
 async function planFor(project: string): Promise<StepPlan | undefined> {
-  const state = await loadProject(project).catch(() => null);
-  if (!state) return undefined;
-  const filter = await projectFilter(state);
-  return filter.ok ? filter.plan : undefined;
+  const state = await loadProject(project).catch(() => null)
+  if (!state) return undefined
+  const filter = await projectFilter(state)
+  return filter.ok ? filter.plan : undefined
 }
 
 /**
@@ -1368,24 +1354,21 @@ async function planFor(project: string): Promise<StepPlan | undefined> {
  *
  * Never throws: a project that will not load is every attempt saying so.
  */
-async function recipesFor(
-  project: string,
-  runs: readonly RunView[],
-): Promise<Map<string, RunRecipe>> {
-  if (runs.length === 0) return new Map();
-  let recipes: RunRecipe[];
+async function recipesFor(project: string, runs: readonly RunView[]): Promise<Map<string, RunRecipe>> {
+  if (runs.length === 0) return new Map()
+  let recipes: RunRecipe[]
   try {
-    const state = await loadProject(project);
-    if (!state) throw new Error("it is not a registered project");
-    const client = await githubClientFor(state);
-    let head: ReturnType<typeof currentRecipe> | null = null;
-    const atHead = () => (head ??= currentRecipe(state));
-    recipes = await Promise.all(runs.map((r) => recipeOfRun(r, client, atHead)));
+    const state = await loadProject(project)
+    if (!state) throw new Error('it is not a registered project')
+    const client = await githubClientFor(state)
+    let head: ReturnType<typeof currentRecipe> | null = null
+    const atHead = () => (head ??= currentRecipe(state))
+    recipes = await Promise.all(runs.map((r) => recipeOfRun(r, client, atHead)))
   } catch (err) {
-    const why = `no recipe could be read for ${project}: ${(err as Error).message}`;
-    recipes = runs.map(() => ({ of: "none", why }));
+    const why = `no recipe could be read for ${project}: ${(err as Error).message}`
+    recipes = runs.map(() => ({ of: 'none', why }))
   }
-  return new Map(runs.map((r, i) => [r.runId, recipes[i]!]));
+  return new Map(runs.map((r, i) => [r.runId, recipes[i]!]))
 }
 
 /**
@@ -1411,12 +1394,12 @@ async function recipesFor(
  * first row: there is no issue behind it to have an opinion about.
  */
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
-  const own = await eventStore.read(taskId);
+  const own = await eventStore.read(taskId)
 
   // Every claim, and not the last one. A task can be claimed several times —
   // `wi-lingtai-87` three, `wi-lingtai-89` twice — and each claim opens a stream
   // of its own that the page kept no room for (#102).
-  const claims = claimsOf(own);
+  const claims = claimsOf(own)
 
   // Beside the run streams rather than after them: one side is a handful of
   // database reads and the other is two calls to GitHub, and the page waits for
@@ -1430,21 +1413,21 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     Promise.all(claims.map((c) => eventStore.read(c.runId))),
     loadTicket(taskId, own),
     eventStore.read(CONTROL_STREAM).catch(() => [] as Envelope[]),
-  ]);
+  ])
 
   // **The only thing that decides a 404**, and it decides it after GitHub has
   // been asked rather than before. See `exists`.
-  if (!exists(own, ticket)) return null;
+  if (!exists(own, ticket)) return null
 
-  const folded = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []));
-  const attempts = new Map(folded.map((r) => [r.runId, r.attempt]));
+  const folded = claims.map((c, i) => foldRun(c, i + 1, streams[i] ?? []))
+  const attempts = new Map(folded.map((r) => [r.runId, r.attempt]))
 
-  const conductor = reduceControl(control);
-  const chats = chatIdsFor(conductor.discussions, own, taskId);
-  const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))));
-  const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held));
+  const conductor = reduceControl(control)
+  const chats = chatIdsFor(conductor.discussions, own, taskId)
+  const chatStreams = await Promise.all(chats.map((c) => eventStore.read(chatStream(c.chatId))))
+  const discussions = chats.map((c, i) => foldChat(c.chatId, chatStreams[i] ?? [], c.held))
 
-  const standing = standingOf(own, folded);
+  const standing = standingOf(own, folded)
   // Together, because neither is an argument to the other: one is a file read
   // and a recipe fetch, the other a recipe fetch and a question put to GitHub,
   // and a page that waited for the sum would pay for both round trips end to
@@ -1460,35 +1443,29 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   //
   // `recipes` wherever there is an attempt to hang an action's command off.
   const [outgoing, queued, plan, recipes] = await Promise.all([
-    standing.state === "blocked" || standing.state === "queued"
-      ? outgoingFor({ own, streams, ticket })
-      : null,
-    standing.state === "queued" && ticket !== null
+    standing.state === 'blocked' || standing.state === 'queued' ? outgoingFor({ own, streams, ticket }) : null,
+    standing.state === 'queued' && ticket !== null
       ? queuedFor({ project: ticket.project, issue: ticket.ref, own, paused: conductor.paused })
       : null,
-    standing.state === "running" && ticket !== null ? planFor(ticket.project) : undefined,
+    standing.state === 'running' && ticket !== null ? planFor(ticket.project) : undefined,
     ticket !== null ? recipesFor(ticket.project, folded) : new Map<string, RunRecipe>(),
-  ]);
+  ])
 
   // The last attempt folded again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
   // released or refused, and its later points recorded nothing because nothing
   // should have run in them — the same line `RailCandidate.over` holds, and
   // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
-  const last = folded.length - 1;
-  const landed = standing.state === "landed";
+  const last = folded.length - 1
+  const landed = standing.state === 'landed'
   const runs = (
     last >= 0 && (landed || plan !== undefined)
-      ? folded.map((r, i) =>
-          i === last
-            ? { ...r, progress: foldProgress(streams[i] ?? [], plan, landed) }
-            : r,
-        )
+      ? folded.map((r, i) => (i === last ? { ...r, progress: foldProgress(streams[i] ?? [], plan, landed) } : r))
       : folded
   ).map((r) => {
-    const recipe = recipes.get(r.runId);
-    return recipe ? { ...r, recipe } : r;
-  });
+    const recipe = recipes.get(r.runId)
+    return recipe ? { ...r, recipe } : r
+  })
 
   return {
     taskId,
@@ -1505,5 +1482,5 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     // section exists to show. The work item's own `DiscussionHeld` is here, and
     // it is the two lines the ticket's history was promised to grow by.
     history: groupHistory([...own, ...streams.flat()], attempts),
-  };
+  }
 }

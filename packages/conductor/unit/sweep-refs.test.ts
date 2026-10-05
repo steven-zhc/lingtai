@@ -1,3 +1,6 @@
+import type { PayloadOf, ToAppend } from '@lingtai/domain'
+import type { EventStore } from '@lingtai/event-store'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 /**
  * **`end`'s third effect, carried out** (`#240`) — the half `end-step.ts` does
  * not do.
@@ -23,47 +26,42 @@
  *   call each, so a refusal on the third leaves two gone for good — and the
  *   names are the one fact the remote can no longer be asked for.
  */
-import { describe, expect, it } from "vitest";
-import { createMemoryEventStore } from "@lingtai/event-store/memory";
-import type { EventStore } from "@lingtai/event-store";
-import type { PayloadOf, ToAppend } from "@lingtai/domain";
-import { agentBranch, armBranch } from "../src/branches.ts";
-import { type IssueChannel, type RefChannel, sweepRefs, tellGitHubAbout } from "../src/tell.ts";
+import { describe, expect, it } from 'vitest'
+
+import { agentBranch, armBranch } from '../src/branches.ts'
+import { type IssueChannel, type RefChannel, sweepRefs, tellGitHubAbout } from '../src/tell.ts'
 
 /** A remote's ref list, and what a sweep did to it. */
-function fakeRefs(
-  refs: readonly string[],
-  opts: { fail?: boolean; refuseFrom?: string } = {},
-) {
-  const held = new Set(refs);
-  const asked: string[] = [];
+function fakeRefs(refs: readonly string[], opts: { fail?: boolean; refuseFrom?: string } = {}) {
+  const held = new Set(refs)
+  const asked: string[] = []
   const channel: RefChannel = {
     async matchingRefs(prefix) {
-      asked.push(prefix);
-      if (opts.fail) throw new Error("403 resource not accessible by integration");
-      return [...held].filter((ref) => ref.startsWith(prefix));
+      asked.push(prefix)
+      if (opts.fail) throw new Error('403 resource not accessible by integration')
+      return [...held].filter((ref) => ref.startsWith(prefix))
     },
     async deleteRef(ref) {
       // A delete GitHub declines from some ref onwards — branch protection, or
       // a secondary rate limit reached part-way down the list.
       if (opts.refuseFrom !== undefined && ref >= opts.refuseFrom) {
-        throw new Error("403 secondary rate limit");
+        throw new Error('403 secondary rate limit')
       }
-      if (!held.delete(ref)) throw new Error(`422 reference does not exist: ${ref}`);
+      if (!held.delete(ref)) throw new Error(`422 reference does not exist: ${ref}`)
     },
-  };
-  return { channel, asked, left: () => [...held].sort() };
+  }
+  return { channel, asked, left: () => [...held].sort() }
 }
 
 /** The rows this appended, newest last. */
 async function rows(store: EventStore, workItemId: string) {
   return (await store.read(workItemId))
-    .filter((e) => e.type === "IssueUpdated" || e.type === "IssueUpdateFailed")
-    .map((e) => ({ type: e.type, ...(e.data as PayloadOf<"IssueUpdated">) }));
+    .filter((e) => e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed')
+    .map((e) => ({ type: e.type, ...(e.data as PayloadOf<'IssueUpdated'>) }))
 }
 
-const BRANCH = agentBranch(240);
-const HEADS = (name: string) => `heads/${name}`;
+const BRANCH = agentBranch(240)
+const HEADS = (name: string) => `heads/${name}`
 
 /** What a ticket that ran four approaches and landed leaves on `origin`. */
 const AFTER_FOUR_ATTEMPTS = [
@@ -72,35 +70,35 @@ const AFTER_FOUR_ATTEMPTS = [
   HEADS(armBranch(BRANCH, 2)),
   HEADS(armBranch(BRANCH, 3)),
   HEADS(armBranch(BRANCH, 4)),
-];
+]
 
 describe("sweeping a landed ticket's history refs", () => {
-  it("deletes every arm and keeps the branch", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS);
+  it('deletes every arm and keeps the branch', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: false });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
 
-    expect(remote.left()).toEqual([HEADS(BRANCH)]);
-    expect(await rows(store, "wi-lingtai-240")).toEqual([
+    expect(remote.left()).toEqual([HEADS(BRANCH)])
+    expect(await rows(store, 'wi-lingtai-240')).toEqual([
       {
-        type: "IssueUpdated",
-        project: "lingtai",
-        issue: "240",
-        change: "refs",
-        detail: [1, 2, 3, 4].map((n) => HEADS(armBranch(BRANCH, n))).join(","),
+        type: 'IssueUpdated',
+        project: 'lingtai',
+        issue: '240',
+        change: 'refs',
+        detail: [1, 2, 3, 4].map((n) => HEADS(armBranch(BRANCH, n))).join(','),
       },
-    ]);
-  });
+    ])
+  })
 
-  it("takes the branch too when the recipe asked for it", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS);
+  it('takes the branch too when the recipe asked for it', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: true });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: true })
 
-    expect(remote.left()).toEqual([]);
-  });
+    expect(remote.left()).toEqual([])
+  })
 
   /**
    * **The prefix is not a path**, and this is the case that says so. `#24` and
@@ -108,18 +106,14 @@ describe("sweeping a landed ticket's history refs", () => {
    * approaches exactly where they are.
    */
   it("leaves a longer ticket number's refs alone", async () => {
-    const store = createMemoryEventStore();
-    const twoDigit = agentBranch(24);
-    const remote = fakeRefs([
-      ...AFTER_FOUR_ATTEMPTS,
-      HEADS(twoDigit),
-      HEADS(armBranch(twoDigit, 1)),
-    ]);
+    const store = createMemoryEventStore()
+    const twoDigit = agentBranch(24)
+    const remote = fakeRefs([...AFTER_FOUR_ATTEMPTS, HEADS(twoDigit), HEADS(armBranch(twoDigit, 1))])
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-24", andTheBranch: true });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-24', andTheBranch: true })
 
-    expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort());
-  });
+    expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
+  })
 
   /**
    * An item whose only claim landed on its first attempt has one arm and one
@@ -127,53 +121,53 @@ describe("sweeping a landed ticket's history refs", () => {
    * is an error, and the row says which it was — *none* is a fact, and a
    * missing row would read as a sweep that never ran.
    */
-  it("records that there was nothing to delete, rather than failing", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs([HEADS(BRANCH)]);
+  it('records that there was nothing to delete, rather than failing', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs([HEADS(BRANCH)])
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: false });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
 
-    expect(remote.left()).toEqual([HEADS(BRANCH)]);
-    expect((await rows(store, "wi-lingtai-240"))[0]).toMatchObject({
-      type: "IssueUpdated",
-      detail: "none",
-    });
-  });
+    expect(remote.left()).toEqual([HEADS(BRANCH)])
+    expect((await rows(store, 'wi-lingtai-240'))[0]).toMatchObject({
+      type: 'IssueUpdated',
+      detail: 'none',
+    })
+  })
 
   /**
    * `end` cannot refuse, so this cannot either. The record is what 0022 kept
    * the pair for: afterwards nobody can tell *we never swept* from *we swept
    * and GitHub said no*.
    */
-  it("records a refusal and returns normally", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { fail: true });
+  it('records a refusal and returns normally', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { fail: true })
 
     await expect(
-      sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: false }),
-    ).resolves.toBeUndefined();
+      sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false }),
+    ).resolves.toBeUndefined()
 
-    expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort());
-    expect((await rows(store, "wi-lingtai-240"))[0]).toMatchObject({
-      type: "IssueUpdateFailed",
-      change: "refs",
-      error: "403 resource not accessible by integration",
-    });
-  });
+    expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
+    expect((await rows(store, 'wi-lingtai-240'))[0]).toMatchObject({
+      type: 'IssueUpdateFailed',
+      change: 'refs',
+      error: '403 resource not accessible by integration',
+    })
+  })
 
   /**
    * It asks under the branch and filters, rather than asking under the arm
    * prefix — one request either way, and this one also sees `agent/<n>` itself,
    * which `andTheBranch` needs.
    */
-  it("asks GitHub once, under the branch", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS);
+  it('asks GitHub once, under the branch', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: false });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
 
-    expect(remote.asked).toEqual([HEADS(BRANCH)]);
-  });
+    expect(remote.asked).toEqual([HEADS(BRANCH)])
+  })
 
   /**
    * **The row has to name the arms that already went** — the case a `doomed`
@@ -185,40 +179,38 @@ describe("sweeping a landed ticket's history refs", () => {
    * one row — which is exactly the pair 0022 kept `IssueUpdated` and
    * `IssueUpdateFailed` apart for.
    */
-  it("names the arms it had already deleted when a delete was refused", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 3)) });
+  it('names the arms it had already deleted when a delete was refused', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 3)) })
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: false });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
 
-    expect(remote.left()).toEqual(
-      [HEADS(BRANCH), HEADS(armBranch(BRANCH, 3)), HEADS(armBranch(BRANCH, 4))].sort(),
-    );
-    const row = (await rows(store, "wi-lingtai-240"))[0]!;
-    expect(row.type).toBe("IssueUpdateFailed");
+    expect(remote.left()).toEqual([HEADS(BRANCH), HEADS(armBranch(BRANCH, 3)), HEADS(armBranch(BRANCH, 4))].sort())
+    const row = (await rows(store, 'wi-lingtai-240'))[0]!
+    expect(row.type).toBe('IssueUpdateFailed')
     expect((row as unknown as { error: string }).error).toBe(
       `403 secondary rate limit — after deleting ${HEADS(armBranch(BRANCH, 1))},${HEADS(armBranch(BRANCH, 2))}`,
-    );
-  });
+    )
+  })
 
   /**
    * And a sweep that was refused before it deleted anything says only the
    * error: a list nobody can read is worse than no list, and *none went* is
    * what an unadorned message means.
    */
-  it("says only the error when nothing had gone yet", async () => {
-    const store = createMemoryEventStore();
-    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 1)) });
+  it('says only the error when nothing had gone yet', async () => {
+    const store = createMemoryEventStore()
+    const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 1)) })
 
-    await sweepRefs({ store, github: remote.channel, workItemId: "wi-lingtai-240", andTheBranch: false });
+    await sweepRefs({ store, github: remote.channel, workItemId: 'wi-lingtai-240', andTheBranch: false })
 
-    expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort());
-    expect((await rows(store, "wi-lingtai-240"))[0]).toMatchObject({
-      type: "IssueUpdateFailed",
-      error: "403 secondary rate limit",
-    });
-  });
-});
+    expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
+    expect((await rows(store, 'wi-lingtai-240'))[0]).toMatchObject({
+      type: 'IssueUpdateFailed',
+      error: '403 secondary rate limit',
+    })
+  })
+})
 
 /**
  * **The sweep goes last within the item, whatever order the recipe wrote**
@@ -236,89 +228,82 @@ describe("sweeping a landed ticket's history refs", () => {
 describe("the order the end point's effects are carried out in", () => {
   /** Every call `tellGitHubAbout` may make, in the order it made them. */
   function fakeChannels(refs: readonly string[]) {
-    const calls: string[] = [];
+    const calls: string[] = []
     const issue: IssueChannel = {
       getIssue: async () => ({ labels: [] }),
       comment: async () => {
-        calls.push("comment");
-        return { id: 1 };
+        calls.push('comment')
+        return { id: 1 }
       },
       setLabels: async (_n, labels) => {
-        calls.push(`setLabels ${[...labels].join(",")}`);
+        calls.push(`setLabels ${[...labels].join(',')}`)
       },
       closeIssue: async () => {
-        calls.push("close");
+        calls.push('close')
       },
       updateBody: async () => {
-        calls.push("updateBody");
+        calls.push('updateBody')
       },
-    };
-    const held = new Set(refs);
+    }
+    const held = new Set(refs)
     const ref: RefChannel = {
       matchingRefs: async (prefix) => [...held].filter((r) => r.startsWith(prefix)),
       deleteRef: async (r) => {
-        calls.push(`deleteRef ${r}`);
-        held.delete(r);
+        calls.push(`deleteRef ${r}`)
+        held.delete(r)
       },
-    };
-    return { github: { ...issue, ...ref }, calls };
+    }
+    return { github: { ...issue, ...ref }, calls }
   }
 
   const resolved = (actions: unknown[]): ToAppend =>
     ({
-      type: "EndActionsResolved",
-      actor: "conductor",
-      data: { outcome: "landed", actions },
-    }) as unknown as ToAppend;
+      type: 'EndActionsResolved',
+      actor: 'conductor',
+      data: { outcome: 'landed', actions },
+    }) as unknown as ToAppend
 
-  it("writes the labels before it deletes, even where `refs:` was declared first", async () => {
-    const store = createMemoryEventStore();
-    const world = fakeChannels([HEADS(BRANCH), HEADS(armBranch(BRANCH, 1))]);
+  it('writes the labels before it deletes, even where `refs:` was declared first', async () => {
+    const store = createMemoryEventStore()
+    const world = fakeChannels([HEADS(BRANCH), HEADS(armBranch(BRANCH, 1))])
 
     await tellGitHubAbout({
       store,
       github: world.github,
-      workItemId: "wi-lingtai-240",
+      workItemId: 'wi-lingtai-240',
       appended: [
         resolved([
-          { name: "sweep", refs: true, branch: false },
-          { name: "label", labels: ["lingtai:done"] },
+          { name: 'sweep', refs: true, branch: false },
+          { name: 'label', labels: ['lingtai:done'] },
         ]),
       ],
-    });
+    })
 
-    expect(world.calls).toEqual([
-      "setLabels lingtai:done",
-      `deleteRef ${HEADS(armBranch(BRANCH, 1))}`,
-    ]);
-  });
+    expect(world.calls).toEqual(['setLabels lingtai:done', `deleteRef ${HEADS(armBranch(BRANCH, 1))}`])
+  })
 
   /**
    * And the order *among* the writes is still the recipe's, because it is a
    * decision rather than an accident: an issue closed and then labelled can
    * come back open, which is the ordering `tellGitHubAbout`'s header keeps.
    */
-  it("leaves the writes in the order they were declared", async () => {
-    const store = createMemoryEventStore();
-    const world = fakeChannels([HEADS(armBranch(BRANCH, 1))]);
+  it('leaves the writes in the order they were declared', async () => {
+    const store = createMemoryEventStore()
+    const world = fakeChannels([HEADS(armBranch(BRANCH, 1))])
 
     await tellGitHubAbout({
       store,
       github: world.github,
-      workItemId: "wi-lingtai-240",
+      workItemId: 'wi-lingtai-240',
       appended: [
         resolved([
-          { name: "sweep", refs: true, branch: false },
-          { name: "label", labels: ["lingtai:done"] },
-          { name: "close", close: true },
+          { name: 'sweep', refs: true, branch: false },
+          { name: 'label', labels: ['lingtai:done'] },
+          { name: 'close', close: true },
         ]),
       ],
-    });
+    })
 
-    expect(world.calls).toEqual([
-      "setLabels lingtai:done",
-      "close",
-      `deleteRef ${HEADS(armBranch(BRANCH, 1))}`,
-    ]);
-  });
-});
+    expect(world.calls).toEqual(['setLabels lingtai:done', 'close', `deleteRef ${HEADS(armBranch(BRANCH, 1))}`])
+  })
+})

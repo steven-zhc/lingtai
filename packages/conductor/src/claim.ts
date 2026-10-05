@@ -1,3 +1,4 @@
+import { parsePayload, reduceWorkItem } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -22,11 +23,10 @@
  * (`daemon/reconcile.ts`). Liveness is the lock, which the kernel maintains;
  * exclusion is the constraint. Neither is a number.
  */
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
-import { parsePayload, reduceWorkItem } from "@lingtai/domain";
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
 export interface ClaimOptions {
-  runId: string;
+  runId: string
   /**
    * Who holds it — host and pid.
    *
@@ -34,7 +34,7 @@ export interface ClaimOptions {
    * holding the lock releases every claim recorded by a *different* worker,
    * because it has proof there is no such conductor left alive.
    */
-  worker?: string;
+  worker?: string
   /**
    * What the task is, if the caller knows.
    *
@@ -43,17 +43,17 @@ export interface ClaimOptions {
    * nothing to show for work that has already merged — GitHub only lists what
    * is still open. Null is honest when the caller genuinely does not know.
    */
-  title?: string | null;
-  kind?: string | null;
-  store?: EventStore;
+  title?: string | null
+  kind?: string | null
+  store?: EventStore
 }
 
 export interface Claim {
-  workItemId: string;
-  runId: string;
-  worker: string;
+  workItemId: string
+  runId: string
+  worker: string
   /** The stream version the claim landed at; the next append expects this. */
-  version: number;
+  version: number
 }
 
 export type ClaimRefusal =
@@ -61,13 +61,13 @@ export type ClaimRefusal =
    * Someone else holds it. No countdown: there is nothing to count down to,
    * and a caller that waited for one would wait for ever.
    */
-  | { reason: "held"; by: string; runId: string }
+  | { reason: 'held'; by: string; runId: string }
   /** Another claimant won the append. Re-read and look again. */
-  | { reason: "lost-race" }
+  | { reason: 'lost-race' }
   /** Not in a state that can be claimed — landed, or blocked on a person. */
-  | { reason: "not-claimable"; status: string };
+  | { reason: 'not-claimable'; status: string }
 
-export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: ClaimRefusal };
+export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: ClaimRefusal }
 
 /**
  * What this process calls itself in a claim.
@@ -77,7 +77,7 @@ export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: Cla
  * which is the point: those are exactly the claims nobody is coming back for.
  */
 export function conductorWorker(): string {
-  return `${process.env["HOSTNAME"] ?? "local"}:${process.pid}`;
+  return `${process.env['HOSTNAME'] ?? 'local'}:${process.pid}`
 }
 
 /**
@@ -87,49 +87,46 @@ export function conductorWorker(): string {
  * looking at the same queue, and a caller that has to catch an exception to
  * discover it will eventually forget to.
  */
-export async function claimWorkItem(
-  workItemId: string,
-  options: ClaimOptions,
-): Promise<ClaimResult> {
-  const store = options.store ?? eventStore;
-  const worker = options.worker ?? conductorWorker();
+export async function claimWorkItem(workItemId: string, options: ClaimOptions): Promise<ClaimResult> {
+  const store = options.store ?? eventStore
+  const worker = options.worker ?? conductorWorker()
 
-  const events = await store.read(workItemId);
-  const state = reduceWorkItem(events);
+  const events = await store.read(workItemId)
+  const state = reduceWorkItem(events)
 
-  if (state.lifecycle.status === "claimed") {
+  if (state.lifecycle.status === 'claimed') {
     // Held is held. There is no expiry to fall through to, so the only way past
     // this is an appended release — which is what a conductor that has just
     // proved itself alone does at startup.
-    const held = state.lifecycle;
-    return { ok: false, refusal: { reason: "held", by: held.worker, runId: held.runId } };
+    const held = state.lifecycle
+    return { ok: false, refusal: { reason: 'held', by: held.worker, runId: held.runId } }
   }
-  if (state.lifecycle.status !== "backlog") {
-    return { ok: false, refusal: { reason: "not-claimable", status: state.lifecycle.status } };
+  if (state.lifecycle.status !== 'backlog') {
+    return { ok: false, refusal: { reason: 'not-claimable', status: state.lifecycle.status } }
   }
 
   try {
     const [written] = await store.append(workItemId, state.version, [
       {
-        type: "WorkItemClaimed",
-        actor: "conductor",
-        data: parsePayload("WorkItemClaimed", {
+        type: 'WorkItemClaimed',
+        actor: 'conductor',
+        data: parsePayload('WorkItemClaimed', {
           runId: options.runId,
           worker,
           title: options.title ?? null,
           kind: options.kind ?? null,
         }),
       },
-    ]);
+    ])
     return {
       ok: true,
       claim: { workItemId, runId: options.runId, worker, version: written!.version },
-    };
+    }
   } catch (err) {
     // The other claimant appended first. The constraint is the whole of the
     // mutual exclusion; this is what losing it looks like.
-    if (err instanceof ConcurrencyError) return { ok: false, refusal: { reason: "lost-race" } };
-    throw err;
+    if (err instanceof ConcurrencyError) return { ok: false, refusal: { reason: 'lost-race' } }
+    throw err
   }
 }
 
@@ -140,9 +137,9 @@ export async function releaseWorkItem(
   reason: string,
   store: EventStore = eventStore,
 ): Promise<void> {
-  const events = await store.read(workItemId);
-  const state = reduceWorkItem(events);
+  const events = await store.read(workItemId)
+  const state = reduceWorkItem(events)
   await store.append(workItemId, state.version, [
-    { type: "WorkItemReleased", actor: "conductor", data: parsePayload("WorkItemReleased", { runId, reason }) },
-  ]);
+    { type: 'WorkItemReleased', actor: 'conductor', data: parsePayload('WorkItemReleased', { runId, reason }) },
+  ])
 }

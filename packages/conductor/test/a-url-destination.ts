@@ -1,3 +1,4 @@
+import type { Action, ActionContext, ActionEvent, ActionResult, TheDesign } from '@lingtai/actions'
 /**
  * **A second destination, whose locator is a URL** — the scaffolding, and no
  * test in it (`#303`).
@@ -69,23 +70,16 @@
  * becomes runnable actions — are both replaced (0060 §1). That is the property
  * to check before adding to this file.
  */
-import { STEPS, type Step } from "@lingtai/domain";
-import type { Action, ActionContext, ActionEvent, ActionResult, TheDesign } from "@lingtai/actions";
-import { StepMap } from "@lingtai/recipe";
-import {
-  outcomeOf,
-  runPass,
-  type PassOptions,
-  type StepBodies,
-  type StepEnding,
-  type StepWork,
-} from "../src/pass.ts";
+import { STEPS, type Step } from '@lingtai/domain'
+import { StepMap } from '@lingtai/recipe'
+
+import { outcomeOf, runPass, type PassOptions, type StepBodies, type StepEnding, type StepWork } from '../src/pass.ts'
 
 /** The document the destination keeps, and the thing a locator locates. */
-export const DOCUMENT = "## The shape\n\nSix bodies, and the fifth is the one that asks.\n";
+export const DOCUMENT = '## The shape\n\nSix bodies, and the fifth is the one that asks.\n'
 
 /** What every step but the two under test answers. */
-const PASSED: ActionResult = { verdict: "passed", evidence: "green", findings: [] };
+const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [] }
 
 /**
  * **The locator the core did not write**, and the whole point of this file.
@@ -116,7 +110,7 @@ const PASSED: ActionResult = { verdict: "passed", evidence: "green", findings: [
  * `unit/a-locator-the-core-did-not-write.test.ts` pins that, so this literal
  * cannot be tidied into canonical form without a red test saying why not.
  */
-export const A_URL = "https://Example.INVALID/design/v2/../1%20a/";
+export const A_URL = 'https://Example.INVALID/design/v2/../1%20a/'
 
 /**
  * **The shape `file:` returns**, as the arm to compare against.
@@ -133,7 +127,7 @@ export const A_URL = "https://Example.INVALID/design/v2/../1%20a/";
  *
  * It is the literal `file-action.test.ts` uses.
  */
-export const A_PATH = "doc/design/x.md";
+export const A_PATH = 'doc/design/x.md'
 
 /**
  * **A cwd the locator has nothing to do with.**
@@ -145,7 +139,7 @@ export const A_PATH = "doc/design/x.md";
  * conductor's `readFile(join(cwd, spec.path))`, which is legal because it sits
  * inside a port named for one plugin and is handed that plugin's own spec.
  */
-export const NOWHERE = "/nowhere";
+export const NOWHERE = '/nowhere'
 
 /**
  * The line a recipe writes to declare each end of a destination, as near as the
@@ -159,9 +153,9 @@ export const NOWHERE = "/nowhere";
  * makes the same substitution and says so in the same words.
  */
 const DECLARED = {
-  design: [{ name: "keep it", agent: "claude-code", prompt: "write the shape down" }],
-  implement: [{ name: "read it back", agent: "claude-code", prompt: "build it" }],
-};
+  design: [{ name: 'keep it', agent: 'claude-code', prompt: 'write the shape down' }],
+  implement: [{ name: 'read it back', agent: 'claude-code', prompt: 'build it' }],
+}
 
 /**
  * **The destination**: keeps the document nowhere, and answers with the locator
@@ -181,15 +175,15 @@ const DECLARED = {
  */
 export const keeping = (locator: string): Action => ({
   name: DECLARED.design[0]!.name,
-  kind: "agent",
+  kind: 'agent',
   run: async (): Promise<ActionResult> => ({
-    verdict: "passed",
-    evidence: "kept the design at the destination",
+    verdict: 'passed',
+    evidence: 'kept the design at the destination',
     findings: [],
     document: DOCUMENT,
     locator,
   }),
-});
+})
 
 /**
  * **The reading counterpart**, `file-brief:`'s shape: it is handed a locator,
@@ -203,18 +197,18 @@ export const keeping = (locator: string): Action => ({
  */
 export const readingBack = (seen: TheDesign[]): Action => ({
   name: DECLARED.implement[0]!.name,
-  kind: "agent",
+  kind: 'agent',
   run: async (context: ActionContext): Promise<ActionResult> => {
-    seen.push(context.design ?? { document: "" });
+    seen.push(context.design ?? { document: '' })
     return {
-      verdict: "passed",
-      evidence: "briefed the implementer with what the destination held",
+      verdict: 'passed',
+      evidence: 'briefed the implementer with what the destination held',
       findings: [],
-      document: context.design?.document ?? "",
+      document: context.design?.document ?? '',
       ...(context.design?.locator === undefined ? {} : { locator: context.design.locator }),
-    };
+    }
   },
-});
+})
 
 /**
  * The ten bodies, each passing.
@@ -226,34 +220,34 @@ export const readingBack = (seen: TheDesign[]): Action => ({
  * this pass before the reading side ever ran.
  */
 const PASSING: StepBodies = Object.fromEntries(
-  STEPS.map((step) => [step, async (_work: StepWork<Step>): Promise<StepEnding> => ({ ending: "passed" })]),
-) as unknown as StepBodies;
+  STEPS.map((step) => [step, async (_work: StepWork<Step>): Promise<StepEnding> => ({ ending: 'passed' })]),
+) as unknown as StepBodies
 
 /** One visit, flattened to the two facts a route is made of. */
 export interface Visit {
-  readonly step: Step;
-  readonly ending: StepEnding;
+  readonly step: Step
+  readonly ending: StepEnding
 }
 
 /** One emitted event, flattened to what a fold off the log would see. */
 export interface Emitted {
-  readonly type: ActionEvent["type"];
-  readonly payload: string;
+  readonly type: ActionEvent['type']
+  readonly payload: string
 }
 
 /** What one pass did with one locator — both ends, the route, and the log. */
 export interface Carried {
   /** What the destination answered with, verbatim. */
-  readonly kept: string;
+  readonly kept: string
   /** `StepPassed.design` off the `design` visit — the near end. */
-  readonly endedWith: TheDesign | undefined;
+  readonly endedWith: TheDesign | undefined
   /** `ActionContext.design` at `implement` — the far end. */
-  readonly briefed: TheDesign | undefined;
+  readonly briefed: TheDesign | undefined
   /** And what `implement`'s own ending carried, which is the return leg. */
-  readonly handedBack: TheDesign | undefined;
-  readonly outcome: ReturnType<typeof outcomeOf>;
-  readonly visits: readonly Visit[];
-  readonly events: readonly Emitted[];
+  readonly handedBack: TheDesign | undefined
+  readonly outcome: ReturnType<typeof outcomeOf>
+  readonly visits: readonly Visit[]
+  readonly events: readonly Emitted[]
 }
 
 /**
@@ -266,39 +260,39 @@ export interface Carried {
  * concerned, and they are what this is asking a question of.
  */
 export async function carry(locator: string, cwd: string = NOWHERE): Promise<Carried> {
-  const briefed: TheDesign[] = [];
-  const events: Emitted[] = [];
+  const briefed: TheDesign[] = []
+  const events: Emitted[] = []
   const at: Record<string, readonly Action[]> = {
     design: [keeping(locator)],
     implement: [readingBack(briefed)],
-  };
-  const actionsAt: PassOptions["actionsAt"] = (step, actions) =>
-    at[step] ?? actions.map((action) => ({ name: action.name, kind: "run" as const, run: async () => PASSED }));
+  }
+  const actionsAt: PassOptions['actionsAt'] = (step, actions) =>
+    at[step] ?? actions.map((action) => ({ name: action.name, kind: 'run' as const, run: async () => PASSED }))
 
   const result = await runPass({
     recipe: { steps: StepMap.parse(DECLARED) },
-    context: { runId: "run-1", onSha: "abc1234def", cwd, env: {} },
+    context: { runId: 'run-1', onSha: 'abc1234def', cwd, env: {} },
     emit: (event) => void events.push({ type: event.type, payload: JSON.stringify(event.data) }),
     actionsAt,
     bodies: PASSING,
-  });
+  })
 
   const endingAt = (step: Step): StepEnding | undefined =>
-    result.steps.filter((visit) => visit.step === step).at(-1)?.ending;
+    result.steps.filter((visit) => visit.step === step).at(-1)?.ending
   const designOn = (step: Step): TheDesign | undefined => {
-    const ending = endingAt(step);
-    return ending?.ending === "passed" ? ending.design : undefined;
-  };
+    const ending = endingAt(step)
+    return ending?.ending === 'passed' ? ending.design : undefined
+  }
 
   return {
     kept: locator,
-    endedWith: designOn("design"),
+    endedWith: designOn('design'),
     briefed: briefed.at(0),
-    handedBack: designOn("implement"),
+    handedBack: designOn('implement'),
     outcome: outcomeOf(result),
     visits: result.steps.map((visit) => ({ step: visit.step, ending: visit.ending })),
     events,
-  };
+  }
 }
 
 /**
@@ -319,9 +313,13 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
 export function withoutTheLocator(carried: Carried): unknown {
   // Matched as it appears *serialised*, not as it appears in memory, so that a
   // third arm carrying a quote or a backslash still matches itself.
-  const written = JSON.stringify(carried.kept).slice(1, -1);
+  const written = JSON.stringify(carried.kept).slice(1, -1)
   const blank = (value: unknown): unknown =>
-    JSON.parse(JSON.stringify(value ?? null).split(written).join("<the locator>"));
+    JSON.parse(
+      JSON.stringify(value ?? null)
+        .split(written)
+        .join('<the locator>'),
+    )
   return {
     endedWith: blank(carried.endedWith),
     briefed: blank(carried.briefed),
@@ -329,5 +327,5 @@ export function withoutTheLocator(carried: Carried): unknown {
     outcome: carried.outcome,
     visits: blank(carried.visits),
     events: blank(carried.events),
-  };
+  }
 }

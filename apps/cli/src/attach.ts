@@ -26,72 +26,72 @@
  * No colour, on purpose. `#107` owns the vocabulary for every surface and the
  * ticket puts this outside it rather than have one more command invent its own.
  */
-import { findRunLog, followRunLog, listRunLogs } from "@lingtai/conductor/run-log";
+import { findRunLog, followRunLog, listRunLogs } from '@lingtai/conductor/run-log'
 
 export interface AttachOptions {
-  runId: string;
+  runId: string
   /** Overridable for a test; `findRunLog` defaults it to `stateDir()`. */
-  home?: string;
-  out?: (line: string) => void;
-  err?: (line: string) => void;
+  home?: string
+  out?: (line: string) => void
+  err?: (line: string) => void
   /** Ends the follow the way Ctrl-C does. */
-  signal?: AbortSignal;
+  signal?: AbortSignal
 }
 
 export async function attach(options: AttachOptions): Promise<number> {
-  const out = options.out ?? ((line: string) => console.log(line));
-  const err = options.err ?? ((line: string) => console.error(line));
+  const out = options.out ?? ((line: string) => console.log(line))
+  const err = options.err ?? ((line: string) => console.error(line))
 
-  const found = await findRunLog(options.runId, options.home);
+  const found = await findRunLog(options.runId, options.home)
   if (!found) {
     // Deliberately not "no such run". This command knows about files and not
     // about runs, so the two things it cannot tell apart — a run id nobody has
     // heard of, and a run that landed and took its log with it (0034 §4) — are
     // named as the one question it can answer, with the list somebody wanting
     // to attach almost always actually wanted.
-    err(`no run log for ${options.runId}`);
-    err("Either the run landed — a log is deleted when its diff reaches the base branch — or the id is not one.");
-    const logs = await listRunLogs(options.home);
+    err(`no run log for ${options.runId}`)
+    err('Either the run landed — a log is deleted when its diff reaches the base branch — or the id is not one.')
+    const logs = await listRunLogs(options.home)
     if (logs.length === 0) {
-      err("There are no run logs on this machine.");
+      err('There are no run logs on this machine.')
     } else {
-      err("");
-      err("Logs that are here, newest first:");
-      for (const log of logs.slice(0, ATTACH_LIST_MAX)) err(`  ${log.runId}\t${log.project}`);
-      if (logs.length > ATTACH_LIST_MAX) err(`  … and ${logs.length - ATTACH_LIST_MAX} more`);
+      err('')
+      err('Logs that are here, newest first:')
+      for (const log of logs.slice(0, ATTACH_LIST_MAX)) err(`  ${log.runId}\t${log.project}`)
+      if (logs.length > ATTACH_LIST_MAX) err(`  … and ${logs.length - ATTACH_LIST_MAX} more`)
     }
-    return 1;
+    return 1
   }
 
-  out(`attached to ${found.project} · ${found.path}`);
+  out(`attached to ${found.project} · ${found.path}`)
 
   for await (const seen of followRunLog({
     path: found.path,
     ...(options.signal ? { signal: options.signal } : {}),
   })) {
-    if ("line" in seen) {
-      out(seen.line);
-      continue;
+    if ('line' in seen) {
+      out(seen.line)
+      continue
     }
     // The file's ending, which is not the run's verdict — see the header.
     out(
-      seen.ended === "removed"
-        ? "— the log is gone. Its run landed, or its work item did, and a landed run has nothing left to explain (0034 §4, §5)"
-        : `— the run log ends here. ${seen.ended === "landed" ? "It is about to be deleted" : `It is kept at ${found.path}`}`,
-    );
-    return 0;
+      seen.ended === 'removed'
+        ? '— the log is gone. Its run landed, or its work item did, and a landed run has nothing left to explain (0034 §4, §5)'
+        : `— the run log ends here. ${seen.ended === 'landed' ? 'It is about to be deleted' : `It is kept at ${found.path}`}`,
+    )
+    return 0
   }
 
   // Only reachable through the signal: the loop above returns on an ending and
   // otherwise waits. Said out loud because a `tail` that simply stops looks the
   // same as a run that simply stopped, and only one of those is happening.
-  out(`— detached. The run is still going; its log is at ${found.path}`);
+  out(`— detached. The run is still going; its log is at ${found.path}`)
 
   // Zero for a follow that worked, whatever the run did. A viewer's exit status
   // is about the viewing: making it carry the run's verdict would be this file
   // settling something, which is the one thing 0034 §8 forbids it.
-  return 0;
+  return 0
 }
 
 /** Enough of a list to recognise the one you meant, and not a page of scroll. */
-const ATTACH_LIST_MAX = 20;
+const ATTACH_LIST_MAX = 20

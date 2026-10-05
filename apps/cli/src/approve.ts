@@ -1,3 +1,5 @@
+import { userInfo } from 'node:os'
+
 /**
  * `lingtai approve <project> --issue <n>` — merge what a held run actually produced.
  *
@@ -6,41 +8,38 @@
  * the flag, which starts a new run with a new worktree and a new diff — so the
  * thing that merges is not the thing anyone looked at.
  */
-import { approve as approveRun, loadProject } from "@lingtai/conductor";
-import { withProjector } from "./projector.ts";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient } from "@lingtai/github";
-import { userInfo } from "node:os";
+import { approve as approveRun, loadProject } from '@lingtai/conductor'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { createGitHubClient } from '@lingtai/github'
+
+import { withProjector } from './projector.ts'
 
 export interface ApproveCommandOptions {
-  project: string;
-  issue: number;
-  note?: string;
-  by?: string;
+  project: string
+  issue: number
+  note?: string
+  by?: string
 }
 
-export async function approveCommand(
-  options: ApproveCommandOptions,
-  log = console.log,
-): Promise<number> {
+export async function approveCommand(options: ApproveCommandOptions, log = console.log): Promise<number> {
   if (!hasGitHubApp()) {
-    log("no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example");
-    return 1;
+    log('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
+    return 1
   }
 
-  const project = await loadProject(options.project);
+  const project = await loadProject(options.project)
   if (!project?.owner) {
-    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
-    return 1;
+    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+    return 1
   }
 
   const client = await createGitHubClient({
     auth: githubApp(),
     owner: project.owner,
     repo: options.project,
-  });
+  })
 
-  const by = options.by ?? `human:${userInfo().username}`;
+  const by = options.by ?? `human:${userInfo().username}`
 
   // This is the command most likely to be run with the board open, and it moves
   // a card off the lane the board exists for. So it follows the log while it
@@ -57,13 +56,13 @@ export async function approveCommand(
       note: options.note,
       token: () => client.token(),
       log,
-  });
+    })
 
-  if (result.ok) {
-    log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`);
-    return 0;
-  }
-  log(`did not merge (${result.reason}): ${result.detail}`);
-  return 1;
-  });
+    if (result.ok) {
+      log(`landed ${result.mergeCommit.slice(0, 7)} — ${result.workItemId}`)
+      return 0
+    }
+    log(`did not merge (${result.reason}): ${result.detail}`)
+    return 1
+  })
 }

@@ -1,20 +1,4 @@
-/**
- * The six bodies, read through the loop rather than beside it.
- *
- * Every test here calls `runPass` with `bodiesFor(ports)` and asserts on the
- * `PassResult`, because a body's whole job is *which ending this answer is* and
- * an ending only means something where the loop reads it: a refusal travels to
- * `proposed`, a `needs-input` is the one `did-not-finish` with anywhere to go,
- * and a `never-ran` releases the item. Calling a body directly would check the
- * return value and nothing the return value is for.
- *
- * Nothing leaves the system. `PassPorts` is a fake — no process, no worktree, no
- * agent, no GitHub, no store — which is what puts this file in `unit/` and has
- * the `build` point run it ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)
- * §1).
- */
-import type { RunOutcome, Runtime } from "@lingtai/agent";
-import type { QueueActionDeps, WorkActionDeps } from "@lingtai/actions";
+import type { QueueActionDeps, WorkActionDeps } from '@lingtai/actions'
 import {
   NO_DESIGN,
   createAgentAction,
@@ -31,20 +15,29 @@ import {
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
-} from "@lingtai/actions";
-import type { Envelope, PayloadOf, ToAppend } from "@lingtai/domain";
-import type { Worktree } from "@lingtai/repo";
-import { StepMap, type QueueSettings, type StepAction } from "@lingtai/recipe";
-import { describe, expect, it } from "vitest";
-import {
-  NEEDS_INPUT,
-  outcomeOf,
-  runPass,
-  type Destination,
-  type PassOptions,
-  type PassResult,
-} from "../src/pass.ts";
-import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from "../src/judge.ts";
+} from '@lingtai/actions'
+/**
+ * The six bodies, read through the loop rather than beside it.
+ *
+ * Every test here calls `runPass` with `bodiesFor(ports)` and asserts on the
+ * `PassResult`, because a body's whole job is *which ending this answer is* and
+ * an ending only means something where the loop reads it: a refusal travels to
+ * `proposed`, a `needs-input` is the one `did-not-finish` with anywhere to go,
+ * and a `never-ran` releases the item. Calling a body directly would check the
+ * return value and nothing the return value is for.
+ *
+ * Nothing leaves the system. `PassPorts` is a fake — no process, no worktree, no
+ * agent, no GitHub, no store — which is what puts this file in `unit/` and has
+ * the `build` point run it ([0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md)
+ * §1).
+ */
+import type { RunOutcome, Runtime } from '@lingtai/agent'
+import type { Envelope, PayloadOf, ToAppend } from '@lingtai/domain'
+import { StepMap, type QueueSettings, type StepAction } from '@lingtai/recipe'
+import type { Worktree } from '@lingtai/repo'
+import { describe, expect, it } from 'vitest'
+
+import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
 import {
   END_UNRESOLVED,
   bodiesFor,
@@ -55,21 +48,22 @@ import {
   type PassPorts,
   type SentBack,
   type Worked,
-} from "../src/pass-steps.ts";
+} from '../src/pass-steps.ts'
+import { NEEDS_INPUT, outcomeOf, runPass, type Destination, type PassOptions, type PassResult } from '../src/pass.ts'
 
 // --------------------------------------------------------------- fixtures ----
 
-const BASE = "0000000000000000000000000000000000000000";
-const CUT_AT = "1111111111111111111111111111111111111111";
-const COMMITTED = "2222222222222222222222222222222222222222";
+const BASE = '0000000000000000000000000000000000000000'
+const CUT_AT = '1111111111111111111111111111111111111111'
+const COMMITTED = '2222222222222222222222222222222222222222'
 
-const context: ActionContext = { runId: "run-1", onSha: BASE, cwd: "/nowhere", env: {} };
+const context: ActionContext = { runId: 'run-1', onSha: BASE, cwd: '/nowhere', env: {} }
 
 const ITEM: Claimed = {
-  workItemId: "wi-lingtai-259",
-  ticket: { ref: "259", title: "T4a", body: "six bodies, filling a contract that already runs" },
-  kind: "feature",
-};
+  workItemId: 'wi-lingtai-259',
+  ticket: { ref: '259', title: 'T4a', body: 'six bodies, filling a contract that already runs' },
+  kind: 'feature',
+}
 
 /**
  * The four values a `queue:` action carries, as `conduct.ts`'s `defaultsAt`
@@ -79,46 +73,46 @@ const ITEM: Claimed = {
  * writes `take: both` where the machine file names nobody.
  */
 const QUEUE: QueueSettings = {
-  kinds: ["bug", "feature"],
-  exclude: ["agent:hold"],
-  backoff: "1h",
-  assignee: { take: "both" },
-};
+  kinds: ['bug', 'feature'],
+  exclude: ['agent:hold'],
+  backoff: '1h',
+  assignee: { take: 'both' },
+}
 
 const TREE: Worktree = {
-  path: "/nowhere/worktrees/lingtai/run-1",
-  branch: "agent/259",
+  path: '/nowhere/worktrees/lingtai/run-1',
+  branch: 'agent/259',
   baseSha: CUT_AT,
-  plantedAt: "/nowhere/worktrees/lingtai/run-1/.env",
+  plantedAt: '/nowhere/worktrees/lingtai/run-1/.env',
   remoteHead: null,
-};
+}
 
-const CLOSE_ON_LANDED: StepAction = { name: "close the ticket", close: true, when: "landed" };
-const HOLD_ON_BLOCKED: StepAction = { name: "hold it", labels: ["agent:hold"], when: "blocked" };
+const CLOSE_ON_LANDED: StepAction = { name: 'close the ticket', close: true, when: 'landed' }
+const HOLD_ON_BLOCKED: StepAction = { name: 'hold it', labels: ['agent:hold'], when: 'blocked' }
 
-const MERGED = "3333333333333333333333333333333333333333";
+const MERGED = '3333333333333333333333333333333333333333'
 
-const PASSED: ActionResult = { verdict: "passed", evidence: "green", findings: [] };
-const RED: ActionResult = { verdict: "failed", evidence: "pnpm install exited 1", findings: [] };
+const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [] }
+const RED: ActionResult = { verdict: 'failed', evidence: 'pnpm install exited 1', findings: [] }
 
 /**
  * A finding with a `failureScenario`, which is the whole of what makes it worth an
  * agent: *something the fixer could not have authored* (0038 §2).
  */
 const BLOCKER: ActionFinding = {
-  file: "packages/conductor/src/pass.ts",
+  file: 'packages/conductor/src/pass.ts',
   line: 1201,
-  claim: "the router is asked before the build",
-  failureScenario: "a red build pays for a review of a diff that does not compile",
-  severity: "blocker",
-};
+  claim: 'the router is asked before the build',
+  failureScenario: 'a red build pays for a review of a diff that does not compile',
+  severity: 'blocker',
+}
 
 /** What a reviewer that says the diff stops here looks like — findings, and `failed`. */
 const REVIEW_REFUSED: ActionResult = {
-  verdict: "failed",
-  evidence: "blocker packages/conductor/src/pass.ts:1201 — the router is asked before the build",
+  verdict: 'failed',
+  evidence: 'blocker packages/conductor/src/pass.ts:1201 — the router is asked before the build',
   findings: [BLOCKER],
-};
+}
 
 /**
  * **An answer that really does defeat `parseFindings`** (`#279`) — a `major` with a
@@ -134,7 +128,7 @@ const REVIEW_REFUSED: ActionResult = {
 const AN_ANSWER_NOBODY_CAN_READ =
   '{"findings":[{"file":"packages/recipe/src/recipe.ts","line":1413,"severity":"major",' +
   '"claim":"`whyThatPair` gained no `claim` branch","failureScenario":"an operator writes a ' +
-  '`run:` at `claim` and is told to move it to `prepared`, which is false where it is printed"}]';
+  '`run:` at `claim` and is told to move it to `prepared`, which is false where it is printed"}]'
 
 /**
  * **A real cold reviewer over a fake runtime**, for `createMergeAction`'s reason:
@@ -145,16 +139,16 @@ const AN_ANSWER_NOBODY_CAN_READ =
  */
 const coldReviewerSaying = (text: string | null): Action =>
   createAgentAction(
-    { name: "cold reviewer", prompt: "" },
+    { name: 'cold reviewer', prompt: '' },
     {
       runtime: {
         capabilities: {
-          id: "claude-code",
+          id: 'claude-code',
           hooks: [],
           canFailClosed: true,
           canRewriteToolCall: false,
-          providesTier: "guarded",
-          enforces: ["turns", "wall"],
+          providesTier: 'guarded',
+          enforces: ['turns', 'wall'],
         },
         // `#269` attempt 3's receipt: `success · 61 turns · $8.97 · exit 0`. It is
         // what makes the loss expensive rather than merely wrong.
@@ -165,26 +159,26 @@ const coldReviewerSaying = (text: string | null): Action =>
           costUsd: 8.97,
           text,
           failure: null,
-          sessionId: "s",
+          sessionId: 's',
         }),
       },
-      issue: async () => ({ ref: "269", title: "T5d", body: "the queue is a plugin at `claim`" }),
-      diff: async () => "diff --git a/x b/x\n+1",
-      settingsPath: "/nowhere/settings.json",
+      issue: async () => ({ ref: '269', title: 'T5d', body: 'the queue is a plugin at `claim`' }),
+      diff: async () => 'diff --git a/x b/x\n+1',
+      settingsPath: '/nowhere/settings.json',
       limits: { turns: 80, wallMs: 3_600_000, diffBytes: 400_000 },
     },
-  );
+  )
 
 const canned = (name: string, result: ActionResult): Action => ({
   name,
-  kind: "run",
+  kind: 'run',
   run: async () => result,
-});
+})
 
 /** A recipe with only the ten steps on it, resolved by the real schema. */
-const recipeWith = (steps: Record<string, unknown> = {}): PassOptions["recipe"] => ({
+const recipeWith = (steps: Record<string, unknown> = {}): PassOptions['recipe'] => ({
   steps: StepMap.parse(steps),
-});
+})
 
 /** What the fake ports were asked, so a test can read the brief a step built. */
 interface Asks {
@@ -196,7 +190,7 @@ interface Asks {
    * plugin's now, so what a test reads back is the action's argument and not a
    * port call.
    */
-  take: QueueSettings[];
+  take: QueueSettings[]
   /**
    * What each `worktree:` action was asked to cut — its `base` and `submodules`,
    * which is the whole of what the cut is handed since `#268`.
@@ -204,7 +198,7 @@ interface Asks {
    * Beside the ports rather than on them: `admit`'s work is a plugin's now, so
    * what a test reads back is the action's argument and not a port call.
    */
-  cut: { base: string; submodules: boolean }[];
+  cut: { base: string; submodules: boolean }[]
   /**
    * Every prompt a drafting agent was handed, which is the whole of what a
    * design dispatch looks like since `#265`.
@@ -213,10 +207,10 @@ interface Asks {
    * `design`'s work is an `agent:` action's now, so what a test reads back is
    * what the runtime was asked to run and not a port call.
    */
-  draft: string[];
-  dispatch: Brief[];
+  draft: string[]
+  dispatch: Brief[]
   /** Every brief a judge was handed, which is what *spends an agent* looks like. */
-  judge: Judging[];
+  judge: Judging[]
   /**
    * What each `merge:` action was asked to land — its `strategy` and the `onSha`
    * it was reached on, which is the whole of what the lane is handed since
@@ -226,36 +220,39 @@ interface Asks {
    * plugin's now, so what a test reads back is the action's argument and not a
    * port call.
    */
-  land: { strategy: MergeStrategy; onSha: string }[];
-  read: string[];
-  record: { workItemId: string; at: number; plan: readonly ToAppend[] }[];
+  land: { strategy: MergeStrategy; onSha: string }[]
+  read: string[]
+  record: { workItemId: string; at: number; plan: readonly ToAppend[] }[]
 }
 
 interface Answers {
   /** What the take answers. `ITEM`, taken, by default. */
-  take?: TakeAnswer | (() => TakeAnswer);
+  take?: TakeAnswer | (() => TakeAnswer)
   /** What the cut answers. Cut at `CUT_AT`, by default. */
-  cut?: CutAnswer;
+  cut?: CutAnswer
   /**
    * What the drafting runtime answers, where a test declares an `agent:` at
    * `design`. A document and nothing else, by default.
    */
-  draft?: Partial<RunOutcome>;
-  dispatch?: Worked | ((brief: Brief) => Worked);
+  draft?: Partial<RunOutcome>
+  dispatch?: Worked | ((brief: Brief) => Worked)
   /** Nothing declared, by default: the built-ins and the person are what answer. */
-  judge?: Judged | ((on: Judging) => Judged);
+  judge?: Judged | ((on: Judging) => Judged)
   /** What the lane answers. Merged at `MERGED`, by default. */
-  land?: LandAnswer | (() => LandAnswer);
+  land?: LandAnswer | (() => LandAnswer)
   /** The stream `end` reads. Empty is an item with nothing resolved on it. */
-  stream?: readonly Envelope[];
+  stream?: readonly Envelope[]
   /** Thrown by `readEnd`, so `end`'s own failure can be reached. */
-  readThrows?: Error;
-  recordThrows?: Error;
+  readThrows?: Error
+  recordThrows?: Error
 }
 
-function portsAnswering(
-  answers: Answers = {},
-): { ports: PassPorts; asked: Asks; taking: QueueActionDeps; working: WorkActionDeps } {
+function portsAnswering(answers: Answers = {}): {
+  ports: PassPorts
+  asked: Asks
+  taking: QueueActionDeps
+  working: WorkActionDeps
+} {
   const asked: Asks = {
     take: [],
     cut: [],
@@ -265,9 +262,9 @@ function portsAnswering(
     land: [],
     read: [],
     record: [],
-  };
+  }
   const of = <T, A>(given: T | ((arg: A) => T) | undefined, fallback: T, arg: A): T =>
-    given === undefined ? fallback : typeof given === "function" ? (given as (a: A) => T)(arg) : given;
+    given === undefined ? fallback : typeof given === 'function' ? (given as (a: A) => T)(arg) : given
 
   /**
    * **What `take` leaves behind, held where `conduct.ts` holds it** (`#269`).
@@ -277,8 +274,8 @@ function portsAnswering(
    * in the take below rather than in `claim`'s body: the action runs before the
    * body, and a reset written there would wipe what it had just taken.
    */
-  let took: Claimed | null = null;
-  let onStream: string | null = null;
+  let took: Claimed | null = null
+  let onStream: string | null = null
 
   /**
    * The take, as the `queue:` action runs it — **and the reset is the first thing
@@ -288,26 +285,26 @@ function portsAnswering(
    */
   const taking: QueueActionDeps = {
     take: async (spec) => {
-      asked.take.push(spec);
-      took = null;
-      onStream = null;
+      asked.take.push(spec)
+      took = null
+      onStream = null
       const answer = of<TakeAnswer, undefined>(
         answers.take,
         { taken: { workItemId: ITEM.workItemId, kind: ITEM.kind } },
         undefined,
-      );
-      if ("taken" in answer) {
-        took = { ...ITEM, workItemId: answer.taken.workItemId, kind: answer.taken.kind };
-        onStream = answer.taken.workItemId;
-      } else if ("mayHold" in answer) {
+      )
+      if ('taken' in answer) {
+        took = { ...ITEM, workItemId: answer.taken.workItemId, kind: answer.taken.kind }
+        onStream = answer.taken.workItemId
+      } else if ('mayHold' in answer) {
         // The one decline that leaves a stream behind: `end` still resolves
         // against it, because an item this run may be holding is one somebody has
         // to be told about.
-        onStream = answer.mayHold.workItemId;
+        onStream = answer.mayHold.workItemId
       }
-      return answer;
+      return answer
     },
-  };
+  }
 
   /**
    * **The dispatch, as the `agent:` action at `implement` runs it** (`#266`).
@@ -326,41 +323,41 @@ function portsAnswering(
         design: context.design ?? NO_DESIGN,
         again: context.again ?? null,
         context,
-      };
-      asked.dispatch.push(brief);
-      return of(answers.dispatch, { committed: COMMITTED }, brief);
+      }
+      asked.dispatch.push(brief)
+      return of(answers.dispatch, { committed: COMMITTED }, brief)
     },
-  };
+  }
 
   const ports: PassPorts = {
     onStream: () => onStream,
     judge: async (on) => {
-      asked.judge.push(on);
-      return of(answers.judge, { noJudge: true }, on);
+      asked.judge.push(on)
+      return of(answers.judge, { noJudge: true }, on)
     },
     readEnd: async (workItemId) => {
-      asked.read.push(workItemId);
-      if (answers.readThrows) throw answers.readThrows;
-      return answers.stream ?? [];
+      asked.read.push(workItemId)
+      if (answers.readThrows) throw answers.readThrows
+      return answers.stream ?? []
     },
     recordEnd: async (workItemId, at, plan) => {
-      asked.record.push({ workItemId, at, plan });
-      if (answers.recordThrows) throw answers.recordThrows;
+      asked.record.push({ workItemId, at, plan })
+      if (answers.recordThrows) throw answers.recordThrows
     },
-  };
-  return { ports, asked, taking, working };
+  }
+  return { ports, asked, taking, working }
 }
 
 /** One run of the whole pass, with whatever the recipe declares and the ports say. */
 async function pass(
   options: {
-    steps?: Record<string, unknown>;
-    answers?: Answers;
-    actions?: Record<string, readonly Action[]>;
-    ceilings?: PassOptions["ceilings"];
+    steps?: Record<string, unknown>
+    answers?: Answers
+    actions?: Record<string, readonly Action[]>
+    ceilings?: PassOptions['ceilings']
   } = {},
 ): Promise<{ result: PassResult; asked: Asks; ports: PassPorts }> {
-  const { ports, asked, taking, working } = portsAnswering(options.answers);
+  const { ports, asked, taking, working } = portsAnswering(options.answers)
   /**
    * **`claim`'s, `admit`'s and `merge`'s defaults, as `conduct.ts`'s `defaultsAt`
    * supplies them** (0065 §3).
@@ -373,17 +370,17 @@ async function pass(
    * would bring a GitHub client and a store into a file whose whole claim is that
    * nothing leaves the system.
    */
-  const claiming = (): Action => createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
+  const claiming = (): Action => createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
   const cutting = (): Action =>
     createWorktreeAction(
-      { name: "cut the branch", base: "main", submodules: false },
+      { name: 'cut the branch', base: 'main', submodules: false },
       {
         cut: async (spec) => {
-          asked.cut.push(spec);
-          return options.answers?.cut ?? { head: CUT_AT, where: TREE.path };
+          asked.cut.push(spec)
+          return options.answers?.cut ?? { head: CUT_AT, where: TREE.path }
         },
       },
-    );
+    )
   /**
    * **The `agent:` a recipe declares at `design`** (`#265`) — the drafting
    * action, over a runtime that runs no process.
@@ -395,31 +392,31 @@ async function pass(
    */
   const drafting = (): Action =>
     createDraftAction(
-      { name: "draft the design", prompt: "" },
+      { name: 'draft the design', prompt: '' },
       {
         runtime: {
           run: async (request: { prompt: string }) => {
-            asked.draft.push(request.prompt);
+            asked.draft.push(request.prompt)
             return {
               exitCode: 0,
               turns: 3,
               durationMs: 1,
               costUsd: null,
               failure: null,
-              text: "",
-              sessionId: "s-1",
+              text: '',
+              sessionId: 's-1',
               ...options.answers?.draft,
-            };
+            }
           },
         } as unknown as Runtime,
         issue: async () => ({ ...ITEM.ticket }),
         // Never asked for at this step, and that is the point of the action
         // being its own: the reviewer would have returned `passed` on it.
-        diff: async () => "",
-        settingsPath: "/nowhere/settings.json",
+        diff: async () => '',
+        settingsPath: '/nowhere/settings.json',
         limits: { turns: 8, wallMs: 1_000, diffBytes: 1_000 },
       },
-    );
+    )
   /**
    * **`implement`'s default, as `conduct.ts`'s `defaultsAt` supplies it**
    * (`#266`).
@@ -429,20 +426,19 @@ async function pass(
    * `implement` still buys the one agent — which is what *behaves exactly as it
    * does today* means for the step that writes the code.
    */
-  const writing = (): Action =>
-    createWorkAction({ name: "write the change", prompt: "" }, working);
+  const writing = (): Action => createWorkAction({ name: 'write the change', prompt: '' }, working)
   const landing = (): Action =>
     createMergeAction(
-      { name: "land the branch", strategy: "merge-commit" },
+      { name: 'land the branch', strategy: 'merge-commit' },
       {
         land: async (spec) => {
-          asked.land.push(spec);
-          const answer = options.answers?.land;
-          if (answer === undefined) return { merged: MERGED };
-          return typeof answer === "function" ? answer() : answer;
+          asked.land.push(spec)
+          const answer = options.answers?.land
+          if (answer === undefined) return { merged: MERGED }
+          return typeof answer === 'function' ? answer() : answer
         },
       },
-    );
+    )
   const result = await runPass({
     recipe: recipeWith(options.steps),
     context,
@@ -450,52 +446,51 @@ async function pass(
     bodies: bodiesFor(ports),
     ceilings: options.ceilings,
     actionsAt: (step, actions) => {
-      if (options.actions?.[step] !== undefined) return options.actions[step];
+      if (options.actions?.[step] !== undefined) return options.actions[step]
       // The one declared cell this file builds for real rather than canning: a
       // `design:` is the step's whole behaviour since `#265`, and a canned pass
       // would assert the body it replaced rather than the plugin that replaced it.
-      if (step === "design" && actions.length > 0) return [drafting()];
-      if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED));
-      if (step === "claim") return [claiming()];
-      if (step === "admit") return [cutting()];
-      if (step === "implement") return [writing()];
-      return step === "merge" ? [landing()] : [];
+      if (step === 'design' && actions.length > 0) return [drafting()]
+      if (actions.length > 0) return actions.map((a) => canned(a.name, PASSED))
+      if (step === 'claim') return [claiming()]
+      if (step === 'admit') return [cutting()]
+      if (step === 'implement') return [writing()]
+      return step === 'merge' ? [landing()] : []
     },
-  });
-  return { result, asked, ports };
+  })
+  return { result, asked, ports }
 }
 
 /** Every visit, as `<step>:<ending>`, which is the shape of the walk. */
-const walk = (result: PassResult): string[] =>
-  result.steps.map((visit) => `${visit.step}:${visit.ending.ending}`);
+const walk = (result: PassResult): string[] => result.steps.map((visit) => `${visit.step}:${visit.ending.ending}`)
 
-const endRow = (plan: readonly ToAppend[]): PayloadOf<"EndActionsResolved"> =>
-  plan[0]?.data as PayloadOf<"EndActionsResolved">;
+const endRow = (plan: readonly ToAppend[]): PayloadOf<'EndActionsResolved'> =>
+  plan[0]?.data as PayloadOf<'EndActionsResolved'>
 
 // ------------------------------------------------------------------ claim ----
 
-describe("claim runs the `queue:` plugin, and cannot refuse", () => {
-  it("takes the item, and every step after it is about that item", async () => {
-    const { result, asked } = await pass();
+describe('claim runs the `queue:` plugin, and cannot refuse', () => {
+  it('takes the item, and every step after it is about that item', async () => {
+    const { result, asked } = await pass()
 
     expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:passed",
-      "design:passed",
-      "implement:passed",
-      "build:passed",
-      "review:passed",
-      "proposed:passed",
-      "merge:passed",
-      "end:passed",
-    ]);
-    expect(asked.take).toEqual([QUEUE]);
-    expect(asked.cut).toEqual([{ base: "main", submodules: false }]);
-    expect(asked.dispatch[0]?.ticket).toEqual(ITEM.ticket);
+      'claim:passed',
+      'admit:passed',
+      'prepared:passed',
+      'design:passed',
+      'implement:passed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
+    expect(asked.take).toEqual([QUEUE])
+    expect(asked.cut).toEqual([{ base: 'main', submodules: false }])
+    expect(asked.dispatch[0]?.ticket).toEqual(ITEM.ticket)
     // `end` resolves onto the stream `claim` named, and nowhere else.
-    expect(asked.read).toEqual([ITEM.workItemId]);
-  });
+    expect(asked.read).toEqual([ITEM.workItemId])
+  })
 
   /**
    * The two declines that leave nothing behind. Neither is a refusal — 0058 §2,
@@ -503,30 +498,30 @@ describe("claim runs the `queue:` plugin, and cannot refuse", () => {
    * and neither reaches the router: `claim` is not in `ARRIVE_AT_THE_ROUTER`.
    */
   it.each([
-    { answer: { passedOver: "excluded-label" } as TakeAnswer, because: "passed-over" },
-    { answer: { notClaimed: "held by local:41" } as TakeAnswer, because: "not-claimed" },
-  ])("stops the pass when the item was not taken ($because)", async ({ answer, because }) => {
-    const { result, asked } = await pass({ answers: { take: answer } });
+    { answer: { passedOver: 'excluded-label' } as TakeAnswer, because: 'passed-over' },
+    { answer: { notClaimed: 'held by local:41' } as TakeAnswer, because: 'not-claimed' },
+  ])('stops the pass when the item was not taken ($because)', async ({ answer, because }) => {
+    const { result, asked } = await pass({ answers: { take: answer } })
 
-    expect(walk(result)).toEqual(["claim:did-not-finish", "end:passed"]);
+    expect(walk(result)).toEqual(['claim:did-not-finish', 'end:passed'])
     // The action's own `because`, travelling — `endingOf` reads it off the result
     // and `at` is the action that said it, where the body used to answer `null`.
     expect(result.stoppedAt).toEqual({
-      step: "claim",
+      step: 'claim',
       ending: {
-        ending: "did-not-finish",
+        ending: 'did-not-finish',
         because,
-        at: "take the ticket",
+        at: 'take the ticket',
         detail: expect.any(String),
       },
-    });
-    expect(result.routes).toEqual([]);
+    })
+    expect(result.routes).toEqual([])
     // Nothing was cut, nothing was dispatched, and `end` had no stream to
     // resolve onto — the whole of what *the pass is about no item* means.
-    expect(asked.cut).toEqual([]);
-    expect(asked.dispatch).toEqual([]);
-    expect(asked.read).toEqual([]);
-  });
+    expect(asked.cut).toEqual([])
+    expect(asked.dispatch).toEqual([])
+    expect(asked.read).toEqual([])
+  })
 
   /**
    * The third decline, and the one with a stream behind it: the claim's append
@@ -534,23 +529,23 @@ describe("claim runs the `queue:` plugin, and cannot refuse", () => {
    * ever handed back, because an item this run may be holding is one somebody has
    * to be told about.
    */
-  it("names the item when the claim may have committed, and still resolves `end` for it", async () => {
+  it('names the item when the claim may have committed, and still resolves `end` for it', async () => {
     const { result, asked } = await pass({
       steps: { end: [HOLD_ON_BLOCKED] },
-      answers: { take: { mayHold: { workItemId: "wi-lingtai-259", detail: "connection reset" } } },
-    });
+      answers: { take: { mayHold: { workItemId: 'wi-lingtai-259', detail: 'connection reset' } } },
+    })
 
-    expect(walk(result)).toEqual(["claim:did-not-finish", "end:passed"]);
-    const ending = result.stoppedAt?.ending;
-    expect(ending).toMatchObject({ ending: "did-not-finish", because: "claim-unconfirmed" });
-    expect(ending && "detail" in ending ? ending.detail : "").toContain("wi-lingtai-259");
-    expect(outcomeOf(result)).toBe("blocked");
-    expect(asked.read).toEqual(["wi-lingtai-259"]);
+    expect(walk(result)).toEqual(['claim:did-not-finish', 'end:passed'])
+    const ending = result.stoppedAt?.ending
+    expect(ending).toMatchObject({ ending: 'did-not-finish', because: 'claim-unconfirmed' })
+    expect(ending && 'detail' in ending ? ending.detail : '').toContain('wi-lingtai-259')
+    expect(outcomeOf(result)).toBe('blocked')
+    expect(asked.read).toEqual(['wi-lingtai-259'])
     expect(endRow(asked.record[0]?.plan ?? [])).toEqual({
-      outcome: "blocked",
-      actions: [{ name: "hold it", labels: ["agent:hold"] }],
-    });
-  });
+      outcome: 'blocked',
+      actions: [{ name: 'hold it', labels: ['agent:hold'] }],
+    })
+  })
 
   /**
    * One closure, two passes. `claim` is where a pass begins, so the item and its
@@ -563,61 +558,60 @@ describe("claim runs the `queue:` plugin, and cannot refuse", () => {
    * could have been silently wrong.
    */
   it("forgets the previous pass's item when the next claim takes nothing", async () => {
-    let first = true;
+    let first = true
     const { ports, asked, taking } = portsAnswering({
       take: () => {
         const answer: TakeAnswer = first
           ? { taken: { workItemId: ITEM.workItemId, kind: ITEM.kind } }
-          : { passedOver: "no kind label" };
-        first = false;
-        return answer;
+          : { passedOver: 'no kind label' }
+        first = false
+        return answer
       },
-    });
-    const bodies = bodiesFor(ports);
-    const claiming = createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
+    })
+    const bodies = bodiesFor(ports)
+    const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
     const run = () =>
       runPass({
         recipe: recipeWith({ end: [CLOSE_ON_LANDED] }),
         context,
         emit: () => {},
         bodies,
-        actionsAt: (step, actions) =>
-          step === "claim" ? [claiming] : actions.map((a) => canned(a.name, PASSED)),
-      });
+        actionsAt: (step, actions) => (step === 'claim' ? [claiming] : actions.map((a) => canned(a.name, PASSED))),
+      })
 
-    await run();
-    const second = await run();
+    await run()
+    const second = await run()
 
-    expect(walk(second)).toEqual(["claim:did-not-finish", "end:passed"]);
-    expect(asked.read).toEqual([ITEM.workItemId]);
-    expect(asked.record).toHaveLength(1);
-  });
-});
+    expect(walk(second)).toEqual(['claim:did-not-finish', 'end:passed'])
+    expect(asked.read).toEqual([ITEM.workItemId])
+    expect(asked.record).toHaveLength(1)
+  })
+})
 
 // ------------------------------------------------------------------ admit ----
 
-describe("admit runs the `worktree:` plugin, and that is where the head comes from", () => {
-  it("advances `onSha` to the base it cut, so every later visit is judged there", async () => {
-    const judged: { step: string; onSha: string }[] = [];
+describe('admit runs the `worktree:` plugin, and that is where the head comes from', () => {
+  it('advances `onSha` to the base it cut, so every later visit is judged there', async () => {
+    const judged: { step: string; onSha: string }[] = []
     const watching = (step: string): Action => ({
       name: step,
-      kind: "run",
+      kind: 'run',
       run: async (ctx) => {
-        judged.push({ step, onSha: ctx.onSha });
-        return PASSED;
+        judged.push({ step, onSha: ctx.onSha })
+        return PASSED
       },
-    });
+    })
     const { result, asked } = await pass({
-      steps: { prepared: [{ name: "install", run: "true" }] },
-      actions: { prepared: [watching("prepared")] },
-    });
+      steps: { prepared: [{ name: 'install', run: 'true' }] },
+      actions: { prepared: [watching('prepared')] },
+    })
 
-    expect(result.steps[1]?.ending).toEqual({ ending: "passed", head: CUT_AT });
+    expect(result.steps[1]?.ending).toEqual({ ending: 'passed', head: CUT_AT })
     // The pipeline at `prepared` and the agent at `implement` see the same head,
     // and it is the one the tree was cut at rather than the caller's base.
-    expect(judged).toEqual([{ step: "prepared", onSha: CUT_AT }]);
-    expect(asked.dispatch[0]?.context.onSha).toBe(CUT_AT);
-  });
+    expect(judged).toEqual([{ step: 'prepared', onSha: CUT_AT }])
+    expect(asked.dispatch[0]?.context.onSha).toBe(CUT_AT)
+  })
 
   /**
    * **A declared `worktree:` is what runs, and `admit` runs nothing else**
@@ -633,48 +627,48 @@ describe("admit runs the `worktree:` plugin, and that is where the head comes fr
    * than merely being listed.
    */
   it("cuts from what the recipe declares, and the head is the action's", async () => {
-    const asked: { base: string; submodules: boolean }[] = [];
+    const asked: { base: string; submodules: boolean }[] = []
     const declared = createWorktreeAction(
-      { name: "cut the branch", base: "1.0", submodules: true },
+      { name: 'cut the branch', base: '1.0', submodules: true },
       {
         cut: async (spec) => {
-          asked.push(spec);
-          return { head: CUT_AT, where: TREE.path };
+          asked.push(spec)
+          return { head: CUT_AT, where: TREE.path }
         },
       },
-    );
+    )
     const { result } = await pass({
-      steps: { admit: [{ name: "cut the branch", worktree: { base: "1.0", submodules: true } }] },
+      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: true } }] },
       actions: { admit: [declared] },
-    });
+    })
 
-    expect(asked).toEqual([{ base: "1.0", submodules: true }]);
+    expect(asked).toEqual([{ base: '1.0', submodules: true }])
     expect(result.steps[1]).toMatchObject({
-      step: "admit",
-      ending: { ending: "passed", head: CUT_AT },
-      results: [{ action: "cut the branch", verdict: "passed" }],
-    });
-  });
+      step: 'admit',
+      ending: { ending: 'passed', head: CUT_AT },
+      results: [{ action: 'cut the branch', verdict: 'passed' }],
+    })
+  })
 
-  it("stops the pass when the tree could not be cut, and buys nothing", async () => {
-    const { result, asked } = await pass({ answers: { cut: { notCut: "no such base ref" } } });
+  it('stops the pass when the tree could not be cut, and buys nothing', async () => {
+    const { result, asked } = await pass({ answers: { cut: { notCut: 'no such base ref' } } })
 
-    expect(walk(result)).toEqual(["claim:passed", "admit:did-not-finish", "end:passed"]);
+    expect(walk(result)).toEqual(['claim:passed', 'admit:did-not-finish', 'end:passed'])
     // The action's name rather than `null`, which is the one thing that changed
     // when the work left the body: `endingOf` names what did not finish.
     expect(result.stoppedAt?.ending).toMatchObject({
-      ending: "did-not-finish",
-      because: "did-not-finish",
-      at: "cut the branch",
-      detail: expect.stringContaining("no such base ref"),
-    });
+      ending: 'did-not-finish',
+      because: 'did-not-finish',
+      at: 'cut the branch',
+      detail: expect.stringContaining('no such base ref'),
+    })
     // Not `needs-input`, so it does not reach the router: there is no question in
     // a clone that did not finish (0057 §2). And no head, so `onSha` is still the
     // base the caller handed in — nothing was cut.
-    expect(result.routes).toEqual([]);
-    expect(result.stoppedAt?.ending).not.toHaveProperty("head");
-    expect(asked.draft).toEqual([]);
-  });
+    expect(result.routes).toEqual([])
+    expect(result.stoppedAt?.ending).not.toHaveProperty('head')
+    expect(asked.draft).toEqual([])
+  })
 
   /**
    * **A question from the plugin holds the item, where the body's reached the
@@ -688,21 +682,21 @@ describe("admit runs the `worktree:` plugin, and that is where the head comes fr
    * person*. Nothing produces it at `admit` today, which is why this is the test
    * that says what would happen.
    */
-  it("holds the item when the cut asks a question", async () => {
-    const { result } = await pass({ answers: { cut: { asked: "which base — main or 1.0?" } } });
+  it('holds the item when the cut asks a question', async () => {
+    const { result } = await pass({ answers: { cut: { asked: 'which base — main or 1.0?' } } })
 
-    expect(walk(result)).toEqual(["claim:passed", "admit:held", "end:passed"]);
+    expect(walk(result)).toEqual(['claim:passed', 'admit:held', 'end:passed'])
     expect(result.stoppedAt).toEqual({
-      step: "admit",
-      ending: { ending: "held", at: "cut the branch", question: "which base — main or 1.0?" },
-    });
-    expect(result.routes).toEqual([]);
-  });
-});
+      step: 'admit',
+      ending: { ending: 'held', at: 'cut the branch', question: 'which base — main or 1.0?' },
+    })
+    expect(result.routes).toEqual([])
+  })
+})
 
 // --------------------------------------------------------------- prepared ----
 
-describe("prepared refuses, and the refusal reports like any other", () => {
+describe('prepared refuses, and the refusal reports like any other', () => {
   /**
    * The ticket's own *watch out*: a failed install is the cheapest refusal there
    * is. Every join it travels through is the skeleton's — `endingOf` reads a
@@ -710,28 +704,22 @@ describe("prepared refuses, and the refusal reports like any other", () => {
    * `proposed`, the router sends it to a person, and what the person is shown is
    * the install rather than the router.
    */
-  it("carries a failed install to a person, naming the install and not the router", async () => {
+  it('carries a failed install to a person, naming the install and not the router', async () => {
     const { result } = await pass({
-      steps: { prepared: [{ name: "install", run: "pnpm install --frozen-lockfile" }] },
-      actions: { prepared: [canned("install", RED)] },
-    });
+      steps: { prepared: [{ name: 'install', run: 'pnpm install --frozen-lockfile' }] },
+      actions: { prepared: [canned('install', RED)] },
+    })
 
-    expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:refused",
-      "proposed:routed",
-      "end:passed",
-    ]);
+    expect(walk(result)).toEqual(['claim:passed', 'admit:passed', 'prepared:refused', 'proposed:routed', 'end:passed'])
     expect(result.stoppedAt).toEqual({
-      step: "prepared",
+      step: 'prepared',
       ending: {
-        ending: "refused",
-        because: "action-refused",
-        at: "install",
-        detail: "pnpm install exited 1",
+        ending: 'refused',
+        because: 'action-refused',
+        at: 'install',
+        detail: 'pnpm install exited 1',
       },
-    });
+    })
     expect(result.routes).toEqual([
       // **What was wanted and what happened, and no ceiling between them**
       // (`#271`). The built-in wants the work fixed where it stands; `prepared`
@@ -739,16 +727,16 @@ describe("prepared refuses, and the refusal reports like any other", () => {
       // because no number a project could raise would have offered `implement`
       // here. That is the reading `chose` alone would get wrong.
       {
-        from: "prepared",
-        chose: "implement",
-        to: "waiting",
+        from: 'prepared',
+        chose: 'implement',
+        to: 'waiting',
         why: expect.any(String),
         ceiling: null,
       },
-    ]);
-    expect(result.rested).toBe("waiting");
-    expect(outcomeOf(result)).toBe("blocked");
-  });
+    ])
+    expect(result.rested).toBe('waiting')
+    expect(outcomeOf(result)).toBe('blocked')
+  })
 
   /**
    * 0061 §3's worked example, from the other side: a failed install refuses
@@ -756,40 +744,40 @@ describe("prepared refuses, and the refusal reports like any other", () => {
    * `implement` is therefore not among the destinations the judge is offered —
    * even with a round to spend.
    */
-  it("offers the judge a person and a restart, and never `implement`", async () => {
+  it('offers the judge a person and a restart, and never `implement`', async () => {
     const { result } = await pass({
-      steps: { prepared: [{ name: "install", run: "false" }] },
-      actions: { prepared: [canned("install", RED)] },
+      steps: { prepared: [{ name: 'install', run: 'false' }] },
+      actions: { prepared: [canned('install', RED)] },
       ceilings: { rounds: 3, restartsLeft: 1 },
-    });
+    })
 
-    const router = result.steps.find((visit) => visit.step === "proposed");
-    expect(router?.ending.ending).toBe("routed");
+    const router = result.steps.find((visit) => visit.step === 'proposed')
+    expect(router?.ending.ending).toBe('routed')
     // What the router was offered is what `NOT_BUILT_YET`'s body quotes back.
-    const why = router?.ending.ending === "routed" ? router.ending.why : "";
-    expect(why).toContain("prepared");
-    expect(why).not.toContain("implement");
-  });
+    const why = router?.ending.ending === 'routed' ? router.ending.why : ''
+    expect(why).toContain('prepared')
+    expect(why).not.toContain('implement')
+  })
 
-  it("passes on a green install, and adds nothing of its own", async () => {
+  it('passes on a green install, and adds nothing of its own', async () => {
     const { result } = await pass({
-      steps: { prepared: [{ name: "install", run: "true" }] },
-    });
+      steps: { prepared: [{ name: 'install', run: 'true' }] },
+    })
 
-    expect(result.steps[2]?.ending).toEqual({ ending: "passed" });
+    expect(result.steps[2]?.ending).toEqual({ ending: 'passed' })
     // The body added no head, no reason and no findings — the visit is its
     // plugins' and nothing else.
-    expect(result.steps[2]?.results.map((r) => r.verdict)).toEqual(["passed"]);
-  });
-});
+    expect(result.steps[2]?.results.map((r) => r.verdict)).toEqual(['passed'])
+  })
+})
 
 // ----------------------------------------------------------------- design ----
 
-describe("design runs the `agent:` plugin, and nothing is an answer", () => {
+describe('design runs the `agent:` plugin, and nothing is an answer', () => {
   /** A recipe with a drafting agent at `design`, which is the whole of the step. */
   const DECLARED: Record<string, readonly StepAction[]> = {
-    design: [{ name: "draft the design", agent: "claude-code", prompt: "" } as StepAction],
-  };
+    design: [{ name: 'draft the design', agent: 'claude-code', prompt: '' } as StepAction],
+  }
 
   /**
    * **The ticket's *watch out*, and it is now a claim about the default rather
@@ -800,16 +788,16 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
    * without the port. The step still appears in the walk, `implement` is briefed
    * with `""` and works from the issue's own text, and no agent is paid.
    */
-  it("runs nothing where the recipe declares nothing, and briefs `implement` from the issue", async () => {
-    const { result, asked } = await pass();
+  it('runs nothing where the recipe declares nothing, and briefs `implement` from the issue', async () => {
+    const { result, asked } = await pass()
 
-    expect(result.steps[3]).toEqual({ step: "design", ending: { ending: "passed" }, results: [] });
-    expect(asked.draft).toEqual([]);
-    expect(asked.dispatch[0]?.design).toEqual({ document: "" });
-    expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body);
-    expect(result.stoppedAt).toBeNull();
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(result.steps[3]).toEqual({ step: 'design', ending: { ending: 'passed' }, results: [] })
+    expect(asked.draft).toEqual([])
+    expect(asked.dispatch[0]?.design).toEqual({ document: '' })
+    expect(asked.dispatch[0]?.ticket.body).toBe(ITEM.ticket.body)
+    expect(result.stoppedAt).toBeNull()
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * An empty document is a **pass** — not a skip and not a failure — and it is
@@ -817,29 +805,29 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
    * runtime said nothing, and `implement` is briefed identically to the case
    * above. There is no conditional step.
    */
-  it("passes on an empty document, and `implement` is still briefed from the issue", async () => {
-    const { result, asked } = await pass({ steps: DECLARED, answers: { draft: { text: "" } } });
+  it('passes on an empty document, and `implement` is still briefed from the issue', async () => {
+    const { result, asked } = await pass({ steps: DECLARED, answers: { draft: { text: '' } } })
 
-    expect(result.steps[3]?.ending).toEqual({ ending: "passed", design: { document: "" } });
-    expect(asked.draft).toHaveLength(1);
+    expect(result.steps[3]?.ending).toEqual({ ending: 'passed', design: { document: '' } })
+    expect(asked.draft).toHaveLength(1)
     // The ticket is in the prompt, and the rule that makes the empty answer real.
-    expect(asked.draft[0]).toContain(ITEM.ticket.body);
-    expect(asked.draft[0]).toContain("Answering with nothing is a real answer");
-    expect(asked.dispatch[0]?.design).toEqual({ document: "" });
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(asked.draft[0]).toContain(ITEM.ticket.body)
+    expect(asked.draft[0]).toContain('Answering with nothing is a real answer')
+    expect(asked.dispatch[0]?.design).toEqual({ document: '' })
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
-  it("hands a document it did write to the agent at `implement`", async () => {
+  it('hands a document it did write to the agent at `implement`', async () => {
     const { asked } = await pass({
       steps: DECLARED,
-      answers: { draft: { text: "## The shape\n\nSix bodies." } },
-    });
+      answers: { draft: { text: '## The shape\n\nSix bodies.' } },
+    })
 
-    expect(asked.dispatch[0]?.design).toEqual({ document: "## The shape\n\nSix bodies." });
+    expect(asked.dispatch[0]?.design).toEqual({ document: '## The shape\n\nSix bodies.' })
     // And no locator, because nothing kept it anywhere: the `agent:` at `design`
     // writes no file, so the third of `TheDesign`'s facts is absent (`#297`).
-    expect(asked.dispatch[0]?.design.locator).toBeUndefined();
-  });
+    expect(asked.dispatch[0]?.design.locator).toBeUndefined()
+  })
 
   /**
    * 0061 §3 puts `agent:` at `design` as well as at `implement`, so a design
@@ -848,31 +836,25 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
    * person. It does not reach the router, because paying an agent to ask what to
    * do about a quota is the one route that cannot work.
    */
-  it("stands the conductor down when its agent never started", async () => {
+  it('stands the conductor down when its agent never started', async () => {
     const { result } = await pass({
       steps: DECLARED,
       answers: {
-        draft: { turns: 1, failure: { kind: "never-started", detail: "session limit" } },
+        draft: { turns: 1, failure: { kind: 'never-started', detail: 'session limit' } },
       },
-    });
+    })
 
-    expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:passed",
-      "design:never-ran",
-      "end:passed",
-    ]);
+    expect(walk(result)).toEqual(['claim:passed', 'admit:passed', 'prepared:passed', 'design:never-ran', 'end:passed'])
     expect(result.stoppedAt?.ending).toEqual({
-      ending: "never-ran",
+      ending: 'never-ran',
       // The action's name rather than the runtime's, which is what changed when
       // the work left the body: `endingOf` names what did not run.
-      at: "draft the design",
-      detail: "session limit",
-    });
-    expect(result.routes).toEqual([]);
-    expect(outcomeOf(result)).toBe("failed");
-  });
+      at: 'draft the design',
+      detail: 'session limit',
+    })
+    expect(result.routes).toEqual([])
+    expect(outcomeOf(result)).toBe('failed')
+  })
 
   /**
    * 0057 §2 at the step that now reaches it through its plugin. **And this is
@@ -881,36 +863,36 @@ describe("design runs the `agent:` plugin, and nothing is an answer", () => {
    * stops rather than `implement` being briefed with `""` as though the answer
    * had been *this needs none*.
    */
-  it("stops the pass when its agent left no receipt", async () => {
+  it('stops the pass when its agent left no receipt', async () => {
     const { result, asked } = await pass({
       steps: DECLARED,
-      answers: { draft: { failure: { kind: "crash", detail: "the runtime exited 1" } } },
-    });
+      answers: { draft: { failure: { kind: 'crash', detail: 'the runtime exited 1' } } },
+    })
 
     expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:passed",
-      "design:did-not-finish",
-      "end:passed",
-    ]);
+      'claim:passed',
+      'admit:passed',
+      'prepared:passed',
+      'design:did-not-finish',
+      'end:passed',
+    ])
     expect(result.stoppedAt?.ending).toMatchObject({
-      ending: "did-not-finish",
-      because: "did-not-finish",
-      at: "draft the design",
-      detail: expect.stringContaining("the runtime exited 1"),
-    });
+      ending: 'did-not-finish',
+      because: 'did-not-finish',
+      at: 'draft the design',
+      detail: expect.stringContaining('the runtime exited 1'),
+    })
     // Not `needs-input`, so there is nothing for a judge to route — and nothing
     // was implemented off a design that was never written.
-    expect(result.routes).toEqual([]);
-    expect(asked.dispatch).toEqual([]);
-    expect(outcomeOf(result)).toBe("blocked");
-  });
-});
+    expect(result.routes).toEqual([])
+    expect(asked.dispatch).toEqual([])
+    expect(outcomeOf(result)).toBe('blocked')
+  })
+})
 
 // -------------------------------------------------------------- implement ----
 
-describe("implement dispatches the one agent, and reports what it committed", () => {
+describe('implement dispatches the one agent, and reports what it committed', () => {
   /**
    * Declared at `proposed` rather than at `build`, and since 2026-09-27 either
    * would resolve — `runPlugin` serves both. The point is the head either way:
@@ -918,59 +900,59 @@ describe("implement dispatches the one agent, and reports what it committed", ()
    * committed, and which step declares it is the caller's seam and not this
    * claim.
    */
-  it("moves the head to the commit, and what runs after it is judged there", async () => {
-    const judged: string[] = [];
+  it('moves the head to the commit, and what runs after it is judged there', async () => {
+    const judged: string[] = []
     const { result } = await pass({
-      steps: { proposed: [{ name: "test", run: "pnpm test" }] },
+      steps: { proposed: [{ name: 'test', run: 'pnpm test' }] },
       actions: {
         proposed: [
           {
-            name: "test",
-            kind: "run",
+            name: 'test',
+            kind: 'run',
             run: async (ctx) => {
-              judged.push(ctx.onSha);
-              return PASSED;
+              judged.push(ctx.onSha)
+              return PASSED
             },
           },
         ],
       },
-    });
+    })
 
-    expect(result.steps[4]?.ending).toEqual({ ending: "passed", head: COMMITTED });
-    expect(judged).toEqual([COMMITTED]);
-  });
+    expect(result.steps[4]?.ending).toEqual({ ending: 'passed', head: COMMITTED })
+    expect(judged).toEqual([COMMITTED])
+  })
 
   it.each([
     {
-      what: "asked",
-      answer: { asked: "the ticket names two files and neither exists" } as Worked,
+      what: 'asked',
+      answer: { asked: 'the ticket names two files and neither exists' } as Worked,
       // Its own ending since `#296`, and no `because`: *it asked* was a value of
       // that field and is the discriminant now, which is what `routed: true`
       // below no longer depends on a string comparison for.
-      ending: { ending: "asked" },
+      ending: { ending: 'asked' },
       routed: true,
     },
     {
-      what: "left no receipt",
-      answer: { stopped: "the turn budget was spent" } as Worked,
-      ending: { ending: "did-not-finish", because: "did-not-finish" },
+      what: 'left no receipt',
+      answer: { stopped: 'the turn budget was spent' } as Worked,
+      ending: { ending: 'did-not-finish', because: 'did-not-finish' },
       routed: false,
     },
     {
-      what: "never started",
-      answer: { neverStarted: { agent: "claude-code", detail: "signed out" } } as Worked,
-      ending: { ending: "never-ran" },
+      what: 'never started',
+      answer: { neverStarted: { agent: 'claude-code', detail: 'signed out' } } as Worked,
+      ending: { ending: 'never-ran' },
       routed: false,
     },
-  ])("reports an agent that $what", async ({ answer, ending, routed }) => {
-    const { result } = await pass({ answers: { dispatch: answer } });
+  ])('reports an agent that $what', async ({ answer, ending, routed }) => {
+    const { result } = await pass({ answers: { dispatch: answer } })
 
-    expect(result.stoppedAt?.step).toBe("implement");
-    expect(result.stoppedAt?.ending).toMatchObject(ending);
-    expect(result.routes.length).toBe(routed ? 1 : 0);
+    expect(result.stoppedAt?.step).toBe('implement')
+    expect(result.stoppedAt?.ending).toMatchObject(ending)
+    expect(result.routes.length).toBe(routed ? 1 : 0)
     // `end` runs on all three, which is the whole of 0058 §3.
-    expect(result.steps.at(-1)?.step).toBe("end");
-  });
+    expect(result.steps.at(-1)?.step).toBe('end')
+  })
 
   /**
    * **The body dispatches nothing, and this is what says so** (`#266`).
@@ -987,26 +969,26 @@ describe("implement dispatches the one agent, and reports what it committed", ()
    * was dispatched, because there is nothing left in it to dispatch. A body that
    * regained the call would dispatch here and go red.
    */
-  it("dispatches nothing of its own, so a declared agent is the only one paid", async () => {
-    const { asked, result } = await pass({ actions: { implement: [] } });
+  it('dispatches nothing of its own, so a declared agent is the only one paid', async () => {
+    const { asked, result } = await pass({ actions: { implement: [] } })
 
-    expect(asked.dispatch).toEqual([]);
-    expect(result.steps.find((visit) => visit.step === "implement")?.ending).toEqual({
-      ending: "passed",
-    });
+    expect(asked.dispatch).toEqual([])
+    expect(result.steps.find((visit) => visit.step === 'implement')?.ending).toEqual({
+      ending: 'passed',
+    })
     // And the pass carries on to the end rather than stopping for the missing
     // receipt: `implement`'s head is the action's, so a step with no action
     // leaves `onSha` where `admit` put it.
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
-  it("is handed the round it is in and the findings it was bought on", async () => {
-    const { asked } = await pass();
+  it('is handed the round it is in and the findings it was bought on', async () => {
+    const { asked } = await pass()
 
-    expect(asked.dispatch[0]?.context.round).toBe(0);
-    expect(asked.dispatch[0]?.context.recheck).toEqual([]);
-    expect(asked.dispatch[0]?.again).toBeNull();
-  });
+    expect(asked.dispatch[0]?.context.round).toBe(0)
+    expect(asked.dispatch[0]?.context.recheck).toEqual([])
+    expect(asked.dispatch[0]?.again).toBeNull()
+  })
 
   /**
    * The other half of a question, and the reason `SentBack` exists: the judge may
@@ -1019,16 +1001,16 @@ describe("implement dispatches the one agent, and reports what it committed", ()
    * The judge is a body here, because `NOT_BUILT_YET`'s router sends every
    * arrival to a person while no `judge:` is built (T4b).
    */
-  it("is told why it is being run again, and what it asked the first time", async () => {
-    let asks = true;
+  it('is told why it is being run again, and what it asked the first time', async () => {
+    let asks = true
     const { ports, asked, taking, working } = portsAnswering({
       dispatch: () => {
-        const answer: Worked = asks ? { asked: "which of the two files?" } : { committed: COMMITTED };
-        asks = false;
-        return answer;
+        const answer: Worked = asks ? { asked: 'which of the two files?' } : { committed: COMMITTED }
+        asks = false
+        return answer
       },
-    });
-    const claiming = createQueueAction({ name: "take the ticket", ...QUEUE }, taking);
+    })
+    const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
     const result = await runPass({
       recipe: recipeWith(),
       context,
@@ -1037,86 +1019,86 @@ describe("implement dispatches the one agent, and reports what it committed", ()
         ...bodiesFor(ports),
         proposed: async ({ arriving }) =>
           arriving === null
-            ? { ending: "passed" }
-            : { ending: "routed", to: "implement", why: "state your assumption and carry on" },
+            ? { ending: 'passed' }
+            : { ending: 'routed', to: 'implement', why: 'state your assumption and carry on' },
       },
       ceilings: { rounds: 1, restartsLeft: 0 },
       // `claim`'s default, because the body takes nothing since `#269` and a pass
       // that claimed no item cannot brief an agent.
       actionsAt: (step, actions) =>
-        step === "claim"
+        step === 'claim'
           ? [claiming]
-          : step === "implement"
-            ? [createWorkAction({ name: "write the change", prompt: "" }, working)]
+          : step === 'implement'
+            ? [createWorkAction({ name: 'write the change', prompt: '' }, working)]
             : actions.map((a) => canned(a.name, PASSED)),
-    });
+    })
 
     expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:passed",
-      "design:passed",
-      "implement:asked",
-      "proposed:routed",
-      "implement:passed",
-      "build:passed",
-      "review:passed",
-      "proposed:passed",
-      "merge:passed",
-      "end:passed",
-    ]);
+      'claim:passed',
+      'admit:passed',
+      'prepared:passed',
+      'design:passed',
+      'implement:asked',
+      'proposed:routed',
+      'implement:passed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
     expect(asked.dispatch[1]?.again).toEqual({
-      why: "state your assumption and carry on",
-      asked: "which of the two files?",
+      why: 'state your assumption and carry on',
+      asked: 'which of the two files?',
       // The question is the whole of what this round was bought on, and `asked`
       // is where it is: `printed` would be the same words twice.
       printed: null,
-    });
-    expect(asked.dispatch[1]?.context.round).toBe(1);
-    expect(outcomeOf(result)).toBe("landed");
-  });
-});
+    })
+    expect(asked.dispatch[1]?.context.round).toBe(1)
+    expect(outcomeOf(result)).toBe('landed')
+  })
+})
 
 // ------------------------------------------------------------------ build ----
 
-describe("build is its own step, and a red one skips review", () => {
+describe('build is its own step, and a red one skips review', () => {
   /**
    * The behaviour change with the cheapest argument behind it. `build` goes first
    * **not because it is quick** — median 313s against review's 149s — but because
    * it spends no tokens where a review spends an agent: the refusal reaches
    * `proposed` and `review` is never visited at all.
    */
-  it("refuses, and `review` is never reached", async () => {
-    const { result, asked } = await pass({ actions: { build: [canned("typecheck", RED)] } });
+  it('refuses, and `review` is never reached', async () => {
+    const { result, asked } = await pass({ actions: { build: [canned('typecheck', RED)] } })
 
     expect(walk(result)).toEqual([
-      "claim:passed",
-      "admit:passed",
-      "prepared:passed",
-      "design:passed",
-      "implement:passed",
-      "build:refused",
-      "proposed:routed",
-      "end:passed",
-    ]);
-    expect(result.steps.some((visit) => visit.step === "review")).toBe(false);
+      'claim:passed',
+      'admit:passed',
+      'prepared:passed',
+      'design:passed',
+      'implement:passed',
+      'build:refused',
+      'proposed:routed',
+      'end:passed',
+    ])
+    expect(result.steps.some((visit) => visit.step === 'review')).toBe(false)
     // And the lane was never asked to merge a diff that does not compile.
-    expect(asked.land).toEqual([]);
-  });
+    expect(asked.land).toEqual([])
+  })
 
   /** Its work is its plugins', which is `prepared`'s argument at the next step along. */
-  it("passes on a green build, and adds nothing of its own", async () => {
-    const { result } = await pass({ actions: { build: [canned("typecheck", PASSED)] } });
+  it('passes on a green build, and adds nothing of its own', async () => {
+    const { result } = await pass({ actions: { build: [canned('typecheck', PASSED)] } })
 
-    const built = result.steps.find((visit) => visit.step === "build");
-    expect(built?.ending).toEqual({ ending: "passed" });
-    expect(built?.results.map((r) => r.verdict)).toEqual(["passed"]);
-  });
-});
+    const built = result.steps.find((visit) => visit.step === 'build')
+    expect(built?.ending).toEqual({ ending: 'passed' })
+    expect(built?.results.map((r) => r.verdict)).toEqual(['passed'])
+  })
+})
 
 // ----------------------------------------------------------------- review ----
 
-describe("review returns findings and judges nothing", () => {
+describe('review returns findings and judges nothing', () => {
   /**
    * 0058 §3 — *a reviewer returns findings with a severity and no verdict* — and
    * the measurement behind it: **10% of `review`'s refusals in fourteen days
@@ -1125,57 +1107,52 @@ describe("review returns findings and judges nothing", () => {
    * passes carrying what the reviewer said, and the judgement is made where
    * there is a round to buy with it.
    */
-  it("passes carrying the findings, and the judge is asked about them", async () => {
+  it('passes carrying the findings, and the judge is asked about them', async () => {
     const { result, asked } = await pass({
-      actions: { review: [canned("cold reviewer", REVIEW_REFUSED)] },
+      actions: { review: [canned('cold reviewer', REVIEW_REFUSED)] },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
-    const reviewed = result.steps.find((visit) => visit.step === "review");
-    expect(reviewed?.ending).toEqual({ ending: "passed" });
+    const reviewed = result.steps.find((visit) => visit.step === 'review')
+    expect(reviewed?.ending).toEqual({ ending: 'passed' })
     // Nothing is dropped: the reviewer's own verdict is on the visit, and it is
     // what says there is a `findings` direction to judge at all.
-    expect(reviewed?.results.map((r) => r.verdict)).toEqual(["failed"]);
+    expect(reviewed?.results.map((r) => r.verdict)).toEqual(['failed'])
     expect(asked.judge).toEqual([
       {
-        when: "findings",
-        offering: ["waiting", "implement"],
+        when: 'findings',
+        offering: ['waiting', 'implement'],
         findings: [BLOCKER],
         evidence: REVIEW_REFUSED.evidence,
       },
-    ]);
-  });
+    ])
+  })
 
   /** A reviewer that refused nothing lets the change through, and `merge` runs. */
-  it("lets the change through when the reviewer refused nothing", async () => {
-    const minor: ActionFinding = { ...BLOCKER, severity: "minor" };
+  it('lets the change through when the reviewer refused nothing', async () => {
+    const minor: ActionFinding = { ...BLOCKER, severity: 'minor' }
     const { result, asked } = await pass({
       actions: {
-        review: [canned("cold reviewer", { verdict: "passed", evidence: "read it", findings: [minor] })],
+        review: [canned('cold reviewer', { verdict: 'passed', evidence: 'read it', findings: [minor] })],
       },
-    });
+    })
 
-    expect(walk(result).slice(-4)).toEqual([
-      "review:passed",
-      "proposed:passed",
-      "merge:passed",
-      "end:passed",
-    ]);
+    expect(walk(result).slice(-4)).toEqual(['review:passed', 'proposed:passed', 'merge:passed', 'end:passed'])
     // A finding at or below the bar is the `backlog:` plugin's business and never
     // a reason to hold a change back, so no judge was asked and nothing was paid.
-    expect(asked.judge).toEqual([]);
-    expect(asked.land).toHaveLength(1);
-    expect(outcomeOf(result)).toBe("landed");
-  });
-});
+    expect(asked.judge).toEqual([])
+    expect(asked.land).toHaveLength(1)
+    expect(outcomeOf(result)).toBe('landed')
+  })
+})
 
 // --------------------------------------------------------------- proposed ----
 
-describe("proposed is the only step that routes, and one judge answers each when", () => {
+describe('proposed is the only step that routes, and one judge answers each when', () => {
   /** A `build` and a `review` declared together, since most of these need both. */
   const checked = (build: ActionResult, review: ActionResult) => ({
-    actions: { build: [canned("typecheck", build)], review: [canned("cold reviewer", review)] },
-  });
+    actions: { build: [canned('typecheck', build)], review: [canned('cold reviewer', review)] },
+  })
 
   /**
    * **`conduct.ts`'s own `ports.judge`, line for line** (`#274`, `#277`).
@@ -1195,22 +1172,22 @@ describe("proposed is the only step that routes, and one judge answers each when
   const theRecipesJudge =
     (steps: Record<string, unknown>, agent: (named: string, on: Judging) => Judged = notAsked) =>
     (on: Judging): Judged => {
-      const declared = judgeDeclaredAt(recipeWith(steps).steps.proposed, on.when);
-      if (declared === null) return { noJudge: true };
-      return "built" in declared ? declared : agent(declared.named, on);
-    };
+      const declared = judgeDeclaredAt(recipeWith(steps).steps.proposed, on.when)
+      if (declared === null) return { noJudge: true }
+      return 'built' in declared ? declared : agent(declared.named, on)
+    }
 
   /** No dispatch was arranged, which is a person — as it is when one fails live. */
   const notAsked = (named: string): Judged => ({
-    next: "waiting",
+    next: 'waiting',
     named,
     why: `the "${named}" judge was not asked`,
-  });
+  })
 
   /** A `judge:` entry, as a recipe writes one. */
-  const declaring = (when: string, name: string, judge = "same-worktree") => ({
+  const declaring = (when: string, name: string, judge = 'same-worktree') => ({
     proposed: [{ name, judge, when }],
-  });
+  })
 
   /**
    * The mechanical direction, and the whole of what keeps `proposed` from buying
@@ -1218,47 +1195,47 @@ describe("proposed is the only step that routes, and one judge answers each when
    * seen sixty times between them in fourteen days and not one was a judgement.
    * Nothing was declared, so the built-in answered — and no judge was paid.
    */
-  it("sends a red build back to `implement` without paying for a judgement", async () => {
-    let red = true;
+  it('sends a red build back to `implement` without paying for a judgement', async () => {
+    let red = true
     const { result, asked } = await pass({
       actions: {
         build: [
           {
-            name: "typecheck",
-            kind: "run",
+            name: 'typecheck',
+            kind: 'run',
             run: async () => {
-              const answer = red ? RED : PASSED;
-              red = false;
-              return answer;
+              const answer = red ? RED : PASSED
+              red = false
+              return answer
             },
           },
         ],
       },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
     expect(walk(result).slice(5)).toEqual([
-      "build:refused",
-      "proposed:routed",
-      "implement:passed",
-      "build:passed",
-      "review:passed",
-      "proposed:passed",
-      "merge:passed",
-      "end:passed",
-    ]);
+      'build:refused',
+      'proposed:routed',
+      'implement:passed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
     expect(result.routes).toEqual([
       // It got what it wanted and no ceiling was reached, which is what `chose`
       // and `to` agreeing says (`#271`).
       {
-        from: "build",
-        chose: "implement",
-        to: "implement",
-        why: expect.stringContaining("same-worktree"),
+        from: 'build',
+        chose: 'implement',
+        to: 'implement',
+        why: expect.stringContaining('same-worktree'),
         ceiling: null,
       },
-    ]);
-    expect(asked.judge.map((on) => on.when)).toEqual(["red"]);
+    ])
+    expect(asked.judge.map((on) => on.when)).toEqual(['red'])
     // **And the agent that was sent back was shown the three errors.** A `run:`
     // action raises no findings, so `context.recheck` is empty on this edge and
     // `asked` is null — the visit before the router was `build` and not
@@ -1266,13 +1243,13 @@ describe("proposed is the only step that routes, and one judge answers each when
     // says what to fix. Without it the round is ~31 turns and ~$3.40 spent on an
     // agent told nothing but that something failed.
     expect(asked.dispatch[1]?.again).toEqual({
-      why: expect.stringContaining("same-worktree"),
+      why: expect.stringContaining('same-worktree'),
       asked: null,
-      printed: { step: "build", detail: RED.evidence },
-    });
-    expect(asked.dispatch[1]?.context.recheck).toEqual([]);
-    expect(outcomeOf(result)).toBe("landed");
-  });
+      printed: { step: 'build', detail: RED.evidence },
+    })
+    expect(asked.dispatch[1]?.context.recheck).toEqual([])
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * **A red build at `build:` reaches the router and buys the round the recipe's
@@ -1292,59 +1269,59 @@ describe("proposed is the only step that routes, and one judge answers each when
    * can *edit* changes no behaviour. What it changes is whose sentence is on the
    * card — the recipe's line, by name.
    */
-  it("buys a round for a red build from the judge the recipe declared", async () => {
-    const steps = declaring("red", "a red build is the agent's to fix, where it already is");
-    let red = true;
+  it('buys a round for a red build from the judge the recipe declared', async () => {
+    const steps = declaring('red', "a red build is the agent's to fix, where it already is")
+    let red = true
     const { result, asked } = await pass({
       steps,
       answers: { judge: theRecipesJudge(steps) },
       actions: {
         build: [
           {
-            name: "typecheck",
-            kind: "run",
+            name: 'typecheck',
+            kind: 'run',
             run: async () => {
-              const answer = red ? RED : PASSED;
-              red = false;
-              return answer;
+              const answer = red ? RED : PASSED
+              red = false
+              return answer
             },
           },
         ],
       },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
     expect(walk(result).slice(5)).toEqual([
-      "build:refused",
-      "proposed:routed",
-      "implement:passed",
-      "build:passed",
-      "review:passed",
-      "proposed:passed",
-      "merge:passed",
-      "end:passed",
-    ]);
-    expect(asked.judge.map((on) => on.when)).toEqual(["red"]);
+      'build:refused',
+      'proposed:routed',
+      'implement:passed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
+    expect(asked.judge.map((on) => on.when)).toEqual(['red'])
     expect(result.routes).toEqual([
       {
-        from: "build",
-        chose: "implement",
-        to: "implement",
+        from: 'build',
+        chose: 'implement',
+        to: 'implement',
         // The recipe's line, named — not the built-in's name, which is what a
         // person would have to grep the source for to find the entry to edit.
         why: expect.stringContaining('the "a red build is the agent\'s to fix, where it already is" judge'),
         ceiling: null,
       },
-    ]);
+    ])
     // And it says what it declares rather than calling a `red` mechanical: the
     // same rule applied because a person wrote it down, not because nothing did.
-    expect(result.routes[0]?.why).toContain("the recipe declares `judge: same-worktree`");
-    expect(result.routes[0]?.why).not.toContain("is mechanical");
+    expect(result.routes[0]?.why).toContain('the recipe declares `judge: same-worktree`')
+    expect(result.routes[0]?.why).not.toContain('is mechanical')
     // The agent that bought the round was shown what failed, which is the whole
     // of what the round is for.
-    expect(asked.dispatch[1]?.again?.printed).toEqual({ step: "build", detail: RED.evidence });
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(asked.dispatch[1]?.again?.printed).toEqual({ step: 'build', detail: RED.evidence })
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * **And the direction that was costing the money**: `findings` has no built-in,
@@ -1356,31 +1333,31 @@ describe("proposed is the only step that routes, and one judge answers each when
    * the same refusal. `rounds: 1` and one review that refuses, twice over.
    */
   it("buys a round for a reviewer's findings where the recipe declares one, and holds where it does not", async () => {
-    const steps = declaring("findings", "the lines, until the rounds are spent");
+    const steps = declaring('findings', 'the lines, until the rounds are spent')
     const spend = {
       ...checked(PASSED, REVIEW_REFUSED),
-      ceilings: { rounds: 1, restartsLeft: 0 } as PassOptions["ceilings"],
-    };
+      ceilings: { rounds: 1, restartsLeft: 0 } as PassOptions['ceilings'],
+    }
 
-    const declared = await pass({ ...spend, steps, answers: { judge: theRecipesJudge(steps) } });
+    const declared = await pass({ ...spend, steps, answers: { judge: theRecipesJudge(steps) } })
     // `review`'s findings arrive on the way through, so the router is `proposed`
     // itself and the round goes back to `implement`.
-    expect(declared.asked.judge.map((on) => on.when)).toEqual(["findings", "findings"]);
-    expect(declared.result.routes[0]).toMatchObject({ from: "proposed", to: "implement" });
-    expect(declared.asked.dispatch).toHaveLength(2);
+    expect(declared.asked.judge.map((on) => on.when)).toEqual(['findings', 'findings'])
+    expect(declared.result.routes[0]).toMatchObject({ from: 'proposed', to: 'implement' })
+    expect(declared.asked.dispatch).toHaveLength(2)
     // The findings are what the round was bought on, and what the agent is
     // briefed with — an empty `recheck` here would be a round spent on nothing.
-    expect(declared.asked.dispatch[1]?.context.recheck).toEqual([BLOCKER]);
+    expect(declared.asked.dispatch[1]?.context.recheck).toEqual([BLOCKER])
     // The second refusal has no round left, so it rests with a person: a
     // declared judge is bounded by the ceiling, never above it (0064 §7).
-    expect(declared.result.rested).toBe("waiting");
-    expect(declared.result.routes[1]?.why).toContain("`rounds` is spent");
+    expect(declared.result.rested).toBe('waiting')
+    expect(declared.result.routes[1]?.why).toContain('`rounds` is spent')
 
-    const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} });
-    expect(nothing.result.routes[0]?.to).toBe("waiting");
-    expect(nothing.result.routes[0]?.why).toContain("no `judge:` is declared");
-    expect(nothing.asked.dispatch).toHaveLength(1);
-  });
+    const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} })
+    expect(nothing.result.routes[0]?.to).toBe('waiting')
+    expect(nothing.result.routes[0]?.why).toContain('no `judge:` is declared')
+    expect(nothing.asked.dispatch).toHaveLength(1)
+  })
 
   /**
    * **A runtime judge is a dispatch, and what it buys is the round the ceilings
@@ -1399,35 +1376,35 @@ describe("proposed is the only step that routes, and one judge answers each when
    * the smallest arrangement where the difference between *spends a round* and
    * *spends rounds* is visible.
    */
-  it("dispatches a runtime judge the recipe declares, and spends one round of `rounds`", async () => {
-    const steps = declaring("findings", "the lines or the approach", "claude-code");
-    const seen: Judging[] = [];
+  it('dispatches a runtime judge the recipe declares, and spends one round of `rounds`', async () => {
+    const steps = declaring('findings', 'the lines or the approach', 'claude-code')
+    const seen: Judging[] = []
     const theLines = (named: string, on: Judging): Judged => {
-      seen.push(on);
-      return { next: "implement", named, why: "the seam is right and two of its lines are wrong" };
-    };
+      seen.push(on)
+      return { next: 'implement', named, why: 'the seam is right and two of its lines are wrong' }
+    }
 
     const { result, asked } = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
       steps,
       answers: { judge: theRecipesJudge(steps, theLines) },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
     // Asked on both arrivals, and never handed a count — the brief is the
     // direction, the words and the set (`JudgeBrief`).
-    expect(seen.map((on) => on.when)).toEqual(["findings", "findings"]);
-    expect(Object.keys(seen[0]!).sort()).toEqual(["evidence", "findings", "offering", "when"]);
+    expect(seen.map((on) => on.when)).toEqual(['findings', 'findings'])
+    expect(Object.keys(seen[0]!).sort()).toEqual(['evidence', 'findings', 'offering', 'when'])
     // The round it asked for, bought once, on the findings it read.
-    expect(result.routes[0]).toMatchObject({ from: "proposed", chose: "implement", to: "implement" });
-    expect(result.routes[0]?.why).toContain("two of its lines are wrong");
-    expect(asked.dispatch).toHaveLength(2);
-    expect(asked.dispatch[1]?.context.recheck).toEqual([BLOCKER]);
+    expect(result.routes[0]).toMatchObject({ from: 'proposed', chose: 'implement', to: 'implement' })
+    expect(result.routes[0]?.why).toContain('two of its lines are wrong')
+    expect(asked.dispatch).toHaveLength(2)
+    expect(asked.dispatch[1]?.context.recheck).toEqual([BLOCKER])
     // And the second time, `implement` was never on the set to ask for.
-    expect(seen[1]?.offering).not.toContain("implement");
-    expect(result.routes[1]).toMatchObject({ chose: "implement", to: "waiting", ceiling: "rounds" });
-    expect(result.rested).toBe("waiting");
-  });
+    expect(seen[1]?.offering).not.toContain('implement')
+    expect(result.routes[1]).toMatchObject({ chose: 'implement', to: 'waiting', ceiling: 'rounds' })
+    expect(result.rested).toBe('waiting')
+  })
 
   /**
    * **An agent judge that answers nothing reaches a person**, and the dispatch is
@@ -1441,13 +1418,13 @@ describe("proposed is the only step that routes, and one judge answers each when
    * answer once costs the same the second time and terminates no sooner, so the
    * pass rests and the round is unspent.
    */
-  it("holds for a person where the runtime judge answered nothing, and buys no round", async () => {
-    const steps = declaring("findings", "the lines or the approach", "claude-code");
+  it('holds for a person where the runtime judge answered nothing, and buys no round', async () => {
+    const steps = declaring('findings', 'the lines or the approach', 'claude-code')
     const silent = (named: string): Judged => ({
-      next: "waiting",
+      next: 'waiting',
       named,
       why: `the "${named}" judge did not answer (timeout): 15m — so the pass is held for a person`,
-    });
+    })
 
     const { result, asked } = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
@@ -1455,14 +1432,14 @@ describe("proposed is the only step that routes, and one judge answers each when
       answers: { judge: theRecipesJudge(steps, silent) },
       // Three rounds to spend, and not one of them is spent on an answer nobody got.
       ceilings: { rounds: 3, restartsLeft: 0 },
-    });
+    })
 
-    expect(result.routes[0]).toMatchObject({ to: "waiting", ceiling: null });
-    expect(result.routes[0]?.why).toContain("did not answer (timeout)");
-    expect(asked.dispatch).toHaveLength(1);
-    expect(result.rested).toBe("waiting");
-    expect(outcomeOf(result)).toBe("blocked");
-  });
+    expect(result.routes[0]).toMatchObject({ to: 'waiting', ceiling: null })
+    expect(result.routes[0]?.why).toContain('did not answer (timeout)')
+    expect(asked.dispatch).toHaveLength(1)
+    expect(result.rested).toBe('waiting')
+    expect(outcomeOf(result)).toBe('blocked')
+  })
 
   /**
    * **And an agent judge is held to the offer exactly as any other is** — the
@@ -1475,21 +1452,21 @@ describe("proposed is the only step that routes, and one judge answers each when
    * card says which ceiling refused it — a number somebody can raise.
    */
   it("refuses a runtime judge's answer the offer did not contain, naming the recipe's entry", async () => {
-    const steps = declaring("findings", "the lines or the approach", "claude-code");
-    const greedy = (named: string): Judged => ({ next: "implement", named, why: "one more go" });
+    const steps = declaring('findings', 'the lines or the approach', 'claude-code')
+    const greedy = (named: string): Judged => ({ next: 'implement', named, why: 'one more go' })
 
     const { result } = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
       steps,
       answers: { judge: theRecipesJudge(steps, greedy) },
       ceilings: { rounds: 0, restartsLeft: 0 },
-    });
+    })
 
-    expect(result.routes[0]).toMatchObject({ chose: "implement", to: "waiting" });
-    expect(result.routes[0]?.why).toContain('the "the lines or the approach" judge answered "implement"');
-    expect(result.routes[0]?.why).toContain("`rounds` is spent");
-    expect(result.rested).toBe("waiting");
-  });
+    expect(result.routes[0]).toMatchObject({ chose: 'implement', to: 'waiting' })
+    expect(result.routes[0]?.why).toContain('the "the lines or the approach" judge answered "implement"')
+    expect(result.routes[0]?.why).toContain('`rounds` is spent')
+    expect(result.rested).toBe('waiting')
+  })
 
   /**
    * **The one move a judge may not make for a mechanical refusal**, and the
@@ -1498,21 +1475,21 @@ describe("proposed is the only step that routes, and one judge answers each when
    * is to fix it where it stands, so releasing the item throws a branch away for
    * a typecheck error. The judge asks anyway and is refused by name.
    */
-  it("refuses a judge that answers `claim` for a mechanical refusal", async () => {
+  it('refuses a judge that answers `claim` for a mechanical refusal', async () => {
     const { result, asked } = await pass({
-      actions: { build: [canned("typecheck", RED)] },
-      answers: { judge: { next: "claim", named: "claude-code", why: "start over" } },
+      actions: { build: [canned('typecheck', RED)] },
+      answers: { judge: { next: 'claim', named: 'claude-code', why: 'start over' } },
       // A restart to spend, and it is still on no offer: the direction is `red`.
       ceilings: { rounds: 1, restartsLeft: 3 },
-    });
+    })
 
-    expect(asked.judge[0]?.offering).toEqual(["waiting", "implement"]);
-    expect(result.routes[0]?.to).toBe("waiting");
-    expect(result.routes[0]?.why).toContain('answered "claim"');
-    expect(result.rested).toBe("waiting");
+    expect(asked.judge[0]?.offering).toEqual(['waiting', 'implement'])
+    expect(result.routes[0]?.to).toBe('waiting')
+    expect(result.routes[0]?.why).toContain('answered "claim"')
+    expect(result.rested).toBe('waiting')
     // The item is held for a person, never released.
-    expect(outcomeOf(result)).toBe("blocked");
-  });
+    expect(outcomeOf(result)).toBe('blocked')
+  })
 
   /**
    * **The set depends on how far the pass got, not only on what is left to
@@ -1526,27 +1503,22 @@ describe("proposed is the only step that routes, and one judge answers each when
    * judgement. No number a project writes down should make a failed install buy
    * a fresh worktree, and no judge should be able to either.
    */
-  it("offers a judge only the steps the pass reached", async () => {
-    const spare = { rounds: 3, restartsLeft: 1 };
+  it('offers a judge only the steps the pass reached', async () => {
+    const spare = { rounds: 3, restartsLeft: 1 }
     const early = await pass({
-      steps: { prepared: [{ name: "install", run: "x" }] },
-      actions: { prepared: [canned("install", RED)] },
+      steps: { prepared: [{ name: 'install', run: 'x' }] },
+      actions: { prepared: [canned('install', RED)] },
       ceilings: spare,
-    });
-    const late = await pass({ ...checked(RED, PASSED), ceilings: spare });
+    })
+    const late = await pass({ ...checked(RED, PASSED), ceilings: spare })
 
-    expect(early.asked.judge[0]?.offering).toEqual(["waiting"]);
-    expect(late.asked.judge[0]?.offering).toEqual(["waiting", "implement"]);
+    expect(early.asked.judge[0]?.offering).toEqual(['waiting'])
+    expect(late.asked.judge[0]?.offering).toEqual(['waiting', 'implement'])
     // And a judge is never told what it is answering for, nor what is left to
     // spend: `Judging` carries the direction, the words and the set, and no
     // ceiling and no count (`JudgeBrief`).
-    expect(Object.keys(late.asked.judge[0] ?? {}).sort()).toEqual([
-      "evidence",
-      "findings",
-      "offering",
-      "when",
-    ]);
-  });
+    expect(Object.keys(late.asked.judge[0] ?? {}).sort()).toEqual(['evidence', 'findings', 'offering', 'when'])
+  })
 
   /**
    * The direction 0061 §3 measured at 231 refusals and calls *the one judgement
@@ -1558,28 +1530,28 @@ describe("proposed is the only step that routes, and one judge answers each when
     const { result, asked } = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
       answers: {
-        judge: { next: "claim", named: "claude-code", why: "the approach is wrong, not the lines" },
+        judge: { next: 'claim', named: 'claude-code', why: 'the approach is wrong, not the lines' },
       },
       ceilings: { rounds: 1, restartsLeft: 1 },
-    });
+    })
 
-    expect(asked.judge[0]?.when).toBe("findings");
+    expect(asked.judge[0]?.when).toBe('findings')
     expect(result.routes).toEqual([
       {
-        from: "proposed",
-        chose: "claim",
-        to: "claim",
-        why: "the approach is wrong, not the lines",
+        from: 'proposed',
+        chose: 'claim',
+        to: 'claim',
+        why: 'the approach is wrong, not the lines',
         ceiling: null,
       },
-    ]);
-    expect(result.rested).toBe("requeued");
+    ])
+    expect(result.rested).toBe('requeued')
     // Nothing refused, so nothing is named as having stopped it — and a requeue
     // releases the item, which is `failed` at `end`.
-    expect(result.stoppedAt).toBeNull();
-    expect(outcomeOf(result)).toBe("failed");
-    expect(asked.land).toEqual([]);
-  });
+    expect(result.stoppedAt).toBeNull()
+    expect(outcomeOf(result)).toBe('failed')
+    expect(asked.land).toEqual([])
+  })
 
   /**
    * **An arrival no judge can answer still reaches a person**, which is the floor
@@ -1588,19 +1560,19 @@ describe("proposed is the only step that routes, and one judge answers each when
    * question reaches somebody rather than a name the schema would accept and no
    * code answers.
    */
-  it("holds a direction no judge answers for a person", async () => {
+  it('holds a direction no judge answers for a person', async () => {
     const { result, asked } = await pass({
-      answers: { dispatch: { asked: "the ticket names two files and neither exists" } },
+      answers: { dispatch: { asked: 'the ticket names two files and neither exists' } },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
-    expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT]);
-    expect(result.routes[0]?.to).toBe("waiting");
-    expect(result.routes[0]?.why).toContain("no `judge:` is declared");
-    expect(result.rested).toBe("waiting");
+    expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT])
+    expect(result.routes[0]?.to).toBe('waiting')
+    expect(result.routes[0]?.why).toContain('no `judge:` is declared')
+    expect(result.rested).toBe('waiting')
     // The person is shown the step that asked, not the router that sent it.
-    expect(result.stoppedAt?.step).toBe("implement");
-  });
+    expect(result.stoppedAt?.step).toBe('implement')
+  })
 
   /**
    * 0061 §8 once more — *a step refuses a destination it did not offer* — and the
@@ -1608,20 +1580,18 @@ describe("proposed is the only step that routes, and one judge answers each when
    * one to ask for a second opinion, so the answer is a person with the refusal
    * on the card rather than the next cheapest step.
    */
-  it("refuses a destination it did not offer, and names the judge", async () => {
+  it('refuses a destination it did not offer, and names the judge', async () => {
     const { result } = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
-      answers: { judge: { next: "implement", named: "claude-code", why: "have another go" } },
+      answers: { judge: { next: 'implement', named: 'claude-code', why: 'have another go' } },
       // Nothing left to spend, so `implement` is on no offer.
       ceilings: { rounds: 0, restartsLeft: 0 },
-    });
+    })
 
-    expect(result.routes[0]?.to).toBe("waiting");
-    expect(result.routes[0]?.why).toContain(
-      'the "claude-code" judge answered "implement" for `review`\'s findings',
-    );
-    expect(result.rested).toBe("waiting");
-  });
+    expect(result.routes[0]?.to).toBe('waiting')
+    expect(result.routes[0]?.why).toContain('the "claude-code" judge answered "implement" for `review`\'s findings')
+    expect(result.rested).toBe('waiting')
+  })
 
   /**
    * `decideFix`'s first rule and the one that makes the loop safe to have (0038
@@ -1630,18 +1600,18 @@ describe("proposed is the only step that routes, and one judge answers each when
    * no judge is asked about them, because paying a model to discover there is
    * nothing to fix is paying twice.
    */
-  it("spends nothing on a refusal carrying nothing an agent could be held to", async () => {
-    const anOpinion: ActionFinding = { ...BLOCKER, failureScenario: "  " };
+  it('spends nothing on a refusal carrying nothing an agent could be held to', async () => {
+    const anOpinion: ActionFinding = { ...BLOCKER, failureScenario: '  ' }
     const { result, asked } = await pass({
-      ...checked(PASSED, { verdict: "failed", evidence: "", findings: [anOpinion] }),
+      ...checked(PASSED, { verdict: 'failed', evidence: '', findings: [anOpinion] }),
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
-    expect(asked.judge).toEqual([]);
-    expect(result.routes[0]).toMatchObject({ to: "waiting" });
-    expect(result.routes[0]?.why).toContain("nothing an agent could be held to");
-    expect(result.rested).toBe("waiting");
-  });
+    expect(asked.judge).toEqual([])
+    expect(result.routes[0]).toMatchObject({ to: 'waiting' })
+    expect(result.routes[0]?.why).toContain('nothing an agent could be held to')
+    expect(result.rested).toBe('waiting')
+  })
 
   /**
    * **And an answer nobody could read is not one of those 24** (`#279`).
@@ -1659,24 +1629,24 @@ describe("proposed is the only step that routes, and one judge answers each when
    * and `implement` is not bought — `rounds: 3` here is what makes that an
    * assertion rather than an accident of the ceilings.
    */
-  it("reports an answer it could not read as unreadable, and not as an opinion", async () => {
+  it('reports an answer it could not read as unreadable, and not as an opinion', async () => {
     const { result, asked } = await pass({
       actions: {
-        build: [canned("typecheck", PASSED)],
+        build: [canned('typecheck', PASSED)],
         review: [coldReviewerSaying(AN_ANSWER_NOBODY_CAN_READ)],
       },
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
-    expect(asked.judge).toEqual([]);
-    expect(result.routes[0]).toMatchObject({ from: "proposed", to: "waiting", ceiling: null });
-    expect(result.routes[0]?.why).toContain("`review`'s findings could not be read at all");
+    expect(asked.judge).toEqual([])
+    expect(result.routes[0]).toMatchObject({ from: 'proposed', to: 'waiting', ceiling: null })
+    expect(result.routes[0]?.why).toContain("`review`'s findings could not be read at all")
     // The sentence the old one gave, and the whole of what `#279` is: a person
     // reading this must not be told the reviewer had no opinion.
-    expect(result.routes[0]?.why).not.toContain("nothing an agent could be held to");
-    expect(result.rested).toBe("waiting");
-    expect(asked.land).toEqual([]);
-  });
+    expect(result.routes[0]?.why).not.toContain('nothing an agent could be held to')
+    expect(result.rested).toBe('waiting')
+    expect(asked.land).toEqual([])
+  })
 
   /**
    * **And the same is true of the lane's own agent, which is the path that does not
@@ -1699,21 +1669,21 @@ describe("proposed is the only step that routes, and one judge answers each when
   it("reports the lane's unreadable answer as unreadable, not as a reason nobody answers", async () => {
     const { result, asked } = await pass({
       actions: {
-        build: [canned("typecheck", PASSED)],
+        build: [canned('typecheck', PASSED)],
         review: [coldReviewerSaying('{"findings":[]}')],
         merge: [coldReviewerSaying(AN_ANSWER_NOBODY_CAN_READ)],
       },
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
-    expect(asked.judge).toEqual([]);
-    expect(result.routes[0]).toMatchObject({ from: "merge", to: "waiting", ceiling: null });
-    expect(result.routes[0]?.why).toContain("could not be read at all");
+    expect(asked.judge).toEqual([])
+    expect(result.routes[0]).toMatchObject({ from: 'merge', to: 'waiting', ceiling: null })
+    expect(result.routes[0]?.why).toContain('could not be read at all')
     // The sentence this branch used to give for a dropped answer.
-    expect(result.routes[0]?.why).not.toContain("not a direction any");
-    expect(result.rested).toBe("waiting");
-    expect(outcomeOf(result)).not.toBe("landed");
-  });
+    expect(result.routes[0]?.why).not.toContain('not a direction any')
+    expect(result.rested).toBe('waiting')
+    expect(outcomeOf(result)).not.toBe('landed')
+  })
 
   /**
    * **And `#262` does not re-open**, which is the other half of the pair: the same
@@ -1721,20 +1691,20 @@ describe("proposed is the only step that routes, and one judge answers each when
    * empty — and the change lands. A fix that read *could not read it* and *read it,
    * it was empty* as one thing would hold this one for a person too.
    */
-  it("lands a clean review whose answer parsed and said nothing", async () => {
+  it('lands a clean review whose answer parsed and said nothing', async () => {
     const { result, asked } = await pass({
       actions: {
-        build: [canned("typecheck", PASSED)],
+        build: [canned('typecheck', PASSED)],
         review: [coldReviewerSaying('{"findings":[]}')],
       },
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
-    expect(result.routes).toEqual([]);
-    expect(asked.judge).toEqual([]);
-    expect(asked.land).toHaveLength(1);
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(result.routes).toEqual([])
+    expect(asked.judge).toEqual([])
+    expect(asked.land).toHaveLength(1)
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * **The whole of `#293`: the reviewer says which kind of refusal it is, and no
@@ -1759,41 +1729,41 @@ describe("proposed is the only step that routes, and one judge answers each when
    * Through `coldReviewerSaying` and not a canned result, for `#279`'s reason: the
    * word arrives through the real parser or the test asserts a field it set itself.
    */
-  it("records what a refusal was about and routes, spends and ends identically either way", async () => {
-    const steps = declaring("findings", "the lines, until the rounds are spent");
-    const said: string[] = [];
-    const passes: unknown[] = [];
+  it('records what a refusal was about and routes, spends and ends identically either way', async () => {
+    const steps = declaring('findings', 'the lines, until the rounds are spent')
+    const said: string[] = []
+    const passes: unknown[] = []
 
     for (const [answered, recorded] of [
       [null, undefined],
-      ["lines", "lines"],
-      ["approach", "approach"],
+      ['lines', 'lines'],
+      ['approach', 'approach'],
       // Neither word is not a word: a reviewer that has not been updated, and the
       // third state that must never read as `lines`.
-      ["the approach", undefined],
+      ['the approach', undefined],
     ] as const) {
       const answer = JSON.stringify(
         answered === null ? { findings: [BLOCKER] } : { about: answered, findings: [BLOCKER] },
-      );
+      )
       const { result, asked } = await pass({
         steps,
         answers: { judge: theRecipesJudge(steps) },
         actions: {
-          build: [canned("typecheck", PASSED)],
+          build: [canned('typecheck', PASSED)],
           review: [coldReviewerSaying(answer)],
         },
         ceilings: { rounds: 1, restartsLeft: 0 },
-      });
+      })
 
       // Both reviews — the one that bought the round and the one after it — and
       // the reviewer's own word, off the visit the pass carries.
       expect(
         result.steps
-          .filter((visit) => visit.step === "review")
+          .filter((visit) => visit.step === 'review')
           .flatMap((visit) => visit.results.map((each) => each.about)),
-      ).toEqual([recorded, recorded]);
+      ).toEqual([recorded, recorded])
 
-      said.push(String(answered));
+      said.push(String(answered))
       passes.push({
         walk: walk(result),
         routes: result.routes,
@@ -1801,24 +1771,24 @@ describe("proposed is the only step that routes, and one judge answers each when
         outcome: outcomeOf(result),
         dispatched: asked.dispatch.length,
         judged: asked.judge.map((on) => on.when),
-      });
+      })
     }
 
     // The pass that is compared is a real one: a round bought on the findings, a
     // second refusal with nothing left to spend, and a person at the end of it.
     expect(passes[0]).toMatchObject({
-      rested: "waiting",
+      rested: 'waiting',
       dispatched: 2,
-      judged: ["findings", "findings"],
-    });
+      judged: ['findings', 'findings'],
+    })
     expect((passes[0] as { routes: unknown[] }).routes[0]).toMatchObject({
-      from: "proposed",
-      to: "implement",
-    });
+      from: 'proposed',
+      to: 'implement',
+    })
     for (const [index, each] of passes.slice(1).entries()) {
-      expect(each, `the pass differed when the reviewer said ${said[index + 1]}`).toEqual(passes[0]);
+      expect(each, `the pass differed when the reviewer said ${said[index + 1]}`).toEqual(passes[0])
     }
-  });
+  })
 
   /**
    * The mechanical answer is written in this file's vocabulary because
@@ -1827,24 +1797,24 @@ describe("proposed is the only step that routes, and one judge answers each when
    * surprise. It is deleted the day T5 makes them one.
    */
   it("answers a mechanical direction exactly as `judge.ts`'s built-in does", async () => {
-    const named = BUILT_IN_FOR.red;
-    expect(named).not.toBeNull();
+    const named = BUILT_IN_FOR.red
+    expect(named).not.toBeNull()
 
     for (const rounds of [0, 1]) {
       const { result } = await pass({
-        actions: { build: [canned("typecheck", RED)] },
+        actions: { build: [canned('typecheck', RED)] },
         ceilings: { rounds, restartsLeft: 0 },
-      });
-      const theirs = BUILT_IN[named ?? "same-worktree"]({
-        when: "red",
+      })
+      const theirs = BUILT_IN[named ?? 'same-worktree']({
+        when: 'red',
         evidence: RED.evidence,
         findings: [],
-        offer: rounds > 0 ? ["implement", "human"] : ["human"],
-      });
+        offer: rounds > 0 ? ['implement', 'human'] : ['human'],
+      })
 
-      expect(result.routes[0]?.to).toBe(theirs === "human" ? "waiting" : theirs);
+      expect(result.routes[0]?.to).toBe(theirs === 'human' ? 'waiting' : theirs)
     }
-  });
+  })
 
   /**
    * **What was chosen, what happened, and which ceiling is the difference between
@@ -1857,41 +1827,41 @@ describe("proposed is the only step that routes, and one judge answers each when
    * the path it took, and until `#271` it was written to a file that is deleted on
    * the ending where the change lands.
    */
-  it("records what the decision wanted, and which ceiling refused it", async () => {
+  it('records what the decision wanted, and which ceiling refused it', async () => {
     const spent = await pass({
-      actions: { build: [canned("typecheck", RED)] },
+      actions: { build: [canned('typecheck', RED)] },
       // The built-in wants `implement` and there is no round to buy it with.
       ceilings: { rounds: 0, restartsLeft: 0 },
-    });
+    })
 
     expect(spent.result.routes).toEqual([
       {
-        from: "build",
-        chose: "implement",
-        to: "waiting",
-        why: expect.stringContaining("same-worktree"),
-        ceiling: "rounds",
+        from: 'build',
+        chose: 'implement',
+        to: 'waiting',
+        why: expect.stringContaining('same-worktree'),
+        ceiling: 'rounds',
       },
-    ]);
+    ])
 
     const overruled = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
-      answers: { judge: { next: "claim", named: "claude-code", why: "the approach is wrong" } },
+      answers: { judge: { next: 'claim', named: 'claude-code', why: 'the approach is wrong' } },
       // A round to spend, so `claim` is the one destination off the set — and the
       // ceiling that took it off is the item's and not this pass's.
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
     expect(overruled.result.routes).toEqual([
       {
-        from: "proposed",
-        chose: "claim",
-        to: "waiting",
+        from: 'proposed',
+        chose: 'claim',
+        to: 'waiting',
         why: expect.stringContaining('answered "claim"'),
-        ceiling: "restarts",
+        ceiling: 'restarts',
       },
-    ]);
-  });
+    ])
+  })
 
   /**
    * **And the words a person reads name the ceiling too** (0064 §7, `#267`).
@@ -1903,38 +1873,38 @@ describe("proposed is the only step that routes, and one judge answers each when
    * `waiting`, and the next move a person has differs: the first is a line in
    * `~/.lingtai/<project>/recipe.yml`, and the second is not.
    */
-  it("names the ceiling in the words, where a number is what refused the choice", async () => {
+  it('names the ceiling in the words, where a number is what refused the choice', async () => {
     const spent = await pass({
-      actions: { build: [canned("typecheck", RED)] },
+      actions: { build: [canned('typecheck', RED)] },
       ceilings: { rounds: 0, restartsLeft: 0 },
-    });
+    })
 
-    expect(spent.result.routes[0]?.why).toContain("it wanted `implement`, and `rounds` is spent");
+    expect(spent.result.routes[0]?.why).toContain('it wanted `implement`, and `rounds` is spent')
 
     // The item's ceiling rather than this pass's, and through the other door: a
     // declared judge answering outside the set it was handed.
     const overruled = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
-      answers: { judge: { next: "claim", named: "claude-code", why: "the approach is wrong" } },
+      answers: { judge: { next: 'claim', named: 'claude-code', why: 'the approach is wrong' } },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
-    expect(overruled.result.routes[0]?.why).toContain("it wanted `claim`, and `restarts` is spent");
+    expect(overruled.result.routes[0]?.why).toContain('it wanted `claim`, and `restarts` is spent')
 
     // And a destination no number would have offered is not named in the words
     // at all, which is `#271`'s rule: naming a step the arrival could not have
     // taken invites the reader to ask for it. `chose` records it; the card does
     // not.
     const never = await pass({
-      steps: { prepared: [{ name: "install", run: "false" }] },
-      actions: { prepared: [canned("install", RED)] },
+      steps: { prepared: [{ name: 'install', run: 'false' }] },
+      actions: { prepared: [canned('install', RED)] },
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
-    expect(never.result.routes[0]?.chose).toBe("implement");
-    expect(never.result.routes[0]?.why).not.toContain("implement");
-    expect(never.result.routes[0]?.why).not.toContain("spent");
-  });
+    expect(never.result.routes[0]?.chose).toBe('implement')
+    expect(never.result.routes[0]?.why).not.toContain('implement')
+    expect(never.result.routes[0]?.why).not.toContain('spent')
+  })
 
   /**
    * **And null is a ceiling's absence rather than a gap in the record** — the
@@ -1943,39 +1913,39 @@ describe("proposed is the only step that routes, and one judge answers each when
    * offer whatever is left to spend: naming `rounds` here would send a person to
    * raise a number that would refuse the same route again.
    */
-  it("names no ceiling where no number would have offered the choice", async () => {
+  it('names no ceiling where no number would have offered the choice', async () => {
     const { result } = await pass({
-      steps: { prepared: [{ name: "install", run: "false" }] },
-      actions: { prepared: [canned("install", RED)] },
+      steps: { prepared: [{ name: 'install', run: 'false' }] },
+      actions: { prepared: [canned('install', RED)] },
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
     expect(result.routes).toEqual([
       {
-        from: "prepared",
-        chose: "implement",
-        to: "waiting",
-        why: expect.stringContaining("same-worktree"),
+        from: 'prepared',
+        chose: 'implement',
+        to: 'waiting',
+        why: expect.stringContaining('same-worktree'),
         ceiling: null,
       },
-    ]);
-  });
-});
+    ])
+  })
+})
 
 // ------------------------------------------------------------------ merge ----
 
-describe("merge reports a reason and a detail, and decides nothing", () => {
-  it("lands, and is handed the head the steps gave their verdicts about", async () => {
-    const { result, asked } = await pass();
+describe('merge reports a reason and a detail, and decides nothing', () => {
+  it('lands, and is handed the head the steps gave their verdicts about', async () => {
+    const { result, asked } = await pass()
 
     // Two facts and no more: the strategy the block declares, and the commit the
     // steps gave their verdicts about — no base, because the base is one value
     // that flows and `land` already has it (0061 §4), and no worktree, which
     // `#268` took off when the cut became a plugin's.
-    expect(asked.land).toEqual([{ strategy: "merge-commit", onSha: COMMITTED }]);
-    expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({ ending: "passed" });
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(asked.land).toEqual([{ strategy: 'merge-commit', onSha: COMMITTED }])
+    expect(result.steps.find((visit) => visit.step === 'merge')?.ending).toEqual({ ending: 'passed' })
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * **The body is nothing beyond its plugins, and `merge: []` is what that costs
@@ -1987,12 +1957,12 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
    * substitution rule doing what it says rather than a hole, and is why
    * `conduct.ts` asks `landedAt()` before it writes `WorkItemLanded`.
    */
-  it("lands nothing where nothing at all runs at the step", async () => {
-    const { result, asked } = await pass({ actions: { merge: [] } });
+  it('lands nothing where nothing at all runs at the step', async () => {
+    const { result, asked } = await pass({ actions: { merge: [] } })
 
-    expect(asked.land).toEqual([]);
-    expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({ ending: "passed" });
-  });
+    expect(asked.land).toEqual([])
+    expect(result.steps.find((visit) => visit.step === 'merge')?.ending).toEqual({ ending: 'passed' })
+  })
 
   /**
    * Over the whole log the lane has refused 32 times — **26 `verify-failed`, 6
@@ -2002,19 +1972,19 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
    * the built-in sends it back to `implement` with the new base.
    */
   it("reports the lane's `reason` and `detail`, and the judge decides", async () => {
-    let refuses = true;
+    let refuses = true
     const { result, asked } = await pass({
       answers: {
         land: () => {
           const answer: LandAnswer = refuses
-            ? { notMerged: { reason: "verify-failed", detail: "pnpm test failed on the new base" } }
-            : { merged: MERGED };
-          refuses = false;
-          return answer;
+            ? { notMerged: { reason: 'verify-failed', detail: 'pnpm test failed on the new base' } }
+            : { merged: MERGED }
+          refuses = false
+          return answer
         },
       },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
     /**
      * **The reason survived becoming an action's, which is the whole of `#270`.**
@@ -2026,19 +1996,19 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
      * the action's name now rather than `null`, which is 0058 §3c's *what refused*
      * gaining an answer it did not have.
      */
-    expect(result.steps.find((visit) => visit.step === "merge")?.ending).toEqual({
-      ending: "refused",
-      because: "verify-failed",
-      at: "land the branch",
-      detail: "pnpm test failed on the new base",
-    });
+    expect(result.steps.find((visit) => visit.step === 'merge')?.ending).toEqual({
+      ending: 'refused',
+      because: 'verify-failed',
+      at: 'land the branch',
+      detail: 'pnpm test failed on the new base',
+    })
     expect(asked.judge[0]).toMatchObject({
-      when: "verify-failed",
-      evidence: "pnpm test failed on the new base",
-    });
-    expect(result.routes).toMatchObject([{ from: "merge", to: "implement" }]);
-    expect(outcomeOf(result)).toBe("landed");
-  });
+      when: 'verify-failed',
+      evidence: 'pnpm test failed on the new base',
+    })
+    expect(result.routes).toMatchObject([{ from: 'merge', to: 'implement' }])
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * **Every path into `end` has been through `build` and `review`**, and the edge
@@ -2051,42 +2021,42 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
    * changes that edited the same decision differently produce text an agent can
    * merge and an intent it cannot know.
    */
-  it("takes a conflict back through `build` and `review` when a judge says so", async () => {
-    let refuses = true;
+  it('takes a conflict back through `build` and `review` when a judge says so', async () => {
+    let refuses = true
     const { result } = await pass({
       answers: {
         land: () => {
           const answer: LandAnswer = refuses
-            ? { notMerged: { reason: "conflict", detail: "both changed doc/design/the-pipeline.md" } }
-            : { merged: MERGED };
-          refuses = false;
-          return answer;
+            ? { notMerged: { reason: 'conflict', detail: 'both changed doc/design/the-pipeline.md' } }
+            : { merged: MERGED }
+          refuses = false
+          return answer
         },
-        judge: { next: "build", named: "claude-code", why: "the text resolves; the intent is one file" },
+        judge: { next: 'build', named: 'claude-code', why: 'the text resolves; the intent is one file' },
       },
       ceilings: { rounds: 1, restartsLeft: 0 },
-    });
+    })
 
     expect(walk(result).slice(8)).toEqual([
-      "merge:refused",
-      "proposed:routed",
-      "build:passed",
-      "review:passed",
-      "proposed:passed",
-      "merge:passed",
-      "end:passed",
-    ]);
+      'merge:refused',
+      'proposed:routed',
+      'build:passed',
+      'review:passed',
+      'proposed:passed',
+      'merge:passed',
+      'end:passed',
+    ])
     expect(result.routes).toEqual([
       {
-        from: "merge",
-        chose: "build",
-        to: "build",
-        why: "the text resolves; the intent is one file",
+        from: 'merge',
+        chose: 'build',
+        to: 'build',
+        why: 'the text resolves; the intent is one file',
         ceiling: null,
       },
-    ]);
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    ])
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * The lane's other five reasons are not directions: they stop the lane before
@@ -2094,20 +2064,20 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
    * arrive by is the same mistake as offering it a step nothing can run*
    * (`JudgeWhen`). So they reach a person, which is where they go today.
    */
-  it("holds a lane reason no judge answers for a person, without asking one", async () => {
+  it('holds a lane reason no judge answers for a person, without asking one', async () => {
     const { result, asked } = await pass({
-      answers: { land: { notMerged: { reason: "pending-migration", detail: "1 migration file" } } },
+      answers: { land: { notMerged: { reason: 'pending-migration', detail: '1 migration file' } } },
       ceilings: { rounds: 3, restartsLeft: 3 },
-    });
+    })
 
-    expect(asked.judge).toEqual([]);
-    expect(result.routes[0]).toMatchObject({ from: "merge", to: "waiting" });
-    expect(result.routes[0]?.why).toContain("pending-migration");
-    expect(result.rested).toBe("waiting");
-    expect(result.stoppedAt?.step).toBe("merge");
-    expect(outcomeOf(result)).toBe("blocked");
-  });
-});
+    expect(asked.judge).toEqual([])
+    expect(result.routes[0]).toMatchObject({ from: 'merge', to: 'waiting' })
+    expect(result.routes[0]?.why).toContain('pending-migration')
+    expect(result.rested).toBe('waiting')
+    expect(result.stoppedAt?.step).toBe('merge')
+    expect(outcomeOf(result)).toBe('blocked')
+  })
+})
 
 // ------------------------------------------------- every reason is reported ----
 
@@ -2131,34 +2101,34 @@ describe("merge reports a reason and a detail, and decides nothing", () => {
  * the free-form field that ending was split out of. So `a question at
  * \`implement\`` moved down to the row that asserts the question.
  */
-describe("every step that does not simply pass reports a reason", () => {
+describe('every step that does not simply pass reports a reason', () => {
   it.each([
-    { what: "a claim nobody could take", answers: { take: { passedOver: "no kind label" } } as Answers },
-    { what: "a tree that was not cut", answers: { cut: { notCut: "no such base ref" } } as Answers },
-    { what: "an agent with no receipt", answers: { dispatch: { stopped: "the budget went" } } as Answers },
+    { what: 'a claim nobody could take', answers: { take: { passedOver: 'no kind label' } } as Answers },
+    { what: 'a tree that was not cut', answers: { cut: { notCut: 'no such base ref' } } as Answers },
+    { what: 'an agent with no receipt', answers: { dispatch: { stopped: 'the budget went' } } as Answers },
     {
-      what: "a merge the lane refused",
-      answers: { land: { notMerged: { reason: "conflict", detail: "both changed one file" } } } as Answers,
+      what: 'a merge the lane refused',
+      answers: { land: { notMerged: { reason: 'conflict', detail: 'both changed one file' } } } as Answers,
     },
-  ])("names a reason for $what", async ({ answers }) => {
-    const { result } = await pass({ answers });
+  ])('names a reason for $what', async ({ answers }) => {
+    const { result } = await pass({ answers })
 
     const reported = result.steps
       .map((visit) => visit.ending)
-      .filter((ending) => ending.ending === "refused" || ending.ending === "did-not-finish");
+      .filter((ending) => ending.ending === 'refused' || ending.ending === 'did-not-finish')
 
-    expect(reported.length).toBeGreaterThan(0);
-    for (const ending of reported) expect(ending.because).not.toBe("");
-  });
+    expect(reported.length).toBeGreaterThan(0)
+    for (const ending of reported) expect(ending.because).not.toBe('')
+  })
 
   /** And the three that report a question instead, which is the same obligation. */
-  it("names the question where a step held instead of reporting", async () => {
-    const { result } = await pass({ answers: { cut: { asked: "which base?" } } });
+  it('names the question where a step held instead of reporting', async () => {
+    const { result } = await pass({ answers: { cut: { asked: 'which base?' } } })
 
-    const held = result.steps.map((visit) => visit.ending).filter((e) => e.ending === "held");
-    expect(held).toEqual([{ ending: "held", at: "cut the branch", question: "which base?" }]);
-    expect(outcomeOf(result)).toBe("blocked");
-  });
+    const held = result.steps.map((visit) => visit.ending).filter((e) => e.ending === 'held')
+    expect(held).toEqual([{ ending: 'held', at: 'cut the branch', question: 'which base?' }])
+    expect(outcomeOf(result)).toBe('blocked')
+  })
 
   /**
    * **And `asked`, whose question is on `detail` and whose `because` does not
@@ -2169,77 +2139,77 @@ describe("every step that does not simply pass reports a reason", () => {
    * the agent asked is on the ending a person and a judge both read, and no token
    * stands in for it.
    */
-  it("names the question where a step asked, and reports no reason beside it", async () => {
-    const { result } = await pass({ answers: { dispatch: { asked: "which file?" } } });
+  it('names the question where a step asked, and reports no reason beside it', async () => {
+    const { result } = await pass({ answers: { dispatch: { asked: 'which file?' } } })
 
-    const asked = result.steps.map((visit) => visit.ending).filter((e) => e.ending === "asked");
-    expect(asked).toEqual([{ ending: "asked", at: "write the change", detail: "which file?" }]);
+    const asked = result.steps.map((visit) => visit.ending).filter((e) => e.ending === 'asked')
+    expect(asked).toEqual([{ ending: 'asked', at: 'write the change', detail: 'which file?' }])
     // The field the split removed, and the assertion that it is gone rather than
     // empty: `"because" in ending` is what `reasonOf` reads.
-    for (const ending of asked) expect("because" in ending).toBe(false);
-  });
-});
+    for (const ending of asked) expect('because' in ending).toBe(false)
+  })
+})
 
 // -------------------------------------------------------------------- end ----
 
-describe("end runs on every ending and cannot refuse", () => {
+describe('end runs on every ending and cannot refuse', () => {
   /**
    * The three outcomes a pass can produce, and `end` resolving the declared list
    * against each. `closed` is the fourth and no pass produces it: it is a person
    * deciding the ticket is over, and `close.ts` resolves `end` for it.
    */
   it.each([
-    { outcome: "landed", answers: {} as Answers, actions: [{ name: "close the ticket", close: true }] },
+    { outcome: 'landed', answers: {} as Answers, actions: [{ name: 'close the ticket', close: true }] },
     {
-      outcome: "blocked",
-      answers: { dispatch: { asked: "which base?" } } as Answers,
-      actions: [{ name: "hold it", labels: ["agent:hold"] }],
+      outcome: 'blocked',
+      answers: { dispatch: { asked: 'which base?' } } as Answers,
+      actions: [{ name: 'hold it', labels: ['agent:hold'] }],
     },
     {
-      outcome: "failed",
+      outcome: 'failed',
       answers: {
-        dispatch: { neverStarted: { agent: "claude-code", detail: "quota" } },
+        dispatch: { neverStarted: { agent: 'claude-code', detail: 'quota' } },
       } as Answers,
       actions: [],
     },
-  ])("resolves the cells `when: $outcome` matches", async ({ outcome, answers, actions }) => {
+  ])('resolves the cells `when: $outcome` matches', async ({ outcome, answers, actions }) => {
     const { result, asked } = await pass({
       steps: { end: [CLOSE_ON_LANDED, HOLD_ON_BLOCKED] },
       answers,
-    });
+    })
 
-    expect(outcomeOf(result)).toBe(outcome);
-    expect(result.steps.at(-1)).toEqual({ step: "end", ending: { ending: "passed" }, results: [] });
-    expect(endRow(asked.record[0]?.plan ?? [])).toEqual({ outcome, actions });
-  });
+    expect(outcomeOf(result)).toBe(outcome)
+    expect(result.steps.at(-1)).toEqual({ step: 'end', ending: { ending: 'passed' }, results: [] })
+    expect(endRow(asked.record[0]?.plan ?? [])).toEqual({ outcome, actions })
+  })
 
-  it("records the resolution at the version the read gave", async () => {
+  it('records the resolution at the version the read gave', async () => {
     const stream = [
       {
         seq: 1n,
         streamId: ITEM.workItemId,
         version: 1,
-        type: "WorkItemClaimed",
+        type: 'WorkItemClaimed',
         schemaVer: 1,
         data: {},
-        actor: "conductor",
+        actor: 'conductor',
         causation: null,
         at: new Date(),
       } satisfies Envelope,
-    ];
-    const { asked } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers: { stream } });
+    ]
+    const { asked } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers: { stream } })
 
-    expect(asked.record[0]?.at).toBe(1);
-    expect(asked.record[0]?.workItemId).toBe(ITEM.workItemId);
-  });
+    expect(asked.record[0]?.at).toBe(1)
+    expect(asked.record[0]?.workItemId).toBe(ITEM.workItemId)
+  })
 
-  it("appends nothing when the recipe declares nothing at the step", async () => {
-    const { result, asked } = await pass();
+  it('appends nothing when the recipe declares nothing at the step', async () => {
+    const { result, asked } = await pass()
 
-    expect(result.steps.at(-1)?.ending).toEqual({ ending: "passed" });
-    expect(asked.read).toEqual([ITEM.workItemId]);
-    expect(asked.record).toEqual([]);
-  });
+    expect(result.steps.at(-1)?.ending).toEqual({ ending: 'passed' })
+    expect(asked.read).toEqual([ITEM.workItemId])
+    expect(asked.record).toEqual([])
+  })
 
   /**
    * The point resolves once per outcome, and the item's own stream is where that
@@ -2247,22 +2217,22 @@ describe("end runs on every ending and cannot refuse", () => {
    * that was blocked, came back and then landed resolves twice for two different
    * outcomes; this one has already landed.
    */
-  it("appends nothing a second time for an outcome the stream already carries", async () => {
+  it('appends nothing a second time for an outcome the stream already carries', async () => {
     const already: Envelope = {
       seq: 2n,
       streamId: ITEM.workItemId,
       version: 2,
-      type: "EndActionsResolved",
+      type: 'EndActionsResolved',
       schemaVer: 1,
-      data: { outcome: "landed", actions: [] },
-      actor: "conductor",
+      data: { outcome: 'landed', actions: [] },
+      actor: 'conductor',
       causation: null,
       at: new Date(),
-    };
-    const { asked } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers: { stream: [already] } });
+    }
+    const { asked } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers: { stream: [already] } })
 
-    expect(asked.record).toEqual([]);
-  });
+    expect(asked.record).toEqual([])
+  })
 
   /**
    * **The effects never decide whether the ending happened.** The nine steps
@@ -2271,35 +2241,35 @@ describe("end runs on every ending and cannot refuse", () => {
    * reported on `end`'s own entry in `steps` and nowhere else.
    */
   it.each([
-    { act: "read", answers: { readThrows: new Error("connection reset") } as Answers },
+    { act: 'read', answers: { readThrows: new Error('connection reset') } as Answers },
     {
-      act: "record",
-      answers: { recordThrows: new Error("version 1 is taken") } as Answers,
+      act: 'record',
+      answers: { recordThrows: new Error('version 1 is taken') } as Answers,
     },
-  ])("reports a $act that threw without changing the outcome", async ({ act, answers }) => {
-    const { result } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers });
+  ])('reports a $act that threw without changing the outcome', async ({ act, answers }) => {
+    const { result } = await pass({ steps: { end: [CLOSE_ON_LANDED] }, answers })
 
-    const ending = result.steps.at(-1)?.ending;
-    expect(ending).toMatchObject({ ending: "did-not-finish", because: END_UNRESOLVED, at: null });
-    expect(ending && "detail" in ending ? ending.detail : "").toContain(`\`${act}\` threw`);
+    const ending = result.steps.at(-1)?.ending
+    expect(ending).toMatchObject({ ending: 'did-not-finish', because: END_UNRESOLVED, at: null })
+    expect(ending && 'detail' in ending ? ending.detail : '').toContain(`\`${act}\` threw`)
     // The landing stands, and the pass reports it as one.
-    expect(result.stoppedAt).toBeNull();
-    expect(outcomeOf(result)).toBe("landed");
-  });
+    expect(result.stoppedAt).toBeNull()
+    expect(outcomeOf(result)).toBe('landed')
+  })
 
   /**
    * `EndActionsResolved` lives on the work item's stream, and a pass that took no
    * item has none. So the step passes, and it does so without asking the port for
    * a stream nobody can name.
    */
-  it("resolves nothing when the pass is about no item", async () => {
+  it('resolves nothing when the pass is about no item', async () => {
     const { result, asked } = await pass({
       steps: { end: [CLOSE_ON_LANDED, HOLD_ON_BLOCKED] },
-      answers: { take: { notClaimed: "lost-race" } },
-    });
+      answers: { take: { notClaimed: 'lost-race' } },
+    })
 
-    expect(result.steps.at(-1)).toEqual({ step: "end", ending: { ending: "passed" }, results: [] });
-    expect(asked.read).toEqual([]);
-    expect(asked.record).toEqual([]);
-  });
-});
+    expect(result.steps.at(-1)).toEqual({ step: 'end', ending: { ending: 'passed' }, results: [] })
+    expect(asked.read).toEqual([])
+    expect(asked.record).toEqual([])
+  })
+})

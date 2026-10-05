@@ -8,8 +8,8 @@
  */
 
 /** See `JudgeName` in `recipe.ts` for what the list means and why it is this short. */
-export const BUILT_IN_JUDGES = ["same-worktree"] as const;
-export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
+export const BUILT_IN_JUDGES = ['same-worktree'] as const
+export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number]
 
 /**
  * Which half of `JudgeName` a name is — **a function rather than a comparison
@@ -22,5 +22,5 @@ export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number];
  * dispatch.
  */
 export function isBuiltInJudge(name: string): name is BuiltInJudge {
-  return (BUILT_IN_JUDGES as readonly string[]).includes(name);
+  return (BUILT_IN_JUDGES as readonly string[]).includes(name)
 }

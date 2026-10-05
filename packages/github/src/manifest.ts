@@ -34,10 +34,10 @@
  * manifest and performs the conversion; `@lingtai/conductor`'s `create-app.ts`
  * is what writes a key to disk and what may never print one.
  */
-import { GITHUB_API, GitHubError, REQUIRED_PERMISSIONS } from "./app.ts";
+import { GITHUB_API, GitHubError, REQUIRED_PERMISSIONS } from './app.ts'
 
 /** Lingtai's own page. GitHub's form requires a homepage and nothing reads it. */
-export const LINGTAI_URL = "https://github.com/steven-zhc/lingtai";
+export const LINGTAI_URL = 'https://github.com/steven-zhc/lingtai'
 
 /**
  * The events the App subscribes to: the ones a delivery can be acted on for.
@@ -54,18 +54,18 @@ export const LINGTAI_URL = "https://github.com/steven-zhc/lingtai";
  * what it *would* deliver, and a person who later points it at a public address
  * should not have to come back and tick a box.
  */
-export const MANIFEST_EVENTS = ["issues"] as const;
+export const MANIFEST_EVENTS = ['issues'] as const
 
 /** 0006's permission table as GitHub's manifest spells it. */
 export function defaultPermissions(): Record<string, string> {
-  return Object.fromEntries(REQUIRED_PERMISSIONS.map((p) => [p.name, p.level]));
+  return Object.fromEntries(REQUIRED_PERMISSIONS.map((p) => [p.name, p.level]))
 }
 
 export interface ManifestOptions {
   /** What the App will be called. Unique across the whole of GitHub. */
-  name: string;
+  name: string
   /** Where GitHub sends the person back, absolute. The loopback is accepted. */
-  redirectUrl: string;
+  redirectUrl: string
   /**
    * A public address GitHub can reach, or null.
    *
@@ -76,30 +76,30 @@ export interface ManifestOptions {
    * produce an App whose deliveries fail silently from the first minute, which
    * is [0016 §4](../../../doc/decisions-archive/0016-the-settled-model.md)'s complaint.
    */
-  webhookUrl?: string | null;
+  webhookUrl?: string | null
   /**
    * Where GitHub sends a person after they install the App, absolute — the
    * repository picker's return (#168). Absent, GitHub shows its own page and
    * the person has to find their way back, which the picker survives: it reads
    * the installations back from GitHub rather than from this redirect.
    */
-  setupUrl?: string | null;
+  setupUrl?: string | null
   /** The homepage field. Overridable only so a test need not assert a constant twice. */
-  url?: string;
+  url?: string
 }
 
 /** The manifest, exactly as it is posted. */
 export interface AppManifest {
-  name: string;
-  url: string;
-  redirect_url: string;
-  public: boolean;
-  default_permissions: Record<string, string>;
-  default_events: string[];
-  hook_attributes: { url: string; active: boolean };
-  setup_url?: string;
+  name: string
+  url: string
+  redirect_url: string
+  public: boolean
+  default_permissions: Record<string, string>
+  default_events: string[]
+  hook_attributes: { url: string; active: boolean }
+  setup_url?: string
   /** Also come back when the repositories an installation covers are changed. */
-  setup_on_update?: boolean;
+  setup_on_update?: boolean
 }
 
 /**
@@ -116,7 +116,7 @@ export interface AppManifest {
  * `active: true` is a configured thing that does not work.
  */
 export function buildManifest(options: ManifestOptions): AppManifest {
-  const hook = options.webhookUrl ?? null;
+  const hook = options.webhookUrl ?? null
   return {
     name: options.name,
     url: options.url ?? LINGTAI_URL,
@@ -126,7 +126,7 @@ export function buildManifest(options: ManifestOptions): AppManifest {
     default_events: [...MANIFEST_EVENTS],
     hook_attributes: hook === null ? { url: `${LINGTAI_URL}#no-webhook`, active: false } : { url: hook, active: true },
     ...(options.setupUrl ? { setup_url: options.setupUrl, setup_on_update: true } : {}),
-  };
+  }
 }
 
 /** Loopback, the three private IPv4 ranges, link-local, and their IPv6 kin. */
@@ -141,7 +141,7 @@ const LOCAL_ADDRESS = [
   /^::$/,
   /^f[cd][0-9a-f]{2}:/,
   /^fe[89ab][0-9a-f]:/,
-];
+]
 
 /**
  * Why GitHub could not deliver to this address, or null when it could.
@@ -162,29 +162,29 @@ const LOCAL_ADDRESS = [
  * every address that is knowably not.
  */
 export function unreachableWebhook(url: string): string | null {
-  let parsed: URL;
+  let parsed: URL
   try {
-    parsed = new URL(url);
+    parsed = new URL(url)
   } catch {
-    return `${url} is not a URL`;
+    return `${url} is not a URL`
   }
-  if (parsed.protocol !== "https:") return "GitHub delivers over https:// and this is not";
+  if (parsed.protocol !== 'https:') return 'GitHub delivers over https:// and this is not'
 
   // `URL.hostname` keeps an IPv6 literal's brackets; the checks below want the
   // address itself.
-  const raw = parsed.hostname.toLowerCase();
-  const host = raw.startsWith("[") ? raw.slice(1, -1) : raw;
-  const ipv6 = host.includes(":");
+  const raw = parsed.hostname.toLowerCase()
+  const host = raw.startsWith('[') ? raw.slice(1, -1) : raw
+  const ipv6 = host.includes(':')
 
-  if (host === "localhost" || host.endsWith(".localhost")) return `${parsed.hostname} is this machine`;
-  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".home.arpa")) {
-    return `${parsed.hostname} resolves on a local network and not on GitHub's`;
+  if (host === 'localhost' || host.endsWith('.localhost')) return `${parsed.hostname} is this machine`
+  if (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.home.arpa')) {
+    return `${parsed.hostname} resolves on a local network and not on GitHub's`
   }
-  if (!ipv6 && !host.includes(".")) return `${parsed.hostname} is a bare name, which GitHub cannot resolve`;
+  if (!ipv6 && !host.includes('.')) return `${parsed.hostname} is a bare name, which GitHub cannot resolve`
   if (LOCAL_ADDRESS.some((range) => range.test(host))) {
-    return `${parsed.hostname} is a loopback or private address, which GitHub cannot reach`;
+    return `${parsed.hostname} is a loopback or private address, which GitHub cannot reach`
   }
-  return null;
+  return null
 }
 
 /**
@@ -209,8 +209,8 @@ export function unreachableWebhook(url: string): string | null {
 export function manifestFormAction(org?: string | null, state?: string | null): string {
   const page = org
     ? `https://github.com/organizations/${encodeURIComponent(org)}/settings/apps/new`
-    : "https://github.com/settings/apps/new";
-  return state ? `${page}?state=${encodeURIComponent(state)}` : page;
+    : 'https://github.com/settings/apps/new'
+  return state ? `${page}?state=${encodeURIComponent(state)}` : page
 }
 
 /**
@@ -223,14 +223,14 @@ export function manifestFormAction(org?: string | null, state?: string | null): 
  */
 export interface CreatedApp {
   /** The App ID — `LINGTAI_GITHUB_APP_ID`. */
-  id: number;
+  id: number
   /** `https://github.com/apps/<slug>/installations/new` is #168's first screen. */
-  slug: string;
-  name: string;
+  slug: string
+  name: string
   /** The receiver verifies signatures with this. */
-  webhookSecret: string;
+  webhookSecret: string
   /** The PEM. Never printed, never logged, never appended to the event log. */
-  pem: string;
+  pem: string
 }
 
 /**
@@ -244,46 +244,43 @@ export interface CreatedApp {
  * testing is on the other side of it, and a test that needed the network would
  * not be run.
  */
-export async function convertManifest(
-  code: string,
-  deps: { fetch?: typeof fetch } = {},
-): Promise<CreatedApp> {
-  const path = `/app-manifests/${encodeURIComponent(code)}/conversions`;
-  const doFetch = deps.fetch ?? fetch;
+export async function convertManifest(code: string, deps: { fetch?: typeof fetch } = {}): Promise<CreatedApp> {
+  const path = `/app-manifests/${encodeURIComponent(code)}/conversions`
+  const doFetch = deps.fetch ?? fetch
   const response = await doFetch(`${GITHUB_API}${path}`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      accept: "application/vnd.github+json",
-      "x-github-api-version": "2022-11-28",
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
       // GitHub rejects a request with no User-Agent, with a message that does
       // not say so.
-      "user-agent": "lingtai",
+      'user-agent': 'lingtai',
     },
-  });
+  })
 
   if (!response.ok) {
-    const body = await response.text();
-    let message = body.slice(0, 400);
+    const body = await response.text()
+    let message = body.slice(0, 400)
     try {
-      message = (JSON.parse(body) as { message?: string }).message ?? message;
+      message = (JSON.parse(body) as { message?: string }).message ?? message
     } catch {
       // Not JSON. The raw prefix is more useful than nothing.
     }
-    throw new GitHubError(response.status, path, message);
+    throw new GitHubError(response.status, path, message)
   }
 
   const raw = (await response.json()) as {
-    id: number;
-    slug: string;
-    name: string;
-    webhook_secret: string | null;
-    pem: string;
-  };
+    id: number
+    slug: string
+    name: string
+    webhook_secret: string | null
+    pem: string
+  }
   return {
     id: raw.id,
     slug: raw.slug,
     name: raw.name,
-    webhookSecret: raw.webhook_secret ?? "",
+    webhookSecret: raw.webhook_secret ?? '',
     pem: raw.pem,
-  };
+  }
 }

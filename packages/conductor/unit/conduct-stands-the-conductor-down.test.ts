@@ -25,9 +25,10 @@
  * hour is one that fails for the four months a year that zone is not in daylight
  * time (`#251`).
  */
-import type { Runtime } from "@lingtai/agent";
-import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import type { Runtime } from '@lingtai/agent'
+import { Effect } from 'effect'
+import { describe, expect, it } from 'vitest'
+
 import {
   DRAFTED,
   PROJECT,
@@ -46,7 +47,7 @@ import {
   reviewerThatCrashes,
   runtime,
   streams,
-} from "../test/one-pass.ts";
+} from '../test/one-pass.ts'
 
 /**
  * The hour a stored instant reads on `zone`'s own wall clock.
@@ -59,15 +60,13 @@ import {
  * March.
  */
 const wallHourIn = (zone: string, at: string) =>
-  new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", hour: "2-digit" }).format(
-    new Date(at),
-  );
+  new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', hour: '2-digit' }).format(new Date(at))
 
-describe("when a run never starts", () => {
-  it("pauses the conductor once, however many runs never start", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+describe('when a run never starts', () => {
+  it('pauses the conductor once, however many runs never start', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const result = await once(
@@ -76,67 +75,67 @@ describe("when a run never starts", () => {
           client: fakeGitHub(said),
           runtime: quotaRuntime,
           issue: 7,
-          hookBinary: "/tmp/fake/lingtai-hook",
-          prompt: "fix {{issue}}",
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
           merge: false,
-          home: "/tmp/fake-home",
+          home: '/tmp/fake-home',
           store,
         },
         fakePorts(did, store),
-      );
+      )
       // **`failed` and not `held`**, which is the distinction the whole ADR is
       // about: a wall about the account asks nobody, so the claim goes back to the
       // queue rather than onto somebody's *Waiting on you*.
-      expect(result.ok, `attempt ${attempt + 1}`).toBe(false);
-      if (result.ok === false) expect(result.stage, `attempt ${attempt + 1}`).toBe("implement");
+      expect(result.ok, `attempt ${attempt + 1}`).toBe(false)
+      if (result.ok === false) expect(result.stage, `attempt ${attempt + 1}`).toBe('implement')
     }
 
     // Every run said what it was, in the vocabulary that is checkable. `crash` is
     // what all six of them said before, which is why the night was unreadable.
-    const runs = [...streams(store)].filter(([id]) => id.startsWith("run-"));
+    const runs = [...streams(store)].filter(([id]) => id.startsWith('run-'))
     const endings = runs.flatMap(([, events]) =>
-      events.filter((e) => e.type === "RunFailed").map((e) => (e.data as { kind: string }).kind),
-    );
-    expect(endings).toEqual(Array.from({ length: 6 }, () => "never-started"));
+      events.filter((e) => e.type === 'RunFailed').map((e) => (e.data as { kind: string }).kind),
+    )
+    expect(endings).toEqual(Array.from({ length: 6 }, () => 'never-started'))
 
     // The items keep their place: each attempt released, as any failed run does.
-    const item = await store.read(`wi-${PROJECT}-7`);
-    expect(item.filter((e) => e.type === "WorkItemReleased")).toHaveLength(6);
+    const item = await store.read(`wi-${PROJECT}-7`)
+    expect(item.filter((e) => e.type === 'WorkItemReleased')).toHaveLength(6)
 
     // **And each release says what happened, which is the card's whole line.**
     // `WorkItemReleased.reason` overwrites the note the projection wrote from
     // `RunFailed`, so `run failed: ${kind}` was where the reason stopped (0031 §6,
     // `#100`) — the prose was in the history and the card said `crash`.
-    const released = item.filter((e) => e.type === "WorkItemReleased");
-    const reason = (released[0]!.data as { reason: string }).reason;
-    expect(reason).toContain("You've hit your session limit");
+    const released = item.filter((e) => e.type === 'WorkItemReleased')
+    const reason = (released[0]!.data as { reason: string }).reason
+    expect(reason).toContain("You've hit your session limit")
     // And which step met it, because the release is read beside nine others.
-    expect(reason).toContain("implement");
+    expect(reason).toContain('implement')
 
     // And the account-wide answer was given exactly once.
-    const control = await store.read("ctl-conductor");
-    const paused = control.filter((e) => e.type === "ConductorPaused");
-    expect(paused).toHaveLength(1);
+    const control = await store.read('ctl-conductor')
+    const paused = control.filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
 
-    const d = paused[0]!.data as { by: string; reason: string; until: string };
+    const d = paused[0]!.data as { by: string; reason: string; until: string }
     // `lingtai` and not a person: a pause with nobody's name on it would read as a
     // bug rather than as a decision.
-    expect(d.by).toBe("lingtai");
+    expect(d.by).toBe('lingtai')
     // Read out of the message, not guessed at: 11pm in Chicago, as an instant —
     // and asked back in Chicago, because that is where the message said it.
-    expect(wallHourIn("America/Chicago", d.until)).toBe("23");
+    expect(wallHourIn('America/Chicago', d.until)).toBe('23')
     // The evidence is on the pause, because this is the only place a person can
     // learn what actually stopped the queue.
-    expect(d.reason).toContain("You've hit your session limit");
+    expect(d.reason).toContain("You've hit your session limit")
 
     // **Nothing was spent, and nothing was left half done.** Six worktrees cut and
     // six removed — the finalizer is unconditional, so a pass that stopped at the
     // wall still unwinds.
-    expect(did.filter((line) => line.startsWith("provision "))).toHaveLength(6);
-    expect(did.filter((line) => line.startsWith("remove "))).toHaveLength(6);
+    expect(did.filter((line) => line.startsWith('provision '))).toHaveLength(6)
+    expect(did.filter((line) => line.startsWith('remove '))).toHaveLength(6)
     // And no merge lane was reached on any of them.
-    expect(did).not.toContain("integrate");
-  });
+    expect(did).not.toContain('integrate')
+  })
 
   /**
    * **The `end` step's effects are carried out on this ending too, and not only
@@ -156,14 +155,11 @@ describe("when a run never starts", () => {
    * reports nothing wrong. A recipe's `end:` is simply not obeyed, for ever,
    * with the log saying it was.
    */
-  it("carries out the end actions a failed ending resolved, rather than only recording them", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const closing = RECIPE.replace(
-      "steps: {}",
-      "steps:\n  end:\n    - { name: close it, when: failed, close: true }",
-    );
+  it('carries out the end actions a failed ending resolved, rather than only recording them', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const closing = RECIPE.replace('steps: {}', 'steps:\n  end:\n    - { name: close it, when: failed, close: true }')
 
     const result = await once(
       {
@@ -171,29 +167,29 @@ describe("when a run never starts", () => {
         client: fakeGitHub(said, closing),
         runtime: quotaRuntime,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
-    expect(result).toMatchObject({ ok: false, stage: "implement" });
+    )
+    expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
     // The plan reached the log, which is the half that already worked.
-    const item = await store.read(`wi-${PROJECT}-7`);
-    const resolved = item.find((e) => e.type === "EndActionsResolved");
-    expect(resolved, "the end step resolved nothing").toBeDefined();
-    expect(resolved!.data).toMatchObject({ outcome: "failed" });
+    const item = await store.read(`wi-${PROJECT}-7`)
+    const resolved = item.find((e) => e.type === 'EndActionsResolved')
+    expect(resolved, 'the end step resolved nothing').toBeDefined()
+    expect(resolved!.data).toMatchObject({ outcome: 'failed' })
 
     // And it reached GitHub, which is the half that did not.
-    expect(said).toContain("close #7");
+    expect(said).toContain('close #7')
     // Recorded as done, so `converge.ts` has nothing to retry and
     // `endedWithoutEndActions` has nothing to report.
-    expect(item.map((e) => e.type)).not.toContain("IssueUpdateFailed");
-  });
-});
+    expect(item.map((e) => e.type)).not.toContain('IssueUpdateFailed')
+  })
+})
 
 /**
  * **The second agent in a pass, and the two ways it can produce no verdict** —
@@ -215,7 +211,7 @@ describe("when a run never starts", () => {
  * the *run's* own wall, which is `{of: "run"}` and the one branch that was
  * covered.
  */
-describe("when an agent inside the pass produces no verdict", () => {
+describe('when an agent inside the pass produces no verdict', () => {
   /**
    * **The reviewer met the wall, and the sentence says so about the reviewer.**
    *
@@ -226,9 +222,9 @@ describe("when an agent inside the pass produces no verdict", () => {
    * they are read.
    */
   it("names the step's agent that met the wall, not the run that was paid for", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
 
     const result = await once(
       {
@@ -236,45 +232,45 @@ describe("when an agent inside the pass produces no verdict", () => {
         client: fakeGitHub(said, REVIEWED),
         runtime: reviewerAtTheWall,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
+    )
 
     // Released rather than held: the wall is about the account, so it asks
     // nobody — the same ending `quotaRuntime` gets, at the step that met it.
-    expect(result).toMatchObject({ ok: false, stage: "proposed" });
+    expect(result).toMatchObject({ ok: false, stage: 'proposed' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
     // **The run started and was paid**, which is the fact that makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
-    expect(run.find((e) => e.type === "RunFinished")!.data).toMatchObject({
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
       turns: 3,
       costUsd: 0.42,
-    });
+    })
     // And the reviewer judged nothing — `never-ran`, not a refusal of the diff.
-    const never = run.find((e) => e.type === "StepNeverRan")!;
-    expect(never.data).toMatchObject({ step: "proposed", action: "review" });
+    const never = run.find((e) => e.type === 'StepNeverRan')!
+    expect(never.data).toMatchObject({ step: 'proposed', action: 'review' })
 
-    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
-    expect(paused).toHaveLength(1);
-    const reason = (paused[0]!.data as { reason: string }).reason;
+    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
+    const reason = (paused[0]!.data as { reason: string }).reason
     // Which agent, by name, and where it was declared.
-    expect(reason).toContain("the proposed:review step's agent never started");
-    expect(reason).toContain("the run that reached it did start, and was paid for");
+    expect(reason).toContain("the proposed:review step's agent never started")
+    expect(reason).toContain('the run that reached it did start, and was paid for')
     // The falsehood the three variants exist to prevent.
-    expect(reason).not.toContain("no turns taken, nothing spent");
+    expect(reason).not.toContain('no turns taken, nothing spent')
     // The runtime's own words, because this is the only place a person can learn
     // what stopped the queue.
-    expect(reason).toContain("You've hit your session limit");
+    expect(reason).toContain("You've hit your session limit")
 
     // The item keeps its place, as any failed run's does.
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemReleased");
-  });
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemReleased')
+  })
 
   /**
    * **The *first* agent a pass can buy, and its own sentence** — the `agent:` a
@@ -295,10 +291,10 @@ describe("when an agent inside the pass produces no verdict", () => {
    * action are in it by name, and a person reading the board's chip is told the
    * design was not written rather than that a run never started.
    */
-  it("names the drafting agent when the first agent a pass buys meets the wall", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
+  it('names the drafting agent when the first agent a pass buys meets the wall', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
 
     const result = await once(
       {
@@ -306,47 +302,47 @@ describe("when an agent inside the pass produces no verdict", () => {
         client: fakeGitHub(said, DRAFTED),
         runtime: designerAtTheWall,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
+    )
 
     // Released rather than held, at the step that met it — the wall is about the
     // account, so it asks nobody.
-    expect(result).toMatchObject({ ok: false, stage: "design" });
+    expect(result).toMatchObject({ ok: false, stage: 'design' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
     // The drafting agent is the one that ran, by name, and nothing after it did:
     // `RunStarted` is `firstDispatch`'s and is never reached.
-    expect(run.find((e) => e.type === "StepNeverRan")!.data).toMatchObject({
-      step: "design",
-      action: "draft",
-    });
-    expect(run.map((e) => e.type)).not.toContain("RunStarted");
-    expect(run.map((e) => e.type)).not.toContain("RunFinished");
-    expect(did).not.toContain("wire");
+    expect(run.find((e) => e.type === 'StepNeverRan')!.data).toMatchObject({
+      step: 'design',
+      action: 'draft',
+    })
+    expect(run.map((e) => e.type)).not.toContain('RunStarted')
+    expect(run.map((e) => e.type)).not.toContain('RunFinished')
+    expect(did).not.toContain('wire')
 
-    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
-    expect(paused).toHaveLength(1);
-    const reason = (paused[0]!.data as { reason: string }).reason;
+    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
+    const reason = (paused[0]!.data as { reason: string }).reason
     // Which agent, by name, and what did not happen because of it.
-    expect(reason).toContain("the design:draft step's agent never started");
-    expect(reason).toContain("nothing drafted the design");
+    expect(reason).toContain("the design:draft step's agent never started")
+    expect(reason).toContain('nothing drafted the design')
     // The falsehood `{of: "run"}` would have written here, and the one
     // `{of: "step"}` would have.
-    expect(reason).not.toContain("no turns taken, nothing spent");
-    expect(reason).not.toContain("nothing judged the diff");
+    expect(reason).not.toContain('no turns taken, nothing spent')
+    expect(reason).not.toContain('nothing judged the diff')
     // The runtime's own words, because this is the only place a person can learn
     // what stopped the queue.
-    expect(reason).toContain("You've hit your session limit");
+    expect(reason).toContain("You've hit your session limit")
 
     // The item keeps its place, as any failed run's does.
-    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain("WorkItemReleased");
-  });
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemReleased')
+  })
 
   /**
    * **The third agent in a pass, and the third sentence** — the agent a round
@@ -369,34 +365,34 @@ describe("when an agent inside the pass produces no verdict", () => {
    * `ARRIVE_AT_THE_ROUTER` does not include the step — and `conflict`,
    * `needs-input` and `findings` have a person as their floor.
    */
-  it("names the agent a round bought when that is what met the wall", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const ports = fakePorts(did, store);
+  it('names the agent a round bought when that is what met the wall', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ports = fakePorts(did, store)
     // The lane refuses with the one reason a round is bought for.
     ports.repo.integrate = () =>
       Effect.sync(() => {
-        did.push("integrate");
-        return { ok: false, reason: "verify-failed", detail: "policy: this branch may not land" } as never;
-      });
+        did.push('integrate')
+        return { ok: false, reason: 'verify-failed', detail: 'policy: this branch may not land' } as never
+      })
 
     /** The implementer works and is paid; the agent the round buys never starts. */
     const fixerAtTheWall: Runtime = {
       ...runtime,
       run: async (request) =>
-        request.runId.includes(":fix:")
+        request.runId.includes(':fix:')
           ? {
               exitCode: 1,
               turns: 0,
               durationMs: 7_000,
               costUsd: 0,
               failure: {
-                kind: "never-started",
+                kind: 'never-started',
                 detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
               },
               text: null,
-              sessionId: "sess-fix",
+              sessionId: 'sess-fix',
             }
           : {
               exitCode: 0,
@@ -404,10 +400,10 @@ describe("when an agent inside the pass produces no verdict", () => {
               durationMs: 1234,
               costUsd: 0.42,
               failure: null,
-              text: "done",
-              sessionId: "sess-1",
+              text: 'done',
+              sessionId: 'sess-1',
             },
-    };
+    }
 
     const result = await once(
       {
@@ -415,26 +411,26 @@ describe("when an agent inside the pass produces no verdict", () => {
         client: fakeGitHub(said),
         runtime: fixerAtTheWall,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         // No hold at `merge`: the lane has to be reached for it to refuse.
         merge: true,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       ports,
-    );
+    )
 
     // Released, at the step the wall was met at — `implement`, because that is
     // where a round's agent runs.
-    expect(result).toMatchObject({ ok: false, stage: "implement" });
+    expect(result).toMatchObject({ ok: false, stage: 'implement' })
 
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
     // A round *was* bought, or this is not the branch under test.
-    expect(run.find((e) => e.type === "FixRequested")!.data).toMatchObject({
+    expect(run.find((e) => e.type === 'FixRequested')!.data).toMatchObject({
       round: 1,
-      action: "merge",
-    });
+      action: 'merge',
+    })
     /**
      * **And the decision that bought it is on the log, not only in the run log**
      * (`#271`).
@@ -445,30 +441,30 @@ describe("when an agent inside the pass produces no verdict", () => {
      * land, which is exactly the ending whose run log survives: asserting the
      * event here says the append does not depend on the ending.
      */
-    expect(run.find((e) => e.type === "PassRouted")!.data).toEqual({
-      from: "merge",
-      chose: "implement",
-      to: "implement",
-      why: expect.stringContaining("same-worktree"),
+    expect(run.find((e) => e.type === 'PassRouted')!.data).toEqual({
+      from: 'merge',
+      chose: 'implement',
+      to: 'implement',
+      why: expect.stringContaining('same-worktree'),
       ceiling: null,
-    });
+    })
     // And the run that reached it was paid for, which is what makes the
     // `{of: "run"}` sentence a lie here rather than merely imprecise.
-    expect(run.find((e) => e.type === "RunFinished")!.data).toMatchObject({
+    expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({
       turns: 3,
       costUsd: 0.42,
-    });
+    })
 
-    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
-    expect(paused).toHaveLength(1);
-    const reason = (paused[0]!.data as { reason: string }).reason;
+    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
+    const reason = (paused[0]!.data as { reason: string }).reason
     // The fixing agent, by name, and what it was bought to answer.
-    expect(reason).toContain("the agent bought to fix merge (round 1) never started");
-    expect(reason).toContain("the run that reached it did start, and was paid for");
+    expect(reason).toContain('the agent bought to fix merge (round 1) never started')
+    expect(reason).toContain('the run that reached it did start, and was paid for')
     // The falsehood the three variants exist to prevent.
-    expect(reason).not.toContain("no turns taken, nothing spent");
-    expect(reason).toContain("You've hit your session limit");
-  });
+    expect(reason).not.toContain('no turns taken, nothing spent')
+    expect(reason).toContain("You've hit your session limit")
+  })
 
   /**
    * **The fourth agent in a pass is the judge, and its wall is the account's**
@@ -494,33 +490,33 @@ describe("when an agent inside the pass produces no verdict", () => {
    * is `kind === "never-started"` and is the adapter's classification, never
    * re-derived here (0031 §1).
    */
-  it("pauses the conductor when the judge it dispatched never started", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const ports = fakePorts(did, store);
+  it('pauses the conductor when the judge it dispatched never started', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const ports = fakePorts(did, store)
 
     /** Everything runs and is paid for; only the judge meets the wall. */
-    const ran: string[] = [];
+    const ran: string[] = []
     const judgeAtTheWall = {
       ...refusingRuntime,
       run: async (request: Parameters<typeof refusingRuntime.run>[0]) => {
-        ran.push(request.runId);
-        if (!request.runId.includes(":judge:")) return refusingRuntime.run(request);
+        ran.push(request.runId)
+        if (!request.runId.includes(':judge:')) return refusingRuntime.run(request)
         return {
           exitCode: 1,
           turns: 0,
           durationMs: 5_000,
           costUsd: 0,
           failure: {
-            kind: "never-started" as const,
+            kind: 'never-started' as const,
             detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
           },
           text: null,
-          sessionId: "sess-judge",
-        };
+          sessionId: 'sess-judge',
+        }
       },
-    };
+    }
 
     const result = await once(
       {
@@ -528,35 +524,35 @@ describe("when an agent inside the pass produces no verdict", () => {
         client: fakeGitHub(said, JUDGED_BY_AN_AGENT),
         runtime: judgeAtTheWall,
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       ports,
-    );
+    )
 
     // It was asked, or this is not the branch under test.
-    expect(ran.filter((id) => id.includes(":judge:"))).toHaveLength(1);
+    expect(ran.filter((id) => id.includes(':judge:'))).toHaveLength(1)
 
     // **Released, not held** — the distinction the whole case is about. A hold
     // answers `ok: "held"` and leaves the item for a person.
-    expect(result).toMatchObject({ ok: false, stage: "proposed" });
+    expect(result).toMatchObject({ ok: false, stage: 'proposed' })
 
-    const paused = (await store.read("ctl-conductor")).filter((e) => e.type === "ConductorPaused");
-    expect(paused).toHaveLength(1);
-    const reason = (paused[0]!.data as { reason: string }).reason;
+    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
+    expect(paused).toHaveLength(1)
+    const reason = (paused[0]!.data as { reason: string }).reason
     // The step whose agent met it, and the clause that is the point of §3.
-    expect(reason).toContain("proposed");
-    expect(reason).toContain("Every queued item would meet the same thing");
+    expect(reason).toContain('proposed')
+    expect(reason).toContain('Every queued item would meet the same thing')
     // The reset came from the message, not from the recipe's backoff (0031 §4).
-    expect(reason).not.toContain("it named no reset time");
-    expect(reason).toContain("You've hit your session limit");
+    expect(reason).not.toContain('it named no reset time')
+    expect(reason).toContain("You've hit your session limit")
     // And the run that reached the judge did start and was paid for, so the
     // sentence must not be the one written for a run that took no turns.
-    expect(reason).not.toContain("no turns taken, nothing spent");
-  });
+    expect(reason).not.toContain('no turns taken, nothing spent')
+  })
 
   /**
    * **A reviewer that started and left no receipt goes to a person, and the
@@ -569,11 +565,11 @@ describe("when an agent inside the pass produces no verdict", () => {
    * (`goesToTheRouter` refuses a crash), and what a person is shown is about the
    * machinery rather than about the change.
    */
-  it("sends a reviewer that left no verdict to a person, and pauses nothing", async () => {
-    const store = memoryStore();
-    const did: string[] = [];
-    const said: string[] = [];
-    const tried = { n: 0 };
+  it('sends a reviewer that left no verdict to a person, and pauses nothing', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const tried = { n: 0 }
 
     const result = await once(
       {
@@ -581,49 +577,49 @@ describe("when an agent inside the pass produces no verdict", () => {
         client: fakeGitHub(said, REVIEWED),
         runtime: reviewerThatCrashes(tried),
         issue: 7,
-        hookBinary: "/tmp/fake/lingtai-hook",
-        prompt: "fix {{issue}}",
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
         merge: false,
-        home: "/tmp/fake-home",
+        home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
-    );
+    )
 
     // Held at the step that produced nothing, and a person holds it.
-    expect(result).toMatchObject({ ok: "held", step: "proposed" });
+    expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
     // Run once (`#234`): 0057 §4's retry is gone, and a second attempt would be
     // the same machine failing the same way at the same price.
-    expect(tried.n).toBe(1);
+    expect(tried.n).toBe(1)
 
     // **The queue is not stood down.** A crash is local, so pausing every other
     // ticket for it is 0041's category error with the sign flipped.
-    expect(await store.read("ctl-conductor")).toEqual([]);
+    expect(await store.read('ctl-conductor')).toEqual([])
 
-    const item = await store.read(`wi-${PROJECT}-7`);
-    const types = item.map((e) => e.type);
-    expect(types).toContain("WorkItemBlocked");
-    expect(types).not.toContain("WorkItemReleased");
+    const item = await store.read(`wi-${PROJECT}-7`)
+    const types = item.map((e) => e.type)
+    expect(types).toContain('WorkItemBlocked')
+    expect(types).not.toContain('WorkItemReleased')
 
-    const blocked = item.find((e) => e.type === "WorkItemBlocked")!.data as {
-      needs: string;
-      question: string;
-      diagnosis: { raw: string | null };
-    };
+    const blocked = item.find((e) => e.type === 'WorkItemBlocked')!.data as {
+      needs: string
+      question: string
+      diagnosis: { raw: string | null }
+    }
     // Nothing is being asked of anybody's judgement about the diff: the
     // machinery broke and the log is asking for it to be acknowledged.
-    expect(blocked.needs).toBe("acknowledgement");
-    expect(blocked.question).toContain("did-not-finish");
+    expect(blocked.needs).toBe('acknowledgement')
+    expect(blocked.question).toContain('did-not-finish')
     // The reviewer's own ending, verbatim, rather than a sentence about the diff.
-    expect(blocked.diagnosis.raw).toContain("the reviewer did not finish (crash)");
-    expect(blocked.diagnosis.raw).toContain("already in use");
+    expect(blocked.diagnosis.raw).toContain('the reviewer did not finish (crash)')
+    expect(blocked.diagnosis.raw).toContain('already in use')
 
     // And no round was bought to answer a judgement nobody made.
-    const [, run] = [...streams(store)].find(([id]) => id.startsWith("run-"))!;
-    expect(run.map((e) => e.type)).not.toContain("FixRequested");
-    expect(run.find((e) => e.type === "StepDidNotFinish")!.data).toMatchObject({
-      step: "proposed",
-      action: "review",
-    });
-  });
-});
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('run-'))!
+    expect(run.map((e) => e.type)).not.toContain('FixRequested')
+    expect(run.find((e) => e.type === 'StepDidNotFinish')!.data).toMatchObject({
+      step: 'proposed',
+      action: 'review',
+    })
+  })
+})

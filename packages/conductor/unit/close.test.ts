@@ -1,3 +1,8 @@
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+
+import { applyWorkItem, reduceWorkItem, type Envelope } from '@lingtai/domain'
+import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 /**
  * Closing a ticket nobody is going to do (#151).
  *
@@ -6,40 +11,45 @@
  * **nothing lifts it**, and the **queue stops offering it because the log says
  * so** rather than because GitHub stopped listing it.
  */
-import { describe, expect, it } from "vitest";
-import { applyWorkItem, reduceWorkItem, type Envelope } from "@lingtai/domain";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { RECIPE_PATH, resolveRecipe } from "@lingtai/recipe";
-import { close } from "../src/close.ts";
+import { describe, expect, it } from 'vitest'
 
-const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString();
+import { close } from '../src/close.ts'
+
+const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString()
 
 /** The shape the store hands a reducer, with only what these tests read. */
 const event = (n: number, type: string, data: object): Envelope =>
-  ({ seq: n, streamId: "wi-lingtai-32", type, data, at: at(n), version: n, actor: "human:steven" }) as unknown as Envelope;
+  ({
+    seq: n,
+    streamId: 'wi-lingtai-32',
+    type,
+    data,
+    at: at(n),
+    version: n,
+    actor: 'human:steven',
+  }) as unknown as Envelope
 
-const closed = event(2, "WorkItemClosed", { by: "human:steven", reason: "over-built for the need" });
+const closed = event(2, 'WorkItemClosed', { by: 'human:steven', reason: 'over-built for the need' })
 
-describe("a closed work item", () => {
-  it("is a terminal that carries who and why", () => {
+describe('a closed work item', () => {
+  it('is a terminal that carries who and why', () => {
     const state = reduceWorkItem([
-      event(1, "WorkItemBlocked", {
-        question: "merge over the refusal?",
-        needsFrom: "human",
-        runId: "run-1",
-        needs: "judgement",
+      event(1, 'WorkItemBlocked', {
+        question: 'merge over the refusal?',
+        needsFrom: 'human',
+        runId: 'run-1',
+        needs: 'judgement',
         diagnosis: null,
       }),
       closed,
-    ]);
+    ])
 
     expect(state.lifecycle).toEqual({
-      status: "closed",
-      by: "human:steven",
-      reason: "over-built for the need",
-    });
-  });
+      status: 'closed',
+      by: 'human:steven',
+      reason: 'over-built for the need',
+    })
+  })
 
   /**
    * The whole of why the queue passes over it. `queue.ts` subtracts every row
@@ -47,12 +57,12 @@ describe("a closed work item", () => {
    * closed item unclaimable — with no label, no GitHub round trip and no change
    * to the queue at all.
    */
-  it("is not backlog, which is what the queue subtracts on", () => {
-    const state = reduceWorkItem([closed]);
+  it('is not backlog, which is what the queue subtracts on', () => {
+    const state = reduceWorkItem([closed])
 
-    expect(state.lifecycle.status).not.toBe("backlog");
-    expect(state.lifecycle.status).toBe("closed");
-  });
+    expect(state.lifecycle.status).not.toBe('backlog')
+    expect(state.lifecycle.status).toBe('closed')
+  })
 
   /**
    * 0151's decision, and the one that had to be written down rather than left
@@ -62,25 +72,25 @@ describe("a closed work item", () => {
    * inherits the findings and the spend of work done under an intent that is no
    * longer the intent.
    */
-  it("is not lifted by an unblock arriving after it", () => {
+  it('is not lifted by an unblock arriving after it', () => {
     const state = applyWorkItem(
       reduceWorkItem([closed]),
-      event(3, "WorkItemUnblocked", { by: "human:steven", note: "changed my mind" }),
-    );
+      event(3, 'WorkItemUnblocked', { by: 'human:steven', note: 'changed my mind' }),
+    )
 
-    expect(state.lifecycle.status).toBe("closed");
-  });
+    expect(state.lifecycle.status).toBe('closed')
+  })
 
   /** And a claim after it does not either: the ticket is over, not free. */
-  it("is not lifted by a claim arriving after it", () => {
+  it('is not lifted by a claim arriving after it', () => {
     const state = applyWorkItem(
       reduceWorkItem([closed]),
-      event(4, "WorkItemClaimed", { runId: "run-2", worker: "daemon" }),
-    );
+      event(4, 'WorkItemClaimed', { runId: 'run-2', worker: 'daemon' }),
+    )
 
-    expect(state.lifecycle.status).toBe("closed");
-  });
-});
+    expect(state.lifecycle.status).toBe('closed')
+  })
+})
 
 /**
  * And the `end` point runs on it, because `end` is the point that runs on every
@@ -95,7 +105,7 @@ describe("a closed work item", () => {
  * that stopped admitting the action would fail this rather than a reader
  * noticing.
  */
-describe("closing runs the end point", () => {
+describe('closing runs the end point', () => {
   /**
    * This repository's own recipe, unaltered.
    *
@@ -107,113 +117,113 @@ describe("closing runs the end point", () => {
    * here as an action resolving on a close that should not.
    */
   async function recipe(): Promise<string> {
-    const root = fileURLToPath(new URL("../../../", import.meta.url));
-    return readFile(`${root}${RECIPE_PATH}`, "utf8");
+    const root = fileURLToPath(new URL('../../../', import.meta.url))
+    return readFile(`${root}${RECIPE_PATH}`, 'utf8')
   }
 
   /** A store that keeps what it was handed, so *one append* is checkable. */
   function store() {
-    const events: Envelope[] = [];
-    const appends: { type: string; data: unknown }[][] = [];
+    const events: Envelope[] = []
+    const appends: { type: string; data: unknown }[][] = []
     return {
       appends,
       events,
       async read() {
-        return events;
+        return events
       },
       async append(_id: string, _version: number, toAppend: { type: string; data: unknown }[]) {
-        appends.push(toAppend);
-        for (const e of toAppend) events.push(event(events.length + 1, e.type, e.data as object));
+        appends.push(toAppend)
+        for (const e of toAppend) events.push(event(events.length + 1, e.type, e.data as object))
       },
-    };
+    }
   }
 
   /** Just enough GitHub to read a recipe and be told about an issue. */
   function github(yaml: string | null) {
-    const closedIssues: number[] = [];
-    const labelWrites: string[][] = [];
+    const closedIssues: number[] = []
+    const labelWrites: string[][] = []
     return {
       closedIssues,
       labelWrites,
       async defaultBranch() {
-        return "main";
+        return 'main'
       },
       async fileAt(path: string, ref: string) {
-        if (yaml === null) throw new Error("the recipe could not be read");
-        return path === RECIPE_PATH && ref === "main" ? yaml : null;
+        if (yaml === null) throw new Error('the recipe could not be read')
+        return path === RECIPE_PATH && ref === 'main' ? yaml : null
       },
       async getIssue() {
-        return { labels: [{ name: "bug" }, { name: "lingtai:waiting" }] };
+        return { labels: [{ name: 'bug' }, { name: 'lingtai:waiting' }] }
       },
       async setLabels(_issue: number, labels: readonly string[]) {
-        labelWrites.push([...labels]);
+        labelWrites.push([...labels])
       },
       async closeIssue(issue: number) {
-        closedIssues.push(issue);
+        closedIssues.push(issue)
       },
       async comment() {
-        return { id: 1 };
+        return { id: 1 }
       },
       async updateBody() {},
-    };
+    }
   }
 
   const args = (s: ReturnType<typeof store>, g: ReturnType<typeof github>) =>
     ({
-      project: "lingtai",
+      project: 'lingtai',
       issue: 32,
-      by: "human:steven",
-      reason: "over-built for the need",
-      state: { name: "lingtai", owner: "steven-zhc", base: "main" },
+      by: 'human:steven',
+      reason: 'over-built for the need',
+      state: { name: 'lingtai', owner: 'steven-zhc', base: 'main' },
       client: g,
       // The recipe through the fake GitHub, so a `null` one still refuses the
       // way an unreadable file does; where it is read from is `local.test.ts`'s.
-      recipe: () => resolveRecipe((p, r) => g.fileAt(p, r), "main"),
+      recipe: () => resolveRecipe((p, r) => g.fileAt(p, r), 'main'),
       store: s,
-    }) as unknown as Parameters<typeof close>[0];
+    }) as unknown as Parameters<typeof close>[0]
 
-  it("resolves the point in the same append as the outcome", async () => {
-    const s = store();
-    const g = github(await recipe());
+  it('resolves the point in the same append as the outcome', async () => {
+    const s = store()
+    const g = github(await recipe())
 
-    const outcome = await close(args(s, g));
+    const outcome = await close(args(s, g))
 
-    expect(outcome.ok).toBe(true);
+    expect(outcome.ok).toBe(true)
     // One append, carrying both. A crash cannot leave a terminal whose point
     // resolved to nothing recorded — the version check guards the pair.
-    expect(s.appends[0]?.map((e) => e.type)).toEqual(["WorkItemClosed", "EndActionsResolved"]);
+    expect(s.appends[0]?.map((e) => e.type)).toEqual(['WorkItemClosed', 'EndActionsResolved'])
     // Exactly the `when: closed` action. The `when: landed` one beside it in
     // the same recipe does not resolve here, which is the whole reason the two
     // are separate actions rather than one `when: any`.
     expect(s.appends[0]?.[1]?.data).toEqual({
-      outcome: "closed",
-      actions: [{ name: "close the ticket a person ended", close: true }],
-    });
-  });
+      outcome: 'closed',
+      actions: [{ name: 'close the ticket a person ended', close: true }],
+    })
+  })
 
-  it("carries the resolution out, so the issue does not need closing by hand", async () => {
-    const s = store();
-    const g = github(await recipe());
+  it('carries the resolution out, so the issue does not need closing by hand', async () => {
+    const s = store()
+    const g = github(await recipe())
 
-    await close(args(s, g));
+    await close(args(s, g))
 
-    expect(g.closedIssues).toEqual([32]);
+    expect(g.closedIssues).toEqual([32])
     // And Lingtai's own labels come off: `labelsFor("closed")` is empty, and a
     // whole-set write keeps everybody else's.
-    expect(g.labelWrites).toEqual([["bug"]]);
-  });
+    expect(g.labelWrites).toEqual([['bug']])
+  })
 
-  it("refuses on a recipe it cannot read, and closes nothing", async () => {
-    const s = store();
-    const g = github(null);
+  it('refuses on a recipe it cannot read, and closes nothing', async () => {
+    const s = store()
+    const g = github(null)
 
-    const outcome = await close(args(s, g));
+    const outcome = await close(args(s, g))
 
-    expect(outcome.ok).toBe(false);
-    expect(outcome.detail).toContain("Nothing was closed.");
+    expect(outcome.ok).toBe(false)
+    expect(outcome.detail).toContain('Nothing was closed.')
     // The point of refusing before the append: a terminal with an unresolved
     // point is the silence this whole mechanism exists to prevent.
-    expect(s.appends).toEqual([]);
-    expect(g.closedIssues).toEqual([]);
-  });
-});
+    expect(s.appends).toEqual([])
+    expect(g.closedIssues).toEqual([])
+  })
+})

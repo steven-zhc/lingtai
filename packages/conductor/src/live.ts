@@ -18,16 +18,12 @@ import {
   smokeTestFailClosedEffect,
   writeHookWiringEffect,
   writeUnhookedSettingsEffect,
-} from "@lingtai/agent";
-import { resolveAgentEnv } from "@lingtai/agent-env";
-import {
-  gitEffect,
-  integrateEffect,
-  provisionWorktreeEffect,
-  removeWorktreeEffect,
-} from "@lingtai/repo";
-import { Effect, Layer } from "effect";
-import { AgentHost, Repo, type RunPorts } from "./ports.ts";
+} from '@lingtai/agent'
+import { resolveAgentEnv } from '@lingtai/agent-env'
+import { gitEffect, integrateEffect, provisionWorktreeEffect, removeWorktreeEffect } from '@lingtai/repo'
+import { Effect, Layer } from 'effect'
+
+import { AgentHost, Repo, type RunPorts } from './ports.ts'
 
 export function livePorts(): RunPorts {
   return {
@@ -52,11 +48,10 @@ export function livePorts(): RunPorts {
       resolveEnv: (options) =>
         Effect.tryPromise({
           try: () => resolveAgentEnv(options),
-          catch: (err) =>
-            new AgentHostFailed({ operation: "resolveEnv", detail: (err as Error).message }),
+          catch: (err) => new AgentHostFailed({ operation: 'resolveEnv', detail: (err as Error).message }),
         }),
     },
-  };
+  }
 }
 
 /**
@@ -69,8 +64,8 @@ export function livePorts(): RunPorts {
  * projector, and that is `Layer.scoped` in `apps/cli/src/projector.ts`, where
  * `Scope` earns what it is for.
  */
-export const RepoLive = Layer.succeed(Repo, livePorts().repo);
-export const AgentHostLive = Layer.succeed(AgentHost, livePorts().agent);
+export const RepoLive = Layer.succeed(Repo, livePorts().repo)
+export const AgentHostLive = Layer.succeed(AgentHost, livePorts().agent)
 
 /** Both, for a host that wants the real world and no choices. */
-export const PortsLive = Layer.merge(RepoLive, AgentHostLive);
+export const PortsLive = Layer.merge(RepoLive, AgentHostLive)

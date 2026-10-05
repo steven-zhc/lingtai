@@ -15,152 +15,146 @@
  * finished, and asks the row the question `doctor` and the board's chips ask —
  * `lastBeat`, which is now the one place either of them asks it.
  */
-import { directPostgresUrl } from "@lingtai/env";
-import { postgresUnderTest } from "@lingtai/event-store/test/postgres";
-import { afterAll, describe, expect, it } from "vitest";
-import pg from "pg";
-import {
-  HEARTBEAT_MS,
-  STALE_AFTER_MS,
-  createStatusTable,
-  lastBeat,
-  readStatus,
-  startBeacon,
-} from "../src/control.ts";
+import { directPostgresUrl } from '@lingtai/env'
+import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import pg from 'pg'
+import { afterAll, describe, expect, it } from 'vitest'
 
-const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+import { HEARTBEAT_MS, STALE_AFTER_MS, createStatusTable, lastBeat, readStatus, startBeacon } from '../src/control.ts'
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 // #275: the beacon's own row is Postgres's `daemon_status`, so this describe —
 // and the cleanup beside it — is skipped rather than converted where no
 // LINGTAI_TEST_DATABASE_URL is set, and the skip is visible in vitest's own
 // count. "what the beacon's row means" below needs no database at all: `lastBeat`
 // is a pure function, so it runs unconditionally.
-describe.skipIf(!postgresUnderTest())("against the real row", () => {
-/**
- * `daemon_status` is one row for the whole installation, so a test that leaves
- * one behind is a test that tells the next package's `lingtai doctor` a daemon
- * is up. Nothing else in the suite writes it, so removing it restores exactly
- * the state these tests found.
- */
-afterAll(async () => {
-  const client = new pg.Client({ connectionString: directPostgresUrl() });
-  await client.connect();
-  try {
-    await client.query("delete from daemon_status where id = 1");
-  } catch {
-    // No table means no row to clear, which is the state we wanted.
-  } finally {
-    await client.end();
-  }
-});
-
-describe("the beacon", () => {
-  it("keeps the row fresh through a startup slower than three missed beats", async () => {
-    await createStatusTable();
-    const beacon = startBeacon("starting");
-
+describe.skipIf(!postgresUnderTest())('against the real row', () => {
+  /**
+   * `daemon_status` is one row for the whole installation, so a test that leaves
+   * one behind is a test that tells the next package's `lingtai doctor` a daemon
+   * is up. Nothing else in the suite writes it, so removing it restores exactly
+   * the state these tests found.
+   */
+  afterAll(async () => {
+    const client = new pg.Client({ connectionString: directPostgresUrl() })
+    await client.connect()
     try {
-      // Standing in for the slow half of startup: a recipe read per project and
-      // a reconcile that writes labels. Nothing says `up`, because in the run
-      // that produced #144 nothing had yet.
-      await wait(STALE_AFTER_MS + 2_000);
-
-      const status = await readStatus();
-      expect(status).not.toBeNull();
-      const beat = lastBeat(status!);
-
-      // The row doctor reads. `up` is the boolean its `not running` sentence
-      // hangs off, and `starting` is the word that says which kind of up.
-      expect(beat.up).toBe(true);
-      expect(beat.state).toBe("starting");
-      // Not merely inside the threshold: within a beat of now, which is the
-      // difference between a timer that ran and one that ran once.
-      expect(beat.ageMs).toBeLessThan(HEARTBEAT_MS * 2);
+      await client.query('delete from daemon_status where id = 1')
+    } catch {
+      // No table means no row to clear, which is the state we wanted.
     } finally {
-      await beacon.stop();
+      await client.end()
     }
-  }, 60_000);
+  })
 
-  it("changes the word without missing a beat, and the last word wins", async () => {
-    await createStatusTable();
-    // Faster than production only so that several beats land inside a test;
-    // what is being asserted is the ordering, which is not a function of the
-    // period.
-    const beacon = startBeacon("starting", { every: 50 });
+  describe('the beacon', () => {
+    it('keeps the row fresh through a startup slower than three missed beats', async () => {
+      await createStatusTable()
+      const beacon = startBeacon('starting')
 
-    try {
-      await beacon.say("up");
-      expect(beacon.state).toBe("up");
-      expect((await readStatus())?.state).toBe("up");
+      try {
+        // Standing in for the slow half of startup: a recipe read per project and
+        // a reconcile that writes labels. Nothing says `up`, because in the run
+        // that produced #144 nothing had yet.
+        await wait(STALE_AFTER_MS + 2_000)
 
-      await beacon.say("draining");
-      expect((await readStatus())?.state).toBe("draining");
+        const status = await readStatus()
+        expect(status).not.toBeNull()
+        const beat = lastBeat(status!)
 
-      // Two beats' worth of ticks, each carrying the word the beacon holds
-      // now. The row must not fall back to an earlier one: they are UPSERTs of
-      // a single row, so an out-of-order write is a lie and not a delay.
-      await wait(200);
-      expect((await readStatus())?.state).toBe("draining");
-    } finally {
-      await beacon.stop();
-    }
-  });
+        // The row doctor reads. `up` is the boolean its `not running` sentence
+        // hangs off, and `starting` is the word that says which kind of up.
+        expect(beat.up).toBe(true)
+        expect(beat.state).toBe('starting')
+        // Not merely inside the threshold: within a beat of now, which is the
+        // difference between a timer that ran and one that ran once.
+        expect(beat.ageMs).toBeLessThan(HEARTBEAT_MS * 2)
+      } finally {
+        await beacon.stop()
+      }
+    }, 60_000)
 
-  it("says a last word and then nothing at all", async () => {
-    await createStatusTable();
-    const beacon = startBeacon("up", { every: 50 });
-    await beacon.stop("stopping");
+    it('changes the word without missing a beat, and the last word wins', async () => {
+      await createStatusTable()
+      // Faster than production only so that several beats land inside a test;
+      // what is being asserted is the ordering, which is not a function of the
+      // period.
+      const beacon = startBeacon('starting', { every: 50 })
 
-    const stopped = await readStatus();
-    expect(stopped?.state).toBe("stopping");
+      try {
+        await beacon.say('up')
+        expect(beacon.state).toBe('up')
+        expect((await readStatus())?.state).toBe('up')
 
-    // The timer is off with the last word, so the row a stopped daemon leaves
-    // goes stale — which is how `doctor` and the board report it, and it cannot
-    // if something is still beating.
-    await wait(200);
-    const later = await readStatus();
-    expect(later?.lastSeenAt.getTime()).toBe(stopped?.lastSeenAt.getTime());
-    expect(later?.state).toBe("stopping");
+        await beacon.say('draining')
+        expect((await readStatus())?.state).toBe('draining')
 
-    // Idempotent, and a word after the stop is not written: the drain calls
-    // `stop` and so does a second Ctrl+C on its way past.
-    await beacon.say("up");
-    await beacon.stop("stopping");
-    expect((await readStatus())?.state).toBe("stopping");
-  });
-});
-});
+        // Two beats' worth of ticks, each carrying the word the beacon holds
+        // now. The row must not fall back to an earlier one: they are UPSERTs of
+        // a single row, so an out-of-order write is a lie and not a delay.
+        await wait(200)
+        expect((await readStatus())?.state).toBe('draining')
+      } finally {
+        await beacon.stop()
+      }
+    })
+
+    it('says a last word and then nothing at all', async () => {
+      await createStatusTable()
+      const beacon = startBeacon('up', { every: 50 })
+      await beacon.stop('stopping')
+
+      const stopped = await readStatus()
+      expect(stopped?.state).toBe('stopping')
+
+      // The timer is off with the last word, so the row a stopped daemon leaves
+      // goes stale — which is how `doctor` and the board report it, and it cannot
+      // if something is still beating.
+      await wait(200)
+      const later = await readStatus()
+      expect(later?.lastSeenAt.getTime()).toBe(stopped?.lastSeenAt.getTime())
+      expect(later?.state).toBe('stopping')
+
+      // Idempotent, and a word after the stop is not written: the drain calls
+      // `stop` and so does a second Ctrl+C on its way past.
+      await beacon.say('up')
+      await beacon.stop('stopping')
+      expect((await readStatus())?.state).toBe('stopping')
+    })
+  })
+})
 
 describe("what the beacon's row means", () => {
   const row = (over: Partial<{ state: string; lastSeenAt: Date }>) => ({
     pid: 28982,
-    host: "local",
+    host: 'local',
     startedAt: new Date(0),
     lastSeenAt: new Date(0),
-    state: "up",
+    state: 'up',
     currentRunId: null,
     codeSha: null,
     codeDirty: false,
     ...over,
-  });
+  })
 
-  it("calls a daemon down only on the age, whatever word it left behind", () => {
-    const now = 1_000_000;
+  it('calls a daemon down only on the age, whatever word it left behind', () => {
+    const now = 1_000_000
     // The exemption not taken: a beacon that says `starting` and stopped
     // beating is a daemon that died on the way up, and reading the word as
     // permission to call it alive would make that wrong answer permanent
     // instead of twelve seconds long.
-    const died = lastBeat(row({ state: "starting", lastSeenAt: new Date(now - STALE_AFTER_MS - 1) }), now);
-    expect(died.up).toBe(false);
+    const died = lastBeat(row({ state: 'starting', lastSeenAt: new Date(now - STALE_AFTER_MS - 1) }), now)
+    expect(died.up).toBe(false)
     // Still carried, because it is what doctor says instead of guessing: this
     // one never got as far as taking work.
-    expect(died.state).toBe("starting");
-  });
+    expect(died.state).toBe('starting')
+  })
 
-  it("keeps a beacon inside the threshold up, and reports its age", () => {
-    const now = 1_000_000;
-    const beating = lastBeat(row({ state: "starting", lastSeenAt: new Date(now - 2_000) }), now);
-    expect(beating.up).toBe(true);
-    expect(beating.ageMs).toBe(2_000);
-  });
-});
+  it('keeps a beacon inside the threshold up, and reports its age', () => {
+    const now = 1_000_000
+    const beating = lastBeat(row({ state: 'starting', lastSeenAt: new Date(now - 2_000) }), now)
+    expect(beating.up).toBe(true)
+    expect(beating.ageMs).toBe(2_000)
+  })
+})

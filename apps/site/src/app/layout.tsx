@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import type { Metadata } from 'next'
+import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google'
+
 /**
  * The product's stylesheet, imported and not copied.
  *
@@ -12,10 +13,10 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
  * `site.css` comes after and adds only what a page has and a console does not:
  * a measure, a hero, and one coral thing.
  */
-import "../../../board/src/app/globals.css";
-import "./site.css";
-import "./home.css";
-import { SITE_URL } from "./chrome";
+import '../../../board/src/app/globals.css'
+import './site.css'
+import './home.css'
+import { SITE_URL } from './chrome'
 
 /**
  * The two faces the product uses, self-hosted, exactly as the board loads them
@@ -27,39 +28,39 @@ import { SITE_URL } from "./chrome";
  * Comfort comes from measure and leading; see `--measure` in `site.css`.
  */
 const sans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-sans",
-  display: "swap",
-});
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans',
+  display: 'swap',
+})
 
 const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-mono",
-  display: "swap",
-});
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-mono',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Lingtai — let your backlog move",
-    template: "%s — Lingtai",
+    default: 'Lingtai — let your backlog move',
+    template: '%s — Lingtai',
   },
   description:
-    "Lingtai takes labeled GitHub issues one at a time, gives coding agents an isolated place to work, runs your checks, and shows you what landed or needs attention.",
+    'Lingtai takes labeled GitHub issues one at a time, gives coding agents an isolated place to work, runs your checks, and shows you what landed or needs attention.',
   icons: {
     icon: [
-      { url: "/logo-dark.png", type: "image/png", media: "(prefers-color-scheme: dark)" },
-      { url: "/logo.png", type: "image/png", media: "(prefers-color-scheme: light)" },
+      { url: '/logo-dark.png', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+      { url: '/logo.png', type: 'image/png', media: '(prefers-color-scheme: light)' },
     ],
   },
-};
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>{children}</body>
     </html>
-  );
+  )
 }

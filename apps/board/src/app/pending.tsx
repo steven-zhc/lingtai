@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * A repository that is on its way in, and the button that finishes it (#163).
@@ -32,12 +32,14 @@
  * installation; this either registers a repository the operator already asked
  * for or reports why it will not, having written nothing.
  */
-import { useState, useTransition } from "react";
-import { recheckProject } from "./actions.ts";
-import type { PendingProject } from "@/lib/board";
+import { useState, useTransition } from 'react'
+
+import type { PendingProject } from '@/lib/board'
+
+import { recheckProject } from './actions.ts'
 
 export function Pending({ projects }: { projects: PendingProject[] }) {
-  if (projects.length === 0) return null;
+  if (projects.length === 0) return null
   return (
     <section className="pending">
       <header className="col-h">
@@ -50,13 +52,13 @@ export function Pending({ projects }: { projects: PendingProject[] }) {
         ))}
       </div>
     </section>
-  );
+  )
 }
 
 function PendingCard({ project }: { project: PendingProject }) {
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const [busy, startTransition] = useTransition();
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [busy, startTransition] = useTransition()
 
   return (
     <article className="card">
@@ -64,7 +66,7 @@ function PendingCard({ project }: { project: PendingProject }) {
           owner is part of the name here and not on a work card, because this
           card is *about* the repository and the slug is what identifies it. */}
       <span className="id">
-        <span className="proj">{project.owner ? `${project.owner}/` : ""}</span>
+        <span className="proj">{project.owner ? `${project.owner}/` : ''}</span>
         {project.project}
       </span>
       {/* Held, not failed. Nothing is broken: the project has been asked for
@@ -78,9 +80,9 @@ function PendingCard({ project }: { project: PendingProject }) {
           which only the press can name. A button whose target is invisible is
           one nobody can tell has been pointed at the wrong place. */}
       <p className="note">
-        checks the GitHub App&apos;s installation and permissions on this repository, and reads{" "}
-        <code>~/.lingtai/{project.project}/recipe.yml</code> on this machine, for{" "}
-        <strong>{project.base ?? "its base branch"}</strong>
+        checks the GitHub App&apos;s installation and permissions on this repository, and reads{' '}
+        <code>~/.lingtai/{project.project}/recipe.yml</code> on this machine, for{' '}
+        <strong>{project.base ?? 'its base branch'}</strong>
       </p>
       {done ? (
         <p className="decided">{done}</p>
@@ -90,23 +92,23 @@ function PendingCard({ project }: { project: PendingProject }) {
             className="btn"
             disabled={busy}
             onClick={() => {
-              setRefusal(null);
+              setRefusal(null)
               startTransition(async () => {
-                const result = await recheckProject({ project: project.project });
+                const result = await recheckProject({ project: project.project })
                 // The server's own sentence either way. "the App is not
                 // installed there" and "the installation is missing a scope"
                 // send an operator to two different places, and only the
                 // server knows which it was.
-                if (result.ok) setDone(result.detail);
-                else setRefusal(result.detail);
-              });
+                if (result.ok) setDone(result.detail)
+                else setRefusal(result.detail)
+              })
             }}
           >
-            {busy ? "…" : "Recheck"}
+            {busy ? '…' : 'Recheck'}
           </button>
         </div>
       )}
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </article>
-  );
+  )
 }

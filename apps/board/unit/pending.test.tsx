@@ -1,3 +1,5 @@
+import { emptyProject, type ProjectState } from '@lingtai/domain'
+import { renderToStaticMarkup } from 'react-dom/server'
 /**
  * A repository that is on its way in, on a board that still works (#163).
  *
@@ -15,40 +17,37 @@
  * markup, for the reason `#101` established — the fold alone could not have
  * caught it.
  */
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
-import { emptyProject, type ProjectState } from "@lingtai/domain";
-import { type ProjectQueue, queuedCards, splitRegister } from "../src/lib/board.ts";
-import { Pending } from "../src/app/pending.tsx";
+import { describe, expect, it } from 'vitest'
+
+import { Pending } from '../src/app/pending.tsx'
+import { type ProjectQueue, queuedCards, splitRegister } from '../src/lib/board.ts'
 
 /** A project the wizard recorded and `Recheck` has not registered. */
 const ARRIVING: ProjectState = {
   ...emptyProject,
-  project: "esctest-arriving",
-  owner: "steven-zhc",
-  base: "develop",
+  project: 'esctest-arriving',
+  owner: 'steven-zhc',
+  base: 'develop',
   version: 1,
   lastSeq: 1n,
-};
+}
 
 /** And one `lingtai add` finished — the difference is the hash, and only the hash. */
 const LIVE: ProjectState = {
   ...ARRIVING,
-  project: "esctest-live",
-  base: "main",
-  configHash: "h",
-  fromSha: "s",
-};
+  project: 'esctest-live',
+  base: 'main',
+  configHash: 'h',
+  fromSha: 's',
+}
 
-describe("the register, split", () => {
-  it("puts a project with no recipe on the pending side, with what Recheck needs", () => {
-    const { registered, pending } = splitRegister([LIVE, ARRIVING]);
+describe('the register, split', () => {
+  it('puts a project with no recipe on the pending side, with what Recheck needs', () => {
+    const { registered, pending } = splitRegister([LIVE, ARRIVING])
 
-    expect(registered.map((p) => p.project)).toEqual(["esctest-live"]);
-    expect(pending).toEqual([
-      { project: "esctest-arriving", owner: "steven-zhc", base: "develop" },
-    ]);
-  });
+    expect(registered.map((p) => p.project)).toEqual(['esctest-live'])
+    expect(pending).toEqual([{ project: 'esctest-arriving', owner: 'steven-zhc', base: 'develop' }])
+  })
 
   /**
    * The one that matters. `askProject` never throws — it answers `unreadable`,
@@ -56,65 +55,65 @@ describe("the register, split", () => {
    * Queued column naming the project. A pending repository put through here
    * would redden the board every render until somebody pressed Recheck.
    */
-  it("asks GitHub about the live project and nothing at all about the pending one", async () => {
-    const asked: string[] = [];
+  it('asks GitHub about the live project and nothing at all about the pending one', async () => {
+    const asked: string[] = []
     const ask = async (state: ProjectState): Promise<ProjectQueue> => {
-      asked.push(state.project as string);
+      asked.push(state.project as string)
       return {
-        state: "unreadable",
-        filter: { project: state.project as string, ok: false, problem: "asked" },
-      };
-    };
+        state: 'unreadable',
+        filter: { project: state.project as string, ok: false, problem: 'asked' },
+      }
+    }
 
-    const { registered, pending } = splitRegister([LIVE, ARRIVING]);
-    const queued = await queuedCards(registered, ask);
+    const { registered, pending } = splitRegister([LIVE, ARRIVING])
+    const queued = await queuedCards(registered, ask)
 
-    expect(asked).toEqual(["esctest-live"]);
-    expect(queued.problems.map((p) => p.project)).toEqual(["esctest-live"]);
+    expect(asked).toEqual(['esctest-live'])
+    expect(queued.problems.map((p) => p.project)).toEqual(['esctest-live'])
     // And it is still on the board — withheld from the column, not dropped.
-    expect(pending.map((p) => p.project)).toEqual(["esctest-arriving"]);
-  });
-});
+    expect(pending.map((p) => p.project)).toEqual(['esctest-arriving'])
+  })
+})
 
-describe("the pending card", () => {
-  const html = () => renderToStaticMarkup(<Pending projects={splitRegister([ARRIVING]).pending} />);
+describe('the pending card', () => {
+  const html = () => renderToStaticMarkup(<Pending projects={splitRegister([ARRIVING]).pending} />)
 
-  it("names the repository, says it is pending, and offers Recheck", () => {
-    const out = html();
+  it('names the repository, says it is pending, and offers Recheck', () => {
+    const out = html()
 
-    expect(out).toContain("steven-zhc/");
-    expect(out).toContain("esctest-arriving");
-    expect(out).toContain("pending");
-    expect(out).toContain("Recheck");
-  });
+    expect(out).toContain('steven-zhc/')
+    expect(out).toContain('esctest-arriving')
+    expect(out).toContain('pending')
+    expect(out).toContain('Recheck')
+  })
 
   /**
    * What `Recheck` checks, since #182 — and never a cause. The wizard only
    * records a repository the App is installed on, so *waiting for the App to be
    * installed* would be false on every card; nor is there a pull request.
    */
-  it("says what Recheck checks, and neither waits for an install nor for anything to merge", () => {
-    const out = html();
+  it('says what Recheck checks, and neither waits for an install nor for anything to merge', () => {
+    const out = html()
 
-    expect(out).toContain("installation and permissions");
-    expect(out).not.toMatch(/to be installed|waiting for|pull request|merge/i);
-  });
+    expect(out).toContain('installation and permissions')
+    expect(out).not.toMatch(/to be installed|waiting for|pull request|merge/i)
+  })
 
   /**
    * The button reads a file, and which file is the whole of what it does — the
    * machine's since #180, never one in the repository. A card that did not say
    * so would be a control nobody could tell had been pointed at the wrong place.
    */
-  it("says which file on this machine it reads, and for which branch", () => {
-    const out = html();
+  it('says which file on this machine it reads, and for which branch', () => {
+    const out = html()
 
-    expect(out).toContain("~/.lingtai/esctest-arriving/recipe.yml");
-    expect(out).not.toContain(".lingtai/config.yaml");
-    expect(out).toContain("develop");
-  });
+    expect(out).toContain('~/.lingtai/esctest-arriving/recipe.yml')
+    expect(out).not.toContain('.lingtai/config.yaml')
+    expect(out).toContain('develop')
+  })
 
   /** Nothing pending is the ordinary case, and it must cost the board no room. */
-  it("draws nothing at all when nothing is on its way in", () => {
-    expect(renderToStaticMarkup(<Pending projects={[]} />)).toBe("");
-  });
-});
+  it('draws nothing at all when nothing is on its way in', () => {
+    expect(renderToStaticMarkup(<Pending projects={[]} />)).toBe('')
+  })
+})

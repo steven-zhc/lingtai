@@ -11,14 +11,14 @@
  * that is guessed at rather than derived from a repository that exists would be
  * exactly the configuration sprawl design.md §8 refuses.
  */
-import type { Recipe } from "./recipe.ts";
+import type { Recipe } from './recipe.ts'
 
 /** What a preset may fill in. Everything is optional; the recipe always wins. */
 export type Preset = {
-  repo?: Partial<Recipe["repo"]>;
-  steps?: Recipe["steps"];
-  runtime?: Partial<Recipe["runtime"]>;
-};
+  repo?: Partial<Recipe['repo']>
+  steps?: Recipe['steps']
+  runtime?: Partial<Recipe['runtime']>
+}
 
 export const PRESETS: Record<string, Preset> = {
   /**
@@ -40,7 +40,7 @@ export const PRESETS: Record<string, Preset> = {
    * does not populate submodules, and a worktree without them fails every test
    * that imports one — which reads the same wrong way.
    */
-  "pnpm-workspace": {
+  'pnpm-workspace': {
     repo: { submodules: true },
     // Only `prepared` and `proposed` are filled. The other eight steps are
     // empty and stay empty until a project says otherwise — which the board
@@ -60,9 +60,7 @@ export const PRESETS: Record<string, Preset> = {
       // defaulting it: an install and a build get `PATH`, `HOME` and the four
       // beside them, and no credential at all (0037 §1). A repository whose
       // build needs one declares it here, in its own recipe, beside the action.
-      prepared: [
-        { name: "install", run: "pnpm install --frozen-lockfile", timeout: "10m", env: [] },
-      ],
+      prepared: [{ name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] }],
       design: [],
       implement: [],
       // **Empty by choice since 2026-09-27, and no longer by necessity.**
@@ -78,31 +76,31 @@ export const PRESETS: Record<string, Preset> = {
       review: [],
       proposed: [
         {
-          name: "build",
-          run: "pnpm typecheck && pnpm lint && pnpm test",
-          timeout: "15m",
+          name: 'build',
+          run: 'pnpm typecheck && pnpm lint && pnpm test',
+          timeout: '15m',
           env: [],
         },
       ],
       merge: [],
       end: [],
     },
-    runtime: { agent: "claude-code" },
+    runtime: { agent: 'claude-code' },
   },
-};
+}
 
 export class UnknownPresetError extends Error {
-  override readonly name = "UnknownPresetError";
+  override readonly name = 'UnknownPresetError'
   constructor(name: string) {
-    super(`no preset named "${name}" — known: ${Object.keys(PRESETS).join(", ")}`);
+    super(`no preset named "${name}" — known: ${Object.keys(PRESETS).join(', ')}`)
   }
 }
 
 export interface PresetApplied {
   /** The recipe with the preset merged underneath, and `extends` removed. */
-  recipe: unknown;
+  recipe: unknown
   /** Which preset was used, kept as provenance rather than as behaviour. */
-  preset: string | null;
+  preset: string | null
 }
 
 /**
@@ -123,34 +121,34 @@ export interface PresetApplied {
  * configuration change. The name comes back separately, as provenance.
  */
 export function applyPreset(raw: unknown): PresetApplied {
-  if (raw === null || typeof raw !== "object") return { recipe: raw, preset: null };
-  const recipe = raw as Record<string, unknown>;
-  const name = recipe["extends"];
-  if (typeof name !== "string") return { recipe: raw, preset: null };
+  if (raw === null || typeof raw !== 'object') return { recipe: raw, preset: null }
+  const recipe = raw as Record<string, unknown>
+  const name = recipe['extends']
+  if (typeof name !== 'string') return { recipe: raw, preset: null }
 
-  const preset = PRESETS[name];
-  if (!preset) throw new UnknownPresetError(name);
+  const preset = PRESETS[name]
+  if (!preset) throw new UnknownPresetError(name)
 
-  const section = (key: "repo" | "runtime") => {
-    const base = preset[key];
-    const own = recipe[key];
-    if (!base) return own;
-    if (own === undefined) return { ...base };
-    if (own === null || typeof own !== "object") return own;
-    return { ...base, ...(own as object) };
-  };
+  const section = (key: 'repo' | 'runtime') => {
+    const base = preset[key]
+    const own = recipe[key]
+    if (!base) return own
+    if (own === undefined) return { ...base }
+    if (own === null || typeof own !== 'object') return own
+    return { ...base, ...(own as object) }
+  }
 
-  const { extends: _dropped, ...rest } = recipe;
+  const { extends: _dropped, ...rest } = recipe
   return {
     recipe: {
       ...rest,
-      repo: section("repo"),
-      runtime: section("runtime"),
+      repo: section('repo'),
+      runtime: section('runtime'),
       // Arrays replace rather than concatenate, for both of these. A recipe
       // that lists its own steps means *those* steps; silently appending the
       // preset's would be a way to acquire work nobody wrote down.
-      steps: recipe["steps"] ?? preset.steps,
+      steps: recipe['steps'] ?? preset.steps,
     },
     preset: name,
-  };
+  }
 }

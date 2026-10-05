@@ -1,3 +1,4 @@
+import { integrationStream, workItemStream } from '@lingtai/domain'
 /**
  * Which project an event is about, against the real log.
  *
@@ -16,104 +17,102 @@
  * have passed for the version that was refused, because the thing it got wrong
  * was what the log actually holds.
  */
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { integrationStream, workItemStream } from "@lingtai/domain";
-import { beforeAll, describe, expect, it } from "vitest";
-import { createSubjectResolver } from "../src/subscribers.ts";
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
-const wi = workItemStream(PROJECT, 7);
-const runId = `run-${crypto.randomUUID()}`;
-const startless = `run-${crypto.randomUUID()}`;
-const lane = integrationStream(PROJECT, "main");
+import { createSubjectResolver } from '../src/subscribers.ts'
 
-let store: EventStore;
-let subject: ReturnType<typeof createSubjectResolver>;
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
+const wi = workItemStream(PROJECT, 7)
+const runId = `run-${crypto.randomUUID()}`
+const startless = `run-${crypto.randomUUID()}`
+const lane = integrationStream(PROJECT, 'main')
+
+let store: EventStore
+let subject: ReturnType<typeof createSubjectResolver>
 
 /** The envelope the resolver is handed, off the log rather than made up. */
 const head = async (streamId: string) => {
-  const events = await store.read(streamId);
-  const last = events.at(-1);
-  if (!last) throw new Error(`${streamId} is empty`);
-  return last;
-};
+  const events = await store.read(streamId)
+  const last = events.at(-1)
+  if (!last) throw new Error(`${streamId} is empty`)
+  return last
+}
 
 beforeAll(async () => {
-  store = await processEventStore();
-  subject = createSubjectResolver(store);
+  store = await processEventStore()
+  subject = createSubjectResolver(store)
 
   // A run stream, opened the way `conduct.ts` opens one: `RunStarted` first,
   // carrying the work item, and then the events that carry only a `runId`.
   await store.append(runId, 0, [
     {
-      type: "RunStarted",
-      actor: "conductor",
+      type: 'RunStarted',
+      actor: 'conductor',
       data: {
         workItemId: wi,
-        runtime: "claude-code",
-        model: "claude-opus-5",
-        promptVersion: "v1",
-        baseSha: "a".repeat(40),
-        configHash: "b".repeat(12),
-        worktree: "/tmp/wt",
+        runtime: 'claude-code',
+        model: 'claude-opus-5',
+        promptVersion: 'v1',
+        baseSha: 'a'.repeat(40),
+        configHash: 'b'.repeat(12),
+        worktree: '/tmp/wt',
         invocation: null,
       },
     },
-  ]);
+  ])
   await store.append(runId, 1, [
     {
-      type: "ApprovalRequested",
-      actor: "conductor",
+      type: 'ApprovalRequested',
+      actor: 'conductor',
       data: {
-        step: "merge",
-        action: "approve",
+        step: 'merge',
+        action: 'approve',
         runId,
-        onSha: "c".repeat(40),
-        question: "Merge into main?",
+        onSha: 'c'.repeat(40),
+        question: 'Merge into main?',
         artifacts: [],
       },
     },
-  ]);
-  await store.append(runId, 2, [
-    { type: "RunAwaitingInput", actor: `agent:${runId}`, data: { prompt: "which base?" } },
-  ]);
+  ])
+  await store.append(runId, 2, [{ type: 'RunAwaitingInput', actor: `agent:${runId}`, data: { prompt: 'which base?' } }])
   await store.append(lane, 0, [
     {
-      type: "IntegrationRefused",
-      actor: "conductor",
-      data: { workItemId: wi, branch: "agent/7", reason: "conflict", detail: "does not merge" },
+      type: 'IntegrationRefused',
+      actor: 'conductor',
+      data: { workItemId: wi, branch: 'agent/7', reason: 'conflict', detail: 'does not merge' },
     },
-  ]);
+  ])
   await store.append(wi, 0, [
     {
-      type: "WorkItemBlocked",
-      actor: "conductor",
+      type: 'WorkItemBlocked',
+      actor: 'conductor',
       data: {
-        question: "which base?",
-        needsFrom: "human",
+        question: 'which base?',
+        needsFrom: 'human',
         runId,
-        needs: "judgement",
+        needs: 'judgement',
         diagnosis: null,
       },
     },
-  ]);
+  ])
   // A run refused before it started: no `RunStarted`, so nothing names a card.
   await store.append(startless, 0, [
-    { type: "RunAwaitingInput", actor: `agent:${startless}`, data: { prompt: "anybody there?" } },
-  ]);
-}, 120_000);
+    { type: 'RunAwaitingInput', actor: `agent:${startless}`, data: { prompt: 'anybody there?' } },
+  ])
+}, 120_000)
 
-describe("createSubjectResolver", () => {
-  const card = { id: wi, project: PROJECT, issue: "7" };
+describe('createSubjectResolver', () => {
+  const card = { id: wi, project: PROJECT, issue: '7' }
 
-  it("reads the work item off its own stream", async () => {
-    expect(await subject(await head(wi))).toEqual(card);
-  });
+  it('reads the work item off its own stream', async () => {
+    expect(await subject(await head(wi))).toEqual(card)
+  })
 
   /** `int-{project}-{base}` cannot be split back — a base may hold a `-` — so the payload answers. */
-  it("reads it off `workItemId` for an integration lane", async () => {
-    expect(await subject(await head(lane))).toEqual(card);
-  });
+  it('reads it off `workItemId` for an integration lane', async () => {
+    expect(await subject(await head(lane))).toEqual(card)
+  })
 
   /**
    * The two the refused attempt dropped. Both are on a run stream and carry a
@@ -121,23 +120,23 @@ describe("createSubjectResolver", () => {
    * stream's own first word.
    */
   it("reads it off the run's RunStarted for an approval", async () => {
-    const events = await store.read(runId);
-    const approval = events.find((e) => e.type === "ApprovalRequested");
-    expect(approval).toBeDefined();
-    expect(await subject(approval!)).toEqual(card);
-  });
+    const events = await store.read(runId)
+    const approval = events.find((e) => e.type === 'ApprovalRequested')
+    expect(approval).toBeDefined()
+    expect(await subject(approval!)).toEqual(card)
+  })
 
   it("reads it off the run's RunStarted for a question", async () => {
-    expect(await subject(await head(runId))).toEqual(card);
-  });
+    expect(await subject(await head(runId))).toEqual(card)
+  })
 
   /**
    * Null is *not from here*, and it is what a notification must not be sent
    * about: a card named by guesswork is worse than none.
    */
-  it("answers null for a run that never started", async () => {
-    expect(await subject(await head(startless))).toBeNull();
-  });
+  it('answers null for a run that never started', async () => {
+    expect(await subject(await head(startless))).toBeNull()
+  })
 
   /**
    * The refusal that ended attempt 5. A null here resolves the delivery as a
@@ -145,19 +144,19 @@ describe("createSubjectResolver", () => {
    * `PluginFailed` — it has to reject, so `deliver` rejects and it is recorded.
    */
   it("rejects, rather than answering null, when the run's stream cannot be read", async () => {
-    const approval = (await store.read(runId)).find((e) => e.type === "ApprovalRequested")!;
+    const approval = (await store.read(runId)).find((e) => e.type === 'ApprovalRequested')!
     const broken: EventStore = {
       ...store,
       read: async () => {
-        throw new Error("the pool is gone");
+        throw new Error('the pool is gone')
       },
-    };
-    await expect(createSubjectResolver(broken)(approval)).rejects.toThrow("the pool is gone");
-  });
+    }
+    await expect(createSubjectResolver(broken)(approval)).rejects.toThrow('the pool is gone')
+  })
 
-  it("answers null for a stream that belongs to the installation", async () => {
-    const control = await head(wi);
-    expect(await subject({ ...control, streamId: "ctl-conductor" })).toBeNull();
-    expect(await subject({ ...control, streamId: "chat-abc" })).toBeNull();
-  });
-});
+  it('answers null for a stream that belongs to the installation', async () => {
+    const control = await head(wi)
+    expect(await subject({ ...control, streamId: 'ctl-conductor' })).toBeNull()
+    expect(await subject({ ...control, streamId: 'chat-abc' })).toBeNull()
+  })
+})

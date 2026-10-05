@@ -25,11 +25,11 @@
  * the two apart; it needs a reset *and* arms left standing, and `refs:` at `end`
  * now sweeps a landed ticket's arms.
  */
-import { armPrefix } from "./branches.ts";
+import { armPrefix } from './branches.ts'
 
 /** The one call this needs of `GitHubClient`, so a test can fake it. */
 export interface ArmChannel {
-  matchingRefs(prefix: string): Promise<readonly string[]>;
+  matchingRefs(prefix: string): Promise<readonly string[]>
 }
 
 /**
@@ -39,8 +39,8 @@ export interface ArmChannel {
  * that `origin` has.
  */
 export interface ArmsOnOrigin {
-  branch: string;
-  onOrigin: ReadonlySet<string>;
+  branch: string
+  onOrigin: ReadonlySet<string>
 }
 
 /**
@@ -49,20 +49,13 @@ export interface ArmsOnOrigin {
  * `[]` for *no arms*, so a throw is never an absence, and null is the caller's
  * cue to say the column is missing and why.
  */
-export async function armsOnOrigin(
-  github: ArmChannel,
-  branch: string,
-): Promise<ArmsOnOrigin | null> {
-  const prefix = armPrefix(branch);
+export async function armsOnOrigin(github: ArmChannel, branch: string): Promise<ArmsOnOrigin | null> {
+  const prefix = armPrefix(branch)
   try {
-    const found = await github.matchingRefs(`heads/${prefix}`);
-    const onOrigin = new Set(
-      found
-        .map((ref) => ref.replace(/^heads\//, ""))
-        .filter((name) => name.startsWith(prefix)),
-    );
-    return { branch, onOrigin };
+    const found = await github.matchingRefs(`heads/${prefix}`)
+    const onOrigin = new Set(found.map((ref) => ref.replace(/^heads\//, '')).filter((name) => name.startsWith(prefix)))
+    return { branch, onOrigin }
   } catch {
-    return null;
+    return null
   }
 }

@@ -37,8 +37,8 @@ import {
   createProjectionRunner,
   type ProjectionRunner,
   taskViewProjection,
-} from "@lingtai/projector";
-import { Context, Effect, Layer } from "effect";
+} from '@lingtai/projector'
+import { Context, Effect, Layer } from 'effect'
 
 /**
  * The backlog follows too (`#137`): a passing review's minors belong on it by
@@ -49,24 +49,24 @@ import { Context, Effect, Layer } from "effect";
  * the reason the board's is not: the log is intact either way.
  */
 async function followBacklog(log: (line: string) => void): Promise<ProjectionRunner | null> {
-  const runner = createProjectionRunner({ projection: backlogProjection });
+  const runner = createProjectionRunner({ projection: backlogProjection })
   try {
-    await runner.start();
-    return runner;
+    await runner.start()
+    return runner
   } catch (err) {
-    log(`the backlog will not follow this run: ${(err as Error).message}`);
-    await runner.close().catch(() => {});
-    return null;
+    log(`the backlog will not follow this run: ${(err as Error).message}`)
+    await runner.close().catch(() => {})
+    return null
   }
 }
 
 async function releaseBacklog(runner: ProjectionRunner | null, log: (line: string) => void): Promise<void> {
-  if (!runner) return;
+  if (!runner) return
   if (runner.failure) {
-    log(`the backlog projection stopped during this run: ${String(runner.failure)}`);
-    log("the backlog is behind until it is rebuilt — lingtai projection rebuild finding_backlog");
+    log(`the backlog projection stopped during this run: ${String(runner.failure)}`)
+    log('the backlog is behind until it is rebuilt — lingtai projection rebuild finding_backlog')
   }
-  await runner.close().catch(() => {});
+  await runner.close().catch(() => {})
 }
 
 /**
@@ -77,36 +77,33 @@ async function releaseBacklog(runner: ProjectionRunner | null, log: (line: strin
  * current would turn a stale board into no work at all, and the next daemon
  * catches up from the checkpoint regardless.
  */
-export async function withProjector<T>(
-  log: (line: string) => void,
-  work: () => Promise<T>,
-): Promise<T> {
-  const runner = createProjectionRunner({ projection: taskViewProjection });
+export async function withProjector<T>(log: (line: string) => void, work: () => Promise<T>): Promise<T> {
+  const runner = createProjectionRunner({ projection: taskViewProjection })
 
-  let following = false;
+  let following = false
   try {
     // Creates the tables, catches up to the head, then follows. Resolves once
     // it is current, so the board is not behind before the work even starts.
-    await runner.start();
-    following = true;
+    await runner.start()
+    following = true
   } catch (err) {
-    log(`the board will not follow this run: ${(err as Error).message}`);
-    log("the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct");
+    log(`the board will not follow this run: ${(err as Error).message}`)
+    log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
   }
-  const backlog = await followBacklog(log);
+  const backlog = await followBacklog(log)
 
   try {
-    return await work();
+    return await work()
   } finally {
     // Said out loud rather than left to be noticed. A projection that stopped
     // part-way through leaves a board that is half-current, which is worse than
     // one that is plainly behind because nobody distrusts it.
     if (following && runner.failure) {
-      log(`the projection stopped during this run: ${String(runner.failure)}`);
-      log("the board is behind until it is rebuilt — lingtai projection rebuild task_view");
+      log(`the projection stopped during this run: ${String(runner.failure)}`)
+      log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
     }
-    await runner.close().catch(() => {});
-    await releaseBacklog(backlog, log);
+    await runner.close().catch(() => {})
+    await releaseBacklog(backlog, log)
   }
 }
 
@@ -122,7 +119,7 @@ export async function withProjector<T>(
  * when the scope closes, whichever way control left it, including a typed
  * refusal raised before the projector was ever read.
  */
-export class Projector extends Context.Tag("lingtai/cli/Projector")<
+export class Projector extends Context.Tag('lingtai/cli/Projector')<
   Projector,
   { readonly following: boolean; readonly failure: unknown }
 >() {}
@@ -132,28 +129,26 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
     Projector,
     Effect.acquireRelease(
       Effect.promise(async () => {
-        const runner = createProjectionRunner({ projection: taskViewProjection });
-        let following = false;
+        const runner = createProjectionRunner({ projection: taskViewProjection })
+        let following = false
         try {
-          await runner.start();
-          following = true;
+          await runner.start()
+          following = true
         } catch (err) {
-          log(`the board will not follow this run: ${(err as Error).message}`);
-          log("the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct");
+          log(`the board will not follow this run: ${(err as Error).message}`)
+          log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
         }
-        const backlog = await followBacklog(log);
-        return { runner, following, backlog };
+        const backlog = await followBacklog(log)
+        return { runner, following, backlog }
       }),
       ({ runner, following, backlog }) =>
         Effect.promise(async () => {
           if (following && runner.failure) {
-            log(`the projection stopped during this run: ${String(runner.failure)}`);
-            log("the board is behind until it is rebuilt — lingtai projection rebuild task_view");
+            log(`the projection stopped during this run: ${String(runner.failure)}`)
+            log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
           }
-          await runner.close().catch(() => {});
-          await releaseBacklog(backlog, log);
+          await runner.close().catch(() => {})
+          await releaseBacklog(backlog, log)
         }),
-    ).pipe(
-      Effect.map((held) => ({ following: held.following, failure: held.runner.failure })),
-    ),
-  );
+    ).pipe(Effect.map((held) => ({ following: held.following, failure: held.runner.failure }))),
+  )

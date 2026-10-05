@@ -21,13 +21,13 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, reduceWorkItem, workItemStream } from "@lingtai/domain";
-import { ConcurrencyError, type EventStore, eventStore } from "@lingtai/event-store";
+import { parsePayload, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 
 export interface AskOutcome {
-  ok: boolean;
-  workItemId: string;
-  detail: string;
+  ok: boolean
+  workItemId: string
+  detail: string
 }
 
 /**
@@ -40,55 +40,55 @@ export interface AskOutcome {
  * the first unanswered, and the union has room for one.
  */
 export async function ask(options: {
-  project: string;
-  issue: number;
-  question: string;
-  by: string;
-  store?: EventStore;
+  project: string
+  issue: number
+  question: string
+  by: string
+  store?: EventStore
 }): Promise<AskOutcome> {
-  const store = options.store ?? eventStore;
-  const workItemId = workItemStream(options.project, options.issue);
+  const store = options.store ?? eventStore
+  const workItemId = workItemStream(options.project, options.issue)
 
   if (!options.question.trim()) {
-    return { ok: false, workItemId, detail: "a question needs a question" };
+    return { ok: false, workItemId, detail: 'a question needs a question' }
   }
 
-  const item = reduceWorkItem(await store.read(workItemId));
-  if (item.lifecycle.status !== "backlog") {
+  const item = reduceWorkItem(await store.read(workItemId))
+  if (item.lifecycle.status !== 'backlog') {
     // The state it is in, for the reason `requeue` names it: "cannot ask" sends
     // nobody anywhere, and "it is already running" answers why.
     return {
       ok: false,
       workItemId,
       detail: `${workItemId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
-    };
+    }
   }
 
   try {
     await store.append(workItemId, item.version, [
       {
-        type: "WorkItemBlocked",
+        type: 'WorkItemBlocked',
         actor: options.by,
-        data: parsePayload("WorkItemBlocked", {
+        data: parsePayload('WorkItemBlocked', {
           question: options.question,
-          needsFrom: "human",
+          needsFrom: 'human',
           // The null the type always allowed and nothing ever wrote.
           runId: null,
-          needs: "judgement",
+          needs: 'judgement',
           diagnosis: null,
         }),
       },
-    ]);
+    ])
   } catch (err) {
     // A conductor claimed it between the read and the append. The claim won,
     // which is the right outcome: say so rather than retrying onto a run.
     if (err instanceof ConcurrencyError) {
-      return { ok: false, workItemId, detail: `${workItemId} changed while asking — read it again` };
+      return { ok: false, workItemId, detail: `${workItemId} changed while asking — read it again` }
     }
-    throw err;
+    throw err
   }
 
-  return { ok: true, workItemId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` };
+  return { ok: true, workItemId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
 }
 
 /**
@@ -107,9 +107,9 @@ export async function ask(options: {
  * sentence about one attempt into every attempt after it.
  */
 export async function answer(options: {
-  project: string;
-  issue: number;
-  answer: string;
+  project: string
+  issue: number
+  answer: string
   /**
    * The question the person was shown, and is answering — refused when the
    * item is asking something else now. Without it, a question withdrawn and
@@ -118,51 +118,51 @@ export async function answer(options: {
    * the current version, so no ConcurrencyError catches it. The board always
    * passes it; the CLI, which shows nothing first, passes none.
    */
-  question?: string;
-  by: string;
-  store?: EventStore;
+  question?: string
+  by: string
+  store?: EventStore
 }): Promise<AskOutcome> {
-  const store = options.store ?? eventStore;
-  const workItemId = workItemStream(options.project, options.issue);
+  const store = options.store ?? eventStore
+  const workItemId = workItemStream(options.project, options.issue)
 
   if (!options.answer.trim()) {
-    return { ok: false, workItemId, detail: "an answer needs an answer" };
+    return { ok: false, workItemId, detail: 'an answer needs an answer' }
   }
 
-  const item = reduceWorkItem(await store.read(workItemId));
-  const life = item.lifecycle;
-  if (life.status !== "blocked") {
-    return { ok: false, workItemId, detail: `${workItemId} is ${life.status}, not asking anything` };
+  const item = reduceWorkItem(await store.read(workItemId))
+  const life = item.lifecycle
+  if (life.status !== 'blocked') {
+    return { ok: false, workItemId, detail: `${workItemId} is ${life.status}, not asking anything` }
   }
   if (life.runId !== null) {
     return {
       ok: false,
       workItemId,
       detail: `${workItemId} is held by ${life.runId}, not asking before a run — lingtai approve or lingtai requeue`,
-    };
+    }
   }
   if (options.question !== undefined && options.question !== life.question) {
     return {
       ok: false,
       workItemId,
       detail: `${workItemId} is asking a different question now — "${life.question}" — read it again`,
-    };
+    }
   }
 
   try {
     await store.append(workItemId, item.version, [
       {
-        type: "WorkItemUnblocked",
+        type: 'WorkItemUnblocked',
         actor: options.by,
-        data: parsePayload("WorkItemUnblocked", { by: options.by, note: options.answer }),
+        data: parsePayload('WorkItemUnblocked', { by: options.by, note: options.answer }),
       },
-    ]);
+    ])
   } catch (err) {
     if (err instanceof ConcurrencyError) {
-      return { ok: false, workItemId, detail: `${workItemId} changed while answering — read it again` };
+      return { ok: false, workItemId, detail: `${workItemId} changed while answering — read it again` }
     }
-    throw err;
+    throw err
   }
 
-  return { ok: true, workItemId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` };
+  return { ok: true, workItemId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }
 }

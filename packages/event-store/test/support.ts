@@ -6,48 +6,49 @@
  * mock — nor by a single connection, which is the mistake
  * doc/decisions-archive/0009-two-connections.md exists to record.
  */
-import pg from "pg";
-import { directPostgresUrl } from "../src/env.ts";
+import pg from 'pg'
+
+import { directPostgresUrl } from '../src/env.ts'
 
 /** Streams created by the current file, so cleanup can name them exactly. */
-export const created = new Set<string>();
+export const created = new Set<string>()
 
-export function streamId(prefix = "wi-test"): string {
-  const id = `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
-  created.add(id);
-  return id;
+export function streamId(prefix = 'wi-test'): string {
+  const id = `${prefix}-${crypto.randomUUID().slice(0, 8)}`
+  created.add(id)
+  return id
 }
 
 /** A valid `WorkItemDiscovered` with a distinguishable title. */
 export const discovered = (title: string) => ({
-  type: "WorkItemDiscovered",
-  actor: "conductor",
+  type: 'WorkItemDiscovered',
+  actor: 'conductor',
   data: {
-    project: "lingtai",
-    source: "manual" as const,
-    externalRef: "test",
+    project: 'lingtai',
+    source: 'manual' as const,
+    externalRef: 'test',
     title,
-    kind: "tech-debt" as const,
+    kind: 'tech-debt' as const,
     labels: [],
   },
-});
+})
 
 async function direct<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const c = new pg.Client({ connectionString: directPostgresUrl() });
-  await c.connect();
+  const c = new pg.Client({ connectionString: directPostgresUrl() })
+  await c.connect()
   try {
-    return await fn(c);
+    return await fn(c)
   } finally {
-    await c.end();
+    await c.end()
   }
 }
 
 /** The log's high-water mark, so a subscriber can start from "now". */
 export function currentMaxSeq(): Promise<bigint> {
   return direct(async (c) => {
-    const r = await c.query("select coalesce(max(seq), 0)::text s from events");
-    return BigInt(r.rows[0].s as string);
-  });
+    const r = await c.query('select coalesce(max(seq), 0)::text s from events')
+    return BigInt(r.rows[0].s as string)
+  })
 }
 
 /**
@@ -62,9 +63,9 @@ export function currentMaxSeq(): Promise<bigint> {
  */
 export function killBackend(pid: number): Promise<boolean> {
   return direct(async (c) => {
-    const r = await c.query<{ ok: boolean }>("select pg_terminate_backend($1) as ok", [pid]);
-    return r.rows[0]?.ok === true;
-  });
+    const r = await c.query<{ ok: boolean }>('select pg_terminate_backend($1) as ok', [pid])
+    return r.rows[0]?.ok === true
+  })
 }
 
 /**
@@ -77,16 +78,16 @@ export function killBackend(pid: number): Promise<boolean> {
  * than a failing test.
  */
 export async function cleanupStreams(): Promise<void> {
-  if (created.size === 0) return;
+  if (created.size === 0) return
   await direct(async (c) => {
     try {
-      await c.query("alter table events disable rule lingtai_events_no_delete");
-      await c.query("delete from events where stream_id = any($1::text[])", [[...created]]);
+      await c.query('alter table events disable rule lingtai_events_no_delete')
+      await c.query('delete from events where stream_id = any($1::text[])', [[...created]])
     } finally {
-      await c.query("alter table events enable rule lingtai_events_no_delete");
+      await c.query('alter table events enable rule lingtai_events_no_delete')
     }
-  });
-  created.clear();
+  })
+  created.clear()
 }
 
 /** Polls until `predicate` holds, or fails with what it last saw. */
@@ -95,12 +96,12 @@ export async function waitFor(
   describe: () => string,
   timeoutMs = 20_000,
 ): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (await predicate()) return;
-    await new Promise((r) => setTimeout(r, 50));
+    if (await predicate()) return
+    await new Promise((r) => setTimeout(r, 50))
   }
-  throw new Error(`timed out after ${timeoutMs}ms waiting: ${describe()}`);
+  throw new Error(`timed out after ${timeoutMs}ms waiting: ${describe()}`)
 }
 
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

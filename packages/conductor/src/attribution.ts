@@ -37,12 +37,7 @@
  * out of, living inside an `if` in a 1,000-line file, is a rule nobody can
  * check.
  */
-import type {
-  BlockDiagnosis,
-  BlockRecommendation,
-  RefusalReason,
-  RunFailureKind,
-} from "@lingtai/domain";
+import type { BlockDiagnosis, BlockRecommendation, RefusalReason, RunFailureKind } from '@lingtai/domain'
 
 /**
  * Who owns a failure — and so what a card can honestly say about it.
@@ -69,7 +64,7 @@ import type {
  * is `#84`'s "never left with no path forward" — and since `#143` that is the
  * whole of the distinction rather than half of it.
  */
-export type FailureOwner = "repository" | "lingtai" | "person";
+export type FailureOwner = 'repository' | 'lingtai' | 'person'
 
 /**
  * A failure, as something to attribute.
@@ -90,13 +85,13 @@ export type FailureOwner = "repository" | "lingtai" | "person";
  * a card has to say.
  */
 export interface Failure {
-  source: "integration" | "project" | "run";
+  source: 'integration' | 'project' | 'run'
   /**
    * A `RefusalReason` for `integration`, a `RunFailed.kind` for `run`; free
    * text for `project`.
    */
-  reason: string;
-  detail: string;
+  reason: string
+  detail: string
 }
 
 /**
@@ -116,29 +111,29 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    * back into the markers, up to `rounds` times. A conflict that still reaches
    * a person has had every cheap answer.
    */
-  conflict: "repository",
+  conflict: 'repository',
   /** A gate refused this diff. The gates are the repository's. */
-  "verify-failed": "repository",
+  'verify-failed': 'repository',
   /** The branch holds nothing the base does not. The repository's, and rare. */
-  "no-commits": "repository",
+  'no-commits': 'repository',
   /** A person applies a migration. Not a failure; see `person` above. */
-  "pending-migration": "person",
+  'pending-migration': 'person',
   /** The integrator's own worktree was not clean. Lingtai cut that worktree. */
-  "dirty-base": "lingtai",
+  'dirty-base': 'lingtai',
   /** Lingtai's mirror and origin disagree about the base. Lingtai's mirror. */
-  "unpushed-base": "lingtai",
+  'unpushed-base': 'lingtai',
   /**
    * Two integrations computed against one base and git turned the second away.
    * Lingtai's lane, for the reason `lane-busy` was: nothing is wrong with the
    * branch, and an agent has nothing it could change about a race.
    */
-  "push-rejected": "lingtai",
+  'push-rejected': 'lingtai',
   /**
    * The same thing, before #194 removed the merge lane's lock — kept because
    * events on the log carry it. Nothing writes it; everything still reads it.
    */
-  "lane-busy": "lingtai",
-};
+  'lane-busy': 'lingtai',
+}
 
 /**
  * Every way a run can end badly, and whose it is.
@@ -157,28 +152,28 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
  * `lingtai` rather than `person` because none of those is a hold anybody meant.
  */
 const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
-  "never-started": "lingtai",
-  timeout: "lingtai",
-  crash: "lingtai",
-  aborted: "lingtai",
-  "no-commits": "lingtai",
+  'never-started': 'lingtai',
+  timeout: 'lingtai',
+  crash: 'lingtai',
+  aborted: 'lingtai',
+  'no-commits': 'lingtai',
   // The recipe calls a run that needs this many turns *"a ticket that was
   // scoped wrong"*, and guide.md reads the limit firing as *the ticket was
   // wrong* (`#89`). The ticket is the repository's, and Lingtai did what the
   // recipe asked — so a card calling this Lingtai's would send somebody to
   // look for a fault that is not there. The owner buys nothing either way
   // (`#143`); it is only what the card says.
-  "out-of-turns": "repository",
+  'out-of-turns': 'repository',
   // The runtime forced a schema on the cold reviewer's answer and could not
   // make one fit after retrying (`#369`) — the agent answered something and
   // the runtime is what lost it, which is Lingtai's failure for the same
   // reason a crash is.
-  "no-structured-answer": "lingtai",
+  'no-structured-answer': 'lingtai',
   // The dollar twin of the argument above, word for word (`#370`): a recipe
   // that set `runtime.limits.usd` and a run that spent it is a ticket too
   // expensive for the ceiling, not Lingtai misbehaving.
-  "out-of-usd": "repository",
-};
+  'out-of-usd': 'repository',
+}
 
 /**
  * Whose failure this is.
@@ -189,9 +184,9 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
  * wrong and it is not the diff*.
  */
 export function whoseFailure(failure: Failure): FailureOwner {
-  if (failure.source === "project") return "lingtai";
-  if (failure.source === "run") return RUN_OWNER[failure.reason as RunFailureKind] ?? "lingtai";
-  return INTEGRATION_OWNER[failure.reason as RefusalReason] ?? "lingtai";
+  if (failure.source === 'project') return 'lingtai'
+  if (failure.source === 'run') return RUN_OWNER[failure.reason as RunFailureKind] ?? 'lingtai'
+  return INTEGRATION_OWNER[failure.reason as RefusalReason] ?? 'lingtai'
 }
 
 // ------------------------------------------------------------- diagnosing ----
@@ -216,60 +211,59 @@ export function whoseFailure(failure: Failure): FailureOwner {
 const REFUSAL_READING: Record<
   RefusalReason,
   {
-    says: (where: { branch: string; base: string }) => string;
+    says: (where: { branch: string; base: string }) => string
     /** The move this refusal implies, or null when nobody can name one. */
-    move: BlockRecommendation | null;
+    move: BlockRecommendation | null
   }
 > = {
   conflict: {
     says: ({ branch, base }) => `${branch} does not merge into ${base}.`,
     move: {
-      action: "requeue",
+      action: 'requeue',
       why:
-        "the mechanical remedy is already spent, so the next attempt is the fix: " +
-        "it is cut from a base that has since moved",
+        'the mechanical remedy is already spent, so the next attempt is the fix: ' +
+        'it is cut from a base that has since moved',
     },
   },
-  "verify-failed": {
+  'verify-failed': {
     says: ({ branch, base }) => `a step refused ${branch}, so it was not merged into ${base}.`,
     // Nothing is recommended, deliberately. A red diff is the one case where
     // the judgement is genuinely a person's — approve it anyway, waive the
     // gate, or reject it — and a default here would be picking for them.
     move: null,
   },
-  "no-commits": {
+  'no-commits': {
     says: ({ branch, base }) => `${branch} holds nothing ${base} does not, so there was nothing to merge.`,
     move: {
-      action: "requeue",
-      why: "there is no diff to approve; a fresh attempt starts from the current base",
+      action: 'requeue',
+      why: 'there is no diff to approve; a fresh attempt starts from the current base',
     },
   },
-  "pending-migration": {
+  'pending-migration': {
     says: ({ branch }) =>
       `${branch} carries a migration, which a person applies. This is a hold Lingtai means, not a failure.`,
     // A person reads the migration. Requeueing would reach this same hold
     // again, and there is nothing else to name.
     move: null,
   },
-  "dirty-base": {
+  'dirty-base': {
     says: ({ branch, base }) =>
       `Lingtai's own checkout of ${base} was not clean, so the merge was refused. Nothing is wrong with ${branch}.`,
     move: null,
   },
-  "unpushed-base": {
+  'unpushed-base': {
     says: ({ branch, base }) =>
       `Lingtai's mirror of ${base} and origin disagree, so the merge was refused. Nothing is wrong with ${branch}.`,
     move: null,
   },
-  "push-rejected": {
-    says: ({ branch, base }) =>
-      `${base} moved while ${branch} was being merged into it, so origin refused the push.`,
+  'push-rejected': {
+    says: ({ branch, base }) => `${base} moved while ${branch} was being merged into it, so origin refused the push.`,
     move: {
-      action: "requeue",
+      action: 'requeue',
       why:
-        "the base moved rather than the branch being wrong — the lane already merged it " +
-        "against where the base had got to and lost the push every time, so a requeue is " +
-        "the same attempt in a quieter minute",
+        'the base moved rather than the branch being wrong — the lane already merged it ' +
+        'against where the base had got to and lost the push every time, so a requeue is ' +
+        'the same attempt in a quieter minute',
     },
   },
   /**
@@ -277,15 +271,14 @@ const REFUSAL_READING: Record<
    * lane's lock went still reaches a person as a sentence and a move, which is
    * the whole reason the value cannot be deleted from `RefusalReason`.
    */
-  "lane-busy": {
-    says: ({ branch, base }) =>
-      `another integration held the merge lane, so ${branch} was not merged into ${base}.`,
+  'lane-busy': {
+    says: ({ branch, base }) => `another integration held the merge lane, so ${branch} was not merged into ${base}.`,
     move: {
-      action: "requeue",
-      why: "the lane was busy rather than wrong — the next pass merges it",
+      action: 'requeue',
+      why: 'the lane was busy rather than wrong — the next pass merges it',
     },
   },
-};
+}
 
 /**
  * Why no agent was bought, which since `#143` is one answer per owner rather
@@ -309,14 +302,14 @@ const REFUSAL_READING: Record<
  */
 const OWNER_SAYS: Record<FailureOwner, string> = {
   repository:
-    "No agent was bought: a refusal at the merge lane or at approval buys none, and " +
-    "no fix round runs there, so no recipe key would have changed this. Re-implementing " +
-    "a branch that already exists is the expensive wrong answer (0039)",
+    'No agent was bought: a refusal at the merge lane or at approval buys none, and ' +
+    'no fix round runs there, so no recipe key would have changed this. Re-implementing ' +
+    'a branch that already exists is the expensive wrong answer (0039)',
   lingtai:
     "No agent was bought: this is Lingtai's own failure, not the repository's — an " +
-    "agent has no access to the thing that is broken and nothing it could change",
-  person: "No agent was bought: this is a hold somebody meant, not a failure — it is yours to answer",
-};
+    'agent has no access to the thing that is broken and nothing it could change',
+  person: 'No agent was bought: this is a hold somebody meant, not a failure — it is yours to answer',
+}
 
 /**
  * What a person is told about a refusal — which is now all of them.
@@ -337,14 +330,14 @@ const OWNER_SAYS: Record<FailureOwner, string> = {
  */
 export function diagnoseRefusal(input: {
   /** A `RefusalReason`, or anything an older build wrote. */
-  reason: string;
-  detail: string;
-  branch: string;
-  base: string;
+  reason: string
+  detail: string
+  branch: string
+  base: string
 }): BlockDiagnosis {
-  const reading = REFUSAL_READING[input.reason as RefusalReason] ?? null;
-  const where = { branch: input.branch, base: input.base };
-  const owner = whoseFailure({ source: "integration", reason: input.reason, detail: input.detail });
+  const reading = REFUSAL_READING[input.reason as RefusalReason] ?? null
+  const where = { branch: input.branch, base: input.base }
+  const owner = whoseFailure({ source: 'integration', reason: input.reason, detail: input.detail })
   return {
     what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,
     // What was *done* about it, which for a conflict is more than nothing: the
@@ -353,10 +346,9 @@ export function diagnoseRefusal(input: {
     // (0025 §4). Then the sentence saying no agent is coming — a card must be
     // able to say why nothing was bought, not only that nothing was.
     done:
-      (input.reason === "conflict"
-        ? `${input.base} was merged in first and it still would not merge. `
-        : "") + `${OWNER_SAYS[owner]}.`,
+      (input.reason === 'conflict' ? `${input.base} was merged in first and it still would not merge. ` : '') +
+      `${OWNER_SAYS[owner]}.`,
     raw: input.detail,
     recommendation: reading?.move ?? null,
-  };
+  }
 }

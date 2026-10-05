@@ -11,14 +11,8 @@ export {
   type DaemonLock,
   type LockPlace,
   type LockResult,
-} from "./lock.ts";
-export {
-  startDaemon,
-  type Daemon,
-  type DaemonOptions,
-  type DaemonStart,
-  type StopReason,
-} from "./daemon.ts";
+} from './lock.ts'
+export { startDaemon, type Daemon, type DaemonOptions, type DaemonStart, type StopReason } from './daemon.ts'
 export {
   COMPLETION_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,
@@ -27,22 +21,14 @@ export {
   type PassReason,
   type WorkLoop,
   type WorkLoopOptions,
-} from "./work-loop.ts";
+} from './work-loop.ts'
 // The store this machine wrote down, and neither implementation by name: the
 // Postgres one is at `@lingtai/daemon/postgres` and the SQLite one at
 // `@lingtai/daemon/sqlite`, which is how a barrel import still never loads
 // `node:sqlite` on a Postgres install. `choose.ts` is the one file that names
 // both, and `unit/one-store.test.ts` is what keeps it the only one (#179).
-export {
-  processDaemonStore,
-  withDaemonStore,
-  type DaemonStoreOptions,
-} from "./choose.ts";
-export {
-  type Beat,
-  type DaemonStore,
-  type StreamQuery,
-} from "./store.ts";
+export { processDaemonStore, withDaemonStore, type DaemonStoreOptions } from './choose.ts'
+export { type Beat, type DaemonStore, type StreamQuery } from './store.ts'
 export {
   CONTROL_STREAM,
   HEARTBEAT_MS,
@@ -74,7 +60,7 @@ export {
   type DaemonStatus,
   type Withdrawal,
   type ShutdownRequest,
-} from "./control.ts";
+} from './control.ts'
 export {
   codeCurrency,
   codeIdentity,
@@ -87,7 +73,7 @@ export {
   type CurrencyOptions,
   type Identity,
   type IdentityRefusal,
-} from "./currency.ts";
+} from './currency.ts'
 export {
   exists,
   findLaggingProjections,
@@ -99,11 +85,11 @@ export {
   type Action,
   type Finding,
   type ReconcileOptions,
-} from "./reconcile.ts";
+} from './reconcile.ts'
 export {
   clientsForProjects,
   convergeIssues,
   findIssueDrift,
   type ConvergeOptions,
   type Divergence,
-} from "./converge.ts";
+} from './converge.ts'

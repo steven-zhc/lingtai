@@ -16,24 +16,25 @@
  * board is the subject: the sentence and not the stack, and nothing is served
  * on a number nobody chose.
  */
-import { spawnSync } from "node:child_process";
-import { boardPort } from "@lingtai/env";
+import { spawnSync } from 'node:child_process'
 
-let port: number;
+import { boardPort } from '@lingtai/env'
+
+let port: number
 try {
-  port = boardPort();
+  port = boardPort()
 } catch (err) {
-  console.error((err as Error).message);
-  process.exit(1);
+  console.error((err as Error).message)
+  process.exit(1)
 }
 
-const mode = process.argv[2] === "start" ? ["start"] : ["dev", "--turbopack"];
+const mode = process.argv[2] === 'start' ? ['start'] : ['dev', '--turbopack']
 // `next` off the PATH pnpm gives a script — the same binary the literal
 // command ran, invoked with the port this repository decides rather than one
 // written in the file that invokes it.
-const r = spawnSync("next", [...mode, "-p", String(port)], { stdio: "inherit" });
+const r = spawnSync('next', [...mode, '-p', String(port)], { stdio: 'inherit' })
 if (r.error) {
-  console.error(r.error.message);
-  process.exit(1);
+  console.error(r.error.message)
+  process.exit(1)
 }
-process.exit(r.status ?? 1);
+process.exit(r.status ?? 1)

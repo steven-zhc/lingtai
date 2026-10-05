@@ -1,3 +1,4 @@
+import type { Runtime } from '@lingtai/agent'
 /**
  * A whole pass against fakes — the scaffolding, and no test in it.
  *
@@ -25,15 +26,15 @@
  * git, not the socket — those have their own tests, in the packages that own
  * them.
  */
-import type { Envelope, ToAppend } from "@lingtai/domain";
-import type { EventStore } from "@lingtai/event-store";
-import type { GitHubClient, Issue } from "@lingtai/github";
-import type { Runtime } from "@lingtai/agent";
-import type { ProjectState } from "@lingtai/domain";
-import { Effect, Layer } from "effect";
-import { AgentHost, Repo, type RunPorts } from "../src/ports.ts";
-import { runOnce } from "../src/conduct.ts";
-import { resolveRecipe } from "@lingtai/recipe";
+import type { Envelope, ToAppend } from '@lingtai/domain'
+import type { ProjectState } from '@lingtai/domain'
+import type { EventStore } from '@lingtai/event-store'
+import type { GitHubClient, Issue } from '@lingtai/github'
+import { resolveRecipe } from '@lingtai/recipe'
+import { Effect, Layer } from 'effect'
+
+import { runOnce } from '../src/conduct.ts'
+import { AgentHost, Repo, type RunPorts } from '../src/ports.ts'
 
 /**
  * The two tags, from the plain shape.
@@ -44,20 +45,19 @@ import { resolveRecipe } from "@lingtai/recipe";
  * this: the shape a `Layer` is built from.
  */
 export const withPorts = (ports: RunPorts) =>
-  Layer.merge(Layer.succeed(Repo, ports.repo), Layer.succeed(AgentHost, ports.agent));
+  Layer.merge(Layer.succeed(Repo, ports.repo), Layer.succeed(AgentHost, ports.agent))
 
 export const once = (options: Parameters<typeof runOnce>[0], ports: RunPorts) =>
   Effect.runPromise(
     runOnce({
       // The recipe through the fake GitHub's `fileAt`, so each test keeps the
       // recipe it wrote. Where a real run reads it from is `local.test.ts`'s.
-      recipe: () =>
-        resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? "main"),
+      recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? 'main'),
       ...options,
     }).pipe(Effect.provide(withPorts(ports))),
-  );
+  )
 
-export const PROJECT = "purecheck";
+export const PROJECT = 'purecheck'
 
 /**
  * The log, in a Map.
@@ -69,21 +69,21 @@ export const PROJECT = "purecheck";
  */
 /** The fake store's own map, for the fakes that need to see it. */
 export function streams(store: EventStore): Map<string, Envelope[]> {
-  return (store as EventStore & { streams: Map<string, Envelope[]> }).streams;
+  return (store as EventStore & { streams: Map<string, Envelope[]> }).streams
 }
 
 export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> } {
-  const streams = new Map<string, Envelope[]>();
-  let seq = 0n;
+  const streams = new Map<string, Envelope[]>()
+  let seq = 0n
   return {
     streams,
     async append(streamId: string, expectedVersion: number, events: readonly ToAppend[]) {
-      const held = streams.get(streamId) ?? [];
+      const held = streams.get(streamId) ?? []
       if (held.length !== expectedVersion) {
-        throw new Error(`stale: ${streamId} is at ${held.length}, expected ${expectedVersion}`);
+        throw new Error(`stale: ${streamId} is at ${held.length}, expected ${expectedVersion}`)
       }
       const written = events.map((e, i) => {
-        seq += 1n;
+        seq += 1n
         return {
           seq,
           streamId,
@@ -92,18 +92,18 @@ export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> }
           actor: e.actor,
           data: e.data,
           at: new Date(),
-        } as unknown as Envelope;
-      });
-      streams.set(streamId, [...held, ...written]);
-      return written;
+        } as unknown as Envelope
+      })
+      streams.set(streamId, [...held, ...written])
+      return written
     },
     async read(streamId: string, fromVersion = 1) {
-      return (streams.get(streamId) ?? []).filter((e) => e.version >= fromVersion);
+      return (streams.get(streamId) ?? []).filter((e) => e.version >= fromVersion)
     },
     async readAll() {
-      return [];
+      return []
     },
-  };
+  }
 }
 
 export const RECIPE = `
@@ -113,7 +113,7 @@ source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 /**
  * **The block `#268` tells a person to paste**, and the `[]` it replaces.
@@ -132,7 +132,7 @@ env: { required: [], plantAt: .env.local }
 steps:
   admit: ${declared}
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 /**
  * **The block `#270` tells a person to paste**, and the `[]` it replaces.
@@ -151,7 +151,7 @@ env: { required: [], plantAt: .env.local }
 steps:
   merge: ${declared}
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 /**
  * The same, with a cold reviewer at `proposed` and no round to patch with.
@@ -175,7 +175,7 @@ steps:
 runtime:
   agent: claude-code
   limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
-`;
+`
 
 /**
  * The same recipe with the cold reviewer this repository actually runs.
@@ -196,7 +196,7 @@ steps:
       agent: claude-code
       prompt: look for races
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 /**
  * **The cold reviewer at `review:` and a judge at `proposed:`** — the shape this
@@ -230,7 +230,7 @@ steps:
 runtime:
   agent: claude-code
   limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
-`;
+`
 
 /**
  * **The same, with an agent judge** (`#277`) — `judge: claude-code` at
@@ -263,7 +263,7 @@ steps:
 runtime:
   agent: claude-code
   limits: { turns: 10, wall: 2m, rounds: 2, restarts: 0 }
-`;
+`
 
 /**
  * **Two runtimes in one pass** (`#314`, 0070 §6) — `runtime.agent: claude-code`
@@ -292,7 +292,7 @@ steps:
       limits: { turns: 4 }
       prompt: look for races
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 /**
  * **`JUDGED_BY_AN_AGENT` with a cheap model on the judge** (`#314`).
@@ -321,7 +321,7 @@ steps:
 runtime:
   agent: claude-code
   limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
-`;
+`
 
 /**
  * **A drafting agent at `design:`** — the block `#265` tells a person to paste,
@@ -348,7 +348,7 @@ steps:
       agent: claude-code
       prompt: say what shape this takes
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 /**
  * A person the recipe declared, and nothing else asking — the claim `#58` is
@@ -381,48 +381,56 @@ steps:
     - name: approval
       human: "Merge this? It is Lingtai's own code."
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
-`;
+`
 
 export const issue: Issue = {
   number: 7,
-  title: "a race in the importer",
-  body: "fix it",
-  labels: [{ name: "bug", color: "#d73a4a" }],
-  state: "open",
-  url: "https://example.invalid/7",
+  title: 'a race in the importer',
+  body: 'fix it',
+  labels: [{ name: 'bug', color: '#d73a4a' }],
+  state: 'open',
+  url: 'https://example.invalid/7',
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
-};
+}
 
 export const project: ProjectState = {
   project: PROJECT,
-  owner: "nobody",
-  base: "main",
-  configHash: "seeded",
-  fromSha: "0".repeat(40),
+  owner: 'nobody',
+  base: 'main',
+  configHash: 'seeded',
+  fromSha: '0'.repeat(40),
   refused: null,
   version: 2,
   lastSeq: null,
-};
+}
 
 /** GitHub, as a record of what it was told. */
 export function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
   return {
-    owner: "nobody",
+    owner: 'nobody',
     repo: PROJECT,
-    installation: { id: 1, permissions: {}, account: "nobody", repositorySelection: "selected", htmlUrl: null },
-    request: async () => { throw new Error("not used"); },
-    token: async () => "not-a-real-token",
-    defaultBranch: async () => "main",
-    fileAt: async (path: string, ref: string) =>
-      path === ".lingtai/config.yaml" && ref === "main" ? recipe : null,
-    refSha: async () => "0".repeat(40),
+    installation: { id: 1, permissions: {}, account: 'nobody', repositorySelection: 'selected', htmlUrl: null },
+    request: async () => {
+      throw new Error('not used')
+    },
+    token: async () => 'not-a-real-token',
+    defaultBranch: async () => 'main',
+    fileAt: async (path: string, ref: string) => (path === '.lingtai/config.yaml' && ref === 'main' ? recipe : null),
+    refSha: async () => '0'.repeat(40),
     listOpenIssues: async () => [issue],
     getIssue: async () => issue,
-    comment: async (n: number) => { said.push(`comment #${n}`); return { id: 1 }; },
-    setLabels: async (n: number, labels: readonly string[]) => { said.push(`labels #${n} ${[...labels].sort().join(",")}`); },
-    closeIssue: async (n: number) => { said.push(`close #${n}`); },
-  } as unknown as GitHubClient;
+    comment: async (n: number) => {
+      said.push(`comment #${n}`)
+      return { id: 1 }
+    },
+    setLabels: async (n: number, labels: readonly string[]) => {
+      said.push(`labels #${n} ${[...labels].sort().join(',')}`)
+    },
+    closeIssue: async (n: number) => {
+      said.push(`close #${n}`)
+    },
+  } as unknown as GitHubClient
 }
 
 /**
@@ -434,12 +442,12 @@ export function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
  */
 export const runtime: Runtime = {
   capabilities: {
-    id: "claude-code",
-    hooks: ["PreToolUse", "PostToolUse", "Stop"],
+    id: 'claude-code',
+    hooks: ['PreToolUse', 'PostToolUse', 'Stop'],
     canFailClosed: true,
     canRewriteToolCall: false,
-    providesTier: "guarded",
-    enforces: ["turns", "wall"],
+    providesTier: 'guarded',
+    enforces: ['turns', 'wall'],
   },
   run: async () => ({
     exitCode: 0,
@@ -447,10 +455,10 @@ export const runtime: Runtime = {
     durationMs: 1234,
     costUsd: 0.42,
     failure: null,
-    text: "done",
-    sessionId: "sess-1",
+    text: 'done',
+    sessionId: 'sess-1',
   }),
-};
+}
 
 /**
  * A runtime that refuses whatever it is shown, in the reviewer's own contract.
@@ -473,17 +481,17 @@ export const refusingRuntime: Runtime = {
     text: JSON.stringify({
       findings: [
         {
-          file: "src/fix.ts",
+          file: 'src/fix.ts',
           line: 12,
-          severity: "blocker",
-          claim: "the approach cannot work",
-          failureScenario: "call it twice and the second call deadlocks on the lock the first took",
+          severity: 'blocker',
+          claim: 'the approach cannot work',
+          failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
         },
       ],
     }),
-    sessionId: "sess-review",
+    sessionId: 'sess-review',
   }),
-};
+}
 
 /**
  * The reviewer of `run-9e510ffc`: exit 1 in a second, nothing on the stream.
@@ -505,32 +513,32 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
   return {
     ...runtime,
     run: async (request) => {
-      if (!request.runId.includes(":review:")) {
+      if (!request.runId.includes(':review:')) {
         return {
           exitCode: 0,
           turns: 3,
           durationMs: 1234,
           costUsd: 0.42,
           failure: null,
-          text: "done",
-          sessionId: "sess-1",
-        };
+          text: 'done',
+          sessionId: 'sess-1',
+        }
       }
-      tried.n += 1;
+      tried.n += 1
       return {
         exitCode: 1,
         turns: 0,
         durationMs: 1_000,
         costUsd: null,
         failure: {
-          kind: "crash",
+          kind: 'crash',
           detail: `Error: Session ID ${request.runId} is already in use.`,
         },
         text: null,
-        sessionId: "sess-review",
-      };
+        sessionId: 'sess-review',
+      }
     },
-  };
+  }
 }
 
 /**
@@ -548,13 +556,13 @@ export const quotaRuntime: Runtime = {
     durationMs: 25_000,
     costUsd: 0,
     failure: {
-      kind: "never-started",
+      kind: 'never-started',
       detail: "You've hit your session limit \u00b7 resets 11pm (America/Chicago)",
     },
     text: null,
-    sessionId: "sess-quota",
+    sessionId: 'sess-quota',
   }),
-};
+}
 
 /**
  * The implementer works and is paid for it; the reviewer meets the wall.
@@ -573,18 +581,18 @@ export const quotaRuntime: Runtime = {
 export const reviewerAtTheWall: Runtime = {
   ...runtime,
   run: async (request) =>
-    request.runId.includes(":review:")
+    request.runId.includes(':review:')
       ? {
           exitCode: 1,
           turns: 0,
           durationMs: 8_000,
           costUsd: 0,
           failure: {
-            kind: "never-started",
+            kind: 'never-started',
             detail: "You've hit your session limit \u00b7 resets 2pm (America/Chicago)",
           },
           text: null,
-          sessionId: "sess-review",
+          sessionId: 'sess-review',
         }
       : {
           exitCode: 0,
@@ -592,10 +600,10 @@ export const reviewerAtTheWall: Runtime = {
           durationMs: 1234,
           costUsd: 0.42,
           failure: null,
-          text: "done",
-          sessionId: "sess-1",
+          text: 'done',
+          sessionId: 'sess-1',
         },
-};
+}
 
 /**
  * **The first agent a pass can buy meets the wall** (`#265`).
@@ -613,18 +621,18 @@ export const reviewerAtTheWall: Runtime = {
 export const designerAtTheWall: Runtime = {
   ...runtime,
   run: async (request) =>
-    request.runId.includes(":design:")
+    request.runId.includes(':design:')
       ? {
           exitCode: 1,
           turns: 0,
           durationMs: 6_000,
           costUsd: 0,
           failure: {
-            kind: "never-started",
+            kind: 'never-started',
             detail: "You've hit your session limit \u00b7 resets 4pm (America/Chicago)",
           },
           text: null,
-          sessionId: "sess-design",
+          sessionId: 'sess-design',
         }
       : {
           exitCode: 0,
@@ -632,10 +640,10 @@ export const designerAtTheWall: Runtime = {
           durationMs: 1234,
           costUsd: 0.42,
           failure: null,
-          text: "done",
-          sessionId: "sess-1",
+          text: 'done',
+          sessionId: 'sess-1',
         },
-};
+}
 
 /**
  * The world, as a list of what was asked of it.
@@ -670,28 +678,28 @@ export const designerAtTheWall: Runtime = {
  */
 export interface FakeTree {
   /** What `rev-parse HEAD` answers now. `provision` cuts at `a`*40. */
-  at: string;
+  at: string
   /** Whether the implementing agent commits — `b`*40, recorded at `wire`. */
-  implementerCommits: boolean;
+  implementerCommits: boolean
 }
 
 export function fakePorts(
   did: string[],
   store: EventStore,
   merges = false,
-  tree: FakeTree = { at: "a".repeat(40), implementerCommits: true },
+  tree: FakeTree = { at: 'a'.repeat(40), implementerCommits: true },
 ): RunPorts {
   return {
     repo: {
       provision: (o) =>
         Effect.sync(() => {
-          did.push(`provision ${o.runId}`);
+          did.push(`provision ${o.runId}`)
           // What it was asked to cut, on its own line so the `provision <runId>`
           // assertions above stay exact matches: since `#268` the base and the
           // submodules come off the `worktree:` action rather than off `repo:`,
           // and *which values reached the cut* is the claim a pasted block needs.
-          did.push(`cut from origin/${o.base}${o.submodules ? " with submodules" : ""}`);
-          return { path: `/tmp/fake/${o.runId}`, branch: `agent/${o.runId}`, baseSha: "a".repeat(40) } as never;
+          did.push(`cut from origin/${o.base}${o.submodules ? ' with submodules' : ''}`)
+          return { path: `/tmp/fake/${o.runId}`, branch: `agent/${o.runId}`, baseSha: 'a'.repeat(40) } as never
         }),
       remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
       git: (args) =>
@@ -702,43 +710,43 @@ export function fakePorts(
           // for the card are two different names. Everything else is
           // assertable by its verb.
           did.push(
-            args[0] === "push"
-              ? `git push ${args.filter((a) => a.includes(":refs/heads/")).join(" ")}`
+            args[0] === 'push'
+              ? `git push ${args.filter((a) => a.includes(':refs/heads/')).join(' ')}`
               : `git ${args[0]}`,
-          );
+          )
           // `rev-parse HEAD` decides the sha every verdict is bound to; `numstat`
           // is what the diff summary is counted from. See `FakeTree` for why this
           // is a variable rather than the constant it was.
-          if (args[0] === "rev-parse") return tree.at;
-          if (args[0] === "diff" && args[1] === "--numstat") return "3\t1\tsrc/fix.ts\n";
-          if (args[0] === "diff" && args[1] === "--name-only") return "src/fix.ts\n";
+          if (args[0] === 'rev-parse') return tree.at
+          if (args[0] === 'diff' && args[1] === '--numstat') return '3\t1\tsrc/fix.ts\n'
+          if (args[0] === 'diff' && args[1] === '--name-only') return 'src/fix.ts\n'
           // `base...HEAD`, which is what a reviewer is shown. Non-empty on
           // purpose: an `agent:` gate short-circuits to `passed` on an empty
           // diff, so a fake that answered "" would make every review pass and
           // the refusal under test unreachable.
-          if (args[0] === "diff") return "diff --git a/src/fix.ts b/src/fix.ts\n+  return ok;\n";
-          return "";
+          if (args[0] === 'diff') return 'diff --git a/src/fix.ts b/src/fix.ts\n+  return ok;\n'
+          return ''
         }),
       integrate: () =>
         Effect.sync(() => {
-          did.push("integrate");
-          if (!merges) throw new Error("a held run must not reach the integrator");
-          return { ok: true, mergeCommit: "c".repeat(40) } as never;
+          did.push('integrate')
+          if (!merges) throw new Error('a held run must not reach the integrator')
+          return { ok: true, mergeCommit: 'c'.repeat(40) } as never
         }),
     },
     agent: {
       wire: () =>
         Effect.sync(() => {
-          did.push("wire");
+          did.push('wire')
           // The implementing agent is about to run in that tree, so this is where
           // its commit lands — where the fixture says it makes one (`FakeTree`).
-          if (tree.implementerCommits) tree.at = "b".repeat(40);
-          return { settingsPath: "/tmp/fake/settings.json", socketPath: "/tmp/fake/sock", env: {} } as never;
+          if (tree.implementerCommits) tree.at = 'b'.repeat(40)
+          return { settingsPath: '/tmp/fake/settings.json', socketPath: '/tmp/fake/sock', env: {} } as never
         }),
       smokeTest: () =>
         Effect.sync(() => {
-          did.push("smokeTest");
-          return { ok: true, detail: "refuses when it cannot reach the socket" };
+          did.push('smokeTest')
+          return { ok: true, detail: 'refuses when it cannot reach the socket' }
         }),
       // Acquired and released, because that is what the port now says it is.
       // The `close` this records is the one the old engine used to make in a
@@ -746,9 +754,9 @@ export function fakePorts(
       serve: () =>
         Effect.acquireRelease(
           Effect.sync(() => {
-            did.push("serve");
+            did.push('serve')
             return {
-              socketPath: "/tmp/fake/sock",
+              socketPath: '/tmp/fake/sock',
               register: (runId: string, version: number) => ({ runId, version }) as never,
               unregister: () => undefined,
               get: ((runId: string) => ({
@@ -760,9 +768,9 @@ export function fakePorts(
               flush: async () => {},
               listen: async () => {},
               close: async () => {},
-            } as never;
+            } as never
           }),
-          () => Effect.sync(() => void did.push("close")),
+          () => Effect.sync(() => void did.push('close')),
         ),
       /**
        * The step agents' settings file, as a path and no file.
@@ -777,8 +785,8 @@ export function fakePorts(
        */
       unhookedSettings: (o) =>
         Effect.sync(() => {
-          did.push(`unhookedSettings ${o.label}`);
-          return `/tmp/fake/${o.runId}.${o.label}.settings.json`;
+          did.push(`unhookedSettings ${o.label}`)
+          return `/tmp/fake/${o.runId}.${o.label}.settings.json`
         }),
       resolveEnv: () => Effect.succeed({ values: {}, names: [], refusal: null }) as never,
       /**
@@ -792,13 +800,13 @@ export function fakePorts(
        */
       runLog: (o) =>
         Effect.sync(() => {
-          did.push(`runLog ${o.path}`);
+          did.push(`runLog ${o.path}`)
           return {
             path: o.path,
-            note: (label: string, detail = "") => void did.push(`note ${label} ${detail}`.trimEnd()),
-            close: async (fate: "keep" | "delete") => void did.push(`runLog ${fate}`),
-          };
+            note: (label: string, detail = '') => void did.push(`note ${label} ${detail}`.trimEnd()),
+            close: async (fate: 'keep' | 'delete') => void did.push(`runLog ${fate}`),
+          }
         }),
     },
-  };
+  }
 }

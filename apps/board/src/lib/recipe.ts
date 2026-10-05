@@ -11,14 +11,40 @@
  * before the move was given the repository's copy, and that commit is where it
  * still is.
  */
-import { homedir } from "node:os";
-import { STEPS, type ProjectState, type Step } from "@lingtai/domain";
-import type { GitHubClient } from "@lingtai/github";
-import { MAX_READ_ROUNDS } from "@lingtai/conductor/discuss";
-import { currentRecipe } from "@lingtai/conductor/projects";
-import { passCeiling } from "@lingtai/conductor/ceiling";
-import { describeAssignee } from "@lingtai/conductor/filter";
-import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGINS, PROVENANCE_ARROW, RecipeInvalidError, RecipeMissingError, assigneeOf, backoffOf, boundsBesides, disclose, discloseSteps, excludeOf, kindOfAction, kindsOf, limitsFor, machinePath, parseDuration, provenanceSource, recipePath, resolveRecipe, type StepAction, type PluginSecrets, type Recipe } from "@lingtai/recipe";
+import { homedir } from 'node:os'
+
+import { passCeiling } from '@lingtai/conductor/ceiling'
+import { MAX_READ_ROUNDS } from '@lingtai/conductor/discuss'
+import { describeAssignee } from '@lingtai/conductor/filter'
+import { currentRecipe } from '@lingtai/conductor/projects'
+import { STEPS, type ProjectState, type Step } from '@lingtai/domain'
+import type { GitHubClient } from '@lingtai/github'
+import {
+  AgentUnresolvedError,
+  LIMIT_DEFAULTS,
+  MachineConfigInvalidError,
+  PLUGINS,
+  PROVENANCE_ARROW,
+  RecipeInvalidError,
+  RecipeMissingError,
+  assigneeOf,
+  backoffOf,
+  boundsBesides,
+  disclose,
+  discloseSteps,
+  excludeOf,
+  kindOfAction,
+  kindsOf,
+  limitsFor,
+  machinePath,
+  parseDuration,
+  provenanceSource,
+  recipePath,
+  resolveRecipe,
+  type StepAction,
+  type PluginSecrets,
+  type Recipe,
+} from '@lingtai/recipe'
 
 /**
  * The limits `a pass` is made of, from the recipe rather than listed again here.
@@ -26,7 +52,7 @@ import { AgentUnresolvedError, LIMIT_DEFAULTS, MachineConfigInvalidError, PLUGIN
  * `usd` is appended rather than read off `LIMIT_DEFAULTS`: it has no default
  * (recipe.ts), so `Object.keys(LIMIT_DEFAULTS)` never contains it.
  */
-const LIMIT_KEYS = [...Object.keys(LIMIT_DEFAULTS), "usd"] as (keyof Recipe["runtime"]["limits"])[];
+const LIMIT_KEYS = [...Object.keys(LIMIT_DEFAULTS), 'usd'] as (keyof Recipe['runtime']['limits'])[]
 
 /**
  * `ResolvedRecipe`, named off the function that returns one.
@@ -34,7 +60,7 @@ const LIMIT_KEYS = [...Object.keys(LIMIT_DEFAULTS), "usd"] as (keyof Recipe["run
  * Inferred rather than imported, so it is always exactly what `currentRecipe`
  * returns — this file holds one and hands it back.
  */
-type Resolved = Awaited<ReturnType<typeof currentRecipe>>;
+type Resolved = Awaited<ReturnType<typeof currentRecipe>>
 
 /**
  * Which recipe the task page is showing beside an attempt, and whether it can
@@ -57,11 +83,11 @@ type Resolved = Awaited<ReturnType<typeof currentRecipe>>;
  */
 export type RunRecipe =
   | {
-      of: "run";
-      recipe: Resolved["recipe"];
-      configHash: string;
-      source: string;
-      at: { base: string } | { head: string };
+      of: 'run'
+      recipe: Resolved['recipe']
+      configHash: string
+      source: string
+      at: { base: string } | { head: string }
       /**
        * How this recipe stands against the one at head (#217).
        *
@@ -69,17 +95,17 @@ export type RunRecipe =
        * question means anything: a `head` recipe *is* head's, and a `none` has
        * nothing to compare.
        */
-      from: FromHead;
+      from: FromHead
     }
   | {
-      of: "head";
-      recipe: Resolved["recipe"];
-      configHash: string;
-      source: string;
-      ref: string;
-      why: string;
+      of: 'head'
+      recipe: Resolved['recipe']
+      configHash: string
+      source: string
+      ref: string
+      why: string
     }
-  | { of: "none"; why: string };
+  | { of: 'none'; why: string }
 
 /**
  * One value this attempt was given that the recipe at head does not have (#217).
@@ -90,9 +116,9 @@ export type RunRecipe =
  */
 export interface Change {
   /** Its path in the recipe, keyed by name where a list has names — `steps.proposed.build.run`. */
-  path: string;
-  run: string | null;
-  head: string | null;
+  path: string
+  run: string | null
+  head: string | null
 }
 
 /**
@@ -115,13 +141,13 @@ export interface Change {
  * says the difference is not in a value it can name, never *0 values differ*.
  */
 export type FromHead =
-  | { of: "same"; ref: string }
-  | { of: "changed"; ref: string; changes: readonly Change[] }
-  | { of: "unknown"; why: string };
+  | { of: 'same'; ref: string }
+  | { of: 'changed'; ref: string; changes: readonly Change[] }
+  | { of: 'unknown'; why: string }
 
 /** A leaf of the recipe as a person reads it. `null` is a value; `undefined` canonical drops. */
 function say(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value) ?? "";
+  return typeof value === 'string' ? value : (JSON.stringify(value) ?? '')
 }
 
 /**
@@ -148,23 +174,23 @@ function flatten(value: unknown, at: string, into: Map<string, string>): void {
   // `undefined` never reaches a reader: `canonical` drops it before the hash is
   // taken (0047 §2), so a path that is undefined here is a path the recipe the
   // run was decided by does not have.
-  if (value === undefined) return;
+  if (value === undefined) return
   if (Array.isArray(value)) {
-    if (value.length === 0) into.set(at, "(nothing)");
-    else if (value.every((v) => typeof (v as { name?: unknown })?.name === "string")) {
+    if (value.length === 0) into.set(at, '(nothing)')
+    else if (value.every((v) => typeof (v as { name?: unknown })?.name === 'string')) {
       // The list's own path carries the names in the order they run, and each
       // one's values hang under it. A swap says so on this line and on no
       // other; an insertion says so here and names the new action below.
-      into.set(at, value.map((v) => (v as { name: string }).name).join(" > "));
-      for (const item of value) flatten(item, `${at}.${(item as { name: string }).name}`, into);
-    } else into.set(at, value.map(say).join(", "));
-    return;
+      into.set(at, value.map((v) => (v as { name: string }).name).join(' > '))
+      for (const item of value) flatten(item, `${at}.${(item as { name: string }).name}`, into)
+    } else into.set(at, value.map(say).join(', '))
+    return
   }
-  if (value !== null && typeof value === "object") {
-    for (const [key, v] of Object.entries(value)) flatten(v, at === "" ? key : `${at}.${key}`, into);
-    return;
+  if (value !== null && typeof value === 'object') {
+    for (const [key, v] of Object.entries(value)) flatten(v, at === '' ? key : `${at}.${key}`, into)
+    return
   }
-  into.set(at, say(value));
+  into.set(at, say(value))
 }
 
 /**
@@ -178,20 +204,16 @@ function flatten(value: unknown, at: string, into: Map<string, string>): void {
  * no row says what it changed to. A recipe with none — which is every recipe
  * today — walks exactly what it walked before.
  */
-export function changesFromHead(
-  mine: Recipe,
-  head: Recipe,
-  plugins?: readonly PluginSecrets[],
-): Change[] {
-  const a = new Map<string, string>();
-  const b = new Map<string, string>();
-  const shown = (recipe: Recipe) => ({ ...recipe, steps: discloseSteps(recipe.steps, plugins) });
-  flatten(shown(mine), "", a);
-  flatten(shown(head), "", b);
+export function changesFromHead(mine: Recipe, head: Recipe, plugins?: readonly PluginSecrets[]): Change[] {
+  const a = new Map<string, string>()
+  const b = new Map<string, string>()
+  const shown = (recipe: Recipe) => ({ ...recipe, steps: discloseSteps(recipe.steps, plugins) })
+  flatten(shown(mine), '', a)
+  flatten(shown(head), '', b)
   return [...new Set([...a.keys(), ...b.keys()])]
     .sort()
     .filter((path) => a.get(path) !== b.get(path))
-    .map((path) => ({ path, run: a.get(path) ?? null, head: b.get(path) ?? null }));
+    .map((path) => ({ path, run: a.get(path) ?? null, head: b.get(path) ?? null }))
 }
 
 /**
@@ -206,14 +228,14 @@ export function changesFromHead(
  * comparison was not made rather than that nothing differs.
  */
 async function fromHead(mine: Resolved, atHead: () => Promise<Resolved>): Promise<FromHead> {
-  let head: Resolved;
+  let head: Resolved
   try {
-    head = await atHead();
+    head = await atHead()
   } catch (err) {
-    return { of: "unknown", why: (err as Error).message.replace(/\s*\n\s*/g, " ").trim() };
+    return { of: 'unknown', why: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim() }
   }
-  if (head.configHash === mine.configHash) return { of: "same", ref: head.ref };
-  return { of: "changed", ref: head.ref, changes: changesFromHead(mine.recipe, head.recipe) };
+  if (head.configHash === mine.configHash) return { of: 'same', ref: head.ref }
+  return { of: 'changed', ref: head.ref, changes: changesFromHead(mine.recipe, head.recipe) }
 }
 
 /**
@@ -226,28 +248,25 @@ async function fromHead(mine: Resolved, atHead: () => Promise<Resolved>): Promis
  * invalid recipe at a sha is kept too — that is also a fact about an immutable
  * commit. A failure to *ask* (a rate limit, a 502) is not, and is asked again.
  */
-const atSha = new Map<string, Resolved | { problem: string }>();
+const atSha = new Map<string, Resolved | { problem: string }>()
 
 /** Only for tests, which must not inherit another test's answer. */
 export function forgetRunRecipes(): void {
-  atSha.clear();
+  atSha.clear()
 }
 
-async function recipeAtSha(
-  client: GitHubClient,
-  sha: string,
-): Promise<Resolved | { problem: string }> {
-  const key = `${client.owner}/${client.repo}@${sha}`;
-  const seen = atSha.get(key);
-  if (seen !== undefined) return seen;
+async function recipeAtSha(client: GitHubClient, sha: string): Promise<Resolved | { problem: string }> {
+  const key = `${client.owner}/${client.repo}@${sha}`
+  const seen = atSha.get(key)
+  if (seen !== undefined) return seen
   try {
-    const resolved = await resolveRecipe((path, ref) => client.fileAt(path, ref), sha);
-    atSha.set(key, resolved);
-    return resolved;
+    const resolved = await resolveRecipe((path, ref) => client.fileAt(path, ref), sha)
+    atSha.set(key, resolved)
+    return resolved
   } catch (err) {
-    const answer = { problem: (err as Error).message.replace(/\s*\n\s*/g, " ").trim() };
-    if (err instanceof RecipeMissingError || err instanceof RecipeInvalidError) atSha.set(key, answer);
-    return answer;
+    const answer = { problem: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim() }
+    if (err instanceof RecipeMissingError || err instanceof RecipeInvalidError) atSha.set(key, answer)
+    return answer
   }
 }
 
@@ -279,18 +298,18 @@ export async function recipeOfRun(
   client: GitHubClient,
   atHead: () => Promise<Resolved>,
 ): Promise<RunRecipe> {
-  let why: string;
+  let why: string
   if (run.configHash === null) {
-    why = "this run recorded no StepsResolved, so there is no hash to prove a recipe against";
+    why = 'this run recorded no StepsResolved, so there is no hash to prove a recipe against'
   } else if (run.baseSha === null) {
-    why = "this run recorded no base commit to read its recipe at";
+    why = 'this run recorded no base commit to read its recipe at'
   } else {
-    const base = await recipeAtSha(client, run.baseSha);
-    if ("problem" in base) {
-      why = `the recipe at base ${run.baseSha.slice(0, 7)} could not be read: ${base.problem}`;
+    const base = await recipeAtSha(client, run.baseSha)
+    if ('problem' in base) {
+      why = `the recipe at base ${run.baseSha.slice(0, 7)} could not be read: ${base.problem}`
     } else if (base.configHash === run.configHash) {
       return {
-        of: "run",
+        of: 'run',
         recipe: base.recipe,
         configHash: base.configHash,
         source: base.source,
@@ -303,40 +322,40 @@ export async function recipeOfRun(
         // costs no request; since 0046 §3 head is this machine's file, and the
         // caller reads it once however many attempts the page has.
         from: await fromHead(base, atHead),
-      };
+      }
     } else {
       why =
         `the recipe at base ${run.baseSha.slice(0, 7)} hashes to ${base.configHash.slice(0, 12)}, ` +
-        `and this run was given ${run.configHash.slice(0, 12)}`;
+        `and this run was given ${run.configHash.slice(0, 12)}`
     }
   }
 
-  let head: Resolved;
+  let head: Resolved
   try {
-    head = await atHead();
+    head = await atHead()
   } catch (err) {
-    return { of: "none", why: `${why}; and the recipe at head could not be read either: ${(err as Error).message}` };
+    return { of: 'none', why: `${why}; and the recipe at head could not be read either: ${(err as Error).message}` }
   }
   if (run.configHash !== null && head.configHash === run.configHash) {
     return {
-      of: "run",
+      of: 'run',
       recipe: head.recipe,
       configHash: head.configHash,
       source: head.source,
       at: { head: head.ref },
       // The same document as head's by the hash that just proved it, so there
       // is nothing to walk and nothing that could differ.
-      from: { of: "same", ref: head.ref },
-    };
+      from: { of: 'same', ref: head.ref },
+    }
   }
   return {
-    of: "head",
+    of: 'head',
     recipe: head.recipe,
     configHash: head.configHash,
     source: head.source,
     ref: head.ref,
     why,
-  };
+  }
 }
 
 /**
@@ -368,26 +387,26 @@ export async function recipeOfRun(
  */
 export type ProjectRecipe =
   | {
-      ok: true;
-      project: string;
+      ok: true
+      project: string
       /** The file the recipe was read from. */
-      at: string;
+      at: string
       /** Of the resolved recipe — what an attempt's is matched against (#217). */
-      configHash: string;
+      configHash: string
       /** The base branch this recipe governs. */
-      ref: string;
-      rows: readonly Reading[];
-      provenance: Readonly<Record<string, string>>;
+      ref: string
+      rows: readonly Reading[]
+      provenance: Readonly<Record<string, string>>
     }
   | {
-      ok: false;
-      project: string;
+      ok: false
+      project: string
       /** The file to open: the recipe, or this machine's `config.yml` when the fault is there. */
-      at: string;
+      at: string
       /** Which of the two files `at` is, so the page can name the fault it actually has. */
-      fault: "recipe" | "machine";
-      problem: string;
-    };
+      fault: 'recipe' | 'machine'
+      problem: string
+    }
 
 /**
  * Which file a refusal is about (#218).
@@ -402,10 +421,10 @@ export type ProjectRecipe =
  * `instanceof`, as `setup/wizard/page.tsx` already does across this same
  * boundary.
  */
-function faultOf(err: unknown, recipe: string): { at: string; fault: "recipe" | "machine" } {
+function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' } {
   return err instanceof MachineConfigInvalidError || err instanceof AgentUnresolvedError
-    ? { at: machinePath(), fault: "machine" }
-    : { at: recipe, fault: "recipe" };
+    ? { at: machinePath(), fault: 'machine' }
+    : { at: recipe, fault: 'recipe' }
 }
 
 /**
@@ -431,18 +450,18 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: "recipe" | 
  * before a resolve ever succeeds.
  */
 export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe> {
-  const project = state.project ?? "(unnamed)";
-  const at = recipePath(project);
-  let resolved: Resolved;
+  const project = state.project ?? '(unnamed)'
+  const at = recipePath(project)
+  let resolved: Resolved
   try {
-    resolved = await currentRecipe(state);
+    resolved = await currentRecipe(state)
   } catch (err) {
     return {
       ok: false,
       project,
       ...faultOf(err, at),
-      problem: (err as Error).message.replace(/\s*\n\s*/g, " ").trim(),
-    };
+      problem: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
+    }
   }
   return {
     ok: true,
@@ -452,7 +471,7 @@ export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe>
     ref: resolved.ref,
     rows: readRecipe(resolved.recipe),
     provenance: resolved.provenance ?? {},
-  };
+  }
 }
 
 /**
@@ -478,11 +497,11 @@ export function describeAction(
   // Every `no_log` value gone before a word of this is written (0061 §9). It
   // reads named fields, so today it could not print one by accident — the point
   // is that it does not have to be relied on not to.
-  action = disclose(action, plugins);
+  action = disclose(action, plugins)
   switch (kindOfAction(action)) {
-    case "run": {
-      const a = action as Extract<StepAction, { run: string }>;
-      return { does: a.run, bound: `timeout ${a.timeout}` };
+    case 'run': {
+      const a = action as Extract<StepAction, { run: string }>
+      return { does: a.run, bound: `timeout ${a.timeout}` }
     }
     // **Three fields since `#245`, and the prose is `prompt:`** (0063 §2).
     // `agent:` used to carry it, so reading `a.agent` still compiled and drew
@@ -491,22 +510,22 @@ export function describeAction(
     // operator is deciding from here is what this reviewer is told and what it
     // costs, so all three are on the line and the prompt is last: it is the
     // long one, and the two short facts would be lost after it.
-    case "agent": {
-      const a = action as Extract<StepAction, { agent: string }>;
+    case 'agent': {
+      const a = action as Extract<StepAction, { agent: string }>
       // Absent `model:` is the runtime's own default, which is a thing to say
       // rather than a blank — and not a name invented here, because the
       // runtime is the one that knows it.
-      const on = `${a.agent}, ${a.model ?? "its default model"}`;
+      const on = `${a.agent}, ${a.model ?? 'its default model'}`
       // What it is *for*, by the step. `review`, `proposed` and `merge` are the
       // three that read a diff somebody else wrote, so they share a word.
       const job =
-        step === "design"
-          ? "an agent drafting a design"
-          : step === "implement"
-            ? "an agent writing the change"
+        step === 'design'
+          ? 'an agent drafting a design'
+          : step === 'implement'
+            ? 'an agent writing the change'
             : step === undefined
-              ? "an agent"
-              : "a cold reviewer";
+              ? 'an agent'
+              : 'a cold reviewer'
       /**
        * **What this entry declared, and the ceiling where it declared nothing**
        * (`#314`, 0070 §5).
@@ -527,50 +546,50 @@ export function describeAction(
       const own = [
         a.limits?.wall === undefined ? null : a.limits.wall,
         a.limits?.turns === undefined ? null : `${a.limits.turns} turns`,
-      ].filter((each): each is string => each !== null);
+      ].filter((each): each is string => each !== null)
       const bound =
         own.length === 0
-          ? "runtime.limits, with no bound of its own"
-          : `${own.join(" and ")} on this one call, narrowing runtime.limits`;
-      return { does: `${job} on ${on}: ${a.prompt}`, bound };
+          ? 'runtime.limits, with no bound of its own'
+          : `${own.join(' and ')} on this one call, narrowing runtime.limits`
+      return { does: `${job} on ${on}: ${a.prompt}`, bound }
     }
     // **The one row that says where an answer *went*** (`#300`, 0066 §5). Every
     // other line here is a check, a dispatch or an effect on the issue; this one
     // is a destination, and what a person reading the recipe wants off it is
     // that the note is in the change — which is the whole of why `bound` says
     // where it goes rather than saying *no clock* and stopping.
-    case "file": {
-      const a = action as Extract<StepAction, { file: string }>;
+    case 'file': {
+      const a = action as Extract<StepAction, { file: string }>
       return {
         does: `keeps the design at ${a.file}, committed to the branch`,
-        bound: "no clock — the note rides the branch through build, review and the merge",
-      };
+        bound: 'no clock — the note rides the branch through build, review and the merge',
+      }
     }
     // **And the row that says where an answer *came from*** (`#301`), which is
     // the same destination read at the other end. It names no path, because the
     // path is the locator the `design` step produced rather than anything in
     // this block — so what a reader wants off the line is which agent it is in
     // front of, and the recipe's own order is where they see that.
-    case "file-brief":
+    case 'file-brief':
       return {
-        does: "reads the design back from where a `file:` kept it, and briefs the actions after it",
-        bound: "no clock — one read of the worktree",
-      };
-    case "watch": {
-      const a = action as Extract<StepAction, { watch: string[] }>;
-      return { does: `watches ${a.watch.join(", ")}, then ${a.then}`, bound: "no clock — a match against the diff" };
+        does: 'reads the design back from where a `file:` kept it, and briefs the actions after it',
+        bound: 'no clock — one read of the worktree',
+      }
+    case 'watch': {
+      const a = action as Extract<StepAction, { watch: string[] }>
+      return { does: `watches ${a.watch.join(', ')}, then ${a.then}`, bound: 'no clock — a match against the diff' }
     }
-    case "human": {
-      const a = action as Extract<StepAction, { human: string }>;
-      return { does: `asks a person: ${a.human}`, bound: "waits on a person, with no timeout" };
+    case 'human': {
+      const a = action as Extract<StepAction, { human: string }>
+      return { does: `asks a person: ${a.human}`, bound: 'waits on a person, with no timeout' }
     }
-    case "close": {
-      const a = action as Extract<StepAction, { close: true }>;
-      return { does: `closes the issue when ${a.when}`, bound: "runs for effect" };
+    case 'close': {
+      const a = action as Extract<StepAction, { close: true }>
+      return { does: `closes the issue when ${a.when}`, bound: 'runs for effect' }
     }
-    case "labels": {
-      const a = action as Extract<StepAction, { labels: string[] }>;
-      return { does: `sets labels ${a.labels.join(", ")} when ${a.when}`, bound: "runs for effect" };
+    case 'labels': {
+      const a = action as Extract<StepAction, { labels: string[] }>
+      return { does: `sets labels ${a.labels.join(', ')} when ${a.when}`, bound: 'runs for effect' }
     }
     // **The effect that deletes** (`#240`), and the row says so in those words:
     // the other two write to an issue and can be written again, and this one
@@ -578,10 +597,10 @@ export function describeAction(
     // vary — the schema admits `landed` and nothing else — so *when it lands*
     // is said as prose rather than read off a field an operator might think
     // they could change here.
-    case "refs": {
-      const a = action as Extract<StepAction, { refs: true; branch: boolean }>;
-      const what = a.branch ? "agent/<n> and every agent/<n>-attempt-<k>" : "every agent/<n>-attempt-<k>";
-      return { does: `deletes ${what} from origin when it lands`, bound: "runs for effect, and cannot be undone" };
+    case 'refs': {
+      const a = action as Extract<StepAction, { refs: true; branch: boolean }>
+      const what = a.branch ? 'agent/<n> and every agent/<n>-attempt-<k>' : 'every agent/<n>-attempt-<k>'
+      return { does: `deletes ${what} from origin when it lands`, bound: 'runs for effect, and cannot be undone' }
     }
     // **Two rows a recipe can now hold, and they were the pass's own calls until
     // 2026-09-27**: `worktree:` at `admit` (`#268`) and `merge:` at `merge`
@@ -591,19 +610,19 @@ export function describeAction(
     // were here to be drawn on the day it happened — the closed set is read here,
     // so the set is what this answers, and a reading with no case for a kind is a
     // `switch` that returns `undefined` on a page nobody would think to re-test.
-    case "worktree": {
-      const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>;
+    case 'worktree': {
+      const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>
       return {
-        does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ", submodules and all" : ""}`,
-        bound: "no clock — it is the directory the work happens in",
-      };
+        does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ', submodules and all' : ''}`,
+        bound: 'no clock — it is the directory the work happens in',
+      }
     }
-    case "merge": {
-      const a = action as Extract<StepAction, { merge: { strategy: string } }>;
+    case 'merge': {
+      const a = action as Extract<StepAction, { merge: { strategy: string } }>
       return {
         does: `lands the branch by ${a.merge.strategy}, onto the base it was cut from`,
-        bound: "no clock — the base moving under it is a recomputation, not a refusal",
-      };
+        bound: 'no clock — the base moving under it is a recomputation, not a refusal',
+      }
     }
     // And the one `claim` will hold, on the same footing and for the same
     // reason: the queue calls it itself today, so no step can hold one and
@@ -613,23 +632,23 @@ export function describeAction(
     // **Its `assignee` field is read here and not in a case of its own** (0063
     // §3, `#244`): it used to be a plugin beside this one, and the two rows the
     // page drew for it were two rows about one decision.
-    case "queue": {
+    case 'queue': {
       const a = action as Extract<
         StepAction,
         { queue: { kinds: string[]; exclude: string[]; backoff: string; assignee?: { login?: string; take: string } } }
-      >;
-      const exclude = a.queue.exclude.length === 0 ? "" : `, never ${a.queue.exclude.join(", ")}`;
-      const me = a.queue.assignee?.login ?? "this machine's login";
+      >
+      const exclude = a.queue.exclude.length === 0 ? '' : `, never ${a.queue.exclude.join(', ')}`
+      const me = a.queue.assignee?.login ?? "this machine's login"
       const whose =
-        a.queue.assignee?.take === "mine"
+        a.queue.assignee?.take === 'mine'
           ? `, only where assigned to ${me}`
-          : a.queue.assignee?.take === "unassigned"
-            ? ", only where assigned to nobody"
-            : "";
+          : a.queue.assignee?.take === 'unassigned'
+            ? ', only where assigned to nobody'
+            : ''
       return {
-        does: `takes ${a.queue.kinds.join(" before ")}${exclude}${whose}`,
+        does: `takes ${a.queue.kinds.join(' before ')}${exclude}${whose}`,
         bound: `a failed attempt waits ${a.queue.backoff} before its own ticket is offered again`,
-      };
+      }
     }
     // And the one `proposed` will hold, whose `bound` is the whole of why it is
     // worth naming: the *pass's* ceilings — rounds and restarts — are the
@@ -642,49 +661,49 @@ export function describeAction(
     // both the way the `agent:` row does — an operator who has just written
     // `model: haiku` and `limits: { turns: 5 }` and reads back only the rounds
     // concludes neither key took.
-    case "judge": {
+    case 'judge': {
       const a = action as Extract<
         StepAction,
         { judge: string; when: string; model?: string; limits?: { turns?: number; wall?: string } }
-      >;
-      const counts = "the workflow counts the rounds and restarts, and offers only the steps still left";
-      if (a.judge === "same-worktree") {
+      >
+      const counts = 'the workflow counts the rounds and restarts, and offers only the steps still left'
+      if (a.judge === 'same-worktree') {
         return {
           does: `decides a ${a.when} refusal with a built-in: back to implement, spending nothing`,
           bound: counts,
-        };
+        }
       }
       const own = [
         a.limits?.wall === undefined ? null : a.limits.wall,
         a.limits?.turns === undefined ? null : `${a.limits.turns} turns`,
-      ].filter((each): each is string => each !== null);
+      ].filter((each): each is string => each !== null)
       const call =
         own.length === 0
-          ? "runtime.limits, with no bound of its own"
-          : `${own.join(" and ")} on this one call, narrowing runtime.limits`;
+          ? 'runtime.limits, with no bound of its own'
+          : `${own.join(' and ')} on this one call, narrowing runtime.limits`
       return {
-        does: `asks ${a.judge}, ${a.model ?? "its default model"}, which step is next, for a ${a.when} refusal`,
+        does: `asks ${a.judge}, ${a.model ?? 'its default model'}, which step is next, for a ${a.when} refusal`,
         bound: `${call}; ${counts}`,
-      };
+      }
     }
     // And the one that sits beside it and decides nothing about where the pass
     // goes: `backlog:` is an effect, so its `bound` is *nothing* — the reading
     // a person budgets from, since at or below the bar is the half of a
     // reviewer's output that costs no agent at all (`#237`).
-    case "backlog": {
-      const a = action as Extract<StepAction, { backlog: string }>;
+    case 'backlog': {
+      const a = action as Extract<StepAction, { backlog: string }>
       return {
         does: `files every finding at ${a.backlog} or below for a person, instead of refusing`,
-        bound: "no clock, and no round — a finding that did not refuse buys nothing",
-      };
+        bound: 'no clock, and no round — a finding that did not refuse buys nothing',
+      }
     }
   }
 }
 
 /** One row of the reading: the recipe's own word for a section, and what it says. */
 export interface Reading {
-  name: string;
-  says: string;
+  name: string
+  says: string
   /**
    * The paths in `provenance` this row's value is made of, so the page that has
    * one can say where the row came from (#218).
@@ -697,7 +716,7 @@ export interface Reading {
    * Several for a row that is several values — `a pass` is four limits and each
    * can come from a different file, which is exactly the fact worth showing.
    */
-  keys: readonly string[];
+  keys: readonly string[]
 }
 
 /**
@@ -710,13 +729,13 @@ export interface Reading {
  * is known, which is what an attempt's recorded recipe always answers.
  */
 export function sourceOf(row: Reading, provenance?: Readonly<Record<string, string>>): string | null {
-  if (provenance === undefined) return null;
-  const wheres: string[] = [];
+  if (provenance === undefined) return null
+  const wheres: string[] = []
   for (const key of row.keys) {
-    const where = provenanceSource(provenance[key]);
-    if (where !== null && !wheres.includes(underHome(where))) wheres.push(underHome(where));
+    const where = provenanceSource(provenance[key])
+    if (where !== null && !wheres.includes(underHome(where))) wheres.push(underHome(where))
   }
-  return wheres.length === 0 ? null : wheres.join(", ");
+  return wheres.length === 0 ? null : wheres.join(', ')
 }
 
 /**
@@ -729,17 +748,17 @@ export function sourceOf(row: Reading, provenance?: Readonly<Record<string, stri
  * both come back saying exactly what they said.
  */
 export function underHome(where: string): string {
-  const home = homedir();
-  return home !== "" && where.startsWith(`${home}/`) ? `~${where.slice(home.length)}` : where;
+  const home = homedir()
+  return home !== '' && where.startsWith(`${home}/`) ? `~${where.slice(home.length)}` : where
 }
 
 /** One line of `lingtai doctor`'s provenance block, split into its columns. */
 export interface Provenance {
   /** Its path in the recipe — `runtime.limits.turns`. */
-  key: string;
-  value: string;
+  key: string
+  value: string
   /** The file, `detected …`, or `default`. */
-  from: string;
+  from: string
 }
 
 /**
@@ -753,13 +772,13 @@ export interface Provenance {
  */
 export function provenanceRows(provenance: Readonly<Record<string, string>>): Provenance[] {
   return Object.entries(provenance).map(([key, entry]) => {
-    const at = entry.indexOf(PROVENANCE_ARROW);
+    const at = entry.indexOf(PROVENANCE_ARROW)
     return {
       key,
       value: at === -1 ? entry : entry.slice(0, at),
-      from: underHome(provenanceSource(entry) ?? "(not said)"),
-    };
-  });
+      from: underHome(provenanceSource(entry) ?? '(not said)'),
+    }
+  })
 }
 
 /**
@@ -781,48 +800,46 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
  * configured and silently did not run (0016 §4, 0061 §5).
  */
 export function readRecipe(recipe: Recipe): Reading[] {
-  const limits = limitsFor(recipe, "implement");
-  const budget = recipe.runtime.budget;
+  const limits = limitsFor(recipe, 'implement')
+  const budget = recipe.runtime.budget
   return [
     {
-      name: "picks up",
-      says:
-        kindsOf(recipe).join(" > ") +
-        (kindsOf(recipe).length > 1 ? " (in priority order)" : ""),
-      keys: ["source.kinds"],
+      name: 'picks up',
+      says: kindsOf(recipe).join(' > ') + (kindsOf(recipe).length > 1 ? ' (in priority order)' : ''),
+      keys: ['source.kinds'],
     },
     {
-      name: "excludes",
-      says: excludeOf(recipe).length > 0 ? excludeOf(recipe).join(", ") : "nothing",
-      keys: ["source.exclude"],
+      name: 'excludes',
+      says: excludeOf(recipe).length > 0 ? excludeOf(recipe).join(', ') : 'nothing',
+      keys: ['source.exclude'],
     },
     {
-      name: "assignee",
+      name: 'assignee',
       says: describeAssignee(assigneeOf(recipe)),
-      keys: ["runtime.assignee.take", "runtime.assignee.login"],
+      keys: ['runtime.assignee.take', 'runtime.assignee.login'],
     },
     {
-      name: "the steps",
-      says: STEPS.map((step) => `${step} ${recipe.steps[step].length}`).join(" · "),
-      keys: ["steps"],
+      name: 'the steps',
+      says: STEPS.map((step) => `${step} ${recipe.steps[step].length}`).join(' · '),
+      keys: ['steps'],
     },
     {
-      name: "a pass",
-      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall), steps: boundsBesides(recipe, "implement") }),
+      name: 'a pass',
+      says: passCeiling({ ...limits, wallMs: parseDuration(limits.wall), steps: boundsBesides(recipe, 'implement') }),
       keys: LIMIT_KEYS.map((key) => `runtime.limits.${key}`),
     },
     // **Beside the limits, because it is the other half of the same answer.**
     // Which CLI runs the work and what it may spend are the two the machine
     // decides (0046 §3), and a reading that named the spend and not the runtime
     // would leave the one value a machine can silently detect unattributed.
-    { name: "agent", says: recipe.runtime.agent, keys: ["runtime.agent"] },
+    { name: 'agent', says: recipe.runtime.agent, keys: ['runtime.agent'] },
     {
-      name: "retries",
+      name: 'retries',
       says: `after ${backoffOf(recipe)}, unless a repair is pending`,
-      keys: ["source.backoff"],
+      keys: ['source.backoff'],
     },
     {
-      name: "budget",
+      name: 'budget',
       says:
         `evidence ${budget.evidence} · attempts ${budget.attempts} · ` +
         `findings ${budget.findings} · diff ${budget.diff}`,
@@ -832,14 +849,14 @@ export function readRecipe(recipe: Recipe): Reading[] {
       keys: Object.keys(budget).map((key) => `runtime.budget.${key}`),
     },
     {
-      name: "discussions",
+      name: 'discussions',
       // One `ask` call is one round, and `holdDiscussion` may make up to
       // `MAX_READ_ROUNDS + 1` of them for one question (`#243`).
       says:
-        `${recipe.discuss.agent}, ${recipe.discuss.model ?? "its default model"}, ` +
+        `${recipe.discuss.agent}, ${recipe.discuss.model ?? 'its default model'}, ` +
         `${recipe.discuss.limits.turns} turns and ${recipe.discuss.limits.wall} per round, ` +
         `up to ${MAX_READ_ROUNDS + 1} rounds per question`,
-      keys: ["discuss.agent", "discuss.model", "discuss.limits.turns", "discuss.limits.wall"],
+      keys: ['discuss.agent', 'discuss.model', 'discuss.limits.turns', 'discuss.limits.wall'],
     },
-  ];
+  ]
 }

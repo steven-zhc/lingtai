@@ -1,3 +1,4 @@
+import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
 /**
  * Step 0: the GitHub App, created in one click (#169).
  *
@@ -25,13 +26,12 @@
  * would name a command that restarts the daemon and not this board, beside a
  * claim that it fixes both: #167's defect, one surface along.
  */
-import Link from "next/link";
-import { type Offer, offerCreation } from "@lingtai/conductor/create-app";
+import Link from 'next/link'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 export default async function GitHubApp() {
-  return <GitHubAppScreen offer={await offerCreation()} />;
+  return <GitHubAppScreen offer={await offerCreation()} />
 }
 
 /**
@@ -43,7 +43,7 @@ export default async function GitHubApp() {
  * and #101 is the ticket that settled that a fold alone cannot catch one.
  */
 export function GitHubAppScreen({ offer }: { offer: Offer }) {
-  const outcome = offer.outcome;
+  const outcome = offer.outcome
 
   return (
     <main className="detail">
@@ -61,12 +61,12 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
             <span className="hlab">GitHub App</span>
             <span className="hfact">
               {offer.configured !== null
-                ? "already configured"
+                ? 'already configured'
                 : offer.minted !== null
-                  ? "created here, and not finished"
+                  ? 'created here, and not finished'
                   : offer.offered
-                    ? "step 0 — Lingtai talks to GitHub as an App, not as a token"
-                    : "the log did not answer"}
+                    ? 'step 0 — Lingtai talks to GitHub as an App, not as a token'
+                    : 'the log did not answer'}
             </span>
           </h2>
 
@@ -84,12 +84,12 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
           ) : outcome?.ok ? null : offer.configured !== null ? (
             <Configured configured={offer.configured} installUrl={offer.installUrl} />
           ) : (
-            <Unanswered why={offer.unanswered ?? ""} />
+            <Unanswered why={offer.unanswered ?? ''} />
           )}
         </section>
       </div>
     </main>
-  );
+  )
 }
 
 /**
@@ -100,8 +100,8 @@ function Permissions({ permissions }: { permissions: { name: string; level: stri
   return (
     <>
       <p className="note">
-        Lingtai fills these in. You never choose them, so they cannot be chosen wrong — which is the
-        failure ADR 0006 was written about.
+        Lingtai fills these in. You never choose them, so they cannot be chosen wrong — which is the failure ADR 0006
+        was written about.
       </p>
       <ul className="meta">
         {permissions.map((p) => (
@@ -110,11 +110,12 @@ function Permissions({ permissions }: { permissions: { name: string; level: stri
           </li>
         ))}
         <li>
-          <code>issues</code> — the one event it subscribes to, since a <code>push</code> delivery is one the receiver drops
+          <code>issues</code> — the one event it subscribes to, since a <code>push</code> delivery is one the receiver
+          drops
         </li>
       </ul>
     </>
-  );
+  )
 }
 
 /**
@@ -124,25 +125,25 @@ function Permissions({ permissions }: { permissions: { name: string; level: stri
  * GitHub, and a server action cannot hand a browser one.
  */
 function Create({ offer }: { offer: Offer }) {
-  const waiting = offer.outstanding;
+  const waiting = offer.outstanding
   return (
     <>
       {waiting === null ? null : (
-        <p className={waiting.state === "waiting" ? "note" : "refusal"}>
-          {waiting.state === "waiting"
+        <p className={waiting.state === 'waiting' ? 'note' : 'refusal'}>
+          {waiting.state === 'waiting'
             ? `A form for ${waiting.name} was posted at ${waiting.startedAt.toISOString()} and has not come back. ` +
               "Finish it on GitHub's screen, or post another one below — GitHub honours the first for an hour."
             : `The form for ${waiting.name} posted at ${waiting.startedAt.toISOString()} never came back, so nothing ` +
-              "was created here. A name already taken on GitHub is the usual cause, and GitHub says so on its own " +
-              "page where Lingtai cannot see it. Try another name."}
+              'was created here. A name already taken on GitHub is the usual cause, and GitHub says so on its own ' +
+              'page where Lingtai cannot see it. Try another name.'}
         </p>
       )}
 
       <Permissions permissions={offer.permissions} />
 
       <p className="note">
-        The private key will be written to <code>{offer.keyPath}</code>, mode <code>0600</code>, and
-        never shown here or written to the log.
+        The private key will be written to <code>{offer.keyPath}</code>, mode <code>0600</code>, and never shown here or
+        written to the log.
       </p>
 
       <form className="setup" method="POST" action="/setup/github-app/start">
@@ -155,18 +156,17 @@ function Create({ offer }: { offer: Offer }) {
           <span>Organisation</span>
           <input name="org" placeholder="blank for your own account" />
           <small>
-            An organisation App is created on that organisation&rsquo;s page, and GitHub refuses there
-            if you are not an owner.
+            An organisation App is created on that organisation&rsquo;s page, and GitHub refuses there if you are not an
+            owner.
           </small>
         </label>
         <label>
           <span>Webhook URL</span>
           <input name="webhook" placeholder="blank — webhooks stay inactive" />
           <small>
-            Blank declares the hook <strong>inactive</strong>, and nothing degrades: discovery runs on
-            the daemon&rsquo;s sweep until this board has an address GitHub can reach. A{" "}
-            <code>localhost</code> URL would be an App whose deliveries fail silently from the first
-            minute, so it is not offered.
+            Blank declares the hook <strong>inactive</strong>, and nothing degrades: discovery runs on the
+            daemon&rsquo;s sweep until this board has an address GitHub can reach. A <code>localhost</code> URL would be
+            an App whose deliveries fail silently from the first minute, so it is not offered.
           </small>
         </label>
         <div className="btnrow">
@@ -177,19 +177,15 @@ function Create({ offer }: { offer: Offer }) {
       </form>
 
       <p className="note">
-        The next screen is GitHub&rsquo;s. A person has to press <strong>Create GitHub App</strong>{" "}
-        there — that is by design, and there is no unattended path.
+        The next screen is GitHub&rsquo;s. A person has to press <strong>Create GitHub App</strong> there — that is by
+        design, and there is no unattended path.
       </p>
     </>
-  );
+  )
 }
 
 /** The ending: the App is usable now, and installing it is the next step. */
-function Created({
-  outcome,
-}: {
-  outcome: Extract<Offer["outcome"], { ok: true }>;
-}) {
+function Created({ outcome }: { outcome: Extract<Offer['outcome'], { ok: true }> }) {
   return (
     <>
       <p className="decided">
@@ -203,9 +199,9 @@ function Created({
           <code>LINGTAI_GITHUB_APP_ID</code> and the webhook secret: <code>{outcome.envFile}</code>
         </li>
         <li>
-          webhooks:{" "}
+          webhooks:{' '}
           {outcome.webhookActive
-            ? "active, at the address you gave"
+            ? 'active, at the address you gave'
             : "declared inactive — discovery runs on the daemon's sweep until this board has an address GitHub can reach"}
         </li>
       </ul>
@@ -214,18 +210,17 @@ function Created({
           file on every call, so this board and a running daemon both have the
           App from the moment it was written. */}
       <p className="note">
-        This board and a daemon that is already running use it from now on — the env file is read
-        on every call, so nothing has to be restarted.
+        This board and a daemon that is already running use it from now on — the env file is read on every call, so
+        nothing has to be restarted.
       </p>
       <p className="note">
-        Next, install it — <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>
-          github.com/apps/{outcome.slug}
-        </a>{" "}
-        — and pick the repositories it may see. Creating is not installing. GitHub brings you back to{" "}
+        Next, install it —{' '}
+        <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>github.com/apps/{outcome.slug}</a> — and
+        pick the repositories it may see. Creating is not installing. GitHub brings you back to{' '}
         <Link href="/setup/repository">the repository picker</Link>.
       </p>
     </>
-  );
+  )
 }
 
 /**
@@ -238,31 +233,31 @@ function Configured({
   configured,
   installUrl,
 }: {
-  configured: { appId: string; slug: string | null; where: "environment" | "file"; file: string | null };
-  installUrl: string | null;
+  configured: { appId: string; slug: string | null; where: 'environment' | 'file'; file: string | null }
+  installUrl: string | null
 }) {
   return (
     <>
       <p className="note">
-        {configured.where === "environment"
+        {configured.where === 'environment'
           ? `This Lingtai is configured with app ${configured.appId}.`
-          : `This Lingtai is configured with app ${configured.appId}, in ${configured.file}.`}{" "}
+          : `This Lingtai is configured with app ${configured.appId}, in ${configured.file}.`}{' '}
         Creation is not offered again: a second App would be one nothing is installed on.
       </p>
       {installUrl === null ? (
         <p className="note">
-          The App was configured by hand, so Lingtai does not know its name. Install it from{" "}
-          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>,
-          then pick the repository at <Link href="/setup/repository">/setup/repository</Link>.
+          The App was configured by hand, so Lingtai does not know its name. Install it from{' '}
+          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then pick the
+          repository at <Link href="/setup/repository">/setup/repository</Link>.
         </p>
       ) : (
         <p className="note">
-          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then pick it at{" "}
+          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then pick it at{' '}
           <Link href="/setup/repository">/setup/repository</Link>.
         </p>
       )}
     </>
-  );
+  )
 }
 
 /**
@@ -285,22 +280,20 @@ function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string
   return (
     <>
       <p className="refusal">
-        App {minted.appId} ({minted.slug}) was created here, and this Lingtai is not configured with
-        it — the credentials did not reach this machine, so <code>{keyPath}</code> and the env file
-        do not name it. It is still on GitHub, and still counts against you there.
+        App {minted.appId} ({minted.slug}) was created here, and this Lingtai is not configured with it — the
+        credentials did not reach this machine, so <code>{keyPath}</code> and the env file do not name it. It is still
+        on GitHub, and still counts against you there.
       </p>
       <p className="note">
-        GitHub hands a private key over exactly once, so that one cannot be fetched again. The way
-        out is to generate a new key on the App&rsquo;s own page —{" "}
-        <a href={`https://github.com/settings/apps/${minted.slug}`}>
-          github.com/settings/apps/{minted.slug}
-        </a>{" "}
-        (an organisation&rsquo;s App is under that organisation&rsquo;s Settings → Developer settings →
-        GitHub Apps) → General → Private keys — and follow <code>doc/operating.md</code> from step 2.
-        Creating another App below also works; delete this one on that page if you do.
+        GitHub hands a private key over exactly once, so that one cannot be fetched again. The way out is to generate a
+        new key on the App&rsquo;s own page —{' '}
+        <a href={`https://github.com/settings/apps/${minted.slug}`}>github.com/settings/apps/{minted.slug}</a> (an
+        organisation&rsquo;s App is under that organisation&rsquo;s Settings → Developer settings → GitHub Apps) →
+        General → Private keys — and follow <code>doc/operating.md</code> from step 2. Creating another App below also
+        works; delete this one on that page if you do.
       </p>
     </>
-  );
+  )
 }
 
 /**
@@ -320,17 +313,16 @@ function Unanswered({ why }: { why: string }) {
     <>
       <p className="refusal">
         Lingtai cannot tell whether an App was already created here: the log could not be read
-        {why === "" ? "" : ` — ${why}`}. Creation is not offered on an unanswered question, because a
-        second App would be minted over the one this installation may already be using, and GitHub
-        hands a private key over exactly once.
+        {why === '' ? '' : ` — ${why}`}. Creation is not offered on an unanswered question, because a second App would
+        be minted over the one this installation may already be using, and GitHub hands a private key over exactly once.
       </p>
       <p className="note">
         Run <code>pnpm lingtai doctor</code>, and reload this page once the log answers.
       </p>
     </>
-  );
+  )
 }
 
 function Refused({ refusal }: { refusal: string }) {
-  return <p className="refusal">{refusal}</p>;
+  return <p className="refusal">{refusal}</p>
 }

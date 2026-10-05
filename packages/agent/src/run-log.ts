@@ -28,12 +28,14 @@
  * or full disk must not stall an agent, and a log that cannot be written must
  * not be able to fail a run — every failure in here is swallowed on purpose.
  */
-import type { FileHandle } from "node:fs/promises";
-import { mkdir, open, rm, stat } from "node:fs/promises";
-import { dirname } from "node:path";
-import { StringDecoder } from "node:string_decoder";
-import { Effect } from "effect";
-import { AgentHostFailed } from "./hook-config.ts";
+import type { FileHandle } from 'node:fs/promises'
+import { mkdir, open, rm, stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
+
+import { Effect } from 'effect'
+
+import { AgentHostFailed } from './hook-config.ts'
 
 /**
  * The mode the file is created with, and then asserted.
@@ -50,10 +52,10 @@ import { AgentHostFailed } from "./hook-config.ts";
  * is no case where the file is the operator's: it is named for a run id, it is
  * written by one process, and it is deleted when that run lands.
  */
-export const RUN_LOG_MODE = 0o600;
+export const RUN_LOG_MODE = 0o600
 
 /** `~/.lingtai/runs/<project>/`, created with the same instinct as the files in it. */
-export const RUN_LOG_DIR_MODE = 0o700;
+export const RUN_LOG_DIR_MODE = 0o700
 
 /**
  * Where one run's log stops.
@@ -70,7 +72,7 @@ export const RUN_LOG_DIR_MODE = 0o700;
  * `doc/reference.md`'s policy section, which is what `#96` exists to make
  * unskippable.
  */
-export const RUN_LOG_MAX_BYTES = 8_000_000;
+export const RUN_LOG_MAX_BYTES = 8_000_000
 
 /**
  * The half of a run log a *writer* gets: a line, and no say in when it ends.
@@ -91,7 +93,7 @@ export const RUN_LOG_MAX_BYTES = 8_000_000;
  * one thing `runLogLine` exists to prevent. The seam 0022 drew is unmoved and
  * is drawn tighter: the adapter now does not learn the path either.
  */
-export type RunTrace = Pick<RunLog, "note">;
+export type RunTrace = Pick<RunLog, 'note'>
 
 /**
  * What a run's log is, to the conductor holding one.
@@ -104,10 +106,10 @@ export type RunTrace = Pick<RunLog, "note">;
  */
 export interface RunLog {
   /** Empty for `NO_RUN_LOG`, so a caller can tell there is nothing to hand on. */
-  readonly path: string;
+  readonly path: string
   /** One timestamped line. Returns immediately; the write is behind it. */
-  note(label: string, detail?: string): void;
-  close(fate: "keep" | "delete"): Promise<void>;
+  note(label: string, detail?: string): void
+  close(fate: 'keep' | 'delete'): Promise<void>
 }
 
 /**
@@ -119,10 +121,10 @@ export interface RunLog {
  * anything.
  */
 export const NO_RUN_LOG: RunLog = {
-  path: "",
+  path: '',
   note: () => {},
   close: async () => {},
-};
+}
 
 /**
  * Where the label starts, and how wide it is — `HH:MM:SS` and two spaces.
@@ -132,8 +134,8 @@ export const NO_RUN_LOG: RunLog = {
  * of the format, in the one place where being wrong looks like a run that never
  * ends.
  */
-const LABEL_AT = 8 + 2;
-const LABEL_WIDTH = 8;
+const LABEL_AT = 8 + 2
+const LABEL_WIDTH = 8
 
 /**
  * One line: `14:22:31  Edit    allow  packages/agent/src/claude-code.ts`.
@@ -144,15 +146,15 @@ const LABEL_WIDTH = 8;
  * in it would otherwise break `tail -f` and every reader after it.
  */
 export function runLogLine(at: Date, label: string, detail: string): string {
-  const hh = String(at.getHours()).padStart(2, "0");
-  const mm = String(at.getMinutes()).padStart(2, "0");
-  const ss = String(at.getSeconds()).padStart(2, "0");
-  const flat = detail.replace(/\s*\r?\n\s*/g, " ⏎ ").trimEnd();
+  const hh = String(at.getHours()).padStart(2, '0')
+  const mm = String(at.getMinutes()).padStart(2, '0')
+  const ss = String(at.getSeconds()).padStart(2, '0')
+  const flat = detail.replace(/\s*\r?\n\s*/g, ' ⏎ ').trimEnd()
   // A label as wide as the column still gets a space after it: a gate's
   // `proposed:review` is twice the width, and run into its detail it would read
   // as one word (#153).
-  const column = label.length >= LABEL_WIDTH ? `${label} ` : label.padEnd(LABEL_WIDTH);
-  return `${hh}:${mm}:${ss}  ${column}${flat}\n`;
+  const column = label.length >= LABEL_WIDTH ? `${label} ` : label.padEnd(LABEL_WIDTH)
+  return `${hh}:${mm}:${ss}  ${column}${flat}\n`
 }
 
 /**
@@ -170,8 +172,8 @@ export function runLogLine(at: Date, label: string, detail: string): string {
  */
 export function taggedTrace(log: RunTrace, tag: string): RunTrace {
   return {
-    note: (label, detail = "") => log.note(tag, detail === "" ? label : `${label.padEnd(6)}  ${detail}`),
-  };
+    note: (label, detail = '') => log.note(tag, detail === '' ? label : `${label.padEnd(6)}  ${detail}`),
+  }
 }
 
 /**
@@ -190,7 +192,7 @@ export function taggedTrace(log: RunTrace, tag: string): RunTrace {
  * reasoning `think`), so an agent that prints this sentence verbatim writes it
  * into a column where it cannot be mistaken for this line.
  */
-export const RUN_LOG_END = "end";
+export const RUN_LOG_END = 'end'
 
 /**
  * How a follow stopped.
@@ -199,7 +201,7 @@ export const RUN_LOG_END = "end";
  * the run landed and §5 when its work item did, so a file that is gone is a
  * file with nothing left to explain.
  */
-export type RunLogEnding = "landed" | "did not land" | "removed";
+export type RunLogEnding = 'landed' | 'did not land' | 'removed'
 
 /**
  * The sentence the log closes on, written by whoever took the keep-or-delete.
@@ -209,73 +211,73 @@ export type RunLogEnding = "landed" | "did not land" | "removed";
  */
 export function runLogEnd(didLand: boolean): string {
   return didLand
-    ? "landed — the diff is on the branch and the events are on the log, so this file goes"
-    : "did not land — this file is kept, and is the only account of why";
+    ? 'landed — the diff is on the branch and the events are on the log, so this file goes'
+    : 'did not land — this file is kept, and is the only account of why'
 }
 
 /** `runLogEnd`'s inverse, and it reads the label column only. See `RUN_LOG_END`. */
-export function runLogEnded(line: string): Exclude<RunLogEnding, "removed"> | null {
-  if (line.slice(LABEL_AT, LABEL_AT + LABEL_WIDTH) !== RUN_LOG_END.padEnd(LABEL_WIDTH)) return null;
-  const detail = line.slice(LABEL_AT + LABEL_WIDTH);
-  if (detail.startsWith("landed")) return "landed";
-  if (detail.startsWith("did not land")) return "did not land";
-  return null;
+export function runLogEnded(line: string): Exclude<RunLogEnding, 'removed'> | null {
+  if (line.slice(LABEL_AT, LABEL_AT + LABEL_WIDTH) !== RUN_LOG_END.padEnd(LABEL_WIDTH)) return null
+  const detail = line.slice(LABEL_AT + LABEL_WIDTH)
+  if (detail.startsWith('landed')) return 'landed'
+  if (detail.startsWith('did not land')) return 'did not land'
+  return null
 }
 
 export interface OpenRunLogOptions {
   /** Absolute, and chosen by the conductor. See the module header. */
-  path: string;
+  path: string
   /** Overridable so a test can fix the header. */
-  started?: Date;
+  started?: Date
 }
 
 export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
-  const path = options.path;
-  const started = options.started ?? new Date();
+  const path = options.path
+  const started = options.started ?? new Date()
 
-  await mkdir(dirname(path), { recursive: true, mode: RUN_LOG_DIR_MODE });
+  await mkdir(dirname(path), { recursive: true, mode: RUN_LOG_DIR_MODE })
   // Append, because a second attempt at the same run id is a thing that should
   // add to the story rather than erase it. The mode argument only applies at
   // creation and umask can only narrow it further, so the `chmod` below is what
   // actually makes 0600 a claim rather than a hope.
-  const handle: FileHandle = await open(path, "a", RUN_LOG_MODE);
-  await handle.chmod(RUN_LOG_MODE).catch(() => {});
+  const handle: FileHandle = await open(path, 'a', RUN_LOG_MODE)
+  await handle.chmod(RUN_LOG_MODE).catch(() => {})
 
-  let bytes = 0;
-  let truncated = false;
+  let bytes = 0
+  let truncated = false
   /** Writes in order, one at a time, with nobody waiting for them. */
-  let tail: Promise<unknown> = Promise.resolve();
+  let tail: Promise<unknown> = Promise.resolve()
 
   // The `catch` is what keeps the queue alive: a line that could not be written
   // must not take every line after it with it.
   const push = (text: string) => {
-    tail = tail.then(() => handle.write(text)).catch(() => {});
-  };
+    tail = tail.then(() => handle.write(text)).catch(() => {})
+  }
 
   const header =
     `lingtai run log · started ${started.toISOString()} · times below are local, HH:MM:SS · ` +
-    `capped at ${RUN_LOG_MAX_BYTES} bytes\n`;
-  bytes += Buffer.byteLength(header);
-  push(header);
+    `capped at ${RUN_LOG_MAX_BYTES} bytes\n`
+  bytes += Buffer.byteLength(header)
+  push(header)
 
   return {
     path,
 
-    note(label, detail = "") {
+    note(label, detail = '') {
       // The line that says the file is over is written past the cap, exactly
       // as the notice that says where the cap was is. A follower has nothing
       // else that tells *the writer has finished* from *the writer is thinking*
       // (`#110`), so leaving it out would hang a reader for ever on precisely
       // the runs that produced the most to read.
       if (label === RUN_LOG_END) {
-        push(runLogLine(new Date(), label, detail));
-        return;
+        push(runLogLine(new Date(), label, detail))
+        return
       }
-      if (truncated) return;
-      const line = runLogLine(new Date(), label, detail);
-      const size = Buffer.byteLength(line);
+      if (truncated) return
+      const line = runLogLine(new Date(), label, detail)
+      const size = Buffer.byteLength(line)
       if (bytes + size > RUN_LOG_MAX_BYTES) {
-        truncated = true;
+        truncated = true
         // Deliberately written past the cap. A file that stopped silently at a
         // round number is a file whose last line is a lie by omission, and the
         // whole reason for a cap that is written down is that somebody reading
@@ -283,22 +285,22 @@ export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
         push(
           runLogLine(
             new Date(),
-            "——",
+            '——',
             `truncated: this log reached RUN_LOG_MAX_BYTES (${RUN_LOG_MAX_BYTES} bytes) and stops here`,
           ),
-        );
-        return;
+        )
+        return
       }
-      bytes += size;
-      push(line);
+      bytes += size
+      push(line)
     },
 
     async close(fate) {
-      await tail.catch(() => {});
-      await handle.close().catch(() => {});
-      if (fate === "delete") await rm(path, { force: true }).catch(() => {});
+      await tail.catch(() => {})
+      await handle.close().catch(() => {})
+      if (fate === 'delete') await rm(path, { force: true }).catch(() => {})
     },
-  };
+  }
 }
 
 /**
@@ -308,13 +310,11 @@ export async function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
  * decision (0034 §4) and only the caller knows it, at the moment its scope
  * closes. `conduct.ts` is where that pair is made, beside the worktree's.
  */
-export const openRunLogEffect = (
-  options: OpenRunLogOptions,
-): Effect.Effect<RunLog, AgentHostFailed> =>
+export const openRunLogEffect = (options: OpenRunLogOptions): Effect.Effect<RunLog, AgentHostFailed> =>
   Effect.tryPromise({
     try: () => openRunLog(options),
-    catch: (err) => new AgentHostFailed({ operation: "runLog", detail: (err as Error).message }),
-  });
+    catch: (err) => new AgentHostFailed({ operation: 'runLog', detail: (err as Error).message }),
+  })
 
 /**
  * How often a follower looks for more.
@@ -328,7 +328,7 @@ export const openRunLogEffect = (
  *
  * In `doc/reference.md`'s policy section, which 0034 §7 makes unskippable.
  */
-export const RUN_LOG_POLL_MS = 250;
+export const RUN_LOG_POLL_MS = 250
 
 /**
  * How often a writer that is still there says so, by touching the file.
@@ -345,26 +345,26 @@ export const RUN_LOG_POLL_MS = 250;
  * nothing — and a page reads the beacon once per render, so a daemon that dies
  * under an open page is still up on it.
  */
-export const RUN_LOG_BEAT_MS = 5_000;
+export const RUN_LOG_BEAT_MS = 5_000
 
 /** Quiet past this, the writer has let go without saying so. Three missed beats. */
-export const RUN_LOG_QUIET_MS = RUN_LOG_BEAT_MS * 3;
+export const RUN_LOG_QUIET_MS = RUN_LOG_BEAT_MS * 3
 
 /** Whether a file last touched at `mtimeMs` has a writer holding it. See `RUN_LOG_BEAT_MS`. */
 export function runLogQuiet(mtimeMs: number, now: number = Date.now()): boolean {
-  return now - mtimeMs > RUN_LOG_QUIET_MS;
+  return now - mtimeMs > RUN_LOG_QUIET_MS
 }
 
 /** A line of the file, or the writer letting go of it. */
-export type RunLogFollowed = { readonly line: string } | { readonly ended: RunLogEnding };
+export type RunLogFollowed = { readonly line: string } | { readonly ended: RunLogEnding }
 
 export interface FollowRunLogOptions {
   /** Absolute. The caller resolved a run id to it; this module knows no layout. */
-  path: string;
+  path: string
   /** Overridable so a test does not wait a quarter of a second per line. */
-  pollMs?: number;
+  pollMs?: number
   /** The reader went away. Ends the follow without an ending, which is the truth. */
-  signal?: AbortSignal;
+  signal?: AbortSignal
 }
 
 /**
@@ -385,21 +385,21 @@ export interface FollowRunLogOptions {
  * `lineReader` in `claude-code.ts` states the same rule for the same reason.
  */
 export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerator<RunLogFollowed> {
-  const pollMs = options.pollMs ?? RUN_LOG_POLL_MS;
+  const pollMs = options.pollMs ?? RUN_LOG_POLL_MS
 
-  let handle: FileHandle;
+  let handle: FileHandle
   try {
-    handle = await open(options.path, "r");
+    handle = await open(options.path, 'r')
   } catch {
     // Not there to begin with. `findRunLog` is how a caller tells this apart
     // from a run id nobody has heard of; here it is simply an ending.
-    yield { ended: "removed" };
-    return;
+    yield { ended: 'removed' }
+    return
   }
 
-  const decoder = new StringDecoder("utf8");
-  const buffer = Buffer.alloc(64 * 1024);
-  let pending = "";
+  const decoder = new StringDecoder('utf8')
+  const buffer = Buffer.alloc(64 * 1024)
+  let pending = ''
 
   try {
     // Which file this handle is, so a *new* file at the same path is seen as
@@ -408,27 +408,27 @@ export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerato
     // the path then succeeds, and a follower that asked only whether the path
     // exists tails the unlinked leftover for the whole of the new answer (#132).
     // The inode cannot be reused while this handle holds it open.
-    const own = await handle.stat();
+    const own = await handle.stat()
 
     for (;;) {
-      if (options.signal?.aborted) return;
+      if (options.signal?.aborted) return
 
       // Everything since the last pass. `position: null` advances the handle's
       // own cursor, which is what makes this a tail and not a re-read.
       for (;;) {
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
-        if (bytesRead === 0) break;
-        pending += decoder.write(buffer.subarray(0, bytesRead));
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
+        if (bytesRead === 0) break
+        pending += decoder.write(buffer.subarray(0, bytesRead))
       }
 
-      for (let nl = pending.indexOf("\n"); nl >= 0; nl = pending.indexOf("\n")) {
-        const line = pending.slice(0, nl);
-        pending = pending.slice(nl + 1);
-        yield { line };
-        const ended = runLogEnded(line);
+      for (let nl = pending.indexOf('\n'); nl >= 0; nl = pending.indexOf('\n')) {
+        const line = pending.slice(0, nl)
+        pending = pending.slice(nl + 1)
+        yield { line }
+        const ended = runLogEnded(line)
         if (ended) {
-          yield { ended };
-          return;
+          yield { ended }
+          return
         }
       }
 
@@ -437,16 +437,16 @@ export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerato
       // handle above outlives the unlink, so the drain just above has already
       // taken everything the writer wrote.
       // Gone, or a different file where it was — both are this one ending.
-      const now = await stat(options.path).catch(() => null);
+      const now = await stat(options.path).catch(() => null)
       if (now === null || now.ino !== own.ino || now.dev !== own.dev) {
-        yield { ended: "removed" };
-        return;
+        yield { ended: 'removed' }
+        return
       }
 
-      await pause(pollMs, options.signal);
+      await pause(pollMs, options.signal)
     }
   } finally {
-    await handle.close().catch(() => {});
+    await handle.close().catch(() => {})
   }
 }
 
@@ -454,11 +454,11 @@ export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerato
 function pause(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const done = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", done);
-      resolve();
-    };
-    const timer = setTimeout(done, ms);
-    signal?.addEventListener("abort", done, { once: true });
-  });
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
 }

@@ -12,44 +12,45 @@
  * pause a person made holds until they lift it, and a drain is a separate fact
  * that an expiring pause has no business touching.
  */
-import { describe, expect, it } from "vitest";
-import type { Envelope } from "../src/envelope.ts";
-import { Actor } from "../src/envelope.ts";
-import { reduceControl } from "../src/control.ts";
+import { describe, expect, it } from 'vitest'
+
+import { reduceControl } from '../src/control.ts'
+import type { Envelope } from '../src/envelope.ts'
+import { Actor } from '../src/envelope.ts'
 
 function log(events: { type: string; data: unknown }[]): Envelope[] {
   return events.map(
     (e, i) =>
       ({
         seq: BigInt(i + 1),
-        streamId: "ctl-conductor",
+        streamId: 'ctl-conductor',
         version: i + 1,
         type: e.type,
         schemaVer: 1,
         data: e.data,
-        actor: "conductor",
+        actor: 'conductor',
         causation: null,
         at: new Date(),
       }) as Envelope,
-  );
+  )
 }
 
-const NOW = new Date("2026-09-09T08:44:14Z");
-const RESET = "2026-09-10T04:00:00.000Z";
+const NOW = new Date('2026-09-09T08:44:14Z')
+const RESET = '2026-09-10T04:00:00.000Z'
 
 const quotaPause = {
-  type: "ConductorPaused",
-  data: { by: "lingtai", reason: "a run ended without ever starting", until: RESET },
-};
+  type: 'ConductorPaused',
+  data: { by: 'lingtai', reason: 'a run ended without ever starting', until: RESET },
+}
 
-describe("a pause that ends by itself", () => {
-  it("holds until the instant it named", () => {
-    const state = reduceControl(log([quotaPause]), NOW);
+describe('a pause that ends by itself', () => {
+  it('holds until the instant it named', () => {
+    const state = reduceControl(log([quotaPause]), NOW)
 
-    expect(state.paused).toBe(true);
-    expect(state.by).toBe("lingtai");
-    expect(state.until?.toISOString()).toBe(RESET);
-  });
+    expect(state.paused).toBe(true)
+    expect(state.by).toBe('lingtai')
+    expect(state.until?.toISOString()).toBe(RESET)
+  })
 
   /**
    * Nothing is appended when it ends, and nothing has to be. The event that set
@@ -57,13 +58,13 @@ describe("a pause that ends by itself", () => {
    * to be written down would be a second thing that can be missed — by exactly
    * the process that is not running, which is the case this exists for.
    */
-  it("is over at that instant, with nobody having done anything", () => {
-    const state = reduceControl(log([quotaPause]), new Date(RESET));
+  it('is over at that instant, with nobody having done anything', () => {
+    const state = reduceControl(log([quotaPause]), new Date(RESET))
 
-    expect(state.paused).toBe(false);
-    expect(state.until).toBeNull();
-    expect(state.reason).toBeNull();
-  });
+    expect(state.paused).toBe(false)
+    expect(state.until).toBeNull()
+    expect(state.reason).toBeNull()
+  })
 
   /**
    * The half that must not start working. `lingtai pause` is somebody deciding
@@ -71,29 +72,29 @@ describe("a pause that ends by itself", () => {
    * hold they thought they had.
    */
   it("is not what a person's pause is", () => {
-    const events = log([{ type: "ConductorPaused", data: { by: "human:steven", reason: "thinking" } }]);
-    const state = reduceControl(events, new Date("2027-01-01T00:00:00Z"));
+    const events = log([{ type: 'ConductorPaused', data: { by: 'human:steven', reason: 'thinking' } }])
+    const state = reduceControl(events, new Date('2027-01-01T00:00:00Z'))
 
-    expect(state.paused).toBe(true);
-    expect(state.until).toBeNull();
-    expect(state.by).toBe("human:steven");
-  });
+    expect(state.paused).toBe(true)
+    expect(state.until).toBeNull()
+    expect(state.by).toBe('human:steven')
+  })
 
   /** A pause written before `until` existed is the pause it always was. */
-  it("reads an unparseable or absent expiry as no expiry at all", () => {
-    for (const until of [undefined, null, "", "eleven o'clock"]) {
-      const events = log([{ type: "ConductorPaused", data: { by: "x", reason: "y", until } }]);
-      const state = reduceControl(events, new Date("2099-01-01T00:00:00Z"));
-      expect(state.paused, String(until)).toBe(true);
+  it('reads an unparseable or absent expiry as no expiry at all', () => {
+    for (const until of [undefined, null, '', "eleven o'clock"]) {
+      const events = log([{ type: 'ConductorPaused', data: { by: 'x', reason: 'y', until } }])
+      const state = reduceControl(events, new Date('2099-01-01T00:00:00Z'))
+      expect(state.paused, String(until)).toBe(true)
     }
-  });
+  })
 
-  it("is lifted early by a person, like any other", () => {
-    const state = reduceControl(log([quotaPause, { type: "ConductorResumed", data: { by: "human:steven" } }]), NOW);
+  it('is lifted early by a person, like any other', () => {
+    const state = reduceControl(log([quotaPause, { type: 'ConductorResumed', data: { by: 'human:steven' } }]), NOW)
 
-    expect(state.paused).toBe(false);
-    expect(state.until).toBeNull();
-  });
+    expect(state.paused).toBe(false)
+    expect(state.until).toBeNull()
+  })
 
   /**
    * 0031's last consequence: a drain and a quota pause **compose**. One stops
@@ -102,60 +103,60 @@ describe("a pause that ends by itself", () => {
    * pause that cleared the drain would restart a daemon somebody had asked to
    * stop.
    */
-  it("leaves a drain exactly where it found it, expired or not", () => {
+  it('leaves a drain exactly where it found it, expired or not', () => {
     const events = log([
-      { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "deploying", timeoutMs: null } },
+      { type: 'ConductorShutdownRequested', data: { by: 'human:steven', reason: 'deploying', timeoutMs: null } },
       quotaPause,
-    ]);
+    ])
 
-    const holding = reduceControl(events, NOW);
-    expect(holding.paused).toBe(true);
-    expect(holding.shutdown?.reason).toBe("deploying");
+    const holding = reduceControl(events, NOW)
+    expect(holding.paused).toBe(true)
+    expect(holding.shutdown?.reason).toBe('deploying')
 
-    const lifted = reduceControl(events, new Date(RESET));
-    expect(lifted.paused).toBe(false);
-    expect(lifted.shutdown?.reason).toBe("deploying");
-  });
-});
+    const lifted = reduceControl(events, new Date(RESET))
+    expect(lifted.paused).toBe(false)
+    expect(lifted.shutdown?.reason).toBe('deploying')
+  })
+})
 
 /**
  * A question is a control instruction, so it lands where `pause` and `now` do
  * ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §3).
  */
-describe("the discussions somebody asked for", () => {
-  it("keeps every request, in order, answered or not", () => {
+describe('the discussions somebody asked for', () => {
+  it('keeps every request, in order, answered or not', () => {
     const state = reduceControl(
       log([
         {
-          type: "DiscussionRequested",
+          type: 'DiscussionRequested',
           data: {
-            chatId: "chat-1",
-            workItemId: "wi-lingtai-89",
+            chatId: 'chat-1',
+            workItemId: 'wi-lingtai-89',
             attempt: 2,
-            question: "why did attempt 2 produce nothing?",
-            by: "human:steven",
+            question: 'why did attempt 2 produce nothing?',
+            by: 'human:steven',
           },
         },
         {
-          type: "DiscussionRequested",
+          type: 'DiscussionRequested',
           data: {
-            chatId: "chat-1",
-            workItemId: "wi-lingtai-89",
+            chatId: 'chat-1',
+            workItemId: 'wi-lingtai-89',
             attempt: null,
-            question: "and the first?",
-            by: "human:steven",
+            question: 'and the first?',
+            by: 'human:steven',
           },
         },
       ]),
       NOW,
-    );
+    )
 
-    expect(state.discussions).toHaveLength(2);
-    expect(state.discussions[0]?.attempt).toBe(2);
+    expect(state.discussions).toHaveLength(2)
+    expect(state.discussions[0]?.attempt).toBe(2)
     // A follow-up carries the same chat id: a conversation is a stream, not a
     // session, and nothing has to still be running between two questions.
-    expect(state.discussions[1]?.chatId).toBe("chat-1");
-  });
+    expect(state.discussions[1]?.chatId).toBe('chat-1')
+  })
 
   /**
    * Whether a question has been *answered* is a fact on `chat-<id>`, so this
@@ -163,22 +164,22 @@ describe("the discussions somebody asked for", () => {
    * half of a state machine on the control stream, which is the thing
    * `RunRequested` refuses to do.
    */
-  it("does not decide whether a request is outstanding", () => {
+  it('does not decide whether a request is outstanding', () => {
     const state = reduceControl(
       log([
         {
-          type: "DiscussionRequested",
-          data: { chatId: "chat-1", workItemId: "wi-lingtai-89", attempt: null, question: "?", by: "human:steven" },
+          type: 'DiscussionRequested',
+          data: { chatId: 'chat-1', workItemId: 'wi-lingtai-89', attempt: null, question: '?', by: 'human:steven' },
         },
-        { type: "ConductorResumed", data: { by: "human:steven" } },
+        { type: 'ConductorResumed', data: { by: 'human:steven' } },
       ]),
       NOW,
-    );
+    )
 
     // A resume lifts a pause and a drain. It does not withdraw a question.
-    expect(state.discussions).toHaveLength(1);
-  });
-});
+    expect(state.discussions).toHaveLength(1)
+  })
+})
 
 /**
  * `lingtai restart` lifts the drain it asked for and nothing else (0042). The
@@ -186,61 +187,86 @@ describe("the discussions somebody asked for", () => {
  * then re-appended the pause, so a person's pause and a second person's drain
  * were both one race away from being overruled by a command about neither.
  */
-describe("withdrawing one shutdown request", () => {
+describe('withdrawing one shutdown request', () => {
   const asked = (by: string, reason: string) => ({
-    type: "ConductorShutdownRequested",
+    type: 'ConductorShutdownRequested',
     data: { by, reason, timeoutMs: null },
-  });
+  })
 
-  it("lifts the request it names, and leaves a pause exactly as it was", () => {
+  it('lifts the request it names, and leaves a pause exactly as it was', () => {
     const state = reduceControl(
       log([
-        { type: "ConductorPaused", data: { by: "human:ops", reason: "the importer is flaky", until: null } },
-        asked("human:steven", "restarting: picking up #88"),
-        { type: "ConductorShutdownWithdrawn", data: { by: "human:steven", version: 2, reason: "restarted" } },
+        { type: 'ConductorPaused', data: { by: 'human:ops', reason: 'the importer is flaky', until: null } },
+        asked('human:steven', 'restarting: picking up #88'),
+        { type: 'ConductorShutdownWithdrawn', data: { by: 'human:steven', version: 2, reason: 'restarted' } },
       ]),
       NOW,
-    );
+    )
 
-    expect(state.shutdown).toBeNull();
-    expect(state.paused).toBe(true);
-    expect(state.by).toBe("human:ops");
-    expect(state.reason).toBe("the importer is flaky");
-  });
+    expect(state.shutdown).toBeNull()
+    expect(state.paused).toBe(true)
+    expect(state.by).toBe('human:ops')
+    expect(state.reason).toBe('the importer is flaky')
+  })
 
-  it("does not lift a newer request somebody else made", () => {
+  it('does not lift a newer request somebody else made', () => {
     const state = reduceControl(
       log([
-        asked("human:steven", "restarting: picking up #88"),
-        asked("human:ops", "the database is being moved"),
-        { type: "ConductorShutdownWithdrawn", data: { by: "human:steven", version: 1, reason: "restarted" } },
+        asked('human:steven', 'restarting: picking up #88'),
+        asked('human:ops', 'the database is being moved'),
+        { type: 'ConductorShutdownWithdrawn', data: { by: 'human:steven', version: 1, reason: 'restarted' } },
       ]),
       NOW,
-    );
+    )
 
-    expect(state.shutdown).toEqual({ by: "human:ops", reason: "the database is being moved", timeoutMs: null, force: false, version: 2 });
-  });
-});
+    expect(state.shutdown).toEqual({
+      by: 'human:ops',
+      reason: 'the database is being moved',
+      timeoutMs: null,
+      force: false,
+      version: 2,
+    })
+  })
+})
 
 /**
  * The handoff is gone (#167, 0048). It was folded for a daemon the supervisor
  * started to claim, and since #159 that daemon folds nothing older than itself,
  * so it never did. What is on the log from before still has to fold.
  */
-describe("a withdrawal written with a handoff, before #167", () => {
-  const asked = { type: "ConductorShutdownRequested", data: { by: "human:steven", reason: "restarting", timeoutMs: null } };
+describe('a withdrawal written with a handoff, before #167', () => {
+  const asked = {
+    type: 'ConductorShutdownRequested',
+    data: { by: 'human:steven', reason: 'restarting', timeoutMs: null },
+  }
   const handed = {
-    type: "ConductorShutdownWithdrawn",
-    data: { by: "human:steven", version: 1, reason: "restarted: picking up #88", handoff: { sha: "2926f2d", dirty: false } },
-  };
-  const started = { type: "ConductorStarted", data: { by: "daemon", reason: null, sha: "2926f2d", dirty: false, worker: "h:1", handoff: 2 } };
+    type: 'ConductorShutdownWithdrawn',
+    data: {
+      by: 'human:steven',
+      version: 1,
+      reason: 'restarted: picking up #88',
+      handoff: { sha: '2926f2d', dirty: false },
+    },
+  }
+  const started = {
+    type: 'ConductorStarted',
+    data: { by: 'daemon', reason: null, sha: '2926f2d', dirty: false, worker: 'h:1', handoff: 2 },
+  }
 
-  it("lifts the request it names, and leaves nothing else in the state", () => {
-    const state = reduceControl(log([asked, handed, started]), NOW);
-    expect(state.shutdown).toBeNull();
-    expect(Object.keys(state).sort()).toEqual(["by", "discussions", "paused", "reason", "requested", "shutdown", "until"]);
-  });
-});
+  it('lifts the request it names, and leaves nothing else in the state', () => {
+    const state = reduceControl(log([asked, handed, started]), NOW)
+    expect(state.shutdown).toBeNull()
+    expect(Object.keys(state).sort()).toEqual([
+      'by',
+      'discussions',
+      'paused',
+      'reason',
+      'requested',
+      'shutdown',
+      'until',
+    ])
+  })
+})
 
 /**
  * Who may append, and the one that could not (`#159`).
@@ -256,22 +282,22 @@ describe("a withdrawal written with a handoff, before #167", () => {
  * unanswerable for exactly the starts nobody witnessed. This is the assertion
  * that stops it going quiet again.
  */
-describe("who may append", () => {
+describe('who may append', () => {
   it("accepts a supervisor's start", () => {
-    expect(Actor.safeParse("daemon").success).toBe(true);
-  });
+    expect(Actor.safeParse('daemon').success).toBe(true)
+  })
 
-  it("accepts the other four", () => {
-    for (const who of ["conductor", "github", "agent:run-1a2b", "human:steven"]) {
-      expect(Actor.safeParse(who).success, who).toBe(true);
+  it('accepts the other four', () => {
+    for (const who of ['conductor', 'github', 'agent:run-1a2b', 'human:steven']) {
+      expect(Actor.safeParse(who).success, who).toBe(true)
     }
-  });
+  })
 
-  it("still refuses a name that is none of them", () => {
+  it('still refuses a name that is none of them', () => {
     // The point of the pattern: an actor is a closed set, so a typo is a
     // refusal rather than a new kind of appender nobody decided on.
-    for (const who of ["", "launchd", "human:", "agent:", "Daemon"]) {
-      expect(Actor.safeParse(who).success, who).toBe(false);
+    for (const who of ['', 'launchd', 'human:', 'agent:', 'Daemon']) {
+      expect(Actor.safeParse(who).success, who).toBe(false)
     }
-  });
-});
+  })
+})

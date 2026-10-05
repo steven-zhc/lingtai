@@ -1,4 +1,4 @@
-import type { Heading, StatusPart } from "@/lib/docs";
+import type { Heading, StatusPart } from '@/lib/docs'
 
 /**
  * A document's sections, beside the document.
@@ -12,25 +12,25 @@ import type { Heading, StatusPart } from "@/lib/docs";
  * are all on the screen already is furniture, and the page reads better without
  * it.
  */
-export const ENOUGH_TO_NAVIGATE = 4;
+export const ENOUGH_TO_NAVIGATE = 4
 
 export function Contents({ headings }: { headings: Heading[] }) {
   // `####` has an id, because links in the files point at one, but it is a
   // detail inside a section rather than a place to send somebody.
-  const places = headings.filter((heading) => heading.depth <= 3);
-  if (places.length < ENOUGH_TO_NAVIGATE) return null;
+  const places = headings.filter((heading) => heading.depth <= 3)
+  if (places.length < ENOUGH_TO_NAVIGATE) return null
   return (
     <nav className="contents" aria-label="Contents">
       <p className="kicker">Contents</p>
       <ul>
         {places.map((heading) => (
-          <li key={heading.id} className={heading.depth === 3 ? "sub" : undefined}>
+          <li key={heading.id} className={heading.depth === 3 ? 'sub' : undefined}>
             <a href={`#${heading.id}`}>{heading.text}</a>
           </li>
         ))}
       </ul>
     </nav>
-  );
+  )
 }
 
 /**
@@ -48,17 +48,17 @@ export function Contents({ headings }: { headings: Heading[] }) {
  * what replaced it.
  */
 export function Status({ decided, parts }: { decided: string | null; parts: StatusPart[] }) {
-  if (decided === null && parts.length === 0) return null;
+  if (decided === null && parts.length === 0) return null
   // Marked only when the *whole* decision was replaced, which is what the
   // status says when it opens with it. 0024 and 0027 read "accepted; …
   // superseded by 0026" and "accepted; supersedes 0013's claim-recovery
   // paragraph" — both are in force, and colouring them as withdrawn would be
   // the site telling a reader something the repository does not.
-  const superseded = parts[0]?.text.trimStart().startsWith("superseded") ?? false;
+  const superseded = parts[0]?.text.trimStart().startsWith('superseded') ?? false
   return (
-    <p className={superseded ? "status superseded" : "status"}>
+    <p className={superseded ? 'status superseded' : 'status'}>
       {decided !== null && <time dateTime={decided}>{decided}</time>}
-      {decided !== null && parts.length > 0 && " · "}
+      {decided !== null && parts.length > 0 && ' · '}
       {parts.map((part, index) =>
         part.href === undefined ? (
           <span key={index}>{part.text}</span>
@@ -69,5 +69,5 @@ export function Status({ decided, parts }: { decided: string | null; parts: Stat
         ),
       )}
     </p>
-  );
+  )
 }

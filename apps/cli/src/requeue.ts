@@ -1,3 +1,5 @@
+import { userInfo } from 'node:os'
+
 /**
  * `lingtai requeue <project> --issue <n> --note <why>` — hand a blocked item
  * back to the queue.
@@ -19,43 +21,40 @@
  * whole of the decision and `reconcile` converges the label an earlier block
  * left behind.
  */
-import { loadProject, requeue } from "@lingtai/conductor";
-import { withProjector } from "./projector.ts";
-import { userInfo } from "node:os";
+import { loadProject, requeue } from '@lingtai/conductor'
+
+import { withProjector } from './projector.ts'
 
 export interface RequeueCommandOptions {
-  project: string;
-  issue: number;
+  project: string
+  issue: number
   /**
    * Why, on the record. Not optional, and an empty one is refused below rather
    * than filled in: a person overruling a block is not anonymous and is not
    * silent, and a note this file invented would be both.
    */
-  note: string;
-  by?: string;
+  note: string
+  by?: string
 }
 
-export async function requeueCommand(
-  options: RequeueCommandOptions,
-  log = console.log,
-): Promise<number> {
+export async function requeueCommand(options: RequeueCommandOptions, log = console.log): Promise<number> {
   // The one rule, and the reason it is here rather than in the argument
   // parsing: `--note` left off and `--note` with nothing after it are the same
   // silence, and a default invented at either layer would be a person
   // overruling a block anonymously. `requeue()` records the note verbatim, so
   // this is the last place that can refuse an empty one.
   if (!options.note.trim()) {
-    log("lingtai requeue needs --note <why> — a block is overruled on the record, or not at all");
-    return 2;
+    log('lingtai requeue needs --note <why> — a block is overruled on the record, or not at all')
+    return 2
   }
 
   // Checked before the stream is read, so a mistyped project says so. Without
   // it the refusal would be `wi-lingati-130 is backlog, not blocked`, which is
   // true, unhelpful, and about the wrong mistake.
-  const project = await loadProject(options.project);
+  const project = await loadProject(options.project)
   if (!project) {
-    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`);
-    return 1;
+    log(`no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+    return 1
   }
 
   // Moves a card off the lane the board exists for, so it follows the log while
@@ -69,9 +68,9 @@ export async function requeueCommand(
       // silent waiver this system exists to remove.
       by: options.by ?? `human:${userInfo().username}`,
       note: options.note,
-    });
+    })
 
-    log(outcome.detail);
-    return outcome.ok ? 0 : 1;
-  });
+    log(outcome.detail)
+    return outcome.ok ? 0 : 1
+  })
 }

@@ -13,8 +13,10 @@
  * giving the daemon package those dependencies would make it the thing it is
  * supposed to be hosting.
  */
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+import { createRuntime } from '@lingtai/agent'
 import {
   PortsLive,
   currentRecipe,
@@ -24,33 +26,32 @@ import {
   runQueue,
   runnableNow,
   selectRunnable,
-} from "@lingtai/conductor";
-import { Effect } from "effect";
-import { readControl } from "@lingtai/daemon";
-import { type ProjectState, passTransition, projectStream, reduceProject } from "@lingtai/domain";
-import { type EventStore, eventStore } from "@lingtai/event-store";
-import { createGitHubClient } from "@lingtai/github";
-import { githubApp, hasGitHubApp, repoRoot } from "@lingtai/env";
-import { createRuntime } from "@lingtai/agent";
-import { kindsOf, queueOf } from "@lingtai/recipe/settings";
+} from '@lingtai/conductor'
+import { readControl } from '@lingtai/daemon'
+import { type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
+import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
+import { type EventStore, eventStore } from '@lingtai/event-store'
+import { createGitHubClient } from '@lingtai/github'
+import { kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { Effect } from 'effect'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
-const root = repoRoot();
+const root = repoRoot()
 
 export interface ConductOptions {
   /** False holds every item at the merge instead of landing it. */
-  merge?: boolean;
-  hookBinary?: string;
-  promptPath?: string;
+  merge?: boolean
+  hookBinary?: string
+  promptPath?: string
   /** How many items one pass may take. One, so completion drives the loop. */
-  max?: number;
+  max?: number
   /**
    * The commit this process was loaded from, read once at its start and never
    * per pass — the checkout is exactly what moves under loaded modules. Carried
    * on a `ProjectRefused`, so the log can tell a broken recipe from a process
    * too old for a good one (#148).
    */
-  codeSha?: string | null;
+  codeSha?: string | null
   /**
    * Whether the conductor is paused *now*, as a sentence, or null — asked
    * before each project and before each ticket, not once for the pass (#210).
@@ -61,17 +62,17 @@ export interface ConductOptions {
    * pass, straight into the same wall. Scoped by the caller to what was
    * appended while it runs (#159), which is why it is handed in.
    */
-  paused?: () => Promise<string | null>;
-  log?: (line: string) => void;
+  paused?: () => Promise<string | null>
+  log?: (line: string) => void
 }
 
 export interface PassOutcome {
   /** Projects looked at. */
-  projects: number;
+  projects: number
   /** Items run across all of them. */
-  ran: number;
+  ran: number
   /** Projects that could not be looked at, and why. */
-  refused: { project: string; detail: string }[];
+  refused: { project: string; detail: string }[]
 }
 
 /**
@@ -84,31 +85,31 @@ export interface PassOutcome {
  * as the daemon runs, which is why there is no scope of that kind here.
  */
 export async function conductorPass(options: ConductOptions = {}): Promise<PassOutcome> {
-  const log = options.log ?? (() => {});
-  const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] };
+  const log = options.log ?? (() => {})
+  const outcome: PassOutcome = { projects: 0, ran: 0, refused: [] }
 
   if (!hasGitHubApp()) {
-    outcome.refused.push({ project: "*", detail: "no GitHub App configured" });
-    return outcome;
+    outcome.refused.push({ project: '*', detail: 'no GitHub App configured' })
+    return outcome
   }
 
-  const hookBinary = options.hookBinary ?? resolve(root, "packages/hook/bin/lingtai-hook");
+  const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
   try {
-    await readFile(hookBinary);
+    await readFile(hookBinary)
   } catch {
     // A run that records nothing must not start. Refusing the pass rather than
     // the daemon: the projections stay current, which is what makes the reason
     // visible on the board.
-    outcome.refused.push({ project: "*", detail: `no lingtai-hook binary at ${hookBinary}` });
-    return outcome;
+    outcome.refused.push({ project: '*', detail: `no lingtai-hook binary at ${hookBinary}` })
+    return outcome
   }
 
-  const promptPath = options.promptPath ?? resolve(root, "prompts/ticket.md");
-  const prompt = await readFile(promptPath, "utf8");
+  const promptPath = options.promptPath ?? resolve(root, 'prompts/ticket.md')
+  const prompt = await readFile(promptPath, 'utf8')
 
   // Read once for the whole pass. A request that arrives mid-pass is answered
   // by the next one — which the append itself triggers.
-  const control = await readControl();
+  const control = await readControl()
 
   return conductProjects({
     projects: await loadProjects(),
@@ -117,25 +118,25 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
     log,
     ...(options.paused ? { paused: options.paused } : {}),
     work: async (project, where) => {
-      const name = project.project!;
+      const name = project.project!
       const client = await createGitHubClient({
         auth: githubApp(),
         owner: project.owner!,
         repo: name,
-      });
+      })
 
       // `max: 0` means "look at the project and take nothing". Returned here
       // rather than through `runQueue({ max: 0 })` because a nominated issue
       // would otherwise still jump the queue and run. Nothing was read, so it
       // says nothing about whether the project would be refused.
-      if (options.max === 0) return "looked-away";
+      if (options.max === 0) return 'looked-away'
       // Asked here rather than inside `currentRecipe`, so a refusal can say
       // which branch it was reading (#148).
-      where.ref = project.base ?? (await client.defaultBranch());
-      const resolved = await currentRecipe(project, client, where.ref);
+      where.ref = project.base ?? (await client.defaultBranch())
+      const resolved = await currentRecipe(project, client, where.ref)
       // Looked at, now — not when the run below returns, which can be an hour
       // away, all of it with a refusal on record for a project being worked.
-      await where.looked();
+      await where.looked()
 
       const common = {
         project,
@@ -153,7 +154,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
         promptVersion: `ticket@${prompt.length}`,
         ...(options.merge === undefined ? {} : { merge: options.merge }),
         log,
-      };
+      }
 
       // A hand-picked issue jumps the queue.
       //
@@ -178,7 +179,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // whatever was at the top of the queue instead, and the request stayed
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
-      const offered = await runnableNow({ client, queue: queueOf(resolved.recipe) });
+      const offered = await runnableNow({ client, queue: queueOf(resolved.recipe) })
       // The rows and not a set of numbers. `selectRunnable` already carries the
       // kind and the title, and the line below is read by somebody watching a
       // pass decide what to spend an agent on: `taking #123` is a number they
@@ -192,21 +193,21 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
             backoffMs: 0,
           })
         ).map((t) => [t.issue, t] as const),
-      );
-      const asked = control.requested.find((r) => r.project === name && queued.has(r.issue));
+      )
+      const asked = control.requested.find((r) => r.project === name && queued.has(r.issue))
 
       if (asked) {
         // Non-null because `queued.has` is what matched it. The shape is
         // `lingtai status`'s — `#123  bug  the title`.
-        const task = queued.get(asked.issue)!;
-        log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`);
+        const task = queued.get(asked.issue)!
+        log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
         const result = await Effect.runPromise(
           runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(PortsLive)),
-        );
-        outcome.ran += 1;
-        if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`);
-        else if (result.ok === "held") log(`held at ${result.step}`);
-        else log(`stopped at ${result.stage}: ${result.detail}`);
+        )
+        outcome.ran += 1
+        if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`)
+        else if (result.ok === 'held') log(`held at ${result.step}`)
+        else log(`stopped at ${result.stage}: ${result.detail}`)
       } else {
         const ran = await Effect.runPromise(
           runQueue({
@@ -218,27 +219,27 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
             // before it just met.
             ...(options.paused ? { paused: options.paused } : {}),
           }).pipe(Effect.provide(PortsLive)),
-        );
-        outcome.ran += ran.ran.length;
+        )
+        outcome.ran += ran.ran.length
       }
-      return "looked";
+      return 'looked'
     },
-  });
+  })
 }
 
 /** How far a project's work got before it refused: the branch, once known. */
 export interface Where {
-  ref: string | null;
+  ref: string | null
   /**
    * The project was looked at without refusing: records the recovery now, while
    * the rest of the work — a run, up to `runtime.limits.wall` — is still ahead.
    * Idempotent, since `passTransition` appends nothing once nothing is on record.
    */
-  looked: () => Promise<void>;
+  looked: () => Promise<void>
 }
 
 export interface ProjectsOptions {
-  projects: readonly ProjectState[];
+  projects: readonly ProjectState[]
   /**
    * One project's share of the pass. Throwing before `where.looked` is refusing
    * it; throwing after is a failure the outcome reports and the log does not
@@ -248,17 +249,17 @@ export interface ProjectsOptions {
    * once it has read enough to know it does not refuse; `"looked"` calls it on
    * return if the work did not.
    */
-  work: (project: ProjectState, where: Where) => Promise<"looked" | "looked-away">;
-  codeSha: string | null;
-  outcome: PassOutcome;
-  log: (line: string) => void;
+  work: (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'>
+  codeSha: string | null
+  outcome: PassOutcome
+  log: (line: string) => void
   /**
    * Asked before each project, and a sentence back ends the pass there (#210).
    * A pause one project's run appended stands for every project after it: the
    * wall it met is the account's, not the repository's.
    */
-  paused?: () => Promise<string | null>;
-  store?: EventStore;
+  paused?: () => Promise<string | null>
+  store?: EventStore
 }
 
 /**
@@ -270,35 +271,35 @@ export interface ProjectsOptions {
  * the log is tested against the log.
  */
 export async function conductProjects(options: ProjectsOptions): Promise<PassOutcome> {
-  const { outcome, log, store = eventStore } = options;
+  const { outcome, log, store = eventStore } = options
 
   for (const project of options.projects) {
-    const name = project.project;
-    if (!name || !project.owner) continue;
+    const name = project.project
+    if (!name || !project.owner) continue
     if (options.paused) {
-      const why = await options.paused();
+      const why = await options.paused()
       if (why !== null) {
-        log(`${name}: not looked at — ${why}`);
-        break;
+        log(`${name}: not looked at — ${why}`)
+        break
       }
     }
-    outcome.projects += 1;
-    let looked = false;
+    outcome.projects += 1
+    let looked = false
     const where: Where = {
       ref: null,
       looked: () => {
-        looked = true;
-        return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log });
+        looked = true
+        return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log })
       },
-    };
+    }
 
     try {
-      if ((await options.work(project, where)) === "looked") await where.looked();
+      if ((await options.work(project, where)) === 'looked') await where.looked()
     } catch (err) {
       // One project's problem is not the pass's. A misconfigured repository
       // must not stop the others from being worked.
-      outcome.refused.push({ project: name, detail: (err as Error).message });
-      log(`${name}: ${(err as Error).message}`);
+      outcome.refused.push({ project: name, detail: (err as Error).message })
+      log(`${name}: ${(err as Error).message}`)
       // **And on the log** (#148): this line was the whole record for hours
       // while a daemon too old for its recipe refused every sweep. Appended on
       // the transition only — `passTransition` compares with what the stream
@@ -309,16 +310,16 @@ export async function conductProjects(options: ProjectsOptions): Promise<PassOut
       // project that was read and worked, which is not what `ProjectRefused`
       // says. Recorded, it would follow this sweep's `ProjectRecovered` with a
       // refusal, and every later sweep would append the same pair again.
-      if (looked) continue;
+      if (looked) continue
       await record(
         project,
         { refused: true, detail: (err as Error).message, ref: where.ref, codeSha: options.codeSha },
         { store, log },
-      );
+      )
     }
   }
 
-  return outcome;
+  return outcome
 }
 
 /**
@@ -331,15 +332,15 @@ async function record(
   seen: Parameters<typeof passTransition>[1],
   options: { store: EventStore; log: (line: string) => void },
 ): Promise<void> {
-  const { store, log } = options;
-  const name = project.project!;
+  const { store, log } = options
+  const name = project.project!
   try {
     // Re-read rather than trusting the state the pass began with: a run can
     // last an hour, and what matters is what the stream holds now.
-    const current = reduceProject(await store.read(projectStream(name)));
-    const next = passTransition(current, seen);
-    if (next) await store.append(projectStream(name), current.version, [next]);
+    const current = reduceProject(await store.read(projectStream(name)))
+    const next = passTransition(current, seen)
+    if (next) await store.append(projectStream(name), current.version, [next])
   } catch (err) {
-    log(`${name}: could not record the pass on the log — ${(err as Error).message}`);
+    log(`${name}: could not record the pass on the log — ${(err as Error).message}`)
   }
 }

@@ -1,7 +1,8 @@
-import postgres from "@prisma/orm-postgres/runtime";
-import { postgresUrl } from "./env.ts";
-import type { Contract } from "./prisma/contract.d.ts";
-import contractJson from "./prisma/contract.json" with { type: "json" };
+import postgres from '@prisma/orm-postgres/runtime'
+
+import { postgresUrl } from './env.ts'
+import type { Contract } from './prisma/contract.d.ts'
+import contractJson from './prisma/contract.json' with { type: 'json' }
 
 /**
  * A client against Lingtai's own database. Never one belonging to a managed
@@ -18,10 +19,10 @@ import contractJson from "./prisma/contract.json" with { type: "json" };
  * client.close()` — or the process will not exit.
  */
 export function createDb(url: string = postgresUrl()) {
-  return postgres<Contract>({ contractJson, url });
+  return postgres<Contract>({ contractJson, url })
 }
 
-export type Db = ReturnType<typeof createDb>;
+export type Db = ReturnType<typeof createDb>
 
 /*
  * There is no process-wide `db` here any more (#179).

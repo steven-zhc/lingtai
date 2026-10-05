@@ -17,16 +17,16 @@ import {
   selectRunnable,
   type ClientFor,
   type RecipeFor,
-} from "@lingtai/conductor";
-import { queueOf } from "@lingtai/recipe/settings";
-import { paint, stateInk } from "@lingtai/env/colour";
-import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from "@lingtai/projector";
+} from '@lingtai/conductor'
+import { paint, stateInk } from '@lingtai/env/colour'
+import { describeArm, describeHold, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
+import { queueOf } from '@lingtai/recipe/settings'
 
 export interface StatusOptions {
   /** Restrict to one project. */
-  project?: string;
+  project?: string
   /** Show items that have left the queue, and what holds them. */
-  all?: boolean;
+  all?: boolean
 }
 
 /**
@@ -37,8 +37,8 @@ export interface StatusOptions {
  * reader who needs all of it goes.
  */
 function oneLine(text: string, n = 140): string {
-  const said = text.replace(/\s+/g, " ").trim();
-  return said.length > n ? `${said.slice(0, n - 1)}…` : said;
+  const said = text.replace(/\s+/g, ' ').trim()
+  return said.length > n ? `${said.slice(0, n - 1)}…` : said
 }
 
 /**
@@ -52,8 +52,8 @@ function oneLine(text: string, n = 140): string {
  * `projectFilter` already takes both as arguments for exactly this reason.
  */
 export interface StatusReading {
-  clientFor?: ClientFor;
-  recipeFor?: RecipeFor;
+  clientFor?: ClientFor
+  recipeFor?: RecipeFor
 }
 
 export async function status(
@@ -61,22 +61,20 @@ export async function status(
   log = console.log,
   reading: StatusReading = {},
 ): Promise<number> {
-  const projects = (await loadProjects()).filter(
-    (p) => !options.project || p.project === options.project,
-  );
+  const projects = (await loadProjects()).filter((p) => !options.project || p.project === options.project)
 
   if (projects.length === 0) {
     log(
       options.project
         ? `no project named "${options.project}" — run lingtai add <owner>/<repo> first`
-        : "no projects registered — run lingtai add <owner>/<repo>",
-    );
-    return 0;
+        : 'no projects registered — run lingtai add <owner>/<repo>',
+    )
+    return 0
   }
 
   for (const project of projects) {
-    const name = project.project!;
-    log(`${name}  base=${project.base ?? "(unrecorded)"}`);
+    const name = project.project!
+    log(`${name}  base=${project.base ?? '(unrecorded)'}`)
 
     // What this project will and will not take, said before the numbers that
     // depend on it — and said by the same function `lingtai daemon` prints at
@@ -84,47 +82,44 @@ export async function status(
     // branch, its kinds in priority order, its excludes; or, when the recipe
     // will not resolve, that and the reason, which is the case that used to
     // render as a queue that was simply empty.
-    const filter = await projectFilter(project, reading.clientFor, reading.recipeFor);
-    for (const line of describeFilter(filter)) log(`  ${line}`);
+    const filter = await projectFilter(project, reading.clientFor, reading.recipeFor)
+    for (const line of describeFilter(filter)) log(`  ${line}`)
 
     // Priority order is the recipe's `kinds`, and the recipe lives in the
     // managed repository — so without GitHub the queue can still be listed, just
     // not prioritised.
-    const kinds: readonly string[] = filter.ok ? filter.kinds : [];
+    const kinds: readonly string[] = filter.ok ? filter.kinds : []
     // What GitHub is offering. Empty when it could not be asked, which is not
     // the same as an empty queue and is said differently below.
-    let offered: { ref: string; title: string; kind: string }[] = [];
+    let offered: { ref: string; title: string; kind: string }[] = []
     /** Whether GitHub answered at all. An empty offer means nothing without it. */
-    let asked = false;
+    let asked = false
     if (filter.ok) {
       try {
-        const { client, recipe } = filter;
+        const { client, recipe } = filter
 
         // Always, not behind a flag. There is nothing left to read the queue
         // out of — 0022 deleted the table that used to hold it — so the choice
         // is between asking GitHub and having no answer. This takes nothing,
         // claims nothing and appends no event.
-        const found = await runnableNow({ client, queue: queueOf(recipe) });
-        offered = found.runnable;
-        asked = true;
-        const passed = passedOver(found.skipped);
+        const found = await runnableNow({ client, queue: queueOf(recipe) })
+        offered = found.runnable
+        asked = true
+        const passed = passedOver(found.skipped)
         // **`eligible`, not `runnable`.** They are answers to different
         // questions and this line used the other line's word for its own,
         // which made "8 runnable / 0 runnable" read as a contradiction when
         // both numbers were right (`#54`). This one is about the *recipe* —
         // how many open issues its `kinds` and `exclude` will take. The line
         // below is about *state* — how many can be claimed right now.
-        log(
-          `  from GitHub: ${found.runnable.length} eligible` +
-            (passed !== null ? `, ${passed}` : ""),
-        );
+        log(`  from GitHub: ${found.runnable.length} eligible` + (passed !== null ? `, ${passed}` : ''))
         // Once, beside the count it explains. A repository whose plan does not
         // expose dependencies passes nothing over for one, and a `blocked-by`
         // that is simply never printed reads as a repository with no chains in
         // it (#131). The phrase is `discover.ts`'s, not this file's.
-        if (found.dependenciesUnread !== null) log(`  (${found.dependenciesUnread})`);
+        if (found.dependenciesUnread !== null) log(`  (${found.dependenciesUnread})`)
       } catch (err) {
-        log(`  (GitHub unavailable: ${(err as Error).message} — the queue cannot be listed)`);
+        log(`  (GitHub unavailable: ${(err as Error).message} — the queue cannot be listed)`)
       }
     }
 
@@ -134,9 +129,9 @@ export async function status(
     // Zero when the recipe would not resolve, and it changes no answer: nothing
     // was offered either, so there is nothing for a window to apply to. It is
     // not a fallback for the recipe's value (0028) — there is no such thing.
-    const backoffMs = filter.ok ? filter.backoffMs : 0;
-    const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs });
-    const known = await readTasks({ project: name });
+    const backoffMs = filter.ok ? filter.backoffMs : 0
+    const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs })
+    const known = await readTasks({ project: name })
     // **The arm comes from the row, because the offer cannot carry it.**
     // `selectRunnable` answers *what could start next* out of GitHub's offer
     // and the log's claims — `Runnable` is four fields and none of them is a
@@ -145,13 +140,13 @@ export async function status(
     // is what stops `lingtai status` saying nothing about an approach the
     // board's card names (#100). Zero for an issue Lingtai has never touched:
     // it has no row, and no approach has been abandoned.
-    const rowOf = new Map(known.map((t) => [t.taskId, t]));
+    const rowOf = new Map(known.map((t) => [t.taskId, t]))
     const queuedRows = runnable.map((r) => ({
       ...r,
-      state: "queued" as const,
+      state: 'queued' as const,
       restarts: rowOf.get(r.taskId)?.restarts ?? 0,
       restartsOf: rowOf.get(r.taskId)?.restartsOf ?? 0,
-    }));
+    }))
 
     // **Where the rest went**, in the same breath as the number. A reader who
     // sees eight eligible and none runnable has to be told why, or the honest
@@ -165,34 +160,34 @@ export async function status(
     // prints the stored word as a label of its own, which is how `1 running,
     // 1 gates` came to be one fact under two labels.
     const NAMES: Record<string, string> = {
-      running: "running",
-      verifying: "running",
-      waiting: "waiting on you",
-      landed: "landed",
-    };
-    const elsewhere = new Map<string, number>();
+      running: 'running',
+      verifying: 'running',
+      waiting: 'waiting on you',
+      landed: 'landed',
+    }
+    const elsewhere = new Map<string, number>()
     // **A question asked before any run is printed, not counted** (#147). It is
     // the one hold whose whole content is a sentence a person has to read, and
     // `1 waiting on you` would say there is a question without saying which.
-    const askedBefore = known.filter((t) => t.blocked && t.asked);
+    const askedBefore = known.filter((t) => t.blocked && t.asked)
     for (const t of known) {
-      if (t.state === "queued") continue;
-      if (t.blocked && t.asked) continue;
-      const label = NAMES[t.state] ?? t.state;
-      elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1);
+      if (t.state === 'queued') continue
+      if (t.blocked && t.asked) continue
+      const label = NAMES[t.state] ?? t.state
+      elsewhere.set(label, (elsewhere.get(label) ?? 0) + 1)
     }
-    const elsewhereSays = [...elsewhere].map(([label, n]) => `${n} ${label}`).join(", ");
+    const elsewhereSays = [...elsewhere].map(([label, n]) => `${n} ${label}`).join(', ')
 
-    log(`  queue: ${runnable.length} runnable` + (elsewhereSays ? ` — ${elsewhereSays}` : ""));
+    log(`  queue: ${runnable.length} runnable` + (elsewhereSays ? ` — ${elsewhereSays}` : ''))
 
     // Under the number, and always rather than behind `--all`: the queue is
     // passing these over, and the reason is a question only a person can
     // answer. With `--all` they are rows below and say it there instead.
     if (askedBefore.length > 0 && !options.all) {
-      log(`  asked, before any run — lingtai answer ${name} --issue <n> "<choice>":`);
+      log(`  asked, before any run — lingtai answer ${name} --issue <n> "<choice>":`)
       for (const t of askedBefore) {
-        log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}  ${stateInk(t.state)(`[${describeWait(t)}]`)}`);
-        if (t.note) log(`             ${oneLine(t.note)}`);
+        log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}  ${stateInk(t.state)(`[${describeWait(t)}]`)}`)
+        if (t.note) log(`             ${oneLine(t.note)}`)
       }
     }
 
@@ -200,36 +195,36 @@ export async function status(
     // which is how you see what is running, held or landed rather than only
     // what could start next.
     let rows: {
-      taskId: string;
-      issue: string;
-      kind: string;
-      title: string;
-      state: string;
+      taskId: string
+      issue: string
+      kind: string
+      title: string
+      state: string
       /** Only ever on a row the log wrote; an offer GitHub made carries neither. */
-      lastAttemptAt?: Date | null;
-      repairPending?: boolean;
+      lastAttemptAt?: Date | null
+      repairPending?: boolean
       /** The card's line: what it is waiting on, or why it stopped. */
-      note?: string | null;
+      note?: string | null
       /** Whether a person is holding a question, as opposed to merely waiting. */
-      blocked?: boolean;
+      blocked?: boolean
       /** Asked before any run, and the sha a review is about. Absent on a GitHub offer. */
-      asked?: boolean;
-      awaitingSha?: string | null;
+      asked?: boolean
+      awaitingSha?: string | null
       /** Approaches abandoned, and the ceiling. Absent on a GitHub offer. */
-      restarts?: number;
-      restartsOf?: number;
+      restarts?: number
+      restartsOf?: number
       /** The hold, as `describeHold` reads it. Absent on a GitHub offer. */
-      needs?: TaskCard["needs"];
-      diagnosis?: TaskCard["diagnosis"];
-    }[] = queuedRows;
+      needs?: TaskCard['needs']
+      diagnosis?: TaskCard['diagnosis']
+    }[] = queuedRows
     if (options.all) {
-      const ids = new Set(known.map((t) => t.taskId));
+      const ids = new Set(known.map((t) => t.taskId))
       // An issue GitHub offers that Lingtai has never touched has no row at
       // all. Before 0022 the cache wrote it one; now it is only in the offer.
-      rows = [...known, ...queuedRows.filter((r) => !ids.has(r.taskId))];
+      rows = [...known, ...queuedRows.filter((r) => !ids.has(r.taskId))]
     }
-    if (rows.length === 0) continue;
-    const now = Date.now();
+    if (rows.length === 0) continue
+    const now = Date.now()
     for (const t of rows) {
       // **When, not whether** (`#95`). A task inside the backoff window is
       // runnable-but-not-yet, and `[backing off]` on its own is a state a person
@@ -239,20 +234,19 @@ export async function status(
       // and the sentence is `backingOff`'s rather than this file's, so the card
       // that shows the same row shows it in the same words (#100).
       const held =
-        t.state === "queued"
+        t.state === 'queued'
           ? heldUntil(
               { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
               backoffMs,
               now,
             )
-          : null;
+          : null
       // A queued row that is not runnable and not held is one GitHub is not
       // offering — closed by hand, relabelled, excluded. That is not the clock
       // and never was, and calling it `[backing off]` was the second thing this
       // line got wrong. Said only when GitHub actually answered: with no answer
       // every row looks unoffered, and the line above already says so.
-      const unoffered =
-        t.state === "queued" && asked && !runnable.some((r) => r.taskId === t.taskId);
+      const unoffered = t.state === 'queued' && asked && !runnable.some((r) => r.taskId === t.taskId)
       // **The board's lanes, in the terminal's colours** (#107). `stateInk`
       // holds the assignment so that this file and `globals.css` cannot drift:
       // landed is the pass colour, running and gates the accent, waiting the
@@ -269,16 +263,16 @@ export async function status(
         asked: t.asked === true,
         awaitingSha: t.awaitingSha ?? null,
         needs: t.needs ?? null,
-      });
+      })
       const note =
-        t.state !== "queued"
+        t.state !== 'queued'
           ? `  ${stateInk(t.state)(`[${wait ?? t.state}]`)}`
           : held
             ? `  ${paint.muted(`[${backingOff(held, now)}]`)}`
             : unoffered
-              ? `  ${paint.muted("[not offered]")}`
-              : "";
-      log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`);
+              ? `  ${paint.muted('[not offered]')}`
+              : ''
+      log(`    #${t.issue.padEnd(5)} ${t.kind.padEnd(11)} ${t.title}${note}`)
 
       // **Which arm, on every row that has one** (0040 §3) — not only the
       // blocked ones below, because the interesting moment is the arm that is
@@ -293,8 +287,8 @@ export async function status(
       // prints only where a person is holding a question (below); on the board
       // it is on every card. So this line is the whole of what a terminal says
       // about a running arm, which is why it is not inside that `if`.
-      const arm = describeArm({ restarts: t.restarts ?? 0, restartsOf: t.restartsOf ?? 0 });
-      if (arm) log(`             ${paint.muted(arm)}`);
+      const arm = describeArm({ restarts: t.restarts ?? 0, restartsOf: t.restartsOf ?? 0 })
+      if (arm) log(`             ${paint.muted(arm)}`)
 
       // **The same thing the card says.** This line used to stop at `[waiting]`:
       // the question was on the board and nowhere else, so the two places an
@@ -309,17 +303,17 @@ export async function status(
       // waiting lane also holds a refused dispatch and a run that asked
       // something mid-flight.
       if (t.blocked) {
-        if (t.note) log(`             ${oneLine(t.note)}`);
+        if (t.note) log(`             ${oneLine(t.note)}`)
         for (const line of describeHold({ needs: t.needs ?? null, diagnosis: t.diagnosis ?? null })) {
-          log(`             ${oneLine(line.text)}`);
+          log(`             ${oneLine(line.text)}`)
         }
         // The raw failure is not printed and is not lost: a hundred lines of git
         // output would bury the listing it belongs to. Said rather than silently
         // dropped, because a summary that hides the output has to admit there is
         // output — the card puts it one disclosure away.
-        if (t.diagnosis?.raw) log("             (the failure itself is on the log, and on the card)");
+        if (t.diagnosis?.raw) log('             (the failure itself is on the log, and on the card)')
       }
     }
   }
-  return 0;
+  return 0
 }

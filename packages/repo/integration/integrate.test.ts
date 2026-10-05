@@ -1,3 +1,9 @@
+import { execFile } from 'node:child_process'
+import { mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
+
 /**
  * The integrator, against real git and the real event store.
  *
@@ -10,201 +16,196 @@
  * The remote is a bare repository in a temp directory. Real git, real merges,
  * real conflicts, no network.
  */
-import { integrationStream } from "@lingtai/domain";
-import { processEventStore, type EventStore } from "@lingtai/event-store";
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ensureMirror, integrate } from "../src/index.ts";
+import { integrationStream } from '@lingtai/domain'
+import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
-const exec = promisify(execFile);
+import { ensureMirror, integrate } from '../src/index.ts'
+
+const exec = promisify(execFile)
 const authored = {
-  GIT_AUTHOR_NAME: "t",
-  GIT_AUTHOR_EMAIL: "t@example.invalid",
-  GIT_COMMITTER_NAME: "t",
-  GIT_COMMITTER_EMAIL: "t@example.invalid",
-};
-const g = (args: string[], cwd: string) =>
-  exec("git", args, { cwd, env: { ...process.env, ...authored } });
+  GIT_AUTHOR_NAME: 't',
+  GIT_AUTHOR_EMAIL: 't@example.invalid',
+  GIT_COMMITTER_NAME: 't',
+  GIT_COMMITTER_EMAIL: 't@example.invalid',
+}
+const g = (args: string[], cwd: string) => exec('git', args, { cwd, env: { ...process.env, ...authored } })
 
-let root: string;
-let originPath: string;
-let work: string;
-let home: string;
-const streams = new Set<string>();
+let root: string
+let originPath: string
+let work: string
+let home: string
+const streams = new Set<string>()
 
-const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`;
-let store: EventStore;
+const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
+let store: EventStore
 
 /** A fresh origin with `develop` and one commit, and a fresh mirror for it. */
 async function freshOrigin(): Promise<void> {
-  await rm(originPath, { recursive: true, force: true });
-  await rm(work, { recursive: true, force: true });
-  await rm(join(home, "repos"), { recursive: true, force: true });
-  await rm(join(home, "worktrees"), { recursive: true, force: true });
+  await rm(originPath, { recursive: true, force: true })
+  await rm(work, { recursive: true, force: true })
+  await rm(join(home, 'repos'), { recursive: true, force: true })
+  await rm(join(home, 'worktrees'), { recursive: true, force: true })
 
-  await exec("git", ["init", "-q", "-b", "develop", work]);
-  await writeFile(join(work, "README.md"), "hello\n");
-  await g(["add", "-A"], work);
-  await g(["commit", "-qm", "first"], work);
-  await exec("git", ["clone", "-q", "--bare", work, originPath]);
-  await g(["remote", "add", "origin", originPath], work).catch(() => {});
+  await exec('git', ['init', '-q', '-b', 'develop', work])
+  await writeFile(join(work, 'README.md'), 'hello\n')
+  await g(['add', '-A'], work)
+  await g(['commit', '-qm', 'first'], work)
+  await exec('git', ['clone', '-q', '--bare', work, originPath])
+  await g(['remote', 'add', 'origin', originPath], work).catch(() => {})
 }
 
 /** Adds a branch to origin with the given file contents. */
 async function branchWith(branch: string, files: Record<string, string>): Promise<void> {
-  await g(["checkout", "-q", "-B", branch, "develop"], work);
+  await g(['checkout', '-q', '-B', branch, 'develop'], work)
   for (const [path, body] of Object.entries(files)) {
-    const full = join(work, path);
-    await exec("mkdir", ["-p", join(full, "..")]);
-    await writeFile(full, body);
+    const full = join(work, path)
+    await exec('mkdir', ['-p', join(full, '..')])
+    await writeFile(full, body)
   }
-  await g(["add", "-A"], work);
-  await g(["commit", "-qm", `work on ${branch}`], work);
-  await g(["push", "-q", "origin", branch], work);
-  await g(["checkout", "-q", "develop"], work);
+  await g(['add', '-A'], work)
+  await g(['commit', '-qm', `work on ${branch}`], work)
+  await g(['push', '-q', 'origin', branch], work)
+  await g(['checkout', '-q', 'develop'], work)
 }
 
 const base = () => ({
   project: PROJECT,
-  owner: "steven-zhc",
+  owner: 'steven-zhc',
   repo: PROJECT,
-  base: "develop",
+  base: 'develop',
   workItemId: `wi-${PROJECT}-1`,
-  headSha: "0".repeat(40),
+  headSha: '0'.repeat(40),
   stepsPassed: true,
   home,
   store,
-});
+})
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "lingtai-integrate-"));
-  originPath = join(root, "origin.git");
-  work = join(root, "work");
-  home = join(root, "home");
-  store = await processEventStore();
-  streams.add(integrationStream(PROJECT, "develop"));
-});
+  root = await mkdtemp(join(tmpdir(), 'lingtai-integrate-'))
+  originPath = join(root, 'origin.git')
+  work = join(root, 'work')
+  home = join(root, 'home')
+  store = await processEventStore()
+  streams.add(integrationStream(PROJECT, 'develop'))
+})
 
 beforeEach(async () => {
-  await freshOrigin();
-  await ensureMirror({ project: PROJECT, owner: "x", repo: PROJECT, remote: originPath, home });
-});
+  await freshOrigin()
+  await ensureMirror({ project: PROJECT, owner: 'x', repo: PROJECT, remote: originPath, home })
+})
 
 afterAll(async () => {
-  await rm(root, { recursive: true, force: true });
-});
+  await rm(root, { recursive: true, force: true })
+})
 
 /** Every event on the lane, so a test can assert what was recorded. */
 async function lane(): Promise<{ type: string; data: Record<string, unknown> }[]> {
-  const events = await store.read(integrationStream(PROJECT, "develop"));
-  return events.map((e) => ({ type: e.type, data: e.data as Record<string, unknown> }));
+  const events = await store.read(integrationStream(PROJECT, 'develop'))
+  return events.map((e) => ({ type: e.type, data: e.data as Record<string, unknown> }))
 }
 
-describe("integrate", () => {
-  it("merges a clean branch and records the merge commit", async () => {
-    await branchWith("agent/1", { "src/a.ts": "export const a = 1;\n" });
+describe('integrate', () => {
+  it('merges a clean branch and records the merge commit', async () => {
+    await branchWith('agent/1', { 'src/a.ts': 'export const a = 1;\n' })
 
-    const before = (await lane()).length;
-    const result = await integrate({ ...base(), branch: "agent/1" });
+    const before = (await lane()).length
+    const result = await integrate({ ...base(), branch: 'agent/1' })
 
-    expect(result.ok, JSON.stringify(result)).toBe(true);
-    if (!result.ok) return;
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    if (!result.ok) return
 
-    const events = (await lane()).slice(before);
-    expect(events.map((e) => e.type)).toEqual(["IntegrationAttempted", "IntegrationSucceeded"]);
-    expect(events[1]!.data["mergeCommit"]).toBe(result.mergeCommit);
+    const events = (await lane()).slice(before)
+    expect(events.map((e) => e.type)).toEqual(['IntegrationAttempted', 'IntegrationSucceeded'])
+    expect(events[1]!.data['mergeCommit']).toBe(result.mergeCommit)
 
     // And it really landed on the base branch at origin.
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).toContain("work on agent/1");
-  });
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).toContain('work on agent/1')
+  })
 
-  it("refuses a conflict with the file that conflicted", async () => {
-    await branchWith("agent/2", { "README.md": "from the agent\n" });
+  it('refuses a conflict with the file that conflicted', async () => {
+    await branchWith('agent/2', { 'README.md': 'from the agent\n' })
     // The base moves underneath it, touching the same file.
-    await writeFile(join(work, "README.md"), "from develop\n");
-    await g(["add", "-A"], work);
-    await g(["commit", "-qm", "base moved"], work);
-    await g(["push", "-q", "origin", "develop"], work);
+    await writeFile(join(work, 'README.md'), 'from develop\n')
+    await g(['add', '-A'], work)
+    await g(['commit', '-qm', 'base moved'], work)
+    await g(['push', '-q', 'origin', 'develop'], work)
 
-    const before = (await lane()).length;
-    const result = await integrate({ ...base(), branch: "agent/2" });
+    const before = (await lane()).length
+    const result = await integrate({ ...base(), branch: 'agent/2' })
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("conflict");
-    expect(result.detail).toContain("README.md");
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('conflict')
+    expect(result.detail).toContain('README.md')
 
-    const refusal = (await lane()).slice(before).find((e) => e.type === "IntegrationRefused");
-    expect(refusal?.data["reason"]).toBe("conflict");
-  });
+    const refusal = (await lane()).slice(before).find((e) => e.type === 'IntegrationRefused')
+    expect(refusal?.data['reason']).toBe('conflict')
+  })
 
-  it("refuses a branch with nothing to merge", async () => {
-    await g(["push", "-q", "origin", "develop:refs/heads/agent/3"], work);
+  it('refuses a branch with nothing to merge', async () => {
+    await g(['push', '-q', 'origin', 'develop:refs/heads/agent/3'], work)
 
-    const result = await integrate({ ...base(), branch: "agent/3" });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("no-commits");
-    expect((await lane()).at(-1)?.data["reason"]).toBe("no-commits");
-  });
+    const result = await integrate({ ...base(), branch: 'agent/3' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('no-commits')
+    expect((await lane()).at(-1)?.data['reason']).toBe('no-commits')
+  })
 
   /** The hold that caught #117: a migration is applied by a person who read it. */
-  it("holds a diff that adds migration files", async () => {
-    await branchWith("agent/4", {
-      "prisma/migrations/20260901_add_index/migration.sql": "create index x on y (z);\n",
-    });
+  it('holds a diff that adds migration files', async () => {
+    await branchWith('agent/4', {
+      'prisma/migrations/20260901_add_index/migration.sql': 'create index x on y (z);\n',
+    })
 
-    const result = await integrate({ ...base(), branch: "agent/4" });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("pending-migration");
-    expect(result.detail).toContain("migration.sql");
-    expect((await lane()).at(-1)?.data["reason"]).toBe("pending-migration");
-  });
+    const result = await integrate({ ...base(), branch: 'agent/4' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('pending-migration')
+    expect(result.detail).toContain('migration.sql')
+    expect((await lane()).at(-1)?.data['reason']).toBe('pending-migration')
+  })
 
-  it("refuses when a gate already said no, and does not merge", async () => {
-    await branchWith("agent/5", { "src/b.ts": "export const b = 1;\n" });
+  it('refuses when a gate already said no, and does not merge', async () => {
+    await branchWith('agent/5', { 'src/b.ts': 'export const b = 1;\n' })
 
     const result = await integrate({
       ...base(),
-      branch: "agent/5",
+      branch: 'agent/5',
       stepsPassed: false,
-      stepDetail: "build exited 1",
-    });
+      stepDetail: 'build exited 1',
+    })
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("verify-failed");
-    expect(result.detail).toContain("build exited 1");
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('verify-failed')
+    expect(result.detail).toContain('build exited 1')
 
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("work on agent/5");
-  });
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).not.toContain('work on agent/5')
+  })
 
-  it("refuses when verification after merging the base in fails", async () => {
-    await branchWith("agent/6", { "src/c.ts": "export const c = 1;\n" });
+  it('refuses when verification after merging the base in fails', async () => {
+    await branchWith('agent/6', { 'src/c.ts': 'export const c = 1;\n' })
 
     const result = await integrate({
       ...base(),
-      branch: "agent/6",
-      verify: async () => ({ ok: false, evidence: "3 tests failed" }),
-    });
+      branch: 'agent/6',
+      verify: async () => ({ ok: false, evidence: '3 tests failed' }),
+    })
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
+    expect(result.ok).toBe(false)
+    if (result.ok) return
     // The gates ran against the agent's head; this is the different question of
     // whether it still works beside what landed since.
-    expect(result.reason).toBe("verify-failed");
-    expect(result.detail).toContain("3 tests failed");
+    expect(result.reason).toBe('verify-failed')
+    expect(result.detail).toContain('3 tests failed')
 
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("work on agent/6");
-  });
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).not.toContain('work on agent/6')
+  })
 
   /**
    * **Git is what makes the merge safe, and the lane holds no lock** (#194).
@@ -232,58 +233,58 @@ describe("integrate", () => {
    * `test:db` run let the two serialise and failed a tree with nothing wrong
    * with it.
    */
-  it("races two integrations on one base: the loser merges again against where the base got to", async () => {
-    await branchWith("agent/7", { "src/d.ts": "export const d = 1;\n" });
-    await branchWith("agent/8", { "src/e.ts": "export const e = 1;\n" });
-    const before = (await lane()).length;
+  it('races two integrations on one base: the loser merges again against where the base got to', async () => {
+    await branchWith('agent/7', { 'src/d.ts': 'export const d = 1;\n' })
+    await branchWith('agent/8', { 'src/e.ts': 'export const e = 1;\n' })
+    const before = (await lane()).length
 
-    let releaseFirst: () => void = () => {};
-    const step = new Promise<void>((r) => (releaseFirst = r));
-    let atVerify: () => void = () => {};
-    const reachedVerify = new Promise<void>((r) => (atVerify = r));
-    let verifies = 0;
+    let releaseFirst: () => void = () => {}
+    const step = new Promise<void>((r) => (releaseFirst = r))
+    let atVerify: () => void = () => {}
+    const reachedVerify = new Promise<void>((r) => (atVerify = r))
+    let verifies = 0
 
     const first = integrate({
       ...base(),
-      branch: "agent/7",
+      branch: 'agent/7',
       verify: async () => {
-        verifies++;
-        atVerify();
-        await step;
-        return { ok: true, evidence: "" };
+        verifies++
+        atVerify()
+        await step
+        return { ok: true, evidence: '' }
       },
-    });
+    })
 
     // The first has fetched `develop` and merged agent/7 into it, and has not
     // pushed. The second now computes against exactly that base.
-    await reachedVerify;
-    const second = await integrate({ ...base(), branch: "agent/8" });
-    expect(second.ok, JSON.stringify(second)).toBe(true);
+    await reachedVerify
+    const second = await integrate({ ...base(), branch: 'agent/8' })
+    expect(second.ok, JSON.stringify(second)).toBe(true)
 
-    releaseFirst();
-    const loser = await first;
+    releaseFirst()
+    const loser = await first
 
     // It lost the push and landed anyway, on the base agent/8 had moved to.
-    expect(loser.ok, JSON.stringify(loser)).toBe(true);
+    expect(loser.ok, JSON.stringify(loser)).toBe(true)
     // A whole second merge, not a second push of the same commit: the base was
     // fetched again, the merge recomputed, and `verify` asked about it.
-    expect(verifies).toBe(2);
+    expect(verifies).toBe(2)
 
     // **Nothing told anybody it did not merge.** Two integrations, two
     // attempts, two successes — and no `IntegrationRefused` at all, which is
     // the event the `desktop` subscriber and `COMPLETION_EVENTS` are declared
     // on. The lost push is not on the log because nothing is owed an
     // explanation for a race that was then won.
-    const events = (await lane()).slice(before);
-    expect(events.filter((e) => e.type === "IntegrationRefused")).toHaveLength(0);
-    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(2);
-    expect(events.filter((e) => e.type === "IntegrationSucceeded")).toHaveLength(2);
+    const events = (await lane()).slice(before)
+    expect(events.filter((e) => e.type === 'IntegrationRefused')).toHaveLength(0)
+    expect(events.filter((e) => e.type === 'IntegrationAttempted')).toHaveLength(2)
+    expect(events.filter((e) => e.type === 'IntegrationSucceeded')).toHaveLength(2)
 
     // Both are on the base branch, in the order the pushes actually happened.
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).toContain("work on agent/8");
-    expect(log.stdout).toContain("work on agent/7");
-  });
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).toContain('work on agent/8')
+    expect(log.stdout).toContain('work on agent/7')
+  })
 
   /**
    * **The retry is bounded, and the refusal it stops at is still a refusal.**
@@ -298,39 +299,39 @@ describe("integrate", () => {
    * desktop notifications about one merge is exactly the noise the retry was
    * added to stop.
    */
-  it("gives up on a base that moves under every push, and says push-rejected once", async () => {
-    await branchWith("agent/10", { "src/g.ts": "export const g = 1;\n" });
-    const before = (await lane()).length;
-    let pushes = 0;
+  it('gives up on a base that moves under every push, and says push-rejected once', async () => {
+    await branchWith('agent/10', { 'src/g.ts': 'export const g = 1;\n' })
+    const before = (await lane()).length
+    let pushes = 0
 
     const result = await integrate({
       ...base(),
-      branch: "agent/10",
+      branch: 'agent/10',
       verify: async () => {
-        pushes++;
-        await g(["commit", "-q", "--allow-empty", "-m", `develop moved ${pushes}`], work);
-        await g(["push", "-q", "origin", "develop"], work);
-        return { ok: true, evidence: "" };
+        pushes++
+        await g(['commit', '-q', '--allow-empty', '-m', `develop moved ${pushes}`], work)
+        await g(['push', '-q', 'origin', 'develop'], work)
+        return { ok: true, evidence: '' }
       },
-    });
+    })
 
-    expect(result.ok, JSON.stringify(result)).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("push-rejected");
-    expect(result.detail).toMatch(/rejected/i);
-    expect(result.detail).toContain("develop");
+    expect(result.ok, JSON.stringify(result)).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('push-rejected')
+    expect(result.detail).toMatch(/rejected/i)
+    expect(result.detail).toContain('develop')
 
     // One try and three retries — and one attempt and one terminal for the lot.
-    expect(pushes).toBe(4);
-    const events = (await lane()).slice(before);
-    expect(events.filter((e) => e.type === "IntegrationAttempted")).toHaveLength(1);
-    expect(
-      events.filter((e) => e.type === "IntegrationRefused" && e.data["reason"] === "push-rejected"),
-    ).toHaveLength(1);
+    expect(pushes).toBe(4)
+    const events = (await lane()).slice(before)
+    expect(events.filter((e) => e.type === 'IntegrationAttempted')).toHaveLength(1)
+    expect(events.filter((e) => e.type === 'IntegrationRefused' && e.data['reason'] === 'push-rejected')).toHaveLength(
+      1,
+    )
 
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("work on agent/10");
-  });
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).not.toContain('work on agent/10')
+  })
 
   /**
    * The worktree is the only thing the scope holds now, and it still unwinds.
@@ -338,17 +339,17 @@ describe("integrate", () => {
    * integration on a base at a time, so the race above would have had the two
    * of them standing in one directory.
    */
-  it("leaves no worktree behind, and never two integrations in one directory", async () => {
-    await branchWith("agent/9", { "src/f.ts": "export const f = 1;\n" });
+  it('leaves no worktree behind, and never two integrations in one directory', async () => {
+    await branchWith('agent/9', { 'src/f.ts': 'export const f = 1;\n' })
 
-    const result = await integrate({ ...base(), branch: "agent/9" });
-    expect(result.ok, JSON.stringify(result)).toBe(true);
+    const result = await integrate({ ...base(), branch: 'agent/9' })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
 
-    const registered = await exec("git", ["worktree", "list", "--porcelain"], {
-      cwd: join(home, "repos", `${PROJECT}.git`),
-    });
-    expect(registered.stdout).not.toContain("integrator-");
-  });
+    const registered = await exec('git', ['worktree', 'list', '--porcelain'], {
+      cwd: join(home, 'repos', `${PROJECT}.git`),
+    })
+    expect(registered.stdout).not.toContain('integrator-')
+  })
 
   /**
    * **A process killed inside a merge leaves a checkout nothing else reclaims.**
@@ -363,32 +364,32 @@ describe("integrate", () => {
    * Age is what tells a corpse from a colleague, because two live integrations
    * on one base is ordinary since #194. An hour is the pass's own ceiling.
    */
-  it("reclaims an integrator worktree a killed process left behind, and leaves a live one alone", async () => {
-    await branchWith("agent/11", { "src/h.ts": "export const h = 1;\n" });
-    const mirror = join(home, "repos", `${PROJECT}.git`);
-    const abandoned = join(home, "worktrees", PROJECT, "integrator-develop-deadbeef");
-    const live = join(home, "worktrees", PROJECT, "integrator-develop-cafe1234");
+  it('reclaims an integrator worktree a killed process left behind, and leaves a live one alone', async () => {
+    await branchWith('agent/11', { 'src/h.ts': 'export const h = 1;\n' })
+    const mirror = join(home, 'repos', `${PROJECT}.git`)
+    const abandoned = join(home, 'worktrees', PROJECT, 'integrator-develop-deadbeef')
+    const live = join(home, 'worktrees', PROJECT, 'integrator-develop-cafe1234')
 
     for (const path of [abandoned, live]) {
-      await exec("git", ["worktree", "add", "-q", "--detach", path, "develop"], { cwd: mirror });
+      await exec('git', ['worktree', 'add', '-q', '--detach', path, 'develop'], { cwd: mirror })
     }
     // Three hours ago: whatever cut it is not coming back for it.
-    const old = new Date(Date.now() - 3 * 60 * 60 * 1_000);
-    await utimes(abandoned, old, old);
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1_000)
+    await utimes(abandoned, old, old)
 
-    const result = await integrate({ ...base(), branch: "agent/11" });
-    expect(result.ok, JSON.stringify(result)).toBe(true);
+    const result = await integrate({ ...base(), branch: 'agent/11' })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
 
     // Gone from the disk and from the mirror's registrations, both halves of
     // what the killed process left.
-    await expect(stat(abandoned)).rejects.toThrow();
-    const registered = await exec("git", ["worktree", "list", "--porcelain"], { cwd: mirror });
-    expect(registered.stdout).not.toContain("integrator-develop-deadbeef");
+    await expect(stat(abandoned)).rejects.toThrow()
+    const registered = await exec('git', ['worktree', 'list', '--porcelain'], { cwd: mirror })
+    expect(registered.stdout).not.toContain('integrator-develop-deadbeef')
 
     // And the one that could be a merge in flight is untouched.
-    expect(registered.stdout).toContain("integrator-develop-cafe1234");
-    expect((await stat(live)).isDirectory()).toBe(true);
-  });
+    expect(registered.stdout).toContain('integrator-develop-cafe1234')
+    expect((await stat(live)).isDirectory()).toBe(true)
+  })
 
   /**
    * **A log that stopped answering is a refusal, not an exception.**
@@ -410,44 +411,42 @@ describe("integrate", () => {
    * cannot be recorded either, because recording it is the thing that is
    * broken. The caller is still given an `IntegrateResult` it can act on.
    */
-  it("hands back a refusal when the log itself is unreachable, rather than throwing", async () => {
-    await branchWith("agent/12", { "src/i.ts": "export const i = 1;\n" });
-    const dropped = new Error("Connection terminated unexpectedly");
+  it('hands back a refusal when the log itself is unreachable, rather than throwing', async () => {
+    await branchWith('agent/12', { 'src/i.ts': 'export const i = 1;\n' })
+    const dropped = new Error('Connection terminated unexpectedly')
     const unreachable: EventStore = {
       append: () => Promise.reject(dropped),
       read: () => Promise.reject(dropped),
       readAll: () => Promise.reject(dropped),
-    };
+    }
 
     // Not rejecting is half of what is under test: an `await` that threw here
     // fails this, and is what `approve.ts` would have got.
-    const result = await integrate({ ...base(), branch: "agent/12", store: unreachable });
+    const result = await integrate({ ...base(), branch: 'agent/12', store: unreachable })
 
-    expect(result.ok, JSON.stringify(result)).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toBe("conflict");
-    expect(result.detail).toContain("Connection terminated unexpectedly");
+    expect(result.ok, JSON.stringify(result)).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('conflict')
+    expect(result.detail).toContain('Connection terminated unexpectedly')
 
     // And it never got near the base: the attempt could not be recorded, so no
     // merge was computed and nothing was pushed.
-    const log = await exec("git", ["log", "--oneline", "develop"], { cwd: originPath });
-    expect(log.stdout).not.toContain("work on agent/12");
-  });
+    const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
+    expect(log.stdout).not.toContain('work on agent/12')
+  })
 
-  it("never returns without an event, whatever happened", async () => {
+  it('never returns without an event, whatever happened', async () => {
     // Every case above asserts its own event; this asserts the invariant across
     // all of them: the lane has exactly one terminal event per attempt.
-    const events = await lane();
-    const attempts = events.filter((e) => e.type === "IntegrationAttempted").length;
-    const terminal = events.filter(
-      (e) => e.type === "IntegrationRefused" || e.type === "IntegrationSucceeded",
-    ).length;
+    const events = await lane()
+    const attempts = events.filter((e) => e.type === 'IntegrationAttempted').length
+    const terminal = events.filter((e) => e.type === 'IntegrationRefused' || e.type === 'IntegrationSucceeded').length
 
     // One terminal per attempt exactly. Nothing refuses before it attempts any
     // more — `lane-busy` was the only path that did, and the lane takes no lock
     // to be refused by (#194) — and a lost push adds neither side of this,
     // which is what keeps it 1:1 through the retries above.
-    expect(terminal).toBe(attempts);
-    expect(attempts).toBeGreaterThan(0);
-  });
-});
+    expect(terminal).toBe(attempts)
+    expect(attempts).toBeGreaterThan(0)
+  })
+})

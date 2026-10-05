@@ -1,3 +1,4 @@
+import { RUN_FAILURE_KINDS, type RefusalReason } from '@lingtai/domain'
 /**
  * Whose failure it is, and what a person is told about it.
  *
@@ -19,17 +20,17 @@
  * Unit, under `--project unit`: nothing here reads a database, and a
  * decision that needed one would be the wrong shape.
  */
-import { describe, expect, it } from "vitest";
-import { RUN_FAILURE_KINDS, type RefusalReason } from "@lingtai/domain";
-import { diagnoseRefusal, whoseFailure } from "../src/attribution.ts";
+import { describe, expect, it } from 'vitest'
+
+import { diagnoseRefusal, whoseFailure } from '../src/attribution.ts'
 
 const conflict = {
-  source: "integration" as const,
-  reason: "conflict",
-  detail: "agent/112 does not merge into develop:\napps/web/src/components/users/user-lookup-panel.tsx",
-};
+  source: 'integration' as const,
+  reason: 'conflict',
+  detail: 'agent/112 does not merge into develop:\napps/web/src/components/users/user-lookup-panel.tsx',
+}
 
-describe("whose failure it is", () => {
+describe('whose failure it is', () => {
   /**
    * The row of 0025 §1 that used to buy an agent. It buys nothing now — what it
    * still means is that the defect is in the managed repository, so the pass it
@@ -37,10 +38,10 @@ describe("whose failure it is", () => {
    * than blaming Lingtai for a red build.
    */
   it("calls a merge conflict, a red gate and an empty branch the repository's", () => {
-    for (const reason of ["conflict", "verify-failed", "no-commits"] as const) {
-      expect(whoseFailure({ ...conflict, reason }), reason).toBe("repository");
+    for (const reason of ['conflict', 'verify-failed', 'no-commits'] as const) {
+      expect(whoseFailure({ ...conflict, reason }), reason).toBe('repository')
     }
-  });
+  })
 
   /**
    * The row that is nothing to do with the diff. Nothing in the repository is
@@ -48,21 +49,21 @@ describe("whose failure it is", () => {
    * that pointed a person at the branch would point them at the wrong thing.
    */
   it("calls the integrator's own worktree, mirror and lane Lingtai's", () => {
-    for (const reason of ["dirty-base", "unpushed-base", "push-rejected", "lane-busy"] as const) {
-      expect(whoseFailure({ ...conflict, reason }), reason).toBe("lingtai");
+    for (const reason of ['dirty-base', 'unpushed-base', 'push-rejected', 'lane-busy'] as const) {
+      expect(whoseFailure({ ...conflict, reason }), reason).toBe('lingtai')
     }
-  });
+  })
 
   it("calls every project-level refusal Lingtai's, whatever it says", () => {
     for (const reason of [
-      "no GitHub App configured",
-      "source.kinds.3: Invalid option",
-      "LINGTAI_TEST_DATABASE_URL is declared and has no value",
-      "no lingtai-hook binary at /x/lingtai-hook",
+      'no GitHub App configured',
+      'source.kinds.3: Invalid option',
+      'LINGTAI_TEST_DATABASE_URL is declared and has no value',
+      'no lingtai-hook binary at /x/lingtai-hook',
     ]) {
-      expect(whoseFailure({ source: "project", reason, detail: reason }), reason).toBe("lingtai");
+      expect(whoseFailure({ source: 'project', reason, detail: reason }), reason).toBe('lingtai')
     }
-  });
+  })
 
   /**
    * A pending migration is not a failure at all — it is the hold that caught
@@ -70,17 +71,17 @@ describe("whose failure it is", () => {
    * a deliberate safeguard; calling it Lingtai's would say Lingtai is broken
    * when it is not.
    */
-  it("calls a migration hold neither, because it is a decision somebody meant", () => {
-    expect(whoseFailure({ ...conflict, reason: "pending-migration" })).toBe("person");
-  });
+  it('calls a migration hold neither, because it is a decision somebody meant', () => {
+    expect(whoseFailure({ ...conflict, reason: 'pending-migration' })).toBe('person')
+  })
 
   /**
    * A reason this build does not know is one it cannot claim to have read, so
    * the honest sentence is *something here is wrong and it is not the diff*.
    */
-  it("refuses to guess about a reason it does not know", () => {
-    expect(whoseFailure({ ...conflict, reason: "something-new" })).toBe("lingtai");
-  });
+  it('refuses to guess about a reason it does not know', () => {
+    expect(whoseFailure({ ...conflict, reason: 'something-new' })).toBe('lingtai')
+  })
 
   /**
    * The map is total over `RefusalReason`, which is what stops a ninth reason
@@ -88,23 +89,21 @@ describe("whose failure it is", () => {
    * compiler, because the compiler's version disappears if anyone reaches for
    * an index signature.
    */
-  it("has an answer for every refusal the integrator can make", () => {
+  it('has an answer for every refusal the integrator can make', () => {
     const every: RefusalReason[] = [
-      "conflict",
-      "dirty-base",
-      "unpushed-base",
-      "pending-migration",
-      "verify-failed",
-      "no-commits",
-      "push-rejected",
-      "lane-busy",
-    ];
+      'conflict',
+      'dirty-base',
+      'unpushed-base',
+      'pending-migration',
+      'verify-failed',
+      'no-commits',
+      'push-rejected',
+      'lane-busy',
+    ]
     for (const reason of every) {
-      expect(["repository", "lingtai", "person"], reason).toContain(
-        whoseFailure({ ...conflict, reason }),
-      );
+      expect(['repository', 'lingtai', 'person'], reason).toContain(whoseFailure({ ...conflict, reason }))
     }
-  });
+  })
 
   /**
    * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §2, and the
@@ -119,12 +118,12 @@ describe("whose failure it is", () => {
   it("calls a run that never started Lingtai's rather than the repository's", () => {
     expect(
       whoseFailure({
-        source: "run",
-        reason: "never-started",
+        source: 'run',
+        reason: 'never-started',
         detail: "You've hit your session limit · resets 11pm (America/Chicago)",
       }),
-    ).toBe("lingtai");
-  });
+    ).toBe('lingtai')
+  })
 
   /**
    * Total over `RunFailed.kind` for the reason the integration map is total
@@ -133,12 +132,12 @@ describe("whose failure it is", () => {
    */
   it("has an answer for every way a run can end badly, and only a spent ceiling is the repository's", () => {
     for (const reason of RUN_FAILURE_KINDS) {
-      expect(whoseFailure({ source: "run", reason, detail: "" }), reason).toBe(
-        reason === "out-of-turns" || reason === "out-of-usd" ? "repository" : "lingtai",
-      );
+      expect(whoseFailure({ source: 'run', reason, detail: '' }), reason).toBe(
+        reason === 'out-of-turns' || reason === 'out-of-usd' ? 'repository' : 'lingtai',
+      )
     }
-  });
-});
+  })
+})
 
 /**
  * The sentence a refusal reaches a person as (#83), which since `#143` is the
@@ -153,45 +152,45 @@ describe("whose failure it is", () => {
  * Pure, and tested here rather than through a run, because it is what the card
  * and `lingtai status` both end up printing.
  */
-describe("a refusal, read for a person", () => {
+describe('a refusal, read for a person', () => {
   const REASONS: RefusalReason[] = [
-    "conflict",
-    "dirty-base",
-    "unpushed-base",
-    "pending-migration",
-    "verify-failed",
-    "no-commits",
-    "push-rejected",
+    'conflict',
+    'dirty-base',
+    'unpushed-base',
+    'pending-migration',
+    'verify-failed',
+    'no-commits',
+    'push-rejected',
     // Nothing writes this since #194 and everything still reads it: the value
     // is on the log, and a build that could not read it could not read this
     // repository's own history.
-    "lane-busy",
-  ];
+    'lane-busy',
+  ]
 
   const read = (reason: string) =>
     diagnoseRefusal({
       reason,
-      detail: "CONFLICT (content): Merge conflict in apps/web/src/page.tsx",
-      branch: "agent/112",
-      base: "develop",
-    });
+      detail: 'CONFLICT (content): Merge conflict in apps/web/src/page.tsx',
+      branch: 'agent/112',
+      base: 'develop',
+    })
 
-  it("says something in words for every reason, and never drops the output", () => {
+  it('says something in words for every reason, and never drops the output', () => {
     for (const reason of REASONS) {
-      const d = read(reason);
+      const d = read(reason)
       // A sentence, not a reason code — the code is what the card had, and it
       // is what an operator was left to interpret.
-      expect(d.what, reason).not.toContain(reason);
-      expect(d.what, reason).toMatch(/\.$/);
+      expect(d.what, reason).not.toContain(reason)
+      expect(d.what, reason).toMatch(/\.$/)
       // The raw failure survives every one of them. A summary that hides the
       // git output is worse than the git output.
-      expect(d.raw, reason).toContain("CONFLICT (content)");
+      expect(d.raw, reason).toContain('CONFLICT (content)')
       // And why no agent is coming, which is what a card could never say —
       // composed here from `whoseFailure` rather than handed in by whichever
       // call site had just asked about money.
-      expect(d.done, reason).toContain("No agent was bought");
+      expect(d.done, reason).toContain('No agent was bought')
     }
-  });
+  })
 
   /**
    * **The three sentences are three, and each one answers a different question
@@ -201,10 +200,10 @@ describe("a refusal, read for a person", () => {
    * *never left with no path forward* failing for the opposite reason.
    */
   it("says why no agent is coming in the owner's own terms", () => {
-    expect(read("verify-failed").done).toContain("at the merge lane or at approval");
-    expect(read("dirty-base").done).toContain("Lingtai's own failure");
-    expect(read("pending-migration").done).toContain("yours to answer");
-  });
+    expect(read('verify-failed').done).toContain('at the merge lane or at approval')
+    expect(read('dirty-base').done).toContain("Lingtai's own failure")
+    expect(read('pending-migration').done).toContain('yours to answer')
+  })
 
   /**
    * **A refusal that reaches a person reached no round**, and the sentence must
@@ -213,35 +212,35 @@ describe("a refusal, read for a person", () => {
    * `runtime.limits.rounds` sends an operator to raise a key the next identical
    * refusal still ignores.
    */
-  it("never tells a person that raising the rounds would have helped", () => {
+  it('never tells a person that raising the rounds would have helped', () => {
     for (const reason of REASONS) {
-      expect(read(reason).done, reason).not.toContain("runtime.limits.rounds");
-      expect(read(reason).done, reason).not.toContain("inside the pass");
+      expect(read(reason).done, reason).not.toContain('runtime.limits.rounds')
+      expect(read(reason).done, reason).not.toContain('inside the pass')
     }
-  });
+  })
 
-  it("recommends the queue for a conflict, and says the remedy is spent", () => {
-    const d = read("conflict");
-    expect(d.what).toBe("agent/112 does not merge into develop.");
-    expect(d.done).toContain("develop was merged in first");
+  it('recommends the queue for a conflict, and says the remedy is spent', () => {
+    const d = read('conflict')
+    expect(d.what).toBe('agent/112 does not merge into develop.')
+    expect(d.done).toContain('develop was merged in first')
     expect(d.recommendation).toEqual({
-      action: "requeue",
+      action: 'requeue',
       why:
-        "the mechanical remedy is already spent, so the next attempt is the fix: " +
-        "it is cut from a base that has since moved",
-    });
-  });
+        'the mechanical remedy is already spent, so the next attempt is the fix: ' +
+        'it is cut from a base that has since moved',
+    })
+  })
 
   /**
    * The refusals with no move, and they are not an oversight. A red diff is the
    * judgement this system exists to ask a person for, and Lingtai's own dirty
    * checkout is not something requeueing walks past.
    */
-  it("recommends nothing where nothing can honestly be recommended", () => {
-    for (const reason of ["verify-failed", "pending-migration", "dirty-base", "unpushed-base"]) {
-      expect(read(reason).recommendation, reason).toBeNull();
+  it('recommends nothing where nothing can honestly be recommended', () => {
+    for (const reason of ['verify-failed', 'pending-migration', 'dirty-base', 'unpushed-base']) {
+      expect(read(reason).recommendation, reason).toBeNull()
     }
-  });
+  })
 
   /**
    * **The lane took a lock until #194 and takes none now**, so a rejected push
@@ -249,22 +248,22 @@ describe("a refusal, read for a person", () => {
    * own sentence and requeues, which is what `lane-busy` did — the refusal did
    * not become less clear by moving to where git makes it.
    */
-  it("reads a rejected push as the base having moved, and requeues", () => {
-    const d = read("push-rejected");
-    expect(d.what).toBe("develop moved while agent/112 was being merged into it, so origin refused the push.");
-    expect(d.recommendation?.action).toBe("requeue");
+  it('reads a rejected push as the base having moved, and requeues', () => {
+    const d = read('push-rejected')
+    expect(d.what).toBe('develop moved while agent/112 was being merged into it, so origin refused the push.')
+    expect(d.recommendation?.action).toBe('requeue')
     // And the refusal it replaced still reads, for the events that carry it.
-    expect(read("lane-busy").recommendation?.action).toBe("requeue");
-    expect(read("lane-busy").what).toContain("held the merge lane");
-  });
+    expect(read('lane-busy').recommendation?.action).toBe('requeue')
+    expect(read('lane-busy').what).toContain('held the merge lane')
+  })
 
   /** An unknown reason still gets a diagnosis, and gets no move — as `whoseFailure` does. */
-  it("says an unrecognised refusal plainly rather than guessing at it", () => {
-    const d = read("something-a-newer-build-wrote");
-    expect(d.what).toContain("something-a-newer-build-wrote");
-    expect(d.recommendation).toBeNull();
-    expect(d.raw).toContain("CONFLICT (content)");
+  it('says an unrecognised refusal plainly rather than guessing at it', () => {
+    const d = read('something-a-newer-build-wrote')
+    expect(d.what).toContain('something-a-newer-build-wrote')
+    expect(d.recommendation).toBeNull()
+    expect(d.raw).toContain('CONFLICT (content)')
     // Lingtai's, by the same default `whoseFailure` takes.
-    expect(d.done).toContain("Lingtai's own failure");
-  });
-});
+    expect(d.done).toContain("Lingtai's own failure")
+  })
+})

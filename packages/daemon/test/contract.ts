@@ -42,8 +42,9 @@
  * `event-store/test/contract.ts` be passed unchanged by a store written months
  * later (#178).
  */
-import type { EventStore } from "@lingtai/event-store/store";
-import { describe, expect, it } from "vitest";
+import type { EventStore } from '@lingtai/event-store/store'
+import { describe, expect, it } from 'vitest'
+
 import {
   controlWatermark,
   startBeacon,
@@ -52,14 +53,14 @@ import {
   requestShutdownUnlessStanding,
   resumeConductor,
   withdrawShutdown,
-} from "../src/control.ts";
-import { STALE_AFTER_MS, lastBeat, type Beat, type DaemonStore } from "../src/store.ts";
+} from '../src/control.ts'
+import { STALE_AFTER_MS, lastBeat, type Beat, type DaemonStore } from '../src/store.ts'
 
 export interface DaemonFixture {
   /** The store under test. */
-  store: DaemonStore;
+  store: DaemonStore
   /** A second store over the same beacon and the same log — what "two processes" means. */
-  another(): Promise<DaemonStore>;
+  another(): Promise<DaemonStore>
   /**
    * Removes the beacon's row, leaving the state a machine is in before any
    * daemon has ever run.
@@ -69,7 +70,7 @@ export interface DaemonFixture {
    * nothing in it deletes. Postgres shares one row with the rest of the suite,
    * so a test that left one behind would tell the next file a daemon is up.
    */
-  forget(): Promise<void>;
+  forget(): Promise<void>
   /**
    * A `like` pattern matching every stream `stream()` hands out, and nothing
    * else in the log.
@@ -77,31 +78,31 @@ export interface DaemonFixture {
    * The fixture's, because only it knows what it named its throwaway project —
    * and `streams()` is asked in exactly this shape by `reconcile`.
    */
-  prefix: string;
+  prefix: string
   /** A work-item stream id nothing else in the log uses. */
-  stream(issue: number): string;
+  stream(issue: number): string
   /** Closes everything this fixture opened. */
-  close(): Promise<void>;
+  close(): Promise<void>
 }
 
 /** A beat with everything named, so an assertion can be about one field. */
 function beating(over: Partial<Beat> = {}): Beat {
   return {
     pid: 4242,
-    host: "contract-host",
-    state: "up",
+    host: 'contract-host',
+    state: 'up',
     currentRunId: null,
     codeSha: null,
     codeDirty: false,
     ...over,
-  };
+  }
 }
 
 const claimed = (runId: string) => ({
-  type: "WorkItemClaimed",
-  actor: "conductor",
-  data: { runId, worker: "local:1", title: null, kind: "bug" },
-});
+  type: 'WorkItemClaimed',
+  actor: 'conductor',
+  data: { runId, worker: 'local:1', title: null, kind: 'bug' },
+})
 
 /**
  * Puts the control stream back to *nobody is being told anything*, by
@@ -125,224 +126,221 @@ const claimed = (runId: string) => ({
  * fresh SQLite file it is one read of an empty stream.
  */
 async function quiesceControl(events: EventStore): Promise<void> {
-  const state = await readControl(events);
-  if (!state.paused && state.shutdown === null) return;
-  await resumeConductor("human:contract", events);
+  const state = await readControl(events)
+  if (!state.paused && state.shutdown === null) return
+  await resumeConductor('human:contract', events)
 }
 
-export function describeDaemonStoreContract(
-  name: string,
-  open: () => Promise<DaemonFixture>,
-): void {
+export function describeDaemonStoreContract(name: string, open: () => Promise<DaemonFixture>): void {
   /** Opened per assertion: a store that leaked between them would hide a leak. */
   async function withStore<T>(fn: (f: DaemonFixture) => Promise<T>): Promise<T> {
-    const fixture = await open();
+    const fixture = await open()
     try {
-      await fixture.store.create();
+      await fixture.store.create()
       // Every assertion starts where a fresh machine does: the table exists,
       // nothing has beaten, and nothing is being said to the conductor.
       // Postgres shares both the row and `ctl-conductor` with the rest of the
       // suite, so this is what makes the order of these tests not matter — and
       // what makes a previous run that died half way through not matter either.
-      await fixture.forget();
-      await quiesceControl(fixture.store.events);
-      return await fn(fixture);
+      await fixture.forget()
+      await quiesceControl(fixture.store.events)
+      return await fn(fixture)
     } finally {
       // Here rather than in a `try` around each pair below, so that no
       // assertion can be written without it: every one of them leaves the
       // beacon and the control stream as it found them, however it ends.
-      await fixture.forget().catch(() => {});
-      await quiesceControl(fixture.store.events).catch(() => {});
-      await fixture.close().catch(() => {});
+      await fixture.forget().catch(() => {})
+      await quiesceControl(fixture.store.events).catch(() => {})
+      await fixture.close().catch(() => {})
     }
   }
 
   describe(`${name}: the beacon`, () => {
-    it("has no row until something beats, and says so rather than guessing", async () => {
+    it('has no row until something beats, and says so rather than guessing', async () => {
       await withStore(async ({ store }) => {
-        expect(await store.status()).toBeNull();
-      });
-    });
+        expect(await store.status()).toBeNull()
+      })
+    })
 
-    it("lands a beat that a later read sees, and reads as up", async () => {
+    it('lands a beat that a later read sees, and reads as up', async () => {
       await withStore(async ({ store }) => {
-        await store.beat(beating({ state: "starting", currentRunId: "run-1", codeSha: "abc1234" }));
+        await store.beat(beating({ state: 'starting', currentRunId: 'run-1', codeSha: 'abc1234' }))
 
-        const status = await store.status();
-        expect(status).not.toBeNull();
-        expect(status!.pid).toBe(4242);
-        expect(status!.host).toBe("contract-host");
-        expect(status!.state).toBe("starting");
-        expect(status!.currentRunId).toBe("run-1");
-        expect(status!.codeSha).toBe("abc1234");
-        expect(status!.codeDirty).toBe(false);
+        const status = await store.status()
+        expect(status).not.toBeNull()
+        expect(status!.pid).toBe(4242)
+        expect(status!.host).toBe('contract-host')
+        expect(status!.state).toBe('starting')
+        expect(status!.currentRunId).toBe('run-1')
+        expect(status!.codeSha).toBe('abc1234')
+        expect(status!.codeDirty).toBe(false)
         // The whole point of the row: `lingtai doctor` and the board's health
         // dot decide on the age, and the age has to be near enough to now.
-        expect(lastBeat(status!).up).toBe(true);
-        expect(lastBeat(status!).state).toBe("starting");
-      });
-    });
+        expect(lastBeat(status!).up).toBe(true)
+        expect(lastBeat(status!).state).toBe('starting')
+      })
+    })
 
-    it("carries a dirty worktree and an absent commit back exactly as written", async () => {
+    it('carries a dirty worktree and an absent commit back exactly as written', async () => {
       // `code_dirty` is a boolean in one store and an integer in the other, and
       // `code_sha` is null on every daemon older than #98. Both are read by
       // `daemon: currency` to decide whether a restart is owed.
       await withStore(async ({ store }) => {
-        await store.beat(beating({ codeSha: "def5678", codeDirty: true }));
-        expect((await store.status())!.codeDirty).toBe(true);
+        await store.beat(beating({ codeSha: 'def5678', codeDirty: true }))
+        expect((await store.status())!.codeDirty).toBe(true)
 
-        await store.beat(beating({ codeSha: null, codeDirty: false }));
-        const later = await store.status();
-        expect(later!.codeSha).toBeNull();
-        expect(later!.codeDirty).toBe(false);
-      });
-    });
+        await store.beat(beating({ codeSha: null, codeDirty: false }))
+        const later = await store.status()
+        expect(later!.codeSha).toBeNull()
+        expect(later!.codeDirty).toBe(false)
+      })
+    })
 
-    it("keeps the last word, whichever process wrote it, and one row for all of them", async () => {
+    it('keeps the last word, whichever process wrote it, and one row for all of them', async () => {
       await withStore(async (fixture) => {
-        const { store } = fixture;
-        await store.beat(beating({ state: "starting" }));
-        const first = await store.status();
+        const { store } = fixture
+        await store.beat(beating({ state: 'starting' }))
+        const first = await store.status()
 
-        const second = await fixture.another();
+        const second = await fixture.another()
         try {
-          await second.beat(beating({ state: "draining", pid: 9999, currentRunId: "run-2" }));
+          await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'run-2' }))
         } finally {
-          await second.close();
+          await second.close()
         }
 
         // One row: the second process did not add a beacon of its own, it
         // overwrote the one there is. Two daemons cannot both be up — the
         // conductor lock sees to that — so a second row would be a lie.
-        const status = await store.status();
-        expect(status!.state).toBe("draining");
-        expect(status!.pid).toBe(9999);
-        expect(status!.currentRunId).toBe("run-2");
+        const status = await store.status()
+        expect(status!.state).toBe('draining')
+        expect(status!.pid).toBe(9999)
+        expect(status!.currentRunId).toBe('run-2')
         // And the row's beginning survives the overwriting. `started_at` is
         // what makes a beat an update of a running daemon rather than a new
         // life for it.
-        expect(status!.startedAt.getTime()).toBe(first!.startedAt.getTime());
+        expect(status!.startedAt.getTime()).toBe(first!.startedAt.getTime())
         // Beating moves, because that is the only field liveness is read from.
-        expect(status!.lastSeenAt.getTime()).toBeGreaterThanOrEqual(first!.lastSeenAt.getTime());
-      });
-    });
+        expect(status!.lastSeenAt.getTime()).toBeGreaterThanOrEqual(first!.lastSeenAt.getTime())
+      })
+    })
 
-    it("tells a daemon that stopped from one that never started", async () => {
+    it('tells a daemon that stopped from one that never started', async () => {
       await withStore(async ({ store }) => {
         // Never started: no row at all, and a reader says "no daemon has run —
         // lingtai run works by hand".
-        expect(await store.status()).toBeNull();
+        expect(await store.status()).toBeNull()
 
         // Stopped: a row, holding the word the process last said, and stale.
         // The clock is the reader's, so this needs no wait — what the contract
         // asserts is that the *row* carries enough to decide it.
-        await store.beat(beating({ state: "stopping" }));
-        const status = await store.status();
-        expect(status).not.toBeNull();
+        await store.beat(beating({ state: 'stopping' }))
+        const status = await store.status()
+        expect(status).not.toBeNull()
 
-        const later = status!.lastSeenAt.getTime() + STALE_AFTER_MS + 1;
-        const gone = lastBeat(status!, later);
-        expect(gone.up).toBe(false);
+        const later = status!.lastSeenAt.getTime() + STALE_AFTER_MS + 1
+        const gone = lastBeat(status!, later)
+        expect(gone.up).toBe(false)
         // Still carried: `stopping` is a daemon that was told to go and
         // `starting` one that died on the way up, and `doctor` says which.
-        expect(gone.state).toBe("stopping");
-      });
-    });
+        expect(gone.state).toBe('stopping')
+      })
+    })
 
-    it("stops beating when the process holding it stops, and leaves its last word", async () => {
+    it('stops beating when the process holding it stops, and leaves its last word', async () => {
       // The beacon is the one timer in the system, and what a *killed* daemon
       // looks like is this: the row stops moving and goes stale, carrying the
       // word the process last said. Run here rather than only against Postgres
       // (`beacon.test.ts`) because it is the whole of how either store reports
       // a daemon that is gone.
       await withStore(async ({ store }) => {
-        const beacon = startBeacon("up", { store, every: 50 });
-        await beacon.stop("stopping");
+        const beacon = startBeacon('up', { store, every: 50 })
+        await beacon.stop('stopping')
 
-        const stopped = await store.status();
-        expect(stopped!.state).toBe("stopping");
+        const stopped = await store.status()
+        expect(stopped!.state).toBe('stopping')
 
         // Two ticks' worth of the period it was started with. Nothing writes,
         // because the timer went with the process.
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        const later = await store.status();
-        expect(later!.lastSeenAt.getTime()).toBe(stopped!.lastSeenAt.getTime());
-        expect(later!.state).toBe("stopping");
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        const later = await store.status()
+        expect(later!.lastSeenAt.getTime()).toBe(stopped!.lastSeenAt.getTime())
+        expect(later!.state).toBe('stopping')
 
         // And a reader past the threshold calls it down — which is the only
         // thing that can call it down, the word being what it *said*.
-        expect(lastBeat(later!, later!.lastSeenAt.getTime() + STALE_AFTER_MS + 1).up).toBe(false);
-      });
-    });
+        expect(lastBeat(later!, later!.lastSeenAt.getTime() + STALE_AFTER_MS + 1).up).toBe(false)
+      })
+    })
 
     it("creates the row's table more than once without losing the row", async () => {
       // Called at every daemon start, so it has to be idempotent in the way
       // that matters: a start must not wipe what the last daemon said.
       await withStore(async ({ store }) => {
-        await store.beat(beating({ state: "up" }));
-        await store.create();
-        expect((await store.status())!.state).toBe("up");
-      });
-    });
-  });
+        await store.beat(beating({ state: 'up' }))
+        await store.create()
+        expect((await store.status())!.state).toBe('up')
+      })
+    })
+  })
 
   describe(`${name}: the log the control stream lives in`, () => {
-    it("holds a pause until somebody lifts it", async () => {
+    it('holds a pause until somebody lifts it', async () => {
       await withStore(async ({ store }) => {
-        await pauseConductor("human:ada", "the queue is wrong", store.events);
-        const paused = await readControl(store.events);
-        expect(paused.paused).toBe(true);
-        expect(paused.by).toBe("human:ada");
-        expect(paused.reason).toBe("the queue is wrong");
+        await pauseConductor('human:ada', 'the queue is wrong', store.events)
+        const paused = await readControl(store.events)
+        expect(paused.paused).toBe(true)
+        expect(paused.by).toBe('human:ada')
+        expect(paused.reason).toBe('the queue is wrong')
 
-        await resumeConductor("human:ada", store.events);
-        expect((await readControl(store.events)).paused).toBe(false);
-      });
-    });
+        await resumeConductor('human:ada', store.events)
+        expect((await readControl(store.events)).paused).toBe(false)
+      })
+    })
 
-    it("hides what was said before the watermark from the daemon that read it", async () => {
+    it('hides what was said before the watermark from the daemon that read it', async () => {
       await withStore(async ({ store }) => {
         // A drain somebody asked of the *previous* daemon.
-        await pauseConductor("human:ada", "before this process", store.events);
+        await pauseConductor('human:ada', 'before this process', store.events)
 
         // What a daemon reads once, before the lock, and keeps (#159).
-        const since = await controlWatermark(store.events);
+        const since = await controlWatermark(store.events)
 
         // Its own view: nothing was said to *it*.
-        expect((await readControl(store.events, since)).paused).toBe(false);
+        expect((await readControl(store.events, since)).paused).toBe(false)
         // Everybody else's — the board, `doctor`, `status` — is the whole
         // stream, and there the pause is plainly standing.
-        expect((await readControl(store.events)).paused).toBe(true);
+        expect((await readControl(store.events)).paused).toBe(true)
 
         // And a pause appended after the watermark is this daemon's to obey.
-        await pauseConductor("human:bob", "and this one is mine", store.events);
-        const mine = await readControl(store.events, since);
-        expect(mine.paused).toBe(true);
-        expect(mine.by).toBe("human:bob");
+        await pauseConductor('human:bob', 'and this one is mine', store.events)
+        const mine = await readControl(store.events, since)
+        expect(mine.paused).toBe(true)
+        expect(mine.by).toBe('human:bob')
 
-        await resumeConductor("human:bob", store.events);
-      });
-    });
+        await resumeConductor('human:bob', store.events)
+      })
+    })
 
-    it("asks for one drain at a time and withdraws the one it asked for", async () => {
+    it('asks for one drain at a time and withdraws the one it asked for', async () => {
       await withStore(async ({ store }) => {
-        const asked = await requestShutdownUnlessStanding("human:ada", "restarting", null, store.events);
-        expect(asked.asked).toBe(true);
-        const version = asked.asked ? asked.version : 0;
+        const asked = await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)
+        expect(asked.asked).toBe(true)
+        const version = asked.asked ? asked.version : 0
 
         // A second ask finds the first standing and appends nothing over it:
         // the fold keeps the newest request, so hiding one would leave the
         // withdrawal below lifting a request nobody withdrew.
-        const again = await requestShutdownUnlessStanding("human:bob", "me too", null, store.events);
-        expect(again.asked).toBe(false);
+        const again = await requestShutdownUnlessStanding('human:bob', 'me too', null, store.events)
+        expect(again.asked).toBe(false)
 
-        const lifted = await withdrawShutdown("human:ada", version, "it finished", store.events);
-        expect(lifted.withdrew).toBe(true);
-        expect((await readControl(store.events)).shutdown).toBeNull();
-      });
-    });
+        const lifted = await withdrawShutdown('human:ada', version, 'it finished', store.events)
+        expect(lifted.withdrew).toBe(true)
+        expect((await readControl(store.events)).shutdown).toBeNull()
+      })
+    })
 
-    it("lifts what a run that died half way through left standing", async () => {
+    it('lifts what a run that died half way through left standing', async () => {
       // The one above appends to `ctl-conductor`, which on Postgres is the real
       // stream, shared and without deletes. Interrupt it between the ask and
       // the withdrawal and a request stands for ever: every later run finds it,
@@ -353,91 +351,89 @@ export function describeDaemonStoreContract(
       // assertion — the one event that lifts a pause and a standing request
       // together.
       await withStore(async ({ store }) => {
-        await pauseConductor("human:ada", "and then the process was killed", store.events);
-        await requestShutdownUnlessStanding("human:ada", "restarting", null, store.events);
+        await pauseConductor('human:ada', 'and then the process was killed', store.events)
+        await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)
 
-        await quiesceControl(store.events);
+        await quiesceControl(store.events)
 
-        const state = await readControl(store.events);
-        expect(state.shutdown).toBeNull();
-        expect(state.paused).toBe(false);
+        const state = await readControl(store.events)
+        expect(state.shutdown).toBeNull()
+        expect(state.paused).toBe(false)
         // Which is the thing that matters: the next run gets to ask.
-        const asked = await requestShutdownUnlessStanding("human:bob", "mine", null, store.events);
-        expect(asked.asked).toBe(true);
-      });
-    });
-  });
+        const asked = await requestShutdownUnlessStanding('human:bob', 'mine', null, store.events)
+        expect(asked.asked).toBe(true)
+      })
+    })
+  })
 
   describe(`${name}: the log, as the daemon asks it`, () => {
-    it("reports a head that has moved past everything appended", async () => {
+    it('reports a head that has moved past everything appended', async () => {
       await withStore(async (fixture) => {
-        const { store } = fixture;
-        const before = await store.head();
+        const { store } = fixture
+        const before = await store.head()
 
-        const written = await store.events.append(fixture.stream(1), 0, [claimed("run-a")]);
-        const seq = written.at(-1)!.seq;
+        const written = await store.events.append(fixture.stream(1), 0, [claimed('run-a')])
+        const seq = written.at(-1)!.seq
 
-        const after = await store.head();
-        expect(after).toBeGreaterThan(before);
+        const after = await store.head()
+        expect(after).toBeGreaterThan(before)
         // The log's end, which is where a starting daemon subscribes from: an
         // answer below this would replay, and one above it would skip.
-        expect(after).toBeGreaterThanOrEqual(seq);
-      });
-    });
+        expect(after).toBeGreaterThanOrEqual(seq)
+      })
+    })
 
-    it("finds the streams that hold a named type, and no others", async () => {
+    it('finds the streams that hold a named type, and no others', async () => {
       await withStore(async (fixture) => {
-        const { store } = fixture;
-        const claimedStream = fixture.stream(2);
-        const landedStream = fixture.stream(3);
-        await store.events.append(claimedStream, 0, [claimed("run-b")]);
+        const { store } = fixture
+        const claimedStream = fixture.stream(2)
+        const landedStream = fixture.stream(3)
+        await store.events.append(claimedStream, 0, [claimed('run-b')])
         await store.events.append(landedStream, 0, [
-          { type: "WorkItemLanded", actor: "conductor", data: { mergeCommit: "abc1234", base: "main" } },
-        ]);
+          { type: 'WorkItemLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'main' } },
+        ])
 
         const found = await store.streams({
           prefixes: [fixture.prefix],
-          types: ["WorkItemClaimed"],
-        });
-        expect(found).toContain(claimedStream);
-        expect(found).not.toContain(landedStream);
+          types: ['WorkItemClaimed'],
+        })
+        expect(found).toContain(claimedStream)
+        expect(found).not.toContain(landedStream)
 
         // Ordered, because `reconcile` reports in this order and a report that
         // shuffles between passes is one nobody can diff.
-        expect(found).toEqual([...found].sort());
-      });
-    });
+        expect(found).toEqual([...found].sort())
+      })
+    })
 
-    it("matches a prefix as SQL like does, case and all", async () => {
+    it('matches a prefix as SQL like does, case and all', async () => {
       // SQLite's `LIKE` folds ASCII case and Postgres's does not. Left alone,
       // the two stores would disagree about which work items a reconcile even
       // looks at — so this is the assertion that keeps `sqlite.ts`'s pragma
       // honest.
       await withStore(async (fixture) => {
-        const { store } = fixture;
-        const id = fixture.stream(4);
-        await store.events.append(id, 0, [claimed("run-c")]);
+        const { store } = fixture
+        const id = fixture.stream(4)
+        await store.events.append(id, 0, [claimed('run-c')])
 
-        expect(
-          await store.streams({ prefixes: [fixture.prefix], types: ["WorkItemClaimed"] }),
-        ).toContain(id);
+        expect(await store.streams({ prefixes: [fixture.prefix], types: ['WorkItemClaimed'] })).toContain(id)
         expect(
           await store.streams({
             prefixes: [fixture.prefix.toUpperCase()],
-            types: ["WorkItemClaimed"],
+            types: ['WorkItemClaimed'],
           }),
-        ).toEqual([]);
-      });
-    });
+        ).toEqual([])
+      })
+    })
 
-    it("asks nothing of the log when there is nothing to ask", async () => {
+    it('asks nothing of the log when there is nothing to ask', async () => {
       // `reconcile` runs with no projects registered on a fresh machine, and
       // `type = any('{}')` matches nothing — so the empty answer is returned
       // rather than paid for.
       await withStore(async ({ store }) => {
-        expect(await store.streams({ prefixes: [], types: ["WorkItemClaimed"] })).toEqual([]);
-        expect(await store.streams({ prefixes: ["wi-%"], types: [] })).toEqual([]);
-      });
-    });
-  });
+        expect(await store.streams({ prefixes: [], types: ['WorkItemClaimed'] })).toEqual([])
+        expect(await store.streams({ prefixes: ['wi-%'], types: [] })).toEqual([])
+      })
+    })
+  })
 }

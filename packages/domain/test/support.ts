@@ -6,19 +6,19 @@
  * Payloads are validated through the real schemas as they are built, so a
  * fixture cannot drift into a shape the store would refuse to write.
  */
-import { type EventType, type Envelope, type PayloadOf, SCHEMA_VER, parsePayload } from "../src/index.ts";
+import { type EventType, type Envelope, type PayloadOf, SCHEMA_VER, parsePayload } from '../src/index.ts'
 
-let nextSeq = 1n;
+let nextSeq = 1n
 
 /** Builds one envelope, assigning `seq` and `version` in call order per stream. */
 export function makeStream(streamId: string) {
-  let version = 0;
+  let version = 0
   return function event<T extends EventType>(
     type: T,
     data: PayloadOf<T>,
     extra: { actor?: string; at?: Date; schemaVer?: number } = {},
   ): Envelope {
-    version += 1;
+    version += 1
     return {
       seq: nextSeq++,
       streamId,
@@ -26,11 +26,11 @@ export function makeStream(streamId: string) {
       type,
       schemaVer: extra.schemaVer ?? SCHEMA_VER[type],
       data: parsePayload(type, data),
-      actor: extra.actor ?? "conductor",
+      actor: extra.actor ?? 'conductor',
       causation: null,
-      at: extra.at ?? new Date("2026-08-31T12:00:00.000Z"),
-    };
-  };
+      at: extra.at ?? new Date('2026-08-31T12:00:00.000Z'),
+    }
+  }
 }
 
 /**
@@ -43,11 +43,11 @@ export function unknownEvent(streamId: string, version: number, seq?: bigint): E
     seq: seq ?? nextSeq++,
     streamId,
     version,
-    type: "SomethingThisBuildHasNeverHeardOf",
+    type: 'SomethingThisBuildHasNeverHeardOf',
     schemaVer: 1,
     data: { whatever: true },
-    actor: "conductor",
+    actor: 'conductor',
     causation: null,
-    at: new Date("2026-08-31T12:00:00.000Z"),
-  };
+    at: new Date('2026-08-31T12:00:00.000Z'),
+  }
 }

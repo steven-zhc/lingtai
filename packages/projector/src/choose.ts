@@ -18,9 +18,10 @@
  * opens all three stores in one Postgres process and reads
  * `process.moduleLoadList` back.
  */
-import { chosenStore } from "@lingtai/env";
-import { createPostgresProjectionStore } from "./postgres.ts";
-import type { ProjectionStore } from "./store.ts";
+import { chosenStore } from '@lingtai/env'
+
+import { createPostgresProjectionStore } from './postgres.ts'
+import type { ProjectionStore } from './store.ts'
 
 export interface ProjectionStoreOptions {
   /**
@@ -33,9 +34,9 @@ export interface ProjectionStoreOptions {
    * this machine did not choose, which is the second decision 0056 exists to
    * remove.
    */
-  url?: string;
+  url?: string
   /** Connections, for the Postgres pool. Two is enough for a runner: one transaction and one read. */
-  max?: number;
+  max?: number
 }
 
 /**
@@ -47,15 +48,15 @@ export interface ProjectionStoreOptions {
  * hands out a handle somebody has to close.
  */
 export async function projectionStore(options: ProjectionStoreOptions = {}): Promise<ProjectionStore> {
-  const choice = chosenStore();
-  if (choice.store === "postgres") {
+  const choice = chosenStore()
+  if (choice.store === 'postgres') {
     return createPostgresProjectionStore({
       url: options.url ?? choice.url,
       ...(options.max === undefined ? {} : { max: options.max }),
-    });
+    })
   }
-  const sqlite = await import("./sqlite.ts");
-  return sqlite.createSqliteProjectionStore(sqlite.openSqliteProjections(choice.path));
+  const sqlite = await import('./sqlite.ts')
+  return sqlite.createSqliteProjectionStore(sqlite.openSqliteProjections(choice.path))
 }
 
 /** Opens one, runs `fn`, and closes it whatever `fn` does. Five readers wanted exactly this. */
@@ -63,10 +64,10 @@ export async function withProjectionStore<T>(
   options: ProjectionStoreOptions,
   fn: (store: ProjectionStore) => Promise<T>,
 ): Promise<T> {
-  const store = await projectionStore(options);
+  const store = await projectionStore(options)
   try {
-    return await fn(store);
+    return await fn(store)
   } finally {
-    await store.close();
+    await store.close()
   }
 }

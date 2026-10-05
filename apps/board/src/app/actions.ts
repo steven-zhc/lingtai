@@ -1,5 +1,10 @@
-"use server";
+'use server'
 
+import { randomUUID } from 'node:crypto'
+
+import { answer } from '@lingtai/conductor/ask'
+import { acceptFinding, declineFinding } from '@lingtai/conductor/backlog'
+import { close } from '@lingtai/conductor/close'
 /**
  * What a person can do from the board.
  *
@@ -31,53 +36,50 @@
 // Subpaths, not the barrel. The root export pulls in `conduct.ts`, which pulls
 // in the gates and the runtime, which the board has no business compiling —
 // the same reason `./board` and `./projects` exist.
-import { approve, requeue } from "@lingtai/conductor/decide";
-import { close } from "@lingtai/conductor/close";
-import { answer } from "@lingtai/conductor/ask";
-import { acceptFinding, declineFinding } from "@lingtai/conductor/backlog";
-import { githubTicketStore } from "@lingtai/conductor/ticket-store";
-import { concludeDiscussion, type IssueChannel } from "@lingtai/conductor/discuss";
-import { editHash } from "@lingtai/conductor/prompt";
-import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, workItemStream } from "@lingtai/domain";
-import { eventStore } from "@lingtai/event-store";
-import { randomUUID } from "node:crypto";
-import { currentRecipe, loadAllProjects, loadProject } from "@lingtai/conductor/projects";
-import { recheck } from "@lingtai/conductor/onboard";
-import { isPending, isRegistered } from "@lingtai/domain";
-import { requestRun, resumeConductor } from "@lingtai/daemon/control";
-import { stateDir } from "@lingtai/env";
-import { git } from "@lingtai/repo";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient } from "@lingtai/github";
-import { revalidatePath } from "next/cache";
-// A "use server" module may only export async functions, so the shapes and the
-// limit live next door.
-import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from "@/lib/diff";
+import { approve, requeue } from '@lingtai/conductor/decide'
+import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
+import { recheck } from '@lingtai/conductor/onboard'
+import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
+import { editHash } from '@lingtai/conductor/prompt'
+import { githubTicketStore } from '@lingtai/conductor/ticket-store'
+import { requestRun, resumeConductor } from '@lingtai/daemon/control'
+import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
+import { isPending, isRegistered } from '@lingtai/domain'
+import { stateDir } from '@lingtai/env'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { eventStore } from '@lingtai/event-store'
+import { createGitHubClient } from '@lingtai/github'
+import { kindsOf } from '@lingtai/recipe/settings'
+import { git } from '@lingtai/repo'
+import { revalidatePath } from 'next/cache'
+
 // Who is acting — next door for the same reason, and so a test can hold the
 // CLI's actor to this one rather than to a copy.
-import { actor } from "@/lib/actor";
-import { kindsOf } from "@lingtai/recipe/settings";
+import { actor } from '@/lib/actor'
+// A "use server" module may only export async functions, so the shapes and the
+// limit live next door.
+import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
 
 async function project(name: string) {
-  const state = await loadProject(name);
-  if (!state?.owner) throw new Error(`no project named "${name}" — run lingtai add first`);
-  return state;
+  const state = await loadProject(name)
+  if (!state?.owner) throw new Error(`no project named "${name}" — run lingtai add first`)
+  return state
 }
 
 export async function approveCard(input: {
-  project: string;
-  issue: number;
-  onSha: string;
-  note?: string;
+  project: string
+  issue: number
+  onSha: string
+  note?: string
 }): Promise<ActionResult> {
   try {
-    if (!hasGitHubApp()) return { ok: false, detail: "no GitHub App configured" };
-    const state = await project(input.project);
+    if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
+    const state = await project(input.project)
     const client = await createGitHubClient({
       auth: githubApp(),
       owner: state.owner!,
       repo: input.project,
-    });
+    })
 
     const result = await approve({
       project: input.project,
@@ -94,14 +96,14 @@ export async function approveCard(input: {
       onSha: input.onSha,
       note: input.note,
       token: () => client.token(),
-    });
+    })
 
-    revalidatePath("/");
+    revalidatePath('/')
     return result.ok
       ? { ok: true, detail: `landed ${result.mergeCommit.slice(0, 7)}` }
-      : { ok: false, detail: `${result.reason}: ${result.detail}` };
+      : { ok: false, detail: `${result.reason}: ${result.detail}` }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -115,11 +117,11 @@ export async function approveCard(input: {
  * attempt's prompt is going to be told it is.
  */
 export async function answerCard(input: {
-  project: string;
-  issue: number;
-  answer: string;
+  project: string
+  issue: number
+  answer: string
   /** The question the page showed, whole — `answer()` refuses if it has changed. */
-  question: string;
+  question: string
 }): Promise<ActionResult> {
   try {
     const result = await answer({
@@ -128,11 +130,11 @@ export async function answerCard(input: {
       by: actor(),
       answer: input.answer,
       question: input.question,
-    });
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.detail };
+    })
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -150,24 +152,20 @@ export async function answerCard(input: {
  * about the *ticket*. A stale sha is the reason to do it, not a reason to
  * refuse.
  */
-export async function requeueCard(input: {
-  project: string;
-  issue: number;
-  note: string;
-}): Promise<ActionResult> {
+export async function requeueCard(input: { project: string; issue: number; note: string }): Promise<ActionResult> {
   try {
-    if (!input.note.trim()) return { ok: false, detail: "say why, so the log can" };
+    if (!input.note.trim()) return { ok: false, detail: 'say why, so the log can' }
     const result = await requeue({
       project: input.project,
       issue: input.issue,
       by: actor(),
       note: input.note,
-    });
+    })
 
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.detail };
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -191,20 +189,16 @@ export async function requeueCard(input: {
  * GitHub issue stayed open, which is half the thing a person clicking *Close*
  * is asking for.
  */
-export async function closeCard(input: {
-  project: string;
-  issue: number;
-  reason: string;
-}): Promise<ActionResult> {
+export async function closeCard(input: { project: string; issue: number; reason: string }): Promise<ActionResult> {
   try {
-    if (!input.reason.trim()) return { ok: false, detail: "a close needs a reason" };
-    if (!hasGitHubApp()) return { ok: false, detail: "no GitHub App configured" };
-    const state = await project(input.project);
+    if (!input.reason.trim()) return { ok: false, detail: 'a close needs a reason' }
+    if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
+    const state = await project(input.project)
     const client = await createGitHubClient({
       auth: githubApp(),
       owner: state.owner!,
       repo: input.project,
-    });
+    })
 
     const result = await close({
       project: input.project,
@@ -213,12 +207,12 @@ export async function closeCard(input: {
       reason: input.reason,
       state,
       client,
-    });
+    })
 
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.detail };
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -231,44 +225,44 @@ export async function closeCard(input: {
  * writing a loop here in the open.
  */
 export async function acceptBacklogFinding(input: {
-  project: string;
-  key: string;
+  project: string
+  key: string
   /** Absent when opening the issue of an entry already accepted: the log has the kind. */
-  kind?: string;
-  hold?: boolean;
+  kind?: string
+  hold?: boolean
 }): Promise<ActionResult> {
   try {
-    const state = await project(input.project);
+    const state = await project(input.project)
     const client = await createGitHubClient({
       auth: githubApp(),
       owner: state.owner!,
       repo: input.project,
-    });
+    })
     // Read from this machine's recipe (#180), the one the queue obeys, not
     // trusted from the text box: a kind it does not list is an issue the queue
     // never sees.
-    const { recipe } = await currentRecipe(state, client);
+    const { recipe } = await currentRecipe(state, client)
     const result = await acceptFinding({
       project: input.project,
       key: input.key,
       by: actor(),
       kind: input.kind,
       kinds: kindsOf(recipe),
-      labels: input.hold === false ? [] : ["agent:hold"],
+      labels: input.hold === false ? [] : ['agent:hold'],
       tickets: githubTicketStore(client),
-    });
-    revalidatePath("/backlog");
-    return { ok: result.ok, detail: result.detail };
+    })
+    revalidatePath('/backlog')
+    return { ok: result.ok, detail: result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
 /** Decline one backlog entry, with the reason the next attempt will not re-ask. */
 export async function declineBacklogFinding(input: {
-  project: string;
-  key: string;
-  reason: string;
+  project: string
+  key: string
+  reason: string
 }): Promise<ActionResult> {
   try {
     const result = await declineFinding({
@@ -276,11 +270,11 @@ export async function declineBacklogFinding(input: {
       key: input.key,
       by: actor(),
       reason: input.reason,
-    });
-    revalidatePath("/backlog");
-    return { ok: result.ok, detail: result.detail };
+    })
+    revalidatePath('/backlog')
+    return { ok: result.ok, detail: result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -318,33 +312,36 @@ export async function declineBacklogFinding(input: {
  */
 export async function recheckProject(input: { project: string }): Promise<ActionResult> {
   try {
-    if (!hasGitHubApp()) return { ok: false, detail: "no GitHub App configured" };
-    const state = (await loadAllProjects()).find((p) => p.project === input.project);
-    if (state === undefined) return { ok: false, detail: `nothing in the log about "${input.project}"` };
+    if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
+    const state = (await loadAllProjects()).find((p) => p.project === input.project)
+    if (state === undefined) return { ok: false, detail: `nothing in the log about "${input.project}"` }
     // Pressed twice, or pressed on a board rendered before somebody else's
     // press: it is already live, which is not a failure and is not a reason to
     // register it again.
-    if (isRegistered(state)) return { ok: true, detail: `${input.project} is already live` };
+    if (isRegistered(state)) return { ok: true, detail: `${input.project} is already live` }
     if (!isPending(state) || !state.project || !state.owner || !state.base) {
-      return { ok: false, detail: `"${input.project}" was not recorded with an owner and a base — re-run the wizard, or lingtai add` };
+      return {
+        ok: false,
+        detail: `"${input.project}" was not recorded with an owner and a base — re-run the wizard, or lingtai add`,
+      }
     }
 
-    const result = await recheck({ owner: state.owner, project: state.project, base: state.base });
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.detail };
+    const result = await recheck({ owner: state.owner, project: state.project, base: state.base })
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
 export async function resumeWork(): Promise<ActionResult> {
   try {
-    const by = actor();
-    await resumeConductor(by);
-    revalidatePath("/");
-    return { ok: true, detail: `resumed by ${by}` };
+    const by = actor()
+    await resumeConductor(by)
+    revalidatePath('/')
+    return { ok: true, detail: `resumed by ${by}` }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -367,22 +364,22 @@ export async function resumeWork(): Promise<ActionResult> {
  * happened, not about which diff to merge.
  */
 export async function askDiscussion(input: {
-  taskId: string;
+  taskId: string
   /** The attempt being asked about, or null for the item as a whole. */
-  attempt: number | null;
-  question: string;
-  chatId?: string;
+  attempt: number | null
+  question: string
+  chatId?: string
 }): Promise<ActionResult & { chatId?: string }> {
   try {
-    if (!input.question.trim()) return { ok: false, detail: "a question needs a question" };
-    const chatId = input.chatId ?? `chat-${randomUUID()}`;
-    const by = actor();
-    const events = await eventStore.read(CONTROL_STREAM);
+    if (!input.question.trim()) return { ok: false, detail: 'a question needs a question' }
+    const chatId = input.chatId ?? `chat-${randomUUID()}`
+    const by = actor()
+    const events = await eventStore.read(CONTROL_STREAM)
     await eventStore.append(CONTROL_STREAM, events.length, [
       {
-        type: "DiscussionRequested",
+        type: 'DiscussionRequested',
         actor: by,
-        data: parsePayload("DiscussionRequested", {
+        data: parsePayload('DiscussionRequested', {
           chatId,
           workItemId: input.taskId,
           attempt: input.attempt,
@@ -390,12 +387,12 @@ export async function askDiscussion(input: {
           by,
         }),
       },
-    ]);
+    ])
 
-    revalidatePath(`/task/${input.taskId}`);
-    return { ok: true, detail: "asked — the daemon answers", chatId };
+    revalidatePath(`/task/${input.taskId}`)
+    return { ok: true, detail: 'asked — the daemon answers', chatId }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -413,25 +410,25 @@ export async function askDiscussion(input: {
  * `setLabels` has to do, and for the same reason.
  */
 export async function concludeChat(input: {
-  taskId: string;
-  chatId: string;
-  outcome: "prompt" | "ticket" | "none";
-  text: string;
+  taskId: string
+  chatId: string
+  outcome: 'prompt' | 'ticket' | 'none'
+  text: string
 }): Promise<ActionResult> {
   try {
-    const parsed = parseWorkItemStream(input.taskId);
-    if (!parsed) return { ok: false, detail: "this id is not a work item" };
+    const parsed = parseWorkItemStream(input.taskId)
+    if (!parsed) return { ok: false, detail: 'this id is not a work item' }
 
-    let ticket: { github: IssueChannel; body: string } | undefined;
-    if (input.outcome === "ticket") {
-      const state = await project(parsed.project);
+    let ticket: { github: IssueChannel; body: string } | undefined
+    if (input.outcome === 'ticket') {
+      const state = await project(parsed.project)
       const client = await createGitHubClient({
         auth: githubApp(),
         owner: state.owner!,
         repo: parsed.project,
-      });
-      const issue = await client.getIssue(Number(parsed.issue));
-      ticket = { github: client, body: issue.body };
+      })
+      const issue = await client.getIssue(Number(parsed.issue))
+      ticket = { github: client, body: issue.body }
     }
 
     const result = await concludeDiscussion({
@@ -442,12 +439,12 @@ export async function concludeChat(input: {
       outcome: input.outcome,
       text: input.text,
       ...(ticket === undefined ? {} : { ticket }),
-    });
+    })
 
-    revalidatePath(`/task/${input.taskId}`);
-    return result;
+    revalidatePath(`/task/${input.taskId}`)
+    return result
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -473,9 +470,9 @@ export async function concludeChat(input: {
  * than an absence somebody has to notice.
  */
 export async function editPrompt(input: {
-  taskId: string;
+  taskId: string
   /** Raw. What is typed is what the attempt is told, byte for byte. */
-  text: string;
+  text: string
   /**
    * The composed version the box was showing — `ticket@1924+failure@1c5708ba`.
    *
@@ -484,37 +481,37 @@ export async function editPrompt(input: {
    * they wrote, and a prompt that has moved since is a difference a reader can
    * see rather than a reason to refuse.
    */
-  basedOn: string;
+  basedOn: string
 }): Promise<ActionResult> {
   try {
-    if (!parseWorkItemStream(input.taskId)) return { ok: false, detail: "this id is not a work item" };
-    const text = input.text;
-    const by = actor();
-    const events = await eventStore.read(input.taskId);
+    if (!parseWorkItemStream(input.taskId)) return { ok: false, detail: 'this id is not a work item' }
+    const text = input.text
+    const by = actor()
+    const events = await eventStore.read(input.taskId)
     await eventStore.append(input.taskId, events.length, [
       {
-        type: "PromptEdited",
+        type: 'PromptEdited',
         actor: by,
-        data: parsePayload("PromptEdited", {
+        data: parsePayload('PromptEdited', {
           text,
           // The same digest the next run's `promptVersion` will carry, from the
           // same function, so the event and the version cannot name different
           // numbers for one edit. Null on a removal: there is nothing to hash.
-          hash: text.trim() === "" ? null : editHash(text),
+          hash: text.trim() === '' ? null : editHash(text),
           by,
           basedOn: input.basedOn || null,
           chatId: null,
         }),
       },
-    ]);
+    ])
 
-    revalidatePath(`/task/${input.taskId}`);
+    revalidatePath(`/task/${input.taskId}`)
     return {
       ok: true,
-      detail: text.trim() === "" ? "the edit is off the next attempt" : "the next attempt carries it",
-    };
+      detail: text.trim() === '' ? 'the edit is off the next attempt' : 'the next attempt carries it',
+    }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -542,7 +539,7 @@ export async function editPrompt(input: {
  * to refuse.
  */
 export async function sendAttempt(input: {
-  taskId: string;
+  taskId: string
   /**
    * A sentence to commit before sending, or null to send what is standing.
    *
@@ -551,31 +548,31 @@ export async function sendAttempt(input: {
    * A string from the editor's own Send, so text typed and not staged is not
    * silently dropped by the click that was meant to send it.
    */
-  text?: string | null;
+  text?: string | null
   /** The composed version the box was showing. See `editPrompt`. */
-  basedOn?: string | null;
+  basedOn?: string | null
 }): Promise<ActionResult> {
   try {
-    const parsed = parseWorkItemStream(input.taskId);
-    if (!parsed) return { ok: false, detail: "this id is not a work item" };
+    const parsed = parseWorkItemStream(input.taskId)
+    if (!parsed) return { ok: false, detail: 'this id is not a work item' }
 
-    const by = actor();
+    const by = actor()
     // **Not on a question asked before any run** (#147), and refused before the
     // edit so nothing is appended. `requeue()` would withdraw the question under
     // a note about a document, and the person pressing Send meant neither to
     // withdraw it nor to answer it. The page offers Answer there instead.
-    const life = reduceWorkItem(await eventStore.read(input.taskId)).lifecycle;
-    if (life.status === "blocked" && life.runId === null) {
-      return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` };
+    const life = reduceWorkItem(await eventStore.read(input.taskId)).lifecycle
+    if (life.status === 'blocked' && life.runId === null) {
+      return { ok: false, detail: `${input.taskId} is asking a question before any run — answer it first` }
     }
-    if (typeof input.text === "string" && input.text.trim() !== "") {
+    if (typeof input.text === 'string' && input.text.trim() !== '') {
       const edited = await editPrompt({
         taskId: input.taskId,
         text: input.text,
-        basedOn: input.basedOn ?? "",
-      });
+        basedOn: input.basedOn ?? '',
+      })
       // Refused: nothing is unblocked, and the sentence is still in the box.
-      if (!edited.ok) return edited;
+      if (!edited.ok) return edited
     }
 
     const result = await requeue({
@@ -590,14 +587,14 @@ export async function sendAttempt(input: {
       note: `sent as the next attempt by ${by}`,
       // The check above is a read; a question asked since it is refused here
       // rather than withdrawn.
-      onQuestion: "refuse",
-    });
+      onQuestion: 'refuse',
+    })
 
-    revalidatePath(`/task/${input.taskId}`);
-    revalidatePath("/");
-    return { ok: result.ok, detail: result.ok ? "sent — the next pass claims it" : result.detail };
+    revalidatePath(`/task/${input.taskId}`)
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.ok ? 'sent — the next pass claims it' : result.detail }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -622,15 +619,15 @@ export async function sendAttempt(input: {
  */
 export async function runNow(input: { project: string; issue: string }): Promise<ActionResult> {
   try {
-    const by = actor();
-    await requestRun(input.project, input.issue, by);
+    const by = actor()
+    await requestRun(input.project, input.issue, by)
     // The id said once, by the function that owns its shape — a second copy of
     // `wi-<project>-<n>` here is a revalidation that quietly stops matching.
-    revalidatePath(`/task/${workItemStream(input.project, input.issue)}`);
-    revalidatePath("/");
-    return { ok: true, detail: `asked for by ${by} — the next pass takes it` };
+    revalidatePath(`/task/${workItemStream(input.project, input.issue)}`)
+    revalidatePath('/')
+    return { ok: true, detail: `asked for by ${by} — the next pass takes it` }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }
 
@@ -645,36 +642,32 @@ export async function runNow(input: { project: string; issue: string }): Promise
  * Split per file here, on the server, because the alternative is shipping one
  * giant string and making the browser parse it on the main thread.
  */
-export async function loadDiff(input: {
-  project: string;
-  baseSha: string;
-  headSha: string;
-}): Promise<DiffResult> {
+export async function loadDiff(input: { project: string; baseSha: string; headSha: string }): Promise<DiffResult> {
   try {
-    const mirror = `${stateDir()}/repos/${input.project}.git`;
-    const raw = await git(["diff", `${input.baseSha}...${input.headSha}`], { cwd: mirror });
+    const mirror = `${stateDir()}/repos/${input.project}.git`
+    const raw = await git(['diff', `${input.baseSha}...${input.headSha}`], { cwd: mirror })
 
-    const files: DiffFile[] = [];
-    let current: DiffFile | null = null;
-    for (const line of raw.split("\n")) {
-      if (line.startsWith("diff --git ")) {
+    const files: DiffFile[] = []
+    let current: DiffFile | null = null
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('diff --git ')) {
         // `diff --git a/x b/x` — the b-side is the path after a rename.
-        const path = line.slice(line.lastIndexOf(" b/") + 3) || line.slice(11);
-        current = { path, added: 0, removed: 0, lines: [] };
-        files.push(current);
-        continue;
+        const path = line.slice(line.lastIndexOf(' b/') + 3) || line.slice(11)
+        current = { path, added: 0, removed: 0, lines: [] }
+        files.push(current)
+        continue
       }
-      if (!current) continue;
-      current.lines.push(line);
-      if (line.startsWith("+") && !line.startsWith("+++")) current.added += 1;
-      if (line.startsWith("-") && !line.startsWith("---")) current.removed += 1;
+      if (!current) continue
+      current.lines.push(line)
+      if (line.startsWith('+') && !line.startsWith('+++')) current.added += 1
+      if (line.startsWith('-') && !line.startsWith('---')) current.removed += 1
     }
 
     // Bounded, and honest about it. A run that changed 300 files is a work item
     // that was scoped too large, which the card says elsewhere.
-    const truncated = files.length > DIFF_FILE_LIMIT;
-    return { ok: true, files: files.slice(0, DIFF_FILE_LIMIT), truncated };
+    const truncated = files.length > DIFF_FILE_LIMIT
+    return { ok: true, files: files.slice(0, DIFF_FILE_LIMIT), truncated }
   } catch (err) {
-    return { ok: false, detail: (err as Error).message };
+    return { ok: false, detail: (err as Error).message }
   }
 }

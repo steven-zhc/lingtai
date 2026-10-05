@@ -1,10 +1,11 @@
-import { definePrismaConfig } from "@prisma/cli-engine";
-import { defineConfig as ormConfig } from "@prisma/orm-postgres/config";
-import { directUrlIfSet } from "./src/env.ts";
+import { definePrismaConfig } from '@prisma/cli-engine'
+import { defineConfig as ormConfig } from '@prisma/orm-postgres/config'
+
+import { directUrlIfSet } from './src/env.ts'
 
 export default definePrismaConfig({
   orm: ormConfig({
-    contract: "./src/prisma/contract.prisma",
+    contract: './src/prisma/contract.prisma',
     // The DIRECT url, not the pooled one: migrations hold locks across
     // statements and transaction pooling breaks that. Read rather than
     // asserted — `contract emit` and `migration plan` are offline and must work
@@ -14,6 +15,6 @@ export default definePrismaConfig({
     // test database is `LINGTAI_TEST=1 pnpm db:bootstrap` and not a second
     // config that can drift from this one — and so that a plain Postgres with
     // only the pooled name set migrates through it (#176).
-    db: { connection: directUrlIfSet() ?? "" },
+    db: { connection: directUrlIfSet() ?? '' },
   }),
-});
+})

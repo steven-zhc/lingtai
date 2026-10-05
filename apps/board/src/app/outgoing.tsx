@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * The prompt the next attempt will be handed, before it is handed it.
@@ -37,15 +37,17 @@
  * that did not happen is worse than no result, so the action reverts on refusal
  * and says the server's own sentence.
  */
-import { useState, useTransition } from "react";
-import { editPrompt, sendAttempt } from "./actions.ts";
-import type { OutgoingView } from "@/lib/prompt";
+import { useState, useTransition } from 'react'
+
+import type { OutgoingView } from '@/lib/prompt'
+
+import { editPrompt, sendAttempt } from './actions.ts'
 
 /** `+4 −0 lines`, or nothing at all when the edit changed no lines. */
 function delta(view: OutgoingView): string | null {
-  const { added, removed } = view.delta;
-  if (added === 0 && removed === 0) return null;
-  return `+${added} −${removed} lines against what Lingtai composed`;
+  const { added, removed } = view.delta
+  if (added === 0 && removed === 0) return null
+  return `+${added} −${removed} lines against what Lingtai composed`
 }
 
 export function Outgoing({
@@ -53,8 +55,8 @@ export function Outgoing({
   outgoing,
   sendable = false,
 }: {
-  taskId: string;
-  outgoing: OutgoingView;
+  taskId: string
+  outgoing: OutgoingView
   /**
    * Whether the decision row below is offering Send.
    *
@@ -63,46 +65,46 @@ export function Outgoing({
    * and then lost to the button that was meant to send it, which is the dead
    * end `#111` is about one step further in.
    */
-  sendable?: boolean;
+  sendable?: boolean
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [draft, setDraft] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
 
   const run = (text: string) => {
-    setBusy(true);
-    setRefusal(null);
+    setBusy(true)
+    setRefusal(null)
     startTransition(async () => {
-      const result = await editPrompt({ taskId, text, basedOn: outgoing.basedOn });
-      setBusy(false);
+      const result = await editPrompt({ taskId, text, basedOn: outgoing.basedOn })
+      setBusy(false)
       if (result.ok) {
         // The page recomposes on the server and this box is handed the new
         // document, so the editor closes onto the thing that will actually run
         // rather than onto a copy of what was typed.
-        setDraft(null);
-        return;
+        setDraft(null)
+        return
       }
-      setRefusal(result.detail);
-    });
-  };
+      setRefusal(result.detail)
+    })
+  }
 
   /** Stage the sentence and send the attempt, in that order. See `sendAttempt`. */
   const send = (text: string) => {
-    setBusy(true);
-    setRefusal(null);
+    setBusy(true)
+    setRefusal(null)
     startTransition(async () => {
-      const result = await sendAttempt({ taskId, text, basedOn: outgoing.basedOn });
-      setBusy(false);
+      const result = await sendAttempt({ taskId, text, basedOn: outgoing.basedOn })
+      setBusy(false)
       if (result.ok) {
-        setDraft(null);
-        return;
+        setDraft(null)
+        return
       }
       // Reverted, and the draft is still here: a refusal that lost what was
       // typed would make clicking again mean typing again.
-      setRefusal(result.detail);
-    });
-  };
+      setRefusal(result.detail)
+    })
+  }
 
   if (outgoing.problem !== null) {
     return (
@@ -115,10 +117,10 @@ export function Outgoing({
             reason tells them apart (#76). */}
         <p className="refusal">The next attempt&rsquo;s prompt cannot be shown: {outgoing.problem}</p>
       </div>
-    );
+    )
   }
 
-  const changed = delta(outgoing);
+  const changed = delta(outgoing)
 
   return (
     <div className="outgoing">
@@ -147,22 +149,18 @@ export function Outgoing({
       {outgoing.edit !== null ? (
         <p className="outedit">
           <span className="outwho">{outgoing.edit.by}</span>
-          {changed ?? "added a sentence"}
+          {changed ?? 'added a sentence'}
         </p>
       ) : null}
 
       {draft === null ? (
         <div className="btnrow">
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => setDraft(outgoing.edit?.text ?? "")}
-          >
-            {outgoing.edit === null ? "Edit" : "Change the edit"}
+          <button className="btn" disabled={busy} onClick={() => setDraft(outgoing.edit?.text ?? '')}>
+            {outgoing.edit === null ? 'Edit' : 'Change the edit'}
           </button>
           {outgoing.edit !== null ? (
-            <button className="btn" disabled={busy} onClick={() => run("")}>
-              {busy ? "…" : "Remove the edit"}
+            <button className="btn" disabled={busy} onClick={() => run('')}>
+              {busy ? '…' : 'Remove the edit'}
             </button>
           ) : null}
         </div>
@@ -179,8 +177,8 @@ export function Outgoing({
             placeholder="`claude --help` does not list it; read the shipped bundle instead of guessing."
           />
           <p className="outnote">
-            Added to attempt {outgoing.attempt} and to no other. Anything meant to last belongs in
-            the ticket, where every later attempt reads it.
+            Added to attempt {outgoing.attempt} and to no other. Anything meant to last belongs in the ticket, where
+            every later attempt reads it.
           </p>
           <div className="btnrow">
             {/* Send is primary when there is something to send: the commonest
@@ -188,20 +186,16 @@ export function Outgoing({
                 sentence, and staging it for a pass nobody has asked for is the
                 rarer of the two. */}
             {sendable ? (
-              <button
-                className="btn pri"
-                disabled={busy || draft.trim() === ""}
-                onClick={() => send(draft)}
-              >
-                {busy ? "…" : `Send attempt ${outgoing.attempt}`}
+              <button className="btn pri" disabled={busy || draft.trim() === ''} onClick={() => send(draft)}>
+                {busy ? '…' : `Send attempt ${outgoing.attempt}`}
               </button>
             ) : null}
             <button
-              className={sendable ? "btn" : "btn pri"}
-              disabled={busy || draft.trim() === ""}
+              className={sendable ? 'btn' : 'btn pri'}
+              disabled={busy || draft.trim() === ''}
               onClick={() => run(draft)}
             >
-              {busy ? "…" : `Add to attempt ${outgoing.attempt}`}
+              {busy ? '…' : `Add to attempt ${outgoing.attempt}`}
             </button>
             <button className="btn" disabled={busy} onClick={() => setDraft(null)}>
               Cancel
@@ -212,5 +206,5 @@ export function Outgoing({
 
       {refusal ? <p className="refusal">{refusal}</p> : null}
     </div>
-  );
+  )
 }

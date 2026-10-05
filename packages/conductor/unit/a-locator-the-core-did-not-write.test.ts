@@ -163,28 +163,22 @@
  * the system, which is why `unit/one-store.test.ts` sits in this half doing the
  * same thing for the same kind of rule.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { TheDesign } from "@lingtai/actions";
-import { describe, expect, it } from "vitest";
-import { readWhatAFileKept } from "../src/file-port.ts";
-import {
-  A_PATH,
-  A_URL,
-  DOCUMENT,
-  NOWHERE,
-  carry,
-  withoutTheLocator,
-  type Carried,
-} from "../test/a-url-destination.ts";
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import type { TheDesign } from '@lingtai/actions'
+import { describe, expect, it } from 'vitest'
+
+import { readWhatAFileKept } from '../src/file-port.ts'
+import { A_PATH, A_URL, DOCUMENT, NOWHERE, carry, withoutTheLocator, type Carried } from '../test/a-url-destination.ts'
 
 /** Both ends of one pass, which is what every assertion below reads. */
 const ends = (carried: Carried): readonly (TheDesign | undefined)[] => [
   carried.endedWith,
   carried.briefed,
   carried.handedBack,
-];
+]
 
 /**
  * `conduct.ts` as written, with its prose stripped and its wrapping flattened.
@@ -194,12 +188,12 @@ const ends = (carried: Carried): readonly (TheDesign | undefined)[] => [
  * unit half for the reason the header gives.
  */
 const conductAsWritten = (): string =>
-  readFileSync(fileURLToPath(new URL("../src/conduct.ts", import.meta.url)), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/\s+/g, " ");
+  readFileSync(fileURLToPath(new URL('../src/conduct.ts', import.meta.url)), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/\s+/g, ' ')
 
-describe("a locator the core did not write", () => {
+describe('a locator the core did not write', () => {
   /**
    * **The literal has to be one a parse would change**, or every `it` below
    * passes against a core that parses.
@@ -225,18 +219,18 @@ describe("a locator the core did not write", () => {
    * which is the one place in this file that is allowed to: the claim is about
    * what a parse would do, and the only way to state it is to do one.
    */
-  it("is a string no round trip through `URL` leaves alone", () => {
-    const parsed = new URL(A_URL);
+  it('is a string no round trip through `URL` leaves alone', () => {
+    const parsed = new URL(A_URL)
 
-    expect(parsed.toString()).not.toBe(A_URL);
-    expect(A_URL).toContain("Example.INVALID");
-    expect(parsed.host).toBe("example.invalid");
-    expect(A_URL).toContain("/v2/..");
-    expect(parsed.pathname).toBe("/design/1%20a/");
-    expect(A_URL).toContain("%20");
-    expect(decodeURIComponent(A_URL)).not.toBe(A_URL);
-    expect(A_URL.endsWith("/")).toBe(true);
-  });
+    expect(parsed.toString()).not.toBe(A_URL)
+    expect(A_URL).toContain('Example.INVALID')
+    expect(parsed.host).toBe('example.invalid')
+    expect(A_URL).toContain('/v2/..')
+    expect(parsed.pathname).toBe('/design/1%20a/')
+    expect(A_URL).toContain('%20')
+    expect(decodeURIComponent(A_URL)).not.toBe(A_URL)
+    expect(A_URL.endsWith('/')).toBe(true)
+  })
 
   /**
    * **Byte for byte, at both ends** — the near one is `StepPassed.design` off
@@ -258,14 +252,14 @@ describe("a locator the core did not write", () => {
    * a core that edited it on the way back would be caught there rather than
    * nowhere.
    */
-  it("reaches both ends of the pass as the destination wrote it", async () => {
-    const carried = await carry(A_URL);
+  it('reaches both ends of the pass as the destination wrote it', async () => {
+    const carried = await carry(A_URL)
 
-    expect(carried.endedWith).toEqual({ document: DOCUMENT, locator: A_URL });
-    expect(carried.briefed).toEqual({ document: DOCUMENT, locator: A_URL });
-    for (const end of ends(carried)) expect(end?.locator).toBe(A_URL);
-    expect(carried.outcome).toBe("landed");
-  });
+    expect(carried.endedWith).toEqual({ document: DOCUMENT, locator: A_URL })
+    expect(carried.briefed).toEqual({ document: DOCUMENT, locator: A_URL })
+    for (const end of ends(carried)) expect(end?.locator).toBe(A_URL)
+    expect(carried.outcome).toBe('landed')
+  })
 
   /**
    * **The whole claim, as one `toEqual`.**
@@ -289,11 +283,11 @@ describe("a locator the core did not write", () => {
    * context. **It says nothing about the ports**, which `carry` does not load:
    * those are the last `it`'s, and the header says why they needed their own.
    */
-  it("takes the same route through the pass that a repository path takes", async () => {
-    const [url, path] = await Promise.all([carry(A_URL), carry(A_PATH)]);
+  it('takes the same route through the pass that a repository path takes', async () => {
+    const [url, path] = await Promise.all([carry(A_URL), carry(A_PATH)])
 
-    expect(withoutTheLocator(url)).toEqual(withoutTheLocator(path));
-  });
+    expect(withoutTheLocator(url)).toEqual(withoutTheLocator(path))
+  })
 
   /**
    * **Nothing resolved it against the worktree**, which is the failure the
@@ -310,18 +304,18 @@ describe("a locator the core did not write", () => {
    * under either `cwd` — nor is anything it normalises to — so a core that stat'd it would
    * throw or report a failure, and the pass would not land.
    */
-  it("does not resolve it against the worktree, wherever the worktree is", async () => {
-    const elsewhere = "/somewhere/else/entirely";
-    const [here, there] = await Promise.all([carry(A_URL, NOWHERE), carry(A_URL, elsewhere)]);
+  it('does not resolve it against the worktree, wherever the worktree is', async () => {
+    const elsewhere = '/somewhere/else/entirely'
+    const [here, there] = await Promise.all([carry(A_URL, NOWHERE), carry(A_URL, elsewhere)])
 
     for (const end of [...ends(here), ...ends(there)]) {
-      expect(end?.locator).toBe(A_URL);
-      expect(end?.locator).not.toContain(NOWHERE);
-      expect(end?.locator).not.toContain(elsewhere);
+      expect(end?.locator).toBe(A_URL)
+      expect(end?.locator).not.toContain(NOWHERE)
+      expect(end?.locator).not.toContain(elsewhere)
     }
-    expect(withoutTheLocator(here)).toEqual(withoutTheLocator(there));
-    expect(here.outcome).toBe("landed");
-  });
+    expect(withoutTheLocator(here)).toEqual(withoutTheLocator(there))
+    expect(here.outcome).toBe('landed')
+  })
 
   /**
    * **And the core wrote it nowhere a replay pays for** (0066 §3, 0069 §6).
@@ -336,12 +330,12 @@ describe("a locator the core did not write", () => {
    * With the plugin's own sentence carrying none, a locator found in an emitted
    * payload can only have been put there by the core.
    */
-  it("reaches no event, so nothing the board folds has parsed it", async () => {
-    const carried = await carry(A_URL);
+  it('reaches no event, so nothing the board folds has parsed it', async () => {
+    const carried = await carry(A_URL)
 
-    expect(carried.events.length).toBeGreaterThan(0);
-    for (const event of carried.events) expect(event.payload).not.toContain(A_URL);
-  });
+    expect(carried.events.length).toBeGreaterThan(0)
+    for (const event of carried.events) expect(event.payload).not.toContain(A_URL)
+  })
 
   /**
    * **And the port under all of that did not look either** — the one thing the
@@ -374,35 +368,35 @@ describe("a locator the core did not write", () => {
    * Unit for the file's reason: the filesystem is the argument, and no `readFile`
    * is anywhere near this.
    */
-  it("hands the locator to the filesystem unclassified, whatever it looks like", async () => {
-    const asked: string[] = [];
+  it('hands the locator to the filesystem unclassified, whatever it looks like', async () => {
+    const asked: string[] = []
     const read = readWhatAFileKept(NOWHERE, {
       read: async (at) => {
-        asked.push(at);
-        return DOCUMENT;
+        asked.push(at)
+        return DOCUMENT
       },
-    });
+    })
 
     for (const locator of [A_URL, A_PATH]) {
-      expect(await read({ path: locator })).toEqual({ document: DOCUMENT });
+      expect(await read({ path: locator })).toEqual({ document: DOCUMENT })
     }
-    expect(asked).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)]);
+    expect(asked).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)])
 
-    const refused: string[] = [];
+    const refused: string[] = []
     const broken = readWhatAFileKept(NOWHERE, {
       read: async (at) => {
-        refused.push(at);
-        throw new Error(`ENOENT: no such file or directory, open '${at}'`);
+        refused.push(at)
+        throw new Error(`ENOENT: no such file or directory, open '${at}'`)
       },
-    });
+    })
 
     for (const locator of [A_URL, A_PATH]) {
       expect(await broken({ path: locator })).toEqual({
         notRead: `ENOENT: no such file or directory, open '${join(NOWHERE, locator)}'`,
-      });
+      })
     }
-    expect(refused).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)]);
-  });
+    expect(refused).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)])
+  })
 
   /**
    * **And the port the `it` above holds is the one `conduct.ts` runs.**
@@ -442,20 +436,18 @@ describe("a locator the core did not write", () => {
    * the cost of the guard, and the reader it stops is the one moving the
    * classification back in.
    */
-  it("is the port `conduct.ts` wires, and the only read it wires", () => {
-    const code = conductAsWritten();
+  it('is the port `conduct.ts` wires, and the only read it wires', () => {
+    const code = conductAsWritten()
 
     // The vacuity guard a source-reading test needs — `one-store.test.ts`'s: a
     // file that had moved, or a subject that had been renamed, would leave the
     // counts below true of nothing.
-    expect(code).toContain("export function runOnce(");
-    expect(code).toMatch(/import \{ readWhatAFileKept \} from ["']\.\/file-port\.ts["']/);
+    expect(code).toContain('export function runOnce(')
+    expect(code).toMatch(/import \{ readWhatAFileKept \} from ["']\.\/file-port\.ts["']/)
 
-    expect(code).toMatch(
-      /const read = readWhatAFileKept\(cwd, \{ read: \(at\) => readFile\(at, ["']utf8["']\) \}\)/,
-    );
-    expect(code).toContain("fileBrief: { read },");
-    expect(code.match(/readWhatAFileKept\(/g)).toHaveLength(1);
-    expect(code.match(/readFile\(/g)).toHaveLength(1);
-  });
-});
+    expect(code).toMatch(/const read = readWhatAFileKept\(cwd, \{ read: \(at\) => readFile\(at, ["']utf8["']\) \}\)/)
+    expect(code).toContain('fileBrief: { read },')
+    expect(code.match(/readWhatAFileKept\(/g)).toHaveLength(1)
+    expect(code.match(/readFile\(/g)).toHaveLength(1)
+  })
+})

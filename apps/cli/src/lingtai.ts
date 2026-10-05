@@ -10,16 +10,13 @@
  * the repository root — see `packages/event-store/src/env.ts`. Never read
  * `process.env` for a connection string directly.
  */
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { connect } from "node:net";
-import { hostname } from "node:os";
-import { BOARD_PORT, boardPort } from "@lingtai/env";
-import { createFileLocker } from "@lingtai/env/lock";
-import { createProjectionRunner, projectionLag } from "@lingtai/projector";
-import { describeFilters, loadProjects, projectFilters } from "@lingtai/conductor";
-import { backlogProjection, taskViewProjection } from "@lingtai/projector";
-import type { Tier } from "@lingtai/domain";
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { connect } from 'node:net'
+import { hostname } from 'node:os'
+
+import { describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
+import { add } from '@lingtai/conductor/onboard'
 import {
   clientsForProjects,
   createStatusTable,
@@ -43,32 +40,53 @@ import {
   startDaemon,
   type CodeVersion,
   type ShutdownRequest,
-} from "@lingtai/daemon";
-import { parseDuration } from "@lingtai/recipe";
-import { paint } from "@lingtai/env/colour";
-import { attach } from "./attach.ts";
-import { configPath } from "./init.ts";
-import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from "./service.ts";
-import { boardCommand, boardEntry, boardLock, boardPortOrWhy, builtBoardDir, parseBoardArgs, serveBoard, type BoardWorld } from "./board.ts";
-import { conductorPass } from "./conduct.ts";
-import { answerOutstanding, onDiscussionRequested } from "./discuss.ts";
-import { add } from "@lingtai/conductor/onboard";
-import { approveCommand } from "./approve.ts";
-import { answerCommand, askCommand } from "./ask.ts";
-import { closeCommand } from "./close.ts";
-import { backlogCommand } from "./backlog.ts";
-import { daemonLiveness, doctorReport, formatReport } from "./doctor.ts";
-import { openDaemon, parseRestartArgs, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from "./restart.ts";
-import { endReplay } from "./end.ts";
-import { envCommand } from "./env.ts";
-import { requeueCommand } from "./requeue.ts";
-import { pauseCommand } from "./pause.ts";
-import { run as runOnceCommand } from "./run.ts";
-import { releaseCheck } from "./install.ts";
-import { status } from "./status.ts";
-import { versionLine } from "./version.ts";
-import { WALL_LIMIT } from "./wall-limit.ts";
-import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
+} from '@lingtai/daemon'
+import type { Tier } from '@lingtai/domain'
+import { BOARD_PORT, boardPort } from '@lingtai/env'
+import { paint } from '@lingtai/env/colour'
+import { createFileLocker } from '@lingtai/env/lock'
+import { createProjectionRunner, projectionLag } from '@lingtai/projector'
+import { backlogProjection, taskViewProjection } from '@lingtai/projector'
+import { parseDuration } from '@lingtai/recipe'
+
+import { approveCommand } from './approve.ts'
+import { answerCommand, askCommand } from './ask.ts'
+import { attach } from './attach.ts'
+import { backlogCommand } from './backlog.ts'
+import {
+  boardCommand,
+  boardEntry,
+  boardLock,
+  boardPortOrWhy,
+  builtBoardDir,
+  parseBoardArgs,
+  serveBoard,
+  type BoardWorld,
+} from './board.ts'
+import { closeCommand } from './close.ts'
+import { conductorPass } from './conduct.ts'
+import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
+import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
+import { endReplay } from './end.ts'
+import { envCommand } from './env.ts'
+import { configPath } from './init.ts'
+import { releaseCheck } from './install.ts'
+import { pauseCommand } from './pause.ts'
+import { requeueCommand } from './requeue.ts'
+import {
+  openDaemon,
+  parseRestartArgs,
+  prepareRestart,
+  queueForTheLock,
+  startRecorder,
+  restartSupervised,
+} from './restart.ts'
+import { run as runOnceCommand } from './run.ts'
+import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
+import { status } from './status.ts'
+import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
+import { versionLine } from './version.ts'
+import { WALL_LIMIT } from './wall-limit.ts'
 
 /**
  * Every projection this system runs, named here in the open.
@@ -77,7 +95,7 @@ import { createSubjectResolver, createSubscriberSet } from "./subscribers.ts";
  * `projectionCommand` says where it has to be added: here, visibly, or it
  * does not exist.
  */
-const PROJECTIONS = [taskViewProjection, backlogProjection] as const;
+const PROJECTIONS = [taskViewProjection, backlogProjection] as const
 
 const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
@@ -263,31 +281,31 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 under ~/.lingtai/locks could not be read
   lingtai help
 
-Projections: ${PROJECTIONS.map((p) => p.name).join(", ")}
-`;
+Projections: ${PROJECTIONS.map((p) => p.name).join(', ')}
+`
 
 async function doctor(): Promise<number> {
-  const report = await doctorReport();
+  const report = await doctorReport()
   // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
   // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
   // and a restart is neither.
-  const release = await releaseCheck({ fetch, env: process.env, self: import.meta.filename });
-  report.results.push(release);
-  if (release.status === "ok") report.ok++;
-  else if (release.status === "warn") report.warned++;
+  const release = await releaseCheck({ fetch, env: process.env, self: import.meta.filename })
+  report.results.push(release)
+  if (release.status === 'ok') report.ok++
+  else if (release.status === 'warn') report.warned++
   else {
     // `notChecked` and not `deferred`: a release check that skipped did so
     // because *this copy* is not an installed one, which is a fact about this
     // machine and belongs on the half of the summary that says so (#214).
-    report.skipped++;
-    report.notChecked++;
+    report.skipped++
+    report.notChecked++
   }
-  console.log(formatReport(report));
+  console.log(formatReport(report))
   // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
   // does not refuse on the same number: a failure marked `restartAnswers` exits
   // this 1 and lets a restart through, since the restart is its remedy — see
   // `gatingFailures`. A deferred check is not a failure; a missing one would be.
-  return report.failed === 0 ? 0 : 1;
+  return report.failed === 0 ? 0 : 1
 }
 
 /**
@@ -300,80 +318,80 @@ async function doctor(): Promise<number> {
  * ignored is the one kind that is worse than a flag that errors.
  */
 function parseFlags(args: string[]): { positional: string[]; flags: Record<string, string> } {
-  const positional: string[] = [];
-  const flags: Record<string, string> = {};
+  const positional: string[] = []
+  const flags: Record<string, string> = {}
   for (let i = 0; i < args.length; i++) {
-    const a = args[i]!;
-    if (a.startsWith("--")) {
-      const next = args[i + 1];
-      if (next === undefined || next.startsWith("--")) {
-        flags[a.slice(2)] = "";
+    const a = args[i]!
+    if (a.startsWith('--')) {
+      const next = args[i + 1]
+      if (next === undefined || next.startsWith('--')) {
+        flags[a.slice(2)] = ''
       } else {
-        flags[a.slice(2)] = next;
-        i++;
+        flags[a.slice(2)] = next
+        i++
       }
     } else {
-      positional.push(a);
+      positional.push(a)
     }
   }
-  return { positional, flags };
+  return { positional, flags }
 }
 
 async function addCommand(args: string[]): Promise<number> {
-  const { positional, flags } = parseFlags(args);
-  const slug = positional[0];
+  const { positional, flags } = parseFlags(args)
+  const slug = positional[0]
   if (!slug) {
-    console.error("lingtai add <owner>/<repo>");
-    return 2;
+    console.error('lingtai add <owner>/<repo>')
+    return 2
   }
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
   // `named`, because a person typed it here: a recipe that contradicts `--base`
   // is refused rather than adopted (#75), which is a refusal only a typed flag
   // may earn.
-  const base = flags["base"];
-  return add({ slug, base: base === undefined ? undefined : { ref: base, named: true } });
+  const base = flags['base']
+  return add({ slug, base: base === undefined ? undefined : { ref: base, named: true } })
 }
 
 async function projectionCommand(args: string[]): Promise<number> {
-  const [sub, name] = args;
+  const [sub, name] = args
 
-  if (sub === "lag") {
-    const lags = await projectionLag();
+  if (sub === 'lag') {
+    const lags = await projectionLag()
     if (lags.length === 0) {
-      console.log("no projection has a checkpoint yet");
-      return 0;
+      console.log('no projection has a checkpoint yet')
+      return 0
     }
     for (const l of lags) {
-      console.log(`${l.name}\t${l.lastSeq}/${l.headSeq}\t${l.lag} behind\t${l.updatedAt?.toISOString() ?? "never"}`);
+      console.log(`${l.name}\t${l.lastSeq}/${l.headSeq}\t${l.lag} behind\t${l.updatedAt?.toISOString() ?? 'never'}`)
     }
-    return 0;
+    return 0
   }
 
-  if (sub === "rebuild") {
+  if (sub === 'rebuild') {
     if (!name) {
-      console.error("lingtai projection rebuild <name>");
-      return 2;
+      console.error('lingtai projection rebuild <name>')
+      return 2
     }
     // Named, not discovered. A list whose only job was to let a projection be
     // written and silently left out of it — no table, no checkpoint, no failing
     // check — is what 0022 refused; `PROJECTIONS` is written out above, and a
     // projection missing from it is missing from `--help` too.
-    const projection = PROJECTIONS.find((p) => p.name === name);
+    const projection = PROJECTIONS.find((p) => p.name === name)
     if (!projection) {
-      console.error(`unknown projection "${name}" — known: ${PROJECTIONS.map((p) => p.name).join(", ")}`);
-      return 2;
+      console.error(`unknown projection "${name}" — known: ${PROJECTIONS.map((p) => p.name).join(', ')}`)
+      return 2
     }
-    const runner = createProjectionRunner({ projection });
+    const runner = createProjectionRunner({ projection })
     try {
       // Drop the table, reset the checkpoint, replay. This is what makes a
       // projection's shape free to change: a rebuild, not a migration.
-      await runner.rebuild();
-      const lag = await runner.lag();
-      console.log(`${name} rebuilt — at ${lag.lastSeq}/${lag.headSeq}, ${lag.lag} behind`);
-      return lag.lag === 0n ? 0 : 1;
+      await runner.rebuild()
+      const lag = await runner.lag()
+      console.log(`${name} rebuilt — at ${lag.lastSeq}/${lag.headSeq}, ${lag.lag} behind`)
+      return lag.lag === 0n ? 0 : 1
     } finally {
-      await runner.close();
+      await runner.close()
     }
   }
 
@@ -385,13 +403,15 @@ async function projectionCommand(args: string[]): Promise<number> {
   // the board stale" gets a different answer depending on which name you
   // happened to learn. Since 0022 there is one behaviour everywhere — every
   // process that appends holds a projector while it runs.
-  if (sub === "run") {
-    console.error("lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.");
-    return 2;
+  if (sub === 'run') {
+    console.error(
+      'lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.',
+    )
+    return 2
   }
 
-  console.error(USAGE);
-  return 2;
+  console.error(USAGE)
+  return 2
 }
 
 /** What `lingtai service` reads off the log, shared with the restart that starts through it. */
@@ -407,8 +427,8 @@ function serviceOptions(): ServiceOptions {
     liveness: async () => (await daemonLiveness(() => readStatus())).detail,
     shutdown: async () => (await readControl()).shutdown,
     pause: async () => {
-      const c = await readControl();
-      return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null;
+      const c = await readControl()
+      return c.paused ? { by: c.by, reason: c.reason, until: c.until } : null
     },
     // `lingtai shutdown`'s own append and a wait on the lock (#174): the
     // supervisor is told only once this command holds the conductor lock.
@@ -427,7 +447,7 @@ function serviceOptions(): ServiceOptions {
       watermark: () => controlWatermark(),
       after: (version) => startAfter(version),
     },
-  };
+  }
 }
 
 /**
@@ -443,24 +463,27 @@ function serviceOptions(): ServiceOptions {
  * the failure becomes the board's own `missing`, which no verb refuses over,
  * and the drain runs.
  */
-function boardOptions(): ServiceOptions["board"] {
-  const asked = boardPortOrWhy();
-  if ("why" in asked) {
-    const why = asked.why;
+function boardOptions(): ServiceOptions['board'] {
+  const asked = boardPortOrWhy()
+  if ('why' in asked) {
+    const why = asked.why
     return {
       // No port was read, so there is no address of this machine's. The
       // default's is where a board would answer once the file reads, and
       // `missing` says in the same breath that nothing is on it.
       url: `http://127.0.0.1:${BOARD_PORT}`,
       answering: async () => null,
-      missing: () => ({ why, remedy: [`the board's port is set in ${configPath(process.env)}, and nothing else here reads it`] }),
+      missing: () => ({
+        why,
+        remedy: [`the board's port is set in ${configPath(process.env)}, and nothing else here reads it`],
+      }),
       // Never reached: every verb asks `missing` first and starts no board.
       heldBy: async () => {
-        throw new Error(why);
+        throw new Error(why)
       },
-    };
+    }
   }
-  const { port } = asked;
+  const { port } = asked
   return {
     url: `http://127.0.0.1:${port}`,
     answering: () => boardAnswering(port),
@@ -468,7 +491,7 @@ function boardOptions(): ServiceOptions["board"] {
     // The key `lingtai board start` takes, read without taking it — so a board
     // in a terminal is not a job the supervisor respawns every thirty seconds.
     heldBy: () => createFileLocker().holder(boardLock(port)),
-  };
+  }
 }
 
 /**
@@ -481,16 +504,16 @@ function boardOptions(): ServiceOptions["board"] {
  * respawns every thirty seconds.
  */
 function boardMissing(): { why: string; remedy: readonly string[] } | null {
-  const entry = boardEntry(builtBoardDir());
+  const entry = boardEntry(builtBoardDir())
   return existsSync(entry)
     ? null
     : {
         why: `no built board at ${entry}`,
         remedy: [
-          "pnpm build writes the board, and pnpm lingtai service install then adds the job",
-          "from a checkout, pnpm --filter @lingtai/board dev serves the same port in a terminal",
+          'pnpm build writes the board, and pnpm lingtai service install then adds the job',
+          'from a checkout, pnpm --filter @lingtai/board dev serves the same port in a terminal',
         ],
-      };
+      }
 }
 
 /**
@@ -501,28 +524,28 @@ function boardMissing(): { why: string; remedy: readonly string[] } | null {
  * else's process. `lingtai init` asks the same question the same way.
  */
 async function boardAnswering(port: number): Promise<string | null> {
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://127.0.0.1:${port}`
   try {
-    const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) });
-    return (await res.text()).includes("<title>Lingtai</title>") ? url : null;
+    const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
+    return (await res.text()).includes('<title>Lingtai</title>') ? url : null
   } catch {
-    return null;
+    return null
   }
 }
 
 function liveBoardWorld(): BoardWorld {
   return {
-    host: "127.0.0.1",
+    host: '127.0.0.1',
     hostname: hostname(),
     answering: boardAnswering,
     bound: (port) =>
       new Promise<boolean>((resolve) => {
-        const socket = connect(port, "127.0.0.1");
-        socket.once("connect", () => {
-          socket.destroy();
-          resolve(true);
-        });
-        socket.once("error", () => resolve(false));
+        const socket = connect(port, '127.0.0.1')
+        socket.once('connect', () => {
+          socket.destroy()
+          resolve(true)
+        })
+        socket.once('error', () => resolve(false))
       }),
     locker: createFileLocker(),
     // The supervisor's job is `lingtai board start --no-open` with no `--port`
@@ -533,38 +556,38 @@ function liveBoardWorld(): BoardWorld {
     // reported that as the stop of the board it was given (#187). A port that
     // could not be read at all is one no job is serving either.
     keeper: (port) => {
-      let supervised: number;
+      let supervised: number
       try {
-        supervised = boardPort();
+        supervised = boardPort()
       } catch {
-        return { kept: false };
+        return { kept: false }
       }
-      return port === supervised ? keeper({}, BOARD_JOB) : { kept: false };
+      return port === supervised ? keeper({}, BOARD_JOB) : { kept: false }
     },
     exec: (call) => {
-      const r = spawnSync(call[0]!, call.slice(1), { encoding: "utf8" });
-      if (r.error) return { status: 127, out: r.error.message };
-      return { status: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+      const r = spawnSync(call[0]!, call.slice(1), { encoding: 'utf8' })
+      if (r.error) return { status: 127, out: r.error.message }
+      return { status: r.status ?? 1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` }
     },
     serve: serveBoard,
     open: (url) =>
       new Promise((resolve) => {
-        const opener = process.platform === "darwin" ? "open" : "xdg-open";
-        const child = spawn(opener, [url], { stdio: "ignore", detached: true });
-        child.once("error", () => resolve(false));
-        child.once("spawn", () => {
-          child.unref();
-          resolve(true);
-        });
+        const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
+        const child = spawn(opener, [url], { stdio: 'ignore', detached: true })
+        child.once('error', () => resolve(false))
+        child.once('spawn', () => {
+          child.unref()
+          resolve(true)
+        })
       }),
     // `kill` with no signal would only ask whether it exists; SIGTERM is the
     // stop, and a board installs no handler that could swallow it.
     signal: (pid) => {
       try {
-        process.kill(pid, "SIGTERM");
-        return true;
+        process.kill(pid, 'SIGTERM')
+        return true
       } catch {
-        return false;
+        return false
       }
     },
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -572,7 +595,7 @@ function liveBoardWorld(): BoardWorld {
     whereThePortIsSet: `board.port in ${configPath(process.env)}, or --port for this one run`,
     log: (line) => console.log(line),
     error: (line) => console.error(line),
-  };
+  }
 }
 
 /**
@@ -611,19 +634,19 @@ async function daemonCommand(
       // says "still here", which is the difference between a board that is behind
       // and a board that is broken. Two work items merged for real while their
       // cards sat still and nothing reported it; this is what makes that a glance.
-      await createStatusTable();
+      await createStatusTable()
       // Read once, here, and carried on every beat afterwards. Node caches a module
       // at import, so this process runs whatever `HEAD` pointed at now for as long
       // as it lives — a merge into `main` reaches the CLI, the gates and the board
       // and does not reach this. #88 landed thirty-nine minutes after a daemon
       // started and never executed once; nothing in the beacon could have said so.
-      return readCodeVersion();
+      return readCodeVersion()
     },
     control: () => readControl(),
     log: (line) => console.log(line),
-  });
-  if (!opened.ok) return opened.code;
-  const { started, code } = opened;
+  })
+  if (!opened.ok) return opened.code
+  const { started, code } = opened
 
   // **Beating from here**, and not from after the reconcile below — which is
   // what `#144` was. The two lines that follow this one read a recipe per
@@ -633,11 +656,11 @@ async function daemonCommand(
   // daemon whose lock it printed on the next line. `startBeacon` keeps one
   // timer for the whole life of the process, so there is no stretch of it
   // during which nothing says "still here".
-  const beacon = startBeacon("starting", { code });
+  const beacon = startBeacon('starting', { code })
   console.log(
-    `running ${code.sha ? code.sha.slice(0, 7) : "an unrecorded commit"}` +
-      `${code.dirty ? " (worktree dirty)" : ""} — lingtai doctor says how far behind that is`,
-  );
+    `running ${code.sha ? code.sha.slice(0, 7) : 'an unrecorded commit'}` +
+      `${code.dirty ? ' (worktree dirty)' : ''} — lingtai doctor says how far behind that is`,
+  )
 
   // And in the log, where the beacon cannot help: a beacon is one mutable row
   // that the next start overwrites, so it says a daemon is up and never said
@@ -661,10 +684,10 @@ async function daemonCommand(
   const noteStart = startRecorder({
     restart,
     tty: Boolean(process.stdin.isTTY),
-    user: process.env["USER"] ?? "operator",
+    user: process.env['USER'] ?? 'operator',
     record: (a) => recordStart(a.by, a.reason, code),
     log: (line) => console.log(line),
-  });
+  })
 
   // Before anything is taken. A worktree left by a killed daemon is holding a
   // branch checked out, which stops git updating that ref on the next attempt —
@@ -672,7 +695,7 @@ async function daemonCommand(
   // All four checks, GitHub included (`#69`). The clients are built here and
   // injected rather than reached for inside `reconcile`, so a reconcile in a
   // test — or on a machine with no App — still does the other three.
-  const registered = await loadProjects().catch(() => []);
+  const registered = await loadProjects().catch(() => [])
 
   // What this daemon will and will not take, per project, **before it takes
   // anything**. The same lines `lingtai status` prints, from the same function,
@@ -685,9 +708,9 @@ async function daemonCommand(
   // logged one `pass failed:` line, but only once a pass had run, and one line
   // into scrollback. A daemon that cannot read a recipe now says so in the
   // block you are already reading while it starts.
-  if (registered.length === 0) console.log("no project registered — run lingtai add <owner>/<repo>");
-  const filters = await projectFilters(registered);
-  for (const line of describeFilters(filters)) console.log(line);
+  if (registered.length === 0) console.log('no project registered — run lingtai add <owner>/<repo>')
+  const filters = await projectFilters(registered)
+  for (const line of describeFilters(filters)) console.log(line)
 
   const found = await reconcile({
     log: (line) => console.log(line),
@@ -700,13 +723,13 @@ async function daemonCommand(
   }).catch((err: unknown) => {
     // Reported, never fatal. Refusing to start because a directory could not be
     // removed would turn a mess into an outage.
-    console.error(`reconcile failed: ${(err as Error).message}`);
-    return [];
-  });
-  if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`));
+    console.error(`reconcile failed: ${(err as Error).message}`)
+    return []
+  })
+  if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`))
   // The slow half is done. The timer has been running throughout it; this is
   // the word changing, not the beating starting.
-  void beacon.say("up");
+  void beacon.say('up')
 
   /**
    * How a daemon that takes no work hears a shutdown. Unset while it takes work,
@@ -720,12 +743,12 @@ async function daemonCommand(
    *
    * On the beacon's period, and deciding nothing about work — only when to stop.
    */
-  let listening: ReturnType<typeof setInterval> | undefined;
+  let listening: ReturnType<typeof setInterval> | undefined
 
   // Taking work is the default now that there is a way to stop it (#45).
   // `--no-conduct` is for a daemon you want keeping the board current while
   // you work on something else.
-  let loop: ReturnType<typeof createWorkLoop> | null = null;
+  let loop: ReturnType<typeof createWorkLoop> | null = null
 
   // ------------------------------------------------------------ stopping ----
   //
@@ -737,9 +760,9 @@ async function daemonCommand(
   // exit, which is only the first of those.
 
   /** The request the loop read, when the log is what began this. */
-  let asked: ShutdownRequest | null = null;
-  let draining = false;
-  let stopping = false;
+  let asked: ShutdownRequest | null = null
+  let draining = false
+  let stopping = false
 
   /**
    * Stop now, without waiting.
@@ -752,20 +775,20 @@ async function daemonCommand(
    * stopped and has not.
    */
   const stopNow = (why: string): void => {
-    if (stopping) return;
-    stopping = true;
-    console.log(paint.held(why));
+    if (stopping) return
+    stopping = true
+    console.log(paint.held(why))
     void (async () => {
       // The last word, and the timer off with it — `stop` does both, in that
       // order, so nothing lands after it.
-      await beacon.stop("stopping");
-      started.daemon.stop();
+      await beacon.stop('stopping')
+      started.daemon.stop()
       // The projections are stopped and the lock is released by this; what it
       // does not do, and must not, is wait for the pass.
-      await started.daemon.stopped;
-      process.exit(0);
-    })();
-  };
+      await started.daemon.stopped
+      process.exit(0)
+    })()
+  }
 
   /**
    * Finish the pass in flight, then stop — and say so before waiting.
@@ -776,39 +799,39 @@ async function daemonCommand(
    * the same instant, and there was nothing left to finish.
    */
   const drain = async (why: string, timeoutMs: number | null): Promise<void> => {
-    if (draining) return;
-    draining = true;
+    if (draining) return
+    draining = true
 
-    const held = await inFlight().catch(() => []);
+    const held = await inFlight().catch(() => [])
     // The held colour, which is the board's own answer for this exact fact:
     // `draining.tsx` wears `chip held` with the comment "Held rather than
     // warned: nothing is broken, and a red chip would send…". A shutdown is a
     // person's word, and a person's word is never the green one nor the red.
-    console.log(paint.held(`draining — ${describeInFlight(held)}, then stopping (${why}).`));
-    console.log(paint.muted("press ctrl-c again to stop now, leaving its agent orphaned."));
+    console.log(paint.held(`draining — ${describeInFlight(held)}, then stopping (${why}).`))
+    console.log(paint.muted('press ctrl-c again to stop now, leaving its agent orphaned.'))
     console.log(
       paint.muted(
         timeoutMs === null
-          // **A pass is no longer one agent**, and this sentence has now been
-          // wrong twice for the same reason. It first said one
-          // `runtime.limits.wall`, which the fix loop made an understatement.
-          // It was then rewritten as *each with its own <wall>, so several
-          // times that* — a multiple, to avoid naming a number this line cannot
-          // know. `#141` then made `WALL_LIMIT` a whole sentence rather than a
-          // phrase, and the two collided into "each with its own the recipe's
-          // runtime.limits — by default, up to 3 agent runs".
-          //
-          // It says the product now, because `passCeiling` computes one and
-          // there is no longer anything to approximate: the multiple *is* the
-          // number, and asking the reader to multiply was only ever the cost of
-          // not having it.
-          ? `a pass is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
+          ? // **A pass is no longer one agent**, and this sentence has now been
+            // wrong twice for the same reason. It first said one
+            // `runtime.limits.wall`, which the fix loop made an understatement.
+            // It was then rewritten as *each with its own <wall>, so several
+            // times that* — a multiple, to avoid naming a number this line cannot
+            // know. `#141` then made `WALL_LIMIT` a whole sentence rather than a
+            // phrase, and the two collided into "each with its own the recipe's
+            // runtime.limits — by default, up to 3 agent runs".
+            //
+            // It says the product now, because `passCeiling` computes one and
+            // there is no longer anything to approximate: the multiple *is* the
+            // number, and asking the reader to multiply was only ever the cost of
+            // not having it.
+            `a pass is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
           : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
       ),
-    );
-    await beacon.say("draining");
+    )
+    await beacon.say('draining')
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined
     if (timeoutMs !== null) {
       timer = setTimeout(
         () =>
@@ -816,19 +839,19 @@ async function daemonCommand(
             `--timeout reached — leaving the agent running. The next conductor kills it and releases the claim (lingtai doctor names it).`,
           ),
         timeoutMs,
-      );
-      timer.unref?.();
+      )
+      timer.unref?.()
     }
 
-    clearInterval(listening);
+    clearInterval(listening)
     // The drain itself. No timeout around this one on purpose (§6).
-    await loop?.stop();
-    clearTimeout(timer);
-    if (stopping) return;
-    stopping = true;
-    await beacon.stop("stopping");
-    started.daemon.stop();
-  };
+    await loop?.stop()
+    clearTimeout(timer)
+    if (stopping) return
+    stopping = true
+    await beacon.stop('stopping')
+    started.daemon.stop()
+  }
 
   // **Where the control stream was when this daemon started** (`#159`). Every
   // signal it obeys is read from here, so a pause or a shutdown appended before
@@ -840,9 +863,9 @@ async function daemonCommand(
   // after the lock and the projections, and a `service shutdown` appended in
   // that gap was below the watermark of the only daemon holding the lock — so
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
-  const since = started.since;
+  const since = started.since
 
-  if (!("no-conduct" in flags)) {
+  if (!('no-conduct' in flags)) {
     // Who is told what happened, straight off the recipes and named nowhere
     // here (`#123`). This block used to construct `macNotifier()` by name,
     // which is what 0037 §3 exists to remove: Lingtai's own desktop
@@ -856,14 +879,14 @@ async function daemonCommand(
     // quiet, and asked again before each pass until it is.
     const declared = await createSubscriberSet({
       filters,
-      reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? "(unnamed)"))),
+      reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? '(unnamed)'))),
       subject: createSubjectResolver(),
       // The daemon's own directory. There is no worktree for an event — it is
       // not about a diff — and a subscriber that wants one has to make it.
       cwd: process.cwd(),
       log: (line) => console.log(line),
-    });
-    for (const line of declared.describe()) console.log(line);
+    })
+    for (const line of declared.describe()) console.log(line)
 
     loop = createWorkLoop({
       log: (line) => console.log(line),
@@ -878,11 +901,11 @@ async function daemonCommand(
       // And a shutdown in the same breath, from the same fold (0030 §2). The
       // command appends and returns; this is where it lands.
       shutdown: async () => {
-        const control = await readControl(undefined, since);
-        asked = control.shutdown;
+        const control = await readControl(undefined, since)
+        asked = control.shutdown
         // The start is recorded off this read and no other, before the first
         // pass it permits — see `startRecorder`.
-        await noteStart(control);
+        await noteStart(control)
         // The remedy in the sentence, because this is also what a daemon
         // started *after* an unwithdrawn request prints on its way straight
         // back out — and at that point it is the only thing worth knowing.
@@ -892,7 +915,7 @@ async function daemonCommand(
         // cannot happen now: `since` makes an older request invisible, so
         // reaching here means somebody asked *this* daemon to stop, and they
         // know they did.
-        return asked ? `asked by ${asked.by} — ${asked.reason}` : null;
+        return asked ? `asked by ${asked.by} — ${asked.reason}` : null
       },
       // The loop has stopped taking work. What it cannot do is exit the
       // process, so the host does — after the drain `stop()` performs.
@@ -901,13 +924,15 @@ async function daemonCommand(
       // the system already knows how to be in rather than inventing one.
       onShutdown: (why) =>
         asked?.force === true
-          ? stopNow(`${why} — forced, so the pass is not finished. The agent is left running for the next conductor to kill.`)
+          ? stopNow(
+              `${why} — forced, so the pass is not finished. The agent is left running for the next conductor to kill.`,
+            )
           : void drain(why, asked?.timeoutMs ?? null),
 
       pass: async (reason) => {
-        await declared.retry();
+        await declared.retry()
         const outcome = await conductorPass({
-          merge: !("no-merge" in flags),
+          merge: !('no-merge' in flags),
           // The commit read at startup, so a refusal on the log says which
           // process refused (#148).
           codeSha: code.sha,
@@ -917,15 +942,15 @@ async function daemonCommand(
           // pass (#210).
           paused: async () => {
             try {
-              const c = await readControl(undefined, since);
-              return c.paused ? `paused by ${c.by} — ${c.reason}` : null;
+              const c = await readControl(undefined, since)
+              return c.paused ? `paused by ${c.by} — ${c.reason}` : null
             } catch (err) {
               // Not "not paused": a pause that could not be read is not consent.
-              return `could not read whether the conductor is paused: ${(err as Error).message}`;
+              return `could not read whether the conductor is paused: ${(err as Error).message}`
             }
           },
           log: (line) => console.log(line),
-        });
+        })
         // The run told GitHub as it went (0022), so there is nothing left
         // here to send and nothing to report about sending it.
         // A routine pass, in the accent — structure, not a verdict. What the
@@ -934,11 +959,11 @@ async function daemonCommand(
         console.log(
           paint.accent(
             `pass (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
-              (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ""),
+              (outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
           ),
-        );
+        )
       },
-    });
+    })
     // **Scoped, like the loop's** (`#159`). It used to fold the whole stream,
     // so a daemon that had just started announced a pause from before it
     // existed and then took work anyway — the report and the loop disagreeing
@@ -948,65 +973,65 @@ async function daemonCommand(
     // and that is the only one worth printing here. `lingtai status` keeps the
     // unscoped read, because it answers *what is standing* rather than *what
     // will this process do*.
-    const control = await readControl(undefined, since);
+    const control = await readControl(undefined, since)
     // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
     // broken and a person stopped it.
-    if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`));
-    await loop.start();
+    if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
+    await loop.start()
     // A question asked while nothing was listening is waiting in the stream,
     // exactly as a pause is (0013). After `start`, so the subscription is
     // already up and a question that arrives during this one is not missed.
     const waiting = await answerOutstanding((line) => console.log(line)).catch((err: unknown) => {
-      console.error(`discussions: ${(err as Error).message}`);
-      return 0;
-    });
-    if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`);
+      console.error(`discussions: ${(err as Error).message}`)
+      return 0
+    })
+    if (waiting > 0) console.log(`answered ${waiting} discussion(s) that were waiting`)
   } else {
     // Discussions go with the conductor, and that is what this flag says: they
     // spend money and 0033 §3 puts everything that spends money in the process
     // that takes work. A daemon told to take none answers none either.
-    console.log(paint.muted("projections only — no work will be taken and no question answered"));
+    console.log(paint.muted('projections only — no work will be taken and no question answered'))
 
     // It still stops when it is told to. Nothing is in flight here — there is
     // no pass to finish — so this drain is over as soon as it begins, which is
     // the honest shape of "finish what you are holding" for a daemon holding
     // nothing.
     const hearShutdown = async (): Promise<void> => {
-      const control = await readControl().catch(() => null);
-      if (control) await noteStart(control);
-      const standing = control?.shutdown ?? null;
-      if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs);
-    };
-    listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS);
+      const control = await readControl().catch(() => null)
+      if (control) await noteStart(control)
+      const standing = control?.shutdown ?? null
+      if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs)
+    }
+    listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS)
     // Asked once before waiting for the timer, so a daemon started after an
     // unwithdrawn request goes straight back out — as a conducting one does.
-    await hearShutdown();
+    await hearShutdown()
   }
 
   // The first signal drains and says so; the second stops now. `kill <pid>` is
   // the same two presses, because it used to be the worse of the two: it
   // reached the daemon alone, orphaned the agent, and took with it the code
   // that would have appended the outcome (#87).
-  let signals = 0;
+  let signals = 0
   const stop = (signal: string) => {
-    signals += 1;
+    signals += 1
     if (signals === 1) {
-      void drain(signal === "SIGINT" ? "ctrl-c" : signal, null);
-      return;
+      void drain(signal === 'SIGINT' ? 'ctrl-c' : signal, null)
+      return
     }
-    stopNow("stopping now — its agent is left running, and the next conductor kills it.");
-  };
-  process.on("SIGINT", () => stop("SIGINT"));
-  process.on("SIGTERM", () => stop("SIGTERM"));
-
-  const reason = await started.daemon.stopped;
-  if (reason === "projection-failed") {
-    const failed = started.daemon.failure;
-    console.error(`stopped: ${failed?.projection} failed — ${String(failed?.error)}`);
-    return 1;
+    stopNow('stopping now — its agent is left running, and the next conductor kills it.')
   }
-  console.log("stopped");
-  return 0;
+  process.on('SIGINT', () => stop('SIGINT'))
+  process.on('SIGTERM', () => stop('SIGTERM'))
+
+  const reason = await started.daemon.stopped
+  if (reason === 'projection-failed') {
+    const failed = started.daemon.failure
+    console.error(`stopped: ${failed?.projection} failed — ${String(failed?.error)}`)
+    return 1
+  }
+  console.log('stopped')
+  return 0
 }
 
 /**
@@ -1028,136 +1053,132 @@ async function daemonCommand(
  * a daemon that has been down would replay the backlog before pausing anything.
  * See `withProjector` for the rule and for this exception.
  */
-async function controlCommand(
-  verb: "pause" | "resume" | "shutdown" | "now",
-  args: string[],
-): Promise<number> {
+async function controlCommand(verb: 'pause' | 'resume' | 'shutdown' | 'now', args: string[]): Promise<number> {
   // **`--help` is a question, never an instruction.** `lingtai shutdown --help`
   // took `--help` as the reason and stopped the daemon — asking what a command
   // does by doing it, on the one command whose cost is a running system. Caught
   // by typing it.
-  if (args.includes("--help") || args.includes("-h")) {
-    console.log(USAGE);
-    return 0;
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(USAGE)
+    return 0
   }
 
-  const { positional, flags } = parseFlags(args);
-  const by = `human:${process.env["USER"] ?? "operator"}`;
+  const { positional, flags } = parseFlags(args)
+  const by = `human:${process.env['USER'] ?? 'operator'}`
 
-  if (verb === "pause") {
-    const reason = flags["reason"] ?? positional.join(" ");
+  if (verb === 'pause') {
+    const reason = flags['reason'] ?? positional.join(' ')
     if (!reason.trim()) {
       // A pause with no reason is one nobody can undo confidently, because
       // nobody can tell whether the thing it was waiting for has happened.
-      console.error("lingtai pause <why>  — a pause needs a reason");
-      return 2;
+      console.error('lingtai pause <why>  — a pause needs a reason')
+      return 2
     }
-    await pauseCommand(by, reason);
-    return 0;
+    await pauseCommand(by, reason)
+    return 0
   }
 
-  if (verb === "resume") {
-    await resumeConductor(by);
-    console.log(paint.pass(`resumed by ${by}`));
-    return 0;
+  if (verb === 'resume') {
+    await resumeConductor(by)
+    console.log(paint.pass(`resumed by ${by}`))
+    return 0
   }
 
-  if (verb === "shutdown") {
+  if (verb === 'shutdown') {
     // A reason is welcome and not required, unlike a pause's: a pause has to be
     // lifted by somebody who can tell whether the thing it was waiting for has
     // happened, and a shutdown is over when the process is.
-    const reason = (flags["reason"] ?? positional.join(" ")).trim() || "no reason given";
+    const reason = (flags['reason'] ?? positional.join(' ')).trim() || 'no reason given'
 
-    let timeoutMs: number | null = null;
-    if ("timeout" in flags) {
-      const text = flags["timeout"] ?? "";
+    let timeoutMs: number | null = null
+    if ('timeout' in flags) {
+      const text = flags['timeout'] ?? ''
       try {
-        timeoutMs = parseDuration(text);
+        timeoutMs = parseDuration(text)
       } catch {
-        console.error(`--timeout takes a duration like 30m or 90s, not "${text}"`);
-        return 2;
+        console.error(`--timeout takes a duration like 30m or 90s, not "${text}"`)
+        return 2
       }
       if (timeoutMs <= 0) {
-        console.error("--timeout takes a positive duration");
-        return 2;
+        console.error('--timeout takes a positive duration')
+        return 2
       }
     }
 
     // Safe is the default and `--force` is the loud one (`#159`). A command
     // whose ordinary form throws away a pass in flight is one people learn to
     // fear; this way the dangerous thing has to be asked for by name.
-    const force = "force" in flags;
-    if (force && "timeout" in flags) {
-      console.error("--timeout is about waiting for the pass, and --force does not wait. Use one.");
-      return 2;
+    const force = 'force' in flags
+    if (force && 'timeout' in flags) {
+      console.error('--timeout is about waiting for the pass, and --force does not wait. Use one.')
+      return 2
     }
 
-    await requestShutdown(by, reason, timeoutMs, undefined, force);
-    console.log(paint.held(`shutdown asked by ${by} — ${reason}`));
+    await requestShutdown(by, reason, timeoutMs, undefined, force)
+    console.log(paint.held(`shutdown asked by ${by} — ${reason}`))
 
     if (force) {
       // What `--timeout` has always done when it tripped, and what a second
       // Ctrl+C does. The orphan is the point, and it already has an owner.
-      console.log("--force: it stops without finishing the pass. The agent is left running, and the next conductor kills it and releases the claim.");
-      return 0;
+      console.log(
+        '--force: it stops without finishing the pass. The agent is left running, and the next conductor kills it and releases the claim.',
+      )
+      return 0
     }
 
     // Said up front, because the alternative is a command that has returned
     // and a daemon that looks hung (0030 §6). What is being waited for is the
     // *pass* — the agent, then the gates, then the merge lane.
-    const held = await inFlight().catch(() => []);
+    const held = await inFlight().catch(() => [])
     console.log(
       timeoutMs === null
-        // No "lingtai resume lifts it" any more (`#159`). It was true when the
-        // request outlived the daemon it was aimed at; the next `lingtai start`
-        // now needs nothing lifted, so saying otherwise would send a person to
-        // a command that has nothing to do.
-        ? `the daemon finishes the pass in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
+        ? // No "lingtai resume lifts it" any more (`#159`). It was true when the
+          // request outlived the daemon it was aimed at; the next `lingtai start`
+          // now needs nothing lifted, so saying otherwise would send a person to
+          // a command that has nothing to do.
+          `the daemon finishes the pass in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
         : `the daemon finishes the pass in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`,
-    );
-    return 0;
+    )
+    return 0
   }
 
-  const project = positional[0];
-  const issue = flags["issue"] ?? positional[1];
+  const project = positional[0]
+  const issue = flags['issue'] ?? positional[1]
   if (!project || !issue) {
-    console.error("lingtai now <project> --issue <n>");
-    return 2;
+    console.error('lingtai now <project> --issue <n>')
+    return 2
   }
-  await requestRun(project, issue, by);
-  console.log(`requested ${project} #${issue}`);
-  return 0;
+  await requestRun(project, issue, by)
+  console.log(`requested ${project} #${issue}`)
+  return 0
 }
 
 async function main(argv: string[]): Promise<number> {
-  const [command, ...rest] = argv;
+  const [command, ...rest] = argv
 
   switch (command) {
-    case "add":
-      return addCommand(rest);
-    case "run": {
-      const { flags } = parseFlags(rest);
-      const positional = rest.filter(
-        (a) => !a.startsWith("--") && a !== flags["issue"] && a !== flags["max"],
-      );
-      const project = positional.find((p) => p !== "--once") ?? flags["project"];
+    case 'add':
+      return addCommand(rest)
+    case 'run': {
+      const { flags } = parseFlags(rest)
+      const positional = rest.filter((a) => !a.startsWith('--') && a !== flags['issue'] && a !== flags['max'])
+      const project = positional.find((p) => p !== '--once') ?? flags['project']
       if (!project) {
-        console.error("lingtai run <project> [--issue <n>] [--max <n>] [--no-merge]");
-        return 2;
+        console.error('lingtai run <project> [--issue <n>] [--max <n>] [--no-merge]')
+        return 2
       }
 
       // `--once` with no `--issue` used to be the only mode. It now means the
       // same as `--max 1`: take the queue, but stop after one.
-      const issue = "issue" in flags ? Number(flags["issue"]) : undefined;
+      const issue = 'issue' in flags ? Number(flags['issue']) : undefined
       if (issue !== undefined && !Number.isInteger(issue)) {
-        console.error("--issue takes a number");
-        return 2;
+        console.error('--issue takes a number')
+        return 2
       }
-      const max =
-        "max" in flags ? Number(flags["max"]) : "once" in flags && issue === undefined ? 1 : undefined;
+      const max = 'max' in flags ? Number(flags['max']) : 'once' in flags && issue === undefined ? 1 : undefined
       if (max !== undefined && (!Number.isInteger(max) || max < 1)) {
-        console.error("--max takes a positive number");
-        return 2;
+        console.error('--max takes a positive number')
+        return 2
       }
 
       return runOnceCommand({
@@ -1165,163 +1186,163 @@ async function main(argv: string[]): Promise<number> {
         ...(issue === undefined ? {} : { issue }),
         ...(max === undefined ? {} : { max }),
         // `--no-merge` is absence of merging, so the flag's presence is the
-              merge: !("no-merge" in flags),
-      });
+        merge: !('no-merge' in flags),
+      })
     }
-    case "approve": {
-      const { positional, flags } = parseFlags(rest);
-      const issue = Number(flags["issue"]);
+    case 'approve': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error("lingtai approve <project> --issue <n> [--note <text>]");
-        return 2;
+        console.error('lingtai approve <project> --issue <n> [--note <text>]')
+        return 2
       }
-      if ("reject" in flags) {
+      if ('reject' in flags) {
         // Gone (#150): it appended `ApprovalRevoked` and put the run straight
         // back into `awaiting-approval`, so the wait it seemed to end went on.
-        console.error("--reject is gone: it asked the same question again and ended nothing.");
-        console.error(`lingtai requeue ${positional[0]} --issue ${issue} --note <why> ends the wait with a new run`);
-        return 2;
+        console.error('--reject is gone: it asked the same question again and ended nothing.')
+        console.error(`lingtai requeue ${positional[0]} --issue ${issue} --note <why> ends the wait with a new run`)
+        return 2
       }
-      return approveCommand({ project: positional[0], issue, note: flags["note"] });
+      return approveCommand({ project: positional[0], issue, note: flags['note'] })
     }
-    case "backlog":
-      return backlogCommand(rest);
-    case "requeue": {
-      const { positional, flags } = parseFlags(rest);
-      const issue = Number(flags["issue"]);
+    case 'backlog':
+      return backlogCommand(rest)
+    case 'requeue': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error("lingtai requeue <project> --issue <n> --note <why>");
-        return 2;
+        console.error('lingtai requeue <project> --issue <n> --note <why>')
+        return 2
       }
       // `--note` with nothing after it parses as the empty string, which is the
       // same silence as leaving the flag off — so both arrive as "" and the
       // command refuses them identically. Not defaulted here or there.
-      return requeueCommand({ project: positional[0], issue, note: flags["note"] ?? "" });
+      return requeueCommand({ project: positional[0], issue, note: flags['note'] ?? '' })
     }
-    case "ask":
-    case "answer": {
-      const { positional, flags } = parseFlags(rest);
-      const issue = Number(flags["issue"]);
+    case 'ask':
+    case 'answer': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
       const usage =
-        command === "ask"
+        command === 'ask'
           ? `lingtai ask <project> --issue <n> "<question>"`
-          : `lingtai answer <project> --issue <n> "<choice>"`;
+          : `lingtai answer <project> --issue <n> "<choice>"`
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error(usage);
-        return 2;
+        console.error(usage)
+        return 2
       }
       // Everything after the project is the sentence, so an unquoted one still
       // arrives whole. Blank is refused by the command, not defaulted here.
-      const text = positional.slice(1).join(" ");
-      const options = { project: positional[0], issue, text };
-      return command === "ask" ? askCommand(options) : answerCommand(options);
+      const text = positional.slice(1).join(' ')
+      const options = { project: positional[0], issue, text }
+      return command === 'ask' ? askCommand(options) : answerCommand(options)
     }
-    case "close": {
-      const { positional, flags } = parseFlags(rest);
-      const issue = Number(flags["issue"]);
+    case 'close': {
+      const { positional, flags } = parseFlags(rest)
+      const issue = Number(flags['issue'])
       if (!positional[0] || !Number.isInteger(issue)) {
-        console.error(`lingtai close <project> --issue <n> "<reason>"`);
-        return 2;
+        console.error(`lingtai close <project> --issue <n> "<reason>"`)
+        return 2
       }
       // Everything after the project is the reason, as `ask` takes its question:
       // an unquoted sentence still arrives whole, and blank is refused by the
       // command rather than defaulted here.
-      return closeCommand({ project: positional[0], issue, reason: positional.slice(1).join(" ") });
+      return closeCommand({ project: positional[0], issue, reason: positional.slice(1).join(' ') })
     }
-    case "attach": {
-      const runId = parseFlags(rest).positional[0];
+    case 'attach': {
+      const runId = parseFlags(rest).positional[0]
       if (!runId) {
-        console.error("lingtai attach <runId>");
-        return 2;
+        console.error('lingtai attach <runId>')
+        return 2
       }
       // Ctrl-C detaches rather than killing the process, so the command gets to
       // say that the run is still going and where its log is. Nothing is being
       // stopped: this is a reader, and 0034's file does not know it has one.
-      const detach = new AbortController();
-      process.on("SIGINT", () => detach.abort());
-      return attach({ runId, signal: detach.signal });
+      const detach = new AbortController()
+      process.on('SIGINT', () => detach.abort())
+      return attach({ runId, signal: detach.signal })
     }
-    case "board": {
-      const parsed = parseBoardArgs(rest);
-      if ("refused" in parsed) {
-        console.error(parsed.refused);
-        return 2;
+    case 'board': {
+      const parsed = parseBoardArgs(rest)
+      if ('refused' in parsed) {
+        console.error(parsed.refused)
+        return 2
       }
       // `--port` is this run's; without it the machine file's, and without that
       // 17820 (#187). A file that does not parse is refused by name here rather
       // than serving on a port nobody chose.
-      let port: number;
+      let port: number
       try {
-        port = parsed.port ?? boardPort();
+        port = parsed.port ?? boardPort()
       } catch (err) {
-        console.error((err as Error).message);
-        return 1;
+        console.error((err as Error).message)
+        return 1
       }
-      return boardCommand({ ...parsed, port, dir: parsed.dir ?? builtBoardDir() }, liveBoardWorld());
+      return boardCommand({ ...parsed, port, dir: parsed.dir ?? builtBoardDir() }, liveBoardWorld())
     }
-    case "status": {
-      const { positional, flags } = parseFlags(rest);
-      return status({ project: positional[0], all: "all" in flags });
+    case 'status': {
+      const { positional, flags } = parseFlags(rest)
+      return status({ project: positional[0], all: 'all' in flags })
     }
-    case "doctor":
-      return doctor();
+    case 'doctor':
+      return doctor()
     // Positional throughout, and not through `parseFlags`: a value is an
     // argument here, and `KEY=--anything` is a legitimate one.
-    case "env":
-      return envCommand(rest);
-    case "end": {
-      const { positional, flags } = parseFlags(rest);
+    case 'env':
+      return envCommand(rest)
+    case 'end': {
+      const { positional, flags } = parseFlags(rest)
       // One subcommand, spelled out. `lingtai end` on its own would read like
       // an instruction to end something.
-      if (positional[0] !== "replay") {
-        console.error("lingtai end replay [<project>] [--issue <n>]");
-        return 2;
+      if (positional[0] !== 'replay') {
+        console.error('lingtai end replay [<project>] [--issue <n>]')
+        return 2
       }
-      const issue = "issue" in flags ? Number(flags["issue"]) : undefined;
+      const issue = 'issue' in flags ? Number(flags['issue']) : undefined
       if (issue !== undefined && !Number.isInteger(issue)) {
-        console.error("--issue takes a number");
-        return 2;
+        console.error('--issue takes a number')
+        return 2
       }
       return endReplay({
         ...(positional[1] === undefined ? {} : { project: positional[1] }),
         ...(issue === undefined ? {} : { issue }),
-      });
+      })
     }
-    case "start":
+    case 'start':
     // **`daemon` still answers, and that is not indecision** (`#159`). An
     // installed LaunchAgent or systemd unit has `lingtai daemon` written into
     // its plist, and renaming a command must not stop a supervisor that is
     // already on disk. `start` is the name; this is the one it used to have.
-    case "daemon":
-      return daemonCommand(parseFlags(rest).flags);
-    case "service":
-      return serviceCommand(rest, serviceOptions());
-    case "restart": {
-      const parsed = parseRestartArgs(rest);
+    case 'daemon':
+      return daemonCommand(parseFlags(rest).flags)
+    case 'service':
+      return serviceCommand(rest, serviceOptions())
+    case 'restart': {
+      const parsed = parseRestartArgs(rest)
       if (!parsed.ok) {
-        console.error(parsed.message);
-        return 2;
+        console.error(parsed.message)
+        return 2
       }
       // Asked before anything stops, like every other refusal. Under launchd or
       // systemd the start is the supervisor's: a daemon started here would be a
       // conductor in a terminal beside the one it keeps (0042 §8).
-      const kept = keeper();
-      if ("unread" in kept) {
-        console.log(paint.fail(`not restarting: ${kept.unread}. Nothing was asked to stop and nothing was stopped.`));
-        return 1;
+      const kept = keeper()
+      if ('unread' in kept) {
+        console.log(paint.fail(`not restarting: ${kept.unread}. Nothing was asked to stop and nothing was stopped.`))
+        return 1
       }
       if (kept.kept && (parsed.args.noConduct || parsed.args.noMerge)) {
         console.error(
           `${kept.path} decides how the supervisor starts the daemon, so --no-conduct and --no-merge cannot reach it — ` +
-            "pnpm lingtai service shutdown, then lingtai restart with them, runs one in this terminal instead",
-        );
-        return 2;
+            'pnpm lingtai service shutdown, then lingtai restart with them, runs one in this terminal instead',
+        )
+        return 2
       }
       // Where a supervisor keeps the daemon, the drain and the start are
       // `lingtai service`'s and every refusal is still the restart's — the same
       // functions as below, and `RESTART_GUARDS` is the table of both (#167).
       if (kept.kept) {
-        const options = serviceOptions();
+        const options = serviceOptions()
         return restartSupervised(parsed.args, {
           service: (argv, asked) =>
             serviceCommand(argv, {
@@ -1332,47 +1353,49 @@ async function main(argv: string[]): Promise<number> {
                   requestShutdownUnlessStanding(by, reason, asked.timeoutMs, undefined, asked.force),
               },
             }),
-        });
+        })
       }
       // Two halves of one command, and the seam is the only place a daemon is
       // started. `prepareRestart` refuses, drains and waits; everything after
       // this line is `lingtai daemon`.
-      const prepared = await prepareRestart(parsed.args);
-      if (!prepared.ok) return prepared.code;
+      const prepared = await prepareRestart(parsed.args)
+      if (!prepared.ok) return prepared.code
       const flags: Record<string, string> = {
-        ...(parsed.args.noConduct ? { "no-conduct": "" } : {}),
-        ...(parsed.args.noMerge ? { "no-merge": "" } : {}),
-      };
-      return daemonCommand(flags, prepared);
+        ...(parsed.args.noConduct ? { 'no-conduct': '' } : {}),
+        ...(parsed.args.noMerge ? { 'no-merge': '' } : {}),
+      }
+      return daemonCommand(flags, prepared)
     }
-    case "pause":
-      return controlCommand("pause", rest);
-    case "resume":
-      return controlCommand("resume", rest);
-    case "shutdown":
-      return controlCommand("shutdown", rest);
-    case "now":
-      return controlCommand("now", rest);
-    case "projection":
-      return projectionCommand(rest);
+    case 'pause':
+      return controlCommand('pause', rest)
+    case 'resume':
+      return controlCommand('resume', rest)
+    case 'shutdown':
+      return controlCommand('shutdown', rest)
+    case 'now':
+      return controlCommand('now', rest)
+    case 'projection':
+      return projectionCommand(rest)
     // `entry.ts` answers this before the log is loaded; here for a process
     // started from this file, as a service's plist starts it.
-    case "version":
-      console.log(versionLine());
-      return 0;
+    case 'version':
+      console.log(versionLine())
+      return 0
     // The same: `entry.ts` answers it, since it runs before there is a log to load.
-    case "init":
-      console.error("lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai");
-      return 2;
+    case 'init':
+      console.error(
+        'lingtai init runs from the entry, before the log is loaded — pnpm lingtai init, or the installed lingtai',
+      )
+      return 2
     case undefined:
-    case "help":
-    case "--help":
-    case "-h":
-      console.log(USAGE);
-      return command === undefined ? 2 : 0;
+    case 'help':
+    case '--help':
+    case '-h':
+      console.log(USAGE)
+      return command === undefined ? 2 : 0
     default:
-      console.error(`unknown command "${command}"\n\n${USAGE}`);
-      return 2;
+      console.error(`unknown command "${command}"\n\n${USAGE}`)
+      return 2
   }
 }
 
@@ -1393,13 +1416,13 @@ async function main(argv: string[]): Promise<number> {
  */
 main(process.argv.slice(2)).then(
   (code) => {
-    process.exitCode = code;
+    process.exitCode = code
   },
   (err: unknown) => {
-    const error = err as Error;
-    console.error(error.message || String(err));
-    if (process.env["LINGTAI_DEBUG"]) console.error(error.stack);
-    else console.error("\n(LINGTAI_DEBUG=1 for the stack)");
-    process.exitCode = 1;
+    const error = err as Error
+    console.error(error.message || String(err))
+    if (process.env['LINGTAI_DEBUG']) console.error(error.stack)
+    else console.error('\n(LINGTAI_DEBUG=1 for the stack)')
+    process.exitCode = 1
   },
-);
+)

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod'
 
 /**
  * What wraps every event. The store fills `seq` and `at`; everything else is
@@ -25,56 +25,54 @@ export const Actor = z
   .string()
   .regex(
     /^(conductor|daemon|github|agent:[\w-]+|human:[\w.@-]+)$/,
-    "actor must be conductor, daemon, github, agent:<runId> or human:<id>",
-  );
+    'actor must be conductor, daemon, github, agent:<runId> or human:<id>',
+  )
 
-export const StreamId = z
-  .string()
-  .regex(
-    /^(wi|run|int|prj|ctl|chat|ext|bkl)-[\w.-]+$/,
-    // `bkl` is one minor finding's decision
-    // ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
-    // §5, `#137`). Not the work item's stream: a person triages the backlog
-    // while a later attempt of the same ticket may be appending there, and a
-    // decision must not become a `ConcurrencyError` in the middle of that run.
-    // `ctl` is the operator's own aggregate: pauses, resumes and hand-picked
-    // runs. One stream for the whole installation — control is not per-project,
-    // and a pause that only stopped one repository would be a surprise.
-    //
-    // `chat` is one discussion about one work item
-    // ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6). Its
-    // own aggregate because a forty-turn exploration on the work item's stream
-    // would drown the history the detail page exists to show — permanently,
-    // the log being append-only. The work item keeps one `DiscussionHeld`
-    // pointing at it.
-    //
-    // `ext` is what an extension did that no work item is answerable for
-    // ([0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
-    // names the two kinds). A subscriber failure cannot go on the stream of the
-    // event it failed on: the daemon follows the log while a run is appending
-    // to that stream, so writing back to it would turn a notifier's bad day
-    // into a `ConcurrencyError` in the middle of a run.
-    "streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension) or bkl-… (backlog)",
-  );
+export const StreamId = z.string().regex(
+  /^(wi|run|int|prj|ctl|chat|ext|bkl)-[\w.-]+$/,
+  // `bkl` is one minor finding's decision
+  // ([0038](../../../doc/decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
+  // §5, `#137`). Not the work item's stream: a person triages the backlog
+  // while a later attempt of the same ticket may be appending there, and a
+  // decision must not become a `ConcurrencyError` in the middle of that run.
+  // `ctl` is the operator's own aggregate: pauses, resumes and hand-picked
+  // runs. One stream for the whole installation — control is not per-project,
+  // and a pause that only stopped one repository would be a surprise.
+  //
+  // `chat` is one discussion about one work item
+  // ([0033](../../../doc/decisions-archive/0033-the-third-kind-of-agent.md) §6). Its
+  // own aggregate because a forty-turn exploration on the work item's stream
+  // would drown the history the detail page exists to show — permanently,
+  // the log being append-only. The work item keeps one `DiscussionHeld`
+  // pointing at it.
+  //
+  // `ext` is what an extension did that no work item is answerable for
+  // ([0015](../../../doc/decisions-archive/0015-five-gates-and-two-extensions.md)
+  // names the two kinds). A subscriber failure cannot go on the stream of the
+  // event it failed on: the daemon follows the log while a run is appending
+  // to that stream, so writing back to it would turn a notifier's bad day
+  // into a `ConcurrencyError` in the middle of a run.
+  'streamId must be wi-… (work item), run-…, int-… (integration lane), prj-… (project), ctl-… (control), chat-… (discussion), ext-… (extension) or bkl-… (backlog)',
+)
 
 export interface Envelope<T = unknown> {
   /** Global order, assigned by the store. */
-  seq: bigint;
-  streamId: string;
+  seq: bigint
+  streamId: string
   /** Position within the stream, from 1. */
-  version: number;
-  type: string;
+  version: number
+  type: string
   /** Which shape `data` is in. Upcasting on read keys off this. */
-  schemaVer: number;
-  data: T;
-  actor: string;
+  schemaVer: number
+  data: T
+  actor: string
   /** The seq of the event that caused this one, when there is one. */
-  causation: bigint | null;
-  at: Date;
+  causation: bigint | null
+  at: Date
 }
 
 /** What an appender supplies. `seq` and `at` belong to the store. */
-export type ToAppend<T = unknown> = Pick<Envelope<T>, "type" | "data" | "actor"> & {
-  schemaVer?: number;
-  causation?: bigint | null;
-};
+export type ToAppend<T = unknown> = Pick<Envelope<T>, 'type' | 'data' | 'actor'> & {
+  schemaVer?: number
+  causation?: bigint | null
+}

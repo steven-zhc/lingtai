@@ -19,11 +19,11 @@
  * all three aggregates; assembling it is the board projection's job, not this
  * function's.
  */
-import type { Envelope } from "./envelope.ts";
-import type { BlockDiagnosis, PayloadOf, Tier } from "./events.ts";
+import type { Envelope } from './envelope.ts'
+import type { BlockDiagnosis, PayloadOf, Tier } from './events.ts'
 
 export type WorkItemLifecycle =
-  | { status: "backlog" }
+  | { status: 'backlog' }
   /**
    * Held. There is no expiry in this shape and that is the whole of 0027: a
    * fold cannot read a clock, so a lifecycle that lapsed on its own would make
@@ -31,37 +31,37 @@ export type WorkItemLifecycle =
    * What returns a claim is a `WorkItemReleased`, appended by a conductor that
    * holds the lock.
    */
-  | { status: "claimed"; runId: string; worker: string }
+  | { status: 'claimed'; runId: string; worker: string }
   | {
-      status: "blocked";
+      status: 'blocked'
       /** The question, not just the fact. `agent:blocked` carried no question. */
-      question: string;
+      question: string
       /** `schema` was here and never written; see `WorkItemBlocked.needsFrom`. */
-      needsFrom: "human" | "external";
+      needsFrom: 'human' | 'external'
       /**
        * The run that asked, or null for a question asked before any run
        * (`lingtai ask`, #147) — which spends no claim and no worktree, and is
        * passed over by the queue because this state is not `backlog`.
        */
-      runId: string | null;
+      runId: string | null
       /**
        * Whether a person's judgement is required, or a failure needs
        * acknowledging. Two opposite kinds of hold that were one event with a
        * string on it (#83). Null on a block written before the field existed.
        */
-      needs: "judgement" | "acknowledgement" | null;
+      needs: 'judgement' | 'acknowledgement' | null
       /** What happened, what was done, what is recommended. Null when undiagnosed. */
-      diagnosis: BlockDiagnosis | null;
+      diagnosis: BlockDiagnosis | null
     }
-  | { status: "landed"; mergeCommit: string; base: string }
+  | { status: 'landed'; mergeCommit: string; base: string }
   /**
    * Nobody is going to do this (#151). A terminal like `landed`, and like it
    * nothing lifts it — reopening the issue starts no work, and the answer to
    * wanting it again is a new ticket.
    */
-  | { status: "closed"; by: string; reason: string };
+  | { status: 'closed'; by: string; reason: string }
 
-export type WorkItemStatus = WorkItemLifecycle["status"];
+export type WorkItemStatus = WorkItemLifecycle['status']
 
 /**
  * An approach this ticket abandoned, as `PassRestarted` recorded it.
@@ -74,14 +74,14 @@ export type WorkItemStatus = WorkItemLifecycle["status"];
  * (0040 §3), and each arm's refusal lives on a run stream no later pass reads.
  */
 export interface RestartRecord {
-  after: string;
-  restart: number;
-  of: number;
-  action: string;
-  rounds: number;
-  branch: string;
-  headSha: string;
-  findings: PayloadOf<"PassRestarted">["findings"];
+  after: string
+  restart: number
+  of: number
+  action: string
+  rounds: number
+  branch: string
+  headSha: string
+  findings: PayloadOf<'PassRestarted'>['findings']
 }
 
 /**
@@ -94,42 +94,42 @@ export interface RestartRecord {
  * block before it, which no appender writes.
  */
 export interface AnswerRecord {
-  question: string | null;
+  question: string | null
   /** Null when the question was asked before any run — `lingtai ask`. */
-  runId: string | null;
-  answer: string;
-  by: string;
+  runId: string | null
+  answer: string
+  by: string
 }
 
 /** How this item is connected to another — a filed bug to the merge that caused it. */
 export interface WorkItemLink {
-  relation: "caused-by" | "follows-up" | "duplicates";
-  otherRef: string;
+  relation: 'caused-by' | 'follows-up' | 'duplicates'
+  otherRef: string
 }
 
 export interface WorkItemState {
-  lifecycle: WorkItemLifecycle;
+  lifecycle: WorkItemLifecycle
 
   /** Null until `WorkItemDiscovered`; a stream can be read before it exists. */
-  project: string | null;
-  source: "github-issue" | "manual" | "agent-followup" | null;
-  externalRef: string | null;
-  title: string | null;
+  project: string | null
+  source: 'github-issue' | 'manual' | 'agent-followup' | null
+  externalRef: string | null
+  title: string | null
   /** Whatever label the recipe's `source.kinds` matched. Null until discovered. */
-  kind: string | null;
-  labels: readonly string[];
+  kind: string | null
+  labels: readonly string[]
 
-  links: readonly WorkItemLink[];
+  links: readonly WorkItemLink[]
 
   /**
    * Every dispatch the scheduler refused, kept rather than counted. A tier is
    * never silently downgraded, so the refusals are the record of what could not
    * run and why.
    */
-  dispatchRefusals: readonly { requiredTier: Tier; runtime: string; missing: readonly string[] }[];
+  dispatchRefusals: readonly { requiredTier: Tier; runtime: string; missing: readonly string[] }[]
 
   /** Runs that have held this item, oldest first. A re-run appends. */
-  runs: readonly string[];
+  runs: readonly string[]
 
   /**
    * Every approach this item has abandoned, oldest first
@@ -148,7 +148,7 @@ export interface WorkItemState {
    * claim had to *become* one — and nothing buys a repair any more (0039
    * §Consequences).
    */
-  restarts: readonly RestartRecord[];
+  restarts: readonly RestartRecord[]
 
   /**
    * A sentence somebody added for the next run, and not yet consumed.
@@ -163,7 +163,7 @@ export interface WorkItemState {
    * stale instruction being sent unseen, and something meant to last belongs in
    * the GitHub ticket where everybody can see it (§6).
    */
-  pendingPrompt: { text: string; by: string } | null;
+  pendingPrompt: { text: string; by: string } | null
 
   /**
    * Every block a person answered, oldest first (#147).
@@ -174,16 +174,16 @@ export interface WorkItemState {
    * attempt at it is owed it — `nextPrompt` carries those, so the answer
    * reaches the agent without anybody editing the GitHub issue body.
    */
-  answers: readonly AnswerRecord[];
+  answers: readonly AnswerRecord[]
 
   /** Version of the last event applied — the `expectedVersion` for the next append. */
-  version: number;
+  version: number
   /** Global position of the last event applied. */
-  lastSeq: bigint | null;
+  lastSeq: bigint | null
 }
 
 export const emptyWorkItem: WorkItemState = {
-  lifecycle: { status: "backlog" },
+  lifecycle: { status: 'backlog' },
   project: null,
   source: null,
   externalRef: null,
@@ -198,7 +198,7 @@ export const emptyWorkItem: WorkItemState = {
   answers: [],
   version: 0,
   lastSeq: null,
-};
+}
 
 /**
  * The events that move the lifecycle, as a set rather than as knowledge spread
@@ -207,16 +207,16 @@ export const emptyWorkItem: WorkItemState = {
  * seventh transition is added.
  */
 const LIFECYCLE_EVENTS = new Set([
-  "WorkItemClaimed",
-  "WorkItemReleased",
-  "WorkItemBlocked",
-  "WorkItemUnblocked",
-  "WorkItemLanded",
-  "WorkItemClosed",
-]);
+  'WorkItemClaimed',
+  'WorkItemReleased',
+  'WorkItemBlocked',
+  'WorkItemUnblocked',
+  'WorkItemLanded',
+  'WorkItemClosed',
+])
 
 export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemState {
-  const at = { version: event.version, lastSeq: event.seq };
+  const at = { version: event.version, lastSeq: event.seq }
 
   /**
    * **`closed` is absorbing** (#151). Nothing lifts it: not an unblock, which
@@ -230,13 +230,13 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
    * The facts that outlive a transition — title, labels, links — still apply, so
    * a closed item's card does not go stale; only its lifecycle is settled.
    */
-  if (state.lifecycle.status === "closed" && LIFECYCLE_EVENTS.has(event.type)) {
-    return { ...state, ...at };
+  if (state.lifecycle.status === 'closed' && LIFECYCLE_EVENTS.has(event.type)) {
+    return { ...state, ...at }
   }
 
   switch (event.type) {
-    case "WorkItemDiscovered": {
-      const d = event.data as PayloadOf<"WorkItemDiscovered">;
+    case 'WorkItemDiscovered': {
+      const d = event.data as PayloadOf<'WorkItemDiscovered'>
       return {
         ...state,
         ...at,
@@ -246,11 +246,11 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
         title: d.title,
         kind: d.kind,
         labels: d.labels,
-      };
+      }
     }
 
-    case "WorkItemClaimed": {
-      const d = event.data as PayloadOf<"WorkItemClaimed">;
+    case 'WorkItemClaimed': {
+      const d = event.data as PayloadOf<'WorkItemClaimed'>
       return {
         ...state,
         ...at,
@@ -258,7 +258,7 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
         // error to represent — it is the unblock-and-retry path — and it cannot
         // leave the block behind, because the union has room for only one.
         lifecycle: {
-          status: "claimed",
+          status: 'claimed',
           runId: d.runId,
           worker: d.worker,
         },
@@ -272,11 +272,11 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
         // the event folds through the default below and changes nothing but the
         // version.
         pendingPrompt: null,
-      };
+      }
     }
 
-    case "PassRestarted": {
-      const d = event.data as PayloadOf<"PassRestarted">;
+    case 'PassRestarted': {
+      const d = event.data as PayloadOf<'PassRestarted'>
       // The lifecycle is untouched: a restart is not a state an item is in — the
       // release that follows this puts it back in the queue, and being queued is
       // the state.
@@ -296,11 +296,11 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
             findings: d.findings,
           },
         ],
-      };
+      }
     }
 
-    case "PromptEdited": {
-      const d = event.data as PayloadOf<"PromptEdited">;
+    case 'PromptEdited': {
+      const d = event.data as PayloadOf<'PromptEdited'>
       // The lifecycle is untouched. An edit is about *what to do*, not about
       // which state the item is in — the next claim is what consumes it, and a
       // second edit before that claim replaces the first rather than stacking:
@@ -314,45 +314,45 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       return {
         ...state,
         ...at,
-        pendingPrompt: d.text.trim() === "" ? null : { text: d.text, by: d.by },
-      };
+        pendingPrompt: d.text.trim() === '' ? null : { text: d.text, by: d.by },
+      }
     }
 
-    case "WorkItemReleased":
+    case 'WorkItemReleased':
       // The only way back to the queue. A claim does not lapse (0027), so every
       // return is an append somebody made — including the one a conductor makes
       // at startup for a claim its predecessor died holding.
-      return { ...state, ...at, lifecycle: { status: "backlog" } };
+      return { ...state, ...at, lifecycle: { status: 'backlog' } }
 
-    case "WorkItemBlocked": {
-      const d = event.data as PayloadOf<"WorkItemBlocked">;
+    case 'WorkItemBlocked': {
+      const d = event.data as PayloadOf<'WorkItemBlocked'>
       return {
         ...state,
         ...at,
         lifecycle: {
-          status: "blocked",
+          status: 'blocked',
           question: d.question,
           needsFrom: d.needsFrom,
           runId: d.runId,
           needs: d.needs,
           diagnosis: d.diagnosis,
         },
-      };
+      }
     }
 
-    case "WorkItemUnblocked": {
-      const d = event.data as PayloadOf<"WorkItemUnblocked">;
+    case 'WorkItemUnblocked': {
+      const d = event.data as PayloadOf<'WorkItemUnblocked'>
       // The answer is kept, and that is the whole of #147's fold change: this
       // case used to return to the backlog and drop `note` on the floor, so the
       // log held the decision and no state, projection or prompt could say it.
-      const block = state.lifecycle.status === "blocked" ? state.lifecycle : null;
+      const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
       // A question withdrawn was never answered, so there is nothing to keep:
       // the item is back in the backlog and no attempt is told anything.
-      if (d.withdrawn === true) return { ...state, ...at, lifecycle: { status: "backlog" } };
+      if (d.withdrawn === true) return { ...state, ...at, lifecycle: { status: 'backlog' } }
       return {
         ...state,
         ...at,
-        lifecycle: { status: "backlog" },
+        lifecycle: { status: 'backlog' },
         answers: [
           ...state.answers,
           {
@@ -362,34 +362,32 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
             by: d.by,
           },
         ],
-      };
+      }
     }
 
-    case "WorkItemLinked": {
-      const d = event.data as PayloadOf<"WorkItemLinked">;
-      const already = state.links.some(
-        (l) => l.relation === d.relation && l.otherRef === d.otherRef,
-      );
-      return { ...state, ...at, links: already ? state.links : [...state.links, d] };
+    case 'WorkItemLinked': {
+      const d = event.data as PayloadOf<'WorkItemLinked'>
+      const already = state.links.some((l) => l.relation === d.relation && l.otherRef === d.otherRef)
+      return { ...state, ...at, links: already ? state.links : [...state.links, d] }
     }
 
-    case "WorkItemClosed": {
-      const d = event.data as PayloadOf<"WorkItemClosed">;
-      return { ...state, ...at, lifecycle: { status: "closed", by: d.by, reason: d.reason } };
+    case 'WorkItemClosed': {
+      const d = event.data as PayloadOf<'WorkItemClosed'>
+      return { ...state, ...at, lifecycle: { status: 'closed', by: d.by, reason: d.reason } }
     }
 
-    case "WorkItemLanded": {
-      const d = event.data as PayloadOf<"WorkItemLanded">;
+    case 'WorkItemLanded': {
+      const d = event.data as PayloadOf<'WorkItemLanded'>
       return {
         ...state,
         ...at,
-        lifecycle: { status: "landed", mergeCommit: d.mergeCommit, base: d.base },
-      };
+        lifecycle: { status: 'landed', mergeCommit: d.mergeCommit, base: d.base },
+      }
     }
 
-    case "DispatchRefused": {
-      const d = event.data as PayloadOf<"DispatchRefused">;
-      return { ...state, ...at, dispatchRefusals: [...state.dispatchRefusals, d] };
+    case 'DispatchRefused': {
+      const d = event.data as PayloadOf<'DispatchRefused'>
+      return { ...state, ...at, dispatchRefusals: [...state.dispatchRefusals, d] }
     }
 
     default:
@@ -402,12 +400,12 @@ export function applyWorkItem(state: WorkItemState, event: Envelope): WorkItemSt
       // it refuses one before a reducer ever sees it. This tolerance is what
       // makes the reducer itself safe to reuse — over a replay, a fixture, or a
       // relaxed reader — not a claim that the whole pipeline is tolerant today.
-      return { ...state, ...at };
+      return { ...state, ...at }
   }
 }
 
 export function reduceWorkItem(events: readonly Envelope[]): WorkItemState {
-  return events.reduce(applyWorkItem, emptyWorkItem);
+  return events.reduce(applyWorkItem, emptyWorkItem)
 }
 
 /**
@@ -427,13 +425,13 @@ export function reduceWorkItem(events: readonly Envelope[]): WorkItemState {
 export function retiredRepairPending(
   events: readonly Envelope[],
 ): { after: string; reason: string; detail: string; attempt: number } | null {
-  let pending: { after: string; reason: string; detail: string; attempt: number } | null = null;
+  let pending: { after: string; reason: string; detail: string; attempt: number } | null = null
   for (const event of events) {
-    if (event.type === "WorkItemClaimed") pending = null;
-    if (event.type === "RepairRequested") {
-      const d = event.data as PayloadOf<"RepairRequested">;
-      pending = { after: d.runId, reason: d.reason, detail: d.detail, attempt: d.attempt };
+    if (event.type === 'WorkItemClaimed') pending = null
+    if (event.type === 'RepairRequested') {
+      const d = event.data as PayloadOf<'RepairRequested'>
+      pending = { after: d.runId, reason: d.reason, detail: d.detail, attempt: d.attempt }
     }
   }
-  return pending;
+  return pending
 }

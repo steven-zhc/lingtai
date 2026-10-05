@@ -22,10 +22,12 @@
  *   `hashRecipe` and `changesFromHead` with it: a guard asserted over an empty
  *   set asserts nothing.
  */
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { RuntimeId, STEPS } from "@lingtai/domain";
+import { readFileSync } from 'node:fs'
+
+import { RuntimeId, STEPS } from '@lingtai/domain'
+import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
+
 import {
   BUILT_IN_JUDGES,
   StepMap,
@@ -56,16 +58,16 @@ import {
   whyThePathEscapes,
   worktreePlugin,
   type StepAction,
-} from "../src/index.ts";
+} from '../src/index.ts'
 
 /** The smallest recipe that resolves, so a case can put one action in it. */
 const BASE: Recipe = Recipe.parse({
   version: 2,
-  repo: { base: "main" },
-  source: { kinds: ["bug"] },
-  env: { plantAt: ".env.local" },
+  repo: { base: 'main' },
+  source: { kinds: ['bug'] },
+  env: { plantAt: '.env.local' },
   runtime: {},
-});
+})
 
 /**
  * A plugin that spends money and is handed the key to do it — the first shape
@@ -76,29 +78,29 @@ const BASE: Recipe = Recipe.parse({
  * a mark is honoured: marking the key would have `disclose` withhold what this
  * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
-const spendPlugin = definePlugin("spend", {
+const spendPlugin = definePlugin('spend', {
   fields: { spend: z.string(), token: noLog(z.string()) },
   at: { proposed: notBuiltYet },
-});
-const PAY = { name: "pay", spend: "50 USD", token: "sk-live-0000-9999" } as unknown as StepAction;
+})
+const PAY = { name: 'pay', spend: '50 USD', token: 'sk-live-0000-9999' } as unknown as StepAction
 
 /** `BASE` with one action at `proposed`, which is a step that runs four kinds. */
 function withAction(action: StepAction): Recipe {
-  return { ...BASE, steps: { ...BASE.steps, proposed: [action] } };
+  return { ...BASE, steps: { ...BASE.steps, proposed: [action] } }
 }
 
-describe("the contract", () => {
-  it("gives every plugin `name` and nothing else it did not declare", () => {
+describe('the contract', () => {
+  it('gives every plugin `name` and nothing else it did not declare', () => {
     for (const plugin of PLUGINS) {
-      expect(plugin.declares, `${plugin.key} does not declare name`).toContain("name");
-      expect(plugin.declares[0], `${plugin.key}'s fields do not start with name`).toBe("name");
+      expect(plugin.declares, `${plugin.key} does not declare name`).toContain('name')
+      expect(plugin.declares[0], `${plugin.key}'s fields do not start with name`).toBe('name')
     }
-  });
+  })
 
   it("reads a field's `no_log` off the schema, not off a list", () => {
-    expect(spendPlugin.secrets).toEqual(["token"]);
-    expect(definePlugin("loud", { fields: { loud: z.string() }, at: {} }).secrets).toEqual([]);
-  });
+    expect(spendPlugin.secrets).toEqual(['token'])
+    expect(definePlugin('loud', { fields: { loud: z.string() }, at: {} }).secrets).toEqual([])
+  })
 
   /**
    * Today's answer, pinned so that the first plugin to want a secret field
@@ -106,63 +108,65 @@ describe("the contract", () => {
    * oversight: every field the six have is a name, a command, a prompt or a
    * glob, and 0021 keeps values out of the file in the first place.
    */
-  it("has no secret field in the closed set today", () => {
-    expect(PLUGINS.flatMap((plugin) => plugin.secrets)).toEqual([]);
-  });
+  it('has no secret field in the closed set today', () => {
+    expect(PLUGINS.flatMap((plugin) => plugin.secrets)).toEqual([])
+  })
 
-  it("finds the plugin an action names, and refuses none and two", () => {
-    expect(pluginOf({ name: "build", run: "x" })?.key).toBe("run");
-    expect(pluginOf({ name: "build" })).toBeNull();
-    expect(pluginOf({ name: "build", run: "x", agent: "y" })).toBeNull();
-    expect(pluginOf("not an object")).toBeNull();
-  });
-});
+  it('finds the plugin an action names, and refuses none and two', () => {
+    expect(pluginOf({ name: 'build', run: 'x' })?.key).toBe('run')
+    expect(pluginOf({ name: 'build' })).toBeNull()
+    expect(pluginOf({ name: 'build', run: 'x', agent: 'y' })).toBeNull()
+    expect(pluginOf('not an object')).toBeNull()
+  })
+})
 
-describe("a plugin refuses a field it does not understand", () => {
+describe('a plugin refuses a field it does not understand', () => {
   /**
    * 0061 §9's own example. `env:` is `run:`'s because `run:` is the one that
    * spawns a process (0037 §1); a plugin that spawns nothing has no such field,
    * and the refusal says so and lists what it does have.
    */
-  it("refuses `env:` on a plugin that spawns nothing, by name", () => {
+  it('refuses `env:` on a plugin that spawns nothing, by name', () => {
     const refused = StepMap.safeParse({
-      proposed: [{ name: "review", agent: "claude-code", prompt: "read the diff", env: ["OPENAI_API_KEY"] }],
-    });
+      proposed: [{ name: 'review', agent: 'claude-code', prompt: 'read the diff', env: ['OPENAI_API_KEY'] }],
+    })
 
-    expect(refused.success).toBe(false);
-    const said = refused.error!.issues[0]!.message;
-    expect(said).toContain('"review"');
-    expect(said).toContain('"agent"');
-    expect(said).toContain('"proposed"');
-    expect(said).toContain('"agent" declares no "env" field');
-    expect(said).toContain('"name", "agent"');
+    expect(refused.success).toBe(false)
+    const said = refused.error!.issues[0]!.message
+    expect(said).toContain('"review"')
+    expect(said).toContain('"agent"')
+    expect(said).toContain('"proposed"')
+    expect(said).toContain('"agent" declares no "env" field')
+    expect(said).toContain('"name", "agent"')
     // And the path reaches the field, so an editor lands on the line.
-    expect(refused.error!.issues[0]!.path).toEqual(["proposed", 0, "env"]);
-  });
+    expect(refused.error!.issues[0]!.path).toEqual(['proposed', 0, 'env'])
+  })
 
-  it("takes `env:` on the plugin that does spawn", () => {
+  it('takes `env:` on the plugin that does spawn', () => {
     const taken = StepMap.safeParse({
-      proposed: [{ name: "build", run: "pnpm verify", env: ["TURBO_TOKEN"] }],
-    });
+      proposed: [{ name: 'build', run: 'pnpm verify', env: ['TURBO_TOKEN'] }],
+    })
 
-    expect(taken.success).toBe(true);
+    expect(taken.success).toBe(true)
     expect(taken.data!.proposed[0]).toEqual({
-      name: "build",
-      run: "pnpm verify",
-      timeout: "15m",
-      env: ["TURBO_TOKEN"],
-    });
-  });
+      name: 'build',
+      run: 'pnpm verify',
+      timeout: '15m',
+      env: ['TURBO_TOKEN'],
+    })
+  })
 
-  it("names the plugins when an action names none, or two", () => {
-    const none = StepMap.safeParse({ proposed: [{ name: "nothing" }] });
-    expect(none.error!.issues[0]!.message).toContain('"nothing" action at the "proposed" step names no plugin');
-    expect(none.error!.issues[0]!.message).toContain('"run", "agent", "file", "file-brief", "watch", "human", "close", "labels"');
+  it('names the plugins when an action names none, or two', () => {
+    const none = StepMap.safeParse({ proposed: [{ name: 'nothing' }] })
+    expect(none.error!.issues[0]!.message).toContain('"nothing" action at the "proposed" step names no plugin')
+    expect(none.error!.issues[0]!.message).toContain(
+      '"run", "agent", "file", "file-brief", "watch", "human", "close", "labels"',
+    )
 
-    const two = StepMap.safeParse({ proposed: [{ name: "both", run: "x", human: "ok?" }] });
-    expect(two.error!.issues[0]!.message).toContain("names 2 plugins");
-    expect(two.error!.issues[0]!.message).toContain('"run" and "human"');
-  });
+    const two = StepMap.safeParse({ proposed: [{ name: 'both', run: 'x', human: 'ok?' }] })
+    expect(two.error!.issues[0]!.message).toContain('names 2 plugins')
+    expect(two.error!.issues[0]!.message).toContain('"run" and "human"')
+  })
 
   /**
    * **The step's answer comes first, and it is the true one.** An `agent:` at
@@ -170,110 +174,110 @@ describe("a plugin refuses a field it does not understand", () => {
    * because of anything about its fields — so `whyNoKindAt`'s sentence is what
    * a person gets, and the field checks do not run at all.
    */
-  it("says why the step refuses before it says anything about a field", () => {
-    const refused = StepMap.safeParse({ prepared: [{ name: "review", agent: "x", env: ["A"] }] });
+  it('says why the step refuses before it says anything about a field', () => {
+    const refused = StepMap.safeParse({ prepared: [{ name: 'review', agent: 'x', env: ['A'] }] })
 
-    expect(refused.error!.issues).toHaveLength(1);
-    expect(refused.error!.issues[0]!.message).toMatch(/nothing has been committed/);
-  });
-});
+    expect(refused.error!.issues).toHaveLength(1)
+    expect(refused.error!.issues[0]!.message).toMatch(/nothing has been committed/)
+  })
+})
 
-describe("every problem in one answer", () => {
+describe('every problem in one answer', () => {
   /**
    * Three bad fields across two steps, refused **once**, each naming its step,
    * its plugin and its field. Before the contract this was a union error about
    * six schemas that had all failed, and a person fixed one thing per attempt.
    */
-  it("names all three bad fields, with their step and plugin", () => {
+  it('names all three bad fields, with their step and plugin', () => {
     const refused = StepMap.safeParse({
       proposed: [
-        { name: "build", run: "pnpm verify", timeout: 15 },
-        { name: "review", agent: "claude-code", prompt: "read it", env: ["A"] },
+        { name: 'build', run: 'pnpm verify', timeout: 15 },
+        { name: 'review', agent: 'claude-code', prompt: 'read it', env: ['A'] },
       ],
-      end: [{ name: "close it", close: true, when: "someday" }],
-    });
+      end: [{ name: 'close it', close: true, when: 'someday' }],
+    })
 
-    expect(refused.success).toBe(false);
-    const said = refused.error!.issues.map((issue) => issue.message);
-    expect(said).toHaveLength(3);
+    expect(refused.success).toBe(false)
+    const said = refused.error!.issues.map((issue) => issue.message)
+    expect(said).toHaveLength(3)
 
-    expect(said[0]).toContain('"build"');
-    expect(said[0]).toContain('"timeout" field');
-    expect(said[0]).toContain('"proposed"');
+    expect(said[0]).toContain('"build"')
+    expect(said[0]).toContain('"timeout" field')
+    expect(said[0]).toContain('"proposed"')
 
-    expect(said[1]).toContain('"review"');
-    expect(said[1]).toContain('"env" field');
+    expect(said[1]).toContain('"review"')
+    expect(said[1]).toContain('"env" field')
 
-    expect(said[2]).toContain('"close it"');
-    expect(said[2]).toContain('"when" field');
-    expect(said[2]).toContain('"end"');
+    expect(said[2]).toContain('"close it"')
+    expect(said[2]).toContain('"when" field')
+    expect(said[2]).toContain('"end"')
 
     // The same sentence the step's own refusal opens with, so the two read as
     // one rule rather than as two mechanisms (0061 §8).
-    for (const one of said) expect(one).toMatch(/^the ".+" action is a ".+" at the ".+" step, and /);
-    for (const one of said) expect(one).toContain("before a worktree, before an agent, before any money");
-  });
+    for (const one of said) expect(one).toMatch(/^the ".+" action is a ".+" at the ".+" step, and /)
+    for (const one of said) expect(one).toContain('before a worktree, before an agent, before any money')
+  })
 
-  it("does not let one bad action hide the next, or one step the other nine", () => {
+  it('does not let one bad action hide the next, or one step the other nine', () => {
     const refused = StepMap.safeParse({
-      prepared: [{ name: "install", run: "pnpm i", timeout: 10 }],
+      prepared: [{ name: 'install', run: 'pnpm i', timeout: 10 }],
       // `proposed:` and not `merge:`, which is where a hold is legal since `#270`
       // — a bad *field* is what this case is about, and one at a step that refused
       // the kind outright would never be read (`whyNoKindAt` answers first).
-      proposed: [{ name: "approve", human: 7 }],
-    });
+      proposed: [{ name: 'approve', human: 7 }],
+    })
 
     expect(refused.error!.issues.map((issue) => issue.path)).toEqual([
-      ["prepared", 0, "timeout"],
-      ["proposed", 0, "human"],
-    ]);
-  });
-});
+      ['prepared', 0, 'timeout'],
+      ['proposed', 0, 'human'],
+    ])
+  })
+})
 
-describe("a `no_log` field never leaves its plugin", () => {
-  it("is replaced by a digest of itself, and the field stays", () => {
+describe('a `no_log` field never leaves its plugin', () => {
+  it('is replaced by a digest of itself, and the field stays', () => {
     // The value is gone and everything that says what this is stays: the key,
     // the name, the field that is not marked — **and that the marked field was
     // written at all**, which is what a deletion would take with it.
-    const shown = disclose(PAY, [spendPlugin]) as Record<string, unknown>;
-    expect(shown).toEqual({ name: "pay", spend: "50 USD", token: withheld("sk-live-0000-9999") });
-    expect(shown["token"]).not.toContain("sk-live");
+    const shown = disclose(PAY, [spendPlugin]) as Record<string, unknown>
+    expect(shown).toEqual({ name: 'pay', spend: '50 USD', token: withheld('sk-live-0000-9999') })
+    expect(shown['token']).not.toContain('sk-live')
 
     // **Two values are two stand-ins**, which is the whole point of a stand-in
     // rather than nothing: the identity of the document follows the credential.
-    expect(withheld("KEY_A")).not.toBe(withheld("KEY_B"));
+    expect(withheld('KEY_A')).not.toBe(withheld('KEY_B'))
     // And a stand-in stands in for itself, so a body read back off the log and
     // put through this again is the same body.
-    expect(withheld(withheld("KEY_A"))).toBe(withheld("KEY_A"));
+    expect(withheld(withheld('KEY_A'))).toBe(withheld('KEY_A'))
 
     // An action with nothing to withhold is the object it was given, so the
     // six plugins in use today are untouched by any of this.
-    const build: StepAction = { name: "build", run: "x", timeout: "15m", env: [] };
-    expect(disclose(build, PLUGINS)).toBe(build);
+    const build: StepAction = { name: 'build', run: 'x', timeout: '15m', env: [] }
+    expect(disclose(build, PLUGINS)).toBe(build)
     // An optional secret nobody wrote is not invented, so a recipe without one
     // is not made into a recipe with one.
-    expect(disclose({ name: "pay", spend: "50 USD" }, [spendPlugin])).toEqual({
-      name: "pay",
-      spend: "50 USD",
-    });
-  });
+    expect(disclose({ name: 'pay', spend: '50 USD' }, [spendPlugin])).toEqual({
+      name: 'pay',
+      spend: '50 USD',
+    })
+  })
 
   it("never reaches the log's body, nor the hash taken over it", () => {
-    const recipe = withAction(PAY);
-    const body = JSON.stringify(canonicalRecipe(recipe, [spendPlugin]));
+    const recipe = withAction(PAY)
+    const body = JSON.stringify(canonicalRecipe(recipe, [spendPlugin]))
 
-    expect(body).not.toContain("sk-live-0000-9999");
+    expect(body).not.toContain('sk-live-0000-9999')
     // **The action on the log still names its plugin**, whole and in the
     // canonical form's own order, **and still says it carried a token**. A
     // strip that took the key with it would write an action the log cannot say
     // the kind of; one that took the field would write an action the log cannot
     // say was ever given a credential at all.
-    expect(body).toContain(`{"name":"pay","spend":"50 USD","token":"${withheld("sk-live-0000-9999")}"}`);
+    expect(body).toContain(`{"name":"pay","spend":"50 USD","token":"${withheld('sk-live-0000-9999')}"}`)
     // Two actions that differ in what is *not* withheld are still two.
     expect(hashRecipe(recipe, [spendPlugin])).not.toBe(
-      hashRecipe(withAction({ ...PAY, spend: "80 USD" } as unknown as typeof PAY), [spendPlugin]),
-    );
-  });
+      hashRecipe(withAction({ ...PAY, spend: '80 USD' } as unknown as typeof PAY), [spendPlugin]),
+    )
+  })
 
   /**
    * **A rotated credential is a new document, and the board rests on that.**
@@ -287,23 +291,23 @@ describe("a `no_log` field never leaves its plugin", () => {
    * deletion cannot have, and the reason the value is replaced rather than
    * dropped.
    */
-  it("keeps two recipes that differ only in a secret two documents", () => {
-    const a = withAction({ name: "pay", spend: "50 USD", token: "KEY_A" } as unknown as StepAction);
-    const b = withAction({ name: "pay", spend: "50 USD", token: "KEY_B" } as unknown as StepAction);
+  it('keeps two recipes that differ only in a secret two documents', () => {
+    const a = withAction({ name: 'pay', spend: '50 USD', token: 'KEY_A' } as unknown as StepAction)
+    const b = withAction({ name: 'pay', spend: '50 USD', token: 'KEY_B' } as unknown as StepAction)
 
-    expect(hashRecipe(a, [spendPlugin])).not.toBe(hashRecipe(b, [spendPlugin]));
+    expect(hashRecipe(a, [spendPlugin])).not.toBe(hashRecipe(b, [spendPlugin]))
     // And an action that carries a credential is not the same document as the
     // same action carrying none.
     expect(hashRecipe(a, [spendPlugin])).not.toBe(
-      hashRecipe(withAction({ name: "pay", spend: "50 USD" } as unknown as StepAction), [spendPlugin]),
-    );
+      hashRecipe(withAction({ name: 'pay', spend: '50 USD' } as unknown as StepAction), [spendPlugin]),
+    )
     // Neither body says which key, and both say there was one.
     for (const recipe of [a, b]) {
-      const body = JSON.stringify(canonicalRecipe(recipe, [spendPlugin]));
-      expect(body).not.toContain("KEY_");
-      expect(body).toContain('"token":"no_log:sha256:');
+      const body = JSON.stringify(canonicalRecipe(recipe, [spendPlugin]))
+      expect(body).not.toContain('KEY_')
+      expect(body).toContain('"token":"no_log:sha256:')
     }
-  });
+  })
 
   /**
    * **The body verifies against the hash beside it**, which is what a reader
@@ -312,22 +316,22 @@ describe("a `no_log` field never leaves its plugin", () => {
    * a stand-in stands in for itself: the body has been through `disclose`
    * already by the time anybody re-hashes it.
    */
-  it("hashes the recorded body back to the hash recorded beside it", () => {
-    const recipe = withAction(PAY);
-    const recorded = canonicalRecipe(recipe, [spendPlugin]) as unknown as Recipe;
+  it('hashes the recorded body back to the hash recorded beside it', () => {
+    const recipe = withAction(PAY)
+    const recorded = canonicalRecipe(recipe, [spendPlugin]) as unknown as Recipe
 
-    expect(hashRecipe(recorded, [spendPlugin])).toBe(hashRecipe(recipe, [spendPlugin]));
-  });
+    expect(hashRecipe(recorded, [spendPlugin])).toBe(hashRecipe(recipe, [spendPlugin]))
+  })
 
   /** The board's half of this is `apps/board/unit/run-recipe.test.tsx`. */
   it("never reaches a refusal's text", () => {
-    const read = readFields(spendPlugin, { name: "pay", spend: "50 USD", token: 4321 });
+    const read = readFields(spendPlugin, { name: 'pay', spend: '50 USD', token: 4321 })
 
-    expect(read.problems).toHaveLength(1);
-    expect(read.problems![0]!.why).toContain('"token" field');
-    expect(read.problems![0]!.why).toContain("declared no_log");
-    expect(read.problems![0]!.why).not.toContain("4321");
-  });
+    expect(read.problems).toHaveLength(1)
+    expect(read.problems![0]!.why).toContain('"token" field')
+    expect(read.problems![0]!.why).toContain('declared no_log')
+    expect(read.problems![0]!.why).not.toContain('4321')
+  })
 
   /**
    * **A mark that would strip nothing is refused where it is written.**
@@ -337,23 +341,24 @@ describe("a `no_log` field never leaves its plugin", () => {
    * strips nothing at all. That is the failure `noLog` exists to remove, so it
    * is an error at import rather than an empty `secrets`.
    */
-  it("refuses a mark written below the field, however deep", () => {
-    expect(() => definePlugin("notify", { fields: { notify: z.object({ token: noLog(z.string()) }) }, at: {} })).toThrow(
-      /marks no_log below its "notify" field/,
-    );
-    expect(() => definePlugin("late", { fields: { late: noLog(z.string()).optional() }, at: {} })).toThrow(
+  it('refuses a mark written below the field, however deep', () => {
+    expect(() =>
+      definePlugin('notify', { fields: { notify: z.object({ token: noLog(z.string()) }) }, at: {} }),
+    ).toThrow(/marks no_log below its "notify" field/)
+    expect(() => definePlugin('late', { fields: { late: noLog(z.string()).optional() }, at: {} })).toThrow(
       /marks no_log below its "late" field/,
-    );
-    expect(() => definePlugin("deep", {
+    )
+    expect(() =>
+      definePlugin('deep', {
         fields: { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) },
         at: {},
-      })).toThrow(
-      /marks no_log below its "deep" field/,
-    );
+      }),
+    ).toThrow(/marks no_log below its "deep" field/)
     // And the way round that does work is the way round the wording asks for.
-    expect(definePlugin("fine", { fields: { fine: z.string(), token: noLog(z.string().optional()) }, at: {} })
-        .secrets).toEqual(["token"]);
-  });
+    expect(
+      definePlugin('fine', { fields: { fine: z.string(), token: noLog(z.string().optional()) }, at: {} }).secrets,
+    ).toEqual(['token'])
+  })
 
   /**
    * **And a mark on what names the action is refused too.** `disclose` withholds
@@ -363,72 +368,72 @@ describe("a `no_log` field never leaves its plugin", () => {
    * the address a verdict, a waiver and every reading use, and goes the same
    * way.
    */
-  it("refuses a mark on the key, and on `name`", () => {
-    expect(() => definePlugin("spend", { fields: { spend: noLog(z.string()) }, at: {} })).toThrow(
+  it('refuses a mark on the key, and on `name`', () => {
+    expect(() => definePlugin('spend', { fields: { spend: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "spend" field no_log/,
-    );
-    expect(() => definePlugin("spend", { fields: { spend: z.string(), name: noLog(z.string()) }, at: {} })).toThrow(
+    )
+    expect(() => definePlugin('spend', { fields: { spend: z.string(), name: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "name" field no_log/,
-    );
+    )
     // The same rule at the strip, because a `PluginSecrets` is written by hand
     // where there is no schema to have refused it — and answering an action
     // naming no plugin would be the quiet failure one layer further down.
-    expect(() => disclose({ name: "pay", spend: "sk-live-0000" }, [{ key: "spend", secrets: ["spend"] }])).toThrow(
+    expect(() => disclose({ name: 'pay', spend: 'sk-live-0000' }, [{ key: 'spend', secrets: ['spend'] }])).toThrow(
       /goes beside the key/,
-    );
-    expect(() => disclose({ name: "pay", spend: "50 USD" }, [{ key: "spend", secrets: ["name"] }])).toThrow(
+    )
+    expect(() => disclose({ name: 'pay', spend: '50 USD' }, [{ key: 'spend', secrets: ['name'] }])).toThrow(
       /marks its own "name" field no_log/,
-    );
-  });
+    )
+  })
 
   /** What the six do today, so the strip cannot be silently costing anything. */
-  it("changes nothing for a recipe with no secret field in it", () => {
-    const build: StepAction = { name: "build", run: "pnpm verify", timeout: "15m", env: [] };
-    const recipe = withAction(build);
+  it('changes nothing for a recipe with no secret field in it', () => {
+    const build: StepAction = { name: 'build', run: 'pnpm verify', timeout: '15m', env: [] }
+    const recipe = withAction(build)
 
-    expect(discloseSteps(recipe.steps).proposed).toEqual([build]);
-    expect(hashRecipe(recipe)).toBe(hashRecipe(recipe, PLUGINS));
-  });
-});
+    expect(discloseSteps(recipe.steps).proposed).toEqual([build])
+    expect(hashRecipe(recipe)).toBe(hashRecipe(recipe, PLUGINS))
+  })
+})
 
-describe("the six behind the contract", () => {
+describe('the six behind the contract', () => {
   /**
    * **Wrap, do not reimplement** is the whole of this ticket, and this is the
    * case that says so: the defaults a recipe has relied on since `run:` and
    * `close:` were written are still the ones it gets.
    */
-  it("resolves the defaults the six had before the contract", () => {
+  it('resolves the defaults the six had before the contract', () => {
     const resolved = StepMap.parse({
       proposed: [
-        { name: "build", run: "pnpm verify" },
-        { name: "tamper", watch: ["**/recipe.yml"] },
+        { name: 'build', run: 'pnpm verify' },
+        { name: 'tamper', watch: ['**/recipe.yml'] },
       ],
       end: [
-        { name: "close it", close: true },
-        { name: "label it", labels: ["lingtai:done"] },
+        { name: 'close it', close: true },
+        { name: 'label it', labels: ['lingtai:done'] },
       ],
-    });
+    })
 
-    expect(resolved.proposed[0]).toEqual({ name: "build", run: "pnpm verify", timeout: "15m", env: [] });
+    expect(resolved.proposed[0]).toEqual({ name: 'build', run: 'pnpm verify', timeout: '15m', env: [] })
     expect(resolved.proposed[1]).toEqual({
-      name: "tamper",
-      watch: ["**/recipe.yml"],
-      then: "request-approval",
-    });
-    expect(resolved.end[0]).toEqual({ name: "close it", close: true, when: "landed" });
-    expect(resolved.end[1]).toEqual({ name: "label it", labels: ["lingtai:done"], when: "any" });
-  });
+      name: 'tamper',
+      watch: ['**/recipe.yml'],
+      then: 'request-approval',
+    })
+    expect(resolved.end[0]).toEqual({ name: 'close it', close: true, when: 'landed' })
+    expect(resolved.end[1]).toEqual({ name: 'label it', labels: ['lingtai:done'], when: 'any' })
+  })
 
-  it("keeps `LINGTAI_*` out of the one plugin that has an `env:`", () => {
-    expect(runPlugin.declares).toContain("env");
-    expect(agentPlugin.declares).not.toContain("env");
+  it('keeps `LINGTAI_*` out of the one plugin that has an `env:`', () => {
+    expect(runPlugin.declares).toContain('env')
+    expect(agentPlugin.declares).not.toContain('env')
 
     const refused = StepMap.safeParse({
-      proposed: [{ name: "build", run: "x", env: ["LINGTAI_DATABASE_URL"] }],
-    });
-    expect(refused.error!.issues[0]!.message).toContain("LINGTAI_DATABASE_URL");
-  });
-});
+      proposed: [{ name: 'build', run: 'x', env: ['LINGTAI_DATABASE_URL'] }],
+    })
+    expect(refused.error!.issues[0]!.message).toContain('LINGTAI_DATABASE_URL')
+  })
+})
 
 /**
  * **The branch a pass owns, cut and landed** (`#235`,
@@ -460,34 +465,34 @@ describe("the six behind the contract", () => {
  * `doc/writing-a-plugin.md` is addressed to, and `whyNoKindAt` takes the set
  * it works against so that case is reachable — the same seam `resolve.ts` has.
  */
-describe("a plugin declares the steps it serves", () => {
+describe('a plugin declares the steps it serves', () => {
   /** The page's own example: one plugin, at one step, and nowhere else. */
-  const slack = definePlugin("slack", {
+  const slack = definePlugin('slack', {
     fields: { slack: z.strictObject({ channel: z.string() }) },
     at: { proposed: notBuiltYet },
-  });
+  })
   /** And the second true thing: one body, every step. */
-  const everywhere = definePlugin("everywhere", { fields: { everywhere: z.string() }, at: { "*": notBuiltYet } });
+  const everywhere = definePlugin('everywhere', { fields: { everywhere: z.string() }, at: { '*': notBuiltYet } })
 
-  it("is legal where its `at` has a key, and refused by name where it does not", () => {
+  it('is legal where its `at` has a key, and refused by name where it does not', () => {
     // Two, so `claim` *is* implemented — by the other one. A set where nobody
     // implements the step takes the next case's branch, which is the whole
     // distinction 0064 §1 is about, and this case would otherwise assert it
     // by accident and say nothing about this one.
-    const set = [slack, everywhere] as unknown as typeof PLUGINS[number][];
-    expect(whyNoKindAt("proposed", "slack" as never, set)).toBeNull();
-    const why = whyNoKindAt("claim", "slack" as never, set);
+    const set = [slack, everywhere] as unknown as (typeof PLUGINS)[number][]
+    expect(whyNoKindAt('proposed', 'slack' as never, set)).toBeNull()
+    const why = whyNoKindAt('claim', 'slack' as never, set)
     // The sentence the page promises: what it does not implement, and where it
     // does. `kindRefusedAt` adds the action, the kind and the step around it.
-    expect(why).toContain("`slack:` does not implement `claim`");
-    expect(why).toContain("it serves `proposed`");
-  });
+    expect(why).toContain('`slack:` does not implement `claim`')
+    expect(why).toContain('it serves `proposed`')
+  })
 
   /** `"*"` is every step, including the nine this plugin has never heard of. */
-  it("is legal everywhere when its `at` is `*`", () => {
-    const set = [everywhere] as unknown as typeof PLUGINS[number][];
-    for (const step of STEPS) expect(whyNoKindAt(step, "everywhere" as never, set)).toBeNull();
-  });
+  it('is legal everywhere when its `at` is `*`', () => {
+    const set = [everywhere] as unknown as (typeof PLUGINS)[number][]
+    for (const step of STEPS) expect(whyNoKindAt(step, 'everywhere' as never, set)).toBeNull()
+  })
 
   /**
    * **And the sentence the table could not say.** An empty row meant *no
@@ -495,30 +500,30 @@ describe("a plugin declares the steps it serves", () => {
    * a reader could not tell which — and `#231` died of the difference. An `at`
    * can only say the first, so the second is a refusal of its own.
    */
-  it("says when no plugin implements a step at all", () => {
-    const set = [slack] as unknown as typeof PLUGINS[number][];
+  it('says when no plugin implements a step at all', () => {
+    const set = [slack] as unknown as (typeof PLUGINS)[number][]
     // **Asked of a plugin set this test hands in, and that is now the only way
     // to reach the branch** (`#266`): every step in `PLUGINS` has a key, so the
     // refusal survives for a caller with its own set and for nothing else.
     // `WHERE_INSTEAD` went with the last step that needed it, so there is no
     // *today the work happens here* clause left to assert.
-    const why = whyNoKindAt("implement", "slack" as never, set);
-    expect(why).toContain("no plugin implements `implement`");
-    expect(why).not.toContain("Today");
+    const why = whyNoKindAt('implement', 'slack' as never, set)
+    expect(why).toContain('no plugin implements `implement`')
+    expect(why).not.toContain('Today')
     // And with the real set it is the pair that answers, because `agent:` serves
     // the step — which is what makes the sentence above unreachable in practice.
-    expect(whyNoKindAt("implement", "slack" as never)).toContain("no plugin is named `slack:`");
-  });
+    expect(whyNoKindAt('implement', 'slack' as never)).toContain('no plugin is named `slack:`')
+  })
 
   /** A key that is not a step is refused at import, where the author is. */
-  it("refuses an `at` key that is not a step", () => {
-    expect(() => definePlugin("typo", { fields: { typo: z.string() }, at: { propsed: notBuiltYet } as never })).toThrow(
+  it('refuses an `at` key that is not a step', () => {
+    expect(() => definePlugin('typo', { fields: { typo: z.string() }, at: { propsed: notBuiltYet } as never })).toThrow(
       /declares itself at "propsed", which is not a step/,
-    );
-  });
-});
+    )
+  })
+})
 
-describe("the two the pass stopped calling itself", () => {
+describe('the two the pass stopped calling itself', () => {
   /**
    * **`merge:` was the last of the four whose `at` was `{}` and served a step the
    * pass's own body did, and `#270` wired it** — the day `merge` read one, the
@@ -535,25 +540,25 @@ describe("the two the pass stopped calling itself", () => {
    * pair, and it is where somebody who wrote a lane at the wrong step reads what a
    * lane is for.
    */
-  it("makes `merge:` legal at `merge` and at no other step", () => {
-    expect(whyNoKindAt("merge", "merge")).toBeNull();
-    for (const step of STEPS.filter((each) => each !== "merge")) {
-      const why = whyNoKindAt(step, "merge");
-      expect(why, `${step} × merge is accepted`).not.toBeNull();
-      expect(why).not.toContain("no step reads a `merge:` action");
+  it('makes `merge:` legal at `merge` and at no other step', () => {
+    expect(whyNoKindAt('merge', 'merge')).toBeNull()
+    for (const step of STEPS.filter((each) => each !== 'merge')) {
+      const why = whyNoKindAt(step, 'merge')
+      expect(why, `${step} × merge is accepted`).not.toBeNull()
+      expect(why).not.toContain('no step reads a `merge:` action')
       if (PLUGINS.some((plugin) => servesStep(plugin, step))) {
-        expect(why, step).toContain("it serves `merge`");
+        expect(why, step).toContain('it serves `merge`')
         // `end` keeps its own sentence, as it does for `judge:`: *these three kinds
         // and no others* is the more useful half where the plugin is an effect's
         // neighbour. Everywhere else the reason is the lane's.
-        if (step !== "end") expect(why, step).toContain("Written at `merge` it is read");
+        if (step !== 'end') expect(why, step).toContain('Written at `merge` it is read')
       } else {
         // Where nobody implements the step, the step's own sentence answers first
         // and is the more useful half — a lane is not what would fix `claim`.
-        expect(why, step).toContain(`no plugin implements \`${step}\``);
+        expect(why, step).toContain(`no plugin implements \`${step}\``)
       }
     }
-  });
+  })
 
   /**
    * And the clause that earns the sentence: a lane is not a check, and the reason
@@ -561,24 +566,24 @@ describe("the two the pass stopped calling itself", () => {
    * half that is not a fact about today's code — the file reference above would go
    * red the day `integrate.ts` moved, and this would not.
    */
-  it("says why a lane belongs at `merge`, and what it does not decide", () => {
-    const why = whyNoKindAt("prepared", "merge")!;
-    expect(why).toContain("the only one that changes the base branch");
-    expect(why).toContain("a pass lands once");
-    expect(why).toContain("reports a reason and decides nothing");
-    expect(why).toContain("`proposed`");
+  it('says why a lane belongs at `merge`, and what it does not decide', () => {
+    const why = whyNoKindAt('prepared', 'merge')!
+    expect(why).toContain('the only one that changes the base branch')
+    expect(why).toContain('a pass lands once')
+    expect(why).toContain('reports a reason and decides nothing')
+    expect(why).toContain('`proposed`')
     // No `base:`, said where somebody about to write one would read it.
-    expect(why).toContain("declares no `base:`");
+    expect(why).toContain('declares no `base:`')
     // A fact about the pair, so every step some plugin serves gives the same
     // reason under its own opening clause.
-    const reason = why.slice(why.indexOf(": ") + 2);
+    const reason = why.slice(why.indexOf(': ') + 2)
     // Every step but `end`, which answers as the step for the reason above.
-    for (const step of ["admit", "prepared", "build", "review", "proposed"] as const) {
-      expect(whyNoKindAt(step, "merge"), step).toBe(
+    for (const step of ['admit', 'prepared', 'build', 'review', 'proposed'] as const) {
+      expect(whyNoKindAt(step, 'merge'), step).toBe(
         `\`merge:\` does not implement \`${step}\` — it serves \`merge\`: ${reason}`,
-      );
+      )
     }
-  });
+  })
 
   /**
    * **`worktree:` was the other one and `#268` wired it** — the day `admit` read
@@ -593,52 +598,53 @@ describe("the two the pass stopped calling itself", () => {
    * where nobody does, the step's own sentence answers first and is the more
    * useful half (`whyNoKindAt`).
    */
-  it("makes `worktree:` legal at `admit` and at no other step", () => {
-    expect(whyNoKindAt("admit", "worktree")).toBeNull();
-    for (const step of STEPS.filter((each) => each !== "admit")) {
-      const why = whyNoKindAt(step, "worktree");
-      expect(why, `${step} × worktree is accepted`).not.toBeNull();
-      expect(why).not.toContain("packages/repo/src/worktree.ts");
+  it('makes `worktree:` legal at `admit` and at no other step', () => {
+    expect(whyNoKindAt('admit', 'worktree')).toBeNull()
+    for (const step of STEPS.filter((each) => each !== 'admit')) {
+      const why = whyNoKindAt(step, 'worktree')
+      expect(why, `${step} × worktree is accepted`).not.toBeNull()
+      expect(why).not.toContain('packages/repo/src/worktree.ts')
       if (PLUGINS.some((plugin) => servesStep(plugin, step))) {
-        expect(why, step).toContain("it serves `admit`");
+        expect(why, step).toContain('it serves `admit`')
       } else {
-        expect(why, step).toContain(`no plugin implements \`${step}\``);
+        expect(why, step).toContain(`no plugin implements \`${step}\``)
       }
     }
-  });
+  })
 
   /**
    * The watch-out this ticket was written around. A `base:` under `merge:` is
    * an unrecognized key inside the plugin's own map, and it has to stay one.
    */
-  it("gives `merge:` no `base:` of its own", () => {
-    expect(mergePlugin.declares).toEqual(["name", "merge"]);
-    expect(JSON.stringify(mergePlugin.schema.safeParse({ name: "x", merge: {} }))).not.toContain("base");
+  it('gives `merge:` no `base:` of its own', () => {
+    expect(mergePlugin.declares).toEqual(['name', 'merge'])
+    expect(JSON.stringify(mergePlugin.schema.safeParse({ name: 'x', merge: {} }))).not.toContain('base')
 
     const refused = mergePlugin.schema.safeParse({
-      name: "land it",
-      merge: { base: "main", strategy: "merge-commit" },
-    });
-    expect(refused.success).toBe(false);
+      name: 'land it',
+      merge: { base: 'main', strategy: 'merge-commit' },
+    })
+    expect(refused.success).toBe(false)
 
     // And the refusal is the map's own words rather than the plugin's field
     // list: `base` is not one of `merge:`'s fields, and naming `"name",
     // "merge"` beside it would send a reader to a depth where neither is legal.
     const problems = readFields(mergePlugin, {
-      name: "land it",
-      merge: { base: "main" },
-    }).problems!;
-    expect(problems).toHaveLength(1);
-    expect(problems[0]!.at).toEqual(["merge"]);
-    expect(problems[0]!.why).toContain("base");
-    expect(problems[0]!.why).not.toContain('what it declares is');
-  });
+      name: 'land it',
+      merge: { base: 'main' },
+    }).problems!
+    expect(problems).toHaveLength(1)
+    expect(problems[0]!.at).toEqual(['merge'])
+    expect(problems[0]!.why).toContain('base')
+    expect(problems[0]!.why).not.toContain('what it declares is')
+  })
 
   /** The values today's code is called with, and no others. */
-  it("carries what the code it wraps is configured by, and nothing more", () => {
-    expect(
-      worktreePlugin.schema.parse({ name: "cut", worktree: { base: "main", submodules: false } }),
-    ).toEqual({ name: "cut", worktree: { base: "main", submodules: false } });
+  it('carries what the code it wraps is configured by, and nothing more', () => {
+    expect(worktreePlugin.schema.parse({ name: 'cut', worktree: { base: 'main', submodules: false } })).toEqual({
+      name: 'cut',
+      worktree: { base: 'main', submodules: false },
+    })
 
     /**
      * **`submodules` is required, and that is `#268`'s second major finding
@@ -652,22 +658,20 @@ describe("the two the pass stopped calling itself", () => {
      * no refusal and no line anywhere saying the value had stopped being read. So
      * a block that does not say is refused by name instead.
      */
-    const silent = worktreePlugin.schema.safeParse({ name: "cut", worktree: { base: "main" } });
-    expect(silent.success).toBe(false);
-    expect(JSON.stringify(silent.error?.issues)).toContain("submodules");
+    const silent = worktreePlugin.schema.safeParse({ name: 'cut', worktree: { base: 'main' } })
+    expect(silent.success).toBe(false)
+    expect(JSON.stringify(silent.error?.issues)).toContain('submodules')
 
     // One strategy, because `integrate.ts` offers one. A second value here
     // would be a behaviour this repository does not have, declared as though
     // it did.
-    expect(mergePlugin.schema.parse({ name: "land", merge: {} })).toEqual({
-      name: "land",
-      merge: { strategy: "merge-commit" },
-    });
-    expect(mergePlugin.schema.safeParse({ name: "land", merge: { strategy: "squash" } }).success).toBe(
-      false,
-    );
-  });
-});
+    expect(mergePlugin.schema.parse({ name: 'land', merge: {} })).toEqual({
+      name: 'land',
+      merge: { strategy: 'merge-commit' },
+    })
+    expect(mergePlugin.schema.safeParse({ name: 'land', merge: { strategy: 'squash' } }).success).toBe(false)
+  })
+})
 
 /**
  * **Which ticket is taken, and whether this machine may take it** (`#236`,
@@ -697,23 +701,23 @@ describe("the two the pass stopped calling itself", () => {
  *   declares; the half of that sentence which is still true is about the *queue
  *   pass* rather than about the step, and `queuePlugin`'s own comment carries it.
  */
-describe("the one `claim` holds", () => {
-  it("serves `claim`, and is refused at the other nine as a pair", () => {
-    expect(queuePlugin.serves).toEqual(["claim"]);
-    expect(whyNoKindAt("claim", "queue")).toBeNull();
+describe('the one `claim` holds', () => {
+  it('serves `claim`, and is refused at the other nine as a pair', () => {
+    expect(queuePlugin.serves).toEqual(['claim'])
+    expect(whyNoKindAt('claim', 'queue')).toBeNull()
 
-    for (const step of STEPS.filter((step) => step !== "claim")) {
-      const why = whyNoKindAt(step, "queue");
-      expect(why, `${step} × queue is accepted`).not.toBeNull();
+    for (const step of STEPS.filter((step) => step !== 'claim')) {
+      const why = whyNoKindAt(step, 'queue')
+      expect(why, `${step} × queue is accepted`).not.toBeNull()
       // Two sentences and the order is `whyNoKindAt`'s: at a step *nobody*
       // implements, *no plugin implements `implement`* is the first thing wrong
       // and the pair is moot; everywhere else the answer is about the pair.
-      const nobody = why!.includes(`no plugin implements \`${step}\``);
-      if (nobody) continue;
-      expect(why).toContain("`queue:` does not implement");
-      expect(why).toContain("it serves `claim`");
+      const nobody = why!.includes(`no plugin implements \`${step}\``)
+      if (nobody) continue
+      expect(why).toContain('`queue:` does not implement')
+      expect(why).toContain('it serves `claim`')
     }
-  });
+  })
 
   /**
    * **`assignee:` is not a plugin, and the closed set is what says so.** A name
@@ -721,11 +725,11 @@ describe("the one `claim` holds", () => {
    * rather than accepted into a cell nothing walks — which is the same rule,
    * read the other way, that put it in `PLUGINS` in the first place.
    */
-  it("has no `assignee:` plugin left in the closed set", () => {
-    expect(PLUGINS.map((plugin) => plugin.key)).not.toContain("assignee");
-    expect(PLUGINS).toHaveLength(14);
-    expect(pluginOf({ name: "whose", assignee: { take: "both" } })).toBeNull();
-  });
+  it('has no `assignee:` plugin left in the closed set', () => {
+    expect(PLUGINS.map((plugin) => plugin.key)).not.toContain('assignee')
+    expect(PLUGINS).toHaveLength(14)
+    expect(pluginOf({ name: 'whose', assignee: { take: 'both' } })).toBeNull()
+  })
 
   /**
    * **One declaration, read by two shapes — and the defaults belong to one of
@@ -746,63 +750,59 @@ describe("the one `claim` holds", () => {
    * what keeps it from growing a `source.assignee` nothing reads.
    */
   it("shares `source:`'s three fields and refuses a `queue:` that names only some", () => {
-    expect(queuePlugin.declares).toEqual(["name", "queue"]);
+    expect(queuePlugin.declares).toEqual(['name', 'queue'])
 
     const whole = {
-      kinds: ["bug", "feature"],
-      exclude: ["agent:hold"],
-      backoff: "45m",
-      assignee: { take: "both" },
-    };
-    expect(queuePlugin.schema.parse({ name: "what to work on", queue: whole })).toEqual({
-      name: "what to work on",
+      kinds: ['bug', 'feature'],
+      exclude: ['agent:hold'],
+      backoff: '45m',
+      assignee: { take: 'both' },
+    }
+    expect(queuePlugin.schema.parse({ name: 'what to work on', queue: whole })).toEqual({
+      name: 'what to work on',
       queue: whole,
-    });
-    expect(Object.keys(Recipe.shape.source.shape)).not.toContain("assignee");
+    })
+    expect(Object.keys(Recipe.shape.source.shape)).not.toContain('assignee')
 
     // The same three values under `source:`, where the two defaults live and
     // where a file that says nothing goes on meaning what it always did.
-    expect(Recipe.shape.source.parse({ kinds: ["bug", "feature"] })).toEqual({
-      kinds: ["bug", "feature"],
+    expect(Recipe.shape.source.parse({ kinds: ['bug', 'feature'] })).toEqual({
+      kinds: ['bug', 'feature'],
       exclude: [],
-      backoff: "1h",
-    });
+      backoff: '1h',
+    })
 
     // Each missing field by name, and the message says which: a block narrowing
     // the kinds must not silently replace the other three.
-    for (const missing of ["exclude", "backoff", "assignee"]) {
-      const partial = Object.fromEntries(Object.entries(whole).filter(([k]) => k !== missing));
-      const refused = queuePlugin.schema.safeParse({ name: "q", queue: partial });
-      expect(refused.success).toBe(false);
-      expect(refused.error!.issues[0]!.path).toEqual(["queue", missing]);
+    for (const missing of ['exclude', 'backoff', 'assignee']) {
+      const partial = Object.fromEntries(Object.entries(whole).filter(([k]) => k !== missing))
+      const refused = queuePlugin.schema.safeParse({ name: 'q', queue: partial })
+      expect(refused.success).toBe(false)
+      expect(refused.error!.issues[0]!.path).toEqual(['queue', missing])
     }
 
     // And the same refusals `source:` has: `backoff: 0` is the absence of the
     // guard rather than a shorter one, and `kinds: []` is a recipe that takes
     // nothing.
-    expect(queuePlugin.schema.safeParse({ name: "q", queue: { ...whole, kinds: [] } }).success).toBe(
-      false,
-    );
-    expect(
-      queuePlugin.schema.safeParse({ name: "q", queue: { ...whole, backoff: "0s" } }).success,
-    ).toBe(false);
-    expect(Recipe.shape.source.safeParse({ kinds: ["bug"], backoff: "0s" }).success).toBe(false);
-  });
+    expect(queuePlugin.schema.safeParse({ name: 'q', queue: { ...whole, kinds: [] } }).success).toBe(false)
+    expect(queuePlugin.schema.safeParse({ name: 'q', queue: { ...whole, backoff: '0s' } }).success).toBe(false)
+    expect(Recipe.shape.source.safeParse({ kinds: ['bug'], backoff: '0s' }).success).toBe(false)
+  })
 
   /**
    * Nothing here spawns a process — the queue runs in the conductor's own — so
    * `env:` is refused by name, which is the case 0061 §9 is written about.
    */
-  it("declares no `env:`, and says what it does declare", () => {
+  it('declares no `env:`, and says what it does declare', () => {
     const problems = readFields(queuePlugin, {
-      name: "take work",
-      queue: { kinds: ["bug"], exclude: [], backoff: "1h", assignee: { take: "both" } },
-      env: ["GITHUB_TOKEN"],
-    }).problems!;
-    expect(problems).toHaveLength(1);
-    expect(problems[0]!.field).toBe("env");
-    expect(problems[0]!.why).toContain(`"queue" declares no "env" field`);
-  });
+      name: 'take work',
+      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } },
+      env: ['GITHUB_TOKEN'],
+    }).problems!
+    expect(problems).toHaveLength(1)
+    expect(problems[0]!.field).toBe('env')
+    expect(problems[0]!.why).toContain(`"queue" declares no "env" field`)
+  })
 
   /**
    * **`AssigneeRule` itself, so its one refinement is not a second refusal.**
@@ -813,36 +813,35 @@ describe("the one `claim` holds", () => {
    * `login`, so a person reading it is told what to add rather than what to
    * remove.
    */
-  it("keeps the rule that `assignee: { take: mine }` needs a login", () => {
+  it('keeps the rule that `assignee: { take: mine }` needs a login', () => {
     // The other three, because the block requires all four — `assignee: {}` is
     // still how a person writes *whoever it is assigned to*.
-    const q = { kinds: ["bug"], exclude: [], backoff: "1h" };
-    expect(
-      queuePlugin.schema.parse({ name: "q", queue: { ...q, assignee: {} } }),
-    ).toMatchObject({ queue: { assignee: { take: "both" } } });
+    const q = { kinds: ['bug'], exclude: [], backoff: '1h' }
+    expect(queuePlugin.schema.parse({ name: 'q', queue: { ...q, assignee: {} } })).toMatchObject({
+      queue: { assignee: { take: 'both' } },
+    })
 
     const refused = queuePlugin.schema.safeParse({
-      name: "q",
-      queue: { ...q, assignee: { take: "mine" } },
-    });
-    expect(refused.success).toBe(false);
-    expect(refused.error!.issues[0]!.message).toContain("take: mine needs a login");
-    expect(refused.error!.issues[0]!.path).toEqual(["queue", "assignee", "login"]);
+      name: 'q',
+      queue: { ...q, assignee: { take: 'mine' } },
+    })
+    expect(refused.success).toBe(false)
+    expect(refused.error!.issues[0]!.message).toContain('take: mine needs a login')
+    expect(refused.error!.issues[0]!.path).toEqual(['queue', 'assignee', 'login'])
 
     expect(
       queuePlugin.schema.parse({
-        name: "q",
-        queue: { ...q, assignee: { take: "mine", login: "steven-zhc" } },
+        name: 'q',
+        queue: { ...q, assignee: { take: 'mine', login: 'steven-zhc' } },
       }),
-    ).toMatchObject({ queue: { assignee: { take: "mine", login: "steven-zhc" } } });
+    ).toMatchObject({ queue: { assignee: { take: 'mine', login: 'steven-zhc' } } })
 
     // And the enum: a fourth `take` is refused rather than dropped.
-    expect(
-      queuePlugin.schema.safeParse({ name: "q", queue: { ...q, assignee: { take: "everyone" } } })
-        .success,
-    ).toBe(false);
-  });
-});
+    expect(queuePlugin.schema.safeParse({ name: 'q', queue: { ...q, assignee: { take: 'everyone' } } }).success).toBe(
+      false,
+    )
+  })
+})
 
 /**
  * **The one `proposed` holds** (`#238`, `#274`,
@@ -857,7 +856,7 @@ describe("the one `claim` holds", () => {
  * the refusal of an answer outside it, is
  * `packages/conductor/unit/judge.test.ts`.
  */
-describe("the one `proposed` will hold", () => {
+describe('the one `proposed` will hold', () => {
   /**
    * **And the one `proposed` holds** (`#238`, `#274`,
    * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3).
@@ -883,47 +882,47 @@ describe("the one `proposed` will hold", () => {
    * `restarts` count calls and are refused twice over, once as fields this
    * plugin does not declare and once inside `limits:` by name.
    */
-  it("makes `judge:` one entry per `when:`, with no ceiling over the pass", () => {
-    expect(judgePlugin.declares).toEqual(["name", "judge", "when", "model", "limits"]);
+  it('makes `judge:` one entry per `when:`, with no ceiling over the pass', () => {
+    expect(judgePlugin.declares).toEqual(['name', 'judge', 'when', 'model', 'limits'])
 
-    expect(
-      judgePlugin.schema.parse({ name: "the approach", judge: "same-worktree", when: "findings" }),
-    ).toEqual({ name: "the approach", judge: "same-worktree", when: "findings" });
+    expect(judgePlugin.schema.parse({ name: 'the approach', judge: 'same-worktree', when: 'findings' })).toEqual({
+      name: 'the approach',
+      judge: 'same-worktree',
+      when: 'findings',
+    })
 
     // No default: a judge that said nothing about which direction it answers
     // would be the one judge for all five this split exists to prevent.
-    expect(judgePlugin.schema.safeParse({ name: "any", judge: "same-worktree" }).success).toBe(false);
+    expect(judgePlugin.schema.safeParse({ name: 'any', judge: 'same-worktree' }).success).toBe(false)
     // And `when:`'s vocabulary is this step's, not `end`'s: a `landed` judge is
     // an outcome where a reason belongs (0061 §3).
-    expect(judgePlugin.schema.safeParse({ name: "any", judge: "same-worktree", when: "landed" }).success).toBe(
-      false,
-    );
+    expect(judgePlugin.schema.safeParse({ name: 'any', judge: 'same-worktree', when: 'landed' }).success).toBe(false)
 
-    for (const ceiling of ["rounds", "restarts"] as const) {
+    for (const ceiling of ['rounds', 'restarts'] as const) {
       const problems = readFields(judgePlugin, {
-        name: "the approach",
-        judge: "same-worktree",
-        when: "findings",
+        name: 'the approach',
+        judge: 'same-worktree',
+        when: 'findings',
         [ceiling]: 9,
-      }).problems!;
-      expect(problems).toHaveLength(1);
-      expect(problems[0]!.field).toBe(ceiling);
-      expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`);
-      expect(problems[0]!.why).toContain('"name", "judge", "when", "model", "limits"');
+      }).problems!
+      expect(problems).toHaveLength(1)
+      expect(problems[0]!.field).toBe(ceiling)
+      expect(problems[0]!.why).toContain(`"judge" declares no "${ceiling}" field`)
+      expect(problems[0]!.why).toContain('"name", "judge", "when", "model", "limits"')
 
       // And inside the dispatch's own `limits:`, where `strictObject` alone
       // would answer *Unrecognized key* and never say why (0070 §5).
       const inside = readFields(judgePlugin, {
-        name: "the approach",
-        judge: "claude-code",
-        when: "findings",
+        name: 'the approach',
+        judge: 'claude-code',
+        when: 'findings',
         limits: { [ceiling]: 9 },
-      }).problems!;
-      expect(inside).toHaveLength(1);
-      expect(inside[0]!.why).toContain("bounds the pass and not one call (0040)");
-      expect(inside[0]!.why).toContain("Write it at `runtime.limits`");
+      }).problems!
+      expect(inside).toHaveLength(1)
+      expect(inside[0]!.why).toContain('bounds the pass and not one call (0040)')
+      expect(inside[0]!.why).toContain('Write it at `runtime.limits`')
     }
-  });
+  })
 
   /**
    * **A judge the schema accepts is a judge something answers**, which is the
@@ -945,19 +944,13 @@ describe("the one `proposed` will hold", () => {
    * repository has decided it will not leave open, with one name behind it
    * instead of three.
    */
-  it("accepts every name something answers, and no name nothing answers", () => {
-    expect(BUILT_IN_JUDGES).toEqual(["same-worktree"]);
+  it('accepts every name something answers, and no name nothing answers', () => {
+    expect(BUILT_IN_JUDGES).toEqual(['same-worktree'])
     for (const answered of [...BUILT_IN_JUDGES, ...RuntimeId.options]) {
-      expect(
-        judgePlugin.schema.safeParse({ name: "j", judge: answered, when: "red" }).success,
-        answered,
-      ).toBe(true);
+      expect(judgePlugin.schema.safeParse({ name: 'j', judge: answered, when: 'red' }).success, answered).toBe(true)
     }
-    expect(
-      judgePlugin.schema.safeParse({ name: "j", judge: "ask-or-assume", when: "needs-input" })
-        .success,
-    ).toBe(false);
-  });
+    expect(judgePlugin.schema.safeParse({ name: 'j', judge: 'ask-or-assume', when: 'needs-input' }).success).toBe(false)
+  })
 
   /**
    * **Which half of the enum a name is, read in one place.**
@@ -967,11 +960,11 @@ describe("the one `proposed` will hold", () => {
    * dispatch on the day a second built-in was added. `isBuiltInJudge` is the
    * whole of the test, and it is `BUILT_IN_JUDGES`'s membership and nothing else.
    */
-  it("says which names spend nothing, off the built-in list itself", () => {
-    for (const built of BUILT_IN_JUDGES) expect(isBuiltInJudge(built), built).toBe(true);
-    for (const runtime of RuntimeId.options) expect(isBuiltInJudge(runtime), runtime).toBe(false);
-  });
-});
+  it('says which names spend nothing, off the built-in list itself', () => {
+    for (const built of BUILT_IN_JUDGES) expect(isBuiltInJudge(built), built).toBe(true)
+    for (const runtime of RuntimeId.options) expect(isBuiltInJudge(runtime), runtime).toBe(false)
+  })
+})
 
 /**
  * **This file's own header, counted rather than remembered** (`#238`).
@@ -1004,17 +997,17 @@ describe("the one `proposed` will hold", () => {
  * preserve. A value nobody can write is a mistake nobody can make, and the
  * refusal arrives when the recipe resolves rather than after the delete.
  */
-describe("the one that deletes", () => {
-  it("is refused at all nine steps that are not `end`", () => {
+describe('the one that deletes', () => {
+  it('is refused at all nine steps that are not `end`', () => {
     for (const step of STEPS) {
-      if (step === "end") {
-        expect(whyNoKindAt(step, "refs")).toBeNull();
-        continue;
+      if (step === 'end') {
+        expect(whyNoKindAt(step, 'refs')).toBeNull()
+        continue
       }
-      expect(whyNoKindAt(step, "refs"), `${step} × refs is accepted`).not.toBeNull();
+      expect(whyNoKindAt(step, 'refs'), `${step} × refs is accepted`).not.toBeNull()
     }
-    expect(whyNoKindAt("proposed", "refs")).toContain("only the `end` step carries out effects");
-  });
+    expect(whyNoKindAt('proposed', 'refs')).toContain('only the `end` step carries out effects')
+  })
 
   /**
    * **This is the case that earns the plugin.** The other two effects take
@@ -1022,21 +1015,20 @@ describe("the one that deletes", () => {
    * word is the difference between tidying up after a landing and destroying an
    * abandoned attempt's only record.
    */
-  it("takes `when: landed` and refuses every other ending, by name, at resolve", () => {
-    const at = (when: string) =>
-      StepMap.safeParse({ end: [{ name: "sweep", refs: true, when }] });
+  it('takes `when: landed` and refuses every other ending, by name, at resolve', () => {
+    const at = (when: string) => StepMap.safeParse({ end: [{ name: 'sweep', refs: true, when }] })
 
-    expect(at("landed").success).toBe(true);
-    for (const when of ["any", "blocked", "failed", "closed"]) {
-      const refused = at(when);
-      expect(refused.success, `"when: ${when}" resolved`).toBe(false);
-      const message = refused.error!.issues[0]!.message;
-      expect(message).toContain('"sweep"');
-      expect(message).toContain('"refs"');
-      expect(message).toContain('"end"');
-      expect(message).toContain('"when"');
+    expect(at('landed').success).toBe(true)
+    for (const when of ['any', 'blocked', 'failed', 'closed']) {
+      const refused = at(when)
+      expect(refused.success, `"when: ${when}" resolved`).toBe(false)
+      const message = refused.error!.issues[0]!.message
+      expect(message).toContain('"sweep"')
+      expect(message).toContain('"refs"')
+      expect(message).toContain('"end"')
+      expect(message).toContain('"when"')
     }
-  });
+  })
 
   /**
    * Absent means `landed` too, so a file that leaves the key out gets the safe
@@ -1044,28 +1036,27 @@ describe("the one that deletes", () => {
    * merge `agent/<n>`'s commits are reachable from `main`, but it is the ref a
    * person follows from the merge commit, so a cleanup keeps it unless asked.
    */
-  it("keeps `agent/<n>` unless the recipe asks for it, and defaults to the landing", () => {
-    expect(refsPlugin.schema.parse({ name: "sweep", refs: true })).toEqual({
-      name: "sweep",
+  it('keeps `agent/<n>` unless the recipe asks for it, and defaults to the landing', () => {
+    expect(refsPlugin.schema.parse({ name: 'sweep', refs: true })).toEqual({
+      name: 'sweep',
       refs: true,
       branch: false,
-      when: "landed",
-    });
-    expect(refsPlugin.schema.parse({ name: "sweep", refs: true, branch: true })).toMatchObject({
+      when: 'landed',
+    })
+    expect(refsPlugin.schema.parse({ name: 'sweep', refs: true, branch: true })).toMatchObject({
       branch: true,
-    });
-  });
+    })
+  })
 
   /** A plugin refuses a field it does not understand, this one included (0061 §9). */
-  it("declares four fields and refuses a fifth", () => {
-    expect(refsPlugin.declares).toEqual(["name", "refs", "branch", "when"]);
-    const problems = readFields(refsPlugin, { name: "sweep", refs: true, older_than: "30d" })
-      .problems!;
-    expect(problems).toHaveLength(1);
-    expect(problems[0]!.field).toBe("older_than");
-    expect(problems[0]!.why).toContain('"refs" declares no "older_than" field');
-  });
-});
+  it('declares four fields and refuses a fifth', () => {
+    expect(refsPlugin.declares).toEqual(['name', 'refs', 'branch', 'when'])
+    const problems = readFields(refsPlugin, { name: 'sweep', refs: true, older_than: '30d' }).problems!
+    expect(problems).toHaveLength(1)
+    expect(problems[0]!.field).toBe('older_than')
+    expect(problems[0]!.why).toContain('"refs" declares no "older_than" field')
+  })
+})
 
 /**
  * **The first destination, and the two questions 0066 left to it** (`#300`).
@@ -1077,8 +1068,8 @@ describe("the one that deletes", () => {
  * — so the cases below are what an operator meets before a worktree, before an
  * agent and before any money.
  */
-describe("the one `design` keeps with", () => {
-  const DRAFTER = { name: "shape it", agent: "claude-code", prompt: "write down the shape" };
+describe('the one `design` keeps with', () => {
+  const DRAFTER = { name: 'shape it', agent: 'claude-code', prompt: 'write down the shape' }
 
   /**
    * **The file is committed, and there is no field for the other answer** —
@@ -1095,19 +1086,17 @@ describe("the one `design` keeps with", () => {
    * refuses a field it does not understand. Somebody bringing the option back has
    * to come through this test and its paragraph.
    */
-  it("declares `file:` and no `commit:`, and refuses one by name", () => {
-    expect(filePlugin.declares).toEqual(["name", "file"]);
+  it('declares `file:` and no `commit:`, and refuses one by name', () => {
+    expect(filePlugin.declares).toEqual(['name', 'file'])
 
     const asked = StepMap.safeParse({
-      design: [DRAFTER, { name: "keep it", file: "doc/design/x.md", commit: false }],
-    });
-    expect(asked.success).toBe(false);
-    expect(asked.error!.issues[0]!.message).toContain('"file" declares no "commit" field');
+      design: [DRAFTER, { name: 'keep it', file: 'doc/design/x.md', commit: false }],
+    })
+    expect(asked.success).toBe(false)
+    expect(asked.error!.issues[0]!.message).toContain('"file" declares no "commit" field')
 
-    expect(
-      StepMap.safeParse({ design: [DRAFTER, { name: "keep it", file: "doc/design/x.md" }] }).success,
-    ).toBe(true);
-  });
+    expect(StepMap.safeParse({ design: [DRAFTER, { name: 'keep it', file: 'doc/design/x.md' }] }).success).toBe(true)
+  })
 
   /**
    * **A path that escapes the worktree is refused where it is written** (0066 §6).
@@ -1120,27 +1109,27 @@ describe("the one `design` keeps with", () => {
    * daemon answer alike, and each clause names what is wrong rather than saying
    * *invalid*.
    */
-  it("refuses a path that leaves the worktree, by the clause that is wrong with it", () => {
-    expect(whyThePathEscapes("doc/design/x.md")).toBeNull();
-    expect(whyThePathEscapes("./x.md")).toBeNull();
-    expect(whyThePathEscapes("")).toContain("empty");
-    expect(whyThePathEscapes("/etc/passwd")).toContain("absolute");
-    expect(whyThePathEscapes("C:\\notes\\x.md")).toContain("absolute");
-    expect(whyThePathEscapes("~/notes/x.md")).toContain("home directory");
-    expect(whyThePathEscapes("../../notes/x.md")).toContain('".." segment');
-    expect(whyThePathEscapes("doc/..\\x.md")).toContain('".." segment');
-    expect(whyThePathEscapes("doc/design/")).toContain("empty segment");
+  it('refuses a path that leaves the worktree, by the clause that is wrong with it', () => {
+    expect(whyThePathEscapes('doc/design/x.md')).toBeNull()
+    expect(whyThePathEscapes('./x.md')).toBeNull()
+    expect(whyThePathEscapes('')).toContain('empty')
+    expect(whyThePathEscapes('/etc/passwd')).toContain('absolute')
+    expect(whyThePathEscapes('C:\\notes\\x.md')).toContain('absolute')
+    expect(whyThePathEscapes('~/notes/x.md')).toContain('home directory')
+    expect(whyThePathEscapes('../../notes/x.md')).toContain('".." segment')
+    expect(whyThePathEscapes('doc/..\\x.md')).toContain('".." segment')
+    expect(whyThePathEscapes('doc/design/')).toContain('empty segment')
 
     const refused = StepMap.safeParse({
-      design: [DRAFTER, { name: "keep it", file: "../../notes/x.md" }],
-    });
-    expect(refused.success).toBe(false);
-    const why = refused.error!.issues[0]!.message;
-    expect(why).toContain('"../../notes/x.md" is not a path inside the worktree');
-    expect(why).toContain("with no `..` in it");
+      design: [DRAFTER, { name: 'keep it', file: '../../notes/x.md' }],
+    })
+    expect(refused.success).toBe(false)
+    const why = refused.error!.issues[0]!.message
+    expect(why).toContain('"../../notes/x.md" is not a path inside the worktree')
+    expect(why).toContain('with no `..` in it')
     // Refused at resolve, which is the whole of §6.
-    expect(why).toContain("before a worktree, before an agent, before any money");
-  });
+    expect(why).toContain('before a worktree, before an agent, before any money')
+  })
 
   /**
    * **`{{issue}}` is the path's one placeholder, and the expansion is judged by
@@ -1159,27 +1148,27 @@ describe("the one `design` keeps with", () => {
    * already said yes. `options.issue` is a number, but 0036 names the evolution —
    * *`{{issue}}` should become `{{ref}}`*, and Jira's is `PROJ-123`.
    */
-  it("expands `{{issue}}` into the path, and judges what it expanded to", () => {
-    expect(thePathForThisTicket("doc/design/{{issue}}.md", "310")).toEqual({
-      path: "doc/design/310.md",
-    });
+  it('expands `{{issue}}` into the path, and judges what it expanded to', () => {
+    expect(thePathForThisTicket('doc/design/{{issue}}.md', '310')).toEqual({
+      path: 'doc/design/310.md',
+    })
     // A path with no placeholder is the same string it was written as, which is
     // what makes this land inert on a machine whose recipe names a fixed path.
-    expect(thePathForThisTicket("doc/design/this-change.md", "310")).toEqual({
-      path: "doc/design/this-change.md",
-    });
+    expect(thePathForThisTicket('doc/design/this-change.md', '310')).toEqual({
+      path: 'doc/design/this-change.md',
+    })
     // Twice in one path is twice expanded — `replaceAll`, not `replace`.
-    expect(thePathForThisTicket("doc/{{issue}}/{{issue}}.md", "310")).toEqual({
-      path: "doc/310/310.md",
-    });
+    expect(thePathForThisTicket('doc/{{issue}}/{{issue}}.md', '310')).toEqual({
+      path: 'doc/310/310.md',
+    })
 
-    const escaped = thePathForThisTicket("doc/{{issue}}.md", "../../etc/passwd");
-    expect("path" in escaped, "a ref carrying `..` reached a path").toBe(false);
-    expect((escaped as { escapes: string }).escapes).toContain('".." segment');
+    const escaped = thePathForThisTicket('doc/{{issue}}.md', '../../etc/passwd')
+    expect('path' in escaped, 'a ref carrying `..` reached a path').toBe(false)
+    expect((escaped as { escapes: string }).escapes).toContain('".." segment')
     // And a ref that makes the whole path absolute, which is the other half.
-    const rooted = thePathForThisTicket("{{issue}}", "/etc/passwd");
-    expect((rooted as { escapes?: string }).escapes).toContain("absolute");
-  });
+    const rooted = thePathForThisTicket('{{issue}}', '/etc/passwd')
+    expect((rooted as { escapes?: string }).escapes).toContain('absolute')
+  })
 
   /**
    * **A placeholder this field does not take is refused where it is written**,
@@ -1191,25 +1180,25 @@ describe("the one `design` keeps with", () => {
    * `{{title}}` is left out on purpose and the refusal says so — a title in a
    * filename is a slug problem, and none of it is worth deciding for a path.
    */
-  it("refuses a placeholder that is not `{{issue}}`, and names the one it takes", () => {
+  it('refuses a placeholder that is not `{{issue}}`, and names the one it takes', () => {
     const refused = StepMap.safeParse({
-      design: [DRAFTER, { name: "keep it", file: "doc/design/{{title}}.md" }],
-    });
-    expect(refused.success).toBe(false);
-    const why = refused.error!.issues[0]!.message;
-    expect(why).toContain("`{{title}}`, which a `file:` path does not take");
-    expect(why).toContain("`{{issue}}` is the one placeholder");
-    expect(why).toContain("slug problem");
+      design: [DRAFTER, { name: 'keep it', file: 'doc/design/{{title}}.md' }],
+    })
+    expect(refused.success).toBe(false)
+    const why = refused.error!.issues[0]!.message
+    expect(why).toContain('`{{title}}`, which a `file:` path does not take')
+    expect(why).toContain('`{{issue}}` is the one placeholder')
+    expect(why).toContain('slug problem')
 
     // And the one it takes passes the escape check unchanged, so nothing there
     // was loosened to make room for it: `doc`, `design`, `{{issue}}.md`.
-    expect(whyThePathEscapes("doc/design/{{issue}}.md")).toBeNull();
+    expect(whyThePathEscapes('doc/design/{{issue}}.md')).toBeNull()
     expect(
       StepMap.safeParse({
-        design: [DRAFTER, { name: "keep it", file: "doc/design/{{issue}}.md" }],
+        design: [DRAFTER, { name: 'keep it', file: 'doc/design/{{issue}}.md' }],
       }).success,
-    ).toBe(true);
-  });
+    ).toBe(true)
+  })
 
   /**
    * **And the reason is about the placeholder that was written**, which is the
@@ -1227,35 +1216,35 @@ describe("the one `design` keeps with", () => {
    * Everything else gets the clause that is true of every unlisted name and of
    * none in particular.
    */
-  it("says why the placeholder that was written is not the one, and never why a different one is not", () => {
+  it('says why the placeholder that was written is not the one, and never why a different one is not', () => {
     const whyNot = (path: string): string => {
       const refused = StepMap.safeParse({
-        design: [DRAFTER, { name: "keep it", file: path }],
-      });
-      expect(refused.success, `"${path}" was accepted`).toBe(false);
-      return refused.error!.issues[0]!.message;
-    };
+        design: [DRAFTER, { name: 'keep it', file: path }],
+      })
+      expect(refused.success, `"${path}" was accepted`).toBe(false)
+      return refused.error!.issues[0]!.message
+    }
 
     // 0036's named successor to this field's own placeholder — and the spelling
     // `#310`'s comments cite as the reason the run-time check exists at all.
-    const ref = whyNot("doc/design/{{ref}}.md");
-    expect(ref).toContain("`{{ref}}`, which a `file:` path does not take");
-    expect(ref).toContain("0036 names the rename");
-    expect(ref, "a `{{ref}}` was answered with `{{title}}`'s reason").not.toContain("slug problem");
+    const ref = whyNot('doc/design/{{ref}}.md')
+    expect(ref).toContain('`{{ref}}`, which a `file:` path does not take')
+    expect(ref).toContain('0036 names the rename')
+    expect(ref, "a `{{ref}}` was answered with `{{title}}`'s reason").not.toContain('slug problem')
 
     // A stray space inside the braces, which is a typo rather than a field.
-    const spaced = whyNot("doc/design/{{ issue }}.md");
-    expect(spaced).toContain("The spelling is exact");
-    expect(spaced, "a typo was answered with `{{title}}`'s reason").not.toContain("slug problem");
+    const spaced = whyNot('doc/design/{{ issue }}.md')
+    expect(spaced).toContain('The spelling is exact')
+    expect(spaced, "a typo was answered with `{{title}}`'s reason").not.toContain('slug problem')
 
     // Anything else: true of every name not listed, and of no field in particular.
-    for (const each of ["{{body}}", "{{design}}", "{{failure}}"]) {
-      const other = whyNot(`doc/design/${each}.md`);
-      expect(other).toContain(`\`${each}\`, which a \`file:\` path does not take`);
-      expect(other).toContain("The list is one name long on purpose");
-      expect(other, `${each} was answered with \`{{title}}\`'s reason`).not.toContain("slug problem");
+    for (const each of ['{{body}}', '{{design}}', '{{failure}}']) {
+      const other = whyNot(`doc/design/${each}.md`)
+      expect(other).toContain(`\`${each}\`, which a \`file:\` path does not take`)
+      expect(other).toContain('The list is one name long on purpose')
+      expect(other, `${each} was answered with \`{{title}}\`'s reason`).not.toContain('slug problem')
     }
-  });
+  })
 
   /**
    * **A destination is written after the thing it keeps.** It keeps what an
@@ -1264,14 +1253,14 @@ describe("the one `design` keeps with", () => {
    * locator, under a recipe that reads as though the design is being kept. That is
    * `#61` reached through an order, and it is refused instead.
    */
-  it("refuses a `file:` written first, because it would keep nothing", () => {
+  it('refuses a `file:` written first, because it would keep nothing', () => {
     const first = StepMap.safeParse({
-      design: [{ name: "keep it", file: "doc/design/x.md" }, DRAFTER],
-    });
-    expect(first.success).toBe(false);
-    expect(first.error!.issues[0]!.message).toContain("it is the first action there");
-    expect(first.error!.issues[0]!.message).toContain("Write it after the action that drafts");
-  });
+      design: [{ name: 'keep it', file: 'doc/design/x.md' }, DRAFTER],
+    })
+    expect(first.success).toBe(false)
+    expect(first.error!.issues[0]!.message).toContain('it is the first action there')
+    expect(first.error!.issues[0]!.message).toContain('Write it after the action that drafts')
+  })
 
   /**
    * **Two destinations are a legal list**, which is 0066 §5 read forwards: a
@@ -1279,17 +1268,17 @@ describe("the one `design` keeps with", () => {
    * `doc/`* and *the brief the ticket asked for* are two entries rather than one
    * block somebody half-wrote.
    */
-  it("takes two destinations, each with its own path", () => {
+  it('takes two destinations, each with its own path', () => {
     const parsed = StepMap.safeParse({
       design: [
         DRAFTER,
-        { name: "the note in the repository", file: "doc/design/notes.md" },
-        { name: "and one beside the ticket", file: "doc/design/{{issue}}.md" },
+        { name: 'the note in the repository', file: 'doc/design/notes.md' },
+        { name: 'and one beside the ticket', file: 'doc/design/{{issue}}.md' },
       ],
-    });
-    expect(parsed.success).toBe(true);
-    expect(parsed.data!.design).toHaveLength(3);
-  });
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.data!.design).toHaveLength(3)
+  })
 
   /**
    * **And it serves `design` alone, answered by the kind** (`#306`'s rule applied
@@ -1297,19 +1286,19 @@ describe("the one `design` keeps with", () => {
    * destination keeps what a step *made* — so no step branch can say why it is
    * meaningless elsewhere, and the sentence is the same at the nine that refuse it.
    */
-  it("serves `design` and says why the other steps are not its", () => {
-    expect(filePlugin.serves).toEqual(["design"]);
-    expect(whyNoKindAt("design", "file")).toBeNull();
-    for (const step of STEPS.filter((each) => each !== "design" && each !== "end")) {
-      const why = whyNoKindAt(step, "file");
-      expect(why, `file is no longer refused at ${step}`).not.toBeNull();
-      expect(why, step).toContain("`design` is the one step that makes something large");
-      expect(why, step).toContain("createFileAction");
+  it('serves `design` and says why the other steps are not its', () => {
+    expect(filePlugin.serves).toEqual(['design'])
+    expect(whyNoKindAt('design', 'file')).toBeNull()
+    for (const step of STEPS.filter((each) => each !== 'design' && each !== 'end')) {
+      const why = whyNoKindAt(step, 'file')
+      expect(why, `file is no longer refused at ${step}`).not.toBeNull()
+      expect(why, step).toContain('`design` is the one step that makes something large')
+      expect(why, step).toContain('createFileAction')
       // Not one of `prepared`'s three paragraphs, which is what `#306` is about.
-      expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
-      expect(why, step).not.toContain("nothing has been committed at `prepared`");
+      expect(why, step).not.toContain('a hold at `prepared` cannot be answered')
+      expect(why, step).not.toContain('nothing has been committed at `prepared`')
     }
-  });
+  })
 
   /**
    * **And its other end, which is the same argument read backwards** (`#301`).
@@ -1320,57 +1309,52 @@ describe("the one `design` keeps with", () => {
    * sentence about what that step asks of an action. `implement` is the step a
    * design is *for*, so the reason is the same at the nine that refuse it.
    */
-  it("serves `implement` and says why the other steps are not its", () => {
-    expect(fileBriefPlugin.serves).toEqual(["implement"]);
-    expect(whyNoKindAt("implement", "file-brief")).toBeNull();
-    for (const step of STEPS.filter((each) => each !== "implement" && each !== "end")) {
-      const why = whyNoKindAt(step, "file-brief");
-      expect(why, `file-brief is no longer refused at ${step}`).not.toBeNull();
-      expect(why, step).toContain("`implement` is the step a design is *for*");
-      expect(why, step).toContain("createFileBriefAction");
-      expect(why, step).not.toContain("a hold at `prepared` cannot be answered");
-      expect(why, step).not.toContain("nothing has been committed at `prepared`");
+  it('serves `implement` and says why the other steps are not its', () => {
+    expect(fileBriefPlugin.serves).toEqual(['implement'])
+    expect(whyNoKindAt('implement', 'file-brief')).toBeNull()
+    for (const step of STEPS.filter((each) => each !== 'implement' && each !== 'end')) {
+      const why = whyNoKindAt(step, 'file-brief')
+      expect(why, `file-brief is no longer refused at ${step}`).not.toBeNull()
+      expect(why, step).toContain('`implement` is the step a design is *for*')
+      expect(why, step).toContain('createFileBriefAction')
+      expect(why, step).not.toContain('a hold at `prepared` cannot be answered')
+      expect(why, step).not.toContain('nothing has been committed at `prepared`')
     }
-  });
-});
+  })
+})
 
 describe("plugin.ts's own count of who carries a universal key", () => {
   const NUMERAL = [
-    "no",
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-  ] as const;
-  const carrying = (field: string) =>
-    PLUGINS.filter((plugin) => plugin.declares.includes(field)).length;
+    'no',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+    'thirteen',
+    'fourteen',
+  ] as const
+  const carrying = (field: string) => PLUGINS.filter((plugin) => plugin.declares.includes(field)).length
 
-  it("says how many plugins carry `when:` and `timeout:`, and how many a hoist would reach", () => {
-    const prose = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8")
-      .replace(/\n\s*\*/g, " ")
-      .replace(/\s+/g, " ");
-    expect(
-      prose,
-      "plugin.ts's header disagrees with PLUGINS about who carries `when:` or `timeout:`",
-    ).toContain(
-      `\`when:\` is legal on ${NUMERAL[carrying("when")]} plugins and \`timeout:\` on ` +
-        `${NUMERAL[carrying("timeout")]}`,
-    );
-    expect(
-      prose,
-      "plugin.ts's header disagrees with PLUGINS about how many plugins a hoist would reach",
-    ).toContain(`hoisting either would make it legal on all ${NUMERAL[PLUGINS.length]}`);
-  });
+  it('says how many plugins carry `when:` and `timeout:`, and how many a hoist would reach', () => {
+    const prose = readFileSync(new URL('../src/plugin.ts', import.meta.url), 'utf8')
+      .replace(/\n\s*\*/g, ' ')
+      .replace(/\s+/g, ' ')
+    expect(prose, "plugin.ts's header disagrees with PLUGINS about who carries `when:` or `timeout:`").toContain(
+      `\`when:\` is legal on ${NUMERAL[carrying('when')]} plugins and \`timeout:\` on ` +
+        `${NUMERAL[carrying('timeout')]}`,
+    )
+    expect(prose, "plugin.ts's header disagrees with PLUGINS about how many plugins a hoist would reach").toContain(
+      `hoisting either would make it legal on all ${NUMERAL[PLUGINS.length]}`,
+    )
+  })
 
   /**
    * **And the two numerals that size the `no_log` claim**, which is the one
@@ -1385,24 +1369,22 @@ describe("plugin.ts's own count of who carries a universal key", () => {
    * counted — a plugin that declared a `noLog` field would make *nothing
    * declares one today* false whatever the numeral says.
    */
-  it("says how many plugins the closed set and the `no_log` claim are about", () => {
-    const prose = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8")
-      .replace(/\n\s*\*/g, " ")
-      .replace(/\s+/g, " ");
+  it('says how many plugins the closed set and the `no_log` claim are about', () => {
+    const prose = readFileSync(new URL('../src/plugin.ts', import.meta.url), 'utf8')
+      .replace(/\n\s*\*/g, ' ')
+      .replace(/\s+/g, ' ')
     for (const sentence of [
       `beside the ${NUMERAL[PLUGINS.length]} declarations`,
       `every field the ${NUMERAL[PLUGINS.length]} plugins have`,
     ]) {
-      expect(prose, "plugin.ts's header disagrees with PLUGINS about the size of the set").toContain(
-        sentence,
-      );
+      expect(prose, "plugin.ts's header disagrees with PLUGINS about the size of the set").toContain(sentence)
     }
     expect(
       PLUGINS.filter((plugin) => plugin.secrets.length > 0),
       "a plugin declares a no_log field, and plugin.ts's header says nothing does",
-    ).toEqual([]);
-  });
-});
+    ).toEqual([])
+  })
+})
 
 /**
  * **One dispatch shape, embedded rather than re-declared**
@@ -1420,7 +1402,7 @@ describe("plugin.ts's own count of who carries a universal key", () => {
  * before the money**: the recipe is parsed on the conducting machine before a
  * worktree is cut and before anything is claimed.
  */
-describe("a dispatch is one shape", () => {
+describe('a dispatch is one shape', () => {
   /**
    * **What is shared is *how*, and what stays the plugin's is *which*** (0070 §3).
    *
@@ -1433,23 +1415,26 @@ describe("a dispatch is one shape", () => {
    * would settle it by accident and hand an operator a way to rewrite the one
    * question `judgePrompt` exists to ask.
    */
-  it("gives both paid plugins the same `model:` and `limits:`, and `prompt:` only to `agent:`", () => {
+  it('gives both paid plugins the same `model:` and `limits:`, and `prompt:` only to `agent:`', () => {
     for (const plugin of [agentPlugin, judgePlugin]) {
-      expect(plugin.declares, `${plugin.key} does not embed the dispatch group`).toContain("model");
-      expect(plugin.declares, `${plugin.key} does not embed the dispatch group`).toContain("limits");
+      expect(plugin.declares, `${plugin.key} does not embed the dispatch group`).toContain('model')
+      expect(plugin.declares, `${plugin.key} does not embed the dispatch group`).toContain('limits')
     }
-    expect(agentPlugin.declares).toContain("prompt");
-    expect(judgePlugin.declares).not.toContain("prompt");
+    expect(agentPlugin.declares).toContain('prompt')
+    expect(judgePlugin.declares).not.toContain('prompt')
 
     // The same schema object and not a second copy of it: a field re-declared
     // beside the group is the divergence this whole shape exists to end.
-    expect(agentPlugin.schema.parse({ name: "n", agent: "claude-code", prompt: "p", limits: { turns: 5 } })).toEqual(
-      { name: "n", agent: "claude-code", prompt: "p", limits: { turns: 5 } },
-    );
+    expect(agentPlugin.schema.parse({ name: 'n', agent: 'claude-code', prompt: 'p', limits: { turns: 5 } })).toEqual({
+      name: 'n',
+      agent: 'claude-code',
+      prompt: 'p',
+      limits: { turns: 5 },
+    })
     expect(
-      judgePlugin.schema.parse({ name: "n", judge: "claude-code", when: "findings", limits: { turns: 5 } }),
-    ).toEqual({ name: "n", judge: "claude-code", when: "findings", limits: { turns: 5 } });
-  });
+      judgePlugin.schema.parse({ name: 'n', judge: 'claude-code', when: 'findings', limits: { turns: 5 } }),
+    ).toEqual({ name: 'n', judge: 'claude-code', when: 'findings', limits: { turns: 5 } })
+  })
 
   /**
    * **Nothing in the group is defaulted, and absent stays absent** (0064 §5).
@@ -1461,13 +1446,13 @@ describe("a dispatch is one shape", () => {
    * file nobody edited*, and this is that promise as a test rather than a hope
    * about it (0070 §8).
    */
-  it("changes nothing for a file nobody edited", () => {
-    const written = { name: "the cold reviewer", agent: "claude-code", prompt: "read it" };
-    const recipe = Recipe.parse({ ...BASE, steps: { review: [written] } });
-    expect(recipe.steps.review[0]).toEqual(written);
-    expect(Object.keys(recipe.steps.review[0]!)).not.toContain("limits");
-    expect(Object.keys(recipe.steps.review[0]!)).not.toContain("model");
-  });
+  it('changes nothing for a file nobody edited', () => {
+    const written = { name: 'the cold reviewer', agent: 'claude-code', prompt: 'read it' }
+    const recipe = Recipe.parse({ ...BASE, steps: { review: [written] } })
+    expect(recipe.steps.review[0]).toEqual(written)
+    expect(Object.keys(recipe.steps.review[0]!)).not.toContain('limits')
+    expect(Object.keys(recipe.steps.review[0]!)).not.toContain('model')
+  })
 
   /**
    * **A dispatch may only narrow, and the sentence names both numbers** (0070 §5).
@@ -1476,35 +1461,35 @@ describe("a dispatch is one shape", () => {
    * would make what a pass may spend knowable only after reading every action in
    * every step, which is what `lingtai status`'s one-line reading rests on.
    */
-  it("refuses a `limits:` that widens the ceiling, naming the step and both numbers", () => {
+  it('refuses a `limits:` that widens the ceiling, naming the step and both numbers', () => {
     const at = (limits: unknown) =>
       Recipe.safeParse({
         ...BASE,
-        runtime: { limits: { turns: 150, wall: "1h" } },
-        steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "", limits }] },
-      });
+        runtime: { limits: { turns: 150, wall: '1h' } },
+        steps: { implement: [{ name: 'write the change', agent: 'claude-code', prompt: '', limits }] },
+      })
 
-    const turns = at({ turns: 300 });
-    expect(turns.success).toBe(false);
+    const turns = at({ turns: 300 })
+    expect(turns.success).toBe(false)
     expect(turns.error!.issues[0]!.message).toBe(
       'steps.implement\'s "write the change" asks for 300 turns; runtime.limits.turns is 150, ' +
-        "and a step may only narrow it (0070 §5)",
-    );
-    expect(turns.error!.issues[0]!.path).toEqual(["steps", "implement"]);
+        'and a step may only narrow it (0070 §5)',
+    )
+    expect(turns.error!.issues[0]!.path).toEqual(['steps', 'implement'])
 
-    const wall = at({ wall: "3h" });
-    expect(wall.success).toBe(false);
+    const wall = at({ wall: '3h' })
+    expect(wall.success).toBe(false)
     expect(wall.error!.issues[0]!.message).toBe(
       'steps.implement\'s "write the change" asks for 3h of wall clock; runtime.limits.wall is 1h, ' +
-        "and a step may only narrow it (0070 §5)",
-    );
+        'and a step may only narrow it (0070 §5)',
+    )
 
     // Narrower resolves, and so does equal: a step written at the bound on
     // purpose is saying a true thing, and refusing it would refuse a recipe for
     // being explicit.
-    expect(at({ turns: 60, wall: "30m" }).success).toBe(true);
-    expect(at({ turns: 150, wall: "1h" }).success).toBe(true);
-  });
+    expect(at({ turns: 60, wall: '30m' }).success).toBe(true)
+    expect(at({ turns: 150, wall: '1h' }).success).toBe(true)
+  })
 
   /**
    * **`safeParse` returns a refusal for a malformed duration and never throws
@@ -1523,33 +1508,33 @@ describe("a dispatch is one shape", () => {
    * `wall: "90"` — the unit forgotten — is that ticket's exact typo, and it is
    * asserted at **both** ends, because the comparison parses both.
    */
-  it("refuses a malformed `wall` by name at either end, rather than throwing out of `safeParse`", () => {
+  it('refuses a malformed `wall` by name at either end, rather than throwing out of `safeParse`', () => {
     const ceiling = Recipe.safeParse({
       ...BASE,
-      runtime: { limits: { wall: "90" } },
-      steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "" }] },
-    });
-    expect(ceiling.success).toBe(false);
+      runtime: { limits: { wall: '90' } },
+      steps: { implement: [{ name: 'write the change', agent: 'claude-code', prompt: '' }] },
+    })
+    expect(ceiling.success).toBe(false)
     expect(ceiling.error!.issues).toEqual([
       expect.objectContaining({
-        path: ["runtime", "limits", "wall"],
-        message: "must be a positive duration, like 2h",
+        path: ['runtime', 'limits', 'wall'],
+        message: 'must be a positive duration, like 2h',
       }),
-    ]);
+    ])
 
     // And a step's own, which the same line parses. The refusal is the leaf's,
     // named at the field — nothing about narrowing, because a ceiling or a bound
     // that is not a duration is not a thing to compare.
     const own = Recipe.safeParse({
       ...BASE,
-      runtime: { limits: { wall: "1h" } },
-      steps: { implement: [{ name: "write the change", agent: "claude-code", prompt: "", limits: { wall: "90" } }] },
-    });
-    expect(own.success).toBe(false);
-    expect(own.error!.issues[0]!.path).toEqual(["steps", "implement", 0, "limits", "wall"]);
-    expect(own.error!.issues[0]!.message).toContain("must be a positive duration, like 30m");
-    expect(own.error!.issues.map((issue) => issue.message).join("\n")).not.toContain("may only narrow");
-  });
+      runtime: { limits: { wall: '1h' } },
+      steps: { implement: [{ name: 'write the change', agent: 'claude-code', prompt: '', limits: { wall: '90' } }] },
+    })
+    expect(own.success).toBe(false)
+    expect(own.error!.issues[0]!.path).toEqual(['steps', 'implement', 0, 'limits', 'wall'])
+    expect(own.error!.issues[0]!.message).toContain('must be a positive duration, like 30m')
+    expect(own.error!.issues.map((issue) => issue.message).join('\n')).not.toContain('may only narrow')
+  })
 
   /**
    * **`rounds` and `restarts` bound the pass, so they are refused inside one
@@ -1561,20 +1546,20 @@ describe("a dispatch is one shape", () => {
    */
   it("refuses `rounds` and `restarts` inside a dispatch's `limits:`, in the recipe's own voice", () => {
     for (const [field, counts] of [
-      ["rounds", "how many times a pass sends the agent back"],
-      ["restarts", "how many times a ticket starts the work over"],
+      ['rounds', 'how many times a pass sends the agent back'],
+      ['restarts', 'how many times a ticket starts the work over'],
     ] as const) {
       const refused = Recipe.safeParse({
         ...BASE,
-        steps: { implement: [{ name: "w", agent: "claude-code", prompt: "", limits: { [field]: 1 } }] },
-      });
-      expect(refused.success).toBe(false);
-      const why = refused.error!.issues.map((issue) => issue.message).join("\n");
-      expect(why).toContain(`\`${field}\` bounds the pass and not one call (0040)`);
-      expect(why).toContain(counts);
-      expect(why).toContain("Write it at `runtime.limits`");
+        steps: { implement: [{ name: 'w', agent: 'claude-code', prompt: '', limits: { [field]: 1 } }] },
+      })
+      expect(refused.success).toBe(false)
+      const why = refused.error!.issues.map((issue) => issue.message).join('\n')
+      expect(why).toContain(`\`${field}\` bounds the pass and not one call (0040)`)
+      expect(why).toContain(counts)
+      expect(why).toContain('Write it at `runtime.limits`')
     }
-  });
+  })
 
   /**
    * **A built-in judge spends nothing, which is the whole of what its name
@@ -1584,18 +1569,18 @@ describe("a dispatch is one shape", () => {
    * dispatched — so there is no model to name and no call to bound. Refused
    * rather than accepted and ignored, which is 0061 §9 one level along.
    */
-  it("refuses a `model:` or a `limits:` on a built-in judge", () => {
+  it('refuses a `model:` or a `limits:` on a built-in judge', () => {
     for (const built of BUILT_IN_JUDGES) {
-      for (const field of ["model", "limits"] as const) {
-        const value = field === "model" ? "haiku" : { turns: 5 };
+      for (const field of ['model', 'limits'] as const) {
+        const value = field === 'model' ? 'haiku' : { turns: 5 }
         const refused = Recipe.safeParse({
           ...BASE,
-          steps: { proposed: [{ name: "a red build", judge: built, when: "red", [field]: value }] },
-        });
-        expect(refused.success).toBe(false);
-        const why = refused.error!.issues.map((issue) => issue.message).join("\n");
-        expect(why).toContain(`names the built-in judge \`${built}\``);
-        expect(why).toContain("it dispatches nothing");
+          steps: { proposed: [{ name: 'a red build', judge: built, when: 'red', [field]: value }] },
+        })
+        expect(refused.success).toBe(false)
+        const why = refused.error!.issues.map((issue) => issue.message).join('\n')
+        expect(why).toContain(`names the built-in judge \`${built}\``)
+        expect(why).toContain('it dispatches nothing')
       }
       // And the same fields beside a runtime judge resolve, because that one is
       // an agent paid for a judgement.
@@ -1604,11 +1589,17 @@ describe("a dispatch is one shape", () => {
           ...BASE,
           steps: {
             proposed: [
-              { name: "the lines or the approach", judge: "claude-code", when: "findings", model: "haiku", limits: { turns: 5 } },
+              {
+                name: 'the lines or the approach',
+                judge: 'claude-code',
+                when: 'findings',
+                model: 'haiku',
+                limits: { turns: 5 },
+              },
             ],
           },
         }).success,
-      ).toBe(true);
+      ).toBe(true)
     }
-  });
-});
+  })
+})

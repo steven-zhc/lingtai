@@ -13,26 +13,26 @@
  * runs, which is what a reader of the log needs, without pretending to be the
  * configuration.
  */
-import type { Envelope, ToAppend } from "./envelope.ts";
-import type { PayloadOf, Tier } from "./events.ts";
+import type { Envelope, ToAppend } from './envelope.ts'
+import type { PayloadOf, Tier } from './events.ts'
 
 export interface ProjectState {
   /** Null until the first event; a stream can be read before it exists. */
-  project: string | null;
+  project: string | null
   /**
    * The GitHub owner. Null for a project registered before `ProjectConfigured`
    * carried one — re-run `lingtai add` to record it.
    */
-  owner: string | null;
+  owner: string | null
   /**
    * The branch this project's recipe is read from and merged into. Null for a
    * project registered before it was recorded — re-run `lingtai add` to record it.
    */
-  base: string | null;
+  base: string | null
 
   /** The last resolved recipe hash, and the commit it was resolved from. */
-  configHash: string | null;
-  fromSha: string | null;
+  configHash: string | null
+  fromSha: string | null
 
   /**
    * The refusal a conductor's pass last recorded, while nothing has recovered
@@ -40,14 +40,14 @@ export interface ProjectState {
    * `ProjectRecovered` followed. The seq and time are the event's, so a reader
    * can say *since when* without the fold reading a clock (0027).
    */
-  refused: RecordedRefusal | null;
+  refused: RecordedRefusal | null
 
-  version: number;
-  lastSeq: bigint | null;
+  version: number
+  lastSeq: bigint | null
 }
 
 /** A `ProjectRefused` as the fold keeps it: the payload, and when it was recorded. */
-export type RecordedRefusal = PayloadOf<"ProjectRefused"> & { seq: bigint; at: Date };
+export type RecordedRefusal = PayloadOf<'ProjectRefused'> & { seq: bigint; at: Date }
 
 export const emptyProject: ProjectState = {
   project: null,
@@ -58,13 +58,12 @@ export const emptyProject: ProjectState = {
   refused: null,
   version: 0,
   lastSeq: null,
-};
+}
 
 export function applyProject(state: ProjectState, event: Envelope): ProjectState {
-  const at = { version: event.version, lastSeq: event.seq };
+  const at = { version: event.version, lastSeq: event.seq }
 
   switch (event.type) {
-
     /**
      * The stream's first event, and the whole of *pending* (#163).
      *
@@ -74,14 +73,14 @@ export function applyProject(state: ProjectState, event: Envelope): ProjectState
      * this event is a project the board can name, list and act on, and one
      * `loadProjects()` does not return.
      */
-    case "ProjectOnboardingStarted": {
-      const d = event.data as PayloadOf<"ProjectOnboardingStarted">;
-      const [owner, repo] = splitSlug(d.slug);
-      return { ...state, ...at, project: repo, owner, base: d.base };
+    case 'ProjectOnboardingStarted': {
+      const d = event.data as PayloadOf<'ProjectOnboardingStarted'>
+      const [owner, repo] = splitSlug(d.slug)
+      return { ...state, ...at, project: repo, owner, base: d.base }
     }
 
-    case "ProjectConfigured": {
-      const d = event.data as PayloadOf<"ProjectConfigured">;
+    case 'ProjectConfigured': {
+      const d = event.data as PayloadOf<'ProjectConfigured'>
       return {
         ...state,
         ...at,
@@ -90,25 +89,25 @@ export function applyProject(state: ProjectState, event: Envelope): ProjectState
         base: d.base ?? state.base,
         configHash: d.configHash,
         fromSha: d.fromSha,
-      };
+      }
     }
 
-    case "ProjectRefused": {
-      const d = event.data as PayloadOf<"ProjectRefused">;
-      return { ...state, ...at, refused: { ...d, seq: event.seq, at: event.at } };
+    case 'ProjectRefused': {
+      const d = event.data as PayloadOf<'ProjectRefused'>
+      return { ...state, ...at, refused: { ...d, seq: event.seq, at: event.at } }
     }
 
-    case "ProjectRecovered":
-      return { ...state, ...at, refused: null };
+    case 'ProjectRecovered':
+      return { ...state, ...at, refused: null }
 
     default:
       // See the note in work-item.ts: ignored, not rejected.
-      return { ...state, ...at };
+      return { ...state, ...at }
   }
 }
 
 export function reduceProject(events: readonly Envelope[]): ProjectState {
-  return events.reduce(applyProject, emptyProject);
+  return events.reduce(applyProject, emptyProject)
 }
 
 /**
@@ -120,13 +119,13 @@ export function reduceProject(events: readonly Envelope[]): ProjectState {
  * `ProjectConfigured` carried one is already in.
  */
 function splitSlug(slug: string): [owner: string | null, repo: string] {
-  const cut = slug.lastIndexOf("/");
-  return cut === -1 ? [null, slug] : [slug.slice(0, cut), slug.slice(cut + 1)];
+  const cut = slug.lastIndexOf('/')
+  return cut === -1 ? [null, slug] : [slug.slice(0, cut), slug.slice(cut + 1)]
 }
 
 /** Whether this stream has ever been configured. */
 export function isRegistered(state: ProjectState): boolean {
-  return state.project !== null && state.configHash !== null;
+  return state.project !== null && state.configHash !== null
 }
 
 /**
@@ -145,13 +144,13 @@ export function isRegistered(state: ProjectState): boolean {
  * question and the board asks both.
  */
 export function isPending(state: ProjectState): boolean {
-  return state.project !== null && state.configHash === null;
+  return state.project !== null && state.configHash === null
 }
 
 /** What one pass saw of a project: refused, and why — or looked at and not refused. */
 export type PassObservation =
   | { refused: true; detail: string; ref: string | null; codeSha: string | null }
-  | { refused: false; ref: string | null; codeSha: string | null };
+  | { refused: false; ref: string | null; codeSha: string | null }
 
 /**
  * What a pass appends about a project, given what its stream already says.
@@ -176,14 +175,14 @@ export type PassObservation =
 export function passTransition(
   state: ProjectState,
   seen: PassObservation,
-): ToAppend<PayloadOf<"ProjectRefused"> | PayloadOf<"ProjectRecovered">> | null {
-  const project = state.project;
-  if (project === null) return null;
-  const last = state.refused;
+): ToAppend<PayloadOf<'ProjectRefused'> | PayloadOf<'ProjectRecovered'>> | null {
+  const project = state.project
+  if (project === null) return null
+  const last = state.refused
 
   if (!seen.refused) {
-    if (last === null) return null;
-    return { type: "ProjectRecovered", actor: "conductor", data: { project, ref: seen.ref, codeSha: seen.codeSha } };
+    if (last === null) return null
+    return { type: 'ProjectRecovered', actor: 'conductor', data: { project, ref: seen.ref, codeSha: seen.codeSha } }
   }
 
   if (
@@ -192,13 +191,13 @@ export function passTransition(
     last.codeSha === seen.codeSha &&
     refusalText(last.detail) === refusalText(seen.detail)
   ) {
-    return null;
+    return null
   }
   return {
-    type: "ProjectRefused",
-    actor: "conductor",
+    type: 'ProjectRefused',
+    actor: 'conductor',
     data: { project, detail: seen.detail, ref: seen.ref, codeSha: seen.codeSha },
-  };
+  }
 }
 
 /**
@@ -212,5 +211,5 @@ export function passTransition(
  * contains a digit is one token — whatever letters the digits are attached to.
  */
 export function refusalText(detail: string): string {
-  return detail.replace(/[\w:.-]+/g, (m) => (/\d/.test(m) ? "#" : m));
+  return detail.replace(/[\w:.-]+/g, (m) => (/\d/.test(m) ? '#' : m))
 }

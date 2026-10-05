@@ -1,5 +1,8 @@
-"use server";
+'use server'
 
+import { readFile } from 'node:fs/promises'
+
+import { startOnboarding } from '@lingtai/conductor/wizard'
 /**
  * The end of the wizard's page: the recipe it describes, as a file, or why
  * there is none yet (#164).
@@ -28,66 +31,65 @@ import {
   saidFor,
   wholeSteps,
   type WizardState,
-} from "@lingtai/conductor/wizard-page";
-import { startOnboarding } from "@lingtai/conductor/wizard";
-import { githubApp, hasGitHubApp } from "@lingtai/env";
-import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
-import { readFile } from "node:fs/promises";
-import { actor } from "../../../lib/actor.ts";
+} from '@lingtai/conductor/wizard-page'
+import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { createGitHubClient, parseSlug } from '@lingtai/github'
+import { Recipe, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from '@lingtai/recipe'
+
+import { actor } from '../../../lib/actor.ts'
 
 export type Finished =
   | {
-      ok: true;
+      ok: true
       /** `path`'s text — never with `runtime.agent` in it. */
-      file: string;
-      path: string;
+      file: string
+      path: string
       /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
-      machine: string | null;
-      changed: string[];
+      machine: string | null
+      changed: string[]
       /** Whether `file` is on disk already: onboarding writes, an edit does not. */
-      written: boolean;
+      written: boolean
     }
-  | { ok: false; refusals: string[] };
+  | { ok: false; refusals: string[] }
 
 export async function finishWizard(input: {
-  state: WizardState;
+  state: WizardState
   /** The recipe the page started from: the scan's proposal, or the machine's, resolved. */
-  recipe: Recipe;
+  recipe: Recipe
   /** `~/.lingtai/<project>/recipe.yml` as it is, when there is one. */
-  existing: string | null;
+  existing: string | null
 }): Promise<Finished> {
-  const { state } = input;
-  const refusals = finishRefusals(state);
-  if (refusals.length > 0) return { ok: false, refusals };
+  const { state } = input
+  const refusals = finishRefusals(state)
+  if (refusals.length > 0) return { ok: false, refusals }
 
   try {
-    const { owner, repo } = parseSlug(state.slug);
+    const { owner, repo } = parseSlug(state.slug)
     if (input.existing === null) {
-      if (!hasGitHubApp()) return { ok: false, refusals: ["no GitHub App configured"] };
+      if (!hasGitHubApp()) return { ok: false, refusals: ['no GitHub App configured'] }
       const started = await startOnboarding({
         client: await createGitHubClient({ auth: githubApp(), owner, repo }),
         recipe: Recipe.parse(applyDraft(Recipe.parse(input.recipe), state)),
         said: saidFor(state),
         by: actor(),
-      });
-      if (!started.ok) return { ok: false, refusals: [started.refusal] };
+      })
+      if (!started.ok) return { ok: false, refusals: [started.refusal] }
       return {
         ok: true,
-        file: await readFile(started.path, "utf8"),
+        file: await readFile(started.path, 'utf8'),
         path: started.path,
         machine: null,
         changed: [],
         written: true,
-      };
+      }
     }
-    const machine = await readFile(machinePath(), "utf8").catch((err: NodeJS.ErrnoException) => {
-      if (err.code === "ENOENT") return null;
-      throw err;
-    });
-    return await editExisting(input.existing, state, { project: repo, current: input.recipe, machine });
+    const machine = await readFile(machinePath(), 'utf8').catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return null
+      throw err
+    })
+    return await editExisting(input.existing, state, { project: repo, current: input.recipe, machine })
   } catch (err) {
-    return { ok: false, refusals: [(err as Error).message] };
+    return { ok: false, refusals: [(err as Error).message] }
   }
 }
 
@@ -113,37 +115,37 @@ export async function editExisting(
   state: WizardState,
   at: { project: string; current: Recipe; machine: string | null; home?: string },
 ): Promise<Finished> {
-  const ref = state.draft.base;
-  const { recipe } = await resolveRecipe(async () => existing, ref);
-  const drafted = Recipe.parse(applyDraft(at.current, state));
+  const ref = state.draft.base
+  const { recipe } = await resolveRecipe(async () => existing, ref)
+  const drafted = Recipe.parse(applyDraft(at.current, state))
   // The file's half: everything the page changed but the machine's own field.
   // `drafted.runtime.limits` passes through untouched — it is the recipe's own
   // (`#375`), so what the page drafted is what the file is compared against.
   const after = Recipe.parse({
     ...drafted,
     runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
-  });
+  })
   const describes = async (file: string) =>
-    (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
+    (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after)
 
-  let changes = changesFrom(recipe, after);
-  let file = editRecipe(existing, changes);
+  let changes = changesFrom(recipe, after)
+  let file = editRecipe(existing, changes)
   if (!(await describes(file))) {
-    changes = wholeSteps(changes, after);
-    file = editRecipe(existing, changes);
+    changes = wholeSteps(changes, after)
+    file = editRecipe(existing, changes)
     if (!(await describes(file))) {
       return {
         ok: false,
         refusals: [
-          `the edit to ${changes.map((c) => c.path.join(".")).join(", ")} would not read back as the recipe this page ` +
-            "describes — what the file inherits would change with it — so it is not offered",
+          `the edit to ${changes.map((c) => c.path.join('.')).join(', ')} would not read back as the recipe this page ` +
+            'describes — what the file inherits would change with it — so it is not offered',
         ],
-      };
+      }
     }
   }
 
-  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime" && c.path[1] === "agent");
-  let machine: string | null = null;
+  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === 'runtime' && c.path[1] === 'agent')
+  let machine: string | null = null
   if (runtime.length > 0) {
     const split = machineFiles({
       file,
@@ -152,16 +154,16 @@ export async function editExisting(
       machine: at.machine,
       ...(at.home === undefined ? {} : { home: at.home }),
       replace: true,
-    });
-    if (!split.ok) return { ok: false, refusals: [split.refusal] };
-    machine = split.machine;
+    })
+    if (!split.ok) return { ok: false, refusals: [split.refusal] }
+    machine = split.machine
   }
   return {
     ok: true,
     file,
     path: recipePath(at.project, at.home),
     machine,
-    changed: [...changes, ...runtime].map((c) => c.path.join(".")),
+    changed: [...changes, ...runtime].map((c) => c.path.join('.')),
     written: false,
-  };
+  }
 }

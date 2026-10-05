@@ -22,18 +22,20 @@
  * document is what the code is judged against, and the judgement belongs where
  * the code is.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { runPlugin } from "@lingtai/recipe";
-import { describe, expect, it } from "vitest";
-import { ARRIVE_AT_THE_ROUTER, onOffer, type Ceilings, type StepEnding } from "../src/pass.ts";
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
-const page = readFileSync(fileURLToPath(new URL("../../../doc/plugins/run.md", import.meta.url)), "utf8");
+import { runPlugin } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
+
+import { ARRIVE_AT_THE_ROUTER, onOffer, type Ceilings, type StepEnding } from '../src/pass.ts'
+
+const page = readFileSync(fileURLToPath(new URL('../../../doc/plugins/run.md', import.meta.url)), 'utf8')
 
 /** Everything a row claims: the step, and whether a red command there buys a round. */
 interface Row {
-  step: string;
-  bought: boolean;
+  step: string
+  bought: boolean
 }
 
 /**
@@ -44,30 +46,33 @@ interface Row {
  * next edit adds.
  */
 function costTable(): Row[] {
-  const section = page.split(/^## /m).find((part) => part.startsWith("Where it may be declared"));
-  if (section === undefined) throw new Error("doc/plugins/run.md has no `## Where it may be declared` section");
+  const section = page.split(/^## /m).find((part) => part.startsWith('Where it may be declared'))
+  if (section === undefined) throw new Error('doc/plugins/run.md has no `## Where it may be declared` section')
 
-  const rows: Row[] = [];
-  for (const line of section.split("\n")) {
-    if (!line.startsWith("| `")) continue;
-    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-    const step = /^`([^`]+)`$/.exec(cells[0] ?? "")?.[1];
-    if (step === undefined) continue;
-    const says = cells[1] ?? "";
-    const bought = /\*\*A fix round\b/.test(says);
+  const rows: Row[] = []
+  for (const line of section.split('\n')) {
+    if (!line.startsWith('| `')) continue
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+    const step = /^`([^`]+)`$/.exec(cells[0] ?? '')?.[1]
+    if (step === undefined) continue
+    const says = cells[1] ?? ''
+    const bought = /\*\*A fix round\b/.test(says)
     if (!bought && !/\*\*No round bought\b/.test(says)) {
-      throw new Error(`the \`${step}\` row says neither "A fix round" nor "No round bought"`);
+      throw new Error(`the \`${step}\` row says neither "A fix round" nor "No round bought"`)
     }
-    rows.push({ step, bought });
+    rows.push({ step, bought })
   }
-  return rows;
+  return rows
 }
 
-describe("the run page says what a red command costs at each step it may be written at", () => {
+describe('the run page says what a red command costs at each step it may be written at', () => {
   /** One row per step `runPlugin` serves, in the order it declares them. */
-  it("has a row for each of the four, and for nothing else", () => {
-    expect(costTable().map((row) => row.step)).toEqual([...runPlugin.serves]);
-  });
+  it('has a row for each of the four, and for nothing else', () => {
+    expect(costTable().map((row) => row.step)).toEqual([...runPlugin.serves])
+  })
 
   /**
    * A refusal buys a round by being routed back into the spine, so a row that
@@ -76,35 +81,35 @@ describe("the run page says what a red command costs at each step it may be writ
    * when it gets there (`AFTER_AN_AGENT`, through `onOffer`). `prepared` fails
    * the second and `proposed` the first.
    */
-  it("promises a fix round only where the refusal reaches a judge that can give one", () => {
-    const spare: Ceilings = { rounds: 2, restartsLeft: 1 };
-    const refused: StepEnding = { ending: "refused", because: "action-refused", at: "check", detail: "…" };
+  it('promises a fix round only where the refusal reaches a judge that can give one', () => {
+    const spare: Ceilings = { rounds: 2, restartsLeft: 1 }
+    const refused: StepEnding = { ending: 'refused', because: 'action-refused', at: 'check', detail: '…' }
 
     for (const row of costTable().filter((each) => each.bought)) {
-      const step = row.step as (typeof ARRIVE_AT_THE_ROUTER)[number];
-      expect(ARRIVE_AT_THE_ROUTER, `a red \`run:\` at \`${step}\` never reaches the router`).toContain(step);
+      const step = row.step as (typeof ARRIVE_AT_THE_ROUTER)[number]
+      expect(ARRIVE_AT_THE_ROUTER, `a red \`run:\` at \`${step}\` never reaches the router`).toContain(step)
       expect(
         onOffer(step, refused, spare, 0).affordable,
         `\`${step}\` is promised a fix round, and the offer there has no \`implement\` on it`,
-      ).toContain("implement");
+      ).toContain('implement')
     }
-  });
+  })
 
   /**
    * And the two the page says buy nothing are the two nothing *could*: `prepared`
    * is off `reachable` as well as `affordable`, so it is not a number somebody
    * can raise, and `proposed` does not arrive at all.
    */
-  it("says no round is bought where no ceiling would have bought one", () => {
-    const spare: Ceilings = { rounds: 9, restartsLeft: 9 };
-    const refused: StepEnding = { ending: "refused", because: "action-refused", at: "check", detail: "…" };
+  it('says no round is bought where no ceiling would have bought one', () => {
+    const spare: Ceilings = { rounds: 9, restartsLeft: 9 }
+    const refused: StepEnding = { ending: 'refused', because: 'action-refused', at: 'check', detail: '…' }
 
-    expect(onOffer("prepared", refused, spare, 0).reachable).toEqual(["waiting"]);
-    expect(ARRIVE_AT_THE_ROUTER).not.toContain("proposed");
-    expect(costTable().filter((row) => !row.bought).map((row) => row.step)).toEqual([
-      "prepared",
-      "proposed",
-      "merge",
-    ]);
-  });
-});
+    expect(onOffer('prepared', refused, spare, 0).reachable).toEqual(['waiting'])
+    expect(ARRIVE_AT_THE_ROUTER).not.toContain('proposed')
+    expect(
+      costTable()
+        .filter((row) => !row.bought)
+        .map((row) => row.step),
+    ).toEqual(['prepared', 'proposed', 'merge'])
+  })
+})

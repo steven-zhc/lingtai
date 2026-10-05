@@ -1,12 +1,13 @@
-import path from "node:path";
-import type { ComponentPropsWithoutRef } from "react";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
-import rehypeHighlight from "rehype-highlight";
-import bash from "highlight.js/lib/languages/bash";
-import typescript from "highlight.js/lib/languages/typescript";
-import yaml from "highlight.js/lib/languages/yaml";
+import path from 'node:path'
+
+import bash from 'highlight.js/lib/languages/bash'
+import typescript from 'highlight.js/lib/languages/typescript'
+import yaml from 'highlight.js/lib/languages/yaml'
+import type { ComponentPropsWithoutRef } from 'react'
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
+import rehypeHighlight from 'rehype-highlight'
+import rehypeSanitize from 'rehype-sanitize'
+import remarkGfm from 'remark-gfm'
 
 /**
  * Syntax colour for the three languages `doc/` fences, and no others: a recipe
@@ -15,8 +16,8 @@ import yaml from "highlight.js/lib/languages/yaml";
  * Highlighting runs after sanitising, so the only markup it adds is its own
  * `hljs-*` spans, which the site's stylesheet colours from the palette.
  */
-const HIGHLIGHT = { languages: { bash, typescript, ts: typescript, yaml }, detect: false };
-import { headingsOf, resolveHref } from "@/lib/docs";
+const HIGHLIGHT = { languages: { bash, typescript, ts: typescript, yaml }, detect: false }
+import { headingsOf, resolveHref } from '@/lib/docs'
 
 /**
  * A file from `doc/`, rendered.
@@ -47,7 +48,7 @@ import { headingsOf, resolveHref } from "@/lib/docs";
  * source: a pipeline that is safe because of who wrote today's input is a
  * pipeline that is unsafe the first time that changes.
  */
-type HeadingProps = ComponentPropsWithoutRef<"h2"> & ExtraProps;
+type HeadingProps = ComponentPropsWithoutRef<'h2'> & ExtraProps
 
 export function Document({
   slug,
@@ -56,26 +57,26 @@ export function Document({
   published,
 }: {
   /** The document's own route, which is what decides how the page is set. */
-  slug: string;
+  slug: string
   /**
    * Its path under `doc/`, which relative links are resolved against — the
    * file's directory and not the route's, since `plugins/index.md` is served at
    * `/docs/plugins/` and a link beside it means the file beside it.
    */
-  source: string;
-  body: string;
+  source: string
+  body: string
   /** Every file the site projects, so a link can tell a page from a blob. */
-  published: string[];
+  published: string[]
 }) {
-  const isPublished = (file: string) => published.includes(file);
+  const isPublished = (file: string) => published.includes(file)
   // By source line, and not by counting headings as they render: the id a
   // heading gets here and the id the contents links to have to be the same id,
   // and the only thing both sides can agree on without one of them assuming the
   // order the other ran in is where the heading is in the file.
-  const ids = new Map(headingsOf(body).map((h) => [h.line, h.id]));
-  const heading = (Tag: "h2" | "h3" | "h4") =>
+  const ids = new Map(headingsOf(body).map((h) => [h.line, h.id]))
+  const heading = (Tag: 'h2' | 'h3' | 'h4') =>
     function Heading({ node, children, ...rest }: HeadingProps) {
-      const id = ids.get(node?.position?.start.line ?? -1);
+      const id = ids.get(node?.position?.start.line ?? -1)
       return (
         <Tag id={id} {...rest}>
           {children}
@@ -85,8 +86,8 @@ export function Document({
             </a>
           )}
         </Tag>
-      );
-    };
+      )
+    }
 
   /**
    * A TL;DR row says what kind of row it is, so the stylesheet can colour the
@@ -96,15 +97,15 @@ export function Document({
    */
   const rowKind = (node: unknown): string | undefined => {
     const cell = (node as { children?: unknown[] } | undefined)?.children?.find(
-      (child) => (child as { type?: string }).type === "element",
-    );
+      (child) => (child as { type?: string }).type === 'element',
+    )
     const text = (n: unknown): string =>
-      typeof n === "object" && n !== null && "value" in n
+      typeof n === 'object' && n !== null && 'value' in n
         ? String((n as { value: unknown }).value)
-        : ((n as { children?: unknown[] } | null)?.children ?? []).map(text).join("");
-    const label = text(cell).trim().toLowerCase();
-    return { does: "does", "write it at": "where", needs: "needs", refuses: "refuses", "watch out": "watch" }[label];
-  };
+        : ((n as { children?: unknown[] } | null)?.children ?? []).map(text).join('')
+    const label = text(cell).trim().toLowerCase()
+    return { does: 'does', 'write it at': 'where', needs: 'needs', refuses: 'refuses', 'watch out': 'watch' }[label]
+  }
 
   const components: Components = {
     tr({ node, children, ...rest }) {
@@ -112,37 +113,41 @@ export function Document({
         <tr data-row={rowKind(node)} {...rest}>
           {children}
         </tr>
-      );
+      )
     },
-    h2: heading("h2"),
-    h3: heading("h3"),
-    h4: heading("h4"),
+    h2: heading('h2'),
+    h3: heading('h3'),
+    h4: heading('h4'),
     a({ href, children, ...rest }) {
       return (
-        <a href={resolveHref(source, href ?? "", isPublished)} {...rest}>
+        <a href={resolveHref(source, href ?? '', isPublished)} {...rest}>
           {children}
         </a>
-      );
+      )
     },
     img({ src, alt, ...rest }) {
-      const written = typeof src === "string" ? src : "";
+      const written = typeof src === 'string' ? src : ''
       // `doc/img/` is the one directory of images the build carries
       // (served at `/img/docs/` by `src/app/img/docs/[name]/route.ts`), so a diagram
       // in a document is the same file on GitHub and on the site. Any other image
       // is pointed at the repository, where it is.
-      const under = path.posix.normalize(path.posix.join(path.posix.dirname(source), written));
-      if (!/^[a-z]+:/i.test(written) && under.startsWith("img/")) {
-        return <img src={`/img/docs/${under.slice("img/".length)}`} alt={alt ?? ""} {...rest} />;
+      const under = path.posix.normalize(path.posix.join(path.posix.dirname(source), written))
+      if (!/^[a-z]+:/i.test(written) && under.startsWith('img/')) {
+        return <img src={`/img/docs/${under.slice('img/'.length)}`} alt={alt ?? ''} {...rest} />
       }
-      return <img src={resolveHref(source, written, isPublished)} alt={alt ?? ""} {...rest} />;
+      return <img src={resolveHref(source, written, isPublished)} alt={alt ?? ''} {...rest} />
     },
-  };
+  }
 
   return (
-    <div className={slug === "tutorial" ? "prose tutorial-prose" : "prose"}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize, [rehypeHighlight, HIGHLIGHT]]} components={components}>
+    <div className={slug === 'tutorial' ? 'prose tutorial-prose' : 'prose'}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeSanitize, [rehypeHighlight, HIGHLIGHT]]}
+        components={components}
+      >
         {body}
       </ReactMarkdown>
     </div>
-  );
+  )
 }

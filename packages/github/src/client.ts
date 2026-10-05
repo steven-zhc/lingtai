@@ -17,7 +17,7 @@ import {
   type Installation,
   createTokenSource,
   installationForRepo,
-} from "./app.ts";
+} from './app.ts'
 
 /**
  * A label as GitHub holds it: the name a recipe matches on, and the colour the
@@ -38,7 +38,7 @@ import {
  * them where it draws (#85).
  */
 export interface Label {
-  name: string;
+  name: string
   /**
    * `#rrggbb`, lower case. GitHub returns six hex digits with no `#`; the hash
    * is added here so nothing downstream has to know that.
@@ -47,7 +47,7 @@ export interface Label {
    * That is an answer rather than a gap: a label nobody coloured has no colour,
    * and supplying one would be exactly the guess this field exists to avoid.
    */
-  color: string | null;
+  color: string | null
 }
 
 /**
@@ -72,18 +72,18 @@ export interface Dependencies {
    * The only one the queue acts on: a closed blocker is groundwork that exists
    * now, and holding a ticket for it would be holding it forever.
    */
-  blockedBy: number;
+  blockedBy: number
   /** How many block it at all, open and closed. */
-  totalBlockedBy: number;
+  totalBlockedBy: number
 }
 
 export interface Issue {
-  number: number;
-  title: string;
-  body: string;
-  labels: Label[];
-  state: "open" | "closed";
-  url: string;
+  number: number
+  title: string
+  body: string
+  labels: Label[]
+  state: 'open' | 'closed'
+  url: string
   /**
    * What blocks it, and **null when GitHub said nothing about dependencies** —
    * a plan that does not expose them, or an API version that predates them.
@@ -93,7 +93,7 @@ export interface Issue {
    * clear, which is the failure `#58` is: a check present, reported, and not
    * looking at the thing you think it is. `runnableNow` says so once instead.
    */
-  dependencies: Dependencies | null;
+  dependencies: Dependencies | null
   /**
    * Who the issue is assigned to, as GitHub logins — empty when nobody is.
    *
@@ -103,19 +103,19 @@ export interface Issue {
    * it is read, rather than a claim label of Lingtai's own. On the object the
    * listing already fetched, as `dependencies` is.
    */
-  assignees: string[];
+  assignees: string[]
 }
 
 export interface GitHubClient {
-  readonly owner: string;
-  readonly repo: string;
-  readonly installation: Installation;
+  readonly owner: string
+  readonly repo: string
+  readonly installation: Installation
 
   /** Raw REST, for the calls that do not have a method yet. */
-  request<T>(method: string, path: string, body?: unknown): Promise<T>;
+  request<T>(method: string, path: string, body?: unknown): Promise<T>
 
   /** The repository's default branch, when the recipe does not name one. */
-  defaultBranch(): Promise<string>;
+  defaultBranch(): Promise<string>
 
   /**
    * A file's contents at a ref, or null if it is not there.
@@ -125,10 +125,10 @@ export interface GitHubClient {
    * whatever the agent's worktree happens to contain
    * (doc/decisions-archive/0005-config-in-target-repo.md).
    */
-  fileAt(path: string, ref: string): Promise<string | null>;
+  fileAt(path: string, ref: string): Promise<string | null>
 
   /** The commit a ref points at right now, so a resolution can be replayed. */
-  refSha(ref: string): Promise<string>;
+  refSha(ref: string): Promise<string>
 
   /**
    * Every ref beginning `refs/<prefix>`, named without that `refs/` —
@@ -147,7 +147,7 @@ export interface GitHubClient {
    * repository it has lost access to as a remote with no refs on it — and a
    * sweep would then record a success saying there was nothing to delete.
    */
-  matchingRefs(prefix: string): Promise<readonly string[]>;
+  matchingRefs(prefix: string): Promise<readonly string[]>
 
   /**
    * Deletes a ref, named as `matchingRefs` names it.
@@ -155,9 +155,9 @@ export interface GitHubClient {
    * A ref that is not there answers 422, which is a throw like any other: the
    * caller that must not fail on one deletes only what it has just listed.
    */
-  deleteRef(ref: string): Promise<void>;
+  deleteRef(ref: string): Promise<void>
 
-  listOpenIssues(): Promise<Issue[]>;
+  listOpenIssues(): Promise<Issue[]>
 
   /**
    * Every issue, open or closed, created at or after `since` — oldest first.
@@ -173,8 +173,8 @@ export interface GitHubClient {
    * before `since`, so the pages are the window's issues and not every issue
    * anybody commented on since.
    */
-  listIssuesSince(since: Date): Promise<Issue[]>;
-  getIssue(number: number): Promise<Issue>;
+  listIssuesSince(since: Date): Promise<Issue[]>
+  getIssue(number: number): Promise<Issue>
 
   /**
    * Posts a comment.
@@ -188,7 +188,7 @@ export interface GitHubClient {
    * record: a failed call there vanished, leaving nobody able to tell "we never
    * commented" from "we commented and it did not help".
    */
-  comment(issue: number, body: string): Promise<{ id: number }>;
+  comment(issue: number, body: string): Promise<{ id: number }>
 
   /**
    * Replaces the whole label set.
@@ -198,7 +198,7 @@ export interface GitHubClient {
    * `agent:review` at the same time with nothing able to notice. A state that
    * is computed and then *set* cannot hold two contradictory values.
    */
-  setLabels(issue: number, labels: readonly string[]): Promise<void>;
+  setLabels(issue: number, labels: readonly string[]): Promise<void>
 
   /**
    * Closes an issue, as completed.
@@ -209,7 +209,7 @@ export interface GitHubClient {
    * failure was state living in labels; the failure after it was state living
    * nowhere.
    */
-  closeIssue(issue: number, reason?: "completed" | "not_planned"): Promise<void>;
+  closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
 
   /**
    * Replaces the issue body.
@@ -226,7 +226,7 @@ export interface GitHubClient {
    * caller is therefore the one that has to have read the current body first;
    * `tell.ts` takes the whole new body and does not compose it.
    */
-  updateBody(issue: number, body: string): Promise<void>;
+  updateBody(issue: number, body: string): Promise<void>
 
   /**
    * Opens an issue.
@@ -236,7 +236,7 @@ export interface GitHubClient {
    * the conductor's `TicketStore`. Nothing decides on its own that an issue
    * should exist — Lingtai proposes, a person decides.
    */
-  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>;
+  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
 
   /**
    * The current installation token, refreshed if it is about to expire.
@@ -251,74 +251,74 @@ export interface GitHubClient {
    * be expired by the time the integrator pushes. Callers hold *this*, and
    * resolve it per git invocation.
    */
-  token(): Promise<string>;
+  token(): Promise<string>
 }
 
 /** How far `listIssuesSince` pages before it refuses to answer rather than answer short. */
-const LIST_SINCE_PAGES = 50;
+const LIST_SINCE_PAGES = 50
 
 export interface CreateClientOptions {
-  auth: AppAuth;
-  owner: string;
-  repo: string;
+  auth: AppAuth
+  owner: string
+  repo: string
   /** Skips the installation lookup when one has already been made. */
-  installation?: Installation;
+  installation?: Installation
 }
 
 export async function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {
-  const { auth, owner, repo } = options;
-  const installation = options.installation ?? (await installationForRepo(auth, owner, repo));
-  const tokenFor = createTokenSource(auth, installation.id);
+  const { auth, owner, repo } = options
+  const installation = options.installation ?? (await installationForRepo(auth, owner, repo))
+  const tokenFor = createTokenSource(auth, installation.id)
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = await tokenFor();
+    const token = await tokenFor()
     const response = await fetch(`${GITHUB_API}${path}`, {
       method,
       headers: {
-        accept: "application/vnd.github+json",
-        "x-github-api-version": "2022-11-28",
-        "user-agent": "lingtai",
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2022-11-28',
+        'user-agent': 'lingtai',
         authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    })
 
     if (!response.ok) {
-      const text = await response.text();
-      let message = text.slice(0, 400);
+      const text = await response.text()
+      let message = text.slice(0, 400)
       try {
-        message = (JSON.parse(text) as { message?: string }).message ?? message;
+        message = (JSON.parse(text) as { message?: string }).message ?? message
       } catch {
         // Not JSON; the prefix is still the most useful thing available.
       }
-      throw new GitHubError(response.status, path, message);
+      throw new GitHubError(response.status, path, message)
     }
-    if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    if (response.status === 204) return undefined as T
+    return (await response.json()) as T
   }
 
   async function comment(issue: number, body: string): Promise<{ id: number }> {
-    return request<{ id: number }>("POST", `/repos/${owner}/${repo}/issues/${issue}/comments`, {
+    return request<{ id: number }>('POST', `/repos/${owner}/${repo}/issues/${issue}/comments`, {
       body,
-    });
+    })
   }
 
-  async function closeIssue(issue: number, reason: "completed" | "not_planned" = "completed"): Promise<void> {
-    await request<unknown>("PATCH", `/repos/${owner}/${repo}/issues/${issue}`, {
-      state: "closed",
+  async function closeIssue(issue: number, reason: 'completed' | 'not_planned' = 'completed'): Promise<void> {
+    await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/${issue}`, {
+      state: 'closed',
       state_reason: reason,
-    });
+    })
   }
 
   async function updateBody(issue: number, body: string): Promise<void> {
-    await request<unknown>("PATCH", `/repos/${owner}/${repo}/issues/${issue}`, { body });
+    await request<unknown>('PATCH', `/repos/${owner}/${repo}/issues/${issue}`, { body })
   }
 
   async function setLabels(issue: number, labels: readonly string[]): Promise<void> {
-    await request<unknown>("PUT", `/repos/${owner}/${repo}/issues/${issue}/labels`, {
+    await request<unknown>('PUT', `/repos/${owner}/${repo}/issues/${issue}/labels`, {
       labels: [...labels],
-    });
+    })
   }
 
   /**
@@ -331,9 +331,9 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
    * handles.
    */
   function hexColour(raw: string | null | undefined): string | null {
-    if (typeof raw !== "string") return null;
-    const hex = raw.startsWith("#") ? raw.slice(1) : raw;
-    return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null;
+    if (typeof raw !== 'string') return null
+    const hex = raw.startsWith('#') ? raw.slice(1) : raw
+    return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null
   }
 
   /**
@@ -351,46 +351,42 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
    * caller already handles by saying so and carrying on.
    */
   function dependenciesOf(raw: {
-    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null;
+    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
   }): Dependencies | null {
-    const summary = raw.issue_dependencies_summary;
-    if (!summary) return null;
-    const { blocked_by: open, total_blocked_by: total } = summary;
-    if (typeof open !== "number" || typeof total !== "number") return null;
-    return { blockedBy: open, totalBlockedBy: total };
+    const summary = raw.issue_dependencies_summary
+    if (!summary) return null
+    const { blocked_by: open, total_blocked_by: total } = summary
+    if (typeof open !== 'number' || typeof total !== 'number') return null
+    return { blockedBy: open, totalBlockedBy: total }
   }
 
   function toIssue(raw: {
-    number: number;
-    title: string;
-    body: string | null;
-    labels: ({ name?: string; color?: string | null } | string)[];
-    state: string;
-    html_url: string;
-    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null;
-    assignees?: ({ login?: string } | null)[] | null;
+    number: number
+    title: string
+    body: string | null
+    labels: ({ name?: string; color?: string | null } | string)[]
+    state: string
+    html_url: string
+    issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
+    assignees?: ({ login?: string } | null)[] | null
   }): Issue {
     return {
       dependencies: dependenciesOf(raw),
       // Off the listing, never `/issues/{n}/assignees`: a pass considers every
       // open issue, and one request each would be the cost `dependenciesOf`
       // refuses for the same reason.
-      assignees: (raw.assignees ?? [])
-        .map((a) => a?.login ?? "")
-        .filter((login) => login !== ""),
+      assignees: (raw.assignees ?? []).map((a) => a?.login ?? '').filter((login) => login !== ''),
       number: raw.number,
       title: raw.title,
-      body: raw.body ?? "",
+      body: raw.body ?? '',
       labels: raw.labels
         .map((l) =>
-          typeof l === "string"
-            ? { name: l, color: null }
-            : { name: l.name ?? "", color: hexColour(l.color) },
+          typeof l === 'string' ? { name: l, color: null } : { name: l.name ?? '', color: hexColour(l.color) },
         )
-        .filter((l) => l.name !== ""),
-      state: raw.state === "closed" ? "closed" : "open",
+        .filter((l) => l.name !== ''),
+      state: raw.state === 'closed' ? 'closed' : 'open',
       url: raw.html_url,
-    };
+    }
   }
 
   return {
@@ -406,32 +402,29 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
     updateBody,
 
     async defaultBranch() {
-      const raw = await request<{ default_branch: string }>("GET", `/repos/${owner}/${repo}`);
-      return raw.default_branch;
+      const raw = await request<{ default_branch: string }>('GET', `/repos/${owner}/${repo}`)
+      return raw.default_branch
     },
 
     async fileAt(path, ref) {
       try {
         const raw = await request<{ content?: string; encoding?: string }>(
-          "GET",
+          'GET',
           `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`,
-        );
-        if (!raw.content) return null;
-        return Buffer.from(raw.content, (raw.encoding as BufferEncoding) ?? "base64").toString("utf8");
+        )
+        if (!raw.content) return null
+        return Buffer.from(raw.content, (raw.encoding as BufferEncoding) ?? 'base64').toString('utf8')
       } catch (err) {
         // A missing file is an answer, not a failure — a repository with no
         // recipe is a repository that has not been onboarded yet.
-        if (err instanceof GitHubError && err.status === 404) return null;
-        throw err;
+        if (err instanceof GitHubError && err.status === 404) return null
+        throw err
       }
     },
 
     async refSha(ref) {
-      const raw = await request<{ sha: string }>(
-        "GET",
-        `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
-      );
-      return raw.sha;
+      const raw = await request<{ sha: string }>('GET', `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`)
+      return raw.sha
     },
 
     async matchingRefs(prefix) {
@@ -440,76 +433,68 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
       // status that means *absence* — a 404 here is the repository, not the
       // refs, and reading it as an empty list would tell a sweep there was
       // nothing to delete on a remote it can no longer see.
-      const raw = await request<{ ref: string }[]>(
-        "GET",
-        `/repos/${owner}/${repo}/git/matching-refs/${prefix}`,
-      );
-      return raw.map((each) => each.ref.replace(/^refs\//, ""));
+      const raw = await request<{ ref: string }[]>('GET', `/repos/${owner}/${repo}/git/matching-refs/${prefix}`)
+      return raw.map((each) => each.ref.replace(/^refs\//, ''))
     },
 
     async deleteRef(ref) {
-      await request<unknown>("DELETE", `/repos/${owner}/${repo}/git/refs/${ref}`);
+      await request<unknown>('DELETE', `/repos/${owner}/${repo}/git/refs/${ref}`)
     },
 
     async listOpenIssues() {
-      const out: Issue[] = [];
+      const out: Issue[] = []
       for (let page = 1; page <= 10; page++) {
         const raw = await request<Parameters<typeof toIssue>[0][]>(
-          "GET",
+          'GET',
           `/repos/${owner}/${repo}/issues?state=open&per_page=100&page=${page}`,
-        );
+        )
         // GitHub returns pull requests from the issues endpoint. A PR is not a
         // work item.
-        const issues = raw.filter((r) => !("pull_request" in r));
-        out.push(...issues.map(toIssue));
-        if (raw.length < 100) break;
+        const issues = raw.filter((r) => !('pull_request' in r))
+        out.push(...issues.map(toIssue))
+        if (raw.length < 100) break
       }
-      return out;
+      return out
     },
 
     async createIssue(input) {
       return toIssue(
-        await request<Parameters<typeof toIssue>[0]>("POST", `/repos/${owner}/${repo}/issues`, {
+        await request<Parameters<typeof toIssue>[0]>('POST', `/repos/${owner}/${repo}/issues`, {
           title: input.title,
           body: input.body,
           labels: [...input.labels],
         }),
-      );
+      )
     },
 
     async listIssuesSince(since) {
-      const out: Issue[] = [];
+      const out: Issue[] = []
       for (let page = 1; ; page++) {
         if (page > LIST_SINCE_PAGES) {
           throw new Error(
             `more than ${LIST_SINCE_PAGES * 100} issues in ${owner}/${repo} were created since ${since.toISOString()} — ` +
               `the listing is incomplete, so it cannot say an issue is not there`,
-          );
+          )
         }
         // `since` filters on `updated_at`, which every issue created since also
         // passes; the order is by creation, so the window ends at the first
         // issue older than it.
         const raw = await request<(Parameters<typeof toIssue>[0] & { created_at: string })[]>(
-          "GET",
+          'GET',
           `/repos/${owner}/${repo}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
             `&sort=created&direction=desc&per_page=100&page=${page}`,
-        );
-        const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime());
-        out.push(...inWindow.filter((r) => !("pull_request" in r)).map(toIssue));
-        if (raw.length < 100 || inWindow.length < raw.length) break;
+        )
+        const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime())
+        out.push(...inWindow.filter((r) => !('pull_request' in r)).map(toIssue))
+        if (raw.length < 100 || inWindow.length < raw.length) break
       }
-      return out.reverse();
+      return out.reverse()
     },
 
     async getIssue(number) {
-      return toIssue(
-        await request<Parameters<typeof toIssue>[0]>(
-          "GET",
-          `/repos/${owner}/${repo}/issues/${number}`,
-        ),
-      );
+      return toIssue(await request<Parameters<typeof toIssue>[0]>('GET', `/repos/${owner}/${repo}/issues/${number}`))
     },
-  };
+  }
 }
 
 /**
@@ -541,37 +526,39 @@ export async function createGitHubClient(options: CreateClientOptions): Promise<
  * copies and is more likely a mistake than a link.
  */
 export function parseSlug(slug: string): { owner: string; repo: string } {
-  const refuse = (why?: string) =>
-    new Error(`"${slug}" is not owner/repo${why ? ` — ${why}` : ""}`);
-  let rest = slug.trim();
+  const refuse = (why?: string) => new Error(`"${slug}" is not owner/repo${why ? ` — ${why}` : ''}`)
+  let rest = slug.trim()
 
-  let linked = false;
-  const scp = /^[A-Za-z0-9._-]+@([A-Za-z0-9.-]+):(.*)$/.exec(rest);
+  let linked = false
+  const scp = /^[A-Za-z0-9._-]+@([A-Za-z0-9.-]+):(.*)$/.exec(rest)
   if (scp) {
-    if (!isGitHubHost(scp[1]!)) throw refuse(`${scp[1]} is not github.com`);
-    rest = scp[2]!;
-    linked = true;
+    if (!isGitHubHost(scp[1]!)) throw refuse(`${scp[1]} is not github.com`)
+    rest = scp[2]!
+    linked = true
   } else {
-    const url = /^(?:(?:https?|ssh|git):\/\/)?(?:[^@/]+@)?([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?::\d+)?\/(.*)$/.exec(rest);
+    const url = /^(?:(?:https?|ssh|git):\/\/)?(?:[^@/]+@)?([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?::\d+)?\/(.*)$/.exec(rest)
     if (url) {
-      if (!isGitHubHost(url[1]!)) throw refuse(`${url[1]} is not github.com`);
-      rest = url[2]!;
-      linked = true;
+      if (!isGitHubHost(url[1]!)) throw refuse(`${url[1]} is not github.com`)
+      rest = url[2]!
+      linked = true
     }
   }
 
   // A query or a fragment belongs to the page, not to the repository.
-  const parts = rest.replace(/[?#].*$/, "").replace(/\/+$/, "").split("/");
-  if (parts.length < 2 || parts.includes("") || (!linked && parts.length > 2)) throw refuse();
+  const parts = rest
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '')
+    .split('/')
+  if (parts.length < 2 || parts.includes('') || (!linked && parts.length > 2)) throw refuse()
 
-  const owner = parts[0]!;
-  const repo = parts[1]!.replace(/\.git$/i, "");
-  const name = /^[A-Za-z0-9._-]+$/;
-  if (!name.test(owner) || !name.test(repo) || repo === "." || repo === "..") throw refuse();
-  return { owner, repo };
+  const owner = parts[0]!
+  const repo = parts[1]!.replace(/\.git$/i, '')
+  const name = /^[A-Za-z0-9._-]+$/
+  if (!name.test(owner) || !name.test(repo) || repo === '.' || repo === '..') throw refuse()
+  return { owner, repo }
 }
 
 function isGitHubHost(host: string): boolean {
-  const h = host.toLowerCase();
-  return h === "github.com" || h === "www.github.com";
+  const h = host.toLowerCase()
+  return h === 'github.com' || h === 'www.github.com'
 }
