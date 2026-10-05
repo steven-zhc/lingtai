@@ -194,6 +194,33 @@ describe('dbTickets, beyond the shared contract', () => {
     },
   )
 
+  it(
+    'createIssue resolves when it loses the first seven rounds of an eight-way race — the ' +
+      "worst case integration/db-tickets.test.ts's eight-concurrent-writers case can hit on Postgres",
+    async () => {
+      const sql = freshStore()
+      const duplicate = await realSqliteDuplicateError()
+      let insertAttempts = 0
+      const flaky: TicketSql = {
+        dialect: sql.dialect,
+        exec: (text) => sql.exec(text),
+        async query<T>(text: string, params?: readonly unknown[]): Promise<T[]> {
+          if (text.includes('INSERT INTO tickets')) {
+            insertAttempts++
+            if (insertAttempts <= 7) throw duplicate
+          }
+          return sql.query<T>(text, params)
+        },
+      }
+
+      const t = dbTickets(flaky, 'retry-proj-eighth')
+      const created = await t.createIssue({ title: 'eighth writer', body: '', labels: [] })
+
+      expect(created.number).toBe(1)
+      expect(insertAttempts).toBe(8)
+    },
+  )
+
   it('createIssue rejects immediately on a non-duplicate error, without retrying', async () => {
     const sql = freshStore()
     let insertAttempts = 0

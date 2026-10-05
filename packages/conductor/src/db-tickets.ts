@@ -226,12 +226,16 @@ export interface DbTicketsOptions {
  * serialises it under the write lock and cannot race, but Postgres runs under
  * READ COMMITTED and can run two of these at once, each reading the same
  * `MAX` — `PRIMARY KEY (project, number)` then refuses one, and `createIssue`
- * retries on exactly that refusal (`isDuplicateTicketNumber`), up to 5 times,
- * and rethrows anything else immediately.
+ * retries on exactly that refusal (`isDuplicateTicketNumber`), up to 7 times,
+ * and rethrows anything else immediately. 7 is not a round number: it is the
+ * bound an n-way race on one project needs to let every writer through —
+ * writer n needs n attempts, so `MAX_RETRIES` must allow `n` attempts total,
+ * i.e. `n - 1` retries after the first try, and the slowest writer in this
+ * file's own eight-way integration case is the eighth.
  */
 export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOptions = {}): DbTickets {
   const now = options.now ?? (() => new Date())
-  const MAX_RETRIES = 5
+  const MAX_RETRIES = 7
 
   let ready: Promise<void> | undefined
   async function ensureReady(): Promise<void> {

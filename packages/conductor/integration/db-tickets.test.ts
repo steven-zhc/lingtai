@@ -12,9 +12,10 @@
  * would exercise that no-op from its second run onward and stay green while
  * asserting nothing about the DDL text. Dropping first means every run
  * re-parses and re-resolves the real statement, which is the only thing that
- * proves it's accepted Postgres syntax. The `describe` blocks after it rely on
- * the tables existing, which is why that one runs first — vitest runs a file's
- * `describe` blocks in declaration order.
+ * proves it's accepted Postgres syntax. The `describe` blocks after it do
+ * *not* rely on the tables already existing — `dbTickets` creates both on
+ * first use (`ensureReady`, `db-tickets.ts`) — so running first is this case's
+ * own requirement, not a dependency the others have on it.
  *
  * Run only this file — `pnpm vitest run --project integration
  * packages/conductor/integration/db-tickets.test.ts` — not
