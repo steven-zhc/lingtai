@@ -228,49 +228,66 @@ steps:
     });
   });
 
+  /** What a pass may spend — the recipe's own since `#375`. */
   describe("runtime.limits", () => {
-    it("comes from the machine, key by key, and each says where from", async () => {
-      const resolved = await resolveLocalRecipe(
-        "app",
-        withMachine("runtime:\n  limits:\n    rounds: 3\nprojects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n"),
-      );
-      expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3, wall: "1h" });
-      expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${HOME}/config.yml`);
-      expect(resolved.provenance?.["runtime.limits.wall"]).toContain("projects.app");
+    it("comes from the recipe, key by key, and each says where from", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    rounds: 3\n`,
+      });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3 });
+      expect(resolved.provenance?.["runtime.limits.rounds"]).toBe(`3 ← ${recipePath("app", HOME)}`);
       expect(resolved.provenance?.["runtime.limits.turns"]).toBe(`${LIMIT_DEFAULTS.turns} ← default`);
+      expect(resolved.provenance?.["runtime.limits.usd"]).toBe("(none) ← default");
     });
 
     it("changes the hash, because a run under other limits is another run", async () => {
       const a = await resolveLocalRecipe("app", withMachine(undefined));
-      const b = await resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    turns: 10\n"));
+      const b = await resolveLocalRecipe(
+        "app",
+        { home: HOME, signedIn: signed("claude-code"), read: files({ [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 10\n` }) },
+      );
       expect(a.configHash).not.toBe(b.configHash);
     });
 
     /**
      * **`wall` is a duration, and this file is the one that has to say so.**
-     * `wall: "90"` — the unit forgotten — used to resolve: nothing rejected it
-     * here, and `parseDuration` threw later, out of whatever was reading the
-     * resolved recipe. The board's recipe page caught that throw beside the
-     * resolve's own and read it as *the recipe could not be read*, naming
-     * `~/.lingtai/app/recipe.yml` — a file that may not carry `runtime.limits`
-     * at all, so its reader opened it twice and found nothing (#218).
+     * `wall: "90"` — the unit forgotten — is refused where the field is
+     * written, `Recipe`'s own schema, naming the recipe's path rather than
+     * throwing later out of whatever read the resolved value (#218).
      */
     it("refuses a wall that is not a duration, by its key and in this file", async () => {
-      const resolving = resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n'));
-      await expect(resolving).rejects.toThrow(MachineConfigInvalidError);
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits: { wall: "90" }\n`,
+      });
+      const resolving = resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      await expect(resolving).rejects.toThrow(RecipeInvalidError);
+      await expect(resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read })).rejects.toThrow(
+        /runtime\.limits\.wall: must be a positive duration/,
+      );
+    });
+
+    /** Strict, as `DISPATCH.limits` already is — a typo is refused, not silently defaulted (`#371`). */
+    it("refuses an unknown key under runtime.limits, rather than dropping it and reading as default", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits: { turn: 7 }\n`,
+      });
+      await expect(resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read })).rejects.toThrow(
+        /runtime\.limits: Unrecognized key: "turn"/,
+      );
+    });
+
+    it("is refused in the machine file by name, machine-wide and per project — nothing applied", async () => {
       await expect(
-        resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n')),
-      ).rejects.toThrow(`${HOME}/config.yml is not valid`);
+        resolveLocalRecipe("app", withMachine("runtime:\n  limits:\n    rounds: 3\n")),
+      ).rejects.toThrow(
+        new RegExp(`runtime\\.limits: what a pass may spend.*${recipePath("app", HOME)}`),
+      );
       await expect(
-        resolveLocalRecipe("app", withMachine('runtime:\n  limits: { wall: "90" }\n')),
-      ).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/);
-      // And under a project's section, which is the other half of the same key.
-      await expect(
-        resolveLocalRecipe(
-          "app",
-          withMachine('projects:\n  app:\n    runtime:\n      limits: { wall: "90" }\n'),
-        ),
-      ).rejects.toThrow(/projects\.app\.runtime\.limits\.wall: must be a positive duration/);
+        resolveLocalRecipe("app", withMachine("projects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n")),
+      ).rejects.toThrow(
+        new RegExp(`projects\\.app\\.runtime\\.limits: what a pass may spend.*${recipePath("app", HOME)}`),
+      );
     });
   });
 
@@ -375,7 +392,7 @@ steps:
 
     it("does not add one to a machine file being edited, even when the recipe has one", async () => {
       const recipe = await parsed(undefined);
-      const machine = "projects:\n  app:\n    runtime:\n      agent: claude-code\n      limits: {}\n";
+      const machine = "projects:\n  app:\n    runtime:\n      agent: claude-code\n";
       const split = machineFiles({
         file: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
         recipe,
@@ -430,15 +447,24 @@ steps:
       ).rejects.toThrow(MachineConfigInvalidError);
     });
 
-    it("runtime.agent or runtime.limits in the recipe names the machine file", async () => {
+    it("runtime.agent in the recipe names the machine file", async () => {
       const read = files({
-        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n  limits:\n    turns: 5\n`,
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n`,
       });
       const resolving = resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
       await expect(resolving).rejects.toThrow(RecipeInvalidError);
       await expect(
         resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read }),
-      ).rejects.toThrow(/runtime\.limits: moved to this machine.*config\.yml/);
+      ).rejects.toThrow(/runtime\.agent: moved to this machine.*config\.yml/);
+    });
+
+    /** `runtime.limits` in the recipe is not refused — it is the recipe's own since `#375`. */
+    it("runtime.limits in the recipe is not refused", async () => {
+      const read = files({
+        [recipePath("app", HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 5\n`,
+      });
+      const resolved = await resolveLocalRecipe("app", { home: HOME, signedIn: signed("claude-code"), read });
+      expect(resolved.recipe.runtime.limits.turns).toBe(5);
     });
   });
 });

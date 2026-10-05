@@ -139,7 +139,8 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
     if (first !== firsts.get(collection) && first.spaceBefore) first.spaceBefore = false;
   }
   // A recipe on this machine has no `runtime` of its own to require — its agent
-  // and limits are the machine file's (#180) — so an absent one is the schema's.
+  // is the machine file's (#180), and `limits` is optional and schema-defaulted
+  // (#375) — so an absent one is the schema's.
   Recipe.parse({ runtime: {}, ...doc.toJS() });
   const after = doc.toString(RENDER);
   if (after === before) return existing;

@@ -1,6 +1,6 @@
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, with
- * `runtime.agent` and `runtime.limits` from `~/.lingtai/config.yml`
+ * `runtime.agent` from `~/.lingtai/config.yml`
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  * `local.ts` reads it; this file is its schema.
  *
@@ -2968,7 +2968,7 @@ export const Recipe = z.object({
      * them, so nothing else writes the product down.
      */
     limits: z
-      .object({
+      .strictObject({
         turns: z.number().int().positive().default(300),
         /**
          * A duration, checked here for the reason `source.backoff` is checked

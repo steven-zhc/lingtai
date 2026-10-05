@@ -6,8 +6,9 @@
  * **Step one reads this machine, not the repository.** The recipe is
  * `~/.lingtai/<project>/recipe.yml` ([0046](../../../../../../doc/decisions-archive/0046-lingtai-is-personal.md)
  * §3, #180), so if that file is there the page is an update flow — the same two
- * speeds, the fast lane filled from it with the machine's agent and limits, and
- * an edit made with `editRecipe` so the file's comments survive it. A
+ * speeds, the fast lane filled from it with the file's own limits and the
+ * machine's agent, and an edit made with `editRecipe` so the file's comments
+ * survive it. A
  * `.lingtai/config.yaml` in the repository is not read: nothing runs by it, and
  * a page editing it would be editing values nothing obeys. Otherwise the
  * repository is read back by `proposeRecipe` (#161).

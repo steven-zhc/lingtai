@@ -703,7 +703,7 @@ export interface Reading {
  * Where a row's value came from, as the source column reads it (#218).
  *
  * **Distinct sources, in the row's own order, and every one of them.** `a pass`
- * is four limits: with `turns` in the machine file and the rest defaulted, one
+ * is four limits: with `turns` written in the recipe and the rest defaulted, one
  * source printed there would be a sentence that is true of a number it is not
  * made of — the failure the-bar.md records for `rounds ×N`. Null when nothing
  * is known, which is what an attempt's recorded recipe always answers.

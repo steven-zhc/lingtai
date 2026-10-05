@@ -176,7 +176,7 @@ describe("a recipe on the base branch that does not parse", () => {
 });
 
 describe("an edit to a recipe that extends a preset", () => {
-  // The machine's recipe, which carries no `runtime.agent` or `runtime.limits` (#180).
+  // The machine's recipe, which carries no `runtime.agent` (#180) and is silent about `runtime.limits` (#375).
   const FILE =
     "version: 2\nextends: pnpm-workspace\n\nrepo:\n  base: main\n\nsource:\n  kinds: [bug]\n\nenv:\n  plantAt: .env\n";
   const HOME = "/home/me/.lingtai";
@@ -213,31 +213,65 @@ describe("an edit to a recipe that extends a preset", () => {
   });
 
   /**
-   * **What the page shows is what the machine reads** (#180). A limit changed
-   * on the page goes into `~/.lingtai/config.yml`, never into the recipe file —
-   * a recipe carrying `runtime.limits` is refused at the path it is read from.
-   * Read back the way a run reads it, the two files are the recipe the page
-   * describes.
+   * **What the page shows is what the machine reads — but limits are the
+   * recipe's own now (`#375`).** The agent still goes into
+   * `~/.lingtai/config.yml`; a limit the page moves lands in the recipe file,
+   * one key at a time, with every other line as it was. Regression for what
+   * `#371`'s first attempt found: a wholesale `runtime` replacement at this
+   * seam made every dial's move refuse, in both directions, because it threw
+   * away whatever the file had not written before comparing. Moving each dial
+   * on its own, one way and back, must change exactly that one line.
    */
-  it("keeps the agent and the limits out of the recipe file, and puts them in the machine file", async () => {
+  it("keeps the agent in the machine file and moves each limit dial in the recipe file alone", async () => {
     const { recipe } = await resolveRecipe(async () => FILE, "main");
     const machineBefore = "# mine\nprojects:\n  shop:\n    runtime:\n      agent: claude-code\n";
-    const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key: "turns", value: 7 });
 
-    const finished = await editExisting(FILE, state, on(recipe, machineBefore));
-    if (!finished.ok) throw new Error(finished.refusals.join("; "));
-    expect(finished.path).toBe(recipePath("shop", HOME));
-    expect(finished.file).not.toMatch(/^\s*(agent|limits|turns):/m);
-    expect(finished.machine).toContain("# mine");
+    const moves: readonly [key: "turns" | "wall" | "rounds" | "restarts", value: number | string][] = [
+      ["turns", 7],
+      ["turns", 400],
+      ["wall", "1h"],
+      ["wall", "4h"],
+      ["rounds", 0],
+      ["rounds", 5],
+      ["restarts", 2],
+    ];
 
-    const resolved = await resolveLocalRecipe("shop", {
-      home: HOME,
-      signedIn: async () => [],
-      read: async (path) =>
-        path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? finished.machine : null,
+    for (const [key, value] of moves) {
+      const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), { type: "limit", key, value });
+      const finished = await editExisting(FILE, state, on(recipe, machineBefore));
+      if (!finished.ok) throw new Error(finished.refusals.join("; "));
+      expect(finished.path).toBe(recipePath("shop", HOME));
+      expect(finished.changed).toEqual([`runtime.limits.${key}`]);
+      expect(finished.machine).toBeNull();
+      expect(finished.file).toMatch(new RegExp(`^\\s*${key}:`, "m"));
+
+      const resolved = await resolveLocalRecipe("shop", {
+        home: HOME,
+        signedIn: async () => [],
+        read: async (path) =>
+          path === recipePath("shop", HOME) ? finished.file : path === machinePath(HOME) ? machineBefore : null,
+      });
+      expect(resolved.recipe.runtime.limits[key]).toEqual(value);
+      expect(resolved.recipe.steps).toEqual(recipe.steps);
+    }
+  });
+
+  /**
+   * `runtime.agent` is still the machine's (`#372`'s boundary, untouched here):
+   * a page that changes it writes `projects.shop.runtime` and leaves the
+   * recipe exactly as it was.
+   */
+  it("keeps the agent itself out of the recipe file, and puts it in the machine file", async () => {
+    const { recipe } = await resolveRecipe(async () => FILE, "main");
+    const state = wizardReducer(updateState({ slug: "acme/shop", recipe }), {
+      type: "set",
+      draft: { agent: "codex" },
     });
-    expect(resolved.recipe.runtime.limits.turns).toBe(7);
-    expect(resolved.recipe.steps).toEqual(recipe.steps);
+
+    const finished = await editExisting(FILE, state, on(recipe, null));
+    if (!finished.ok) throw new Error(finished.refusals.join("; "));
+    expect(finished.file).not.toMatch(/^\s*agent:/m);
+    expect(finished.machine).toContain("codex");
   });
 });
 

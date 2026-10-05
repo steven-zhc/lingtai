@@ -10,10 +10,12 @@
  *
  * **Onboarding ends by writing, on this machine** (0046 §3, #180). A new recipe
  * goes through `startOnboarding` — parsed by the system's own parser on the
- * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's agent and
- * limits under `projects.<project>.runtime` in `~/.lingtai/config.yml`, and
+ * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's agent
+ * under `projects.<project>.runtime` in `~/.lingtai/config.yml`, and
  * `ProjectOnboardingStarted` appended — so the board draws a pending card whose
- * `Recheck` reads exactly that file. Nothing is written to the repository.
+ * `Recheck` reads exactly that file. Nothing is written to the repository. The
+ * page's limits are the recipe's own (`#375`) and are written into the file
+ * itself, with every other field it chose.
  *
  * An existing recipe — the machine's, never a copy in the repository — goes
  * through `editExisting`, which changes the lines of the fields that moved and
@@ -30,14 +32,14 @@ import {
 import { startOnboarding } from "@lingtai/conductor/wizard";
 import { githubApp, hasGitHubApp } from "@lingtai/env";
 import { createGitHubClient, parseSlug } from "@lingtai/github";
-import { Recipe, ceilingOf, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
+import { Recipe, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from "@lingtai/recipe";
 import { readFile } from "node:fs/promises";
 import { actor } from "../../../lib/actor.ts";
 
 export type Finished =
   | {
       ok: true;
-      /** `path`'s text — never with `runtime.agent` or `runtime.limits` in it. */
+      /** `path`'s text — never with `runtime.agent` in it. */
       file: string;
       path: string;
       /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
@@ -99,10 +101,12 @@ export async function finishWizard(input: {
  * and must describe the recipe the page does; where it does not, the gates are
  * written whole, and where that still does not, nothing is offered.
  *
- * **`runtime.agent` and `runtime.limits` are never written into it** (#180): a
- * recipe carrying either is refused at the path it is read from. They are
- * compared with `current` — what the machine resolved them to — and a change to
- * them is the machine file with `projects.<project>.runtime` set, beside it.
+ * **`runtime.agent` is never written into it** (#180): a recipe carrying it is
+ * refused at the path it is read from. It is compared with `current` — what
+ * the machine resolved it to — and a change to it is the machine file with
+ * `projects.<project>.runtime` set, beside it. `runtime.limits` is the
+ * recipe's own (`#375`) and is written into the file exactly as every other
+ * field the page changed.
  */
 export async function editExisting(
   existing: string,
@@ -112,11 +116,12 @@ export async function editExisting(
   const ref = state.draft.base;
   const { recipe } = await resolveRecipe(async () => existing, ref);
   const drafted = Recipe.parse(applyDraft(at.current, state));
-  // The file's half: everything the page changed but the machine's two fields.
+  // The file's half: everything the page changed but the machine's own field.
+  // `drafted.runtime.limits` passes through untouched — it is the recipe's own
+  // (`#375`), so what the page drafted is what the file is compared against.
   const after = Recipe.parse({
     ...drafted,
-    // The machine file's ceiling, not a step's reduction from it (`#314`).
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent, limits: ceilingOf(recipe) },
+    runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
   });
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after);
@@ -137,7 +142,7 @@ export async function editExisting(
     }
   }
 
-  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime");
+  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === "runtime" && c.path[1] === "agent");
   let machine: string | null = null;
   if (runtime.length > 0) {
     const split = machineFiles({

@@ -105,10 +105,10 @@ function dispatchedBy(action: StepAction): { turns?: number; wall?: string } | n
  * an undeclared one may spend the ceiling, because the undeclared one may.
  *
  * **A caller that writes `runtime.limits` wants `ceilingOf` and not this.** The
- * wizard and `resolveLocalRecipe` save the machine file's ceiling, and narrowing
- * that to whatever `implement` asked for would lower it permanently on the next
- * save. `pnpm typecheck` cannot tell the two apart — both return the same type —
- * so the question is in the name.
+ * wizard saves the recipe's ceiling (`#375`), and narrowing that to whatever
+ * `implement` asked for would lower it permanently on the next save.
+ * `pnpm typecheck` cannot tell the two apart — both return the same type — so
+ * the question is in the name.
  *
  * **The ceiling object itself comes back where nothing narrows**, by identity, so
  * *a recipe nobody edited resolves to the same values* is cheap to assert
