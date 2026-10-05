@@ -179,15 +179,6 @@ function Wizard({ initial, recipe, existing }: { initial: WizardState; recipe: R
                   : `Changes ${finished.changed.join(', ')}, and every other line as it was. Nothing has been written — this is ${finished.path}:`}
             </p>
             <pre className="wz-file">{finished.file}</pre>
-            {finished.machine === null ? null : (
-              <>
-                <p className="note">
-                  The agent is this machine&apos;s, not the recipe&apos;s — <code>~/.lingtai/config.yml</code> with this
-                  change:
-                </p>
-                <pre className="wz-file">{finished.machine}</pre>
-              </>
-            )}
           </>
         ) : (
           <ul className="wz-refusals">

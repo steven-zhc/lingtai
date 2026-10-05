@@ -374,7 +374,8 @@ describe('the recipe the button writes', () => {
     // Scoped to `runtime:` itself — `discuss:` states its own `agent` by
     // default too, and is not what this assertion is about.
     const runtimeBlock = written.slice(written.indexOf('\nruntime:'))
-    expect(runtimeBlock).not.toMatch(/^\s+agent:/m)
+    // The agent is the recipe's own since `#372`, written beside `steps:`.
+    expect(runtimeBlock).toMatch(/^\s+agent: claude-code/m)
     // `runtime.limits` is the recipe's own (`#375`) — stated with its defaults.
     expect(runtimeBlock).toMatch(/^\s+limits:/m)
     const resolved = await resolveLocalRecipe(project, {
@@ -384,18 +385,18 @@ describe('the recipe the button writes', () => {
       },
     })
     expect(resolved.recipe).toEqual(recipe)
-    expect(resolved.provenance?.['runtime.agent']).toContain(`projects.${project}`)
+    expect(resolved.provenance?.['runtime.agent']).toBe(`claude-code ← ${recipePath(project, home)}`)
 
     const state = reduceProject(await store.read(projectStream(project)))
     expect(state.base).toBe('develop')
     expect(state.owner).toBe(OWNER)
   })
 
-  /** The machine file keeps everything it already said. */
-  it("adds the project's runtime to a machine file without disturbing the rest of it", async () => {
+  /** The machine file is the machine's: onboarding writes nothing into it. */
+  it('leaves the machine file exactly as it was', async () => {
     const project = fresh()
     const home = await machine()
-    const before = '# mine\nruntime:\n  agent: codex\nprojects:\n  other:\n    runtime:\n      agent: claude-code\n'
+    const before = '# mine\nboard:\n  port: 18000\n'
     await writeFile(machinePath(home), before)
 
     const started = await startOnboarding({
@@ -407,16 +408,17 @@ describe('the recipe the button writes', () => {
     })
 
     expect(started.ok).toBe(true)
-    const after = await readFile(machinePath(home), 'utf8')
-    expect(after).toContain('# mine')
-    expect(after).toContain('agent: codex')
-    expect(after).toContain('other:')
+    expect(await readFile(machinePath(home), 'utf8')).toBe(before)
     const resolved = await resolveLocalRecipe(project, { home, signedIn: async () => [] })
     expect(resolved.recipe.runtime.agent).toBe('claude-code')
   })
 
-  /** A person's choice already in the machine file is not overwritten by a page. */
-  it('refuses, writing nothing, when the machine file already names another runtime for the project', async () => {
+  /**
+   * **A machine file that still names a runtime refuses the onboarding**, by
+   * the same refusal every resolve makes (`#372`): the recipe would be read
+   * back against a file that holds a key nothing reads, so nothing is written.
+   */
+  it('refuses, writing nothing, when the machine file still names a runtime for the project', async () => {
     const project = fresh()
     const home = await machine()
     const before = `projects:\n  ${project}:\n    runtime:\n      agent: codex\n`
@@ -432,7 +434,7 @@ describe('the recipe the button writes', () => {
 
     expect(started.ok).toBe(false)
     if (started.ok) return
-    expect(started.refusal).toContain(`projects.${project}.runtime`)
+    expect(started.refusal).toContain(`projects.${project}: how a project's work is run`)
     expect(await readFile(machinePath(home), 'utf8')).toBe(before)
     expect(await readdir(home)).toEqual(['config.yml'])
     expect(await store.read(projectStream(project))).toEqual([])

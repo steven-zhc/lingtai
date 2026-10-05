@@ -17,7 +17,7 @@ import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initComma
 const URL_ = 'postgresql://me:secret@db.example:5432/lingtai'
 
 /** A step a Ctrl+C can land in. Each is a call into the world that has not returned. */
-const STEPS = ['git', 'runtimes', 'ask:database', 'database', 'ask:agent', 'app', 'board', 'open', 'appeared'] as const
+const STEPS = ['git', 'runtimes', 'ask:database', 'database', 'app', 'board', 'open', 'appeared'] as const
 type Step = (typeof STEPS)[number]
 
 class Interrupted extends Error {}
@@ -70,7 +70,9 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       env: { LINGTAI_HOME: home, ...script.env },
       log: (line) => seen.lines.push(line),
       ask: async (question) => {
-        const which: Step = /Postgres/.test(question) ? 'ask:database' : 'ask:agent'
+        // The store is the one question init asks: the agent is each recipe's (#372).
+        const which: Step = 'ask:database'
+        expect(question).toMatch(/Postgres/)
         seen.asked.push(which)
         step(which)
         return answers.length > 0 ? answers.shift()! : null
@@ -142,7 +144,7 @@ describe('lingtai init (#186)', () => {
 
     expect(await initCommand([], w)).toBe(0)
 
-    expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\nruntime:\n  agent: claude-code\n`)
+    expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(seen.opened).toEqual(['http://127.0.0.1:3200/setup/github-app'])
     expect(seen.lines.join('\n')).toContain('lingtai-me, owned by me — it answered')
@@ -165,23 +167,21 @@ describe('lingtai init (#186)', () => {
       it(`interrupted during ${at}`, async () => {
         const home = freshHome()
         const db = database()
-        // Two signed in, so the agent is a question and has a step to be interrupted in.
+        // Two signed in, which init no longer asks about: each recipe names its agent (#372).
         const runtimes = [signedIn('claude-code'), signedIn('codex')]
 
-        const first = world(home, { runtimes, answers: [URL_, 'codex'], interruptAt: at }, db)
+        const first = world(home, { runtimes, answers: [URL_], interruptAt: at }, db)
         await expect(initCommand([], first.world)).rejects.toThrow(Interrupted)
 
-        const second = world(home, { runtimes, answers: [URL_, 'codex'] }, db)
+        const second = world(home, { runtimes, answers: [URL_] }, db)
         expect(await initCommand([], second.world)).toBe(0)
 
-        expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\nruntime:\n  agent: codex\n`)
+        expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
         expect(second.seen.opened).toEqual(['http://127.0.0.1:3200/setup/github-app'])
 
         // What the first run settled, the second does not ask again.
         const settledDatabase = STEPS.indexOf(at) > STEPS.indexOf('database')
-        const settledAgent = STEPS.indexOf(at) > STEPS.indexOf('ask:agent')
         expect(second.seen.asked.includes('ask:database')).toBe(!settledDatabase)
-        expect(second.seen.asked.includes('ask:agent')).toBe(!settledAgent)
       })
     }
   })
@@ -201,12 +201,6 @@ describe('lingtai init (#186)', () => {
       initCommand([], world(home, { runtimes, answers: [URL_], interruptAt: 'database' }).world),
     ).rejects.toThrow(Interrupted)
     expect(config(home)).toBeNull()
-
-    // Stopped at the agent question: the database is written, no agent is.
-    await expect(
-      initCommand([], world(home, { runtimes, answers: [URL_], interruptAt: 'ask:agent' }).world),
-    ).rejects.toThrow(Interrupted)
-    expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
   })
 
   it('verifies each detection rather than assuming it: the database by connecting, the App by a call', async () => {
@@ -280,37 +274,35 @@ describe('lingtai init (#186)', () => {
       expect(config(home)).toContain('# mine')
       expect(config(home)).toContain(URL_)
     })
-
-    it('an agent written in the file and no longer signed in is asked about — never swapped for the one that is', async () => {
-      const home = freshHome()
-      mkdirSync(home, { recursive: true })
-      writeFileSync(configPath({ LINGTAI_HOME: home }), `database:\n  url: ${URL_}\nruntime:\n  agent: codex\n`)
-      const runtimes = [signedIn('claude-code'), signedOut('codex')]
-
-      const nobody = world(home, { runtimes, answers: [] })
-      expect(await initCommand([], nobody.world)).toBe(1)
-      expect(nobody.seen.asked).toEqual(['ask:agent'])
-      expect(config(home)).toContain('agent: codex')
-
-      const chosen = world(home, { runtimes, answers: ['1'] })
-      expect(await initCommand([], chosen.world)).toBe(0)
-      expect(config(home)).toContain('agent: claude-code')
-    })
   })
 
-  it('asks when more than one runtime is signed in, and refuses to pick with nobody to ask', async () => {
+  /**
+   * **Which runtime runs is each recipe's** (`#372`), so init asks nothing
+   * about it and writes nothing for it — and a file that still names one is
+   * refused by name, because every resolve would refuse it next.
+   */
+  it('asks nothing about the agent when more than one is signed in, and writes none', async () => {
     const home = freshHome()
     const runtimes = [signedIn('claude-code'), signedIn('codex')]
-    const { world: w, seen } = world(home, { runtimes, answers: [URL_, null] })
-    expect(await initCommand([], w)).toBe(1)
-    expect(seen.lines.at(-1)).toContain('does not pick one silently')
+    const { world: w, seen } = world(home, { runtimes, answers: [URL_] })
+    expect(await initCommand([], w)).toBe(0)
+    expect(seen.asked).toEqual(['ask:database'])
+    expect(seen.lines.join('\n')).toContain(
+      "claude-code and codex signed in · each project's recipe names which one runs",
+    )
     expect(config(home)).not.toContain('agent')
+  })
 
-    // --agent answers the question, where that one is signed in.
-    const flagged = world(home, { runtimes })
-    expect(await initCommand(['--agent', 'codex'], flagged.world)).toBe(0)
-    expect(flagged.seen.asked).toEqual([])
-    expect(config(home)).toContain('agent: codex')
+  it('refuses a file that still names a runtime, saying where it moved, and writes nothing', async () => {
+    const home = freshHome()
+    mkdirSync(home, { recursive: true })
+    const before = `database:\n  store: postgres\n  url: ${URL_}\nruntime:\n  agent: codex\n`
+    writeFileSync(configPath({ LINGTAI_HOME: home }), before)
+    const { world: w, seen } = world(home, {})
+    expect(await initCommand([], w)).toBe(1)
+    expect(seen.lines.at(-1)).toContain('runtime.agent in that project')
+    expect(config(home)).toBe(before)
+    expect(seen.boards).toBe(0)
   })
 
   it('refuses by name when no runtime is signed in, and writes no agent', async () => {
@@ -352,7 +344,7 @@ describe('lingtai init (#186)', () => {
     expect(await initCommand([], w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([URL_])
-    expect(config(home)).toBe('runtime:\n  agent: claude-code\n')
+    expect(config(home)).toBeNull()
     // It is the process's answer and not the file's, so the file still says nothing.
     expect(seen.lines.join('\n')).toContain('exported into this process')
   })
@@ -379,7 +371,7 @@ describe('lingtai init (#186)', () => {
     expect(statSync(configPath({ LINGTAI_HOME: home })).mtimeMs).toBe(mtime)
     const said = again.seen.lines.join('\n')
     expect(said).toContain('tables present')
-    expect(said).toContain('claude-code ← ')
+    expect(said).toContain('claude-code signed in')
     expect(said).toContain('lingtai-me, owned by me')
   })
 
@@ -535,7 +527,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(await initCommand(['--store', 'sqlite'], w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([])
-    expect(config(home)).toBe('database:\n  store: sqlite\nruntime:\n  agent: claude-code\n')
+    expect(config(home)).toBe('database:\n  store: sqlite\n')
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
     expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
@@ -633,14 +625,14 @@ describe('--store answers the store question without a terminal (#345)', () => {
       const { world: w, seen } = world(home, {})
       expect(await initCommand(['--store', 'postgres', '--database-url', URL_], w)).toBe(0)
       expect(seen.asked).toEqual([])
-      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\nruntime:\n  agent: claude-code\n`)
+      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
     })
 
     it('with an exported LINGTAI_DATABASE_URL instead, uses it and writes nothing for it', async () => {
       const home = freshHome()
       const { world: w } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
       expect(await initCommand(['--store', 'postgres'], w)).toBe(0)
-      expect(config(home)).toBe('runtime:\n  agent: claude-code\n')
+      expect(config(home)).toBeNull()
 
       // Naming the same database is that same run; naming another is refused, never ignored.
       const same = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
@@ -651,7 +643,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
       expect(other.seen.connected).toEqual([])
       expect(other.seen.lines.at(-1)).toContain('exported URL wins')
       expect(other.seen.lines.join('\n')).not.toMatch(/secret|hunter2/)
-      expect(config(home)).toBe('runtime:\n  agent: claude-code\n')
+      expect(config(home)).toBeNull()
     })
 
     it("with no URL, or an empty one, is a usage refusal — never the empty answer's SQLite", async () => {

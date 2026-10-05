@@ -42,6 +42,7 @@ repo: { base: main }
 source: { kinds: [bug, tech-debt], exclude: ["blocked", "agent:hold"] }
 env: { plantAt: .env.local }
 runtime:
+  agent: claude-code
   limits: { turns: 150, rounds: 3 }
 steps:
   proposed:
@@ -62,6 +63,7 @@ steps:
   proposed:
     - { name: build, run: "pnpm test", timeout: 20m }
 runtime:
+  agent: claude-code
   budget: { attempts: 9, diff: 1000 }
 `
 
@@ -76,12 +78,16 @@ extends: pnpm-workspace
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
+runtime: { agent: claude-code }
 `
 
-/** This machine's own file: the agent, and nothing else — limits are the recipe's (`#375`). */
+/**
+ * This machine's own file: its own facts and nothing about how a project's work
+ * is run — the agent is the recipe's since `#372`, the limits since `#375`.
+ */
 const MACHINE = `
-runtime:
-  agent: claude-code
+board:
+  port: 17820
 `
 
 const PAGE = new URL('../src/app/recipe/[project]/page.tsx', import.meta.url)
@@ -149,9 +155,9 @@ describe("what a project's recipe says today", () => {
         view.rows.find((r) => r.name === name)!,
         view.provenance,
       )
-    // The two places, told apart: the project's own file, and the machine's.
+    // Both the recipe's now: the agent moved there with `#372`.
     expect(of('picks up')).toBe(join(home, 'app', 'recipe.yml'))
-    expect(of('agent')).toBe(join(home, 'config.yml'))
+    expect(of('agent')).toBe(join(home, 'app', 'recipe.yml'))
     // `a pass` is four limits from the recipe and the schema, and says both:
     // one source printed there would be a sentence true of a number it is
     // not made of.
@@ -260,11 +266,11 @@ describe('a recipe that cannot be read', () => {
   /**
    * **And when the fault is in the other file, it says that one.** `steps:` in
    * the machine file is the mistake that file exists to refuse, and it stops
-   * the resolve with `recipe.yml` perfectly readable — as a `runtime.assignee`
-   * written there does, since it moved to the recipe (`#373`), and as
-   * `AgentUnresolvedError` does. A page answering all three with *the recipe
-   * could not be read* and then *edit the recipe* costs its reader two
-   * readings of the one file there is nothing wrong with.
+   * the resolve with `recipe.yml` perfectly readable — as a `runtime:` written
+   * there does, since everything under it moved to the recipe (`#372`, `#373`,
+   * `#375`). A page answering both with *the recipe could not be read* and then
+   * *edit the recipe* costs its reader two readings of the one file there is
+   * nothing wrong with.
    */
   it("names the machine's file when the fault is there, and sends nobody to the recipe", async () => {
     await writeFile(join(home, 'config.yml'), `${MACHINE}\nsteps:\n  proposed: []\n`)
@@ -293,7 +299,7 @@ describe('a recipe that cannot be read', () => {
   it("names the recipe's file for a wall that is not a duration, and never the machine", async () => {
     await writeFile(
       join(home, 'app', 'recipe.yml'),
-      'version: 2\nrepo: { base: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  limits: { wall: "90" }\nsteps:\n  proposed: []\n',
+      'version: 2\nrepo: { base: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  agent: claude-code\n  limits: { wall: "90" }\nsteps:\n  proposed: []\n',
     )
     const view = await projectRecipe(state)
     const html = render(view)

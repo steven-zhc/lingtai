@@ -85,7 +85,6 @@ export const PRESETS: Record<string, Preset> = {
       merge: [],
       end: [],
     },
-    runtime: { agent: 'claude-code' },
   },
 }
 

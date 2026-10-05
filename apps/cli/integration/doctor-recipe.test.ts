@@ -20,6 +20,7 @@ version: 2
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
+runtime: { agent: claude-code }
 steps:
   proposed:
     - { name: build, run: "true" }
@@ -33,7 +34,8 @@ describe('the recipe row, with no App configured', () => {
     home = await mkdtemp(join(tmpdir(), 'lingtai-doctor-'))
     await mkdir(join(home, 'app'))
     await writeFile(join(home, 'app', 'recipe.yml'), RECIPE)
-    await writeFile(join(home, 'config.yml'), 'runtime:\n  agent: claude-code\n')
+    // The machine's own facts only: the agent is the recipe's since `#372`.
+    await writeFile(join(home, 'config.yml'), 'board:\n  port: 17820\n')
     saved = process.env['LINGTAI_HOME']
     process.env['LINGTAI_HOME'] = home
   })
@@ -44,23 +46,23 @@ describe('the recipe row, with no App configured', () => {
     await rm(home, { recursive: true, force: true })
   })
 
-  it("resolves the machine's file and says where each value came from", async () => {
+  it("resolves the machine's recipe and says where each value came from", async () => {
     const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
     const filter = await projectFilter(state, recipeClientFor({}))
 
     if (!filter.ok) throw new Error(filter.problem)
     expect(filter.kinds).toEqual(['bug'])
-    expect(filter.provenance['runtime.agent']).toBe(`claude-code ← ${join(home, 'config.yml')}`)
+    expect(filter.provenance['runtime.agent']).toBe(`claude-code ← ${join(home, 'app', 'recipe.yml')}`)
     expect(filter.provenance['steps']).toContain(join(home, 'app', 'recipe.yml'))
   })
 
   /**
-   * A machine that names codex resolves, and every pass of it is refused by
+   * A recipe that names codex resolves, and every pass of it is refused by
    * `runOnce` before its claim — so the row that says what a run will do is a
    * fail in that refusal's words, not an ok that prints `codex` (#180).
    */
   it('fails when runtime.agent names a runtime this conductor does not dispatch', async () => {
-    await writeFile(join(home, 'config.yml'), 'runtime:\n  agent: codex\n')
+    await writeFile(join(home, 'app', 'recipe.yml'), RECIPE.replace('agent: claude-code', 'agent: codex'))
     const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
     const filter = await projectFilter(state, recipeClientFor({}))
 
@@ -69,7 +71,7 @@ describe('the recipe row, with no App configured', () => {
     expect(row.detail).toContain('runtime.agent is codex')
     expect(row.detail).toContain('this conductor runs claude-code')
 
-    await writeFile(join(home, 'config.yml'), 'runtime:\n  agent: claude-code\n')
+    await writeFile(join(home, 'app', 'recipe.yml'), RECIPE)
     expect(recipeRow(await projectFilter(state, recipeClientFor({})), 'claude-code').status).toBe('ok')
   })
 
@@ -77,10 +79,9 @@ describe('the recipe row, with no App configured', () => {
    * **And the remedy names the line that can change** (`#245`).
    *
    * A step's `agent:` is a runtime too since that ticket, so `runtime.agent:
-   * claude-code` in the machine file and `review` naming `codex` in the recipe
-   * is refused — and the row used to answer it with *name runtime.agent:
-   * claude-code in ~/.lingtai/config.yml*, which is what that file already
-   * says: it is the value `dispatched` was compared against and matched. An
+   * claude-code` and `review` naming `codex` in the same recipe is refused —
+   * and the row used to answer it with *name runtime.agent: claude-code*,
+   * which is what that line already says: it is the value `dispatched` was compared against and matched. An
    * operator following it re-writes the same line, re-runs doctor, reads the
    * identical fail, and the project takes no work the whole time, with the
    * action that is wrong never mentioned.
@@ -102,8 +103,8 @@ describe('the recipe row, with no App configured', () => {
     expect(row.detail).toContain('nothing on this machine is signed in to codex')
     expect(row.detail).toContain("Sign in to it, or name a runtime this machine has as that action's agent:")
     expect(row.detail).toContain(join(home, 'app', 'recipe.yml'))
-    // And never the machine file's `runtime.agent`, which is already
-    // `claude-code` here — editing it is the one thing that cannot help.
+    // And never `runtime.agent`, which is already `claude-code` here —
+    // editing it is the one thing that cannot help.
     expect(row.detail).not.toContain('Name runtime.agent:')
 
     // And signed in to it, the same recipe is dispatched rather than refused.

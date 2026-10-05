@@ -15,8 +15,10 @@
 #
 # It carries a database password and the App's webhook secret: keep it 0600.
 #
-# `runtime:` and `projects:` live in the same file and belong to the recipe's
-# reader (`packages/recipe/src/local.ts`); doc/operating.md covers them.
+# Nothing about how a project's work is run belongs here: which runtime, whose
+# tickets and what a pass may spend are each project's recipe's, under
+# `runtime:` in ~/.lingtai/<project>/recipe.yml (#372, #373, #375). A
+# `runtime:` or `projects:` section here is refused by name.
 
 # --- the event log ----------------------------------------------------------
 database:

@@ -5,7 +5,7 @@
  *
  *   look       git, which runtimes are installed and signed in, what ~/.lingtai holds
  *   store      postgres or sqlite, written down — a URL connected to, its tables created
- *   agent      detected; more than one signed in is asked; none is refused by name
+ *   agent      at least one runtime signed in, or refused by name — which one runs is each recipe's
  *   App        one already configured is verified by a real call
  *   board      started here, and a browser opened on the wizard's first screen
  *
@@ -16,15 +16,18 @@
  * progress file to disagree with the configuration it describes.
  *
  * **Nothing is written before its choice.** The URL is written after the
- * connection answered and the tables exist, the agent after it was chosen, and
- * the App's key by the board's own page (`@lingtai/conductor/create-app`), which
+ * connection answered and the tables exist, and the App's key by the board's own page (`@lingtai/conductor/create-app`), which
  * is GitHub's manifest flow: the one step here that is a person on somebody
  * else's page.
  *
- * **A failure returns to the choice.** A URL that does not connect, or an agent
- * named in the file that is no longer signed in, asks again — never selects the
- * other thing silently, which is how a machine signed in to two runtimes ends
- * up running the one nobody picked.
+ * **A failure returns to the choice.** A URL that does not connect asks again —
+ * never selects the other thing silently.
+ *
+ * **Which runtime runs is not this command's question** (`#372`). It is each
+ * project's, written in its recipe as `runtime.agent` (or `agent:` on a step),
+ * which the board's onboarding page asks; a machine-wide default under every
+ * recipe was a choice no recipe could be read for. What is the machine's is
+ * whether anything is signed in at all, and that is checked here.
  *
  * **The store is written, never inferred** (0056, #215). `database.store` is
  * `postgres` or `sqlite` and it is this command that puts it there: an empty
@@ -148,8 +151,7 @@ export interface InitWorld {
   open: (url: string) => Promise<boolean>
 }
 
-const USAGE =
-  'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--agent claude-code|codex] [--port <n>]'
+const USAGE = 'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -199,7 +201,7 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
   const flags: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!
-    if (!['--store', '--database-url', '--agent', '--port'].includes(name)) return { refused: `${USAGE} — no ${name}` }
+    if (!['--store', '--database-url', '--port'].includes(name)) return { refused: `${USAGE} — no ${name}` }
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
     flags[name.slice(2)] = value
@@ -260,7 +262,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   if (store !== null) return store
 
   // ---- the agent ------------------------------------------------------------
-  const agent = await chooseAgent(world, config, path, home, runtimes, flags['agent'] ?? null)
+  const agent = checkAgent(world, config, path, runtimes)
   if (agent !== null) return agent
 
   // ---- the App --------------------------------------------------------------
@@ -564,49 +566,27 @@ function sqliteChosen(world: Pick<InitWorld, 'log'>, choice: StoreChosen): null 
   return null
 }
 
-/** Null once an agent is settled; an exit code when it cannot be. */
-async function chooseAgent(
+/**
+ * Null when something can run here; an exit code when nothing can, or when the
+ * file still carries a runtime the recipes own now (`#372`).
+ *
+ * Nothing is written: which runtime runs is each recipe's `runtime.agent`.
+ */
+function checkAgent(
   world: InitWorld,
   config: Document,
   path: string,
-  home: string,
   runtimes: readonly RuntimeFound[],
-  flag: string | null,
-): Promise<number | null> {
+): number | null {
+  if (config.has('runtime') || config.has('projects')) {
+    return refuse(
+      world,
+      `${path} still names a runtime under runtime: or projects: — which one runs is each project's now, written ` +
+        "as runtime.agent in that project's recipe (~/.lingtai/<project>/recipe.yml). Move it there, remove it " +
+        'here, and run lingtai init again; nothing was written',
+    )
+  }
   const signedIn = runtimes.filter((r) => r.signedIn).map((r) => r.id)
-  const named = config.getIn(['runtime', 'agent'])
-
-  if (typeof named === 'string' && (flag === null || flag === named)) {
-    if ((signedIn as string[]).includes(named)) {
-      world.log(paint.pass(`agent        ${named} ← ${path} · signed in`))
-      return null
-    }
-    world.log(paint.fail(`agent        ${named} ← ${path} is not signed in — ${detailOf(runtimes, named)}`))
-    // Back to the choice, and asked even when one other is signed in: that one is not what was written.
-    return ask(world, config, path, home, runtimes, signedIn, null)
-  }
-
-  if (signedIn.length === 1 && (flag === null || flag === signedIn[0])) {
-    return write(world, config, path, home, signedIn[0]!, 'detected — the only runtime signed in')
-  }
-  return ask(world, config, path, home, runtimes, signedIn, flag)
-}
-
-function detailOf(runtimes: readonly RuntimeFound[], id: string): string {
-  const found = runtimes.find((r) => r.id === id)
-  if (!found) return 'Lingtai has no runtime by that name'
-  return found.installed ? found.detail : 'not installed'
-}
-
-async function ask(
-  world: InitWorld,
-  config: Document,
-  path: string,
-  home: string,
-  runtimes: readonly RuntimeFound[],
-  signedIn: readonly RuntimeName[],
-  flag: string | null,
-): Promise<number | null> {
   if (signedIn.length === 0) {
     const each = runtimes.map((r) =>
       r.installed ? `${r.id} is installed and not signed in (${r.detail})` : `${r.id} is not installed`,
@@ -617,30 +597,11 @@ async function ask(
         'whether it is paid for is between you and its provider. Nothing was written',
     )
   }
-  if (flag !== null) {
-    if ((signedIn as string[]).includes(flag)) return write(world, config, path, home, flag as RuntimeName, '--agent')
-    world.log(paint.fail(`--agent ${flag} is not signed in here — ${detailOf(runtimes, flag)}`))
-  }
-  for (;;) {
-    const options = signedIn.map((id, i) => `${i + 1}) ${id}`).join('  ')
-    const answer = await world.ask(paint.signal(`${signedIn.join(' and ')} can run here — which one? ${options}: `))
-    if (answer === null) {
-      return refuse(
-        world,
-        `nobody is at a terminal to choose — ${USAGE}. Lingtai does not pick one silently; nothing was written`,
-      )
-    }
-    const trimmed = answer.trim()
-    const picked = signedIn.find((id, i) => trimmed === id || trimmed === String(i + 1))
-    if (picked !== undefined) return write(world, config, path, home, picked, 'chosen')
-    world.log(paint.fail(`"${trimmed}" is not one of ${signedIn.join(', ')}`))
-  }
-}
-
-function write(world: InitWorld, config: Document, path: string, home: string, agent: RuntimeName, why: string): null {
-  config.setIn(['runtime', 'agent'], agent)
-  writeConfig(path, config, home)
-  world.log(paint.pass(`agent        ${agent} → ${path} · ${why}`))
+  world.log(
+    paint.pass(
+      `agent        ${signedIn.join(' and ')} signed in · each project's recipe names which one runs (runtime.agent)`,
+    ),
+  )
   return null
 }
 

@@ -283,10 +283,9 @@ export function nothingChecks(base: string): string {
  * installation's permissions and the recipe, and that is what is named.
  */
 export function onboardingWritten(slug: string, path: string): string {
-  const project = slug.slice(slug.lastIndexOf('/') + 1)
   return (
-    `Written on this machine: the recipe is ${path}, and the agent is ` +
-    `projects.${project}.runtime in ~/.lingtai/config.yml. Nothing was written to ${slug}. ` +
+    `Written on this machine: the recipe is ${path}, with its agent under runtime.agent. ` +
+    `Nothing was written to ${slug}. ` +
     "Onboarding is recorded — press Recheck on the board's pending card to register it: it " +
     `checks the GitHub App's permissions on ${slug} and reads that recipe.`
   )

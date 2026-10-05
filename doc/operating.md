@@ -40,7 +40,7 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 
 | | Lifetime | Why there |
 |---|---|---|
-| `config.yml` | Persistent | **This machine's half of the recipe, and all of its configuration** — `runtime.agent`, `database.store` and `database.url`, `github.*`, `board.port`. With the variables exported into a process, the only source there is: a variable overrides the key of the same name (`github.app_id` ↔ `LINGTAI_GITHUB_APP_ID`), and there is no env file ([config.example.yml](../config.example.yml)). Keep it `0600` — it carries a password and a webhook secret. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). `runtime.assignee` and `runtime.limits` moved out of here and into the recipe (`#373`, `#375`). |
+| `config.yml` | Persistent | **This machine's own configuration** — `database.store` and `database.url`, `github.*`, `board.port`, and nothing about how a project's work is run: the runtime, the assignee and the limits are each recipe's (`#372`, `#373`, `#375`). With the variables exported into a process, the only source there is: a variable overrides the key of the same name (`github.app_id` ↔ `LINGTAI_GITHUB_APP_ID`), and there is no env file ([config.example.yml](../config.example.yml)). Keep it `0600` — it carries a password and a webhook secret. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). `runtime.assignee` and `runtime.limits` moved out of here and into the recipe (`#373`, `#375`). |
 | `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions-archive/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
@@ -441,41 +441,25 @@ steps:
       close: true
 ```
 
-**There is no `runtime:` block here beyond `limits`, and writing `agent` under
-one is refused rather than ignored.** `runtime.agent` is a fact about *this
-machine*, not about this repository, so it lives in `~/.lingtai/config.yml`
-([0046](decisions-archive/0046-lingtai-is-personal.md) §3). `runtime.assignee`
-and `runtime.limits` are the opposite case: each is a fact about this
-repository — whose tickets this project takes, and what one of its passes may
-spend — so both belong in the recipe (`#373`, `#375`), and a machine file that
-writes either is refused instead:
+**The recipe's `runtime:` block is the whole of how this project's work is run**:
+which runtime runs a step that names none (`agent`, `#372`), whose tickets it
+takes (`assignee`, `#373`) and what one of its passes may spend (`limits`,
+`#375`). The machine file holds none of them.
 
 ```yaml
 runtime:
-  agent: claude-code
-
-projects:
-  nextloom-ai-admin:
-    runtime:
-      agent: codex      # this one repository, over the machine's own
-```
-
-A recipe states its own ceiling the same way:
-
-```yaml
-runtime:
+  agent: claude-code    # a step's own `agent:` still wins over this
   limits: { turns: 300, wall: 2h, rounds: 2, restarts: 0 }
 ```
 
-`runtime.agent` left in the recipe is named back at you —
-`runtime.agent: moved to this machine (0046 §3) — write it in
-~/.lingtai/config.yml … Nothing here was applied` — and `runtime.limits` left
-in the machine file is refused the mirror way, naming the recipe's path.
-`steps:` written in the machine file is refused on the same principle. **Both
-files refuse what belongs in the other**, because a key silently dropped and a
-key that does not exist are different facts to whoever wrote it
-([0016](decisions-archive/0016-the-settled-model.md) §4), and a gate that reads
-as declared while holding nothing is a way to weaken a gate quietly.
+A recipe that names no `runtime.agent` gets the one runtime signed in on this
+machine; with several or none it is refused by name rather than one picked, and
+the refusal says to write `runtime.agent` here. `runtime:`, `projects:` or
+`steps:` written in `~/.lingtai/config.yml` is refused the mirror way, naming
+the recipe's path. **Both files refuse what belongs in the other**, because a key
+silently dropped and a key that does not exist are different facts to whoever
+wrote it ([0016](decisions-archive/0016-the-settled-model.md) §4), and a gate
+that reads as declared while holding nothing is a way to weaken a gate quietly.
 
 > [0053](decisions-archive/0053-the-recipe-chooses-the-agent-for-each-role.md) moves the
 > agent back into the recipe too, per *role* — development, discussion, and
@@ -1459,9 +1443,8 @@ Every refusal names itself. The common ones:
 | `the GitHub App is not installed on …` | Step 3 above — install it on that repository. |
 | `the installation is missing permissions:` | Step 1's table; each gap is listed with what it has, what it needs and what it is for. |
 | `no recipe at ~/.lingtai/<project>/recipe.yml` | The recipe is yours and lives on this machine (0046 §3) — nothing is read from the repository, and nothing needs committing to it. The board's wizard writes a first one by reading the repository. |
-| `runtime.agent: moved to this machine (0046 §3)` | A key that belongs in `~/.lingtai/config.yml` was left in the recipe. **Nothing in that recipe was applied** — the file is refused whole, rather than the key being dropped. |
-| `runtime.assignee: … is not configured in the machine file` | The opposite case (`#373`): whose tickets this project takes is the recipe's, under `runtime.assignee` or `queue:`'s `assignee`. A machine file that still writes it is refused whole, the same way the machine file refuses `steps:` written in the recipe — and the retired `gates:` there, which is told it is retired. |
-| `runtime.limits: … is not configured in the machine file` | The same move, for what a pass may spend (`#375`): the ceiling is the recipe's, under `runtime.limits`. A machine file that still writes it — machine-wide or under `projects.<name>.runtime` — is refused whole, naming the recipe's path. |
+| `… names no runtime.agent — which one should run?` | Several runtimes are signed in and the recipe names none. Write `runtime.agent` in that project's recipe (or `agent:` on each step that dispatches); Lingtai does not pick one. |
+| `runtime: how a project's work is run is not configured in the machine file` | `~/.lingtai/config.yml` still has a `runtime:` or `projects:` section. Which runtime, whose tickets and what a pass may spend are each the recipe's (`#372`, `#373`, `#375`): move them into `~/.lingtai/<project>/recipe.yml` under `runtime:` and delete the section. Refused whole, rather than read as applied. |
 | `runtime: signed in — claude-code reports not signed in` | `lingtai doctor` asks in the environment a *run* gets, not yours. If you are signed in and this fails, that environment is missing something the credential store needs. `/login` will not help. |
 | `no lingtai-hook binary at …` | `pnpm --filter @lingtai/hook build`. A run without the guard must not start. |
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |

@@ -20,7 +20,6 @@ import { currentRecipe } from '@lingtai/conductor/projects'
 import { STEPS, type ProjectState, type Step } from '@lingtai/domain'
 import type { GitHubClient } from '@lingtai/github'
 import {
-  AgentUnresolvedError,
   LIMIT_DEFAULTS,
   MachineConfigInvalidError,
   PLUGINS,
@@ -411,18 +410,18 @@ export type ProjectRecipe =
 /**
  * Which file a refusal is about (#218).
  *
- * The machine file refuses `gates:` and `runtime.assignee` by name — the
- * latter because it is the recipe's since `#373` — and `AgentUnresolvedError`
- * is answered either there — by writing
- * `runtime.agent` — or by signing a runtime out. None of the three is fixed by
- * editing the recipe, and each names its own remedy in its message; what a
- * caller must not do is wrap all three in a sentence about the other file.
+ * The machine file refuses `steps:`, `runtime:` and `projects:` by name — each
+ * is the recipe's (`#372`, `#373`, `#375`) — and is fixed by editing the
+ * machine file. `AgentUnresolvedError` is answered in the recipe, by writing
+ * `runtime.agent`, or by signing a runtime out — so it is the recipe's fault.
+ * Each names its own remedy in its message; what a caller must not do is wrap
+ * them in a sentence about the other file.
  *
  * `instanceof`, as `setup/wizard/page.tsx` already does across this same
  * boundary.
  */
 function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' } {
-  return err instanceof MachineConfigInvalidError || err instanceof AgentUnresolvedError
+  return err instanceof MachineConfigInvalidError
     ? { at: machinePath(), fault: 'machine' }
     : { at: recipe, fault: 'recipe' }
 }

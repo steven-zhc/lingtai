@@ -1,25 +1,23 @@
 /**
- * The recipe is mine: `~/.lingtai/<project>/recipe.yml`, and the machine's own
- * half beside it in `~/.lingtai/config.yml`
- * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3).
+ * The recipe is mine: `~/.lingtai/<project>/recipe.yml`
+ * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3), with
+ * `~/.lingtai/config.yml` beside it holding the machine's own facts and nothing
+ * about how a project's work is run.
  *
- * **The repository holds facts about itself; everything else is mine.** So the
- * recipe keeps `repo`, `source`, `env`, `steps` and `subscribers` — what this
- * repository needs and how I want its work judged — and the two fields that
- * were facts about a machine sitting in a file about a project move out of it:
+ * **The recipe answers every question about a run.** Which runtime a step uses
+ * is `agent:` on that step, or `runtime.agent` beside `steps:` for the steps that
+ * name none (`#372`); whose tickets a project takes is `runtime.assignee`
+ * (`#373`); what a pass may spend is `runtime.limits` (`#375`). Both files sit
+ * on one machine, so a machine-wide default under a per-project file answered
+ * nothing a person could read off the recipe.
  *
- * - `runtime.agent`, because which CLI is installed and signed in is a fact
- *   about this machine. **It moves; it does not go** — 0007 supports two
- *   runtimes, both can be signed in at once, and a choice nobody wrote down is
- *   the default this is here to refuse.
+ * **What the machine still answers is which runtimes are signed in** — a fact,
+ * detected rather than declared (`resolveAgent`): a recipe that names no agent
+ * gets the one runtime signed in, and with several or none it is refused by
+ * name. A choice nobody wrote down is the default 0046 §3 is against.
  *
- * `runtime.limits` is the recipe's (`#375`): both files sit on one machine, so
- * a machine-wide override of a per-machine file answered nothing, and cost
- * `#371` two passes finding that out. The ceiling is stated once, in the
- * recipe, and this file carries no opinion about it at all.
- *
- * Nothing here makes a request. The file is read on every resolve, as the
- * branch was, so an edit reaches the next run and a daemon holds nothing stale.
+ * Nothing here makes a request. The files are read on every resolve, so an edit
+ * reaches the next run and a daemon holds nothing stale.
  *
  * **Both files refuse what belongs in the other, by name.** A key silently
  * dropped and a key that does not exist are different facts to whoever wrote
@@ -28,15 +26,14 @@
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isDeepStrictEqual } from 'node:util'
 
 import { RuntimeId } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
-import { Document, isMap, parse as parseYaml, parseDocument } from 'yaml'
+import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 
 import { PRESETS } from './presets.ts'
-import { LIMIT_DEFAULTS, type Recipe } from './recipe.ts'
+import { LIMIT_DEFAULTS } from './recipe.ts'
 import { RecipeMissingError, type ResolvedRecipe, resolveSource } from './resolve.ts'
 import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from './settings.ts'
 
@@ -51,34 +48,20 @@ export function machinePath(home: string = stateDir()): string {
 }
 
 /**
- * `runtime` in the machine file: the agent, and nothing else. Strict, so
- * `tier`, `prompt`, `budget` or `limits` written here is refused rather than
- * dropped — those are about how this repository's work is run and stay in the
- * recipe (`limits` since `#375`).
- */
-const MachineRuntime = z.strictObject({
-  agent: RuntimeId.optional(),
-})
-
-/**
- * `~/.lingtai/config.yml`.
+ * `~/.lingtai/config.yml`, as this reader sees it.
  *
- * Not strict at the top: this file is the machine's (ports, a database URL —
- * doc/design/1.0.md), and a section some other reader owns is not this
- * reader's to refuse. `steps`, `runtime.assignee` and `runtime.limits` are
- * refused anyway, before the schema: `steps` because its silent absence
- * weakens a gate, and `runtime.assignee` and `runtime.limits` because each
- * moved to the recipe (`#373`, `#375`) and a key accepted here but never read
- * is 0016 §4's failure under a new name.
+ * Not strict at the top: this file is the machine's (the log, the App, the
+ * board's port — `@lingtai/env`), and a section some other reader owns is not
+ * this reader's to refuse. **`runtime` and `projects` are refused whole**,
+ * before the schema: every key they ever held moved to the recipe (`#372`,
+ * `#373`, `#375`), and a key accepted here but never read is 0016 §4's failure
+ * under a new name. `steps` is refused because its silent absence weakens a
+ * gate.
  */
-export const MachineConfig = z.object({
-  runtime: MachineRuntime.optional(),
-  /** Per project, over the machine-wide `runtime`: a person may want a different agent for one repository. */
-  projects: z.record(z.string(), z.strictObject({ runtime: MachineRuntime.optional() })).optional(),
-})
+export const MachineConfig = z.object({})
 export type MachineConfig = z.infer<typeof MachineConfig>
 
-/** Which runtimes are signed in on this machine. Asked only when no file names one. */
+/** Which runtimes are signed in on this machine. Asked only when the recipe names none. */
 export type SignedIn = () => Promise<readonly RuntimeId[]>
 
 export class MachineConfigInvalidError extends Error {
@@ -117,39 +100,18 @@ function stepsRefusal(at: string, project: string, home: string): string {
 }
 
 /**
- * **Since `#373`.** Whose tickets this project takes is the recipe's — under
- * `runtime.assignee`, or `assignee` in `claim`'s `queue:` — never the
- * machine's, so a machine file that still writes it is a person who has not
- * heard of the move, and a key accepted here but never read is exactly what
+ * **Since `#372`, `#373` and `#375`.** How a project's work is run — which
+ * runtime, whose tickets, what a pass may spend — is the recipe's, so a
+ * `runtime:` or a `projects:` section here is a person who has not heard of
+ * the move, and a key accepted here but never read is exactly what
  * `stepsRefusal` exists to keep this file from doing silently.
  */
-function assigneeRefusal(at: string, project: string, home: string): string {
+function runtimeRefusal(at: string, project: string, home: string): string {
   return (
-    `${at}: whose tickets this project takes is not configured in the machine file — it is configured ` +
-    `in the recipe, ${recipePath(project, home)}, under \`runtime.assignee\`, or \`assignee\` in \`claim\`'s ` +
-    '`queue:`. Nothing here was applied; move it there if it is meant to apply'
+    `${at}: how a project's work is run is not configured in the machine file — it is configured in the ` +
+    `recipe, ${recipePath(project, home)}: \`runtime.agent\` (or \`agent:\` on a step), \`runtime.assignee\` ` +
+    'and `runtime.limits`. Nothing here was applied; move it there if it is meant to apply'
   )
-}
-
-/**
- * **Since `#375`.** What a pass may spend is the recipe's — under
- * `runtime.limits` — never the machine's, so a machine file that still writes
- * it is a person who has not heard of the move, and a key accepted here but
- * never read is exactly what `stepsRefusal` exists to keep this file from
- * doing silently.
- */
-function limitsRefusal(at: string, project: string, home: string): string {
-  return (
-    `${at}: what a pass may spend is not configured in the machine file — it is configured in the recipe, ` +
-    `${recipePath(project, home)}, under \`runtime.limits\`. Nothing here was applied; ` +
-    'move it there if it is meant to apply'
-  )
-}
-
-/** Whether `runtime.<key>` is written under `scope`, which is `top` or one `top.projects` entry. */
-function hasRuntimeKey(scope: Record<string, unknown>, key: string): boolean {
-  const runtime = scope['runtime']
-  return runtime !== null && typeof runtime === 'object' && !Array.isArray(runtime) && key in runtime
 }
 
 /**
@@ -172,17 +134,17 @@ export function parseMachineConfig(text: string | null, path: string, project: s
   const problems: string[] = []
   const top = raw as Record<string, unknown>
   if ('steps' in top) problems.push(stepsRefusal('steps', project, home))
-  if (hasRuntimeKey(top, 'assignee')) problems.push(assigneeRefusal('runtime.assignee', project, home))
-  if (hasRuntimeKey(top, 'limits')) problems.push(limitsRefusal('runtime.limits', project, home))
+  if ('runtime' in top) problems.push(runtimeRefusal('runtime', project, home))
   const projects = top['projects']
-  if (projects !== null && typeof projects === 'object' && !Array.isArray(projects)) {
-    for (const [name, scope] of Object.entries(projects as Record<string, unknown>)) {
-      if (scope === null || typeof scope !== 'object') continue
-      const scoped = scope as Record<string, unknown>
-      if ('steps' in scoped) problems.push(stepsRefusal(`projects.${name}.steps`, name, home))
-      if (hasRuntimeKey(scoped, 'assignee'))
-        problems.push(assigneeRefusal(`projects.${name}.runtime.assignee`, name, home))
-      if (hasRuntimeKey(scoped, 'limits')) problems.push(limitsRefusal(`projects.${name}.runtime.limits`, name, home))
+  if (projects !== undefined) {
+    if (projects !== null && typeof projects === 'object' && !Array.isArray(projects)) {
+      for (const [name, scope] of Object.entries(projects as Record<string, unknown>)) {
+        const scoped = scope !== null && typeof scope === 'object' ? (scope as Record<string, unknown>) : {}
+        if ('steps' in scoped) problems.push(stepsRefusal(`projects.${name}.steps`, name, home))
+        else problems.push(runtimeRefusal(`projects.${name}`, name, home))
+      }
+    } else {
+      problems.push(runtimeRefusal('projects', project, home))
     }
   }
   if (problems.length > 0) throw new MachineConfigInvalidError(path, problems)
@@ -201,7 +163,7 @@ export function parseMachineConfig(text: string | null, path: string, project: s
  * Which agent, and why that one.
  *
  * ```
- * a file names one                →  that one
+ * the recipe names one            →  that one
  * absent, exactly one signed in   →  that one
  * absent, more than one           →  say so and ask; never pick silently
  * absent, none                    →  refuse by name
@@ -221,8 +183,8 @@ export async function resolveAgent(
   if (detected.length > 1) {
     throw new AgentUnresolvedError(
       `${detected.join(' and ')} are all signed in on this machine, and ${path} names no runtime.agent — ` +
-        `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path}; ` +
-        'Lingtai does not pick one silently',
+        `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path}, or \`agent:\` ` +
+        'on each step that dispatches; Lingtai does not pick one silently',
     )
   }
   throw new AgentUnresolvedError(
@@ -309,7 +271,7 @@ function originIn(wrote: unknown, preset: string | null, path: string): (key: st
 export interface LocalRecipeOptions {
   /** `stateDir()` unless a test says otherwise. */
   home?: string
-  /** Asked only when neither the project's nor the machine's section names an agent. */
+  /** Asked only when the recipe names no `runtime.agent`. */
   signedIn: SignedIn
   /**
    * The branch this project was registered against, which becomes `ref`. The
@@ -351,21 +313,36 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
     )
   }
 
-  const machine = parseMachineConfig(await read(machineFile), machineFile, project, home)
-  const scoped = machine.projects?.[project]?.runtime
-  const shared = machine.runtime
-  const scopedAt = `${machineFile} (projects.${project})`
+  // Read for its refusals: the machine file names nothing a resolve uses.
+  parseMachineConfig(await read(machineFile), machineFile, project, home)
 
-  const named = scoped?.agent
-    ? { agent: scoped.agent, from: scopedAt }
-    : shared?.agent
-      ? { agent: shared.agent, from: machineFile }
-      : null
-  const agent = await resolveAgent(named, options.signedIn, machineFile)
-
-  const provenance: Record<string, string> = {
-    'runtime.agent': `${agent.agent}${PROVENANCE_ARROW}${agent.from}`,
+  // The recipe's own `runtime.agent`, read off the file before anything is
+  // merged: a preset carries none (it is about commands, not preference), and
+  // the schema's default must never stand in for a choice nobody wrote down.
+  const written = namedIn(source, path)
+  // A value written that is not a runtime is kept for the schema to refuse by
+  // path — never replaced by what happens to be signed in.
+  let agent: { agent: RuntimeId; from: string } | null = null
+  if (written !== 'not a runtime') {
+    try {
+      agent = await resolveAgent(written, options.signedIn, path)
+    } catch (err) {
+      // **The recipe's own fault first.** A file that is wrong for some other
+      // reason is reported as that, not as a missing agent: resolved once with
+      // a placeholder so the schema speaks, and only a file that passes is
+      // refused for its agent.
+      if (!(err instanceof AgentUnresolvedError)) throw err
+      resolveSource(source, options.base ?? path, path, (raw) => {
+        const runtime = raw['runtime']
+        const own = runtime !== null && typeof runtime === 'object' && !Array.isArray(runtime) ? runtime : {}
+        raw['runtime'] = { ...own, agent: 'claude-code' }
+        return []
+      })
+      throw err
+    }
   }
+
+  const provenance: Record<string, string> = {}
 
   // What the *file itself* carries, kept before anything is merged into it.
   // This is the only place the difference survives: `recipe.source.exclude`
@@ -374,25 +351,18 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
   // this file decided from one it was silent about (#218).
   //
   // A copy, and not the object: the callback below sets `raw.runtime.agent`
-  // to the machine's choice, and the preset merges underneath afterwards.
+  // to the detected runtime where the file names none, and the preset merges
+  // underneath afterwards.
   let wrote: unknown = {}
 
   const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
     wrote = structuredClone(raw)
-    const refused: string[] = []
     const runtime = raw['runtime']
     const own =
       runtime !== null && typeof runtime === 'object' && !Array.isArray(runtime)
         ? (runtime as Record<string, unknown>)
         : {}
-    if ('agent' in own) {
-      refused.push(
-        `runtime.agent: moved to this machine (0046 §3) — write it in ${machineFile}, ` +
-          `under \`runtime:\` or \`projects.${project}.runtime:\`. Nothing here was applied`,
-      )
-    }
-    if (refused.length > 0) return refused
-    raw['runtime'] = { ...own, agent: agent.agent }
+    if (agent !== null && !('agent' in own)) raw['runtime'] = { ...own, agent: agent.agent }
     return []
   })
 
@@ -400,6 +370,9 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
   // value, so the doctor prints the resolved recipe rather than a list of names.
   const { recipe } = resolved
   const from = originIn(wrote, resolved.preset, path)
+  // The recipe's own, or the one runtime signed in — and which, said. Only a
+  // value the schema refused leaves `agent` null, and that threw above.
+  provenance['runtime.agent'] = `${recipe.runtime.agent}${PROVENANCE_ARROW}${agent?.from ?? path}`
 
   // `limits` is the recipe's own now (`#375`): read off the resolved recipe
   // through `ceilingOf`, named by `originIn` exactly as every other recipe
@@ -415,6 +388,20 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
   const limitsUsd = ceiling.usd
   provenance['runtime.limits.usd'] =
     `${limitsUsd ?? '(none)'}${PROVENANCE_ARROW}${limitsUsd === undefined ? 'default' : from('runtime.limits.usd')}`
+
+  // **Each step's runtime, off the recipe alone** (`#372`): the runtimes its
+  // own `agent:` actions name, and for `implement` — which dispatches whether
+  // or not it declares an agent — `runtime.agent` when it names none.
+  for (const [step, actions] of Object.entries(recipe.steps)) {
+    const named = actions.flatMap((action) =>
+      'agent' in action && typeof action.agent === 'string' ? [action.agent] : [],
+    )
+    if (named.length > 0) {
+      provenance[`steps.${step}.agent`] = `${[...new Set(named)].join(', ')}${PROVENANCE_ARROW}${from(`steps.${step}`)}`
+    } else if (step === 'implement') {
+      provenance['steps.implement.agent'] = `${recipe.runtime.agent}${PROVENANCE_ARROW}runtime.agent`
+    }
+  }
 
   const list = (items: readonly string[]) => (items.length > 0 ? items.join(', ') : '(none)')
   const recipeValues: Record<string, string> = {
@@ -459,90 +446,25 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
   return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance }
 }
 
-/** The two files a recipe built elsewhere becomes on this machine, or why it cannot. */
-export type MachineFiles =
-  | {
-      ok: true
-      /**
-       * `recipePath(project)`'s text: the recipe without `runtime.agent`,
-       * which is carried to `machine`. `runtime.assignee` and
-       * `runtime.limits` are left exactly as the recipe wrote them
-       * (`#373`, `#375`) — neither is one this file moves.
-       */
-      recipe: string
-      /** `machinePath()`'s new text, or null when it already says this and needs no write. */
-      machine: string | null
-    }
-  | { ok: false; refusal: string }
-
 /**
- * A whole recipe — the wizard's, with its agent in it — split into the files
- * `resolveLocalRecipe` reads (0046 §3, #180).
+ * The recipe's own `runtime.agent`, or null where the file names none — read off
+ * the text, before any preset or default.
  *
- * The agent the page chose is not dropped: it goes under
- * `projects.<project>.runtime` in the machine file, which is where a choice for
- * one repository lives, and every other byte of that file is kept. A machine
- * file that already names a *different* runtime for this project is refused
- * rather than overwritten — both are a person's recorded choice, and which one
- * is meant is theirs to say. `runtime.assignee` and `runtime.limits` take no
- * part in any of this (`#373`, `#375`): both are the recipe's, so this
- * function neither reads either out of the machine file nor writes either
- * there.
+ * A value that is not a runtime is left to the schema, which refuses it by
+ * path once the recipe resolves; a file that will not parse is left to
+ * `resolveSource`, which says so.
  */
-export function machineFiles(input: {
-  /** The recipe as emitted, comments and all. */
-  file: string
-  recipe: Recipe
-  project: string
-  /** The machine file's current text, or null when there is none. */
-  machine: string | null
-  home?: string
-  /**
-   * Set the project's section even when it already says something else. For
-   * an edit a person made to that very section on a page showing its current
-   * value — never for a first onboarding, which must not overwrite a choice.
-   */
-  replace?: boolean
-}): MachineFiles {
-  const home = input.home ?? stateDir()
-  const doc = parseDocument(input.file)
-  const toJSON = (node: unknown) =>
-    node !== null && typeof node === 'object' && 'toJSON' in node ? (node as { toJSON: () => unknown }).toJSON() : node
-  // A file already without it — the machine's own, being edited — has no `runtime` to delete from.
-  if (doc.hasIn(['runtime', 'agent'])) doc.deleteIn(['runtime', 'agent'])
-  const recipe = doc.toString({ lineWidth: 0, flowCollectionPadding: false })
-
-  const at = ['projects', input.project, 'runtime']
-  const path = machinePath(home)
-  const choose = () => ({ agent: input.recipe.runtime.agent })
-
-  if (input.machine === null || input.machine.trim() === '') {
-    const created = new Document({ projects: { [input.project]: { runtime: choose() } } })
-    return { ok: true, recipe, machine: created.toString() }
+function namedIn(source: string, path: string): { agent: RuntimeId; from: string } | 'not a runtime' | null {
+  let raw: unknown
+  try {
+    raw = parseYaml(source)
+  } catch {
+    return null
   }
-
-  const machine = parseDocument(input.machine)
-  if (machine.errors.length > 0 || !isMap(machine.contents)) {
-    return {
-      ok: false,
-      refusal: `${path} does not parse as a mapping, so ${input.project}'s agent cannot be added to it — fix it and press this again`,
-    }
-  }
-  const chosen = choose()
-  if (machine.hasIn(at)) {
-    const json = toJSON(machine.getIn(at))
-    if (isDeepStrictEqual(json, chosen)) return { ok: true, recipe, machine: null }
-    if (input.replace) {
-      machine.setIn(at, chosen)
-      return { ok: true, recipe, machine: machine.toString() }
-    }
-    return {
-      ok: false,
-      refusal:
-        `${path} already sets projects.${input.project}.runtime to ${JSON.stringify(json)}, and this page chose ` +
-        `${JSON.stringify(chosen)}. Nothing was written — edit that section, or remove it and press this again`,
-    }
-  }
-  machine.setIn(at, chosen)
-  return { ok: true, recipe, machine: machine.toString() }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const runtime = (raw as Record<string, unknown>)['runtime']
+  if (runtime === null || typeof runtime !== 'object' || Array.isArray(runtime)) return null
+  if (!('agent' in runtime)) return null
+  const agent = RuntimeId.safeParse((runtime as Record<string, unknown>)['agent'])
+  return agent.success ? { agent: agent.data, from: path } : 'not a runtime'
 }

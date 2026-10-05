@@ -676,7 +676,7 @@ describe('the last screen, written', () => {
 
   it('names the files it wrote on this machine', () => {
     expect(said).toContain('/home/me/.lingtai/shop/recipe.yml')
-    expect(said).toContain('projects.shop.runtime in ~/.lingtai/config.yml')
+    expect(said).toContain('with its agent under runtime.agent')
     expect(said).toContain('Nothing was written to acme/shop')
   })
 

@@ -48,8 +48,6 @@ import {
   excludeOf,
   kindsOf,
   queueOf,
-  machineFiles,
-  machinePath,
   parseDuration,
   recipePath,
   resolveLocalRecipe,
@@ -297,9 +295,8 @@ async function readIfThere(path: string): Promise<string | null> {
  * onboarding started.
  *
  * **Nothing is written to the repository** (0046 §3, #180). The recipe is
- * `~/.lingtai/<project>/recipe.yml`, limits and all (`#375`), and the agent the
- * page chose goes under `projects.<project>.runtime` in `~/.lingtai/config.yml`
- * — the files `Recheck`'s `lingtai add` reads — so a pending card is finished by
+ * `~/.lingtai/<project>/recipe.yml`, limits and agent and all (`#375`,
+ * `#372`) — the file `Recheck`'s `lingtai add` reads — so a pending card is finished by
  * pressing `Recheck`, with no pull request for anybody to merge first. It used
  * to open one carrying `.lingtai/config.yaml`, which nothing reads any more.
  *
@@ -328,7 +325,6 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   const base = baseOf(recipe)
   const stream = projectStream(client.repo)
   const path = recipePath(client.repo, home)
-  const machineFile = machinePath(home)
 
   const existing = await store.read(stream)
   const state = reduceProject(existing)
@@ -347,22 +343,16 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   const validated = await validateProposal(recipe, options.said ?? {})
   if (!validated.ok) return { ok: false, refusal: validated.refusal }
 
-  let files: ReturnType<typeof machineFiles>
+  // The recipe whole, its agent included (#372): nothing of it goes to the
+  // machine file any more.
+  const file = validated.file
   let there: string | null
   try {
-    files = machineFiles({
-      file: validated.file,
-      recipe,
-      project: client.repo,
-      machine: await readIfThere(machineFile),
-      home,
-    })
     there = await readIfThere(path)
   } catch (err) {
     return { ok: false, refusal: `this machine's files could not be read: ${(err as Error).message}` }
   }
-  if (!files.ok) return { ok: false, refusal: files.refusal }
-  if (there !== null && there !== files.recipe) {
+  if (there !== null && there !== file) {
     return {
       ok: false,
       refusal:
@@ -372,15 +362,13 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
   }
 
   // The bytes, read back the way `lingtai add` reads them — the agent is named
-  // in the machine file now, so nothing is asked what is signed in.
-  const planned = files
+  // in the recipe, so nothing is asked what is signed in.
   try {
     await resolveLocalRecipe(client.repo, {
       home,
       base,
       signedIn: async () => [],
-      read: async (p) =>
-        p === path ? planned.recipe : p === machineFile ? (planned.machine ?? readIfThere(p)) : readIfThere(p),
+      read: async (p) => (p === path ? file : readIfThere(p)),
     })
   } catch (err) {
     return { ok: false, refusal: (err as Error).message }
@@ -388,8 +376,7 @@ export async function startOnboarding(options: StartOnboardingOptions): Promise<
 
   try {
     await mkdir(dirname(path), { recursive: true })
-    if (there === null) await writeFile(path, files.recipe)
-    if (files.machine !== null) await writeFile(machineFile, files.machine)
+    if (there === null) await writeFile(path, file)
   } catch (err) {
     return { ok: false, refusal: `the recipe was not written: ${(err as Error).message}` }
   }

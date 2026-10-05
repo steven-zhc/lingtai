@@ -89,7 +89,7 @@ import {
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
-import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, machinePath, recipePath, type Recipe } from '@lingtai/recipe'
+import { baseDivergence, baseOf, baseWrittenAt, ceilingOf, recipePath, type Recipe } from '@lingtai/recipe'
 import { git } from '@lingtai/repo'
 import pg from 'pg'
 
@@ -1517,12 +1517,13 @@ async function projectRecipes(
  * The line an operator has to change, for the `agent:` that was refused.
  *
  * **Two refusals, two files, and one instruction for both is a wrong one**
- * (`#245`). `runtime.agent` is this machine's, in `machinePath()`; a step's
- * `agent:` is the project's, in `recipePath()`. A row that named the machine
- * file for a step's refusal sent the operator to a line that is *already* the
- * dispatched runtime — it is what `dispatched` was compared against and
- * matched — so re-writing the same value there changes nothing and the project
- * goes on taking no work, with the line that must change never mentioned.
+ * (`#245`). Both live in `recipePath()` since `#372` — `runtime.agent` beside
+ * `steps:`, and a step's own `agent:` on the step — but they are different
+ * lines: a row that named `runtime.agent` for a step's refusal sent the
+ * operator to a line that is *already* the dispatched runtime — it is what
+ * `dispatched` was compared against and matched — so re-writing the same value
+ * there changes nothing and the project goes on taking no work, with the line
+ * that must change never mentioned.
  *
  * **The step's half stopped saying *name the other one* in `#314`.** Per-step
  * dispatch is built, so a step naming a second runtime is legal; what is refused
@@ -1538,7 +1539,7 @@ async function projectRecipes(
  */
 function agentRemedy(refused: AgentRefusal, project: string, dispatched: string): string {
   return refused.at === 'runtime.agent'
-    ? `Name runtime.agent: ${dispatched} in ${machinePath()}; it is what this conductor was asked to dispatch`
+    ? `Name runtime.agent: ${dispatched} in ${recipePath(project)}; it is what this conductor was asked to dispatch`
     : `Sign in to it, or name a runtime this machine has as that action's ${refused.key}: in ` +
         `${recipePath(project)} — see the runtime: signed in row above`
 }
@@ -1900,7 +1901,7 @@ async function dispatchedAuthRow(
     detail:
       `${agent} reports ${status.detail}, and ${project}'s recipe names it at runtime.agent — ` +
       `so that is what the next pass constructs and spawns. Sign in, or name a runtime this ` +
-      `machine has in ${machinePath()}. If you are signed in yourself, the run's environment ` +
+      `machine has at runtime.agent in ${recipePath(project)}. If you are signed in yourself, the run's environment ` +
       `is missing something the credential store needs — see runtime: signed in.`,
   }
 }

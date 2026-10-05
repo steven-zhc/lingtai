@@ -217,8 +217,8 @@ export const changedFilesArgs = (baseSha: string): string[] => [
  * it was.
  *
  * The sentence is one for both places (#180). `at` is here because the remedy
- * is not: `runtime.agent` is written on this machine, in `machinePath()`, and a
- * step's `agent:` is written in the project's own recipe — so a caller that
+ * is not: `runtime.agent` is written beside `steps:` and a step's `agent:` on
+ * the step, two lines of the project's recipe (`#372`) — so a caller that
  * offers one instruction for both refusals sends the operator to a line that is
  * already correct, and its project goes on taking nothing (`#245`). Which
  * `agent:` and which file to open are one fact, so they travel together rather

@@ -232,7 +232,16 @@ export function resolveSource(
   const unknown = unknownKeys(applied.recipe)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
 
-  const parsed = Recipe.safeParse(applied.recipe)
+  // A recipe may write no `runtime:` at all — its agent on each step or
+  // detected (#372), and every field inside defaulted — so an absent one is
+  // the schema's, as `emitRecipe` already reads it.
+  const withRuntime =
+    applied.recipe !== null &&
+    typeof applied.recipe === 'object' &&
+    (applied.recipe as Record<string, unknown>)['runtime'] == null
+      ? { ...applied.recipe, runtime: {} }
+      : applied.recipe
+  const parsed = Recipe.safeParse(withRuntime)
   if (!parsed.success) {
     throw new RecipeInvalidError(
       ref,

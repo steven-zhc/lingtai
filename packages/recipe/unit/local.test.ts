@@ -10,7 +10,6 @@ import {
   MachineConfigInvalidError,
   RecipeInvalidError,
   RecipeMissingError,
-  machineFiles,
   machinePath,
   recipePath,
   resolveLocalRecipe,
@@ -51,6 +50,20 @@ const withMachine = (machine: string | undefined, signedIn = signed('claude-code
     ...(machine === undefined ? {} : { [machinePath(HOME)]: machine }),
   }),
 })
+
+const withRecipe = (text: string, signedIn = signed('claude-code'), machine?: string) => ({
+  home: HOME,
+  signedIn,
+  read: files({
+    [recipePath('app', HOME)]: text,
+    ...(machine === undefined ? {} : { [machinePath(HOME)]: machine }),
+  }),
+})
+
+/** The sentence a machine file's `runtime:` or `projects:` is refused with (`#372`). */
+const MOVED = new RegExp(
+  `how a project's work is run is not configured in the machine file.*${recipePath('app', HOME)}`,
+)
 
 describe('resolveLocalRecipe', () => {
   it('reads ~/.lingtai/<project>/recipe.yml, with no request', async () => {
@@ -184,23 +197,15 @@ steps:
     await expect(resolveLocalRecipe('app', options)).rejects.toThrow(`${HOME}/app/recipe.yml`)
   })
 
+  /** Which runtime runs a step the recipe leaves open — the recipe's since `#372`. */
   describe('runtime.agent', () => {
-    it('is the one the file names, even with two signed in', async () => {
+    it('is the one the recipe names, even with two signed in', async () => {
       const resolved = await resolveLocalRecipe(
         'app',
-        withMachine('runtime:\n  agent: codex\n', signed('claude-code', 'codex')),
+        withRecipe(`${RECIPE}runtime:\n  agent: codex\n`, signed('claude-code', 'codex')),
       )
       expect(resolved.recipe.runtime.agent).toBe('codex')
-      expect(resolved.provenance?.['runtime.agent']).toBe(`codex ← ${HOME}/config.yml`)
-    })
-
-    it("is the project's over the machine's", async () => {
-      const resolved = await resolveLocalRecipe(
-        'app',
-        withMachine('runtime:\n  agent: claude-code\nprojects:\n  app:\n    runtime:\n      agent: codex\n'),
-      )
-      expect(resolved.recipe.runtime.agent).toBe('codex')
-      expect(resolved.provenance?.['runtime.agent']).toContain('projects.app')
+      expect(resolved.provenance?.['runtime.agent']).toBe(`codex ← ${recipePath('app', HOME)}`)
     })
 
     it('is the only one signed in, when nothing names one — and says it was detected', async () => {
@@ -209,11 +214,11 @@ steps:
       expect(resolved.provenance?.['runtime.agent']).toContain('detected')
     })
 
-    it('is asked for, never picked, when more than one is signed in', async () => {
+    it('is asked for, never picked, when more than one is signed in — and the recipe is where to write it', async () => {
       const resolving = resolveLocalRecipe('app', withMachine(undefined, signed('claude-code', 'codex')))
       await expect(resolving).rejects.toThrow(AgentUnresolvedError)
       await expect(resolveLocalRecipe('app', withMachine(undefined, signed('claude-code', 'codex')))).rejects.toThrow(
-        /claude-code and codex are all signed in.*which one should run/,
+        new RegExp(`claude-code and codex are all signed in.*which one should run.*in ${recipePath('app', HOME)}`),
       )
     })
 
@@ -223,16 +228,42 @@ steps:
       )
     })
 
-    it('does not ask what is signed in when a file names one', async () => {
+    it('does not ask what is signed in when the recipe names one', async () => {
       let asked = false
       await resolveLocalRecipe(
         'app',
-        withMachine('runtime:\n  agent: claude-code\n', async () => {
+        withRecipe(`${RECIPE}runtime:\n  agent: claude-code\n`, async () => {
           asked = true
           return []
         }),
       )
       expect(asked).toBe(false)
+    })
+
+    /** A typo is the schema's to refuse by path — never replaced by what is signed in. */
+    it('refuses one that is not a runtime, rather than detecting over it', async () => {
+      await expect(
+        resolveLocalRecipe('app', withRecipe(`${RECIPE}runtime:\n  agent: claud\n`, signed('claude-code'))),
+      ).rejects.toThrow(/runtime\.agent/)
+    })
+
+    /** `lingtai add` and `lingtai doctor` print these rows — each step's runtime off the recipe alone. */
+    it("says each step's runtime and where it was written", async () => {
+      const withReview = RECIPE.replace(
+        'steps:\n',
+        'steps:\n  review:\n    - name: cold\n      agent: codex\n      prompt: review\n',
+      )
+      const resolved = await resolveLocalRecipe('app', withRecipe(`${withReview}runtime:\n  agent: claude-code\n`))
+      expect(resolved.provenance?.['steps.review.agent']).toBe(`codex ← ${recipePath('app', HOME)}`)
+      expect(resolved.provenance?.['steps.implement.agent']).toBe('claude-code ← runtime.agent')
+      expect(resolved.provenance).not.toHaveProperty('steps.proposed.agent')
+    })
+
+    it('is refused in the machine file by name, machine-wide and per project', async () => {
+      await expect(resolveLocalRecipe('app', withMachine('runtime:\n  agent: codex\n'))).rejects.toThrow(MOVED)
+      await expect(
+        resolveLocalRecipe('app', withMachine('projects:\n  app:\n    runtime:\n      agent: codex\n')),
+      ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
   })
 
@@ -288,13 +319,11 @@ steps:
 
     it('is refused in the machine file by name, machine-wide and per project — nothing applied', async () => {
       await expect(resolveLocalRecipe('app', withMachine('runtime:\n  limits:\n    rounds: 3\n'))).rejects.toThrow(
-        new RegExp(`runtime\\.limits: what a pass may spend.*${recipePath('app', HOME)}`),
+        MOVED,
       )
       await expect(
         resolveLocalRecipe('app', withMachine('projects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n')),
-      ).rejects.toThrow(
-        new RegExp(`projects\\.app\\.runtime\\.limits: what a pass may spend.*${recipePath('app', HOME)}`),
-      )
+      ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
   })
 
@@ -365,52 +394,14 @@ steps:
 
     it('is refused in the machine file by name, machine-wide and per project', async () => {
       await expect(resolveLocalRecipe('app', withMachine('runtime:\n  assignee:\n    take: both\n'))).rejects.toThrow(
-        new RegExp(`runtime\\.assignee: whose tickets this project takes.*${recipePath('app', HOME)}`),
+        MOVED,
       )
       await expect(
         resolveLocalRecipe(
           'app',
           withMachine('projects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n'),
         ),
-      ).rejects.toThrow(
-        new RegExp(`projects\\.app\\.runtime\\.assignee: whose tickets this project takes.*${recipePath('app', HOME)}`),
-      )
-    })
-  })
-
-  /** The page edits the agent and limits; an assignee is never theirs to move (#181, #373). */
-  describe('machineFiles and runtime.assignee', () => {
-    const parsed = async (machine: string | undefined) => (await resolveLocalRecipe('app', withMachine(machine))).recipe
-
-    it('leaves one written in the recipe text in the recipe, and it never reaches the machine file', async () => {
-      const recipe = await parsed(undefined)
-      const split = machineFiles({
-        file: `${RECIPE}runtime:\n  assignee:\n    take: unassigned\n`,
-        recipe,
-        project: 'app',
-        machine: null,
-        home: HOME,
-      })
-      if (!split.ok || split.machine === null) throw new Error('expected a machine file')
-      expect(split.recipe).toContain('assignee:')
-      expect(split.recipe).toContain('take: unassigned')
-      expect(split.machine).not.toContain('assignee')
-    })
-
-    it('does not add one to a machine file being edited, even when the recipe has one', async () => {
-      const recipe = await parsed(undefined)
-      const machine = 'projects:\n  app:\n    runtime:\n      agent: claude-code\n'
-      const split = machineFiles({
-        file: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
-        recipe,
-        project: 'app',
-        machine,
-        home: HOME,
-        replace: true,
-      })
-      if (!split.ok) throw new Error('expected ok')
-      expect(split.recipe).toContain('assignee:')
-      expect(split.machine ?? '').not.toContain('assignee')
+      ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
   })
 
@@ -430,39 +421,27 @@ steps:
     })
 
     /**
-     * **The pre-0061 spelling is refused by the schema now, not by name**
-     * (`#247`). It was named here beside `steps:`, for somebody copying an
-     * older block across — and it is one of the four retired words, so it could
-     * not stay in `src/` and leave `doc/reference.md`'s allowlist empty.
-     *
-     * What it cost is the sentence and not the refusal: `projects.<name>` is a
-     * `strictObject`, so an unknown key under a project is still refused by its
-     * own name. At the top level the machine file is open by design — a section
-     * some other reader owns is not this reader's to refuse — so a `gates:`
-     * there is now ignored like any other stranger's block, which is the one
-     * thing this change gave up.
+     * **A project's section has nothing left to hold** (`#372`): its runtime
+     * was the last key, so anything under it is refused by the section's name.
      */
-    it("names an unknown key under a project's section, whatever it is called", async () => {
+    it("names a project's section whatever it holds", async () => {
       await expect(
         resolveLocalRecipe('app', withMachine('projects:\n  app:\n    gates:\n      merge: []\n')),
-      ).rejects.toThrow(/gates/)
+      ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
 
-    it("and anything else the machine's runtime does not own", async () => {
+    it("and anything under the machine's runtime", async () => {
       await expect(resolveLocalRecipe('app', withMachine('runtime:\n  tier: guarded\n'))).rejects.toThrow(
         MachineConfigInvalidError,
       )
     })
 
-    it('runtime.agent in the recipe names the machine file', async () => {
-      const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  agent: claude-code\n`,
-      })
-      const resolving = resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
-      await expect(resolving).rejects.toThrow(RecipeInvalidError)
-      await expect(resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })).rejects.toThrow(
-        /runtime\.agent: moved to this machine.*config\.yml/,
+    it("leaves a section some other reader owns alone — the machine's own facts", async () => {
+      const resolved = await resolveLocalRecipe(
+        'app',
+        withMachine('database:\n  store: sqlite\ngithub:\n  app_id: "1"\nboard:\n  port: 18000\n'),
       )
+      expect(resolved.recipe.steps.proposed).toHaveLength(1)
     })
 
     /** `runtime.limits` in the recipe is not refused — it is the recipe's own since `#375`. */

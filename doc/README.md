@@ -86,7 +86,7 @@ replaces.
 | [0101](decisions/0101-typescript-packages-effect-unbuilt.md) | **Architecture** — TypeScript in one workspace, run unbuilt, with Effect where something is acquired and where configuration is read | accepted |
 | [0102](decisions/0102-one-conductor-holds-the-lock.md) | **The conductor and the daemon** — one process holds the work, a file lock makes it the only one, and stopping drains the pass | accepted |
 | [0103](decisions/0103-a-pass-is-ten-fixed-steps.md) | **The pipeline** — a pass is ten fixed steps, four may refuse, and only `proposed` routes | accepted; part not yet built |
-| [0104](decisions/0104-the-recipe-is-the-pipeline.md) | **The recipe** — one file per project on this machine, ten steps in order, each setting on the step that uses it | accepted; part not yet built |
+| [0104](decisions/0104-the-recipe-is-the-pipeline.md) | **The recipe** — one file per project on this machine, ten steps in order, each setting on the step that uses it | accepted |
 | [0105](decisions/0105-a-plugin-is-a-declaration-and-an-implementation.md) | **Plugins** — a plugin is a declaration and an implementation, and only the implementation must be ours | accepted; part not yet built |
 | [0106](decisions/0106-a-role-keeps-its-powers-across-runtimes.md) | **Agents and runtimes** — the recipe picks the runtime for each role, and the role keeps its powers whichever runtime it gets | accepted; part not yet built |
 | [0107](decisions/0107-the-agent-gets-what-the-recipe-allows.md) | **The agent's environment** — the project's own file holds the values, the recipe decides what an agent sees, and nothing named `LINGTAI_` reaches it | accepted; part not yet built |

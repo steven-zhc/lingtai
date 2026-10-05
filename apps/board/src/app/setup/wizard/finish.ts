@@ -14,8 +14,7 @@ import { startOnboarding } from '@lingtai/conductor/wizard'
  * **Onboarding ends by writing, on this machine** (0046 §3, #180). A new recipe
  * goes through `startOnboarding` — parsed by the system's own parser on the
  * bytes, written to `~/.lingtai/<project>/recipe.yml` with the page's agent
- * under `projects.<project>.runtime` in `~/.lingtai/config.yml`, and
- * `ProjectOnboardingStarted` appended — so the board draws a pending card whose
+ * under `runtime.agent` (`#372`), and `ProjectOnboardingStarted` appended — so the board draws a pending card whose
  * `Recheck` reads exactly that file. Nothing is written to the repository. The
  * page's limits are the recipe's own (`#375`) and are written into the file
  * itself, with every other field it chose.
@@ -34,18 +33,17 @@ import {
 } from '@lingtai/conductor/wizard-page'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, parseSlug } from '@lingtai/github'
-import { Recipe, editRecipe, hashRecipe, machineFiles, machinePath, recipePath, resolveRecipe } from '@lingtai/recipe'
+import { Recipe, editRecipe, hashRecipe, recipePath, resolveRecipe } from '@lingtai/recipe'
+import { parse as parseYaml } from 'yaml'
 
 import { actor } from '../../../lib/actor.ts'
 
 export type Finished =
   | {
       ok: true
-      /** `path`'s text — never with `runtime.agent` in it. */
+      /** `path`'s text, its agent included (#372). */
       file: string
       path: string
-      /** `~/.lingtai/config.yml` as it would be with this change, or null when it needs none. */
-      machine: string | null
       changed: string[]
       /** Whether `file` is on disk already: onboarding writes, an edit does not. */
       written: boolean
@@ -78,16 +76,11 @@ export async function finishWizard(input: {
         ok: true,
         file: await readFile(started.path, 'utf8'),
         path: started.path,
-        machine: null,
         changed: [],
         written: true,
       }
     }
-    const machine = await readFile(machinePath(), 'utf8').catch((err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') return null
-      throw err
-    })
-    return await editExisting(input.existing, state, { project: repo, current: input.recipe, machine })
+    return await editExisting(input.existing, state, { project: repo, current: input.recipe })
   } catch (err) {
     return { ok: false, refusals: [(err as Error).message] }
   }
@@ -103,32 +96,28 @@ export async function finishWizard(input: {
  * and must describe the recipe the page does; where it does not, the gates are
  * written whole, and where that still does not, nothing is offered.
  *
- * **`runtime.agent` is never written into it** (#180): a recipe carrying it is
- * refused at the path it is read from. It is compared with `current` — what
- * the machine resolved it to — and a change to it is the machine file with
- * `projects.<project>.runtime` set, beside it. `runtime.limits` is the
- * recipe's own (`#375`) and is written into the file exactly as every other
- * field the page changed.
+ * **`runtime.agent` is the recipe's** (`#372`) and is written into the file as
+ * every other field is — and written **whenever the file names none**, even
+ * where the page's choice equals the schema's default: a file silent about its
+ * agent is resolved by asking what is signed in, so leaving the line out would
+ * make the page's answer depend on the machine. `runtime.limits` is the
+ * recipe's own (`#375`) and is written exactly as every other field.
  */
 export async function editExisting(
   existing: string,
   state: WizardState,
-  at: { project: string; current: Recipe; machine: string | null; home?: string },
+  at: { project: string; current: Recipe; home?: string },
 ): Promise<Finished> {
   const ref = state.draft.base
   const { recipe } = await resolveRecipe(async () => existing, ref)
-  const drafted = Recipe.parse(applyDraft(at.current, state))
-  // The file's half: everything the page changed but the machine's own field.
-  // `drafted.runtime.limits` passes through untouched — it is the recipe's own
-  // (`#375`), so what the page drafted is what the file is compared against.
-  const after = Recipe.parse({
-    ...drafted,
-    runtime: { ...drafted.runtime, agent: recipe.runtime.agent },
-  })
+  const after = Recipe.parse(applyDraft(at.current, state))
   const describes = async (file: string) =>
     (await resolveRecipe(async () => file, ref)).configHash === hashRecipe(after)
 
   let changes = changesFrom(recipe, after)
+  if (!namesAgent(existing) && !changes.some((c) => c.path.join('.') === 'runtime.agent')) {
+    changes = [...changes, { path: ['runtime', 'agent'], value: after.runtime.agent }]
+  }
   let file = editRecipe(existing, changes)
   if (!(await describes(file))) {
     changes = wholeSteps(changes, after)
@@ -144,26 +133,18 @@ export async function editExisting(
     }
   }
 
-  const runtime = changesFrom(at.current, drafted).filter((c) => c.path[0] === 'runtime' && c.path[1] === 'agent')
-  let machine: string | null = null
-  if (runtime.length > 0) {
-    const split = machineFiles({
-      file,
-      recipe: drafted,
-      project: at.project,
-      machine: at.machine,
-      ...(at.home === undefined ? {} : { home: at.home }),
-      replace: true,
-    })
-    if (!split.ok) return { ok: false, refusals: [split.refusal] }
-    machine = split.machine
-  }
   return {
     ok: true,
     file,
     path: recipePath(at.project, at.home),
-    machine,
-    changed: [...changes, ...runtime].map((c) => c.path.join('.')),
+    changed: changes.map((c) => c.path.join('.')),
     written: false,
   }
+}
+
+/** Whether the file itself writes `runtime.agent`, before any preset or default. */
+function namesAgent(text: string): boolean {
+  const raw = parseYaml(text) as { runtime?: unknown } | null
+  const runtime = raw?.runtime
+  return runtime !== null && typeof runtime === 'object' && 'agent' in runtime
 }

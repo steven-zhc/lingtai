@@ -90,8 +90,10 @@ on that path is paid for thousands of times per run.
    and `apps/cli/unit/discuss-agent.test.ts` pins the two lists to each other.
 
 7. **The recipe chooses the runtime per step, and a choice is binding.**
-   `runtime.agent` (default `claude-code`) is the default for a step that names
-   none. An `agent:` or runtime `judge:` on a step dispatches on that runtime.
+   `runtime.agent`, written in the recipe beside `steps:`, is the default for a
+   step that names none; where the recipe writes no `runtime.agent`, the one
+   runtime signed in is used, and with several or none the recipe is refused
+   rather than one picked (`resolveAgent`, `#372`). An `agent:` or runtime `judge:` on a step dispatches on that runtime.
    `agentRefusal` in `packages/conductor/src/conduct.ts` refuses a pass before
    the claim if a named runtime is one that nothing on this machine is signed in
    to. Lingtai never falls back to another runtime, whether the cause is
