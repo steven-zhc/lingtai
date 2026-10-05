@@ -65,6 +65,26 @@ describe('memoryTickets, beyond the shared contract', () => {
     await expect(t.getIssue(1)).rejects.toBeTruthy()
   })
 
+  it('comment stores the body rather than discarding it, and appends rather than overwriting', async () => {
+    const t = memoryTickets()
+    const created = await t.createIssue({ title: 'x', body: '', labels: [] })
+
+    await t.comment(created.number, 'first')
+    await t.comment(created.number, 'second')
+
+    expect(t.commentBodies(created.number)).toEqual(['first', 'second'])
+  })
+
+  it('dependencies is { blockedBy: 0 }, never null — a rule on this implementation, not on every Tickets (ticket-store.ts)', async () => {
+    const t = memoryTickets()
+    const created = await t.createIssue({ title: 'x', body: '', labels: [] })
+
+    const listing = (await t.listOpenIssues()).find((i) => i.number === created.number)
+    expect(listing?.dependencies).toEqual({ blockedBy: 0 })
+    const got = await t.getIssue(created.number)
+    expect(got.dependencies).toEqual({ blockedBy: 0 })
+  })
+
   it('returns copies: mutating a result does not change what the next call answers', async () => {
     const t = memoryTickets()
     const created = await t.createIssue({ title: 'x', body: '', labels: ['bug'] })

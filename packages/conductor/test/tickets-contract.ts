@@ -109,15 +109,5 @@ export function describeTicketsContract(name: string, make: () => Tickets | Prom
       const nothingYet = await t.listIssuesSince(new Date('3000-01-01'))
       expect(nothingYet.map((i) => i.number)).not.toContain(open.number)
     })
-
-    it('dependencies is { blockedBy: 0 }, never null', async () => {
-      const t = await tickets()
-      const created = await t.createIssue({ title: 'x', body: '', labels: [] })
-
-      const listing = (await t.listOpenIssues()).find((i) => i.number === created.number)
-      expect(listing?.dependencies).toEqual({ blockedBy: 0 })
-      const got = await t.getIssue(created.number)
-      expect(got.dependencies).toEqual({ blockedBy: 0 })
-    })
   })
 }

@@ -23,9 +23,25 @@ interface StoredTicket {
   labels: string[]
   state: 'open' | 'closed'
   createdAt: Date
+  comments: string[]
 }
 
-export function memoryTickets(options: MemoryTicketsOptions = {}): Tickets {
+/**
+ * `memoryTickets()`'s return, widened past `Tickets` with one inspection seam
+ * that no production caller gets. Nothing in this codebase reads a comment
+ * back (`comment(issue, body)`'s own comment in `@lingtai/github/client.ts`:
+ * *"nothing renders comments into a prompt"*), so `Tickets` carries no verb
+ * for it — but a test fake that threw the text away regardless would be
+ * indistinguishable from one that stored it, to every caller that only has a
+ * `Tickets`. `commentBodies` is for `unit/tickets.test.ts` alone, which imports
+ * this factory directly rather than through the shared contract's narrower
+ * `make: () => Tickets`.
+ */
+export interface MemoryTickets extends Tickets {
+  commentBodies(issue: number): readonly string[]
+}
+
+export function memoryTickets(options: MemoryTicketsOptions = {}): MemoryTickets {
   let tick = 0
   const now = options.now ?? (() => new Date(tick++))
   const byNumber = new Map<number, StoredTicket>()
@@ -80,14 +96,19 @@ export function memoryTickets(options: MemoryTicketsOptions = {}): Tickets {
         labels: [...input.labels],
         state: 'open',
         createdAt: now(),
+        comments: [],
       }
       byNumber.set(t.number, t)
       return toTicket(t)
     },
 
-    async comment(number, _body) {
-      require(number)
+    async comment(number, body) {
+      require(number).comments.push(body)
       return { id: nextCommentId++ }
+    },
+
+    commentBodies(number) {
+      return [...require(number).comments]
     },
 
     async setLabels(number, labels) {
