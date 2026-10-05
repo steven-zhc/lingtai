@@ -1284,6 +1284,13 @@ async function loadTicket(taskId: string, own: readonly Envelope[]): Promise<Tic
     .then((r) => ticketSourceOf(r.recipe))
     .catch(() => null)
   const url = issueUrl(state.owner, project, issue, tickets)
+  // A `db` ticket's number is not a GitHub issue number — it can collide with
+  // an unrelated issue on the same repository (`recipe.ts`, `TicketSource`'s
+  // doc comment), so asking GitHub about it answers a different ticket's
+  // title, labels and body rather than 404ing the way the catch below expects.
+  if (tickets === 'db') {
+    return { ...base, found: null, url, body: null, problem: `${project}'s tickets are read from the database` }
+  }
   try {
     const client = await githubClientFor(state)
     const live = await client.getIssue(Number(issue))
