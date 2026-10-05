@@ -1020,6 +1020,16 @@ const BACKOFF = z
  * discovery, the queue, the board's Queued column and the daemon's
  * convergence all take their tickets from there rather than from a
  * `GitHubClient` directly.
+ *
+ * **Not wired everywhere yet.** The board's task page
+ * (`apps/board/src/lib/task.ts`, `lib/prompt.ts`) and `lingtai backlog accept`
+ * (`apps/cli/src/backlog.ts`) still build a `GitHubClient` and open or read
+ * GitHub issues directly, `db` or not — #383's. A `db` project with no GitHub
+ * App configured throws there rather than numbering into `dbTickets`; a `db`
+ * project that *does* have one risks `backlog accept` opening a GitHub issue
+ * numbered into the same `wi-<project>-<n>` stream namespace `dbTickets`
+ * numbers from 1, which is the collision `TicketSourceConflict` guards
+ * against and cannot catch once it has happened.
  */
 export const TicketSource = z.enum(['github', 'db'])
 export type TicketSource = z.infer<typeof TicketSource>

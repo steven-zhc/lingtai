@@ -10,17 +10,51 @@
 import type { LogQueries } from '@lingtai/event-store'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
+import type { GitHubClient } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
+import { queueOf } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { runOnce } from '../src/conduct.ts'
 import { dbTickets } from '../src/db-tickets.ts'
-import { passClientOf, TicketSourceConflict, ticketsFor } from '../src/ticket-store.ts'
+import { runnableNow } from '../src/discover.ts'
+import { passClientOf, TicketSourceConflict, ticketsFor, type Tickets } from '../src/ticket-store.ts'
 import { fakeGitHub, fakePorts, memoryStore, PROJECT, project, runtime, streams, withPorts } from '../test/one-pass.ts'
 
 function freshSql(): TicketSql {
   return createSqliteTicketSql(openSqliteLog(':memory:'))
+}
+
+/**
+ * `fakeGitHub` only pushes into its own `said` array from three of the eight
+ * `Tickets` verbs (`comment`, `setLabels`, `closeIssue`), so `expect(said).toEqual([])`
+ * cannot see a `listOpenIssues`, `getIssue`, `createIssue`, `listIssuesSince` or
+ * `updateBody` call reaching GitHub. This wraps all eight so a test asserting
+ * "no GitHub ticket call happened" is actually watching all of them, not three.
+ */
+const TICKET_VERBS = [
+  'listOpenIssues',
+  'listIssuesSince',
+  'getIssue',
+  'createIssue',
+  'comment',
+  'setLabels',
+  'closeIssue',
+  'updateBody',
+] as const satisfies readonly (keyof Tickets)[]
+
+function recordTicketCalls(client: GitHubClient, calls: string[]): GitHubClient {
+  const wrapped: Record<string, unknown> = { ...client }
+  for (const verb of TICKET_VERBS) {
+    const original = (client as unknown as Record<string, unknown>)[verb]
+    wrapped[verb] = (...args: unknown[]) => {
+      calls.push(verb)
+      if (typeof original !== 'function') throw new Error(`fakeGitHub.${verb} was called and has no implementation`)
+      return (original as (...a: unknown[]) => unknown)(...args)
+    }
+  }
+  return wrapped as unknown as GitHubClient
 }
 
 /** No `tickets:` written — the default, exactly as a project had it before this field existed. */
@@ -141,14 +175,17 @@ describe('a pass under source.tickets: db', () => {
   /**
    * **Every ticket verb a pass makes lands in `dbTickets`, and the fake
    * GitHub records none of its own** — the claim, the block's comment and
-   * label change, and the `end` point's close.
+   * label change, and the `end` point's close. `ticketCalls` watches all
+   * eight `Tickets` verbs on the fake, not the three `said` happens to cover,
+   * so a regression that leaves any one of them wired to GitHub fails here.
    */
   it('claims a ticket dbTickets created, blocks, and closes it — all without a GitHub call', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const ticketCalls: string[] = []
 
-    const github = fakeGitHub(said, RECIPE_DB_HOLD)
+    const github = recordTicketCalls(fakeGitHub(said, RECIPE_DB_HOLD), ticketCalls)
     const sql = freshSql()
     const tickets = dbTickets(sql, PROJECT)
     const created = await tickets.createIssue({
@@ -177,9 +214,9 @@ describe('a pass under source.tickets: db', () => {
     if (result.ok !== 'held') throw new Error('it landed, and a person had been declared at proposed')
     expect(result.step).toBe('proposed')
 
-    // The fake GitHub's own ticket verbs were never called — everything a
+    // None of the fake GitHub's eight ticket verbs were called — everything a
     // real `GitHubClient` would have been asked went to `dbTickets` instead.
-    expect(said).toEqual([])
+    expect(ticketCalls).toEqual([])
 
     const after = await tickets.getIssue(created.number)
     expect(after.state).toBe('closed')
@@ -187,5 +224,30 @@ describe('a pass under source.tickets: db', () => {
 
     const comments = await tickets.commentBodies(created.number)
     expect(comments.some((body) => body.includes('Lingtai is waiting on you'))).toBe(true)
+  })
+
+  /**
+   * The ticket's headline and first Want bullet — the queue — ran through
+   * `passClientOf` by no test before this one. `runOnce` above never calls
+   * `listOpenIssues` (it is handed a specific `issue:` number), so it proved
+   * nothing about the read `runnableNow` makes.
+   */
+  it('runnableNow reads the queue from dbTickets, never from GitHub', async () => {
+    const sql = freshSql()
+    const tickets = dbTickets(sql, PROJECT)
+    const created = await tickets.createIssue({
+      title: 'a race in the importer',
+      body: 'fix it',
+      labels: ['bug'],
+    })
+
+    const ticketCalls: string[] = []
+    const github = recordTicketCalls(fakeGitHub([]), ticketCalls)
+    const recipe = await recipeOf(RECIPE_DB)
+
+    const offered = await runnableNow({ client: passClientOf(github, tickets), queue: queueOf(recipe) })
+
+    expect(offered.runnable.map((r) => r.ref)).toEqual([String(created.number)])
+    expect(ticketCalls).toEqual([])
   })
 })

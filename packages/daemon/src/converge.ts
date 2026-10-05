@@ -77,7 +77,7 @@ import {
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import { createGitHubClient } from '@lingtai/github'
+import { createGitHubClient, type GitHubClient } from '@lingtai/github'
 
 import { withDaemonStore } from './choose.ts'
 import type { DaemonStore } from './store.ts'
@@ -96,6 +96,17 @@ import type { DaemonStore } from './store.ts'
  * `db` project's ticket verbs read `dbTickets` rather than GitHub, and
  * everything this map's one reader (`findIssueDrift`/`convergeIssues`,
  * `ConvergeOptions.clients`) asks of a value is `Tickets` and `RefChannel`.
+ *
+ * **The client building and the recipe resolving fail independently.** Only a
+ * client that will not build costs a project its convergence — "one
+ * repository's expired installation must not cost the rest theirs," unchanged
+ * from before `#382`. A recipe that will not resolve (the daemon running code
+ * that cannot serve a step the recipe names, or a `db` project in conflict
+ * with its own GitHub-numbered history) falls back to the client itself
+ * rather than dropping the project: for a `github` project the recipe read
+ * cannot change the outcome, and a `TicketSourceConflict` means the project's
+ * existing work items are GitHub-numbered already, which is exactly what the
+ * client itself answers for.
  */
 export async function clientsForProjects(
   projects: readonly ProjectState[],
@@ -104,16 +115,19 @@ export async function clientsForProjects(
   if (!hasGitHubApp()) return clients
   for (const p of projects) {
     if (!p.project || !p.owner) continue
+    let client: GitHubClient
     try {
-      const client = await createGitHubClient({ auth: githubApp(), owner: p.owner, repo: p.project })
-      // Where this project's tickets actually live (`ticketsFor`, `#382`) —
-      // a recipe that will not resolve or a `db` project in conflict with its
-      // own history lands in this same catch, and the project is skipped.
-      const resolved = await currentRecipe(p, client)
-      clients.set(p.project, passClientOf(client, await ticketsFor(p, resolved.recipe, client)))
+      client = await createGitHubClient({ auth: githubApp(), owner: p.owner, repo: p.project })
     } catch {
       // Named by its absence: the divergence for that project simply is not
       // found, and `doctor` still reports what the log says was not managed.
+      continue
+    }
+    try {
+      const resolved = await currentRecipe(p, client)
+      clients.set(p.project, passClientOf(client, await ticketsFor(p, resolved.recipe, client)))
+    } catch {
+      clients.set(p.project, client)
     }
   }
   return clients

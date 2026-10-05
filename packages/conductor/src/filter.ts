@@ -169,16 +169,19 @@ export type ProjectFilter =
        */
       plan: StepPlan
       /**
-       * The recipe and the client that read it, carried so a caller that wants
-       * to go on and ask GitHub what is offered does not fetch either twice.
+       * The recipe and the client that read it, carried so a caller does not
+       * fetch either twice. **Not what asks GitHub what is offered** — that is
+       * `tickets`, below; a `db` project's `client` still reaches GitHub for
+       * the recipe but must not be asked for its tickets.
        */
       recipe: Recipe
       client: TicketSource
       /**
        * Where this project's tickets actually come from — `client` itself for
-       * `github`, or `dbTickets` for `db` (`ticketsFor`, `#382`). What the
-       * queue and the board's Queued column read instead of `client`, so a
-       * `db` project is asked nothing of GitHub for its tickets.
+       * `github`, or `dbTickets` for `db` (`ticketsFor`, `#382`). **This is
+       * what a caller that wants to go on and ask what is offered reads** —
+       * the queue and the board's Queued column both do — so a `db` project
+       * is asked nothing of GitHub for its tickets.
        */
       tickets: TicketSource
     }
