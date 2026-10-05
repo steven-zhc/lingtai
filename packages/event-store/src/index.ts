@@ -48,8 +48,8 @@ export {
  * never defaulted to SQLite
  * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) §2):
  * *unset* is not a fact a process can establish, and reading it as a choice is
- * how a process that could not see a checkout's `.env.local` came to open a
- * second, empty log and report every append into it as success.
+ * how a process that could not see a checkout's `.env.local` — when one was
+ * still read — came to open a second, empty log and report every append into it as success.
  */
 export const eventStore: EventStore = deferredEventStore(processEventStore)
 

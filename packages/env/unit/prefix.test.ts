@@ -22,8 +22,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+import { parse as parseYaml } from 'yaml'
 
-import { PREFIX, dbVar, githubApp, hasGitHubApp } from '../src/index.ts'
+import { PREFIX, dbVar, githubApp, githubSection, hasGitHubApp, yamlProvider } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '../../..')
@@ -142,11 +143,14 @@ describe('the LINGTAI_ prefix', () => {
     expect(() => githubApp(old)).toThrow(/renamed/)
   })
 
-  /** Every name in the example file is one this package would accept. */
-  it('matches .env.example', () => {
-    const example = readFileSync(join(ROOT, '.env.example'), 'utf8')
-    const declared = [...example.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!)
-    expect(declared.length).toBeGreaterThan(0)
-    expect(declared.filter((n) => !n.startsWith(PREFIX))).toEqual([])
+  /** Every App key in the example file is one this package reads. */
+  it('matches config.example.yml', () => {
+    const example = parseYaml(readFileSync(join(ROOT, 'config.example.yml'), 'utf8')) as {
+      github: Record<string, unknown>
+    }
+    const read = { app_id: 'appId', app_private_key_path: 'privateKeyPath', webhook_secret: 'webhookSecret' }
+    expect(Object.keys(example.github).sort()).toEqual(Object.keys(read).sort())
+    const section = githubSection(yamlProvider({ github: { ...example.github, webhook_secret: 'x' } }))
+    expect(Object.keys(section).sort()).toEqual(Object.values(read).sort())
   })
 })

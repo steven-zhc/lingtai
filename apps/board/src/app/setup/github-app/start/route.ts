@@ -43,6 +43,14 @@ export async function POST(request: Request): Promise<Response> {
       { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } },
     )
   }
+  if (offer.unreadable !== null) {
+    // A file to fix, not a log to wait for — and one that may name an App.
+    return new Response(
+      `${offer.unreadable}. Creating an App now could write a second one over the one that file names. ` +
+        'Fix the file (pnpm lingtai doctor says what is wrong with it), then try again.',
+      { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    )
+  }
   if (!offer.offered) {
     // Configured, and not merely minted: an App whose credentials never landed
     // keeps the offer open (#169), and the page names it beside the form.

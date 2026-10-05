@@ -142,7 +142,7 @@ async function bundleCli(root: string, out: string): Promise<void> {
     target: 'node22',
     // Inside a SEA (#185) `__filename` is the path this file had on the machine
     // that built the binary, carried into it verbatim — so `board/` and
-    // `.env.local` would be looked for in the build's checkout. The binary is
+    // `prompts/` would be looked for in the build's checkout. The binary is
     // the file that is running, so there it is `process.execPath`.
     banner: {
       js: [
@@ -155,7 +155,7 @@ async function bundleCli(root: string, out: string): Promise<void> {
       'import.meta.url': '__import_meta_url',
       'import.meta.filename': '__lingtai_filename',
       'import.meta.dirname': '__lingtai_dirname',
-      // `@lingtai/env` finds `.env.local` relative to itself; bundled, that is
+      // `@lingtai/env` finds the root relative to itself; bundled, that is
       // `dist/`, one directory below the checkout rather than three.
       LINGTAI_BUNDLED: 'true',
     },

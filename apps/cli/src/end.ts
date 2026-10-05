@@ -48,7 +48,9 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
     return 0
   }
   if (!hasGitHubApp()) {
-    log('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
+    log(
+      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+    )
     return 1
   }
 

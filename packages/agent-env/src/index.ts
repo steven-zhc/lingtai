@@ -2,8 +2,8 @@
  * The environment an agent is given, in named layers.
  *
  * **Filtered, not inherited.** The agent gets exactly the variable names the
- * recipe *requires*, merged from layers with different owners, and a name with
- * no value in any of them refuses the project rather than being logged. This is
+ * recipe *requires*, read from the project's own file, and a name with no
+ * value there refuses the project rather than being logged. This is
  * one of the three real boundaries
  * ([0007](../../../doc/decisions-archive/0007-dual-runtime.md), reshaped by
  * [0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md));
@@ -22,7 +22,7 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { PREFIX, machineEnvFile, stateDir } from '@lingtai/env'
+import { stateDir } from '@lingtai/env'
 
 // ------------------------------------------------------------ environment ----
 
@@ -108,26 +108,6 @@ export function hostLooksProduction(host: string, patterns: readonly string[]): 
 }
 
 /**
- * The one name-shaped rule left, and it is a prefix rather than a list.
- *
- * `#63` made every name Lingtai reads for itself begin `LINGTAI_`, and that is
- * what lets this be one rule instead of the `RESERVED` denylist 0021 deleted:
- * there is nothing to keep up to date and nothing to forget.
- *
- * **It applies to the machine's file only.** `.env.local` holds this system's
- * own log and the key that signs its tokens; a managed repository must never
- * receive those, whatever its recipe says. The *project's* file is written by
- * the operator for one project, so a `LINGTAI_TEST_DATABASE_URL` there — for
- * this repository, when a run touches one of the files on `@lingtai/event-
- * store/test/postgres`'s list (#275) — is the operator handing Lingtai's own
- * test database to Lingtai's own run, on purpose, which is the asymmetry that
- * keeps working.
- */
-function isMachineOwn(name: string): boolean {
-  return name.startsWith(PREFIX)
-}
-
-/**
  * The variables a process needs in order to be a process at all — **layer 1**.
  *
  * `filterEnv` is an allowlist of the *project's* variables — the secrets and
@@ -186,7 +166,7 @@ export function runnableEnv(
  *
  * | `allow` | `deny` | what passes |
  * |---|---|---|
- * | — | — | everything the two files hold |
+ * | — | — | everything the project file holds |
  * | set | — | only what `allow` names |
  * | — | set | everything except `deny` |
  * | set | set | `allow` minus `deny` |
@@ -213,7 +193,7 @@ export function filterEnv(
 export interface ExtensionEnv {
   /** The declared names that had a value. Layer 1 is added by `runnableEnv`. */
   values: Record<string, string>
-  /** Declared, and no value in either file. Reported, never guessed at. */
+  /** Declared, and no value in the project's file. Reported, never guessed at. */
   missing: string[]
 }
 
@@ -222,14 +202,14 @@ export interface ExtensionEnv {
  * consumer ([0037](../../../doc/decisions-archive/0037-an-extension-is-a-command.md) §1).
  *
  * The whole of the difference from `filterEnv` is which way round the question
- * is asked. An agent gets *everything the two files hold*, minus what the
+ * is asked. An agent gets *everything the project file holds*, minus what the
  * recipe filtered; an extension gets **only what it declared**, because its
  * code is not trusted and the daemon's own environment is the thing 0037 §1
  * took away from it. A name it did not ask for is not in the result, and a
  * name it asked for and this machine does not hold is in `missing` rather than
  * silently absent — that is what `lingtai doctor` reports before a run.
  *
- * `merged` is the two files, before the recipe's `allow`/`deny`: those decide
+ * `merged` is the project file, before the recipe's `allow`/`deny`: those decide
  * what reaches *the agent*, which is a different consumer with a different
  * declaration, and making one answer for the other is how a `deny` written
  * about an agent would quietly become a rule about a Telegram bot.
@@ -364,7 +344,7 @@ export function parseEnvFile(text: string): EnvFile {
 // --------------------------------------------------- the merged environment ---
 
 /** Where a declared name's value came from. Names only — never values. */
-export type EnvLayer = 'machine file' | 'project file' | 'not set'
+export type EnvLayer = 'project file' | 'not set'
 
 export interface AgentEnvName {
   name: string
@@ -375,7 +355,7 @@ export interface AgentEnv {
   /** What reaches the agent, after `allow`/`deny`. Layer 1 is added by `runnableEnv`. */
   values: Record<string, string>
   /**
-   * The two files merged, **before** `allow`/`deny` — 0021's data layer, which
+   * The project's file, **before** `allow`/`deny` — 0021's data layer, which
    * `required` is already checked against.
    *
    * Here because it now has a second consumer: an extension declares its own
@@ -389,7 +369,7 @@ export interface AgentEnv {
    * (an extension), and both are narrower than it by construction.
    */
   merged: Record<string, string>
-  /** Every name either file offered, and which one answered, in name order. */
+  /** Every name the file offered, and every required name, in name order. */
   names: AgentEnvName[]
   /** `required` names the merged data did not supply. */
   missing: string[]
@@ -410,18 +390,21 @@ export interface AgentEnv {
 /**
  * The environment an agent may see, and the refusal when it cannot be completed.
  *
- * **Merge first, filter second** (`#60`). The two files are merged — the
- * project's over the machine's — `required` is checked against *that*, and only
- * then do `allow` and `deny` decide what actually reaches the agent. The order
- * is what makes a name that is both required and denied legal: the machine must
- * have it, and this run does not see it
+ * **Read first, filter second** (`#60`). `required` is checked against the
+ * project's file, and only then do `allow` and `deny` decide what actually
+ * reaches the agent. The order is what makes a name that is both required and
+ * denied legal: the machine must have it, and this run does not see it
  * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
  *
- * The machine's **file**, not `process.env`: the operator's shell carries
- * `AWS_*`, npm tokens and whatever else is exported in the terminal a command
- * was typed into, and none of that is something either file offered.
+ * **One file, the project's** — `~/.lingtai/env/<project>.env`. There was a
+ * machine-wide layer under it, read from the checkout's `.env.local`; it went
+ * with that file, so what a project's agent sees is what that project's file
+ * says and nothing a second project's needs. Never `process.env`: the
+ * operator's shell carries `AWS_*`, npm tokens and whatever else is exported in
+ * the terminal a command was typed into, and none of that is something the
+ * file offered.
  *
- * Runs nothing and claims nothing — it is a function of the recipe, two files
+ * Runs nothing and claims nothing — it is a function of the recipe, one file
  * and a clock, which is what lets `lingtai doctor` ask it for free.
  */
 export async function resolveAgentEnv(options: {
@@ -432,8 +415,6 @@ export async function resolveAgentEnv(options: {
   allow?: readonly string[] | undefined
   /** `env.deny` — names that never reach the agent. */
   deny?: readonly string[] | undefined
-  /** Layer 2, injectable. Defaults to the machine's own env file. */
-  machine?: Record<string, string>
   home?: string
   /** Every pattern refused — `productionPatterns(env.refuseHosts)` for a run. */
   patterns?: readonly string[]
@@ -446,8 +427,8 @@ export async function resolveAgentEnv(options: {
   const missing = required.filter((name) => !(name in merged))
 
   const values = filterEnv(merged, { allow: options.allow, deny: options.deny })
-  // Over every value that actually reaches an agent, from either file — which
-  // is the only place it can be over, now that the filters run last.
+  // Over every value that actually reaches an agent — which is the only place
+  // it can be over, now that the filters run last.
   for (const [name, value] of Object.entries(values)) guardProduction(name, value, patterns)
 
   const names = layerNames(merged, fromFile, required)
@@ -464,15 +445,14 @@ export async function resolveAgentEnv(options: {
 }
 
 /**
- * The two files, read and merged, with nothing decided about them yet.
+ * The project's file, read, with nothing decided about it yet.
  *
  * Shared by `resolveAgentEnv` and by `projectEnvNames`, which is what `lingtai
- * env list` asks. Splitting it out is what stops the listing command growing a
- * second, subtly different idea of which layer answered for a name — the thing
- * the operator is being asked to be responsible for
+ * env list` asks, so the listing command cannot grow a second idea of which
+ * names a project has
  * ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)).
  */
-async function readEnvLayers(options: { project: string; machine?: Record<string, string>; home?: string }): Promise<{
+async function readEnvLayers(options: { project: string; home?: string }): Promise<{
   file: string
   merged: Record<string, string>
   fromFile: Set<string>
@@ -480,23 +460,15 @@ async function readEnvLayers(options: { project: string; machine?: Record<string
 }> {
   const file = projectEnvPath(options.project, options.home ?? stateDir())
 
-  // Layer 2, minus what is Lingtai's own. See `isMachineOwn`: this is the one
-  // asymmetry left, and it is a prefix rather than a list.
-  const fromMachine: Record<string, string> = {}
-  for (const [name, value] of Object.entries(options.machine ?? machineEnvFile())) {
-    if (!isMachineOwn(name) && value !== '') fromMachine[name] = value
-  }
-
   let parsed: EnvFile = { values: {}, commands: {} }
   try {
     parsed = parseEnvFile(await readFile(file, 'utf8'))
   } catch {
-    // No file is the ordinary case for a project whose values are all on the
-    // machine. An unreadable one is reported by the names it fails to supply.
+    // No file is the ordinary case for a project that needs nothing. An
+    // unreadable one is reported by the names it fails to supply.
   }
 
-  // Layer 3 over layer 2: one project can differ from the machine.
-  const merged: Record<string, string> = { ...fromMachine }
+  const merged: Record<string, string> = {}
   const fromFile = new Set<string>()
   for (const [name, value] of Object.entries(parsed.values)) {
     if (value === '') continue
@@ -514,7 +486,7 @@ function layerNames(
 ): AgentEnvName[] {
   return [...new Set([...Object.keys(merged), ...also])].sort().map((name) => ({
     name,
-    layer: fromFile.has(name) ? 'project file' : name in merged ? 'machine file' : 'not set',
+    layer: fromFile.has(name) ? 'project file' : 'not set',
   }))
 }
 
@@ -528,7 +500,7 @@ function refusalFor(
   const isDeferredName = new Set(deferred)
 
   const lines = [
-    `env: ${missing.join(', ')} declared in env.required and not set in either file. ` +
+    `env: ${missing.join(', ')} declared in env.required and not set in ${file}. ` +
       `Nothing was claimed and no agent was started.`,
   ]
 
@@ -677,8 +649,8 @@ export function unsetEnvLine(text: string, name: string): { text: string; remove
 
 function header(project: string): string {
   return (
-    `# ${project} — the values Lingtai merges over the machine's own file when it\n` +
-    `# prepares a run (doc/decisions-archive/0021). One NAME=value per line.\n` +
+    `# ${project} — the values Lingtai gives this project's agent when it prepares\n` +
+    `# a run (doc/decisions-archive/0021). One NAME=value per line.\n` +
     `# Written by \`lingtai env set ${project}\`; edit it by hand if you prefer.\n`
   )
 }
@@ -746,7 +718,7 @@ export async function unsetProjectEnv(options: {
 
 export interface ProjectEnvListing {
   file: string
-  /** Every name either file offers, and which one answered. Never a value. */
+  /** Every name the file offers. Never a value. */
   names: AgentEnvName[]
   /** Names in the project's file whose value asks for the unbuilt layer 4. */
   deferred: string[]
@@ -759,13 +731,9 @@ export interface ProjectEnvListing {
  * machine hold for this project", which is a question worth being able to ask
  * with no App configured and no recipe fetched. What a *run* would then do with
  * it — `required`, `allow`, `deny` — is `lingtai doctor`'s answer, from
- * `resolveAgentEnv`, over these same two layers.
+ * `resolveAgentEnv`, over this same file.
  */
-export async function projectEnvNames(options: {
-  project: string
-  machine?: Record<string, string>
-  home?: string
-}): Promise<ProjectEnvListing> {
+export async function projectEnvNames(options: { project: string; home?: string }): Promise<ProjectEnvListing> {
   const project = checkProject(options.project)
   const { file, merged, fromFile, commands } = await readEnvLayers({ ...options, project })
   const deferred = Object.keys(commands).sort()

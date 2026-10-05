@@ -25,11 +25,11 @@
  * lock being asked anyway. That is the assertion the three `catch` blocks never
  * had.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
-// Only the loader, which reads `.env.local` and connects to nothing.
+// Only the configuration reader, which connects to nothing.
 import {
   dbVar,
   logConfigured,
@@ -100,7 +100,7 @@ export function liveWorld(self: string, outside: Live = live()): World {
     running: runningFrom,
     // **Asked whether or not a log is configured.** The conductor lock is a
     // file under `~/.lingtai/locks/` since #193, so a daemon running from a
-    // checkout — whose `.env.local` names a log this copy has never heard of —
+    // checkout — whose configuration names a log this copy has never heard of —
     // is named here rather than answered as a null. Gating this on the log was
     // true only while the lock was `pg_advisory_lock`, and what it would cost
     // is `install.ts` removing a live conductor's worktrees on `--nothing-conducts`.
@@ -329,21 +329,13 @@ async function liveApp(): Promise<AppFacts | null> {
     organisation: app.owner.type === 'Organization',
     installations: installations.length,
     repositories,
+    // An inline key is in whichever source answered for the App: the
+    // environment, which nothing here removes, or `config.yml`, which an
+    // uninstall does.
     key: credentials.keySource.startsWith('LINGTAI_')
-      ? {
-          variable: credentials.keySource,
-          files: env.envFiles().filter((file) => envFileSets(file, credentials.keySource)),
-        }
-      : { path: env.resolvePath(credentials.keySource) },
-  }
-}
-
-/** Whether an env file names `variable` — so an uninstall can say whether removing the file removed the key. */
-function envFileSets(file: string, variable: string): boolean {
-  try {
-    // dotenv's own shape, `NAME=value` with an optional `export`, and not empty.
-    return new RegExp(`^\\s*(export\\s+)?${variable}\\s*=\\s*[^\\s#]`, 'm').test(readFileSync(file, 'utf8'))
-  } catch {
-    return false
+      ? credentials.source === 'environment'
+        ? { variable: credentials.keySource, files: [] }
+        : { variable: 'github.app_private_key', files: [credentials.source] }
+      : { path: credentials.keySource },
   }
 }

@@ -61,19 +61,17 @@
  * - It is wired as vitest's **`globalSetup`**, whose module may export a
  *   `teardown`. There is no `globalTeardown` option — that is Jest's name, and
  *   vitest drops the unknown key without a word.
- * - This module runs *outside* the test files, so nothing has loaded
- *   `.env.local` yet. Importing `@lingtai/env` for its side effect is what makes
- *   `LINGTAI_TEST_DATABASE_URL` exist here at all; without it the URL is `undefined`,
- *   the function returns at its first line, and every run looks like a run that
- *   cleaned up.
+ * - `LINGTAI_TEST_DATABASE_URL` comes from the shell that runs the suite and
+ *   nowhere else — there is no env file to load since the checkout's
+ *   `.env.local` stopped being read. Without it the URL is `undefined`, the
+ *   function returns at its first line, and every run looks like a run that
+ *   cleaned up; that is the Postgres half being skipped, not cleaned.
  * - `delete from events` does nothing unless `lingtai_events_no_delete` is
  *   disabled first. The rule answers `DO INSTEAD NOTHING`, so the statement
  *   succeeds and removes no rows. The rule is re-enabled in a `finally`: a live
  *   database left without its append-only guarantee is far worse than a test
  *   database left dirty.
  */
-// Side effect: loads `.env.local` from the workspace root. See above.
-import '@lingtai/env'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

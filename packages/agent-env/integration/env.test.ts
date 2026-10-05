@@ -127,19 +127,14 @@ describe('extensionEnv — the declared set is the whole set', () => {
   })
 })
 
-describe('resolveAgentEnv — merge first, filter second', () => {
-  it("lets the project's file beat the machine's, and says which answered", async () => {
+describe('resolveAgentEnv — read first, filter second', () => {
+  it("gives the agent the project's file and nothing else", async () => {
     await project('SHARED=from-project\nONLY_FILE=x\n')
-    const env = await resolveAgentEnv({
-      project: PROJECT,
-      home,
-      machine: { SHARED: 'from-machine', ONLY_MACHINE: 'y' },
-    })
+    const env = await resolveAgentEnv({ project: PROJECT, home })
 
-    expect(env.values).toEqual({ SHARED: 'from-project', ONLY_FILE: 'x', ONLY_MACHINE: 'y' })
+    expect(env.values).toEqual({ SHARED: 'from-project', ONLY_FILE: 'x' })
     expect(env.names).toEqual([
       { name: 'ONLY_FILE', layer: 'project file' },
-      { name: 'ONLY_MACHINE', layer: 'machine file' },
       { name: 'SHARED', layer: 'project file' },
     ])
     expect(env.refusal).toBeNull()
@@ -158,7 +153,6 @@ describe('resolveAgentEnv — merge first, filter second', () => {
       home,
       required: ['SECRET'],
       deny: ['SECRET'],
-      machine: {},
     })
 
     expect(env.refusal).toBeNull()
@@ -166,13 +160,12 @@ describe('resolveAgentEnv — merge first, filter second', () => {
     expect(env.values['SECRET']).toBeUndefined()
   })
 
-  it('refuses the project when a required name is in neither file', async () => {
+  it("refuses the project when a required name is not in the project's file", async () => {
     await project('PRESENT=1\n')
     const env = await resolveAgentEnv({
       project: PROJECT,
       home,
       required: ['PRESENT', 'ABSENT'],
-      machine: {},
     })
 
     expect(env.missing).toEqual(['ABSENT'])
@@ -181,25 +174,23 @@ describe('resolveAgentEnv — merge first, filter second', () => {
   })
 
   /**
-   * The machine's file holds this system's own log and the key that signs its
-   * tokens. A managed repository never receives those, whatever it declares —
-   * one prefix rule since `#63`, not the `RESERVED` list 0021 deleted.
+   * There is no machine-wide layer under the project's file any more: the
+   * checkout's `.env.local` was it, and it is gone. What this process was
+   * started with never reaches the agent either.
    */
-  it("never passes a LINGTAI_ name out of the machine's file", async () => {
+  it("never passes this process's own environment through", async () => {
     await project('')
-    const env = await resolveAgentEnv({
-      project: PROJECT,
-      home,
-      machine: { LINGTAI_DATABASE_URL: 'postgres://the-system-itself', ORDINARY: 'ok' },
-    })
-
-    expect(env.values).toEqual({ ORDINARY: 'ok' })
-    expect(env.names.map((n) => n.name)).not.toContain('LINGTAI_DATABASE_URL')
+    process.env['LINGTAI_DATABASE_URL_FOR_THIS_TEST'] = 'postgres://the-system-itself'
+    try {
+      const env = await resolveAgentEnv({ project: PROJECT, home })
+      expect(env.values).toEqual({})
+    } finally {
+      delete process.env['LINGTAI_DATABASE_URL_FOR_THIS_TEST']
+    }
   })
 
   /**
-   * …and the asymmetry that keeps self-hosting working: a `LINGTAI_` name the
-   * operator wrote into *this project's* file is the operator handing Lingtai's
+   * A `LINGTAI_` name the operator wrote into *this project's* file is the operator handing Lingtai's
    * own name to Lingtai's own run, on purpose.
    *
    * Not `LINGTAI_TEST_DATABASE_URL` any more: since #275 the suite runs on a
@@ -214,7 +205,6 @@ describe('resolveAgentEnv — merge first, filter second', () => {
       project: PROJECT,
       home,
       required: ['LINGTAI_TEST_EXAMPLE'],
-      machine: {},
     })
 
     expect(env.refusal).toBeNull()
@@ -223,7 +213,7 @@ describe('resolveAgentEnv — merge first, filter second', () => {
 
   it('refuses a value that looks like production, from either file', async () => {
     await project('DB=postgres://user:pw@db.prod.example.com/app\n')
-    await expect(resolveAgentEnv({ project: PROJECT, home, machine: {} })).rejects.toBeInstanceOf(ProductionValueError)
+    await expect(resolveAgentEnv({ project: PROJECT, home })).rejects.toBeInstanceOf(ProductionValueError)
   })
 
   /**
@@ -233,13 +223,12 @@ describe('resolveAgentEnv — merge first, filter second', () => {
    */
   it('refuses a Supabase host by the ref the recipe names, which the default passes', async () => {
     await project('DATABASE_URL=postgresql://postgres:s3cr3tpass@db.eliwlauokdzgsqfgczkv.supabase.co:5432/postgres\n')
-    const passed = await resolveAgentEnv({ project: PROJECT, home, machine: {} })
+    const passed = await resolveAgentEnv({ project: PROJECT, home })
     expect(passed.values['DATABASE_URL']).toContain('supabase.co')
 
     const refused = resolveAgentEnv({
       project: PROJECT,
       home,
-      machine: {},
       patterns: productionPatterns(['eliwlauokdzgsqfgczkv']),
     })
     await expect(refused).rejects.toBeInstanceOf(ProductionValueError)
@@ -254,18 +243,16 @@ describe('resolveAgentEnv — merge first, filter second', () => {
       'DATABASE_URL=postgresql://postgres.eliwlauokdzgsqfgczkv:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres\n',
     )
     await expect(
-      resolveAgentEnv({ project: PROJECT, home, machine: {}, patterns: ['eliwlauokdzgsqfgczkv'] }),
+      resolveAgentEnv({ project: PROJECT, home, patterns: ['eliwlauokdzgsqfgczkv'] }),
     ).rejects.toBeInstanceOf(ProductionValueError)
     // A different project's ref on the same pooler is not this one.
-    await expect(
-      resolveAgentEnv({ project: PROJECT, home, machine: {}, patterns: ['someotherprojectref'] }),
-    ).resolves.toBeDefined()
+    await expect(resolveAgentEnv({ project: PROJECT, home, patterns: ['someotherprojectref'] })).resolves.toBeDefined()
   })
 
   /** A denied value never reaches an agent, so it is not the tripwire's business. */
   it('does not refuse a production value the recipe denies', async () => {
     await project('DB=postgres://user:pw@db.prod.example.com/app\n')
-    const env = await resolveAgentEnv({ project: PROJECT, home, deny: ['DB'], machine: {} })
+    const env = await resolveAgentEnv({ project: PROJECT, home, deny: ['DB'] })
     expect(env.values).toEqual({})
   })
 })
@@ -388,7 +375,7 @@ describe("writing the project's file", () => {
     await setProjectEnv({ project: WRITTEN, name: 'PASSWORD', value, home })
     expect(parseEnvFile(await readFile(file(), 'utf8')).values['PASSWORD']).toBe(value)
 
-    const env = await resolveAgentEnv({ project: WRITTEN, home, machine: {} })
+    const env = await resolveAgentEnv({ project: WRITTEN, home })
     expect(env.values['PASSWORD']).toBe(value)
   })
 
@@ -425,13 +412,11 @@ describe("writing the project's file", () => {
     const listing = await projectEnvNames({
       project: WRITTEN,
       home,
-      machine: { FROM_MACHINE: 'y', LINGTAI_DATABASE_URL: 'postgres://the-system-itself' },
     })
 
     expect(listing.names).toEqual([
       { name: 'ASKED', layer: 'not set' },
       { name: 'FROM_FILE', layer: 'project file' },
-      { name: 'FROM_MACHINE', layer: 'machine file' },
     ])
     expect(listing.deferred).toEqual(['ASKED'])
   })
@@ -458,7 +443,6 @@ describe('what the refusal tells you to do', () => {
       project: 'refuser',
       home,
       required: ['MISSING_ONE'],
-      machine: {},
     })
 
     expect(env.refusal).toContain('lingtai env set refuser MISSING_ONE')

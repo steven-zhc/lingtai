@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  * Three claims, and each is a line in the ticket:
  * **an App already configured is offered no second one**, **the key is a path
  * and never bytes**, and **no screen names `lingtai restart`**. The App ID and
- * key path are read from `.env.local` on every call, so a created App is usable
+ * key path are read from `config.yml` on every call, so a created App is usable
  * at once in this board and in a running daemon — and `lingtai restart`
  * restarts only the daemon, so a sentence naming it would promise a fix for the
  * board it cannot deliver.
@@ -30,6 +30,7 @@ const OFFERING: Offer = {
   configured: null,
   minted: null,
   unanswered: null,
+  unreadable: null,
   installUrl: null,
   keyPath: '~/.ssh/lingtai-agent.private-key.pem',
   suggestedName: 'lingtai-steven',
@@ -108,18 +109,18 @@ describe('an App that already exists', () => {
   })
 
   /** Named by the file: usable as it stands, since the file is read per call. */
-  it('names the env file, and no restart, when the file is what says so', () => {
+  it('names config.yml, and no restart, when the file is what says so', () => {
     const out = html({
       ...CONFIGURED,
       configured: {
         appId: '1234567',
         slug: 'lingtai-steven',
         where: 'file',
-        file: '/repo/.env.local',
+        file: '/home/op/.lingtai/config.yml',
       },
     })
 
-    expect(out).toContain('/repo/.env.local')
+    expect(out).toContain('/home/op/.lingtai/config.yml')
     expect(out).toContain('configured with app 1234567')
     expect(out).not.toMatch(/restart/i)
   })
@@ -129,7 +130,7 @@ describe('an App that already exists', () => {
  * **An App on the log is not a configured App**, and this is the screen that
  * says the difference.
  *
- * `GitHubAppCreated` is appended before the key file and the env file, so that
+ * `GitHubAppCreated` is appended before the key file and `config.yml`, so that
  * a write which fails leaves a record of the App it failed for. Rendered as a
  * configuration, that record turned exactly those failures into *created here*,
  * with no sentence anywhere saying the key never landed.
@@ -195,11 +196,33 @@ describe('a log that would not answer', () => {
   })
 })
 
+/**
+ * A `config.yml` that will not parse is a file to fix, and the page must not
+ * send anyone to wait for a log that answered perfectly well.
+ */
+describe('a config.yml that could not be read', () => {
+  const UNREADABLE: Offer = {
+    ...OFFERING,
+    offered: false,
+    unreadable: '/home/op/.lingtai/config.yml could not be read: Nested mappings are not allowed',
+  }
+
+  it('draws no form, names the file, and never blames the log', () => {
+    const out = html(UNREADABLE)
+
+    expect(out).not.toContain('action="/setup/github-app/start"')
+    expect(out).toContain('/home/op/.lingtai/config.yml could not be read')
+    expect(out).toContain('Fix the file')
+    expect(out).not.toContain('the log could not be read')
+    expect(out).not.toContain('once the log answers')
+  })
+})
+
 describe('the ending', () => {
   const CREATED: Offer = {
     ...OFFERING,
     offered: false,
-    configured: { appId: '1234567', slug: 'lingtai-steven', where: 'file', file: '/repo/.env.local' },
+    configured: { appId: '1234567', slug: 'lingtai-steven', where: 'file', file: '/home/op/.lingtai/config.yml' },
     minted: { appId: '1234567', slug: 'lingtai-steven' },
     installUrl: 'https://github.com/apps/lingtai-steven/installations/new',
     outcome: {
@@ -208,7 +231,7 @@ describe('the ending', () => {
       slug: 'lingtai-steven',
       name: 'lingtai-steven',
       keyPath: '~/.ssh/lingtai-agent.private-key.pem',
-      envFile: '/repo/.env.local',
+      configFile: '/home/op/.lingtai/config.yml',
       webhookActive: false,
       warning: null,
       at: new Date('2026-09-15T10:05:00Z'),
@@ -251,7 +274,7 @@ describe('the ending', () => {
 
 /**
  * **No screen names `lingtai restart`** (#169). It restarts the daemon and not
- * the board, and nothing here needs either: the env file is read per call. So
+ * the board, and nothing here needs either: `config.yml` is read per call. So
  * every state the setup route can render is rendered and grepped.
  */
 describe('every screen of the setup route', () => {
@@ -270,21 +293,21 @@ describe('every screen of the setup route', () => {
     'configured, file, by hand': {
       ...OFFERING,
       offered: false,
-      configured: { appId: '1234567', slug: null, where: 'file', file: '/repo/.env.local' },
+      configured: { appId: '1234567', slug: null, where: 'file', file: '/home/op/.lingtai/config.yml' },
     },
     unfinished: { ...OFFERING, minted },
     unanswered: { ...OFFERING, offered: false, unanswered: 'connection refused' },
     created: {
       ...OFFERING,
       offered: false,
-      configured: { ...minted, where: 'file', file: '/repo/.env.local' },
+      configured: { ...minted, where: 'file', file: '/home/op/.lingtai/config.yml' },
       minted,
       outcome: {
         ok: true,
         ...minted,
         name: 'lingtai-steven',
         keyPath: '~/.ssh/lingtai-agent.private-key.pem',
-        envFile: '/repo/.env.local',
+        configFile: '/home/op/.lingtai/config.yml',
         webhookActive: true,
         warning: 'the log did not record it (down)',
         at,
@@ -293,7 +316,7 @@ describe('every screen of the setup route', () => {
     'refused after minting': {
       ...OFFERING,
       minted,
-      outcome: { ok: false, refusal: 'the env file could not be written', minted, at },
+      outcome: { ok: false, refusal: 'config.yml could not be written', minted, at },
     },
   }
 

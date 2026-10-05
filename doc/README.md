@@ -83,13 +83,13 @@ replaces.
 | | | |
 |---|---|---|
 | [0100](decisions/0100-one-append-only-log.md) | **The event log and its store** — one append-only log is the truth, held in SQLite or Postgres as the machine wrote down | accepted |
-| [0101](decisions/0101-typescript-packages-effect-unbuilt.md) | **Architecture** — TypeScript in one workspace, run unbuilt, with Effect only where something is acquired | accepted |
+| [0101](decisions/0101-typescript-packages-effect-unbuilt.md) | **Architecture** — TypeScript in one workspace, run unbuilt, with Effect where something is acquired and where configuration is read | accepted |
 | [0102](decisions/0102-one-conductor-holds-the-lock.md) | **The conductor and the daemon** — one process holds the work, a file lock makes it the only one, and stopping drains the pass | accepted |
 | [0103](decisions/0103-a-pass-is-ten-fixed-steps.md) | **The pipeline** — a pass is ten fixed steps, four may refuse, and only `proposed` routes | accepted; part not yet built |
 | [0104](decisions/0104-the-recipe-is-the-pipeline.md) | **The recipe** — one file per project on this machine, ten steps in order, each setting on the step that uses it | accepted; part not yet built |
 | [0105](decisions/0105-a-plugin-is-a-declaration-and-an-implementation.md) | **Plugins** — a plugin is a declaration and an implementation, and only the implementation must be ours | accepted; part not yet built |
 | [0106](decisions/0106-a-role-keeps-its-powers-across-runtimes.md) | **Agents and runtimes** — the recipe picks the runtime for each role, and the role keeps its powers whichever runtime it gets | accepted; part not yet built |
-| [0107](decisions/0107-the-agent-gets-what-the-recipe-allows.md) | **The agent's environment** — two files hold the values, the recipe decides what an agent sees, and nothing named `LINGTAI_` reaches it | accepted; part not yet built |
+| [0107](decisions/0107-the-agent-gets-what-the-recipe-allows.md) | **The agent's environment** — the project's own file holds the values, the recipe decides what an agent sees, and nothing named `LINGTAI_` reaches it | accepted; part not yet built |
 | [0108](decisions/0108-a-refusal-buys-a-round.md) | **Failure, fix rounds and restarts** — a refusal buys a round in the same worktree, a wall stops the conductor, and a crash stops the pass | accepted; part not yet built |
 | [0109](decisions/0109-the-core-takes-a-ticket.md) | **The ticket, the claim, branches and attempts, and close** — the core takes a ticket, every claim leaves its commits on a named ref, and a close is a terminal outcome | accepted; part not yet built |
 | [0110](decisions/0110-tokens-on-the-event-money-at-display.md) | **Cost and tokens** — a paid call records its tokens on the event it ends on, and money is computed only where it is displayed | accepted; part not yet built |
@@ -99,6 +99,7 @@ replaces.
 | [0114](decisions/0114-a-github-app-not-a-token.md) | **The GitHub App** — Lingtai reaches GitHub as an App created from a manifest, never through a personal access token | accepted |
 | [0115](decisions/0115-unit-gates-integration-follows.md) | **Tests** — unit tests gate the diff, integration tests run apart, and the test side gets a store of its own | accepted; part not yet built |
 | [0116](decisions/0116-the-project-is-lingtai.md) | **The name** — the project, its commands and every name it owns are Lingtai | accepted |
+| [0117](decisions/0117-configuration-is-config-yml-and-the-environment.md) | **Configuration** — `~/.lingtai/config.yml` and the exported environment, the environment overriding, and no env file | accepted |
 
 ## Experiments
 

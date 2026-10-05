@@ -940,8 +940,8 @@
 
   <section>
     <h2>What the agent is given</h2>
-    <p class="lede">Two files, merged, filtered by the recipe, planted in the worktree at
-      <code>0600</code>. The shell the conductor happens to be running in is not a layer.</p>
+    <p class="lede">One file, the project's own, filtered by the recipe, planted in the worktree at
+      <code>0600</code>. Lingtai's own configuration and the shell the conductor happens to be running in are not layers.</p>
 
     <div class="tablewrap">
       <table>
@@ -949,8 +949,8 @@
           <tr><th>Layer</th><th>Where</th><th>Holds</th><th>Reaches the agent</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">machine file</td><td><code>~/.lingtai/env/&lt;project&gt;.env</code></td><td>what this machine can supply to that project</td><td class="who">yes — unless it is Lingtai's own</td></tr>
-          <tr><td class="k">project file</td><td>the workspace <code>.env.local</code>, then <code>.env</code></td><td>what the repository itself declares</td><td class="who">yes</td></tr>
+          <tr><td class="k">project file</td><td><code>~/.lingtai/env/&lt;project&gt;.env</code></td><td>what this machine supplies to that project</td><td class="who">yes</td></tr>
+          <tr><td class="k">Lingtai's configuration</td><td><code>~/.lingtai/config.yml</code>, then <code>LINGTAI_*</code> exported</td><td>the log, the App, the board's port</td><td class="who">no — it is the conductor's, never an agent's</td></tr>
           <tr><td class="k">the conductor's shell</td><td><code>process.env</code></td><td>whatever you happened to export</td><td class="who">no — not a layer, by decision</td></tr>
         </tbody>
       </table>
@@ -958,7 +958,7 @@
 
     <ul class="rules">
       <li><b>The recipe decides; the machine only holds.</b> <span><code>env.allow</code> and <code>env.deny</code> are the filters and <code>env.required</code> is a check — a declared name with no value refuses the whole project <em>before</em> anything is claimed, which is to say before the money.</span></li>
-      <li><b>A <code>LINGTAI_</code> name never crosses, from the machine file.</b> <span>That prefix is the machine's own namespace. No managed application asks for such a name, so a project whose file is missing a line gets an <em>absent</em> value — which <code>required</code> refuses loudly — instead of silently inheriting Lingtai's.</span></li>
+      <li><b>A <code>LINGTAI_</code> name is Lingtai's own.</b> <span>That prefix is the machine's own namespace. No managed application asks for such a name, so a project whose file is missing a line gets an <em>absent</em> value — which <code>required</code> refuses loudly — instead of silently inheriting Lingtai's. One reaches an agent only when you write it into that project's file.</span></li>
       <li><b>A project keeps its own names.</b> <span><code>DATABASE_URL</code> in a project's file is that project's database and passes through untouched. <code>LINGTAI_DATABASE_URL</code> is this system's own log, and an agent is never given it.</span></li>
       <li><b>The list is not hardcoded any more.</b> <span>A <code>RESERVED</code> constant used to decide this. It was deleted with <code>#60</code>: a guard nobody could see from the recipe is a guard nobody can audit from the repository it protects.</span></li>
     </ul>

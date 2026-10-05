@@ -1,0 +1,77 @@
+# What ~/.lingtai/config.yml can say about this machine. `lingtai init` writes
+# `database:` and the board's /setup/github-app page writes `github:`, so on an
+# ordinary install nobody types this file — it is here to read.
+#
+# **Two sources and no third** (`packages/env`): this file, and the variables
+# exported into a process, the second overriding the first. Every key below has
+# a variable of the same name in constant case under LINGTAI_ —
+# `github.app_id` is LINGTAI_GITHUB_APP_ID, `database.url` is
+# LINGTAI_DATABASE_URL, `board.port` is LINGTAI_BOARD_PORT. There is no env
+# file: a checkout's `.env.local` is not read, whatever it says.
+#
+# The file is read per call, so what the setup page writes is seen at once by a
+# board and a daemon that are already running. A variable is read from the
+# environment a process started with, so changing one is a restart.
+#
+# It carries a database password and the App's webhook secret: keep it 0600.
+#
+# `runtime:` and `projects:` live in the same file and belong to the recipe's
+# reader (`packages/recipe/src/local.ts`); doc/operating.md covers them.
+
+# --- the event log ----------------------------------------------------------
+database:
+  # **Which store this machine runs is written down, never inferred** (0056).
+  # `postgres` or `sqlite`; nothing here means *not set up*, and every command
+  # that opens the log refuses by name until `lingtai init` writes one.
+  store: postgres
+  # One URL. It stands in for both the pooled and the session-mode connection,
+  # because 1.0's store has no split. **It must not go through a transaction
+  # pooler** (#157): LISTEN/NOTIFY breaks there without erroring. On Supabase
+  # the direct host is `db.<project-ref>.supabase.co:5432`; the
+  # `...pooler.supabase.com` one is what the dashboard offers first.
+  #
+  # A LINGTAI_DATABASE_URL exported into a process wins, and decides postgres
+  # for that process — which is what makes CI, launchd and a container work with
+  # no file at all. Where that one is a pooler, export
+  # LINGTAI_DIRECT_DATABASE_URL beside it, on the same database; there is no key
+  # for it here.
+  #
+  # With `store: sqlite` there is no url: the log is ~/.lingtai/lingtai.db, and
+  # a url beside it is refused as two keys disagreeing.
+  url: postgresql://user:password@host:5432/lingtai
+
+# --- GitHub -----------------------------------------------------------------
+# An App, not a personal access token (doc/decisions/0114). The setup page
+# creates it from a manifest and writes these three; write them by hand only for
+# an App you created yourself (doc/operating.md, "Connecting GitHub").
+#
+# **One source answers for the App, and it answers every name.** If
+# LINGTAI_GITHUB_APP_ID is exported, the key and the webhook secret are taken
+# from the environment too and nothing below is read; otherwise all of them come
+# from here. An id from one source beside a key or secret from the other is a
+# pair nobody configured, so it is never assembled.
+github:
+  app_id: '123456'
+  # A path, so the key is never pasted anywhere; `~` is expanded, and a relative
+  # path is relative to ~/.lingtai. `app_private_key` takes the PEM inline
+  # instead, for a host that can only carry it as one line.
+  app_private_key_path: ~/.ssh/lingtai-agent.private-key.pem
+  # Optional. The same value as the App's webhook settings, with the App pointed
+  # at <your tunnel>/api/webhook, and a new issue reaches the daemon in seconds
+  # instead of at its next sweep. Without it /api/webhook answers 503 and says
+  # which name is missing — the sweep still finds everything.
+  webhook_secret: ''
+
+# --- the board --------------------------------------------------------------
+board:
+  # 17820 when absent. Not in 32768–65535, which the kernel hands out as
+  # ephemeral ports.
+  port: 17820
+
+# --- the tests --------------------------------------------------------------
+# Nothing here, on purpose. A test never reads this file: it is exactly the
+# operator's log and App. The integration half runs on a SQLite file of its own;
+# the few files on `@lingtai/event-store/test/postgres`'s ON_POSTGRES list need
+# LINGTAI_TEST_DATABASE_URL (and, behind a pooler, LINGTAI_TEST_DIRECT_DATABASE_URL)
+# exported into the shell that runs them — its own database, never this one's,
+# and not through a pooler either — and are skipped where it is not.

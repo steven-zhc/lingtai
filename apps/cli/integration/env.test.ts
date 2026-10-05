@@ -32,25 +32,20 @@ describe('lingtai env list', () => {
     await setProjectEnv({ project: PROJECT, name: 'DATABASE_URL', value: SECRET, home })
     await setProjectEnv({ project: PROJECT, name: 'API_KEY', value: 'sk-live-abc123', home })
 
-    const out = formatEnvList(
-      await projectEnvNames({ project: PROJECT, home, machine: { FROM_MACHINE: 'machine-value' } }),
-    )
+    const out = formatEnvList(await projectEnvNames({ project: PROJECT, home }))
 
     expect(out).toContain('API_KEY')
     expect(out).toContain('DATABASE_URL')
     expect(out).toContain('project file')
-    expect(out).toContain('FROM_MACHINE')
-    expect(out).toContain('machine file')
 
     // The assertion the ticket asks for, and the reason this file exists.
     expect(out).not.toContain(SECRET)
     expect(out).not.toContain('hunter2')
     expect(out).not.toContain('sk-live-abc123')
-    expect(out).not.toContain('machine-value')
   })
 
   it('says so plainly when a project has nothing, rather than printing a header over nothing', async () => {
-    const out = formatEnvList(await projectEnvNames({ project: 'nothinghere', home, machine: {} }))
+    const out = formatEnvList(await projectEnvNames({ project: 'nothinghere', home }))
     expect(out).toContain('no names')
     expect(out).toContain('nothinghere.env')
   })

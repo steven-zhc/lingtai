@@ -14,8 +14,8 @@ rather than pass against SQLite.
 
 A gate's verdict is paid for with an agent: a refusal at `build` buys a fix
 round, a round off the ceiling, and a reviewer's attention. A test that can go
-red for a reason the diff cannot cause — a loaded machine, a pre-configured
-`.env.local`, a dropped pooled connection — spends that round looking for a
+red for a reason the diff cannot cause — a loaded machine, the operator's own
+`config.yml`, a dropped pooled connection — spends that round looking for a
 defect that is not there. Separately, a suite that writes real events must
 never write them into the operator's own log, and a suite that exists to assert
 Postgres behaviour must never be answered by SQLite.

@@ -202,14 +202,12 @@ describe('logWhere', () => {
     // Content nothing reads: whether the log is there is the whole question.
     writeFileSync(join(home, 'lingtai.db'), '')
 
-    // `alsoElsewhere` is `false` for the reason the probe at the end of this
-    // block gives, and not because the URL in that file is nothing: a
-    // handed-in environment never has the machine file read for a URL, so
-    // in-process the refusal's `logConfigured()` half cannot answer.
+    // `alsoElsewhere` too: the `database.url` it refused over is a URL the
+    // machine file names, and an uninstall says both.
     expect(where({ LINGTAI_HOME: home })).toEqual({
       kind: 'file',
       path: join(home, 'lingtai.db'),
-      alsoElsewhere: false,
+      alsoElsewhere: true,
     })
   })
 
@@ -243,25 +241,21 @@ describe('logWhere', () => {
     const home = mkdtempSync(join(tmpdir(), 'lingtai-no-store-'))
     writeFileSync(join(home, 'config.yml'), `database:\n  url: ${URL_}\n`)
 
-    expect(where({ LINGTAI_HOME: home })).toEqual({ kind: 'none' })
+    expect(where({ LINGTAI_HOME: home })).toEqual({
+      kind: 'elsewhere',
+      named: 'at postgresql://u:***@db.example.com:5432/postgres',
+    })
   })
 
   /**
-   * **And that fallback is `logConfigured()` and not a constant**, which is a
-   * claim no handed-in environment can check: `postgresUrlIfSet` reads the
-   * machine's `config.yml` only for the real `process.env`
-   * (`machineUrlIfReadable`), so in-process the refusal with no file is
-   * `none` whatever that file says.
-   *
-   * So: a child, whose `process.env` really is this machine's, whose
+   * **And that fallback is the same out of process**: a child, whose
+   * `process.env` really is this machine's, whose
    * `config.yml` names a `database.url` and no `database.store`, and whose
    * `~/.lingtai` holds no log. `elsewhere` there is the sentence `lingtai
    * uninstall` prints about a Postgres log it leaves standing, and its two
    * remedies both name that URL.
    *
-   * `LINGTAI_DATABASE_URL` empty for the reason the probe below gives: absent
-   * to `optional`, present to dotenv, so the checkout's `.env.local` cannot be
-   * what answers this.
+   * `LINGTAI_DATABASE_URL` empty, because empty is absent to `optional`.
    */
   it("reads that URL from the machine file, on a process whose environment is a machine's", () => {
     const dir = mkdtempSync(join(tmpdir(), 'lingtai-refused-'))

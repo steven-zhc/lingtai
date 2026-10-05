@@ -1,4 +1,4 @@
-# 0101 — Architecture: TypeScript in one workspace, run unbuilt, with Effect only where something is acquired
+# 0101 — Architecture: TypeScript in one workspace, run unbuilt, with Effect where something is acquired and where configuration is read
 
 **Status** accepted · 2026-10-01
 
@@ -9,8 +9,10 @@ packages that touch the world in the middle, `conductor` above them, and the hos
 (`daemon`, the CLI, the board) on top. The conductor reaches git and the agent
 through two ports that a host provides. Effect is used for those ports, for the
 adapters behind them and for the conductor's run, because a run acquires resources
-and has to release every one on every path. Everything that acquires nothing stays
-plain functions. The only file that is not ordinary TypeScript on Node is the
+and has to release every one on every path. The one other place is reading
+configuration, which goes through Effect's `Config` in `env` and is run there
+synchronously, so its callers stay plain. Everything else that acquires nothing
+stays plain functions. The only file that is not ordinary TypeScript on Node is the
 hook, a compiled single-file binary.
 
 ## Context
@@ -103,12 +105,17 @@ turn limit, so every idiom it adopts is paid for again on every run.
      integration, and the run log closes last.
    - Refusals come before acquisitions. The recipe, the environment, the tier and
      the claim all refuse before the first resource is acquired.
-   - Effect is a dependency of `conductor`, `repo`, `agent`, `github` and
-     `apps/cli` only.
+   - Effect is a dependency of `conductor`, `repo`, `agent`, `github`,
+     `apps/cli`, and `env` for configuration only (rule 7).
 
 7. **What stays plain, deliberately.** `domain`, `recipe`, `actions`, `agent-env`,
    `env` and `extension` are plain functions that Effect code calls. They have no
-   resources to manage. Some interfaces keep promise faces:
+   resources to manage. **`env` reads configuration through Effect's `Config`**
+   ([0117](0117-configuration-is-config-yml-and-the-environment.md)): one
+   `ConfigProvider` per source, so the file's keys and the environment's names
+   map onto each other mechanically and one `Config` describes both. It is run
+   with `Effect.runSync` inside `env`'s own functions and never escapes them, so
+   every caller still gets a plain value or a plain error. Some interfaces keep promise faces:
    - the event store, whose failures are defects rather than refusals, because a
      run cannot decide anything on behalf of a store that will not append;
    - the `GitHubClient` methods and the runtime interface `actions` consumes;

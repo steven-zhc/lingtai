@@ -182,7 +182,9 @@ export async function backlogCommand(args: string[], log = console.log): Promise
     // needed when it is already accepted: the log says what the issue carries.
     const kind = flags['kind']
     if (!hasGitHubApp()) {
-      log('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
+      log(
+        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+      )
       return 1
     }
     const state = await loadProject(project)

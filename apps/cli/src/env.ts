@@ -36,7 +36,7 @@ lingtai env unset <project> KEY       remove one`
 export function formatEnvList(listing: ProjectEnvListing): string {
   const deferred = new Set(listing.deferred)
   if (listing.names.length === 0) {
-    return `no names — nothing in ${listing.file}, and the machine's own file offers none`
+    return `no names — nothing in ${listing.file}`
   }
 
   const width = Math.max(...listing.names.map((n) => n.name.length))

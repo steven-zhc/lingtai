@@ -40,7 +40,7 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 
 | | Lifetime | Why there |
 |---|---|---|
-| `config.yml` | Persistent | **This machine's half of the recipe** — `runtime.agent`, `database.store` and `database.url`, `board.port`. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). `runtime.assignee` and `runtime.limits` moved out of here and into the recipe (`#373`, `#375`). |
+| `config.yml` | Persistent | **This machine's half of the recipe, and all of its configuration** — `runtime.agent`, `database.store` and `database.url`, `github.*`, `board.port`. With the variables exported into a process, the only source there is: a variable overrides the key of the same name (`github.app_id` ↔ `LINGTAI_GITHUB_APP_ID`), and there is no env file ([config.example.yml](../config.example.yml)). Keep it `0600` — it carries a password and a webhook secret. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). `runtime.assignee` and `runtime.limits` moved out of here and into the recipe (`#373`, `#375`). |
 | `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions-archive/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
@@ -50,9 +50,10 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 | `locks/` | While held | One file per lock — the conductor's, the board's, a merge lane's, a decision's. **Not anything in Postgres** ([0052](decisions-archive/0052-the-lock-is-sqlite-on-a-file.md)): each person runs their own Lingtai against their own log, so a lock scoped to one database would have answered `ok` while the real competitor was on somebody else's laptop. |
 | `$TMPDIR/lingtai/*.sock` | One run | The hook's socket. In `$TMPDIR` rather than under `LINGTAI_HOME` because a unix socket path has a hard 104-byte limit and a home directory plus a run id exceeds it — see [ADR 0011](decisions-archive/0011-hook-latency-is-runtime-startup.md). |
 
-Two things in this repository are also not committed: `.env.local`, and
+One thing in this repository is also not committed:
 `packages/hook/bin/lingtai-hook` — a 55 MB compiled binary that `pnpm --filter
-@lingtai/hook build` produces.
+@lingtai/hook build` produces. There is no env file to fill in: a checkout's
+`.env.local` is not read, whatever it says.
 
 **`rm -rf ~/.lingtai/repos ~/.lingtai/worktrees ~/.lingtai/runs` is safe.**
 Everything in those is either re-clonable from GitHub or belongs to a run that is
@@ -71,20 +72,27 @@ refused by name until you write it again.
 
 ```bash
 pnpm install
-cp .env.example .env.local        # then paste the connection string
+pnpm lingtai init                 # asks for the store and writes ~/.lingtai/config.yml
 pnpm contract:emit                # offline — no database needed
 pnpm typecheck
 ```
 
-`.env.local` lives at the repo root and is gitignored. A real environment
-variable beats it, which is what makes CI and launchd work with no file at all.
+**Configuration is `~/.lingtai/config.yml` and the exported environment, the
+second overriding the first, and nothing else** — every key there has a
+`LINGTAI_` variable of the same name in constant case, and
+[config.example.yml](../config.example.yml) lists them. An exported variable is
+what makes CI, launchd and a container work with no file at all. The file is
+read per call; a variable is the environment a process started with, so
+changing one is a restart.
 
-**One database, and on a plain Postgres one connection string** (#176).
-`LINGTAI_DATABASE_URL` is for ordinary queries; `LINGTAI_DIRECT_DATABASE_URL` is session mode, for migrations and `LISTEN/NOTIFY`
-— not for locks, which are files under `~/.lingtai/locks` and never Postgres (0052). Unset, the direct one is `LINGTAI_DATABASE_URL`; set, it
-wins. It is needed only when the first goes through a transaction pooler —
-Supabase's, PgBouncer — which breaks both, and breaks them without
-erroring; `lingtai doctor` refuses a pooled URL standing in. See
+**One database, and on a plain Postgres one connection string** (#176):
+`database.url`, or `LINGTAI_DATABASE_URL` exported. Migrations and
+`LISTEN/NOTIFY` need session mode — not locks, which are files under
+`~/.lingtai/locks` and never Postgres (0052) — and a transaction pooler,
+Supabase's or PgBouncer, breaks both without erroring. So the URL should not
+be a pooler; where an exported one has to be, export
+`LINGTAI_DIRECT_DATABASE_URL` beside it on the same database, and `lingtai
+doctor` refuses a pooled URL standing in. See
 [ADR 0009](decisions-archive/0009-two-connections.md).
 
 The event store must be **its own database**, not one belonging to a managed
@@ -101,7 +109,9 @@ own SQL. `@lingtai/event-store/test/postgres`'s `ON_POSTGRES` names each one
 and why; without a URL those skip rather than fail, and the skip shows in
 vitest's own count.
 
-Point at a real database only to run that named set. Same pair as the
+Point at a real database only to run that named set, by **exporting**
+`LINGTAI_TEST_DATABASE_URL` into the shell that runs the suite — a test reads
+no machine's `config.yml`, so there is nowhere else for it to come from. Same pair as the
 operator's own, at a *different* database — it falls back within itself, never
 to the operator's — because the suite is not mocked on those files: it appends
 real events, runs real projections, and pointed at your own log it leaves work
@@ -122,13 +132,11 @@ reads that copy — the conducting machine's own
 names `LINGTAI_TEST_DATABASE_URL` until somebody copies this block over by
 hand. **Without it, every run against this repository refuses by name before
 it claims anything** (0021). An operator who wants the `ON_POSTGRES` files
-exercised locally still copies the pair into the project's own file — a
-`LINGTAI_` name never crosses from the machine file, whatever a recipe
-declares:
+exercised by a run writes the pair into the project's own file — that file is
+all an agent's environment is:
 
 ```bash
-mkdir -p ~/.lingtai/env
-grep '^LINGTAI_TEST_' .env.local > ~/.lingtai/env/lingtai.env
+lingtai env set lingtai LINGTAI_TEST_DATABASE_URL    # read from stdin, unechoed
 ```
 
 `pnpm lingtai doctor` says which layer each name came from. See
@@ -153,7 +161,7 @@ It refuses twice over if you point it at anything else: the flag has to be set,
 a process can establish: the URL used to be looked for in a `.env.local` found
 by walking up from `packages/env/src`, so `pnpm lingtai` from the checkout and a
 launchd job started from `~` could reach opposite answers and neither could say
-so.
+so. That file is not read at all any more.
 
 ```yaml
 database:
@@ -245,11 +253,13 @@ The permissions below are in the manifest, so they are not a question and
 cannot be answered wrong, which is the whole of why 0006's founding failure
 cannot happen on that path.
 
-Nothing has to be restarted afterwards. `hasGitHubApp()` and `githubApp()` read
-the App ID and the key path from `.env.local` on disk whenever the environment
-does not set them, so the App is usable at once — by the board that wrote it and
-by a daemon that was already running. A variable set in the environment still
-wins over the file.
+Nothing has to be restarted afterwards. The page writes `github:` into
+`~/.lingtai/config.yml`, and `hasGitHubApp()` and `githubApp()` read that file
+per call, so the App is usable at once — by the board that wrote it and by a
+daemon that was already running. An App exported into the environment still
+wins over the file, **as a whole**: an exported `LINGTAI_GITHUB_APP_ID` means
+the key and the webhook secret are read from the environment too, and the
+file's are not borrowed for it.
 
 **What is below is the fallback, and it stays one.** A person may prefer to
 create the App themselves; an organisation role that cannot create an App has
@@ -318,17 +328,20 @@ that repository (Settings → GitHub Apps → Configure), then run lingtai add a
 
 ### 4. Point Lingtai at it
 
-In `.env.local` at the repository root:
+In `~/.lingtai/config.yml`:
 
-```bash
-LINGTAI_GITHUB_APP_ID=123456
-LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH=~/.lingtai-app.pem
+```yaml
+github:
+  app_id: '123456'
+  app_private_key_path: ~/.lingtai-app.pem
 ```
 
-`~` is expanded, and a relative path is relative to *this repository's root* —
-not to whichever directory you ran the command from. Where only a single-line
-value can be carried, `LINGTAI_GITHUB_APP_PRIVATE_KEY` takes the PEM itself with `\n`
-escapes instead.
+`~` is expanded, and a relative path is relative to `~/.lingtai` — not to
+whichever directory you ran the command from. Where only a single-line value can
+be carried, `app_private_key` takes the PEM itself with `\n` escapes instead.
+The same three can be exported as `LINGTAI_GITHUB_APP_ID`,
+`LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH` and `LINGTAI_GITHUB_APP_PRIVATE_KEY`; an
+exported id takes all of them from the environment.
 
 No installation id is needed. It is looked up per repository, which is what
 turns "the App is not installed there" into a sentence rather than a 404.
@@ -341,7 +354,7 @@ pnpm lingtai doctor
 
 ```
   ok   github: app credentials
-       app 123456, key from ~/.lingtai-app.pem · requires issues:write,
+       app 123456 from ~/.lingtai/config.yml, key from /home/you/.lingtai-app.pem · requires issues:write,
        contents:write, pull_requests:write, metadata:read (verified per
        repository by lingtai add)
 ```
@@ -498,18 +511,16 @@ dropped a human approval would put a green board on a change nobody approved.
 
 #### The layers
 
-The recipe declares **names**. The values come from two files with two different
-owners, merged in order — later wins:
+The recipe declares **names**. The values come from one file, the project's own:
 
-> **Changed by [#60](https://github.com/steven-zhc/lingtai/issues/60).** There
-> were three layers and the first two were `process.env` — whatever the
-> conductor happened to be started with. **The shell is no longer a layer.** Two
-> files remain, merged in order, later wins:
+| Source | Who owns it | Example |
+|---|---|---|
+| `~/.lingtai/env/<project>.env` | you, per project | `LOCAL_DATABASE_URL` |
 
-| | Source | Who owns it | Example |
-|---|---|---|---|
-| 1 | `~/.lingtai/env/<project>.env` | you, per project | `LOCAL_DATABASE_URL` |
-| 2 | the workspace's `.env.local`, then `.env` | the repository | whatever it declares |
+> **The shell stopped being a layer with [#60](https://github.com/steven-zhc/lingtai/issues/60),
+> and the machine-wide file under the project's stopped on 2026-10-05**, when
+> Lingtai stopped reading the checkout's `.env.local`. What a project's agent
+> sees is what that project's file says, and nothing a second project needed.
 
 ```bash
 lingtai env set nextloom-ai-admin LOCAL_DATABASE_URL=postgresql://localhost:5432/admin_dev
@@ -1215,7 +1226,7 @@ checkout they own:
 sudo useradd --system --create-home --home-dir /var/lib/lingtai lingtai
 sudo loginctl enable-linger lingtai     # a user manager that outlives logins
 sudo machinectl shell lingtai@          # a real session, so systemctl --user works
-# as lingtai: clone the repository, fill in .env.local and ~/.lingtai/env, then
+# as lingtai: clone the repository, run lingtai init, fill in ~/.lingtai/env, then
 pnpm install && pnpm lingtai doctor && pnpm lingtai service install
 ```
 
@@ -1455,7 +1466,7 @@ Every refusal names itself. The common ones:
 | `no lingtai-hook binary at …` | `pnpm --filter @lingtai/hook build`. A run without the guard must not start. |
 | `ENOENT … lingtai-app.pem` | The key path is wrong. `~` and relative paths both work; relative is from this repository's root. |
 | `stopped at recipe: …` | The recipe did not parse, or names an action this build does not have. The message is the validation failure. |
-| `stopped at env: … declared in env.required and not set in any layer` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. Or declare it in the repository's own `.env.local`. A `LINGTAI_` name never crosses from the machine file at all. |
+| `stopped at env: … declared in env.required and not set in ~/.lingtai/env/<project>.env` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. That file is the only place an agent's values come from — a name exported in your shell, or written in `~/.lingtai/config.yml`, never reaches it. |
 | `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions-archive/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
 | `stopped at discover: excluded-label` | That issue carries a label the recipe's `source.exclude` names. Every reason an issue is passed over is the recipe's — there is no built-in list. |
 | `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next pass asks GitHub again (#131). |

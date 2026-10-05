@@ -1,6 +1,6 @@
 import { CONTROL_STREAM } from '@lingtai/daemon'
 import { parsePayload } from '@lingtai/domain'
-import { githubWebhookSecret } from '@lingtai/env'
+import { githubWebhookSecret, githubWebhookSecretMissing } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 /**
  * The one endpoint reachable from outside.
@@ -27,13 +27,15 @@ import { verifyWebhook, DELIVERY_HEADER, EVENT_HEADER, SIGNATURE_HEADER } from '
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request): Promise<Response> {
-  // Read per request, from `.env.local` as it is now when the environment does
-  // not set it: the setup page writes it there while this board runs (#169).
+  // Read per request, from `config.yml` as it is now when the environment does
+  // not name the App: the setup page writes it there while this board runs (#169).
   const secret = githubWebhookSecret()
   if (!secret) {
     // Not configured is not an error to shout about — the sweep covers it — but
-    // returning 200 would tell GitHub the delivery landed when it did not.
-    return new Response('webhooks are not configured', { status: 503 })
+    // returning 200 would tell GitHub the delivery landed when it did not. The
+    // sentence says which name is missing and where it belongs, so the 503 in
+    // GitHub's delivery log is a remedy rather than a shrug.
+    return new Response(githubWebhookSecretMissing(), { status: 503 })
   }
 
   const body = await request.text()

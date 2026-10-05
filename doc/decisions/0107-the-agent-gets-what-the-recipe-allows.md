@@ -1,16 +1,15 @@
-# 0107 — The agent's environment: two files hold the values, the recipe decides what an agent sees, and nothing named `LINGTAI_` reaches it
+# 0107 — The agent's environment: the project's own file holds the values, the recipe decides what an agent sees, and nothing named `LINGTAI_` reaches it
 
 **Status** accepted · 2026-10-01
 
-An agent's environment is built from two files and nothing else: the machine's
-own env file, with every `LINGTAI_*` name removed, and
-`~/.lingtai/env/<project>.env` on top of it. The operator's shell is not part of
-it. The recipe names variables and never holds their values. `env.allow` and
+An agent's environment is built from one file and nothing else:
+`~/.lingtai/env/<project>.env`. The operator's shell is not part of it, and
+neither is anything Lingtai reads for itself. The recipe names variables and never holds their values. `env.allow` and
 `env.deny` decide which values reach the agent. `env.required` is a check: if a
 required name has no value, the whole project is refused before anything is
 claimed. A `run:` extension gets only the names it declares. Every name Lingtai
-reads for itself starts with `LINGTAI_`, so one prefix rule keeps Lingtai's own
-credentials away from agents without a denylist. `@lingtai/agent-env` decides
+reads for itself starts with `LINGTAI_`, so no project ever reaches for one of
+Lingtai's own by accident. `@lingtai/agent-env` decides
 all of this, and `lingtai env` writes the project file.
 
 ## Context
@@ -25,29 +24,27 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
 
 ## Decision
 
-1. **The values come from two files, and the project's file wins.**
-   - The machine layer is the env file `@lingtai/env` loads at start
-     (`.env.local`, then `.env`, at the root Lingtai runs from), as returned by
-     `machineEnvFile()`. It is not `process.env`, so whatever is exported in the
-     operator's terminal (`AWS_*`, npm tokens and so on) is never handed over.
-     Empty values and every name starting with `LINGTAI_` are dropped from this
-     layer.
-   - The project layer is `~/.lingtai/env/<project>.env`
-     (`projectEnvPath`, under `stateDir()`). It is merged on top of the machine
-     layer, and the `LINGTAI_` strip does not apply to it. The operator writes it
-     for one project, so a value there is a deliberate hand-over. For example,
-     Lingtai's own recipe can be given `LINGTAI_TEST_DATABASE_URL` this way.
+1. **The values come from the project's own file.** It is
+   `~/.lingtai/env/<project>.env` (`projectEnvPath`, under `stateDir()`), and
+   empty values in it are no values. It is not `process.env`, so whatever is
+   exported in the operator's terminal (`AWS_*`, npm tokens and so on) is never
+   handed over. There is no machine-wide layer under it: Lingtai's own
+   configuration is `~/.lingtai/config.yml` and the exported environment
+   ([0117](0117-configuration-is-config-yml-and-the-environment.md)), and neither
+   is an agent's. The operator writes the file for one project, so a value
+   there is a deliberate hand-over — Lingtai's own recipe can be given
+   `LINGTAI_TEST_DATABASE_URL` this way.
 
 2. **The recipe names variables; `allow` and `deny` filter what reaches the
-   agent.** If neither is set, everything in the merged files passes. With
+   agent.** If neither is set, everything in the project's file passes. With
    `allow` alone, only the names it lists pass. With `deny` alone, everything
    passes except what it lists. With both, the result is `allow` minus `deny`.
    This is `filterEnv` in `packages/agent-env/src/index.ts`.
 
-3. **`env.required` is a check against the merged data, not a filter.** It is
+3. **`env.required` is a check against the project's file, not a filter.** It is
    evaluated before `allow`/`deny` apply, so a name can be both required and
    denied: the machine must be configured with it, and this run does not need to
-   see it. If a required name has no value in either file, the project is
+   see it. If a required name has no value in the file, the project is
    refused for that pass at stage `env`, before any work item is claimed and
    before any agent starts. The refusal names each missing variable and the
    `lingtai env set` command that fixes it. The environment belongs to the
@@ -64,7 +61,7 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
    itself (see [0106](0106-a-role-keeps-its-powers-across-runtimes.md)).
 
 5. **An extension gets exactly the names it declares.** A `run:` plugin's
-   `env:` list and a subscriber's `env:` list are read from the merged data
+   `env:` list and a subscriber's `env:` list are read from the project's file
    (before `allow`/`deny`) by `extensionEnv`, plus `RUNNABLE`. An extension that
    declares nothing gets only `RUNNABLE`. It never receives the agent's
    environment. A declared name that starts with `LINGTAI_` is refused when the
@@ -77,8 +74,9 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
    `packages/env/unit/prefix.test.ts` reads that file and holds the rule
    without exceptions. A project's own variables keep their own names, so
    `DATABASE_URL` in a project file is that project's application database and
-   never Lingtai's. The prefix is what removes Lingtai's credentials from the
-   machine layer (rule 1) and from extensions (rule 5). There is no list of
+   never Lingtai's. The prefix is what keeps Lingtai's credentials out of
+   extensions (rule 5), and what makes a missing project line an absent value
+   rather than Lingtai's own under a generic name. There is no list of
    reserved names to maintain.
 
 7. **A value that looks like production is refused before the claim.** Any
@@ -121,15 +119,16 @@ decision, made through the recipe. It is not a list built into Lingtai's source.
 ## Consequences
 
 - The operator carries the risk of what an agent can see. The recipe is the
-  control, and `doctor`'s names-and-layers report is how the operator checks
+  control, and `doctor`'s names report is how the operator checks
   it. The production tripwire is a backstop, not a guarantee. It only fires on
   hosts that the patterns or `refuseHosts` actually name.
-- A machine-wide key is set once in the machine file, and one project can
-  override it in its own file.
+- There is no machine-wide value: a key two projects both need is written into
+  each project's file. That is the price of a project seeing nothing another
+  project needed.
 - A value exported only in a shell is invisible to agents. That is intended:
-  values must be put in one of the two files.
-- A project can never receive a `LINGTAI_*` value from the machine file. If it
-  really needs one, it has to be written into that project's own file.
+  values must be put in the project's file.
+- A project receives a `LINGTAI_*` value only when the operator writes it into
+  that project's own file.
 
 ## Not built yet
 

@@ -912,8 +912,8 @@
 
   <section>
     <h2>代理拿到什么</h2>
-    <p class="lede">两个文件，合并、按 recipe 过滤，以 <code>0600</code> 落进工作树。
-      conductor 恰好跑在哪个 shell 里，不是一层。</p>
+    <p class="lede">一个文件，项目自己的，按 recipe 过滤，以 <code>0600</code> 落进工作树。
+      Lingtai 自己的配置、conductor 恰好跑在哪个 shell 里，都不是一层。</p>
 
     <div class="tablewrap">
       <table>
@@ -921,8 +921,8 @@
           <tr><th>层</th><th>在哪</th><th>装什么</th><th>会到代理手上吗</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">机器文件</td><td><code>~/.lingtai/env/&lt;project&gt;.env</code></td><td>这台机器能供给该项目的东西</td><td class="who">会 —— 除非它是 Lingtai 自己的</td></tr>
-          <tr><td class="k">项目文件</td><td>工作区的 <code>.env.local</code>，其次 <code>.env</code></td><td>仓库自己声明的东西</td><td class="who">会</td></tr>
+          <tr><td class="k">项目文件</td><td><code>~/.lingtai/env/&lt;project&gt;.env</code></td><td>这台机器供给该项目的东西</td><td class="who">会</td></tr>
+          <tr><td class="k">Lingtai 的配置</td><td><code>~/.lingtai/config.yml</code>，其次 export 的 <code>LINGTAI_*</code></td><td>日志、App、board 的端口</td><td class="who">不会 —— 它是 conductor 的，从来不是代理的</td></tr>
           <tr><td class="k">conductor 的 shell</td><td><code>process.env</code></td><td>你碰巧 export 了什么</td><td class="who">不会 —— 按决定，它不是一层</td></tr>
         </tbody>
       </table>
@@ -930,7 +930,7 @@
 
     <ul class="rules">
       <li><b>recipe 决定，机器只是持有。</b> <span><code>env.allow</code> 和 <code>env.deny</code> 是过滤器，<code>env.required</code> 是检查 —— 声明了名字却没有值，会在认领任何东西<em>之前</em>就拒掉整个项目，也就是在花钱之前。</span></li>
-      <li><b><code>LINGTAI_</code> 开头的名字，永远不会从机器文件里过去。</b> <span>那个前缀是机器自己的命名空间。没有哪个被托管的应用会要一个这样的名字，所以某个项目的文件少了一行时，它拿到的是一个<em>缺失</em>的值 —— <code>required</code> 会大声拒绝 —— 而不是悄悄继承了 Lingtai 的。</span></li>
+      <li><b><code>LINGTAI_</code> 开头的名字是 Lingtai 自己的。</b> <span>那个前缀是机器自己的命名空间。没有哪个被托管的应用会要一个这样的名字，所以某个项目的文件少了一行时，它拿到的是一个<em>缺失</em>的值 —— <code>required</code> 会大声拒绝 —— 而不是悄悄继承了 Lingtai 的。只有你把它写进那个项目的文件，它才会到代理手上。</span></li>
       <li><b>项目保留自己的名字。</b> <span>项目文件里的 <code>DATABASE_URL</code> 就是那个项目的数据库，原样透过。<code>LINGTAI_DATABASE_URL</code> 是这个系统自己的日志，代理永远拿不到它。</span></li>
       <li><b>这份清单不再写死在代码里。</b> <span>从前是一个 <code>RESERVED</code> 常量说了算。它随 <code>#60</code> 被删掉了：一道从 recipe 里看不见的护栏，就是一道从它所保护的那个仓库里审计不了的护栏。</span></li>
     </ul>

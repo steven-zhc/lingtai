@@ -1,31 +1,31 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { config, parse } from 'dotenv'
+import { Config, ConfigProvider, Effect, Either, Option } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
 /**
  * Where configuration values come from, for every package that needs one.
  *
- * Loads the environment from the workspace root rather than from whichever
- * directory a command happened to start in.
+ * **Two sources and no third**: `~/.lingtai/config.yml`, and the variables
+ * exported into the process, the second overriding the first. There is no env
+ * file. A checkout's `.env.local` used to be merged into `process.env` here at
+ * import, which made every answer depend on the directory a process started in
+ * — `pnpm lingtai` from the checkout and a launchd job started from `~` reached
+ * opposite answers about the same machine, and neither could tell (0056 §4).
  *
- * `dotenv/config` alone would only read `packages/event-store/.env`, which is wrong
- * twice over: the file belongs at the root, where the board and the CLI will
- * also want it, and it should be `.env.local` so that `.env.example` can stay
- * committed as the template.
+ * Both sources are read through Effect's `Config`: one `ConfigProvider` per
+ * source, and the names map onto each other mechanically — the file's
+ * `github.app_id` is the environment's `LINGTAI_GITHUB_APP_ID`, `database.url`
+ * is `LINGTAI_DATABASE_URL`, `board.port` is `LINGTAI_BOARD_PORT`. See
+ * `environmentProvider` and `machineFile`.
  *
- * Order is priority — dotenv does not overwrite a key that is already set, so
- * the first file to define one wins. A real environment variable beats them all,
- * which is what makes CI and launchd work without a file at all.
- *
- * **The database URL has a third source, behind both**: `database.url` in
- * `~/.lingtai/config.yml`, where `lingtai init` writes the one it verified
- * (#186). `postgresUrl` and `directUrlIfSet` fall back to it when neither the
- * environment nor an env file names one — see `machineDatabaseUrl` — so a
- * command that connects with no variable and no env file is reading that file.
+ * The file is read per call, so a value the board's setup page or `lingtai
+ * init` writes there is seen by the next call in every process. A variable is
+ * read from the environment the process was started with, so changing one is a
+ * restart — the rule every other fact about a running daemon already follows.
  */
 const here = dirname(fileURLToPath(import.meta.url))
 /**
@@ -37,46 +37,6 @@ declare const LINGTAI_BUNDLED: boolean | undefined
 const root = resolve(here, typeof LINGTAI_BUNDLED === 'undefined' ? '../../..' : '..')
 
 /**
- * What was really exported into this process, taken **before** any env file is
- * merged into `process.env` below.
- *
- * One reader, `storeChoice`, has to tell a variable somebody exported from a
- * variable a checkout's `.env.local` supplied, and after `config()` has run
- * `process.env` cannot be asked: dotenv sets a name it did not find and leaves
- * one it did, so the merged environment holds no record of which happened.
- * [0056 §4](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md) is
- * why that distinction exists — the file is found by walking up from this
- * source file, so whether it exists depends on the directory a process started
- * in, and a fact four processes must agree about cannot come from there.
- *
- * Every other reader here still asks the merged environment, which is what
- * makes `.env.local` a convenience for everything else.
- */
-const exported: NodeJS.ProcessEnv = { ...process.env }
-
-const loaded = config({
-  path: [resolve(root, '.env.local'), resolve(root, '.env')],
-  quiet: true,
-})
-
-/**
- * What the machine's own env **file** holds — not the whole process environment.
- *
- * The distinction is the whole of `#60`'s default. An agent's environment is
- * "the two files merged" ([0021](../../../doc/decisions-archive/0021-the-recipe-decides-the-environment.md)):
- * this one and the project's. It is deliberately **not** `process.env`, because
- * that also carries the operator's shell — `AWS_*`, npm tokens, whatever is
- * exported in the terminal a command was typed into — and none of that is
- * something either file said to hand over.
- *
- * `LINGTAI_*` names are stripped by `agent-env`, not here: this function's job
- * is to say what the file holds, and whose it is, is somebody else's question.
- */
-export function machineEnvFile(): Record<string, string> {
-  return { ...loaded.parsed }
-}
-
-/**
  * Whether this process is a test run.
  *
  * Vitest sets `VITEST`; the explicit override exists for anything that runs the
@@ -84,6 +44,119 @@ export function machineEnvFile(): Record<string, string> {
  */
 function inTest(from: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(from['VITEST'] || from['LINGTAI_TEST'])
+}
+
+// ------------------------------------------------------------ the two sources --
+
+/**
+ * The environment as a `ConfigProvider`: `github.app_id` is looked up as
+ * `LINGTAI_GITHUB_APP_ID`.
+ *
+ * Built from `from` rather than `ConfigProvider.fromEnv()`, which reads
+ * `process.env` and nothing else — `lingtai doctor` and every test hand in an
+ * environment of their own and are owed an answer about that one. An empty
+ * value is no value, as `optional` has always said: `LINGTAI_GITHUB_APP_ID=`
+ * exported blank must not win over a file that names one.
+ */
+export function environmentProvider(from: NodeJS.ProcessEnv = process.env): ConfigProvider.ConfigProvider {
+  return exportedProvider(from).pipe(ConfigProvider.nested(PREFIX.slice(0, -1)), ConfigProvider.constantCase)
+}
+
+/**
+ * The same environment, asked by its own names — `LINGTAI_DIRECT_DATABASE_URL`
+ * as written. What `optional` reads, for the names that are variables only and
+ * have no key in the file.
+ */
+function exportedProvider(from: NodeJS.ProcessEnv): ConfigProvider.ConfigProvider {
+  const set = new Map<string, string>()
+  for (const [name, value] of Object.entries(from)) if (value) set.set(name, value)
+  return ConfigProvider.fromMap(set, { pathDelim: '_' })
+}
+
+/** `~/.lingtai/config.yml`, as it is on disk now — or why it could not be read. */
+export interface MachineFile {
+  /** The file asked, or null where this environment reads none (a test, below). */
+  path: string | null
+  /** What it parsed to; `{}` where there is no file. */
+  provider: ConfigProvider.ConfigProvider
+  /**
+   * Why a file that exists could not be read — it would not parse, or it could
+   * not be opened. **Never** *it does not exist*, which is an empty file.
+   *
+   * A file that cannot be opened is not *no file*: answered as `{}`, a
+   * `config.yml` naming App 1850235 under another account's ownership read as
+   * *no App here*, and the board offered to create a second one — which GitHub
+   * hands its private key out for exactly once.
+   */
+  unreadable?: string
+}
+
+/**
+ * Which `config.yml` this environment reads, or null where it reads none.
+ *
+ * An environment that names its own `LINGTAI_HOME` reads that one: it is how
+ * `lingtai doctor` and a test are pointed at a home of their own. Otherwise
+ * **a test reads no machine's file** — not this process's own environment
+ * under vitest, and not one handed in by a test either — because the file on
+ * the operator's machine is exactly the operator's log and App. Anything else
+ * reads `stateDir()`'s.
+ */
+function machineFilePath(from: NodeJS.ProcessEnv): string | null {
+  const ownHome = Boolean(from['LINGTAI_HOME'])
+  if (!ownHome && (inTest(from) || inTest(process.env))) return null
+  return join(stateDir(from), 'config.yml')
+}
+
+/**
+ * Whether a read failed because nothing is there: no file, or a path through
+ * something that is not a directory. Either is *no file*, never *unreadable*.
+ */
+export function absent(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException).code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
+/** A parsed YAML document as a `ConfigProvider`: `github.app_id` is `github: { app_id }`. */
+export function yamlProvider(parsed: unknown): ConfigProvider.ConfigProvider {
+  return ConfigProvider.fromJson(parsed !== null && typeof parsed === 'object' ? parsed : {})
+}
+
+/** The file, read and parsed now. Total: every failure is `unreadable`, never thrown. */
+export function machineFile(from: NodeJS.ProcessEnv = process.env): MachineFile {
+  const path = machineFilePath(from)
+  if (path === null) return { path, provider: yamlProvider({}) }
+  let text: string
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch (err) {
+    if (absent(err)) return { path, provider: yamlProvider({}) }
+    return { path, provider: yamlProvider({}), unreadable: `${path} could not be read: ${(err as Error).message}` }
+  }
+  try {
+    return { path, provider: yamlProvider(parseYaml(text)) }
+  } catch (err) {
+    return {
+      path,
+      provider: yamlProvider({}),
+      unreadable: `${path} could not be parsed as YAML: ${(err as Error).message}`,
+    }
+  }
+}
+
+/** One `Config` against one provider, as data rather than a thrown `ConfigError`. */
+function readConfig<A>(config: Config.Config<A>, provider: ConfigProvider.ConfigProvider): Either.Either<A, string> {
+  return Either.mapLeft(Effect.runSync(Effect.either(Effect.withConfigProvider(config, provider))), String)
+}
+
+/** A string at `path` in one provider, or undefined. A non-string there is no string. */
+function stringAt(provider: ConfigProvider.ConfigProvider, ...path: [string, ...string[]]): string | undefined {
+  const [name, ...outer] = [...path].reverse() as [string, ...string[]]
+  let config: Config.Config<Option.Option<string>> = Config.option(Config.string(name))
+  for (const section of outer) config = Config.nested(config, section)
+  return Either.match(readConfig(config, provider), {
+    onLeft: () => undefined,
+    onRight: (value) => Option.getOrUndefined(Option.filter(value, (v) => v !== '')),
+  })
 }
 
 /**
@@ -167,7 +240,7 @@ export const PREFIX = 'LINGTAI_'
  * `DATABASE_URL` is plainly set, which reads as a bug in Lingtai.
  *
  * **Delete this once no machine running Lingtai predates `#63`** — in practice,
- * once this operator's `.env.local` and `~/.lingtai/env/lingtai.env` are
+ * once this operator's configuration and `~/.lingtai/env/lingtai.env` are
  * renamed, which the same change did. It is kept only for a machine that
  * upgrades later.
  */
@@ -188,7 +261,7 @@ function testUrl(name: string, from: NodeJS.ProcessEnv = process.env): string {
         (was ? `${was} is set — it was renamed to ${full} (#63). ` : '') +
         'Since #275 the suite runs on a SQLite file of its own without it — only the files on ' +
         "@lingtai/event-store/test/postgres's list, which assert Postgres itself, need " +
-        `${full} and ${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own — see .env.example.`,
+        `${full} and ${PREFIX}TEST_DIRECT_DATABASE_URL at a database of their own, exported into the shell that runs the suite.`,
     )
   }
   return value
@@ -204,8 +277,8 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
           ? `${was} is set — it was renamed to ${name} (#63), so that a project's own ` +
             `${was} can never be confused with Lingtai's. Rename the line.`
           : name.includes('DATABASE_URL')
-            ? 'lingtai init asks for one and writes it to ~/.lingtai/config.yml; from a checkout, .env.local at the repo root works too.'
-            : 'Copy .env.example to .env.local at the repo root and fill it in.'),
+            ? 'lingtai init asks for one and writes it to ~/.lingtai/config.yml as database.url; exporting it also works.'
+            : 'Write it in ~/.lingtai/config.yml or export it, and restart.'),
     )
   }
   return v
@@ -215,14 +288,14 @@ function required(name: string, from: NodeJS.ProcessEnv = process.env): string {
  * `database.url` in `~/.lingtai/config.yml` — where `lingtai init` writes the
  * one it was given and verified (#186) — or undefined where the file names none.
  *
- * **Behind the environment and the env files, never in front of them**: a set
- * `LINGTAI_DATABASE_URL` wins, as a real variable beats a file everywhere else
+ * **Behind the environment, never in front of it**: a set
+ * `LINGTAI_DATABASE_URL` wins, as a variable beats the file everywhere else
  * here. And **never for a test** — `postgresUrl` and `directUrlIfSet` do not ask
  * this while `inTest`, because a file on the operator's machine is exactly the
  * operator's log, and `testUrl` exists to refuse that.
  *
  * One URL, not two: 1.0's store has no pooled/direct split (doc/design/1.0.md),
- * so this stands in for both names. A file that does not parse is refused by
+ * so this stands in for both names. A file that cannot be read is refused by
  * name rather than read as no URL, which would say *not set* about a machine
  * where somebody plainly set one.
  */
@@ -249,35 +322,21 @@ interface MachineDatabase {
  * that only look.
  */
 function machineDatabase(from: NodeJS.ProcessEnv): MachineDatabase {
-  const path = join(stateDir(from), 'config.yml')
-  let text: string
-  try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    return {}
+  const file = machineFile(from)
+  if (file.unreadable !== undefined) {
+    return { unreadable: `${file.unreadable} — so its database.url could not be read` }
   }
-  let parsed: unknown
-  try {
-    parsed = parseYaml(text)
-  } catch (err) {
-    return {
-      unreadable: `${path} could not be parsed as YAML, so its database.url could not be read: ${(err as Error).message}`,
-    }
-  }
-  const database =
-    parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>)['database'] : undefined
-  const url =
-    database !== null && typeof database === 'object' ? (database as Record<string, unknown>)['url'] : undefined
-  return typeof url === 'string' && url !== '' ? { url } : {}
+  const url = stringAt(file.provider, 'database', 'url')
+  return url === undefined ? {} : { url }
 }
 
-/** The machine file's URL, asked only of this process's own environment and never in a test. */
+/** The machine file's URL, never in a test. */
 function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
-  return from === process.env && !inTest(from) ? machineDatabaseUrl(from) : undefined
+  return inTest(from) ? undefined : machineDatabaseUrl(from)
 }
 
 /**
- * The same, **total**: a `config.yml` that does not parse is undefined here
+ * The same, **total**: a `config.yml` that cannot be read is undefined here
  * rather than a thrown error.
  *
  * The refusal is not lost, it is moved to the caller it belongs to — the one
@@ -289,7 +348,7 @@ function machineUrl(from: NodeJS.ProcessEnv): string | undefined {
  * and a half-written `config.yml` must not be what stops them.
  */
 function machineUrlIfReadable(from: NodeJS.ProcessEnv): string | undefined {
-  return from === process.env && !inTest(from) ? machineDatabase(from).url : undefined
+  return inTest(from) ? undefined : machineDatabase(from).url
 }
 
 // --------------------------------------------------------------- the store --
@@ -313,24 +372,23 @@ export type StoreChosen =
        * `directPostgresUrl()` answers a different question — *what connection
        * string can this process find* — and its answer need not be the same
        * database. It falls back to `LINGTAI_DATABASE_URL`, so a machine whose
-       * `config.yml` says `url: A` beside a checkout's `.env.local` holding
-       * `LINGTAI_DATABASE_URL=B` would open the store on A and register the
-       * `LISTEN` on B: every append lands in A, no notification from A ever
-       * reaches a session on B, and each subscriber drains once on connect and
-       * is never nudged again while the board goes on rendering that one
-       * drain. Silent, and exactly the split-log failure 0056 exists to
-       * remove. Here there is no such fallback, and the session-mode name is
-       * taken only where it names **the same database as `url`** — so the
-       * waker is on the store's own database, and never on a second one.
+       * `config.yml` says `url: A` beside an exported `LINGTAI_DATABASE_URL=B`
+       * would open the store on B and could register the `LISTEN` elsewhere:
+       * every append lands in one database, no notification from it ever
+       * reaches a session on the other, and each subscriber drains once on
+       * connect and is never nudged again. Silent, and exactly the split-log
+       * failure 0056 exists to remove. Here there is no such fallback, and the
+       * session-mode name is taken only where it names **the same database as
+       * `url`** — so the waker is on the store's own database, and never on a
+       * second one.
        *
        * So it is `url` itself unless this process names a session-mode URL on
        * that database — the one legitimate second string, because on Supabase
-       * the pooled and direct strings genuinely differ in their port (0009),
-       * and on a checkout that string lives in `.env.local`, which is where
-       * `.env.example` says to put it. A stale one there, left over from a
-       * database this machine has been pointed away from, names another and is
-       * ignored. A `config.yml` carries one URL and it stands in for both
-       * names, which is what `machineDatabaseUrl` already says.
+       * the pooled and direct strings genuinely differ in their port (0009). A
+       * stale one, left over from a database this machine has been pointed away
+       * from, names another and is ignored. A `config.yml` carries one URL and
+       * it stands in for both names, which is what `machineDatabaseUrl` already
+       * says.
        */
       directUrl: string
       where: StoreSource
@@ -392,67 +450,17 @@ export const SQLITE_MACHINE =
   'can read it, and switching stores later is a new log rather than the same one somewhere else (0055 §3)'
 
 /**
- * The variables really exported into this process.
- *
- * An environment handed in never had an env file merged into it, so it is
- * already its own answer — which is also what lets `lingtai init` and a test
- * drive this function with an environment of their own.
- */
-function realEnvironment(from: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return from === process.env ? exported : from
-}
-
-/**
- * The file the choice is read from, or null where this environment has none.
- *
- * This process's own environment reads the machine's file unless this is a test
- * run — `machineUrl`'s rule, for its reason: the suite's environment must never
- * reach the operator's file. An environment handed in reads one only when it
- * names its own `LINGTAI_HOME`, so a test that hands in `{}` is answered
- * without touching any machine at all.
- */
-function machineChoiceFile(from: NodeJS.ProcessEnv): string | null {
-  if (from === process.env) return inTest(from) ? null : join(stateDir(from), 'config.yml')
-  return from['LINGTAI_HOME'] ? join(stateDir(from), 'config.yml') : null
-}
-
-/**
  * The session-mode connection that goes with a chosen Postgres URL — see
  * `StoreChosen.directUrl` for why it is part of the choice and not a second
  * lookup.
  *
- * **Read the merged way, which is deliberately not the rule the selection is
- * read by.** 0056 §4 keeps `.env.local` out of *which store this machine
- * runs*, because that is a fact four processes have to agree about. This is
- * not that fact: the store is already chosen, and this only says how to reach
- * **the same database** in a mode that can hold a `LISTEN` (0009).
- *
- * The second string is exactly what a checkout carries — `.env.example` is
- * what tells an operator to put `LINGTAI_DIRECT_DATABASE_URL` there — so
- * reading the snapshot for it lost the direct URL on every machine that
- * followed those instructions and left the waker on whatever `init` wrote,
- * which on Supabase is the transaction pooler the dashboard offers first
- * (#157). There the registration is handed away between statements and no
- * notification ever arrives: every subscriber drains once at connect and is
- * never nudged again, and nothing errors.
- *
- * So it is read the way `directUrlIfSet` and `lingtai doctor`'s session-mode
- * check read it — this process's environment, env files included — and those
- * two cannot report on a connection the waker does not open. **The direct name
- * and nothing else**: `directUrlIfSet`'s fallback to `LINGTAI_DATABASE_URL` is
- * the one that could name a different database, and here the fallback is the
- * chosen `url`.
- *
- * **And only where it names the same database as `url`**, which is what makes
- * the sentence above a rule rather than a hope. Reading the merged environment
- * is what a checkout needs and is also what lets a stale pair in `.env.local`
- * answer for a machine that has since been pointed somewhere else: `config.yml`
- * says NEW, the file still holds the OLD pair, and the store opens on NEW while
- * the `LISTEN` registers on OLD — where nothing is ever appended, so no
- * notification arrives, every subscriber drains once at connect and is never
- * nudged again, and nothing errors. A direct name that is not the chosen
- * database is not 0009's second string at all, so it is ignored and `url`
- * stands.
+ * The direct name and nothing else: `directUrlIfSet`'s fallback to
+ * `LINGTAI_DATABASE_URL` is the one that could name a different database, and
+ * here the fallback is the chosen `url`. **And only where it names the same
+ * database as `url`**: a stale `LINGTAI_DIRECT_DATABASE_URL` left exported
+ * after `config.yml` was pointed somewhere else would otherwise register the
+ * `LISTEN` on the old database — where nothing is ever appended, so no
+ * notification arrives, and nothing errors (#157, 0009).
  */
 function sessionUrlFor(url: string, from: NodeJS.ProcessEnv): string {
   const named = optional(dbVar('DIRECT_DATABASE_URL', from), from)
@@ -502,10 +510,10 @@ function notSetUp(name: string, path: string | null, url?: string): StoreRefused
  * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)).
  *
  * Nothing infers it from a variable being unset. *Unset* is not a fact a
- * process can establish: the URL `postgresUrl()` reads has three sources, one
- * of them a `.env.local` found by walking up from this file, so `pnpm lingtai`
- * from the checkout and a launchd job started from `~` reach opposite answers
- * about whether anything is there, and neither can tell.
+ * process can establish: the URL `postgresUrl()` reads used to have a third
+ * source, a `.env.local` found by walking up from this file, so `pnpm lingtai`
+ * from the checkout and a launchd job started from `~` reached opposite answers
+ * about whether anything was there, and neither could tell.
  * Four processes, four stores, and every append into the empty one reported as
  * success — which, for a system whose first rule is that the log settles it, is
  * the worst failure available.
@@ -524,8 +532,7 @@ function notSetUp(name: string, path: string | null, url?: string): StoreRefused
  * | `store: sqlite` beside a `url` | refused, quoting both |
  *
  * An exported `LINGTAI_DATABASE_URL` wins and supplies the URL, which is what
- * makes CI, launchd and a container work with no file at all (0056 §3) — and it
- * is the *exported* one, never a checkout's `.env.local` (§4).
+ * makes CI, launchd and a container work with no file at all (0056 §3).
  *
  * **What opens the store it names is `chosenStore()` below** (#179): the three
  * factories — the log, the projections and the beacon — each ask that, and no
@@ -535,34 +542,23 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
   // The test side for a test, as every other read here does — so a suite that
   // exists to assert Postgres can never be answered by the operator's machine.
   const name = dbVar('DATABASE_URL', from)
-  // **`realEnvironment` is how 0056 §4 is kept**, and it is kept for the
-  // machine's name only. The snapshot predates dotenv, so a checkout's
-  // `.env.local` cannot decide, for a machine, which store that machine runs.
-  //
-  // **A test side is not a machine's.** `dbVar` has already moved to
-  // `LINGTAI_TEST_DATABASE_URL`, which 0056 §4 names as a value `.env.local`
-  // goes on supplying and `.env.example` documents there — so reading the
-  // snapshot for it would refuse every suite whose URL is in the one file the
-  // suite is told to put it in, while `postgresUrl()` beside it answered.
-  // What 0046 forbids is a *fallback*, and there is none: with no test URL
-  // anywhere this still refuses, by name.
-  const url = optional(name, inTest(from) ? from : realEnvironment(from))
+  const url = optional(name, from)
   if (url !== undefined) {
-    // Said as it is: a machine's name was really exported, and a test's may
-    // have come from the env files. A line somebody reads must not claim the
-    // stronger of the two.
-    const said =
-      inTest(from) && optional(name, realEnvironment(from)) === undefined
-        ? `${name}, in this process's environment`
-        : `${name}, exported into this process`
-    return { store: 'postgres', url, directUrl: sessionUrlFor(url, from), where: 'environment', from: said }
+    return {
+      store: 'postgres',
+      url,
+      directUrl: sessionUrlFor(url, from),
+      where: 'environment',
+      from: `${name}, exported into this process`,
+    }
   }
 
-  const path = machineChoiceFile(from)
+  const file = machineFile(from)
+  const path = file.path
   if (path === null) {
-    // **The test side, since #275.** `machineChoiceFile` answers null here in
-    // the two cases that matter: this process's own environment under
-    // `inTest`, and a hand-built `from` naming no `LINGTAI_HOME` of its own —
+    // **The test side, since #275.** `machineFile` answers null here in the
+    // two cases that matter: this process's own environment under `inTest`,
+    // and a test's hand-built `from` naming no `LINGTAI_HOME` of its own —
     // never for a `from` that names one, which is a machine file a test is
     // simulating on purpose (see `packages/env/integration/store.test.ts`'s
     // "four answers") and goes on being read below as it always was.
@@ -590,31 +586,19 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
     }
     return notSetUp(name, null)
   }
-  let text: string
-  try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    // No file is no choice, and it is the same sentence: a machine that has not
-    // been set up is not a machine that chose SQLite.
-    return notSetUp(name, path)
-  }
-  let parsed: unknown
-  try {
-    parsed = parseYaml(text)
-  } catch (err) {
+  if (file.unreadable !== undefined) {
     return {
       because: 'unreadable',
       refused:
-        `${path} could not be parsed as YAML, so which store this machine runs went unanswered: ` +
-        `${(err as Error).message} — fix that file, or lingtai init writes it again`,
+        `${file.unreadable} — so which store this machine runs went unanswered. ` +
+        'Fix that file, or lingtai init writes it again',
     }
   }
-  const database =
-    parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>)['database'] : undefined
-  const at = database !== null && typeof database === 'object' ? (database as Record<string, unknown>) : {}
-  const written = typeof at['url'] === 'string' && at['url'] !== '' ? (at['url'] as string) : undefined
-  const store = at['store']
-  if (store === undefined || store === null || store === '') return notSetUp(name, path, written)
+  // No file is no choice, and it is the same sentence: a machine that has not
+  // been set up is not a machine that chose SQLite.
+  const written = stringAt(file.provider, 'database', 'url')
+  const store = stringAt(file.provider, 'database', 'store')
+  if (store === undefined) return notSetUp(name, path, written)
   if (store !== 'postgres' && store !== 'sqlite') {
     return {
       because: 'nothing chosen',
@@ -640,8 +624,7 @@ export function storeChoice(from: NodeJS.ProcessEnv = process.env): StoreChoice 
       because: 'no url',
       refused:
         `${path} says database.store: postgres and names no database.url — a URL is looked for in ${name} exported ` +
-        `into this process, then in database.url in that file, and nowhere else: a checkout's .env.local does not ` +
-        'decide this (0056 §4). lingtai init asks for one and writes it',
+        `into this process, then in database.url in that file, and nowhere else. lingtai init asks for one and writes it`,
     }
   }
   return {
@@ -753,43 +736,36 @@ export const BOARD_PORT = 17820
 export const RESERVED_PORT = 17821
 
 /**
- * `board.port` in `~/.lingtai/config.yml`, or undefined where the file names
- * none — the same third source, and the same rules, as `machineDatabaseUrl`.
+ * `board.port`, or undefined where nothing names one — `LINGTAI_BOARD_PORT`
+ * exported, over `board.port` in `~/.lingtai/config.yml`.
  *
  * The file need not exist. A value that is not a port number is refused by name
  * rather than ignored, which would serve the board on 17820 and say nothing
  * about the number somebody plainly wrote down.
  */
 export function machineBoardPort(from: NodeJS.ProcessEnv = process.env): number | undefined {
-  const path = join(stateDir(from), 'config.yml')
-  let text: string
-  try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    return undefined
-  }
-  let parsed: unknown
-  try {
-    parsed = parseYaml(text)
-  } catch (err) {
+  const port = Config.option(Config.nested(Config.port('port'), 'board'))
+  const exported = readConfig(port, environmentProvider(from))
+  if (Either.isLeft(exported)) {
     throw new Error(
-      `${path} could not be parsed as YAML, so its board.port could not be read: ${(err as Error).message}`,
+      `${PREFIX}BOARD_PORT is not a port number, so no port was read: ${exported.left} — ` +
+        `unset it to have the default, ${BOARD_PORT}`,
     )
   }
-  const board = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>)['board'] : undefined
-  const port = board !== null && typeof board === 'object' ? (board as Record<string, unknown>)['port'] : undefined
-  if (port === undefined || port === null) return undefined
-  const n = typeof port === 'number' ? port : Number(port)
-  if (!Number.isInteger(n) || n <= 0 || n > 65535) {
+  if (Option.isSome(exported.right)) return exported.right.value
+  const file = machineFile(from)
+  if (file.unreadable !== undefined) throw new Error(`${file.unreadable} — so its board.port could not be read`)
+  const written = readConfig(port, file.provider)
+  if (Either.isLeft(written)) {
     // Not "17820 is the default": nothing fell back to it, and a sentence that
     // named the default beside the refusal read as though the value had been
     // ignored and the board served on 17820 anyway.
     throw new Error(
-      `${path} sets board.port to ${JSON.stringify(port)}, which is not a port number, so no port was read — ` +
+      `${file.path} sets board.port to something that is not a port number, so no port was read: ${written.left} — ` +
         `take that line out to have the default, ${BOARD_PORT}`,
     )
   }
-  return n
+  return Option.getOrUndefined(written.right)
 }
 
 /** The port the board is served on and linked to: the file's, else `BOARD_PORT`. */
@@ -951,10 +927,62 @@ export function directUrlIfSet(from: NodeJS.ProcessEnv = process.env): string | 
   )
 }
 
-/** Set, or undefined. For values whose absence is a legitimate state. */
+/** Set, or undefined. For values whose absence is a legitimate state. Empty is unset. */
 export function optional(name: string, from: NodeJS.ProcessEnv = process.env): string | undefined {
-  return from[name] || undefined
+  return stringAt(exportedProvider(from), name)
 }
+
+/**
+ * Where Lingtai keeps what it owns on this machine — clones, worktrees, the
+ * per-project env files, the hook sockets, and `config.yml`.
+ *
+ * Here rather than beside the worktrees because it is not about worktrees: it
+ * is a fact about the machine, which is what this package is for, and three
+ * packages need it without needing each other. There were two copies before
+ * (`conductor/worktree.ts` and `daemon/reconcile.ts`), differing in how they
+ * fell back when `HOME` was unset.
+ */
+export function stateDir(from: NodeJS.ProcessEnv = process.env): string {
+  return from['LINGTAI_HOME'] ?? join(from['HOME'] ?? homedir(), '.lingtai')
+}
+
+/**
+ * A path from configuration, made absolute.
+ *
+ * `~` is expanded, because configuration is exactly where someone writes it and
+ * nothing else expands it there: a shell does not touch a YAML file, and
+ * `path.resolve` would produce a directory *named* `~`.
+ *
+ * A relative path is relative to `against` — the repository root by default,
+ * not whichever directory a command happened to start in. `config.yml`'s own
+ * paths pass `stateDir()`, because bundled, the root is under `versions/` and
+ * moves with every upgrade (#183).
+ */
+export function resolvePath(path: string, against: string = root): string {
+  if (path === '~') return homedir()
+  if (path.startsWith('~/')) return resolve(homedir(), path.slice(2))
+  return isAbsolute(path) ? path : resolve(against, path)
+}
+
+/**
+ * The checkout Lingtai is running from — where `prompts/` and the hook binary
+ * live.
+ *
+ * Already the anchor `resolvePath` uses; exported because it is also read by
+ * something other than a command. `#104` shows the next attempt's prompt on the
+ * board before it is sent, and the template is `prompts/ticket.md` at this root
+ * — the same file `conduct.ts` reads to run one. Two ways of finding it would be
+ * two prompts the moment either moved.
+ *
+ * **Not the managed project's checkout.** That is a clone under `stateDir()`,
+ * and a mirror of it under `repos/`; this is Lingtai's own source, which 0010
+ * runs unbuilt.
+ */
+export function repoRoot(): string {
+  return root
+}
+
+// ---------------------------------------------------------------- the App --
 
 /**
  * The GitHub App's credentials.
@@ -972,134 +1000,148 @@ export function optional(name: string, from: NodeJS.ProcessEnv = process.env): s
 export interface GitHubAppCredentials {
   appId: string
   privateKey: string
-  /** Where the key came from, for diagnostics. Never the key itself. */
+  /**
+   * Where the key came from, for diagnostics. Never the key itself: the
+   * absolute path it was read from, or `LINGTAI_GITHUB_APP_PRIVATE_KEY` for one
+   * carried inline.
+   */
   keySource: string
+  /** Which source answered for the App: `"environment"`, or the `config.yml` path. */
+  source: string
 }
 
 /**
- * A path from configuration, made absolute.
+ * The App's names, as one `github:` section — `github.app_id` in the file is
+ * `LINGTAI_GITHUB_APP_ID` exported, and so on for each.
  *
- * `~` is expanded, because a config file is exactly where someone writes it and
- * nothing else expands it there: a shell does not touch a `.env` file, dotenv
- * reads the value literally, and `path.resolve` would produce a directory
- * *named* `~` inside the repository. The README documented `~/...` before this
- * existed, which would have failed with a bare ENOENT naming a path nobody
- * wrote.
- *
- * A relative path is relative to the repository root, not to whichever directory
- * a command happened to start in — the same rule the environment file itself
- * follows.
+ * There is an inline key because some hosts can only carry the key as one line
+ * of environment; nothing stops a file naming one too, though the path is what
+ * `lingtai init` and the setup page write.
  */
-/**
- * Where Lingtai keeps what it owns on this machine — clones, worktrees, the
- * per-project env files, the hook sockets.
- *
- * Here rather than beside the worktrees because it is not about worktrees: it
- * is a fact about the machine, which is what this package is for, and three
- * packages need it without needing each other. There were two copies before
- * (`conductor/worktree.ts` and `daemon/reconcile.ts`), differing in how they
- * fell back when `HOME` was unset.
- */
-export function stateDir(from: NodeJS.ProcessEnv = process.env): string {
-  return from['LINGTAI_HOME'] ?? join(from['HOME'] ?? homedir(), '.lingtai')
+const GITHUB_APP = Config.nested(
+  Config.all({
+    appId: Config.option(Config.string('app_id')),
+    privateKeyPath: Config.option(Config.string('app_private_key_path')),
+    privateKey: Config.option(Config.string('app_private_key')),
+    webhookSecret: Config.option(Config.string('webhook_secret')),
+  }),
+  'github',
+)
+
+/** What one source says about the App. An empty value is no value. */
+export interface GitHubAppSection {
+  appId?: string
+  privateKeyPath?: string
+  privateKey?: string
+  webhookSecret?: string
 }
 
-export function resolvePath(path: string): string {
-  if (path === '~') return homedir()
-  if (path.startsWith('~/')) return resolve(homedir(), path.slice(2))
-  return resolve(root, path)
+/** `github:` as one provider has it. Total: a malformed section is an empty one. */
+export function githubSection(provider: ConfigProvider.ConfigProvider): GitHubAppSection {
+  return Either.match(readConfig(GITHUB_APP, provider), {
+    onLeft: () => ({}),
+    onRight: (section) => {
+      const out: GitHubAppSection = {}
+      for (const [name, value] of Object.entries(section) as [keyof GitHubAppSection, Option.Option<string>][]) {
+        if (Option.isSome(value) && value.value !== '') out[name] = value.value
+      }
+      return out
+    },
+  })
+}
+
+/** What `config.yml` says about the App, with the file it said it in. */
+export interface MachineGithub {
+  /** The file asked, or null where this environment reads none. */
+  path: string | null
+  section: GitHubAppSection
+  /** Why the file could not be read, where it could not. */
+  unreadable?: string
+}
+
+/** The `github:` section of a file already read. */
+function machineGithub(file: MachineFile): MachineGithub {
+  const github: MachineGithub = { path: file.path, section: githubSection(file.provider) }
+  if (file.unreadable !== undefined) github.unreadable = file.unreadable
+  return github
+}
+
+/** The App as elected: one source for every name, or none. */
+export interface ElectedGitHubApp {
+  /** `"environment"`, the `config.yml` path, or null where nothing names an id. */
+  source: string | null
+  values: GitHubAppSection
+  /** Why `config.yml` could not be read, where it could not — so *not set* is never said about it. */
+  unreadable?: string
 }
 
 /**
- * The checkout Lingtai is running from — where `.env.local`, `prompts/` and the
- * hook binary live.
+ * **One source answers for the App, and it answers every name.**
  *
- * Already the anchor `resolvePath` and the dotenv load above use; exported
- * because it is now read by something other than a command. `#104` shows the
- * next attempt's prompt on the board before it is sent, and the template is
- * `prompts/ticket.md` at this root — the same file `conduct.ts` reads to run
- * one. Two ways of finding it would be two prompts the moment either moved.
+ * The environment overrides the file — but as a whole section, never name by
+ * name. The id, the key and the webhook secret belong to one App, and asked
+ * one at a time they pair App 222's id from one source with App 111's key or
+ * secret from the other: every JWT signed with a key GitHub does not hold for
+ * that id, or every delivery refused with a secret configured for a different
+ * App. So whichever source names the id is asked for the rest, and a name it
+ * does not carry is absent rather than borrowed.
  *
- * **Not the managed project's checkout.** That is a clone under `stateDir()`,
- * and a mirror of it under `repos/`; this is Lingtai's own source, which 0010
- * runs unbuilt.
+ * Pure, over sources already read, so the pairing is a unit test.
+ *
+ * A relative key path from the file is resolved against `home` — the file's
+ * own directory, `stateDir()` — and never against the checkout, which bundled
+ * is under `versions/`.
  */
-export function repoRoot(): string {
-  return root
-}
-
-/**
- * The env files `@lingtai/env` loads, in its order — first to name a value wins.
- *
- * The same two paths as the `config()` call at the top of this file, which reads
- * them once. `appValues` reads them again on every call, for the App's names
- * below and no others.
- */
-export function envFiles(): string[] {
-  return [resolve(root, '.env.local'), resolve(root, '.env')]
-}
-
-/**
- * The App's names, from the environment or else the files as they are **now**
- * (#169) — and **every name from the source that names the App ID**.
- *
- * The private key was always re-read per call — `readFileSync` is inside
- * `githubApp` — while the App ID came from `process.env`, which Next.js and
- * dotenv both fill once, at start. So an App created at runtime by the board's
- * setup page worked by half: the key landed and every process, the board that
- * wrote it included, went on answering *no GitHub App configured*. Reading the
- * id the way the key is read closes that, in every process, with nothing to
- * restart.
- *
- * **One source per App, not one per name.** The id and the key are a pair, and
- * a `.env.local` copied from `.env.example` ships the key path filled in with
- * the id blank — so `process.env` holds a key path from start while the id is
- * only ever in the file. Asked name by name, the id came from the file and the
- * key path from that stale snapshot: the setup page writes a key aside because
- * one is already at the default path, points the file at it, and every call
- * signs the new App's JWT with the old App's key. So the source that names the
- * id is asked first for every other name, and the rest only for what it does
- * not say.
- *
- * `process.env` keeps winning where it names the id, so a deployment that
- * supplies the variables directly is unaffected. A file that cannot be read
- * says nothing.
- */
-function appValues(from: NodeJS.ProcessEnv, files: readonly string[]): (name: string) => string | undefined {
-  const sources: ((name: string) => string | undefined)[] = [(name) => optional(name, from)]
-  for (const file of files) {
-    let parsed: Record<string, string>
-    try {
-      parsed = parse(readFileSync(file, 'utf8'))
-    } catch {
-      continue
-    }
-    sources.push((name) => parsed[name] || undefined)
+export function electGithubApp(environment: GitHubAppSection, machine: MachineGithub, home: string): ElectedGitHubApp {
+  const unreadable = machine.unreadable === undefined ? {} : { unreadable: machine.unreadable }
+  if (environment.appId !== undefined) return { source: 'environment', values: environment, ...unreadable }
+  if (machine.path !== null && machine.section.appId !== undefined) {
+    const values = { ...machine.section }
+    if (values.privateKeyPath !== undefined) values.privateKeyPath = resolvePath(values.privateKeyPath, home)
+    return { source: machine.path, values }
   }
-  const owner = sources.find((source) => source(`${PREFIX}GITHUB_APP_ID`) !== undefined)
-  const ordered = owner === undefined ? sources : [owner, ...sources.filter((s) => s !== owner)]
-  return (name) => {
-    for (const source of ordered) {
-      const value = source(name)
-      if (value) return value
-    }
-    return undefined
-  }
+  return { source: null, values: {}, ...unreadable }
+}
+
+/** The election, against this environment and its `config.yml` as it is now. */
+export function githubAppValues(from: NodeJS.ProcessEnv = process.env): ElectedGitHubApp {
+  return electGithubApp(githubSection(environmentProvider(from)), machineGithub(machineFile(from)), stateDir(from))
 }
 
 /**
- * The secret `/api/webhook` verifies deliveries with, read the way the App is.
+ * The secret `/api/webhook` verifies deliveries with — the elected App's, and
+ * no other's.
  *
- * The setup page writes it into `.env.local` beside the id, while the board is
- * running — so a receiver reading `process.env` alone answered every delivery
- * of an App created with an active hook *webhooks are not configured* until
- * somebody restarted the board, under a screen saying nothing had to be.
+ * Undefined where the App that won names none, even if the other source does:
+ * that secret belongs to a different App. The file is read per call, so a
+ * secret the setup page writes into `config.yml` is seen by the next delivery;
+ * an exported one is seen after a restart, like every other variable.
  */
-export function githubWebhookSecret(
-  from: NodeJS.ProcessEnv = process.env,
-  files: readonly string[] = from === process.env ? envFiles() : [],
-): string | undefined {
-  return appValues(from, files)(`${PREFIX}GITHUB_WEBHOOK_SECRET`)
+export function githubWebhookSecret(from: NodeJS.ProcessEnv = process.env): string | undefined {
+  return githubAppValues(from).values.webhookSecret
+}
+
+/**
+ * Where the webhook secret is looked for, as a sentence a refusal can carry.
+ *
+ * `/api/webhook` answers every delivery with this when no secret is
+ * configured, rather than a bare 503: a name that is not there is refused by
+ * name, with the place it belongs.
+ */
+export function githubWebhookSecretMissing(from: NodeJS.ProcessEnv = process.env): string {
+  const elected = githubAppValues(from)
+  const file = machineFilePath(from) ?? join(stateDir(from), 'config.yml')
+  if (elected.source === 'environment') {
+    return (
+      `${PREFIX}GITHUB_WEBHOOK_SECRET is not exported, and the App in this process's environment is the one ` +
+      'that answers — export it beside the id and restart'
+    )
+  }
+  return (
+    `no webhook secret: ${file} names no github.webhook_secret` +
+    (elected.unreadable === undefined ? '' : ` (${elected.unreadable})`) +
+    ` — write it there, or export ${PREFIX}GITHUB_WEBHOOK_SECRET beside ${PREFIX}GITHUB_APP_ID and restart`
+  )
 }
 
 /**
@@ -1109,53 +1151,46 @@ export function githubWebhookSecret(
  * about the argument and partly about the machine, which showed up the moment
  * the operator configured a real App and a test asserting "not configured"
  * started failing for a reason that had nothing to do with the code.
- *
- * `files` follows the same rule: the env files on disk are consulted only when
- * the environment is this process's own, since they are what that environment
- * was loaded from. A caller handing in another environment gets no files unless
- * it names them.
  */
-export function githubApp(
-  from: NodeJS.ProcessEnv = process.env,
-  files: readonly string[] = from === process.env ? envFiles() : [],
-): GitHubAppCredentials {
-  const value = appValues(from, files)
-  const appId = value(`${PREFIX}GITHUB_APP_ID`)
-  if (!appId) {
+export function githubApp(from: NodeJS.ProcessEnv = process.env): GitHubAppCredentials {
+  const elected = githubAppValues(from)
+  const { appId, privateKeyPath, privateKey } = elected.values
+  if (elected.source === null || appId === undefined) {
+    const file = machineFilePath(from) ?? join(stateDir(from), 'config.yml')
     throw new Error(
       `${PREFIX}GITHUB_APP_ID is not set. ` +
         (renamedFrom(`${PREFIX}GITHUB_APP_ID`, from)
           ? `GITHUB_APP_ID is set — it was renamed (#63). Rename the line.`
-          : 'Copy .env.example to .env.local at the repo root and fill it in.'),
+          : `${file} names no github.app_id, and nothing exported does — the board's setup page or ` +
+            'lingtai init writes it there.') +
+        (elected.unreadable === undefined ? '' : ` ${elected.unreadable}.`),
     )
   }
-  const path = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`)
-  const inline = value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)
-
-  if (path) {
-    return { appId, privateKey: readFileSync(resolvePath(path), 'utf8'), keySource: path }
+  if (privateKeyPath) {
+    const absolute = resolvePath(privateKeyPath)
+    return { appId, privateKey: readFileSync(absolute, 'utf8'), keySource: absolute, source: elected.source }
   }
-  if (inline) {
+  if (privateKey) {
     // Some hosts can only carry the key as one line; \n restores the PEM.
-    return { appId, privateKey: inline.replace(/\\n/g, '\n'), keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY` }
+    return {
+      appId,
+      privateKey: privateKey.replace(/\\n/g, '\n'),
+      keySource: `${PREFIX}GITHUB_APP_PRIVATE_KEY`,
+      source: elected.source,
+    }
   }
   throw new Error(
-    `Neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ${PREFIX}GITHUB_APP_PRIVATE_KEY is set. ` +
-      'See doc/decisions-archive/0006-github-app.md for creating the App.',
+    elected.source === 'environment'
+      ? `${PREFIX}GITHUB_APP_ID is exported but neither ${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH nor ` +
+          `${PREFIX}GITHUB_APP_PRIVATE_KEY is — the App in the environment answers every name, so export its key ` +
+          'beside it and restart.'
+      : `${elected.source} names github.app_id but neither github.app_private_key_path nor github.app_private_key. ` +
+          'See doc/decisions-archive/0006-github-app.md for creating the App.',
   )
 }
 
-/**
- * Whether the App is configured at all, without throwing to find out — asked of
- * the environment and then of the env files as they are now, like `githubApp`.
- */
-export function hasGitHubApp(
-  from: NodeJS.ProcessEnv = process.env,
-  files: readonly string[] = from === process.env ? envFiles() : [],
-): boolean {
-  const value = appValues(from, files)
-  return Boolean(
-    value(`${PREFIX}GITHUB_APP_ID`) &&
-    (value(`${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`) || value(`${PREFIX}GITHUB_APP_PRIVATE_KEY`)),
-  )
+/** Whether the App is configured at all, without throwing to find out — the same election as `githubApp`. */
+export function hasGitHubApp(from: NodeJS.ProcessEnv = process.env): boolean {
+  const { values } = githubAppValues(from)
+  return Boolean(values.appId && (values.privateKeyPath || values.privateKey))
 }

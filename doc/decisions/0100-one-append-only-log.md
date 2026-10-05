@@ -81,8 +81,8 @@ same URL can be visible from a checkout and invisible to a daemon started from
    Postgres; `postgres` with no URL → refused, naming where a URL is looked for;
    `sqlite` beside a `url` → refused, quoting both. **Nothing defaults.** An
    exported `LINGTAI_DATABASE_URL` selects Postgres and supplies the URL over the
-   file, which is how CI, launchd and containers work with no file; a checkout's
-   `.env.local` never decides the store. `$LINGTAI_HOME` relocates `~/.lingtai`.
+   file, which is how CI, launchd and containers work with no file; there is no
+   env file to decide it ([0117](0117-configuration-is-config-yml-and-the-environment.md)). `$LINGTAI_HOME` relocates `~/.lingtai`.
 
 8. **Each store opens at first use, once per process.** `processLog()` in
    `packages/event-store/src/choose.ts` opens the chosen log lazily and memoises

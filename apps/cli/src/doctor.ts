@@ -61,6 +61,7 @@ import {
   type StoreChoice,
   directUrlIfSet,
   githubApp,
+  githubAppValues,
   hasGitHubApp,
   machineDatabaseUrl,
   postgresUrlIfSet,
@@ -345,7 +346,7 @@ export function environment(
       status: 'fail',
       detail:
         `${missing.join(' and ')} not set, and ~/.lingtai/config.yml names no database.url — ` +
-        'lingtai init writes one, or copy .env.example to .env.local at the repo root',
+        'lingtai init writes one, or export LINGTAI_DATABASE_URL and restart',
     }
   }
 
@@ -755,13 +756,18 @@ async function runtimeAuth(fetch: () => ReturnType<typeof everyRuntime> = () => 
 
 function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
   const name = 'github: app credentials'
-  if (!hasGitHubApp(env)) {
+  // A source that names an id with no key, or a `config.yml` that cannot be
+  // read, is somebody's half-written App — a failure with its reason, never
+  // the *not configured* skip, which tells them to write what they just wrote.
+  const elected = githubAppValues(env)
+  if (!hasGitHubApp(env) && elected.source === null && elected.unreadable === undefined) {
     return {
       name,
       status: 'skip',
       detail:
-        'LINGTAI_GITHUB_APP_ID and a private key are not set — no repository can be onboarded yet. ' +
-        'See doc/decisions-archive/0006-github-app.md.',
+        'no GitHub App is configured — ~/.lingtai/config.yml names no github.app_id and key, and nothing ' +
+        "exported does, so no repository can be onboarded yet. The board's setup page writes one; " +
+        'see doc/decisions-archive/0006-github-app.md.',
     }
   }
   try {
@@ -773,7 +779,7 @@ function githubCredentials(env: NodeJS.ProcessEnv): CheckResult {
       name,
       status: 'ok',
       detail:
-        `app ${app.appId}, key from ${app.keySource} · ` +
+        `app ${app.appId} from ${app.source}, key from ${app.keySource} · ` +
         `requires ${REQUIRED_PERMISSIONS.map((p) => `${p.name}:${p.level}`).join(', ')} ` +
         '(verified per repository by lingtai add)',
     }
@@ -2239,13 +2245,10 @@ export async function runDoctor(
  */
 export async function doctorReport(): Promise<DoctorReport> {
   const env = doctorEnvironment()
-  // `storeChoice()` and not `storeChoice(env)`: the choice is read from the
-  // variables really exported into this process, and `doctorEnvironment` hands
-  // out a copy carrying what the env files supplied too (0056 §4).
   return runDoctor(
     env,
     () => machineDatabaseUrl(env),
-    () => storeChoice(),
+    () => storeChoice(env),
   )
 }
 

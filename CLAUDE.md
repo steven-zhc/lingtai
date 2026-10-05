@@ -385,14 +385,31 @@ divergence is a failing test rather than a surprise.
 **Neither connection string may go through a pooler** (#157), and that holds
 for this system's own log too, not only the test side. The measurement is the
 test side's: under `inTest`, `dbVar` sends every read to the `TEST_` pair
-(`packages/env/src/index.ts:124`), so it was `LINGTAI_TEST_DATABASE_URL` that
+(`packages/env/src/index.ts:195`), so it was `LINGTAI_TEST_DATABASE_URL` that
 pointed at `aws-0-us-east-1.pooler.supabase.com` for months and failed often
 enough that a red gate meant nothing — `30 passed → 10 failed → 31 passed` on
 one commit inside an hour, every failure a dropped connection and not an
 assertion. On the direct host, `db.<project-ref>.supabase.co:5432`, the same
 suite ran ten times in a row green at 480–502s. The dashboard offers the
-pooler first, which is how this happens on `LINGTAI_DATABASE_URL` as much as
-on the test pair; `.env.example` says so at both lines.
+pooler first, which is how this happens on `database.url` as much as on the
+test pair; `config.example.yml` says so.
+
+**Configuration has two sources and no third, since 2026-10-05:**
+`~/.lingtai/config.yml`, and the variables exported into a process, the second
+overriding the first — read through Effect's `Config` in `packages/env`, with
+`github.app_id` in the file being `LINGTAI_GITHUB_APP_ID` exported, and so on
+for every key ([config.example.yml](config.example.yml)). **There is no env
+file.** A checkout's `.env.local` is not read, whatever it says; it made every
+answer depend on the directory a process started in. The file is read per call,
+so what the setup page writes there is seen at once; a variable is the
+environment a process started with, so changing one is a restart. The GitHub
+App is one exception to *the environment overrides name by name*: whichever
+source names `app_id` answers the key and the webhook secret too
+(`electGithubApp`), because an id from one and a secret from the other is a
+pair nobody configured. **A test reads no machine's `config.yml`** — not this
+process's under vitest, and not one handed in without a `LINGTAI_HOME` of its
+own — so `LINGTAI_TEST_DATABASE_URL` comes from the shell that runs the suite
+and nowhere else.
 
 `LINGTAI_TEST_SQLITE_PATH` is what makes the default above safe: a directory
 made for one run alone, by `test-support/teardown.ts`'s `setup()`, never

@@ -7,7 +7,7 @@ manages. Lingtai creates the App itself through GitHub's manifest flow, so a
 person never chooses the permissions and so cannot choose them wrong. The App
 asks for four permissions and subscribes to one event. Its credentials are an
 App ID, a private key and an optional webhook secret. They live on the
-conducting machine (by default `.env.local` beside the checkout, with the key in
+conducting machine (`github:` in `~/.lingtai/config.yml`, with the key in
 `~/.ssh`), never in a managed repository and never in an agent's environment.
 API calls use short-lived installation tokens.
 
@@ -67,21 +67,30 @@ check the App's permissions before any work starts.
    (`public: false`), created once per team. The installation flow returns to
    the repository picker through `setup_url`.
 
-5. **Credentials live on the conducting machine, read fresh from file.**
-   - `LINGTAI_GITHUB_APP_ID`: the App ID.
-   - `LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH`: the PEM's path, default
-     `~/.ssh/lingtai-agent.private-key.pem`, written with mode `0600`.
-     `LINGTAI_GITHUB_APP_PRIVATE_KEY` takes the PEM inline instead, for hosts
-     that can carry it only as one line.
-   - `LINGTAI_GITHUB_WEBHOOK_SECRET`: optional.
+5. **Credentials live on the conducting machine, read fresh from file.** They
+   are the `github:` section of `~/.lingtai/config.yml`, each key overridable by
+   the exported variable of the same name ([0117](0117-configuration-is-config-yml-and-the-environment.md)):
+   - `app_id` / `LINGTAI_GITHUB_APP_ID`: the App ID.
+   - `app_private_key_path` / `LINGTAI_GITHUB_APP_PRIVATE_KEY_PATH`: the PEM's
+     path, default `~/.ssh/lingtai-agent.private-key.pem`, written with mode
+     `0600`; relative in the file means relative to `~/.lingtai`.
+     `app_private_key` / `LINGTAI_GITHUB_APP_PRIVATE_KEY` takes the PEM inline
+     instead, for hosts that can carry it only as one line.
+   - `webhook_secret` / `LINGTAI_GITHUB_WEBHOOK_SECRET`: optional. Without it
+     `/api/webhook` answers 503 with a sentence naming where it belongs.
 
-   The setup page writes these values into `.env.local` at the checkout root.
-   `githubApp()` and `hasGitHubApp()` in `packages/env/src/index.ts` read the
-   process environment first, then `.env.local`, then `.env`. They read the
-   files as they are at call time, so an App created at runtime works in every
-   running process without a restart. Whichever source names the App ID also
-   supplies the other values, so an ID and a key from different Apps are never
-   paired.
+   The setup page writes `github:` into `config.yml`, editing the document so
+   every other section and comment stays, creating the file `0600`, and
+   refusing when an `app_id` is already there. `githubApp()` and
+   `hasGitHubApp()` in `packages/env/src/index.ts` read the file as it is at
+   call time, so an App created at runtime works in every running process
+   without a restart. **One source answers every name** (`electGithubApp`):
+   an exported `LINGTAI_GITHUB_APP_ID` takes the key and secret from the
+   environment too, otherwise all of them come from the file, so an ID, a key
+   and a secret from different Apps are never paired. A `config.yml` that will
+   not parse or cannot be opened is named as that file — never as *not set*,
+   and never as the log being unreadable — and the setup page offers no App
+   over it.
 
 6. **Secrets are never written to the log or printed.** The conversion drops
    `client_id` and `client_secret` at the seam, because Lingtai has no OAuth

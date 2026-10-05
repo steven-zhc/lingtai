@@ -81,6 +81,10 @@ async function main(): Promise<void> {
   // between builds by default.
   await rm(SNAPSHOT_FILE, { force: true })
 
+  // **Exported, and never `config.yml`'s `database.url`.** This freezes a real
+  // board into public files, so it happens only when somebody says so for this
+  // one build; reading the machine file would put the operator's board into
+  // every local `pnpm build` of the site.
   const url = process.env.LINGTAI_DATABASE_URL
   if (url === undefined || url === '') {
     console.log(

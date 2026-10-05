@@ -314,6 +314,9 @@ importers:
       pg:
         specifier: ^8.16.3
         version: 8.23.0
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^26.4.0
@@ -386,9 +389,9 @@ importers:
 
   packages/env:
     dependencies:
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
+      effect:
+        specifier: ^3.22.1
+        version: 3.22.1
       yaml:
         specifier: ^2.8.1
         version: 2.9.0

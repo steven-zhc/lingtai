@@ -131,7 +131,7 @@ async function started(port: number, spec: Partial<SubscriberSpec> = {}, token =
     filters: [{ project: PROJECT, ok: true, recipe: { subscribers: [declared] } } as unknown as ProjectFilter],
     cwd: ROOT,
     subject: createSubjectResolver(store),
-    resolveEnv: (options) => resolveAgentEnv({ ...options, home, machine: {} }),
+    resolveEnv: (options) => resolveAgentEnv({ ...options, home }),
   })
   expect(unread).toEqual([])
   loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: async () => {} })

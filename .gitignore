@@ -11,7 +11,6 @@ out/
 # Secrets. The event store URL and the GitHub App key never enter git.
 .env
 .env.*
-!.env.example
 
 # Prisma 8 emits contract.json and contract.d.ts next to the schema. They are
 # committed: they are deterministic output of contract.prisma, and db.ts imports

@@ -167,7 +167,9 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
     yield* ConductorLock
 
     if (!hasGitHubApp()) {
-      return yield* refuse('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
+      return yield* refuse(
+        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+      )
     }
 
     const project = yield* Effect.tryPromise({

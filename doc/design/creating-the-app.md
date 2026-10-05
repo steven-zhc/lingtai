@@ -6,6 +6,13 @@ and `packages/conductor/src/create-app.ts` · precedes
 [the onboarding wizard](the-onboarding-wizard.md) and
 [#168](https://github.com/steven-zhc/lingtai/issues/168)
 
+> **Since 2026-10-05 the credentials go into `~/.lingtai/config.yml`'s `github:`
+> section, not `.env.local`**, which nothing reads any more
+> ([0117](../decisions/0117-configuration-is-config-yml-and-the-environment.md)).
+> Wherever this note says `.env.local` below, the code now says `config.yml`;
+> the reasoning about reading the file per call and guarding the write is
+> unchanged and is what `create-app.ts` still does.
+
 ## The cost this removes, in the words of the decision that accepted it
 
 [0006](../decisions-archive/0006-github-app.md) chose a GitHub App over a personal

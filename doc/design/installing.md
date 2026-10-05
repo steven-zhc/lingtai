@@ -19,7 +19,8 @@ Then, in order:
 
 ```
 git clone …                      there is no install — see below
-cp .env.example .env.local       and fill in five variables
+cp .env.example .env.local       and fill in five variables  (since 2026-10-05:
+                                 lingtai init writes ~/.lingtai/config.yml; 0117)
 pnpm install
 pnpm db:init && pnpm db:bootstrap
 pnpm lingtai doctor

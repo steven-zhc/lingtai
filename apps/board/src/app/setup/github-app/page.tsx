@@ -20,7 +20,7 @@ import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
  * self-submitting form, and `created/route.ts` is where GitHub comes back.
  *
  * **It ends on the install link and names no restart.** `hasGitHubApp()` and
- * `githubApp()` read `.env.local` as it is on disk, per call, so the App is
+ * `githubApp()` read `~/.lingtai/config.yml` as it is on disk, per call, so the App is
  * usable the moment it is written — by this board's next Approve and by a daemon
  * that was already running. An ending that said *now run `lingtai restart`*
  * would name a command that restarts the daemon and not this board, beside a
@@ -66,7 +66,9 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
                   ? 'created here, and not finished'
                   : offer.offered
                     ? 'step 0 — Lingtai talks to GitHub as an App, not as a token'
-                    : 'the log did not answer'}
+                    : offer.unreadable !== null
+                      ? 'config.yml could not be read'
+                      : 'the log did not answer'}
             </span>
           </h2>
 
@@ -83,6 +85,8 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
             <Create offer={offer} />
           ) : outcome?.ok ? null : offer.configured !== null ? (
             <Configured configured={offer.configured} installUrl={offer.installUrl} />
+          ) : offer.unreadable !== null ? (
+            <Unreadable why={offer.unreadable} />
           ) : (
             <Unanswered why={offer.unanswered ?? ''} />
           )}
@@ -196,7 +200,7 @@ function Created({ outcome }: { outcome: Extract<Offer['outcome'], { ok: true }>
           private key: <code>{outcome.keyPath}</code>, mode <code>0600</code>
         </li>
         <li>
-          <code>LINGTAI_GITHUB_APP_ID</code> and the webhook secret: <code>{outcome.envFile}</code>
+          the App&rsquo;s id and the webhook secret: <code>{outcome.configFile}</code>, under <code>github:</code>
         </li>
         <li>
           webhooks:{' '}
@@ -281,8 +285,8 @@ function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string
     <>
       <p className="refusal">
         App {minted.appId} ({minted.slug}) was created here, and this Lingtai is not configured with it — the
-        credentials did not reach this machine, so <code>{keyPath}</code> and the env file do not name it. It is still
-        on GitHub, and still counts against you there.
+        credentials did not reach this machine, so <code>{keyPath}</code> and <code>config.yml</code> do not name it. It
+        is still on GitHub, and still counts against you there.
       </p>
       <p className="note">
         GitHub hands a private key over exactly once, so that one cannot be fetched again. The way out is to generate a
@@ -302,7 +306,7 @@ function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string
  *
  * `GitHubAppCreated` is the only durable record that an App was minted here, and
  * the creations it is the *only* record of are the ones whose writes failed:
- * there is no key file and no env line for those, so nothing else on this
+ * there is no key file and no `github:` section for those, so nothing else on this
  * machine remembers them. A store unreachable for a few minutes must therefore
  * read as *unknown* and never as *nothing* — the button on an unanswered
  * question mints a second App while the first is still unfinished, and GitHub
@@ -318,6 +322,28 @@ function Unanswered({ why }: { why: string }) {
       </p>
       <p className="note">
         Run <code>pnpm lingtai doctor</code>, and reload this page once the log answers.
+      </p>
+    </>
+  )
+}
+
+/**
+ * `config.yml` would not say, so the page does not guess — and does not draw
+ * the button, because that file may already name an App.
+ *
+ * **Its own sentence, never `Unanswered`'s.** A file that will not parse or
+ * cannot be opened is something the operator fixes in ten seconds; sending
+ * them to wait for a log that answered perfectly well is the wrong remedy.
+ */
+function Unreadable({ why }: { why: string }) {
+  return (
+    <>
+      <p className="refusal">
+        {why}. Creation is not offered while that file cannot be read, because it may already name an App, and a second
+        one written over it would be an App nothing is installed on.
+      </p>
+      <p className="note">
+        Fix the file — <code>pnpm lingtai doctor</code> names what is wrong with it — and reload this page.
       </p>
     </>
   )

@@ -23,7 +23,9 @@ export interface ApproveCommandOptions {
 
 export async function approveCommand(options: ApproveCommandOptions, log = console.log): Promise<number> {
   if (!hasGitHubApp()) {
-    log('no GitHub App configured — see doc/decisions-archive/0006-github-app.md and .env.example')
+    log(
+      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+    )
     return 1
   }
 

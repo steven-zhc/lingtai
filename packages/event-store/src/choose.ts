@@ -69,18 +69,16 @@ async function open(): Promise<Log> {
   if (choice.store === 'postgres') {
     // **Both connections come out of the choice**, and the waker's is the one
     // that matters here: left out, `createPostgresWaker` resolves
-    // `directPostgresUrl()`, which reads this process's *merged* environment —
-    // so a machine whose `config.yml` names A beside a checkout's `.env.local`
-    // holding `LINGTAI_DATABASE_URL=B` would append to A and register its
-    // `LISTEN` on B, and every subscriber would drain once and never be nudged
-    // again while the board went on rendering that one drain. 0009's
-    // session-mode requirement is kept by the choice itself: `directUrl` is
-    // `LINGTAI_DIRECT_DATABASE_URL` where this process names one **on the
-    // chosen database** — including from a checkout's `.env.local`, which is
-    // where `.env.example` says to put it — and `url` where it does not. Never
+    // `directPostgresUrl()`, which falls back on its own to
+    // `LINGTAI_DATABASE_URL` — so the log could append to one database and
+    // register its `LISTEN` on another, and every subscriber would drain once
+    // and never be nudged again while the board went on rendering that one
+    // drain. 0009's session-mode requirement is kept by the choice itself:
+    // `directUrl` is `LINGTAI_DIRECT_DATABASE_URL` where this process names one
+    // **on the chosen database**, and `url` where it does not. Never
     // `LINGTAI_DATABASE_URL`, which is the fallback that could name a different
-    // database, and never a direct name that points at one either: a stale pair
-    // in an env file is the same split by another route.
+    // database, and never a direct name that points at one either: a stale one
+    // left exported is the same split by another route.
     return createPostgresLog({
       store: createEventStore(createDb(choice.url)),
       url: choice.url,
