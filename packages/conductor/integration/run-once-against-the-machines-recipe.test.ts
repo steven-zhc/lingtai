@@ -70,12 +70,16 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
       fileAt: async (path: string) => (path !== ".lingtai/config.yaml" ? null : RECIPE),
     } as unknown as GitHubClient;
 
-    // The machine's half: the recipe without `runtime`, and the agent named in
-    // `config.yml` so nothing is asked what is signed in.
+    // The machine's half: the recipe without `runtime.agent`, and the agent
+    // named in `config.yml` so nothing is asked what is signed in.
+    // `runtime.limits` stays in the recipe — it is the recipe's own (`#375`).
     const lingtaiHome = await mkdtemp(join(tmpdir(), "lingtai-home-"));
     await mkdir(join(lingtaiHome, PROJECT));
-    await writeFile(join(lingtaiHome, PROJECT, "recipe.yml"), armed.replace(/^runtime:.*$/m, ""));
-    await writeFile(join(lingtaiHome, "config.yml"), "runtime:\n  agent: claude-code\n  limits: { turns: 10, wall: 2m }\n");
+    await writeFile(
+      join(lingtaiHome, PROJECT, "recipe.yml"),
+      armed.replace(/^runtime:.*$/m, "runtime: { limits: { turns: 10, wall: 2m } }"),
+    );
+    await writeFile(join(lingtaiHome, "config.yml"), "runtime:\n  agent: claude-code\n");
     const saved = process.env["LINGTAI_HOME"];
     process.env["LINGTAI_HOME"] = lingtaiHome;
 

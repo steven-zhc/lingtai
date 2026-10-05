@@ -39,6 +39,8 @@ version: 2
 repo: { base: main }
 source: { kinds: [bug, tech-debt], exclude: ["blocked", "agent:hold"] }
 env: { plantAt: .env.local }
+runtime:
+  limits: { turns: 150, rounds: 3 }
 steps:
   proposed:
     - { name: build, run: "pnpm test", timeout: 20m }
@@ -74,15 +76,10 @@ source: { kinds: [bug] }
 env: { plantAt: .env.local }
 `;
 
-/** A machine that says some of it machine-wide and some of it for this project. */
+/** This machine's own file: the agent, and nothing else — limits are the recipe's (`#375`). */
 const MACHINE = `
 runtime:
   agent: claude-code
-  limits: { rounds: 3 }
-projects:
-  app:
-    runtime:
-      limits: { turns: 150 }
 `;
 
 const PAGE = new URL("../src/app/recipe/[project]/page.tsx", import.meta.url);
@@ -141,14 +138,13 @@ describe("what a project's recipe says today", () => {
     }
 
     const of = (name: string) => sourceOf(view.rows.find((r) => r.name === name)!, view.provenance);
-    // The three places, told apart: the project's own file, the machine's, and
-    // the machine's per-project section.
+    // The two places, told apart: the project's own file, and the machine's.
     expect(of("picks up")).toBe(join(home, "app", "recipe.yml"));
     expect(of("agent")).toBe(join(home, "config.yml"));
-    // `a pass` is four limits from three places, and says all three: one
-    // source printed there would be a sentence true of a number it is not
-    // made of.
-    expect(of("a pass")).toContain("(projects.app)");
+    // `a pass` is four limits from the recipe and the schema, and says both:
+    // one source printed there would be a sentence true of a number it is
+    // not made of.
+    expect(of("a pass")).toContain(join(home, "app", "recipe.yml"));
     expect(of("a pass")).toContain("default");
   });
 
@@ -251,7 +247,7 @@ describe("a recipe that cannot be read", () => {
   });
 
   /**
-   * **And when the fault is in the other file, it says that one.** `gates:` in
+   * **And when the fault is in the other file, it says that one.** `steps:` in
    * the machine file is the mistake that file exists to refuse, and it stops
    * the resolve with `recipe.yml` perfectly readable — as a `runtime.assignee`
    * written there does, since it moved to the recipe (`#373`), and as
@@ -260,7 +256,7 @@ describe("a recipe that cannot be read", () => {
    * readings of the one file there is nothing wrong with.
    */
   it("names the machine's file when the fault is there, and sends nobody to the recipe", async () => {
-    await writeFile(join(home, "config.yml"), `${MACHINE}\ngates:\n  proposed: []\n`);
+    await writeFile(join(home, "config.yml"), `${MACHINE}\nsteps:\n  proposed: []\n`);
     const view = await projectRecipe(state);
     const html = render(view);
 
@@ -278,30 +274,29 @@ describe("a recipe that cannot be read", () => {
   });
 
   /**
-   * **And a value the reading has to parse is the machine's too.** `wall: "90"`
-   * — the unit forgotten — used to resolve, because nothing refined it as a
-   * duration: the throw came afterwards, out of `parseDuration` inside
-   * `readRecipe`, and was caught beside the resolve's own errors and sorted by
-   * `faultOf`'s `else` into `fault: "recipe"`. The page then named
-   * `~/.lingtai/app/recipe.yml`, which may not carry `runtime.limits` at all
-   * (0046 §3) — so its reader opened that file twice, found no `limits:` block,
-   * and was never told about the one file to edit.
+   * **And a value the reading has to parse is the recipe's own, since `#375`.**
+   * `wall: "90"` — the unit forgotten — is refused where `runtime.limits` is
+   * written now, by the recipe's own schema, naming that file rather than the
+   * machine's, which carries no opinion about limits at all.
    */
-  it("names the machine's file for a wall that is not a duration, and never the recipe", async () => {
-    await writeFile(join(home, "config.yml"), `runtime:\n  agent: claude-code\n  limits: { wall: "90" }\n`);
+  it("names the recipe's file for a wall that is not a duration, and never the machine", async () => {
+    await writeFile(
+      join(home, "app", "recipe.yml"),
+      'version: 2\nrepo: { base: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  limits: { wall: "90" }\nsteps:\n  proposed: []\n',
+    );
     const view = await projectRecipe(state);
     const html = render(view);
 
     expect(view.ok).toBe(false);
     if (view.ok) return;
-    expect(view.fault).toBe("machine");
-    expect(view.at).toBe(join(home, "config.yml"));
+    expect(view.fault).toBe("recipe");
+    expect(view.at).toBe(join(home, "app", "recipe.yml"));
     expect(html).toContain("must be a positive duration");
-    expect(html).not.toContain(join(home, "app", "recipe.yml"));
+    expect(html).not.toContain(join(home, "config.yml"));
     // The line that says what to edit is the line that must not send a reader
     // to the file with nothing wrong in it.
     const note = html.slice(html.indexOf("Read-only."));
-    expect(note).toContain(join(home, "config.yml"));
+    expect(note).toContain(join(home, "app", "recipe.yml"));
   });
 
   /**

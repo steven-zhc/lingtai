@@ -425,9 +425,10 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: "recipe" | 
  * `try` is sorted by its `else` branch and comes out as `fault: "recipe"`,
  * naming a file that need not hold the offending value at all. `readRecipe` is
  * outside it for that reason, and may be: the one value it parses rather than
- * prints is `runtime.limits.wall`, and since #218 both schemas that can carry
- * a `wall` refuse one that is not a duration — so the file that holds it says
- * so, under its own key, before a resolve ever succeeds.
+ * prints is `runtime.limits.wall`, and since #218 (and `#375`, now that it is
+ * the recipe's own key) the schema that carries a `wall` refuses one that is
+ * not a duration — so the file that holds it says so, under its own key,
+ * before a resolve ever succeeds.
  */
 export async function projectRecipe(state: ProjectState): Promise<ProjectRecipe> {
   const project = state.project ?? "(unnamed)";

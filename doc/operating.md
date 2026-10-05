@@ -428,7 +428,7 @@ steps:
       close: true
 ```
 
-**There is no `runtime:` block here beyond `agent`, and writing `agent` under
+**There is no `runtime:` block here beyond `limits`, and writing `agent` under
 one is refused rather than ignored.** `runtime.agent` is a fact about *this
 machine*, not about this repository, so it lives in `~/.lingtai/config.yml`
 ([0046](decisions-archive/0046-lingtai-is-personal.md) §3). `runtime.assignee`

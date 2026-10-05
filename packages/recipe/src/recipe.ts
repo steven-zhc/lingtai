@@ -3229,11 +3229,8 @@ export const LIMIT_DEFAULTS = Recipe.shape.runtime.shape.limits.parse(undefined)
 /**
  * `parseDuration`, as a predicate: for a schema, where throwing is the wrong
  * shape.
- *
- * Exported for the machine file's schema, which holds the same `wall` this one
- * does and must refuse the same values by name (0046 §3, #218).
  */
-export function positiveDuration(text: string): boolean {
+function positiveDuration(text: string): boolean {
   try {
     return parseDuration(text) > 0;
   } catch {
