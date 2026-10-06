@@ -45,6 +45,15 @@ export interface AskInstallAndBuildInput {
   tryBuild: ((install: string | null, build: string[]) => Promise<TrialResult[]>) | null
   home?: string
   files?: RecipeFiles
+  /**
+   * The `extends:` a first-run caller (#400) is about to write in the same
+   * `setRecipe` call, when the file does not have one of its own yet.
+   * `unwidenProposed` reads `extends` off the file, and on a first run there
+   * is no file to read it from — the caller is the only one who knows the
+   * preset is coming, since it is the one adding `extends:` to the same
+   * batch of changes.
+   */
+  extends?: string | null
 }
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
@@ -101,6 +110,12 @@ async function resolvedRunActions(
 
 /** A flag that takes its value as a separate following token, e.g. `pnpm --filter web test`. */
 const VALUE_FLAGS = /^(?:--filter|-F|--workspace|-w)$/
+/**
+ * pnpm's own spelling of `-w`/`--workspace`: short for `--workspace-root`, and
+ * takes no value at all — unlike npm's `-w`/`--workspace <name>`, which `VALUE_FLAGS`
+ * is otherwise right about.
+ */
+const PNPM_WORKSPACE_ROOT = /^(?:-w|--workspace-root)$/
 /** A subcommand that runs an arbitrary following binary rather than naming the check itself. */
 const PASSTHROUGH_SUBCOMMAND = /^(?:exec|dlx|x)$/
 
@@ -111,12 +126,16 @@ const PASSTHROUGH_SUBCOMMAND = /^(?:exec|dlx|x)$/
  * of the check it actually names — a numbered name where nothing is left.
  */
 function nameForCommand(command: string, index: number, used: Set<string>): string {
-  const m = /^(?:pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(.*)$/.exec(command.trim())
+  const m = /^(pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(.*)$/.exec(command.trim())
   let base = `check-${index + 1}`
   if (m) {
-    const tokens = m[1]!.split(/\s+/).filter((t) => t !== '')
+    const manager = m[1]
+    const tokens = m[2]!.split(/\s+/).filter((t) => t !== '')
     let i = 0
-    while (i < tokens.length && tokens[i]!.startsWith('-')) i += VALUE_FLAGS.test(tokens[i]!) ? 2 : 1
+    while (i < tokens.length && tokens[i]!.startsWith('-')) {
+      const takesValue = VALUE_FLAGS.test(tokens[i]!) && !(manager === 'pnpm' && PNPM_WORKSPACE_ROOT.test(tokens[i]!))
+      i += takesValue ? 2 : 1
+    }
     if (i < tokens.length && PASSTHROUGH_SUBCOMMAND.test(tokens[i]!)) i += 1
     const candidate = tokens[i]
     if (candidate !== undefined && /^[\w:.-]+$/.test(candidate)) base = candidate
@@ -297,12 +316,18 @@ async function askBuild(
 async function unwidenProposed(
   world: SetupWorld,
   project: string,
+  pendingExtends: string | null,
   options: { home?: string; files?: RecipeFiles },
 ): Promise<RecipeChange | null> {
-  const ownProposed = await readRecipeKey(project, ['steps', 'proposed'], options)
-  if (ownProposed !== null) return null
+  // Any `steps:` key the file already writes — not just `proposed` — already
+  // stops the preset's steps from applying at all (`applyPreset`'s `steps:
+  // recipe['steps'] ?? preset.steps` is all-or-nothing), so there is nothing
+  // left for a preset to displace onto.
+  const ownSteps = await readRecipeKey(project, ['steps'], options)
+  if (ownSteps !== null) return null
 
-  const extends_ = await readRecipeKey(project, ['extends'], options)
+  const fileExtends = await readRecipeKey(project, ['extends'], options)
+  const extends_ = typeof fileExtends === 'string' ? fileExtends : pendingExtends
   if (typeof extends_ !== 'string') return null
 
   const preset = PRESETS[extends_]
@@ -360,7 +385,7 @@ export async function askInstallAndBuild(
   }
 
   if (changes.length > 0) {
-    const unwiden = await unwidenProposed(world, input.project, fileOptions)
+    const unwiden = await unwidenProposed(world, input.project, input.extends ?? null, fileOptions)
     if (unwiden) changes.push(unwiden)
   }
 

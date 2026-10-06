@@ -399,6 +399,77 @@ env:
     expect(lines.some((l) => l.includes('removed') && l.includes('steps.proposed'))).toBe(true)
   })
 
+  it('a first run bundled with extends: in the same setRecipe call ends with no run: action at steps.proposed', async () => {
+    const files = mapFiles({})
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm test'], check: null }, extends: 'pnpm-workspace', files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(
+      result.changes.some(
+        (c) => c.path.join('.') === 'steps.proposed' && Array.isArray(c.value) && c.value.length === 0,
+      ),
+    ).toBe(true)
+
+    const bundle = [
+      { path: ['extends'], value: 'pnpm-workspace' },
+      { path: ['repo', 'base'], value: 'main' },
+      { path: ['source', 'kinds'], value: ['bug'] },
+      { path: ['env', 'plantAt'], value: '.env.local' },
+      ...result.changes,
+    ]
+    const written = await setRecipe('app', bundle, { home: HOME, files })
+    const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.proposed).toEqual([])
+  })
+
+  it('a file that already writes its own steps.prepared/build is left alone — no false "removed" log', async () => {
+    const FIXTURE = `version: 2
+extends: pnpm-workspace
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+steps:
+  prepared:
+    - name: install
+      run: npm ci
+  build:
+    - name: test
+      run: pnpm test
+      timeout: 45m
+      env: [TURBO_TOKEN]
+`
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const { world: w, lines } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'npm ci', build: ['pnpm test', 'pnpm lint'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(result.changes.some((c) => c.path.join('.') === 'steps.proposed')).toBe(false)
+    expect(lines.some((l) => l.includes('removed') && l.includes('steps.proposed'))).toBe(false)
+  })
+
+  it('a typed pnpm command using -w (workspace-root) is named after the script, not "check-1"', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm -w test', 'pnpm -w lint'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
+    expect(build?.value).toEqual([
+      { name: 'test', run: 'pnpm -w test' },
+      { name: 'lint', run: 'pnpm -w lint' },
+    ])
+  })
+
   it('a red trial build under --check-build yes refuses and returns no changes', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const failing: TrialResult[] = [{ command: 'pnpm test', ok: false, evidence: 'FAIL: 1 test failed' }]
