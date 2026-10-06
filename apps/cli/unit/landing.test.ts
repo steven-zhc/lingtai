@@ -265,7 +265,7 @@ describe('askLanding', () => {
     expect(resolved.repo.base).toBe('release')
   })
 
-  it('--land hold on a file inheriting steps.proposed from its preset keeps the preset build action', async () => {
+  it('--land hold on a file inheriting its steps from a preset keeps the preset build and adds only the hold', async () => {
     const files = mapFiles({ [PATH]: PRESET_NO_STEPS })
     const { world: w } = world()
     const result = await askLanding(w, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
@@ -273,8 +273,11 @@ describe('askLanding', () => {
 
     const written = (await files.read(PATH))!
     const resolved = resolveSource(written, PATH, PATH).recipe
-    expect(resolved.steps.proposed).toEqual([
+    // The preset's check is at `build:` (b21b89ea), and widening keeps it there.
+    expect(resolved.steps.build).toEqual([
       { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
+    ])
+    expect(resolved.steps.proposed).toEqual([
       { name: 'hold every pass', human: "Land this? The setup was answered 'hold'." },
     ])
   })
@@ -310,7 +313,7 @@ describe('askLanding', () => {
     expect(files.replaced).toEqual([])
   })
 
-  it('--land release on a hand-written hold carrying a comment is refused by name, not thrown, and nothing is written', async () => {
+  it('--land release on a hand-written hold carrying a comment removes the hold and its comment (0104 §14)', async () => {
     const COMMENTED_HOLD = `version: 2
 repo: {base: main, submodules: false}
 source: {kinds: [bug], exclude: []}
@@ -328,8 +331,10 @@ runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts:
       files,
       defaultBranch: async () => 'main',
     })
-    expect(result).toMatchObject({ refused: expect.stringContaining('carries a comment') })
-    expect(files.replaced).toEqual([])
+    expect(result).toEqual({ ok: true })
+    const written = (await files.read(PATH))!
+    expect(written).not.toContain('human:')
+    expect(written).not.toContain('I want to see every merge')
   })
 })
 

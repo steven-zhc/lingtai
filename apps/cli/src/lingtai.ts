@@ -128,6 +128,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --reviewer <agent|none>     a cold reviewer, and which agent, or none,
                                 instead of being asked
     --reviewer-model <name>     the reviewer's model, instead of being asked
+    --land <branch|hold>        where a pass lands, or hold every pass for a
+                                person at proposed, instead of being asked
+    --rounds <n>                fix rounds a pass may buy, instead of being asked
+    --wall <duration>           wall time per agent run, e.g. 1h, instead of
+                                being asked
+    --budget <usd>              a dollar ceiling per agent run, instead of
+                                being asked
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -396,6 +403,25 @@ async function addCommand(args: string[]): Promise<number> {
     return 2
   }
 
+  // Tier, gates and the base are the recipe's, in the managed repository, which
+  // is why this takes a slug and — at most — the branch to find the file on.
+  // `named`, because a person typed it here: a recipe that contradicts `--base`
+  // is refused rather than adopted (#75), which is a refusal only a typed flag
+  // may earn.
+  const base = flags['base']
+  const land = flags['land']
+  // `--land <branch>` and `--base` are different questions — where to read the
+  // recipe from, and what it should land on — and a person who named both must
+  // not have one silently overrule the other (#399, mirroring #75's rule for
+  // `--base` against the recipe's own `repo.base`).
+  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
+    console.error(
+      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
+        'silently. Nothing was written',
+    )
+    return 2
+  }
+
   // Which agent writes the change, and which cold-reviews it, is asked here —
   // before `add()` resolves the recipe — because `resolveLocalRecipe` throws
   // `AgentUnresolvedError` on a file naming no `runtime.agent` the moment more
@@ -403,7 +429,7 @@ async function addCommand(args: string[]): Promise<number> {
   // here (`doc/design/398.md`): with no file, `add()` still refuses with
   // `RecipeMissingError` as it always has, except a flag naming an agent is
   // refused by name rather than silently ignored.
-  const { repo } = parseSlug(slug)
+  const { owner, repo } = parseSlug(slug)
   const path = recipePath(repo)
   const existing = await diskFiles.read(path)
   const agentFlags = {
@@ -440,39 +466,16 @@ async function addCommand(args: string[]): Promise<number> {
       console.error(asked.refused)
       return 1
     }
-    // Two calls, not one: `changes` sets an action's `agent:` (or creates it
-    // outright) and `modelChanges` sets that same action's `model:` next —
-    // combining them would change two fields of one item in a single
-    // `setRecipe` call, which `emit.ts`'s `CommentWouldBeLostError` refuses
-    // the moment that item carries a comment (`agents.ts`'s header).
+    // `changes` sets an action's `agent:` (or creates it) and `modelChanges`
+    // that same action's `model:`, written one after the other.
     await setRecipe(repo, asked.changes)
     await setRecipe(repo, asked.modelChanges)
-  }
-
-  // Tier, gates and the base are the recipe's, in the managed repository, which
-  // is why this takes a slug and — at most — the branch to find the file on.
-  // `named`, because a person typed it here: a recipe that contradicts `--base`
-  // is refused rather than adopted (#75), which is a refusal only a typed flag
-  // may earn.
-  const base = flags['base']
-  const land = flags['land']
-  // `--land <branch>` and `--base` are different questions — where to read the
-  // recipe from, and what it should land on — and a person who named both must
-  // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--base` against the recipe's own `repo.base`).
-  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
-    console.error(
-      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
-        'silently. Nothing was written',
-    )
-    return 2
   }
 
   // The questions are asked before add() runs, and only when the recipe is
   // already there — an absent one is add()'s own refusal to speak, and
   // nothing here seeds a file that cannot resolve on its own (#395).
-  const { owner, repo } = parseSlug(slug)
-  if (existsSync(recipePath(repo))) {
+  if (existsSync(path)) {
     const world = liveQuestionWorld()
     const landed = await askLanding(world, repo, land ?? null, {
       defaultBranch: () => defaultBranchOf(owner, repo),

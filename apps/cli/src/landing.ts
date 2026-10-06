@@ -72,7 +72,7 @@ type Answered = { ok: true } | { refused: string }
 
 /**
  * `setRecipe` throws — `RecipeInvalidError` on a narrowing or schema refusal,
- * `CommentWouldBeLostError` on a carry it cannot make — rather than returning
+ * or on a change it cannot carry onto the file exactly — rather than returning
  * a refusal, so every call site here must catch it and hand the message back
  * as `{refused}` the same way `question()`'s own refusals are returned. Left
  * uncaught, the answers already written stay on disk while the one that threw
@@ -306,10 +306,16 @@ export async function askLimits(
       })}`,
     ),
   )
-  if (file.agent !== 'claude-code' && after.limits.usd !== undefined) {
+  // The runtime the file names, not `resolveSource`'s schema default: a recipe
+  // naming none runs whichever runtime this machine detects (local.ts), which
+  // may not be claude-code.
+  const named = await readRecipeKey(project, ['runtime', 'agent'], options)
+  if (after.limits.usd !== undefined && named !== 'claude-code') {
     world.log(
       paint.muted(
-        `${file.agent} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime (#370)`,
+        typeof named === 'string'
+          ? `${named} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime (#370)`
+          : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.usd is written, and holds only where claude-code is the runtime that runs (#370)',
       ),
     )
   }
