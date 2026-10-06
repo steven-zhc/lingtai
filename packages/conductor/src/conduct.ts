@@ -181,6 +181,7 @@ import { readWhatAFileKept } from './file-port.ts'
 import { fixBrief } from './fix.ts'
 import { chosenIn, judgePrompt } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
+import { keptRunPort } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type NeverStarted, standDown } from './never-started.ts'
 import {
@@ -2185,6 +2186,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `implement` is briefed with the document the pass is already carrying,
         // exactly as it was before this existed.
         fileBrief: { read },
+        // The tenth, and the one that commits rather than keeps: `implement`'s
+        // own `run:` action makes its commit through this (`#390`). `keep`
+        // stages everything but the planted env file, commits only where that
+        // leaves a difference from `HEAD`, and records the new head exactly as
+        // the agent's own dispatch does — `recordCompletion` below is `keep`'s
+        // mirror in `firstDispatch`. `plantAt` is the one path it must never
+        // stage, for `provisionWorktree`'s reason (`packages/repo/src/worktree.ts`).
+        keptRun: keptRunPort({
+          git: gitAsked,
+          plantAt: recipe.env.plantAt,
+          issue,
+          recordCompletion: async (head) => {
+            await recordDiff(branch, head)
+            await appendNow(runId, [
+              {
+                type: 'RunProposedCompletion',
+                actor: 'conductor',
+                data: parsePayload('RunProposedCompletion', { headSha: head }),
+              },
+            ])
+          },
+        }),
       }
 
       /**
