@@ -6,7 +6,9 @@
  *   look       git, which runtimes are installed and signed in, what ~/.lingtai holds
  *   store      postgres or sqlite, written down — a URL connected to, its tables created
  *   agent      at least one runtime signed in, or refused by name — which one runs is each recipe's
- *   App        one already configured is verified by a real call
+ *   project    github or local — github asks for the App (#393); local does not
+ *   App        one already configured is verified by a real call; a new one
+ *              waits with a deadline and a way to skip, never forever
  *   board      started here, and a browser opened on the wizard's first screen
  *
  * **Resuming is not a mode.** Each choice is written to `~/.lingtai/config.yml`
@@ -104,6 +106,7 @@ import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { boardLock, builtBoardDir, serveBoard } from './board.ts'
+import { APP_WAIT_MS, askFirstProject, appComeBackLine, waitForApp } from './github-app.ts'
 import { question } from './question.ts'
 
 // -------------------------------------------------------------- the world --
@@ -151,8 +154,13 @@ export interface InitWorld {
   database: (url: string) => Promise<DatabaseCheck>
   /** The App this machine is configured with, asked with a real call. */
   app: () => Promise<AppCheck>
-  /** Resolves once an App is configured and answers — written by the board's first screen. */
-  appeared: () => Promise<{ slug: string; owner: string }>
+  /**
+   * Resolves once an App is configured and answers — written by the board's
+   * first screen. Stops polling once `signal` aborts; the loser of a race.
+   */
+  appeared: (signal: AbortSignal) => Promise<{ slug: string; owner: string }>
+  /** Resolves on any keypress at a TTY — the skip. Never, at no TTY, until `signal` aborts. */
+  pressed: (signal: AbortSignal) => Promise<void>
   /**
    * A Lingtai board already answering on this port — the machine's own, from
    * `lingtai board` or the service — as its URL, or null. Asked before one is
@@ -165,7 +173,9 @@ export interface InitWorld {
   open: (url: string) => Promise<boolean>
 }
 
-const USAGE = 'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>]'
+const USAGE =
+  'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
+  '[--project github|local] [--github-app create|skip]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -215,7 +225,8 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
   const flags: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!
-    if (!['--store', '--database-url', '--port'].includes(name)) return { refused: `${USAGE} — no ${name}` }
+    if (!['--store', '--database-url', '--port', '--project', '--github-app'].includes(name))
+      return { refused: `${USAGE} — no ${name}` }
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
     flags[name.slice(2)] = value
@@ -294,6 +305,12 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       : "app          none yet — the board's first screen creates it through GitHub's manifest flow",
   )
 
+  // ---- which project ---------------------------------------------------------
+  // Asked only when no App is configured yet: a configured one already says
+  // the project is GitHub, and nothing here is asked about it (#393).
+  const chosen = app.configured ? ({ project: 'github', app: 'create' } as const) : await askFirstProject(world, flags)
+  if ('refused' in chosen) return refuse(world, chosen.refused)
+
   // ---- the board, on the wizard ---------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of
   // the same file `readConfig` above refuses by name, and a file that does not
@@ -308,17 +325,25 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       `the board did not start — ${board.refused}. Everything chosen above is kept, and lingtai init again continues from here`,
     )
   }
-  const wizard = `${board.url}${app.configured ? '/setup/repository' : '/setup/github-app'}`
-  world.log(
-    (await world.open(wizard))
-      ? paint.pass(`opened ${wizard}`)
-      : paint.signal(`no browser could be opened here — open ${wizard}`),
-  )
-  if (!app.configured) {
-    world.log(paint.signal('waiting for the App — press Create on that page, and GitHub brings you back'))
-    const made = await world.appeared()
-    world.log(paint.pass(`app          ${made.slug}, owned by ${made.owner} — it answered`))
-    world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
+
+  if (chosen.project === 'local') {
+    world.log(
+      `project      local — the board is at ${board.url}, and registering a directory on this machine comes with ` +
+        'lingtai add',
+    )
+  } else if (app.configured) {
+    const wizard = `${board.url}/setup/repository`
+    world.log(
+      (await world.open(wizard))
+        ? paint.pass(`opened ${wizard}`)
+        : paint.signal(`no browser could be opened here — open ${wizard}`),
+    )
+  } else if (chosen.app === 'skip') {
+    // The browser is the only reason to leave the terminal (#391) — a skip opens nothing.
+    world.log(appComeBackLine(board.url, 'skipped'))
+  } else {
+    const result = await waitForApp(world, board.url, { waitMs: APP_WAIT_MS })
+    if ('made' in result) world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
   }
   world.log(
     running !== null
@@ -711,13 +736,66 @@ export function liveInitWorld(): InitWorld {
       }
     },
     app: liveApp,
-    appeared: async () => {
-      for (;;) {
-        const app = await liveApp()
-        if (app.configured && app.ok) return { slug: app.slug, owner: app.owner }
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-      }
-    },
+    // The live loop, with a stop the race's loser can pull: `signal.aborted`
+    // is checked each time round, and the pending timer is cleared on abort
+    // rather than left to fire into a board that may have moved on.
+    appeared: (signal) =>
+      new Promise((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const poll = async () => {
+          if (signal.aborted) return
+          const app = await liveApp()
+          if (signal.aborted) return
+          if (app.configured && app.ok) {
+            resolve({ slug: app.slug, owner: app.owner })
+            return
+          }
+          timer = setTimeout(poll, 2000)
+        }
+        signal.addEventListener(
+          'abort',
+          () => {
+            if (timer) clearTimeout(timer)
+          },
+          { once: true },
+        )
+        void poll()
+      }),
+    // Raw mode so a bare keypress resolves it rather than waiting on Enter —
+    // undone in every exit path, or `ctrl-c stops it` (init.ts's board line)
+    // would stop working for the rest of the session (#393).
+    pressed: (signal) =>
+      new Promise((resolve) => {
+        const stdin = process.stdin
+        if (!stdin.isTTY) {
+          signal.addEventListener('abort', () => resolve(), { once: true })
+          return
+        }
+        const done = () => {
+          stdin.setRawMode(false)
+          stdin.pause()
+          stdin.removeListener('data', onData)
+          signal.removeEventListener('abort', onAbort)
+        }
+        const onData = (data: Buffer) => {
+          // Ctrl+C in raw mode arrives as this byte, not SIGINT — and must never count as a skip.
+          if (data.toString('utf8') === '\x03') {
+            done()
+            console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
+            process.exit(130)
+          }
+          done()
+          resolve()
+        }
+        const onAbort = () => {
+          done()
+          resolve()
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        stdin.setRawMode(true)
+        stdin.resume()
+        stdin.on('data', onData)
+      }),
     boardAt: async (port) => {
       const url = `http://127.0.0.1:${port}`
       try {

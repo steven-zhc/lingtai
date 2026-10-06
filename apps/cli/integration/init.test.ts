@@ -37,6 +37,10 @@ interface Script {
   running?: string
   /** Throw from this step, once — the Ctrl+C. */
   interruptAt?: Step
+  /** The project kind question's answer, when no App is configured (#393). Defaults to `github`. */
+  project?: 'github' | 'local'
+  /** The App question's answer, when the project is `github` (#393). Defaults to `create`. */
+  appAnswer?: 'create' | 'skip'
 }
 
 interface Recorded {
@@ -70,7 +74,12 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       env: { LINGTAI_HOME: home, ...script.env },
       log: (line) => seen.lines.push(line),
       ask: async (question) => {
-        // The store is the one question init asks: the agent is each recipe's (#372).
+        // The project and App questions (#393) are answered directly from the
+        // script, never through the `answers` queue and never recorded as a
+        // step: the Ctrl+C matrix below is about the database question alone.
+        if (/a GitHub project/.test(question)) return script.project ?? 'github'
+        if (/the GitHub App now/.test(question)) return script.appAnswer ?? 'create'
+        // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
         expect(question).toMatch(/Postgres/)
         seen.asked.push(which)
@@ -98,10 +107,14 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         seen.apps++
         return script.app ?? { configured: false }
       },
-      appeared: async () => {
+      appeared: async (_signal) => {
         step('appeared')
         return { slug: 'lingtai-me', owner: 'me' }
       },
+      // Never resolves at a terminal with nobody at it — only on the signal
+      // the race's winner aborts it with, exactly as `liveInitWorld`'s does
+      // with no TTY.
+      pressed: (signal) => new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true })),
       boardAt: async () => script.running ?? null,
       board: async () => {
         step('board')
@@ -150,6 +163,24 @@ describe('lingtai init (#186)', () => {
     expect(seen.lines.join('\n')).toContain('lingtai-me, owned by me — it answered')
     // The password is not printed anywhere.
     expect(seen.lines.join('\n')).not.toContain('secret')
+  })
+
+  it('a local project never calls appeared or opens a browser, and exits 0 (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], project: 'local' })
+    expect(await initCommand([], w)).toBe(0)
+    expect(seen.opened).toEqual([])
+    expect(seen.lines.join('\n')).toContain('project      local')
+    expect(seen.lines.join('\n')).toContain('lingtai add')
+  })
+
+  it('a skipped App opens no browser, at once, with the come-back line, and exits 0 (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], appAnswer: 'skip' })
+    expect(await initCommand([], w)).toBe(0)
+    expect(seen.opened).toEqual([])
+    expect(seen.lines.join('\n')).toContain('not created (skipped)')
+    expect(seen.lines.join('\n')).toContain('run lingtai init again')
   })
 
   it('opens the repository picker instead when the App already answers', async () => {
