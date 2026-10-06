@@ -628,6 +628,17 @@ describe('--store answers the store question without a terminal (#345)', () => {
       expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n`)
     })
 
+    it('--database-url alone, with no --store, still repoints a machine already settled on another database that still answers', async () => {
+      const home = freshHome()
+      expect(await initCommand(['--store', 'postgres', '--database-url', URL_], world(home, {}).world)).toBe(0)
+      const newer = 'postgresql://me:pw@db.new.example:5432/lingtai'
+      const { world: w, seen } = world(home, { answering: [URL_, newer] })
+      expect(await initCommand(['--database-url', newer], w)).toBe(0)
+      expect(seen.asked).toEqual([])
+      expect(seen.connected).toEqual([newer])
+      expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${newer}\n`)
+    })
+
     it('with an exported LINGTAI_DATABASE_URL instead, uses it and writes nothing for it', async () => {
       const home = freshHome()
       const { world: w } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })

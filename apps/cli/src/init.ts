@@ -401,12 +401,13 @@ async function chooseStore(
     )
   }
 
-  // `--store postgres --database-url <url>` is a given answer that bypasses
-  // what follows entirely — settled, inherited and the question alike — so
-  // that a URL that fails to connect refuses on its own account rather than
-  // falling through to whatever the file already says (named `postgres`
-  // only reaches here with a `flag`: the no-URL case was refused above).
-  if (named !== 'postgres') {
+  // `--database-url <url>` is a given answer that bypasses what follows
+  // entirely — settled, inherited and the question alike — so that a URL
+  // that fails to connect refuses on its own account rather than falling
+  // through to whatever the file already says. That holds whether or not
+  // `--store postgres` named it too: a flag given without `--store` is still
+  // a flag, not silently discarded because nothing named the store.
+  if (flag === null) {
     // The settled-store check runs once: a machine already answering is
     // reported and not asked about again (this file's header).
     const settled = storeChoice(world.env)
