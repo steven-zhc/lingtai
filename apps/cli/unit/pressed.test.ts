@@ -2,8 +2,9 @@
  * `waitForKeypress` (#393), against a fake `RawStdin` — no filesystem, no
  * network, no real tty, so this is `unit/` by 0060 §1.
  *
- * What this file does *not* cover: the backlog race the review for #393
- * found (`init.ts:839`, now fixed by nesting the swap's `setImmediate`) is a
+ * What this file covers of the backlog guard (`waitForKeypress`'s `discard`)
+ * is that a byte arriving while it is attached does not resolve the wait.
+ * What it does *not* cover is why the swap is nested in two `setImmediate`s: a
  * libuv poll-phase-versus-check-phase ordering that only a real pty — or a
  * raw-mode-capable pipe — reproduces; a plain in-memory double's `resume()`
  * cannot be made to lag behind a `setImmediate` the way a real fd's read does
@@ -57,6 +58,24 @@ describe('waitForKeypress (#393)', () => {
     await new Promise((r) => setImmediate(() => setImmediate(() => setImmediate(r))))
     press('a')
     await p
+    expect(raw).toEqual([true, false])
+  })
+
+  it('a byte already waiting when it starts is discarded, not read as a press', async () => {
+    const { stdin, press, raw } = fakeTtyStdin()
+    const controller = new AbortController()
+    let resolved = false
+    const p = waitForKeypress(stdin, controller.signal).then(() => {
+      resolved = true
+    })
+    // Delivered before the guard's window closes: the backlog a person typed
+    // while the board booted.
+    press('a')
+    await new Promise((r) => setImmediate(() => setImmediate(() => setImmediate(r))))
+    expect(resolved).toBe(false)
+    press('b')
+    await p
+    expect(resolved).toBe(true)
     expect(raw).toEqual([true, false])
   })
 

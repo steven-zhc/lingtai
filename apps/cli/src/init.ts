@@ -9,9 +9,9 @@
  *   project    github or local — github asks for the App (#393); local does not
  *   App        one already configured is verified by a real call; a new one
  *              waits with a deadline and a way to skip, never forever
- *   board      started here; a browser is opened on the wizard's first screen
- *              only when an App still has to be created — a local project or
- *              a skipped App leaves one line printed instead
+ *   board      started here; a browser is opened on the wizard's next screen —
+ *              creating the App, or picking a repository once one answers — and
+ *              a local project or a skipped App leaves one line printed instead
  *
  * **Resuming is not a mode.** Each choice is written to `~/.lingtai/config.yml`
  * the moment it is made and verified, and every run begins by reading what is
@@ -330,22 +330,11 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       )
     }
   }
-  // A `local` project is the one answer here with no App to verify it on a
-  // later run, so it is the one answer written down — the same reason the
-  // store is (this file's header: "a finished one run with no flags reports
-  // and changes nothing"). With nothing else naming the project, a machine
-  // already marked `local` is reported rather than asked again.
-  const settledLocal = config.getIn(['project']) === 'local'
-  const chosen = app.configured
-    ? ({ project: 'github', app: 'create' } as const)
-    : settledLocal && flags['project'] === undefined
-      ? ({ project: 'local' } as const)
-      : await askFirstProject(world, flags)
+  // The answer is not written down, so a machine with no App is asked again on
+  // every run. Remembering the project is #394's, which registers it; written
+  // here, `local` would be a choice nothing reads back and nothing can undo.
+  const chosen = app.configured ? ({ project: 'github', app: 'create' } as const) : await askFirstProject(world, flags)
   if ('refused' in chosen) return refuse(world, chosen.refused)
-  if (chosen.project === 'local' && !settledLocal) {
-    config.setIn(['project'], 'local')
-    writeConfig(path, config, home)
-  }
 
   // ---- the board, on the wizard ---------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of

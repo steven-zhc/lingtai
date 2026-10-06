@@ -188,18 +188,16 @@ describe('lingtai init (#186)', () => {
     expect(seen.lines.join('\n')).toContain('not built yet')
   })
 
-  it('a local project is written down, so a re-run with no flags and no terminal finishes rather than asking again (#393)', async () => {
+  it("a local project is not written down, so a re-run asks the question again (remembering it is #394's)", async () => {
     const home = freshHome()
     const first = world(home, { answers: [URL_], project: 'local' })
     expect(await initCommand([], first.world)).toBe(0)
-    expect(config(home)).toBe('database:\n  store: postgres\n  url: ' + URL_ + '\nproject: local\n')
+    expect(config(home)).toBe('database:\n  store: postgres\n  url: ' + URL_ + '\n')
 
-    // No --project, and a world whose project question would refuse if asked at all.
+    // No --project and no terminal: the question is asked, so it refuses by name.
     const second = world(home, { project: null })
-    expect(await initCommand([], second.world)).toBe(0)
-    expect(second.seen.opened).toEqual([])
-    expect(second.seen.appeared).toBe(0)
-    expect(second.seen.lines.join('\n')).toContain('project      local')
+    expect(await initCommand([], second.world)).not.toBe(0)
+    expect(second.seen.lines.join('\n')).toContain('--project github, or --project local')
   })
 
   it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {
@@ -637,7 +635,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(await initCommand(['--store', 'sqlite', '--project', 'local'], w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([])
-    expect(config(home)).toBe('database:\n  store: sqlite\nproject: local\n')
+    expect(config(home)).toBe('database:\n  store: sqlite\n')
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
     expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
