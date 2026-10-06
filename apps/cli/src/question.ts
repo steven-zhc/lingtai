@@ -38,6 +38,14 @@ export interface Question {
   choices?: readonly string[]
   /** Null accepts the answer; a string is why not, logged, and asked again at a terminal. */
   validate?: (answer: string) => Promise<string | null>
+  /**
+   * The clause after "needs an answer: pass <flag>." — what is still true when
+   * this question goes unanswered. Defaults to "Nothing was written", which is
+   * only accurate for the first question a caller asks; a caller placed after
+   * its own write (`askFirstProject`, asked once the store is already on disk)
+   * must say what that write left behind instead.
+   */
+  kept?: string
 }
 
 export type Answered = { answer: string } | { refused: string }
@@ -66,7 +74,8 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
 
   for (;;) {
     const typed = await world.ask(prompt)
-    if (typed === null) return { refused: `${q.name} needs an answer: pass ${q.flag}. Nothing was written` }
+    if (typed === null)
+      return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
     const answer = typed.trim() === '' ? defaultValue : typed.trim()
     const why = await accept(q, answer)
     if (why === null) return { answer }
