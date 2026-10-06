@@ -36,7 +36,19 @@ export async function askFirstProject(world: QuestionWorld, flags: Record<string
     kept,
   })
   if ('refused' in kind) return { refused: kind.refused }
-  if (kind.answer === 'local') return { project: 'local' }
+  if (kind.answer === 'local') {
+    // The same rule `chooseStore` holds to for `--store`: a flag naming
+    // anything else is refused rather than silently discarded (#393) — and
+    // `--github-app` names something `local` never asks for.
+    if (flags['github-app'] !== undefined) {
+      return {
+        refused:
+          `--github-app ${flags['github-app']}, but --project local creates no GitHub App. Leave out ` +
+          `--github-app, or pass --project github. ${kept}`,
+      }
+    }
+    return { project: 'local' }
+  }
 
   const how = await question(world, {
     name: 'the GitHub App',

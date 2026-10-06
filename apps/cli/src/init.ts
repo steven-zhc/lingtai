@@ -330,8 +330,22 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       )
     }
   }
-  const chosen = app.configured ? ({ project: 'github', app: 'create' } as const) : await askFirstProject(world, flags)
+  // A `local` project is the one answer here with no App to verify it on a
+  // later run, so it is the one answer written down — the same reason the
+  // store is (this file's header: "a finished one run with no flags reports
+  // and changes nothing"). With nothing else naming the project, a machine
+  // already marked `local` is reported rather than asked again.
+  const settledLocal = config.getIn(['project']) === 'local'
+  const chosen = app.configured
+    ? ({ project: 'github', app: 'create' } as const)
+    : settledLocal && flags['project'] === undefined
+      ? ({ project: 'local' } as const)
+      : await askFirstProject(world, flags)
   if ('refused' in chosen) return refuse(world, chosen.refused)
+  if (chosen.project === 'local' && !settledLocal) {
+    config.setIn(['project'], 'local')
+    writeConfig(path, config, home)
+  }
 
   // ---- the board, on the wizard ---------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of
@@ -708,6 +722,93 @@ function checkAgent(
 
 // ------------------------------------------------------------- live world --
 
+/** The slice of `process.stdin` `waitForKeypress` needs — narrow enough that a real socket can stand in for it in a test. */
+export interface RawStdin {
+  readonly isTTY: boolean | undefined
+  setRawMode: (mode: boolean) => void
+  resume: () => void
+  pause: () => void
+  on: (event: 'data', listener: (data: Buffer) => void) => void
+  removeListener: (event: 'data', listener: (data: Buffer) => void) => void
+}
+
+/**
+ * Resolves on the first keypress at a TTY, or never (until `signal` aborts)
+ * with no TTY — exported so a real OS-backed stream can exercise the backlog
+ * guard below without a real terminal (#393).
+ *
+ * Raw mode so a bare keypress resolves it rather than waiting on Enter —
+ * undone in every exit path, or `ctrl-c stops it` (init.ts's board line)
+ * would stop working for the rest of the session.
+ */
+export function waitForKeypress(stdin: RawStdin, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (!stdin.isTTY) {
+      signal.addEventListener('abort', () => resolve(), { once: true })
+      return
+    }
+    // Set once the wait ends any way at all, so the deferred swap below —
+    // scheduled before any of that can happen — never re-attaches `onData`
+    // onto a stdin this promise has already let go of.
+    let settled = false
+    const done = () => {
+      settled = true
+      stdin.setRawMode(false)
+      stdin.pause()
+      stdin.removeListener('data', discard)
+      stdin.removeListener('data', onData)
+      signal.removeEventListener('abort', onAbort)
+    }
+    const onData = (data: Buffer) => {
+      // Ctrl+C in raw mode arrives as this byte, not SIGINT — and must never count as a skip.
+      if (data.toString('utf8') === '\x03') {
+        done()
+        console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
+        process.exit(130)
+      }
+      done()
+      resolve()
+    }
+    // A key pressed while stdin was paused during the board's boot sits in
+    // the tty's own buffer and would otherwise arrive the instant `resume`
+    // below is called — not a deliberate skip of a wait that has not visibly
+    // started yet. Discard that backlog, then switch to listening for an
+    // actual press.
+    //
+    // A single `setImmediate` is not enough: entered from an I/O continuation
+    // (`waitForApp` awaits `world.open` before racing this in), the swap below
+    // would run in the *check* phase of the loop iteration already under way —
+    // before the *poll* phase that delivers a byte already sitting in the
+    // tty's buffer, so that byte would reach `onData` instead of `discard`.
+    // An immediate scheduled from inside an executing immediate is deferred to
+    // the *next* iteration's check phase, which comes after that iteration's
+    // poll phase — late enough for the backlog to have already been read and
+    // discarded. (Verified against a real pty, and a pipe, in #393's review.)
+    const discard = (data: Buffer) => {
+      if (data.toString('utf8') === '\x03') {
+        done()
+        console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
+        process.exit(130)
+      }
+    }
+    const onAbort = () => {
+      done()
+      resolve()
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    stdin.setRawMode(true)
+    stdin.resume()
+    stdin.on('data', discard)
+    setImmediate(() => {
+      setImmediate(() => {
+        if (settled) return
+        stdin.removeListener('data', discard)
+        stdin.on('data', onData)
+      })
+    })
+  })
+}
+
 /** The board lock this process holds while `lingtai init` serves one. See `board` below. */
 let kept: HeldLock | null = null
 
@@ -783,65 +884,7 @@ export function liveInitWorld(): InitWorld {
         )
         void poll()
       }),
-    // Raw mode so a bare keypress resolves it rather than waiting on Enter —
-    // undone in every exit path, or `ctrl-c stops it` (init.ts's board line)
-    // would stop working for the rest of the session (#393).
-    pressed: (signal) =>
-      new Promise((resolve) => {
-        const stdin = process.stdin
-        if (!stdin.isTTY) {
-          signal.addEventListener('abort', () => resolve(), { once: true })
-          return
-        }
-        // Set once the wait ends any way at all, so the `setImmediate` below —
-        // scheduled before any of that can happen — never re-attaches `onData`
-        // onto a stdin this promise has already let go of.
-        let settled = false
-        const done = () => {
-          settled = true
-          stdin.setRawMode(false)
-          stdin.pause()
-          stdin.removeListener('data', discard)
-          stdin.removeListener('data', onData)
-          signal.removeEventListener('abort', onAbort)
-        }
-        const onData = (data: Buffer) => {
-          // Ctrl+C in raw mode arrives as this byte, not SIGINT — and must never count as a skip.
-          if (data.toString('utf8') === '\x03') {
-            done()
-            console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
-            process.exit(130)
-          }
-          done()
-          resolve()
-        }
-        // A key pressed while stdin was paused during the board's boot sits in
-        // the tty's own buffer and would otherwise arrive the instant `resume`
-        // below is called — not a deliberate skip of a wait that has not
-        // visibly started yet. Discard that backlog for one pass of the event
-        // loop (a real Ctrl+C in it still stops, same as `onData`'s), then
-        // switch to listening for an actual press.
-        const discard = (data: Buffer) => {
-          if (data.toString('utf8') === '\x03') {
-            done()
-            console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
-            process.exit(130)
-          }
-        }
-        const onAbort = () => {
-          done()
-          resolve()
-        }
-        signal.addEventListener('abort', onAbort, { once: true })
-        stdin.setRawMode(true)
-        stdin.resume()
-        stdin.on('data', discard)
-        setImmediate(() => {
-          if (settled) return
-          stdin.removeListener('data', discard)
-          stdin.on('data', onData)
-        })
-      }),
+    pressed: (signal) => waitForKeypress(process.stdin, signal),
     boardAt: async (port) => {
       const url = `http://127.0.0.1:${port}`
       try {

@@ -49,6 +49,17 @@ describe('askFirstProject (#393)', () => {
     expect(asked).toEqual([])
   })
 
+  it('--project local --github-app create is refused rather than silently discarding --github-app (#393)', async () => {
+    const { world, asked } = questionWorld()
+    const result = await askFirstProject(world, { project: 'local', 'github-app': 'create' })
+    expect(result).toEqual({
+      refused:
+        '--github-app create, but --project local creates no GitHub App. Leave out --github-app, or pass ' +
+        '--project github. the store chosen above is kept',
+    })
+    expect(asked).toEqual([])
+  })
+
   it('at a terminal, an empty answer to the kind falls back to github and then asks the App question', async () => {
     const { world } = questionWorld(['', 'skip'])
     const result = await askFirstProject(world, {})

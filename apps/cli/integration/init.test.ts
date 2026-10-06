@@ -188,6 +188,29 @@ describe('lingtai init (#186)', () => {
     expect(seen.lines.join('\n')).toContain('not built yet')
   })
 
+  it('a local project is written down, so a re-run with no flags and no terminal finishes rather than asking again (#393)', async () => {
+    const home = freshHome()
+    const first = world(home, { answers: [URL_], project: 'local' })
+    expect(await initCommand([], first.world)).toBe(0)
+    expect(config(home)).toBe('database:\n  store: postgres\n  url: ' + URL_ + '\nproject: local\n')
+
+    // No --project, and a world whose project question would refuse if asked at all.
+    const second = world(home, { project: null })
+    expect(await initCommand([], second.world)).toBe(0)
+    expect(second.seen.opened).toEqual([])
+    expect(second.seen.appeared).toBe(0)
+    expect(second.seen.lines.join('\n')).toContain('project      local')
+  })
+
+  it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], project: 'local' })
+    expect(await initCommand(['--store', 'sqlite', '--project', 'local', '--github-app', 'create'], w)).toBe(1)
+    expect(seen.lines.at(-1)).toContain('--github-app create')
+    expect(seen.opened).toEqual([])
+    expect(config(home)).not.toContain('project')
+  })
+
   it('a skipped App opens no browser, at once, with the come-back line, and exits 0 (#393)', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, { answers: [URL_], appAnswer: 'skip' })
@@ -614,7 +637,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(await initCommand(['--store', 'sqlite', '--project', 'local'], w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([])
-    expect(config(home)).toBe('database:\n  store: sqlite\n')
+    expect(config(home)).toBe('database:\n  store: sqlite\nproject: local\n')
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
     expect(seen.lines.join('\n')).toContain(SQLITE_MACHINE)
