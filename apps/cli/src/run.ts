@@ -28,7 +28,7 @@ import { createRuntime } from '@lingtai/agent'
  * See `heedThePause` below for why this read is not scoped the way the daemon's
  * is.
  */
-import { currentRecipe, loadProject, runOnce, runQueue, tallyPass } from '@lingtai/conductor'
+import { currentRecipe, loadProject, passClientOf, runOnce, runQueue, tallyPass, ticketsFor } from '@lingtai/conductor'
 import { PortsLive } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
@@ -251,9 +251,19 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
       })
 
+      // Where this project's tickets actually live — the client itself for
+      // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `passClientOf`
+      // folds that choice back into one object so `runOnce` and `runQueue`
+      // keep taking one client; the refs, `fileAt`, the branch and the token
+      // still go to GitHub either way.
+      const tickets = yield* Effect.tryPromise({
+        try: () => ticketsFor(project, resolved.recipe, client),
+        catch: (err) => refuse((err as Error).message),
+      })
+
       const common = {
         project,
-        client,
+        client: passClientOf(client, tickets),
         // The runtime the recipe named, not the one this file used to hardcode.
         runtime: createRuntime(resolved.recipe.runtime.agent),
         // Both managed repositories are private. Without this every git command in

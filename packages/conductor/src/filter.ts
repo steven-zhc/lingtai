@@ -34,6 +34,7 @@ import {
 import { passCeiling } from './ceiling.ts'
 import type { TicketSource } from './discover.ts'
 import { currentRecipe } from './projects.ts'
+import { ticketsFor } from './ticket-store.ts'
 
 // Its own file so a page can call it in the browser (#164); every caller that
 // imported it from here still does.
@@ -168,11 +169,21 @@ export type ProjectFilter =
        */
       plan: StepPlan
       /**
-       * The recipe and the client that read it, carried so a caller that wants
-       * to go on and ask GitHub what is offered does not fetch either twice.
+       * The recipe and the client that read it, carried so a caller does not
+       * fetch either twice. **Not what asks GitHub what is offered** — that is
+       * `tickets`, below; a `db` project's `client` still reaches GitHub for
+       * the recipe but must not be asked for its tickets.
        */
       recipe: Recipe
       client: TicketSource
+      /**
+       * Where this project's tickets actually come from — `client` itself for
+       * `github`, or `dbTickets` for `db` (`ticketsFor`, `#382`). **This is
+       * what a caller that wants to go on and ask what is offered reads** —
+       * the queue and the board's Queued column both do — so a `db` project
+       * is asked nothing of GitHub for its tickets.
+       */
+      tickets: TicketSource
     }
   | { project: string; ok: false; problem: string }
 
@@ -224,6 +235,7 @@ export async function projectFilter(
   try {
     const client = await clientFor(state)
     const resolved = await recipeFor(state, client)
+    const tickets = await ticketsFor(state, resolved.recipe, client)
     return {
       project,
       ok: true,
@@ -248,6 +260,7 @@ export async function projectFilter(
       plan: stepPlan(resolved.recipe),
       recipe: resolved.recipe,
       client,
+      tickets,
     }
   } catch (err) {
     return { project, ok: false, problem: oneLine((err as Error).message) }

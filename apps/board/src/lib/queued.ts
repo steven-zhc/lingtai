@@ -269,7 +269,7 @@ export async function queuedFor(input: {
   const until = backoffOf(input.own, filter.backoffMs)
 
   try {
-    const offered = await runnableNow({ client: filter.client, queue: queueOf(filter.recipe) })
+    const offered = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
     const runnable = await selectRunnable({
       project,
       offered: offered.runnable,

@@ -113,8 +113,12 @@ export { acceptFinding, declineFinding, proposalFor, type BacklogDecision, type 
 export {
   githubTicketStore,
   keyMarker,
+  passClientOf,
+  ticketsFor,
+  TicketSourceConflict,
   type ProposedRef,
   type ProposedTicket,
   type Tickets,
+  type TicketsForOptions,
   type TicketStore,
 } from './ticket-store.ts'

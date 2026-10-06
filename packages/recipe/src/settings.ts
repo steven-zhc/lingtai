@@ -304,7 +304,14 @@ export function backoffOf(recipe: Recipe): Recipe['source']['backoff'] {
  * existed.
  *
  * The board reads it (#384), for whether a card's reference points at
- * GitHub — #382 is what wires a `db` answer into the pass itself.
+ * GitHub, and so does `ticketsFor` (`@lingtai/conductor/ticket-store`,
+ * `#382`), which is what the pass, the queue and the daemon's convergence
+ * take their tickets from instead of a `GitHubClient` directly.
+ *
+ * **Not read by the board's task page or `lingtai backlog accept`** — #383's.
+ * Those still go straight to GitHub regardless of this setting, so a `db`
+ * project is not yet fully off GitHub for tickets (see `TicketSource`'s own
+ * doc comment in `recipe.ts`).
  */
 export function ticketSourceOf(recipe: Recipe): TicketSource {
   return recipe.source.tickets ?? 'github'

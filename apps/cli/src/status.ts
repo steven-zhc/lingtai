@@ -96,13 +96,15 @@ export async function status(
     let asked = false
     if (filter.ok) {
       try {
-        const { client, recipe } = filter
+        const { tickets, recipe } = filter
 
         // Always, not behind a flag. There is nothing left to read the queue
         // out of — 0022 deleted the table that used to hold it — so the choice
-        // is between asking GitHub and having no answer. This takes nothing,
-        // claims nothing and appends no event.
-        const found = await runnableNow({ client, queue: queueOf(recipe) })
+        // is between asking the ticket source and having no answer. This takes
+        // nothing, claims nothing and appends no event. **`tickets`, not
+        // `client`** (`#382`): a `db` project's queue lives in `dbTickets`, not
+        // GitHub, same as `board.ts` and `queued.ts`.
+        const found = await runnableNow({ client: tickets, queue: queueOf(recipe) })
         offered = found.runnable
         asked = true
         const passed = passedOver(found.skipped)

@@ -60,11 +60,11 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
 import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
-import { loadProjects } from '@lingtai/conductor/projects'
+import { currentRecipe, loadProjects } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
-import type { Tickets } from '@lingtai/conductor/ticket-store'
+import { passClientOf, ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
 import {
   parseWorkItemStream,
   parsePayload,
@@ -91,17 +91,48 @@ import type { DaemonStore } from './store.ts'
  *
  * A project whose client will not build is skipped and the others go on. One
  * repository's expired installation must not cost the rest their convergence.
+ *
+ * **The value is `passClientOf`'s shape, not `GitHubClient`** (`#382`): a
+ * `db` project's ticket verbs read `dbTickets` rather than GitHub, and
+ * everything this map's one reader (`findIssueDrift`/`convergeIssues`,
+ * `ConvergeOptions.clients`) asks of a value is `Tickets` and `RefChannel`.
+ *
+ * **The client building and the recipe resolving fail independently, and a
+ * recipe that will not resolve drops the project rather than falling back to
+ * the raw client.** A recipe that throws — the daemon running code that
+ * cannot serve a step the recipe names (#76), or a `db` project's own
+ * `TicketSourceConflict` — leaves this function not knowing whether the
+ * project's tickets live on GitHub or in `dbTickets`. Handing `convergeIssues`
+ * the raw client for what might be a `db` project means its ticket numbers
+ * are asked of GitHub as issue numbers, which can write Lingtai's labels onto,
+ * and close, an unrelated GitHub issue that happens to share the number. So
+ * this project is skipped for the pass instead — "one repository's expired
+ * installation must not cost the rest theirs," extended to a recipe that
+ * will not resolve.
  */
-export async function clientsForProjects(projects: readonly ProjectState[]): Promise<Map<string, GitHubClient>> {
-  const clients = new Map<string, GitHubClient>()
+export async function clientsForProjects(
+  projects: readonly ProjectState[],
+): Promise<Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>> {
+  const clients = new Map<string, Tickets & RefChannel & { readonly owner: string; readonly repo: string }>()
   if (!hasGitHubApp()) return clients
   for (const p of projects) {
     if (!p.project || !p.owner) continue
+    let client: GitHubClient
     try {
-      clients.set(p.project, await createGitHubClient({ auth: githubApp(), owner: p.owner, repo: p.project }))
+      client = await createGitHubClient({ auth: githubApp(), owner: p.owner, repo: p.project })
     } catch {
       // Named by its absence: the divergence for that project simply is not
       // found, and `doctor` still reports what the log says was not managed.
+      continue
+    }
+    try {
+      const resolved = await currentRecipe(p, client)
+      clients.set(p.project, passClientOf(client, await ticketsFor(p, resolved.recipe, client)))
+    } catch {
+      // Not known whether this project's tickets are GitHub's or dbTickets' —
+      // see the doc comment above for why that rules out falling back to the
+      // raw client.
+      continue
     }
   }
   return clients

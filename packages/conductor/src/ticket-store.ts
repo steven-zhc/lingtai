@@ -23,7 +23,15 @@
  * GitHub, the kind is a label, so is a hold, and the key is a comment in the
  * body.
  */
+import { parseWorkItemStream, type ProjectState } from '@lingtai/domain'
+import type { LogQueries, TicketSql } from '@lingtai/event-store'
+import type { GitHubClient } from '@lingtai/github'
+import type { Recipe } from '@lingtai/recipe'
+import { ticketSourceOf } from '@lingtai/recipe/settings'
+
+import { dbTickets } from './db-tickets.ts'
 import type { TicketDetail, TicketListing } from './discover.ts'
+import type { RefChannel } from './tell.ts'
 
 /**
  * A ticket's detail plus where it lives, if anywhere a person can browse to —
@@ -175,5 +183,115 @@ export function githubTicketStore(
       }
       return ref(opened, true)
     },
+  }
+}
+
+/** A project's recipe newly says `db`, but the log already has GitHub-numbered work items. */
+export class TicketSourceConflict extends Error {
+  constructor(project: string, streams: readonly string[]) {
+    super(
+      `${project}: source.tickets is db, but the log already has GitHub-numbered work items ` +
+        `(${streams.join(', ')}) — db would number from 1 into them; remove source.tickets or use a fresh project`,
+    )
+    this.name = 'TicketSourceConflict'
+  }
+}
+
+export interface TicketsForOptions {
+  /** Defaults to this process's own ticket tables, opened on first use. */
+  sql?: TicketSql
+  /** Defaults to this process's own log. */
+  log?: Pick<LogQueries, 'projectStreams'>
+}
+
+async function defaultSql(): Promise<TicketSql> {
+  return (await import('@lingtai/event-store')).processTicketSql()
+}
+
+async function defaultLogQueries(): Promise<Pick<LogQueries, 'projectStreams'>> {
+  return (await import('@lingtai/event-store')).log.queries
+}
+
+/**
+ * Where a project's tickets come from, by its recipe (`#382`).
+ *
+ * `'github'`, or the field absent: returns `client` itself, the identical
+ * value a caller had before this existed. `'db'`: `dbTickets` on `sql`, after
+ * the refusal below.
+ *
+ * `sql` and `log` default through a **dynamic** import of
+ * `@lingtai/event-store`, for `projects.ts`'s reason: a caller that brings its
+ * own log should still load no store at all, and `filter.ts` — which `lingtai
+ * status` reaches before anything else — must not open one merely by
+ * importing this function.
+ *
+ * **The refusal.** A project whose log already has `wi-<project>-*` streams
+ * and whose recipe newly says `db` would number tickets from 1 into streams
+ * that belong to GitHub issues (`workItemStream`, `@lingtai/domain`). Once
+ * `dbTickets` holds any ticket of its own, the project switched deliberately
+ * and this passes regardless of what the log holds from before.
+ */
+export async function ticketsFor(
+  state: ProjectState,
+  recipe: Recipe,
+  client: Tickets,
+  options: TicketsForOptions = {},
+): Promise<Tickets> {
+  if (ticketSourceOf(recipe) !== 'db') return client
+
+  const project = state.project
+  if (!project) throw new Error('no repository name recorded — re-run lingtai add')
+
+  const sql = options.sql ?? (await defaultSql())
+  const tickets = dbTickets(sql, project)
+
+  const already = await tickets.listIssuesSince(new Date(0))
+  if (already.length === 0) {
+    const log = options.log ?? (await defaultLogQueries())
+    const streams = (await log.projectStreams(`wi-${project}-`)).filter(
+      (id) => parseWorkItemStream(id)?.project === project,
+    )
+    if (streams.length > 0) throw new TicketSourceConflict(project, streams)
+  }
+
+  return tickets
+}
+
+/**
+ * The client a pass is handed, with its ticket verbs taken from `tickets`.
+ *
+ * `tickets === client` (`ticketsFor`'s `'github'` branch): returns `client`
+ * unchanged. Otherwise returns a copy of `client` with each of `Tickets`'
+ * eight verbs replaced — named explicitly rather than spread from `tickets`,
+ * because a `DbTickets` carries extras (`commentBodies`) `GitHubClient` does
+ * not have.
+ *
+ * **The refs, `fileAt`, the default branch and the token are untouched.**
+ * Those still go to GitHub for a project that is on GitHub; only the ticket
+ * verbs move.
+ *
+ * **Typed `PassClient`'s own shape and not `GitHubClient`.** `dbTickets`
+ * answers a label's `color` and the array it carries both as read-only — the
+ * same shape `Tickets.getIssue` promises — where `GitHubClient`'s `Issue`
+ * promises a mutable `Label[]` for the issue it actually fetched; the two
+ * cannot both be true of one return type. Every real caller (`runOnce`,
+ * `runQueue`, `runnableNow`, `convergeIssues`) asks for `Tickets`, `RefChannel`
+ * and `owner`/`repo` and nothing wider, which is this.
+ */
+export function passClientOf(
+  client: GitHubClient,
+  tickets: Tickets,
+): Tickets & RefChannel & { readonly owner: string; readonly repo: string } {
+  if ((tickets as unknown) === (client as unknown)) return client
+  return {
+    ...client,
+    listOpenIssues: tickets.listOpenIssues,
+    listIssuesSince: tickets.listIssuesSince,
+    getIssue: tickets.getIssue,
+    createIssue: tickets.createIssue,
+    comment: tickets.comment,
+    setLabels: tickets.setLabels,
+    closeIssue: tickets.closeIssue,
+    updateBody: tickets.updateBody,
   }
 }

@@ -21,10 +21,12 @@ import {
   PortsLive,
   currentRecipe,
   loadProjects,
+  passClientOf,
   runOnce,
   runQueue,
   runnableNow,
   selectRunnable,
+  ticketsFor,
 } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
 import { type ProjectState, passTransition, projectStream, reduceProject } from '@lingtai/domain'
@@ -133,13 +135,18 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // which branch it was reading (#148).
       where.ref = project.base ?? (await client.defaultBranch())
       const resolved = await currentRecipe(project, client, where.ref)
+      // Where this project's tickets actually live (`ticketsFor`, `#382`) —
+      // **before `where.looked()`**, so a refusal here (a `db` project whose
+      // log already has GitHub-numbered work items) is durable: a throw after
+      // `looked()` is not recorded as a `ProjectRefused` (see below).
+      const tickets = await ticketsFor(project, resolved.recipe, client)
       // Looked at, now — not when the run below returns, which can be an hour
       // away, all of it with a refusal on record for a project being worked.
       await where.looked()
 
       const common = {
         project,
-        client,
+        client: passClientOf(client, tickets),
         // **The runtime the recipe named** (`#313`). `resolved` is in hand two
         // statements up, so nothing had to be reordered here — and until this
         // ticket `runtime.agent: codex` did not run Codex, it made
@@ -178,7 +185,7 @@ export async function conductorPass(options: ConductOptions = {}): Promise<PassO
       // whatever was at the top of the queue instead, and the request stayed
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
-      const offered = await runnableNow({ client, queue: queueOf(resolved.recipe) })
+      const offered = await runnableNow({ client: common.client, queue: queueOf(resolved.recipe) })
       // The rows and not a set of numbers. `selectRunnable` already carries the
       // kind and the title, and the line below is read by somebody watching a
       // pass decide what to spend an agent on: `taking #123` is a number they
