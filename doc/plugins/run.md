@@ -60,7 +60,7 @@ prepared:
 ```
 
 ```yaml
-# ~/.lingtai/lingtai/recipe.yml — the build; the `pnpm-workspace` preset puts the same at `proposed`, where a red one costs a person
+# ~/.lingtai/lingtai/recipe.yml — the build, where a red one buys a fix round; the `pnpm-workspace` preset puts its check here too
 build:
   - name: build
     run: pnpm typecheck && pnpm test
