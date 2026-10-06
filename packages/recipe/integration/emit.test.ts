@@ -93,10 +93,11 @@ describe("editRecipe, on this repository's own recipe", () => {
       added: ['    - name: tests'],
     },
     {
-      name: 'the merge point, from nothing to a person',
-      change: { path: ['steps', 'merge'], value: [{ name: 'approve', human: 'Does this merge?' }] },
+      // `human:` is legal only at `proposed` since #270, and `merge` ends with the lane.
+      name: 'the merge point, from nothing to the lane',
+      change: { path: ['steps', 'merge'], value: [{ name: 'land', merge: {} }] },
       removed: ['  merge: []'],
-      added: ['  merge:', '    - name: approve', '      human: Does this merge?'],
+      added: ['  merge:', '    - name: land', '      merge: {}'],
     },
     {
       name: 'a key the file does not have yet',
@@ -149,11 +150,11 @@ describe("editRecipe, on this repository's own recipe", () => {
       '  merge: []\n',
       '  # holds nothing\n  merge: [] # nobody holds it\n  # after merge\n',
     )
-    const out = editRecipe(annotated, [{ path: ['steps', 'merge'], value: [{ name: 'a person', human: 'Merge?' }] }])
+    const out = editRecipe(annotated, [{ path: ['steps', 'merge'], value: [{ name: 'land', merge: {} }] }])
     // The comment that was beside `[]` is on a line of its own now, and still under `merge:`.
     expect(commentCount(out)).toBe(commentCount(annotated) + 1)
     expect(out).toContain(
-      '  # holds nothing\n  merge:\n    # nobody holds it\n    - name: a person\n      human: Merge?\n  # after merge\n',
+      '  # holds nothing\n  merge:\n    # nobody holds it\n    - name: land\n      merge: {}\n  # after merge\n',
     )
   })
 
@@ -433,7 +434,7 @@ describe('emitRecipe', () => {
 
   it('an edit to what it emitted keeps every sentence', () => {
     const text = emitRecipe(recipe, said)
-    const out = editRecipe(text, [{ path: ['steps', 'merge'], value: [{ name: 'approve', human: 'Merge?' }] }])
+    const out = editRecipe(text, [{ path: ['steps', 'merge'], value: [{ name: 'land', merge: {} }] }])
     expect(commentCount(out)).toBe(commentCount(text))
     expect(out).toContain('  # nobody holds it\n  merge:\n')
   })
