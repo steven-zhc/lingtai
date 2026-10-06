@@ -90,7 +90,7 @@ describe("usd through actionsFromRecipe's review dispatch", () => {
  * back to a process action that would commit nothing silently.
  */
 describe('a run: at implement needs the git port, and env: alone is not enough', () => {
-  const action = { name: 'format', run: 'pnpm fmt', timeout: '5m', env: [] as const }
+  const action = { name: 'format', run: 'pnpm fmt', timeout: '5m', env: [] as string[] }
 
   it('refuses by name when no git port was supplied', () => {
     expect(() => actionsFromRecipe('implement', [action], { env: () => ({}) })).toThrow(ActionUnavailableError)
