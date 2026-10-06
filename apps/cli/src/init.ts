@@ -80,10 +80,20 @@
  * **Subscriptions are not Lingtai's business.** Whether a runtime can run is
  * asked of the runtime; whether it is paid for is not asked at all.
  *
- * Like `install.ts`, none of this needs the log to exist — `entry.ts` answers
- * `init` before `lingtai.ts` loads `@lingtai/event-store` — and everything
- * outside this file is reached through `InitWorld`, so a test drives every step
- * and every interruption with no database, network or browser.
+ * **This now reads and writes the log, for the project question (#394).** The
+ * local branch folds every `prj-*` stream (`world.projects()` →
+ * `loadAllProjects()`) and appends `ProjectConfigured` (`world.registerLocal()`
+ * → `addLocal`), so `@lingtai/conductor/onboard` and `@lingtai/conductor/projects`
+ * are imported statically at the top of this file, same as `first-project.ts`'s
+ * own live seam — not lazily, the way `doc/design/394.md` asked for. That is
+ * safe only because `@lingtai/event-store`'s own client is itself built lazily
+ * inside its barrel (#179): importing the module does not yet need a database.
+ * **If that ever stops being true** — an eager read added to `onboard.ts` or
+ * `projects.ts` that does not go through the deferred client — `lingtai init`
+ * breaks silently on the fresh machine it exists for, since nothing here
+ * checks for it. Everything else outside this file is still reached through
+ * `InitWorld`, so a test drives every other step and every interruption with
+ * no database, network or browser.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -335,12 +345,12 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   // Registering a project *is* the record of the answer (#394) — nothing
   // machine-wide holds "local" or "github". A machine that already has
   // projects is told what it has and how to add another, rather than asked
-  // the question again; an explicit --project, --local or --github names what
-  // to do next and reopens the question on one. Lazy, and only once the store
-  // above is written: the event-store client this loads is module scope
-  // (`entry.ts:5-10`), and this module answers before a fresh machine's store
-  // exists at all.
-  const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined || flags['github'] !== undefined
+  // the question again; an explicit --project or --local names what to do
+  // next and reopens the question on one. (`--github` is `lingtai add`'s own
+  // flag, not `init`'s — `parseArgs` above refuses it, so a GitHub project
+  // here is always named through `--project github` instead; checking for it
+  // below was dead, since it could never be set.)
+  const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined
   // Whether the project question is asked at all this run — false when the
   // machine already has projects and nothing named which to add, so the
   // question is not asked again (below), only answered by what is printed
@@ -393,6 +403,9 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       home,
       signedIn: world.signedIn,
       register: world.registerLocal,
+      // The store above is already written by the time this runs — the same
+      // reason `askFirstProject` carries this sentence (#394 finding 2).
+      kept: 'the store chosen above is kept',
       // `init`'s only (first-project.ts): a configured App already answers
       // *is the project*, and `--project`/`--github-app` naming anything else
       // is refused rather than asked past.

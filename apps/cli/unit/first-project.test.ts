@@ -81,6 +81,7 @@ function harness(options: {
   waitForApp?: FirstProjectWorld['github']['waitForApp']
   picker?: FirstProjectWorld['github']['picker']
   add?: FirstProjectWorld['github']['add']
+  kept?: string
 }): Harness {
   const answers = [...(options.answers ?? [])]
   const asked: string[] = []
@@ -103,6 +104,7 @@ function harness(options: {
       registered.push(payload)
       return `added ${payload.project}`
     },
+    kept: options.kept ?? 'Nothing was written',
     github: {
       app: options.app ?? (async () => ({ configured: false })),
       boardUrl: async () => options.boardUrl ?? null,
@@ -208,6 +210,22 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const result = await chooseFirstProject(world, { local: '/repo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('someone-else/repo') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('a name already taken by an owner, differing only in case, is refused by name — a case-insensitive filesystem resolves them to one file (#394 finding 4)', async () => {
+    const { world, registered, files } = harness({
+      git: {
+        '/code/myapp::rev-parse --show-toplevel': ok('/code/myapp\n'),
+        '/code/myapp::remote get-url origin': ok('https://github.com/me/myapp.git\n'),
+      },
+      projects: [project('MyApp', 'acme')],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/code/myapp' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('acme/myapp') })
     expect(registered).toEqual([])
     expect(files.replaced).toEqual({})
   })
@@ -379,6 +397,67 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
 
     expect(result).toEqual({ ok: true, project: 'github', app: 'already' })
     expect(asked).toEqual([])
+  })
+
+  it('a failed registration is not logged by the add callback — only returned, so the caller prints it once (#394 finding 7)', async () => {
+    const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
+    const picker = await listRepositories({ reader, projects: [], installUrl: null })
+
+    const { world, logged } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      picker: async () => picker,
+      add: async (_options, log) => {
+        log('installation 7 on acme (selected)')
+        log('the installation is missing permissions:')
+        return 1
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/widget' })
+
+    expect(result).toEqual({
+      refused: 'installation 7 on acme (selected)\nthe installation is missing permissions:',
+    })
+    // Not logged during the call — only returned, so a caller that prints
+    // `refused` is the one and only place these lines are shown.
+    expect(logged).toEqual([])
+  })
+
+  it('a successful registration is logged once, after add returns', async () => {
+    const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
+    const picker = await listRepositories({ reader, projects: [], installUrl: null })
+
+    const { world, logged } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      picker: async () => picker,
+      add: async (_options, log) => {
+        log('added acme/widget')
+        return 0
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/widget' })
+
+    expect(result).toMatchObject({ ok: true, project: 'github' })
+    expect(logged).toEqual(['added acme/widget'])
+  })
+
+  it('--github-app given beside a slug, with an App already configured, is refused rather than silently discarded (#394 finding 8)', async () => {
+    let addCalled = false
+    const { world } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      add: async () => {
+        addCalled = true
+        return 0
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/widget', 'github-app': 'create' })
+
+    expect(result).toEqual({
+      refused: expect.stringContaining('--github-app create, but a GitHub App is already configured here'),
+    })
+    expect(addCalled).toBe(false)
   })
 
   it('a registered project is re-registered rather than refused as already onboarded (#394 finding 2)', async () => {

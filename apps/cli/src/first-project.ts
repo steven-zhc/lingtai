@@ -95,6 +95,16 @@ export interface FirstProjectWorld extends QuestionWorld {
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
   register: (payload: RegisterLocalPayload) => Promise<string>
   /**
+   * The clause a refusal here ends with in place of "Nothing was written" —
+   * what is still true about what this caller already wrote before any
+   * question here was asked (#394 finding 2). `init`'s own `chooseStore` has
+   * already written `~/.lingtai/config.yml` by the time this runs, so its
+   * `kept` is `'the store chosen above is kept'` (`question.ts`'s own
+   * documented reason for the field); `lingtai add` writes nothing before
+   * this, so its `kept` is `'Nothing was written'`, same as the default.
+   */
+  kept: string
+  /**
    * `init`'s only (#393): a configured App already answers *is the project*,
    * so the question is refused past rather than asked, and `--project`/
    * `--github-app` naming anything else is refused by name. `lingtai add` has
@@ -119,23 +129,23 @@ export type FirstProjectOutcome =
   | { refused: string }
 
 /** Why a combination of flags cannot both be obeyed, or null when they can. */
-function conflictingFlags(flags: Record<string, string>): string | null {
+function conflictingFlags(flags: Record<string, string>, kept: string): string | null {
   const local = flags['local']
   const github = flags['github']
   if (local !== undefined && github !== undefined) {
-    return `--local ${local} and --github ${github} name two different projects. Pass one or the other. Nothing was written`
+    return `--local ${local} and --github ${github} name two different projects. Pass one or the other. ${kept}`
   }
   if (local !== undefined && flags['project'] === 'github') {
-    return `--local ${local}, but --project github names the other kind. Leave out --project, or leave out --local. Nothing was written`
+    return `--local ${local}, but --project github names the other kind. Leave out --project, or leave out --local. ${kept}`
   }
   if (local !== undefined && flags['github-app'] !== undefined) {
     return (
       `--github-app ${flags['github-app']}, but --local ${local} creates no GitHub App. Leave out --github-app, ` +
-      'or leave out --local. Nothing was written'
+      `or leave out --local. ${kept}`
     )
   }
   if (github !== undefined && flags['project'] === 'local') {
-    return `--github ${github}, but --project local names the other kind. Leave out --project, or leave out --github. Nothing was written`
+    return `--github ${github}, but --project local names the other kind. Leave out --project, or leave out --github. ${kept}`
   }
   return null
 }
@@ -149,10 +159,10 @@ function conflictingFlags(flags: Record<string, string>): string | null {
  * time and must keep doing so.
  */
 async function askProjectKind(
-  world: QuestionWorld,
+  world: FirstProjectWorld,
   flags: Record<string, string>,
 ): Promise<{ kind: 'local' | 'github' } | { refused: string }> {
-  const kept = 'the store chosen above is kept'
+  const kept = world.kept
   const kind = await question(world, {
     name: 'the project',
     flag: '--project github, or --project local',
@@ -180,7 +190,7 @@ export async function chooseFirstProject(
   world: FirstProjectWorld,
   flags: Record<string, string>,
 ): Promise<FirstProjectOutcome> {
-  const conflict = conflictingFlags(flags)
+  const conflict = conflictingFlags(flags, world.kept)
   if (conflict !== null) return { refused: conflict }
 
   let kind: 'local' | 'github' | null =
@@ -199,7 +209,7 @@ export async function chooseFirstProject(
       return {
         refused:
           `the GitHub App configured here does not answer — ${app.why}. Fix its credentials, or remove them, ` +
-          'and run this again. Nothing was written',
+          `and run this again. ${world.kept}`,
       }
     }
     if (app.configured && world.githubAppIsTheProject === true) {
@@ -208,14 +218,14 @@ export async function chooseFirstProject(
         return {
           refused:
             `--project ${namedProject}, but a GitHub App is already configured here — the project is github ` +
-            'already. Remove the App first, or leave out --project. Nothing was written',
+            `already. Remove the App first, or leave out --project. ${world.kept}`,
         }
       }
       if (flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
         return {
           refused:
             `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is ` +
-            'created now. Leave out --github-app, or pass --github-app skip. Nothing was written',
+            `created now. Leave out --github-app, or pass --github-app skip. ${world.kept}`,
         }
       }
       kind = 'github'
@@ -229,14 +239,14 @@ export async function chooseFirstProject(
         return {
           refused:
             `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is ` +
-            'created now. Leave out --github-app, or pass --github-app skip. Nothing was written',
+            `created now. Leave out --github-app, or pass --github-app skip. ${world.kept}`,
         }
       }
       const asked = await askProjectKind(world, flags)
       if ('refused' in asked) return { refused: asked.refused }
       kind = asked.kind
     } else {
-      const asked = await askFirstProject(world, flags)
+      const asked = await askFirstProject(world, flags, world.kept)
       if ('refused' in asked) return { refused: asked.refused }
       if (asked.project === 'local') kind = 'local'
       else {
@@ -277,7 +287,7 @@ async function runLocalBranch(
 
   const top = await world.git(dir, ['rev-parse', '--show-toplevel'])
   if (!top.ok) {
-    return { refused: `${dir} is not a git repository — ${(top.stderr || top.stdout).trim()}. Nothing was written` }
+    return { refused: `${dir} is not a git repository — ${(top.stderr || top.stdout).trim()}. ${world.kept}` }
   }
   const toplevel = top.stdout.trim()
 
@@ -287,19 +297,24 @@ async function runLocalBranch(
       refused:
         `${toplevel} has no origin — ${(origin.stderr || origin.stdout).trim()}. The merge lane pushes to the ` +
         "repository's own origin (packages/actions/src/merge-action.ts:47), and there is nothing to push to " +
-        'without one. Add one with git remote add origin <url>, and run this again. Nothing was written',
+        `without one. Add one with git remote add origin <url>, and run this again. ${world.kept}`,
     }
   }
   const remote = resolveRemote(origin.stdout.trim(), toplevel)
   const name = basename(toplevel)
 
+  // Case-insensitive, like `pick-repository.ts`'s own `same()`: on a
+  // case-insensitive filesystem (macOS's default APFS), `recipePath` below
+  // resolves a differently-cased name to the same file, so a `===` compare
+  // would let a second, differently-cased directory slip past this guard and
+  // overwrite that file (#394 finding 4).
   const registered = await world.projects()
-  const found = registered.find((p) => p.project === name)
+  const found = registered.find((p) => p.project !== null && p.project.toLowerCase() === name.toLowerCase())
   if (found !== undefined && found.owner !== null) {
     return {
       refused:
         `a project called ${name} is already registered as ${found.owner}/${name}, and a project is keyed by its ` +
-        'name — pick another directory, or remove that project first. Nothing was written',
+        `name — pick another directory, or remove that project first. ${world.kept}`,
     }
   }
   if (found !== undefined && found.owner === null) {
@@ -316,11 +331,11 @@ async function runLocalBranch(
           typeof existingRemote === 'string'
             ? `a project called ${name} is already registered with repo.remote: ${existingRemote}, and ${toplevel}'s ` +
               `origin is ${remote} — a project is keyed by its name, and registering this directory would silently ` +
-              'redirect it to this one. Remove the existing project first, or rename this directory. Nothing was written'
+              `redirect it to this one. Remove the existing project first, or rename this directory. ${world.kept}`
             : `a project called ${name} is already registered with no repo.remote recorded — it may be a project ` +
               'registered before owners were, and there is nothing here to confirm this directory is the same one ' +
               `— and a project is keyed by its name, so registering ${toplevel} here would silently redirect it ` +
-              'to this directory instead. Remove the existing project first, or rename this directory. Nothing was written',
+              `to this directory instead. Remove the existing project first, or rename this directory. ${world.kept}`,
       }
     }
   }
@@ -417,7 +432,21 @@ async function runGithubBranch(
     return {
       refused:
         `the GitHub App configured here does not answer — ${app.why}. Fix its credentials, or remove them, and ` +
-        'run this again. Nothing was written',
+        `run this again. ${world.kept}`,
+    }
+  }
+
+  // A slug given directly — `--github <owner>/<repo>`, or `add`'s positional
+  // — reaches here with `kind` already settled as `github`, bypassing the
+  // `--github-app` contradiction checks above (`chooseFirstProject`'s
+  // `kind === null` branches), which never ran. Checked again here instead,
+  // so the flag is refused rather than silently discarded on that path too
+  // (#394 finding 8).
+  if (app.configured && flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
+    return {
+      refused:
+        `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is created ` +
+        `now. Leave out --github-app, or pass --github-app skip. ${world.kept}`,
     }
   }
 
@@ -426,7 +455,7 @@ async function runGithubBranch(
   if (!app.configured) {
     let appAnswer = askedApp
     if (appAnswer === null) {
-      const asked = await askFirstProject(world, { ...flags, project: 'github' })
+      const asked = await askFirstProject(world, { ...flags, project: 'github' }, world.kept)
       if ('refused' in asked) return { refused: asked.refused }
       appAnswer = asked.project === 'github' ? asked.app : 'create'
     }
@@ -436,7 +465,7 @@ async function runGithubBranch(
       return {
         refused:
           'no board is running here to create the GitHub App on — start one with lingtai init --project github, ' +
-          'or lingtai board, then run this again. Nothing was written',
+          `or lingtai board, then run this again. ${world.kept}`,
       }
     }
 
@@ -475,6 +504,10 @@ async function runGithubBranch(
     installation = picked.installation
   }
 
+  // Collected rather than logged as they arrive: on a refusal, the caller
+  // prints `refused` itself (`initCommand`'s `refuse()`, `addCommand`'s
+  // `console.error`), and logging each line here too printed the whole
+  // failure twice (#394 finding 7). On success they are printed once, below.
   const said: string[] = []
   const baseFlag = flags['base']
   const code = await world.github.add(
@@ -483,14 +516,12 @@ async function runGithubBranch(
       installation,
       base: baseFlag === undefined ? undefined : { ref: baseFlag, named: true },
     },
-    (line) => {
-      said.push(line)
-      world.log(line)
-    },
+    (line) => said.push(line),
   )
   if (code !== 0) {
     return { refused: said.filter((l) => l.trim() !== '').join('\n') || `${givenSlug} could not be registered` }
   }
+  for (const line of said) world.log(line)
   return { ok: true, project: 'github', app: appOutcome, slug: givenSlug }
 }
 
@@ -570,6 +601,9 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     files: diskFiles,
     home,
     signedIn: signedInHere,
+    // `lingtai add`'s only caller of this: nothing precedes it with a write to
+    // report kept, unlike `init`'s own `chooseStore` (#394 finding 2).
+    kept: 'Nothing was written',
     register: (payload) =>
       addLocal(
         { project: payload.project, base: payload.base, configHash: payload.configHash, fromSha: payload.fromSha },

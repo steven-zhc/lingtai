@@ -74,6 +74,8 @@ interface Recorded {
   apps: number
   /** Calls made to wait for the App to appear through the board's manifest flow. */
   appeared: number
+  /** Every call to `registerLocal` — the local branch's claim that it registers (#394 finding 10). */
+  registered: { project: string; base: string }[]
 }
 
 /** The database's state survives between runs, as a real one would: tables made once are there the next time. */
@@ -82,7 +84,16 @@ function database() {
 }
 
 function world(home: string, script: Script, db = database()): { world: InitWorld; seen: Recorded } {
-  const seen: Recorded = { lines: [], asked: [], connected: [], opened: [], boards: 0, apps: 0, appeared: 0 }
+  const seen: Recorded = {
+    lines: [],
+    asked: [],
+    connected: [],
+    opened: [],
+    boards: 0,
+    apps: 0,
+    appeared: 0,
+    registered: [],
+  }
   const answers = [...(script.answers ?? [])]
   let interrupt = script.interruptAt
   const step = (name: Step) => {
@@ -170,8 +181,13 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         }
       })() as RecipeFiles,
       signedIn: async () => ['claude-code'] as never[],
-      registerLocal: async (payload) =>
-        (script.registerLocal ?? (async (p) => `added ${p.project}`))({ project: payload.project, base: payload.base }),
+      registerLocal: async (payload) => {
+        seen.registered.push({ project: payload.project, base: payload.base })
+        return (script.registerLocal ?? (async (p) => `added ${p.project}`))({
+          project: payload.project,
+          base: payload.base,
+        })
+      },
       picker: async () => script.picker ?? { installations: [], installUrl: null },
       addGithub: async (options, log) => (script.addGithub ?? (async () => 1))(options, log),
     },
@@ -239,6 +255,11 @@ describe('lingtai init (#186)', () => {
     }
     const first = world(home, { answers: [URL_], gitPlan: git })
     expect(await initCommand(['--local', '/repo', '--base', 'main'], first.world)).toBe(0)
+
+    // The first run actually registered the directory — not just printed a
+    // line claiming to (#394 finding 10): `registerLocal` is the record, and
+    // nothing here checked that the local branch ever calls it.
+    expect(first.seen.registered).toEqual([{ project: 'repo', base: 'main' }])
 
     // No --project, --local or --github and no terminal: with the directory
     // already registered, the question is not asked again — it is listed.

@@ -398,9 +398,14 @@ async function addCommand(args: string[]): Promise<number> {
     return 1
   }
   if (result.project === 'github' && result.slug === undefined) {
-    console.log(
+    // Nothing was registered — the same claim `lingtai add <owner>/<repo>`
+    // with no slug at all used to refuse with exit 2, before #394 let a bare
+    // `lingtai add` reach this branch with no slug of its own. A script
+    // checking the exit code must not read this as success (#394 finding 3).
+    console.error(
       'no repository was picked — run lingtai add <owner>/<repo>, or lingtai init --project github to use the board',
     )
+    return 2
   }
   return 0
 }
