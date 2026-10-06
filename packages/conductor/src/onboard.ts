@@ -380,6 +380,48 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
  * `loadProjects` already draws, asked of the stream as it stood before this
  * append.
  */
+/** What `chooseFirstProject`'s local branch (#394) has already resolved before it registers. */
+export interface AddLocalOptions {
+  project: string
+  base: string
+  configHash: string
+  fromSha: string
+}
+
+/**
+ * The directory branch of onboarding (#394): `owner: null`, no installation to
+ * check and no permissions to ask GitHub for — the recipe was already read and
+ * resolved by `chooseFirstProject`, which is why this takes it rather than
+ * reading it again.
+ *
+ * The same stream-version append `add` makes, and the same `registrationLine`,
+ * so the two ways of registering a project cannot disagree about either.
+ */
+export async function addLocal(
+  options: AddLocalOptions,
+  resolved: ResolvedRecipe,
+  log: (line: string) => void = console.log,
+): Promise<string> {
+  const stream = projectStream(options.project)
+  const existing = await eventStore.read(stream)
+  await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
+    {
+      type: 'ProjectConfigured',
+      actor: 'conductor',
+      data: parsePayload('ProjectConfigured', {
+        project: options.project,
+        owner: null,
+        base: options.base,
+        configHash: options.configHash,
+        fromSha: options.fromSha,
+      }),
+    },
+  ])
+  const line = registrationLine(existing, options.project, resolved)
+  log(line)
+  return line
+}
+
 export function registrationLine(prior: readonly Envelope[], repo: string, resolved: ResolvedRecipe): string {
   const before: ProjectState = reduceProject(prior)
   return isRegistered(before)

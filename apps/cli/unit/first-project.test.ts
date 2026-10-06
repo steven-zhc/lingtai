@@ -1,0 +1,388 @@
+/**
+ * `chooseFirstProject` (#394): the local branch against a Map-backed `files`
+ * seam and a programmable `git`, and the GitHub branch against the real
+ * `choose`/`listRepositories` fed a fake reader — no filesystem, no network,
+ * so this is `unit/` by 0060 §1.
+ */
+import { listRepositories } from '@lingtai/conductor/pick-repository'
+import type { ProjectState } from '@lingtai/domain'
+import { GitHubError } from '@lingtai/github'
+import type { RecipeFiles } from '@lingtai/recipe'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
+import { chooseFirstProject } from '../src/first-project.ts'
+
+const before = process.env['NO_COLOR']
+beforeAll(() => {
+  process.env['NO_COLOR'] = '1'
+})
+afterAll(() => {
+  if (before === undefined) delete process.env['NO_COLOR']
+  else process.env['NO_COLOR'] = before
+})
+
+const HOME = '/home/me/.lingtai'
+
+function mapFiles(initial: Record<string, string> = {}): RecipeFiles & { replaced: Record<string, string> } {
+  const store = new Map(Object.entries(initial))
+  const replaced: Record<string, string> = {}
+  return {
+    replaced,
+    read: async (path) => store.get(path) ?? null,
+    replace: async (path, text) => {
+      store.set(path, text)
+      replaced[path] = text
+    },
+  }
+}
+
+const project = (name: string, owner: string | null): ProjectState => ({
+  project: name,
+  owner,
+  base: 'main',
+  configHash: owner !== null ? 'hash' : null,
+  fromSha: null,
+  refused: null,
+  version: 1,
+  lastSeq: 1n,
+})
+
+type GitPlan = Record<string, GitResult>
+
+function fakeGit(plan: GitPlan): FirstProjectWorld['git'] {
+  return async (dir, args) => {
+    const key = `${dir}::${args.join(' ')}`
+    const found = plan[key]
+    if (found === undefined) throw new Error(`unplanned git call: ${key}`)
+    return found
+  }
+}
+
+const ok = (stdout: string): GitResult => ({ ok: true, stdout, stderr: '' })
+const fail = (stderr: string): GitResult => ({ ok: false, stdout: '', stderr })
+
+interface Harness {
+  world: FirstProjectWorld
+  asked: string[]
+  logged: string[]
+  registered: RegisterLocalPayload[]
+  files: RecipeFiles & { replaced: Record<string, string> }
+}
+
+function harness(options: {
+  answers?: (string | null)[]
+  git?: GitPlan
+  projects?: ProjectState[]
+  files?: Record<string, string>
+  signedIn?: string[]
+  app?: FirstProjectWorld['github']['app']
+  boardUrl?: string | null
+  waitForApp?: FirstProjectWorld['github']['waitForApp']
+  picker?: FirstProjectWorld['github']['picker']
+  add?: FirstProjectWorld['github']['add']
+}): Harness {
+  const answers = [...(options.answers ?? [])]
+  const asked: string[] = []
+  const logged: string[] = []
+  const registered: RegisterLocalPayload[] = []
+  const files = mapFiles(options.files ?? {})
+
+  const world: FirstProjectWorld = {
+    ask: async (prompt) => {
+      asked.push(prompt)
+      return answers.length > 0 ? answers.shift()! : null
+    },
+    log: (line) => logged.push(line),
+    git: fakeGit(options.git ?? {}),
+    projects: async () => options.projects ?? [],
+    files,
+    home: HOME,
+    signedIn: async () => (options.signedIn ?? ['claude-code']) as never[],
+    register: async (payload) => {
+      registered.push(payload)
+      return `added ${payload.project}`
+    },
+    github: {
+      app: options.app ?? (async () => ({ configured: false })),
+      boardUrl: async () => options.boardUrl ?? null,
+      waitForApp: options.waitForApp ?? (async () => ({ skipped: true })),
+      picker: options.picker ?? (async () => ({ installations: [], installUrl: null })),
+      add: options.add ?? (async () => 1),
+    },
+  }
+  return { world, asked, logged, registered, files }
+}
+
+describe('chooseFirstProject — the local branch (#394)', () => {
+  it('--local <dir> with an origin registers once, with owner: null and both repo.base and repo.remote written', async () => {
+    const { world, registered, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+      },
+      projects: [],
+      // The base question has no --base flag: an empty line at the terminal
+      // takes the detected default ("main", from symbolic-ref above).
+      answers: [''],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({
+      ok: true,
+      project: 'local',
+      name: 'repo',
+      remote: 'https://github.com/acme/widget.git',
+      base: 'main',
+    })
+    expect(registered).toHaveLength(1)
+    expect(registered[0]).toMatchObject({
+      project: 'repo',
+      owner: null,
+      base: 'main',
+      fromSha: 'abc123f',
+    })
+
+    const path = `${HOME}/repo/recipe.yml`
+    expect(files.replaced[path]).toContain('base: main')
+    expect(files.replaced[path]).toContain('remote: https://github.com/acme/widget.git')
+  })
+
+  it('a relative origin is written absolute, resolved against the toplevel', async () => {
+    const { world, files } = harness({
+      git: {
+        '/home/me/repos/widget::rev-parse --show-toplevel': ok('/home/me/repos/widget\n'),
+        '/home/me/repos/widget::remote get-url origin': ok('../bare/widget.git\n'),
+        '/home/me/repos/widget::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/home/me/repos/widget::rev-parse --verify main^{commit}': ok('deadbee\n'),
+      },
+      answers: [''],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/home/me/repos/widget' })
+
+    expect(result).toMatchObject({ ok: true, remote: '/home/me/repos/bare/widget.git' })
+    const path = `${HOME}/widget/recipe.yml`
+    expect(files.replaced[path]).toContain('remote: /home/me/repos/bare/widget.git')
+  })
+
+  it('a directory that is not a git repository is refused by name, and nothing is written', async () => {
+    const { world, registered, files } = harness({
+      git: { '/nope::rev-parse --show-toplevel': fail('fatal: not a git repository') },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/nope' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('/nope is not a git repository') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('a repository with no origin is refused by name, naming the merge lane, and nothing is written', async () => {
+    const { world, registered, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': fail('fatal: No such remote'),
+      },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('merge-action.ts:47') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('a name already taken by an owner is refused by name, and nothing is written', async () => {
+    const { world, registered, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+      },
+      projects: [project('repo', 'someone-else')],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('someone-else/repo') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('an owner: null project of the same name with a different repo.remote is refused by name, naming both remotes', async () => {
+    const path = `${HOME}/repo/recipe.yml`
+    const { world, registered } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+      },
+      projects: [project('repo', null)],
+      files: { [path]: 'version: 2\nrepo:\n  base: main\n  remote: https://github.com/other/thing.git\n' },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({
+      refused: expect.stringContaining('https://github.com/other/thing.git'),
+    })
+    expect(registered).toEqual([])
+  })
+
+  it('no agent signed in is refused by name, before anything is written', async () => {
+    const { world, registered, files } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify main^{commit}': ok('abc123f\n'),
+      },
+      signedIn: [],
+      answers: [''],
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('no agent runtime is signed in') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
+  it('--base answers the base question without a TTY, validated against the directory', async () => {
+    const { world, registered } = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': ok('origin/main\n'),
+        '/repo::rev-parse --verify develop^{commit}': ok('cafefee\n'),
+      },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/repo', base: 'develop' })
+
+    expect(result).toMatchObject({ ok: true, base: 'develop' })
+    expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafefee' })
+  })
+})
+
+describe('chooseFirstProject — the GitHub branch (#394)', () => {
+  interface FakeInstallation {
+    id: number
+    account: string
+    repositories: string[]
+  }
+
+  function fakeReader(installations: FakeInstallation[]) {
+    return {
+      async request<T>(method: string, path: string, as: 'app' | number): Promise<T> {
+        if (method !== 'GET') throw new Error(`wrote to GitHub: ${method} ${path}`)
+        const url = new URL(path, 'https://api.github.com')
+        if (url.pathname === '/app/installations' && as === 'app') {
+          return installations.map((i) => ({
+            id: i.id,
+            permissions: { issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' },
+            account: { login: i.account },
+            repository_selection: 'selected',
+            html_url: `https://github.com/settings/installations/${i.id}`,
+          })) as T
+        }
+        if (url.pathname === '/installation/repositories' && typeof as === 'number') {
+          const found = installations.find((i) => i.id === as)!
+          return {
+            repositories: found.repositories.map((name) => ({ name, owner: { login: found.account }, private: true })),
+          } as T
+        }
+        throw new GitHubError(404, path, 'Not Found')
+      },
+    }
+  }
+
+  it('reaches waitForApp, then choose, then add, when no App is configured yet', async () => {
+    const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
+    const picker = await listRepositories({ reader, projects: [], installUrl: null })
+
+    const added: unknown[] = []
+    const { world, logged } = harness({
+      answers: ['create'],
+      boardUrl: 'http://127.0.0.1:17820',
+      waitForApp: async () => ({ made: { slug: 'lingtai-steven', owner: 'steven-zhc' } }),
+      picker: async () => picker,
+      add: async (options, log) => {
+        added.push(options)
+        log('installation 7 on acme (selected)')
+        return 0
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/widget' })
+
+    expect(result).toEqual({
+      ok: true,
+      project: 'github',
+      app: { made: { slug: 'lingtai-steven', owner: 'steven-zhc' } },
+      slug: 'acme/widget',
+    })
+    expect(added).toHaveLength(1)
+    expect(added[0]).toMatchObject({ slug: 'acme/widget' })
+    expect(logged).toContain('installation 7 on acme (selected)')
+  })
+
+  it('a repository the App cannot see is refused by name, and add is never called', async () => {
+    const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
+    const picker = await listRepositories({ reader, projects: [], installUrl: null })
+    let addCalled = false
+
+    const { world } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      picker: async () => picker,
+      add: async () => {
+        addCalled = true
+        return 0
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/other' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('acme/other') })
+    expect(addCalled).toBe(false)
+  })
+
+  it('an already-configured App with no slug reports "already", asking nothing', async () => {
+    const { world, asked } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+    })
+
+    const result = await chooseFirstProject(world, { project: 'github' })
+
+    expect(result).toEqual({ ok: true, project: 'github', app: 'already' })
+    expect(asked).toEqual([])
+  })
+})
+
+describe('chooseFirstProject — contradicting flags are refused (#394)', () => {
+  it('--local and --github together', async () => {
+    const { world } = harness({})
+    const result = await chooseFirstProject(world, { local: '/repo', github: 'acme/widget' })
+    expect(result).toEqual({ refused: expect.stringContaining('--local /repo and --github acme/widget') })
+  })
+
+  it('--local with --project github', async () => {
+    const { world } = harness({})
+    const result = await chooseFirstProject(world, { local: '/repo', project: 'github' })
+    expect(result).toEqual({ refused: expect.stringContaining('--project github names the other kind') })
+  })
+
+  it('--local with --github-app', async () => {
+    const { world } = harness({})
+    const result = await chooseFirstProject(world, { local: '/repo', 'github-app': 'create' })
+    expect(result).toEqual({ refused: expect.stringContaining('creates no GitHub App') })
+  })
+
+  it('--github with --project local', async () => {
+    const { world } = harness({})
+    const result = await chooseFirstProject(world, { github: 'acme/widget', project: 'local' })
+    expect(result).toEqual({ refused: expect.stringContaining('--project local names the other kind') })
+  })
+})

@@ -88,7 +88,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline/promises'
 
 import { runnableEnv } from '@lingtai/agent-env'
 import { askEveryRuntime } from '@lingtai/agent/auth'
@@ -107,9 +106,10 @@ import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
 import { Document, isMap, parseDocument } from 'yaml'
 
-import { boardLock, builtBoardDir, serveBoard } from './board.ts'
-import { APP_WAIT_MS, askFirstProject, appComeBackLine, waitForApp } from './github-app.ts'
-import { question } from './question.ts'
+import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
+import { boardAt, boardLock, builtBoardDir, serveBoard } from './board.ts'
+import { chooseFirstProject, liveFirstProjectWorld } from './first-project.ts'
+import { liveAsk, question } from './question.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -133,10 +133,7 @@ export interface RuntimeFound {
 
 export type DatabaseCheck = { ok: true; schema: SchemaOutcome } | { ok: false; why: string }
 
-export type AppCheck =
-  | { configured: false }
-  | { configured: true; ok: true; slug: string; owner: string }
-  | { configured: true; ok: false; why: string }
+export type { AppCheck }
 
 export interface InitWorld {
   /**
@@ -308,11 +305,36 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   )
 
   // ---- which project ---------------------------------------------------------
-  // Asked only when no App is configured yet: a configured one already says
-  // the project is GitHub, and nothing here is asked about it (#393). A flag
-  // naming anything else is refused rather than silently discarded — the same
-  // rule `chooseStore` holds to for `--store` (init.ts:428-436: "naming another
-  // is refused, never ignored").
+  // Registering a project *is* the record of the answer (#394) — nothing
+  // machine-wide holds "local" or "github". A machine that already has
+  // projects is told what it has and how to add another, rather than asked
+  // the question again; an explicit --project, --local or --github names what
+  // to do next and reopens the question on one. Lazy, and only once the store
+  // above is written: the event-store client this loads is module scope
+  // (`entry.ts:5-10`), and this module answers before a fresh machine's store
+  // exists at all.
+  const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined || flags['github'] !== undefined
+  if (!explicitChoice) {
+    const { loadAllProjects } = await import('@lingtai/conductor/projects')
+    const registered = await loadAllProjects()
+    if (registered.length > 0) {
+      for (const p of registered) {
+        world.log(p.owner !== null ? `  ${p.owner}/${p.project} — github` : `  ${p.project} — local`)
+      }
+      world.log(
+        paint.muted(
+          'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
+            'the GitHub App on a machine that has only local projects',
+        ),
+      )
+      return 0
+    }
+  }
+
+  // A flag naming anything else, on a machine that already has an App
+  // configured, is refused rather than silently discarded — the same rule
+  // `chooseStore` holds to for `--store` (this file's `sqliteRefused`:
+  // "naming another is refused, never ignored").
   if (app.configured) {
     const namedProject = flags['project'] ?? null
     if (namedProject !== null && namedProject !== 'github') {
@@ -330,11 +352,6 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
       )
     }
   }
-  // The answer is not written down, so a machine with no App is asked again on
-  // every run. Remembering the project is #394's, which registers it; written
-  // here, `local` would be a choice nothing reads back and nothing can undo.
-  const chosen = app.configured ? ({ project: 'github', app: 'create' } as const) : await askFirstProject(world, flags)
-  if ('refused' in chosen) return refuse(world, chosen.refused)
 
   // ---- the board, on the wizard ---------------------------------------------
   // The port is decided here and not at the top: `board.port` is read out of
@@ -351,25 +368,30 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     )
   }
 
+  const firstProjectWorld = liveFirstProjectWorld({
+    ask: world.ask,
+    log: world.log,
+    boardUrl: board.url,
+    appWait: { open: world.open, appeared: world.appeared, pressed: world.pressed },
+  })
+  const chosen = await chooseFirstProject(firstProjectWorld, flags)
+  if ('refused' in chosen) return refuse(world, chosen.refused)
+
   if (chosen.project === 'local') {
-    world.log(
-      `project      local — the board is at ${board.url}. Registering a directory on this machine is not built yet ` +
-        '(#394); there is nothing further to do here',
-    )
-  } else if (app.configured) {
+    world.log(paint.pass(`project      local — ${chosen.name}, registered with its own origin as repo.remote`))
+  } else if (chosen.app === 'already') {
     const wizard = `${board.url}/setup/repository`
     world.log(
       (await world.open(wizard))
         ? paint.pass(`opened ${wizard}`)
         : paint.signal(`no browser could be opened here — open ${wizard}`),
     )
-  } else if (chosen.app === 'skip') {
-    // The browser is the only reason to leave the terminal (#391) — a skip opens nothing.
-    world.log(appComeBackLine(board.url, 'skipped'))
-  } else {
-    const result = await waitForApp(world, board.url, { waitMs: APP_WAIT_MS })
-    if ('made' in result) world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
+  } else if ('made' in chosen.app) {
+    world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
   }
+  // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s own
+  // call to `waitForApp` (`appComeBackLine`).
+
   world.log(
     running !== null
       ? paint.muted(`the board was already running at ${running} — this started none`)
@@ -805,20 +827,7 @@ export function liveInitWorld(): InitWorld {
   return {
     env: process.env,
     log: (line) => console.log(line),
-    ask: async (question) => {
-      if (!process.stdin.isTTY) return null
-      const rl = createInterface({ input: process.stdin, output: process.stdout })
-      // Ctrl+C at a question: every earlier answer is already written, and this one was not.
-      rl.on('SIGINT', () => {
-        console.log('\nstopped at the question — its answer was not written, and lingtai init again asks it here')
-        process.exit(130)
-      })
-      try {
-        return await rl.question(question)
-      } finally {
-        rl.close()
-      }
-    },
+    ask: liveAsk,
     git: async () => {
       const said = spawnSync('git', ['--version'], { encoding: 'utf8' })
       return said.status === 0 ? said.stdout.trim() : null
@@ -847,43 +856,10 @@ export function liveInitWorld(): InitWorld {
         await client.end().catch(() => {})
       }
     },
-    app: liveApp,
-    // The live loop, with a stop the race's loser can pull: `signal.aborted`
-    // is checked each time round, and the pending timer is cleared on abort
-    // rather than left to fire into a board that may have moved on.
-    appeared: (signal) =>
-      new Promise((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined
-        const poll = async () => {
-          if (signal.aborted) return
-          const app = await liveApp()
-          if (signal.aborted) return
-          if (app.configured && app.ok) {
-            resolve({ slug: app.slug, owner: app.owner })
-            return
-          }
-          timer = setTimeout(poll, 2000)
-        }
-        signal.addEventListener(
-          'abort',
-          () => {
-            if (timer) clearTimeout(timer)
-          },
-          { once: true },
-        )
-        void poll()
-      }),
+    app: checkApp,
+    appeared: pollForApp,
     pressed: (signal) => waitForKeypress(process.stdin, signal),
-    boardAt: async (port) => {
-      const url = `http://127.0.0.1:${port}`
-      try {
-        // The board's own title, so a port some other server holds is not mistaken for it.
-        const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
-        return (await res.text()).includes('<title>Lingtai</title>') ? url : null
-      } catch {
-        return null
-      }
-    },
+    boardAt,
     board: async (port) => {
       const host = '127.0.0.1'
       // The same lock `lingtai board start` takes (#187), and for the same
@@ -917,20 +893,5 @@ export function liveInitWorld(): InitWorld {
           resolve(true)
         })
       }),
-  }
-}
-
-/** `GET /app` with the App's own JWT — the call that proves the id and the key belong together. */
-async function liveApp(): Promise<AppCheck> {
-  const env = await import('@lingtai/env')
-  if (!env.hasGitHubApp()) return { configured: false }
-  try {
-    const github = await import('@lingtai/github')
-    const credentials = env.githubApp()
-    const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
-    const app = await reader.request<{ slug: string; owner: { login: string } }>('GET', '/app', 'app')
-    return { configured: true, ok: true, slug: app.slug, owner: app.owner.login }
-  } catch (err) {
-    return { configured: true, ok: false, why: (err as Error).message }
   }
 }

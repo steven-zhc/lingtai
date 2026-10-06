@@ -16,7 +16,6 @@ import { connect } from 'node:net'
 import { hostname } from 'node:os'
 
 import { describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
-import { add } from '@lingtai/conductor/onboard'
 import {
   clientsForProjects,
   createStatusTable,
@@ -68,9 +67,11 @@ import { answerOutstanding, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness, doctorReport, formatReport } from './doctor.ts'
 import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
+import { chooseFirstProject, liveFirstProjectWorld } from './first-project.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
+import { liveAsk } from './question.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -111,10 +112,16 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --agent <claude-code|codex> instead of being asked, where both are signed in
     --port <n>                  the board's port, for this run. default: 17820,
                                 or board.port in ~/.lingtai/config.yml
-  lingtai add <owner>/<repo>        onboard a repository the App is installed on
-    --base <branch>             where to *read the recipe from*, not what the
-                                base is — the recipe's own repo.base says that,
-                                and a --base contradicting it is refused.
+  lingtai add [<owner>/<repo>]      onboard a GitHub repository the App is installed
+                                on, or — with no argument, or --local <dir> —
+                                a directory on this machine with its own origin
+    --github <owner>/<repo>     same as the positional
+    --local <dir>                a directory on this machine instead of GitHub
+    --base <branch>             github: where to *read the recipe from*, not
+                                what the base is — the recipe's own repo.base
+                                says that, and a --base contradicting it is
+                                refused. local: the branch the recipe governs,
+                                asked for if not given.
                                 default: the repository's own default branch
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
@@ -359,20 +366,36 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
   return { positional, flags }
 }
 
+/**
+ * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
+ * positional, which asks the same GitHub-or-directory question `lingtai init`
+ * does, through the one function both share (`chooseFirstProject`).
+ *
+ * A bare slug is still `--github <owner>/<repo>`, so every invocation that
+ * worked before this still does. Tier, gates and the base are the recipe's,
+ * in the managed repository, which is why the GitHub branch takes a slug and
+ * — at most — the branch to find the file on: `--base`, named because a
+ * person typed it here, is refused rather than silently adopted when the
+ * recipe disagrees (#75).
+ */
 async function addCommand(args: string[]): Promise<number> {
   const { positional, flags } = parseFlags(args)
-  const slug = positional[0]
-  if (!slug) {
-    console.error('lingtai add <owner>/<repo>')
-    return 2
+  if (positional[0] !== undefined && flags['github'] === undefined && flags['local'] === undefined) {
+    flags['github'] = positional[0]
   }
-  // Tier, gates and the base are the recipe's, in the managed repository, which
-  // is why this takes a slug and — at most — the branch to find the file on.
-  // `named`, because a person typed it here: a recipe that contradicts `--base`
-  // is refused rather than adopted (#75), which is a refusal only a typed flag
-  // may earn.
-  const base = flags['base']
-  return add({ slug, base: base === undefined ? undefined : { ref: base, named: true } })
+
+  const world = liveFirstProjectWorld({ ask: liveAsk, log: (line) => console.log(line) })
+  const result = await chooseFirstProject(world, flags)
+  if ('refused' in result) {
+    console.error(result.refused)
+    return 1
+  }
+  if (result.project === 'github' && result.slug === undefined) {
+    console.log(
+      'no repository was picked — run lingtai add <owner>/<repo>, or lingtai init --project github to use the board',
+    )
+  }
+  return 0
 }
 
 async function projectionCommand(args: string[]): Promise<number> {
