@@ -12,7 +12,6 @@
  */
 import {
   diskFiles,
-  PRESETS,
   type RecipeChange,
   type RecipeFiles,
   readRecipeKey,
@@ -45,15 +44,6 @@ export interface AskInstallAndBuildInput {
   tryBuild: ((install: string | null, build: string[]) => Promise<TrialResult[]>) | null
   home?: string
   files?: RecipeFiles
-  /**
-   * The `extends:` a first-run caller (#400) is about to write in the same
-   * `setRecipe` call, when the file does not have one of its own yet.
-   * `unwidenProposed` reads `extends` off the file, and on a first run there
-   * is no file to read it from — the caller is the only one who knows the
-   * preset is coming, since it is the one adding `extends:` to the same
-   * batch of changes.
-   */
-  extends?: string | null
 }
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
@@ -312,39 +302,6 @@ async function askBuild(
   return { build: namedFromTyped(typed) }
 }
 
-/** The change that strips a preset's own `proposed` build the moment this write would otherwise displace it onto it (decision 7). */
-async function unwidenProposed(
-  world: SetupWorld,
-  project: string,
-  pendingExtends: string | null,
-  options: { home?: string; files?: RecipeFiles },
-): Promise<RecipeChange | null> {
-  // Any `steps:` key the file already writes — not just `proposed` — already
-  // stops the preset's steps from applying at all (`applyPreset`'s `steps:
-  // recipe['steps'] ?? preset.steps` is all-or-nothing), so there is nothing
-  // left for a preset to displace onto.
-  const ownSteps = await readRecipeKey(project, ['steps'], options)
-  if (ownSteps !== null) return null
-
-  const fileExtends = await readRecipeKey(project, ['extends'], options)
-  const extends_ = typeof fileExtends === 'string' ? fileExtends : pendingExtends
-  if (typeof extends_ !== 'string') return null
-
-  const preset = PRESETS[extends_]
-  const proposed = preset?.steps?.proposed as unknown[] | undefined
-  if (!proposed) return null
-
-  const runActions = proposed.filter(isRunAction)
-  if (runActions.length === 0) return null
-
-  world.log(
-    `removed ${extends_}'s own check at steps.proposed (${runActions.map((a) => a.run).join(', ')}) — it would otherwise run in addition to what was just set`,
-  )
-
-  const rest = proposed.filter((a) => !isRunAction(a))
-  return { path: ['steps', 'proposed'], value: rest }
-}
-
 export async function askInstallAndBuild(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
@@ -382,11 +339,6 @@ export async function askInstallAndBuild(
   if (!sameBuild) {
     const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], fileOptions)) as unknown[] | null
     changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
-  }
-
-  if (changes.length > 0) {
-    const unwiden = await unwidenProposed(world, input.project, input.extends ?? null, fileOptions)
-    if (unwiden) changes.push(unwiden)
   }
 
   return { changes }

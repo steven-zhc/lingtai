@@ -212,7 +212,7 @@ steps:
     expect(written).toEqual({ path: PATH, text: FIXTURE, written: false })
   })
 
-  it('a file that extends: pnpm-workspace ends with no run: action at steps.proposed', async () => {
+  it('a file that extends: pnpm-workspace gets the answered build in place of the preset’s, and nothing at steps.proposed', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
 repo:
@@ -229,14 +229,11 @@ env:
       input({ given: { install: 'pnpm install --frozen-lockfile', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
-    expect(
-      result.changes.some(
-        (c) => c.path.join('.') === 'steps.proposed' && Array.isArray(c.value) && c.value.length === 0,
-      ),
-    ).toBe(true)
+    expect(result.changes.some((c) => c.path.join('.') === 'steps.proposed')).toBe(false)
 
     const written = await setRecipe('app', result.changes, { home: HOME, files })
     const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
     expect(resolved.recipe.steps.proposed).toEqual([])
     // The preset's own install is untouched — only `build` was named by this call,
     // so the install keeps the preset's own timeout (10m) rather than the schema's.
@@ -267,7 +264,7 @@ env:
     const written = await setRecipe('app', result.changes, { home: HOME, files })
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
-    // Declining still counts as a change, so the preset's own `proposed` build is unwidened too.
+    // The preset declares nothing at `proposed`, so nothing runs there after the write either.
     expect(resolved.recipe.steps.proposed).toEqual([])
   })
 
@@ -378,7 +375,7 @@ steps:
     expect(build?.value).toEqual([{ name: 'playwright', run: 'pnpm exec playwright test' }])
   })
 
-  it('logs the preset check it removes from steps.proposed, and the empty build it was given', async () => {
+  it('declining the build on a file that extends a preset logs it and keeps none of the preset’s checks', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
 repo:
@@ -396,22 +393,21 @@ env:
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(lines).toContain('nothing will check a diff before review')
-    expect(lines.some((l) => l.includes('removed') && l.includes('steps.proposed'))).toBe(true)
+
+    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.build).toEqual([])
+    expect(resolved.recipe.steps.proposed).toEqual([])
   })
 
-  it('a first run bundled with extends: in the same setRecipe call ends with no run: action at steps.proposed', async () => {
+  it('a first run bundled with extends: in the same setRecipe call keeps the answers and none of the preset’s checks', async () => {
     const files = mapFiles({})
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm test'], check: null }, extends: 'pnpm-workspace', files }),
+      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
-    expect(
-      result.changes.some(
-        (c) => c.path.join('.') === 'steps.proposed' && Array.isArray(c.value) && c.value.length === 0,
-      ),
-    ).toBe(true)
 
     const bundle = [
       { path: ['extends'], value: 'pnpm-workspace' },
@@ -422,10 +418,12 @@ env:
     ]
     const written = await setRecipe('app', bundle, { home: HOME, files })
     const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.prepared).toEqual([])
+    expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
     expect(resolved.recipe.steps.proposed).toEqual([])
   })
 
-  it('a file that already writes its own steps.prepared/build is left alone — no false "removed" log', async () => {
+  it('a file that already writes its own steps.prepared/build gets no steps.proposed change', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
 repo:
