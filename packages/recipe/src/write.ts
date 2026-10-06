@@ -105,14 +105,24 @@ function editedText(existing: string | null, changes: readonly RecipeChange[], p
  * this change never mentioned moves anyway. Caught by trying the narrow edit
  * first and comparing: only a step named in `changes` may differ from what the
  * file resolved to before.
+ *
+ * "Before" is the file with this same call's *other* changes already applied,
+ * not the raw file on disk. A stub that `extends:` a preset but is still
+ * missing a required answer does not resolve on its own — and the one call
+ * that supplies the missing answer is often the same one that writes the
+ * first `steps:` key. Resolving the raw file would throw and fall into the
+ * catch below, skipping the widening it most needs to do.
  */
 function widenStepsIfNeeded(existing: string, changes: readonly RecipeChange[], path: string): readonly RecipeChange[] {
   const stepChanges = changes.filter((c) => c.path[0] === 'steps')
   if (stepChanges.length === 0 || stepChanges.some((c) => c.path.length === 1)) return changes
 
+  const nonStepChanges = changes.filter((c) => c.path[0] !== 'steps')
+  const beforeText = editedText(existing, nonStepChanges, path)
+
   let before
   try {
-    before = resolveSource(existing, refFor(existing, path), path)
+    before = resolveSource(beforeText, refFor(beforeText, path), path)
   } catch {
     return changes
   }

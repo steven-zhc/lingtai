@@ -182,6 +182,40 @@ env:
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
   })
 
+  it('widens a narrow steps.* write even when this same call is what makes the file resolve at all', async () => {
+    // The stub `extends: pnpm-workspace` but has not answered `source.kinds` or
+    // `env.plantAt` yet, so it does not resolve on its own. A single setRecipe
+    // call supplies both missing answers *and* `steps.build` together — the
+    // scenario `widenStepsIfNeeded`'s old `resolveSource(existing, …)` got
+    // wrong: resolving the raw file throws, and the catch used to hand the
+    // narrow (preset-losing) change straight through.
+    const STUB = `version: 2
+extends: pnpm-workspace
+repo:
+  base: main
+`
+    const files = mapFiles({ [PATH]: STUB })
+    const result = await setRecipe(
+      'app',
+      [
+        { path: ['source', 'kinds'], value: ['bug'] },
+        { path: ['env', 'plantAt'], value: '.env.local' },
+        { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
+      ],
+      { home: HOME, files },
+    )
+
+    expect(result.written).toBe(true)
+    const resolved = resolveSource(result.text, 'main', PATH)
+    expect(resolved.recipe.steps.prepared).toEqual([
+      { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
+    ])
+    expect(resolved.recipe.steps.proposed).toEqual([
+      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
+    ])
+    expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
+  })
+
   it('is a no-op when a change sets the value the file already has', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const result = await setRecipe('app', [{ path: ['repo', 'base'], value: 'main' }], { home: HOME, files })
