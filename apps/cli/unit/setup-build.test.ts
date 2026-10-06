@@ -158,7 +158,7 @@ steps:
     expect(result).toEqual({ refused: expect.stringContaining('--install') })
   })
 
-  it('answering "yes" takes the detected build list', async () => {
+  it('answering "yes" takes the detected build list, written as bare run: actions', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const detected = reader({
       'pnpm-lock.yaml': '',
@@ -169,8 +169,16 @@ steps:
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
     expect(build?.value).toEqual([
-      { name: 'format', run: 'pnpm fmt:check', because: '`fmt:check` runs `oxfmt --check .`' },
-      { name: 'test', run: 'pnpm test', because: '`test` runs `vitest run`' },
+      { name: 'format', run: 'pnpm fmt:check' },
+      { name: 'test', run: 'pnpm test' },
+    ])
+
+    // `because` is not a field a run: action may carry — setRecipe must accept this.
+    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.build).toEqual([
+      { name: 'format', run: 'pnpm fmt:check', timeout: '15m', env: [] },
+      { name: 'test', run: 'pnpm test', timeout: '15m', env: [] },
     ])
   })
 
@@ -230,10 +238,80 @@ env:
     const written = await setRecipe('app', result.changes, { home: HOME, files })
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.proposed).toEqual([])
-    // The preset's own install is untouched — only `build` was named by this call.
+    // The preset's own install is untouched — only `build` was named by this call,
+    // so the install keeps the preset's own timeout (10m) rather than the schema's.
     expect(resolved.recipe.steps.prepared).toEqual([
-      { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '15m', env: [] },
+      { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
     ])
+  })
+
+  it('declining an install the preset supplies writes the decline, not the preset default', async () => {
+    const FIXTURE = `version: 2
+extends: pnpm-workspace
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+`
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(result.changes.some((c) => c.path.join('.') === 'steps.prepared' && Array.isArray(c.value))).toBe(true)
+
+    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.prepared).toEqual([])
+    // Declining still counts as a change, so the preset's own `proposed` build is unwidened too.
+    expect(resolved.recipe.steps.proposed).toEqual([])
+  })
+
+  it('adding a build command keeps the timeout and env of the ones already there', async () => {
+    const FIXTURE = `version: 2
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+steps:
+  build:
+    - name: test
+      run: pnpm test
+      timeout: 45m
+      env: [TURBO_TOKEN]
+`
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm test', 'pnpm lint'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+
+    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.build).toEqual([
+      { name: 'test', run: 'pnpm test', timeout: '45m', env: ['TURBO_TOKEN'] },
+      { name: 'lint', run: 'pnpm lint', timeout: '15m', env: [] },
+    ])
+  })
+
+  it('a typed command with a flag is named after the flag’s value, never the flag itself', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm --filter web test'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
+    expect(build?.value).toEqual([{ name: 'web', run: 'pnpm --filter web test' }])
   })
 
   it('a red trial build under --check-build yes refuses and returns no changes', async () => {

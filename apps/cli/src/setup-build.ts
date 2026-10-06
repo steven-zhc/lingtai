@@ -10,7 +10,15 @@
  * as `packages/recipe/unit/write.test.ts` hands a `RecipeChange[]` to it
  * directly.
  */
-import { PRESETS, type RecipeChange, type RecipeFiles, readRecipeKey } from '@lingtai/recipe'
+import {
+  diskFiles,
+  PRESETS,
+  type RecipeChange,
+  type RecipeFiles,
+  readRecipeKey,
+  recipePath,
+  resolveSource,
+} from '@lingtai/recipe'
 
 import { type DetectedSetup, type SetupReader, detectSetup } from './detect-setup.ts'
 import { type QuestionWorld, question } from './question.ts'
@@ -56,9 +64,35 @@ async function currentRunActions(
   return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
 }
 
+/**
+ * The `run:` actions that would actually execute at `step` — the file's own,
+ * or inherited from a preset the file `extends:` — `[]` where there is no
+ * recipe yet or it does not resolve. `currentRunActions` reads the file's own
+ * raw key and is right for *what to show as a default*; deciding whether an
+ * answer changes anything needs this instead, or an answer that only restates
+ * what a preset already supplies reads as unchanged and widening later pins
+ * the preset's value in anyway.
+ */
+async function resolvedRunActions(
+  project: string,
+  step: 'prepared' | 'build',
+  options: { home?: string; files?: RecipeFiles },
+): Promise<NamedRun[]> {
+  const files = options.files ?? diskFiles
+  const path = recipePath(project, options.home)
+  const text = await files.read(path)
+  if (text === null) return []
+  try {
+    const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
+    return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
+  } catch {
+    return []
+  }
+}
+
 /** The script a command invokes, when it is `<pm> [run[-script]] <script>`; a numbered name otherwise. */
 function nameForCommand(command: string, index: number, used: Set<string>): string {
-  const m = /^(?:pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?([\w:.-]+)/.exec(command.trim())
+  const m = /^(?:pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(?:-\S+\s+)*([\w:.-]+)/.exec(command.trim())
   let base = m?.[1] ?? `check-${index + 1}`
   let name = base
   let n = 2
@@ -72,14 +106,20 @@ function namedFromTyped(commands: readonly string[]): NamedRun[] {
   return commands.map((run, i) => ({ name: nameForCommand(run, i, used), run }))
 }
 
-/** `original` with its `run:` entries replaced by `wanted`, in place — every other action keeps its position. */
+/**
+ * `original` with its `run:` entries replaced by `wanted`, in place — every
+ * other action keeps its position. An entry whose `run:` text is unchanged
+ * keeps its other fields (`timeout`, `env`) too, rather than being rebuilt
+ * bare — only a `run:` that actually changed loses them.
+ */
 function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
   const queue = [...wanted]
   const merged: unknown[] = []
   for (const item of original) {
     if (isRunAction(item)) {
       const next = queue.shift()
-      if (next) merged.push(next)
+      if (next === undefined) continue
+      merged.push(next.run === item.run ? { ...item, name: next.name, run: next.run } : next)
     } else {
       merged.push(item)
     }
@@ -201,7 +241,7 @@ async function askBuild(
       fallback: 'yes',
     })
     if ('refused' in answer) return { refused: answer.refused }
-    if (answer.answer === 'yes') return { build: defaultList }
+    if (answer.answer === 'yes') return { build: defaultList.map(({ name, run }) => ({ name, run })) }
   }
 
   const typed: string[] = []
@@ -262,9 +302,9 @@ export async function askInstallAndBuild(
   const changes: RecipeChange[] = []
   const fileOptions = { home: input.home, files: input.files }
 
-  const currentInstall = await currentRunActions(input.project, ['steps', 'prepared'], fileOptions)
-  const currentInstallRun = currentInstall[0]?.run ?? null
-  if (install.run !== currentInstallRun) {
+  const effectiveInstall = await resolvedRunActions(input.project, 'prepared', fileOptions)
+  const effectiveInstallRun = effectiveInstall[0]?.run ?? null
+  if (install.run !== effectiveInstallRun) {
     const originalPrepared = (await readRecipeKey(input.project, ['steps', 'prepared'], fileOptions)) as
       | unknown[]
       | null
@@ -272,9 +312,9 @@ export async function askInstallAndBuild(
     changes.push({ path: ['steps', 'prepared'], value: mergeRunActions(originalPrepared ?? [], wanted) })
   }
 
-  const currentBuild = await currentRunActions(input.project, ['steps', 'build'], fileOptions)
+  const effectiveBuild = await resolvedRunActions(input.project, 'build', fileOptions)
   const sameBuild =
-    currentBuild.length === build.build.length && currentBuild.every((a, i) => a.run === build.build[i]!.run)
+    effectiveBuild.length === build.build.length && effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
   if (!sameBuild) {
     const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], fileOptions)) as unknown[] | null
     changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
