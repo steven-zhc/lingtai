@@ -1,0 +1,289 @@
+/**
+ * The two questions #397 asks over `detect-setup.ts`'s suggestion: the
+ * install command at `steps.prepared`, and the build commands at
+ * `steps.build` — both through #392's seam (`question.ts`), both returned
+ * as `RecipeChange[]` for the caller to write with #395's `setRecipe`.
+ *
+ * **This writes nothing.** #395's own design settled that a new file is
+ * written once, by whoever collects every first-run answer — #400, not
+ * here. What this returns is handed to `setRecipe` by the caller, exactly
+ * as `packages/recipe/unit/write.test.ts` hands a `RecipeChange[]` to it
+ * directly.
+ */
+import { PRESETS, type RecipeChange, type RecipeFiles, readRecipeKey } from '@lingtai/recipe'
+
+import { type DetectedSetup, type SetupReader, detectSetup } from './detect-setup.ts'
+import { type QuestionWorld, question } from './question.ts'
+
+export type SetupWorld = QuestionWorld
+
+/** One command the trial run tried, and how it went. */
+export interface TrialResult {
+  command: string
+  ok: boolean
+  evidence: string
+}
+
+interface NamedRun {
+  name: string
+  run: string
+}
+
+export interface AskInstallAndBuildInput {
+  project: string
+  reader: SetupReader
+  given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
+  /** Null where there is nowhere to run it — logged, never run silently. */
+  tryBuild: ((install: string | null, build: string[]) => Promise<TrialResult[]>) | null
+  home?: string
+  files?: RecipeFiles
+}
+
+export type AskInstallAndBuildResult = { changes: RecipeChange[] } | { refused: string }
+
+function isRunAction(value: unknown): value is NamedRun & Record<string, unknown> {
+  return typeof value === 'object' && value !== null && typeof (value as { run?: unknown }).run === 'string'
+}
+
+/** The `run:` actions already at `path`, in file order — `[]` where the step is absent or writes none. */
+async function currentRunActions(
+  project: string,
+  path: readonly string[],
+  options: { home?: string; files?: RecipeFiles },
+): Promise<NamedRun[]> {
+  const value = await readRecipeKey(project, path, options)
+  if (!Array.isArray(value)) return []
+  return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
+}
+
+/** The script a command invokes, when it is `<pm> [run[-script]] <script>`; a numbered name otherwise. */
+function nameForCommand(command: string, index: number, used: Set<string>): string {
+  const m = /^(?:pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?([\w:.-]+)/.exec(command.trim())
+  let base = m?.[1] ?? `check-${index + 1}`
+  let name = base
+  let n = 2
+  while (used.has(name)) name = `${base}-${n++}`
+  used.add(name)
+  return name
+}
+
+function namedFromTyped(commands: readonly string[]): NamedRun[] {
+  const used = new Set<string>()
+  return commands.map((run, i) => ({ name: nameForCommand(run, i, used), run }))
+}
+
+/** `original` with its `run:` entries replaced by `wanted`, in place — every other action keeps its position. */
+function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
+  const queue = [...wanted]
+  const merged: unknown[] = []
+  for (const item of original) {
+    if (isRunAction(item)) {
+      const next = queue.shift()
+      if (next) merged.push(next)
+    } else {
+      merged.push(item)
+    }
+  }
+  merged.push(...queue)
+  return merged
+}
+
+function printFound(world: SetupWorld, detected: DetectedSetup): void {
+  if (detected.install) world.log(`install: ${detected.install.run} — ${detected.install.because}`)
+  for (const b of detected.build) world.log(`build (${b.name}): ${b.run} — ${b.because}`)
+  for (const s of detected.skipped) world.log(`skipped \`${s.script}\`: ${s.why}`)
+  for (const n of detected.notes) world.log(n)
+}
+
+async function askInstall(
+  world: SetupWorld,
+  input: AskInstallAndBuildInput,
+  detected: DetectedSetup,
+): Promise<{ run: string | null; refused: string } | { run: string | null }> {
+  const current = await currentRunActions(input.project, ['steps', 'prepared'], {
+    home: input.home,
+    files: input.files,
+  })
+  const currentRun = current[0]?.run ?? null
+
+  const answer = await question(world, {
+    name: 'the install command',
+    flag: '--install <command>, or --install none',
+    given: input.given.install,
+    prompt: 'the install command',
+    current: currentRun,
+    detected: detected.install?.run ?? null,
+    fallback: '',
+    validate: async (a) => (a === '' ? 'type a command, or none' : null),
+  })
+  if ('refused' in answer) return { run: null, refused: answer.refused }
+  return { run: answer.answer === 'none' ? null : answer.answer }
+}
+
+/** Runs the trial build, prints its results, and decides whether a red one still writes. */
+async function tryTheBuild(
+  world: SetupWorld,
+  input: AskInstallAndBuildInput,
+  install: string | null,
+  build: NamedRun[],
+): Promise<{ ok: true } | { refused: string }> {
+  if (build.length === 0 || input.tryBuild === null) {
+    if (build.length > 0) {
+      world.log(
+        'the trial run was not run — no checkout on this machine; the first pass’s `build` is where these first run',
+      )
+    }
+    return { ok: true }
+  }
+
+  const check = await question(world, {
+    name: 'the trial run',
+    flag: '--check-build yes, or --check-build no',
+    given: input.given.check,
+    prompt: 'run these once against the base before writing them?',
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+  })
+  if ('refused' in check) return { refused: check.refused }
+  if (check.answer === 'no') return { ok: true }
+
+  world.log('running the trial build — this can take minutes')
+  const results = await input.tryBuild(
+    install,
+    build.map((b) => b.run),
+  )
+  const failed = results.filter((r) => !r.ok)
+  if (failed.length === 0) return { ok: true }
+
+  for (const r of failed) world.log(`failed: ${r.command}\n${r.evidence}`)
+
+  const decide = await question(world, {
+    name: 'whether to write the failed build list',
+    flag: '--check-build no',
+    given: null,
+    prompt: 'write them anyway, or edit the list?',
+    choices: ['write', 'edit'],
+    fallback: 'edit',
+  })
+  if ('refused' in decide) return { refused: decide.refused }
+  if (decide.answer === 'edit') {
+    return {
+      refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
+    }
+  }
+  return { ok: true }
+}
+
+async function askBuild(
+  world: SetupWorld,
+  input: AskInstallAndBuildInput,
+  detected: DetectedSetup,
+): Promise<{ build: NamedRun[] } | { refused: string }> {
+  const current = await currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files })
+
+  if (input.given.build !== null) {
+    if (input.given.build.includes('none') && input.given.build.length > 1) {
+      return { refused: '--build none cannot be combined with another --build value' }
+    }
+    const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build)
+    return { build }
+  }
+
+  const defaultList = current.length > 0 ? current : detected.build.length > 0 ? detected.build : null
+
+  if (defaultList !== null) {
+    const answer = await question(world, {
+      name: 'the build steps',
+      flag: '--build <command> (repeatable), or --build none',
+      given: null,
+      prompt: 'run these before review? yes, or no to write your own',
+      choices: ['yes', 'no'],
+      fallback: 'yes',
+    })
+    if ('refused' in answer) return { refused: answer.refused }
+    if (answer.answer === 'yes') return { build: defaultList }
+  }
+
+  const typed: string[] = []
+  for (;;) {
+    const answer = await question(world, {
+      name: 'a build command',
+      flag: '--build <command> (repeatable), or --build none',
+      given: null,
+      prompt: 'a command that must pass before review — empty when done',
+      fallback: '',
+    })
+    if ('refused' in answer) return { refused: answer.refused }
+    if (answer.answer === '') break
+    typed.push(answer.answer)
+  }
+  if (typed.length === 0) world.log('nothing will check a diff before review')
+  return { build: namedFromTyped(typed) }
+}
+
+/** The change that strips a preset's own `proposed` build the moment this write would otherwise displace it onto it (decision 7). */
+async function unwidenProposed(
+  project: string,
+  options: { home?: string; files?: RecipeFiles },
+): Promise<RecipeChange | null> {
+  const ownProposed = await readRecipeKey(project, ['steps', 'proposed'], options)
+  if (ownProposed !== null) return null
+
+  const extends_ = await readRecipeKey(project, ['extends'], options)
+  if (typeof extends_ !== 'string') return null
+
+  const preset = PRESETS[extends_]
+  const proposed = preset?.steps?.proposed as unknown[] | undefined
+  if (!proposed) return null
+
+  const runActions = proposed.filter(isRunAction)
+  if (runActions.length === 0) return null
+
+  const rest = proposed.filter((a) => !isRunAction(a))
+  return { path: ['steps', 'proposed'], value: rest }
+}
+
+export async function askInstallAndBuild(
+  world: SetupWorld,
+  input: AskInstallAndBuildInput,
+): Promise<AskInstallAndBuildResult> {
+  const detected = await detectSetup(input.reader)
+  printFound(world, detected)
+
+  const install = await askInstall(world, input, detected)
+  if ('refused' in install) return { refused: install.refused }
+
+  const build = await askBuild(world, input, detected)
+  if ('refused' in build) return { refused: build.refused }
+
+  const tried = await tryTheBuild(world, input, install.run, build.build)
+  if ('refused' in tried) return { refused: tried.refused }
+
+  const changes: RecipeChange[] = []
+  const fileOptions = { home: input.home, files: input.files }
+
+  const currentInstall = await currentRunActions(input.project, ['steps', 'prepared'], fileOptions)
+  const currentInstallRun = currentInstall[0]?.run ?? null
+  if (install.run !== currentInstallRun) {
+    const originalPrepared = (await readRecipeKey(input.project, ['steps', 'prepared'], fileOptions)) as
+      | unknown[]
+      | null
+    const wanted = install.run === null ? [] : [{ name: 'install', run: install.run }]
+    changes.push({ path: ['steps', 'prepared'], value: mergeRunActions(originalPrepared ?? [], wanted) })
+  }
+
+  const currentBuild = await currentRunActions(input.project, ['steps', 'build'], fileOptions)
+  const sameBuild =
+    currentBuild.length === build.build.length && currentBuild.every((a, i) => a.run === build.build[i]!.run)
+  if (!sameBuild) {
+    const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], fileOptions)) as unknown[] | null
+    changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
+  }
+
+  if (changes.length > 0) {
+    const unwiden = await unwidenProposed(input.project, fileOptions)
+    if (unwiden) changes.push(unwiden)
+  }
+
+  return { changes }
+}
