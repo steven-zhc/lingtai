@@ -340,6 +340,20 @@ export function ticketSourceOf(recipe: Recipe): TicketSource {
 }
 
 /**
+ * The repository's own `origin` — where a mirror fetches from and the merge
+ * lane pushes to — or null where the recipe names none and `worktree.ts:102`'s
+ * GitHub default applies.
+ *
+ * **Not one of `queue:`'s four, and `takeAt` plays no part here**, for
+ * `ticketSourceOf`'s reason: this is a property of the repository, not of one
+ * cut, so nothing moves it onto `admit` the way `baseOf` and `submodulesOf`
+ * move. `cutAt` is not asked.
+ */
+export function remoteOf(recipe: Recipe): string | null {
+  return recipe.repo.remote ?? null
+}
+
+/**
  * Whose tickets this project takes — **`queue:`'s fourth field**, and the one
  * whose v1 name is not `source:`'s
  * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3).

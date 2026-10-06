@@ -57,6 +57,7 @@ import {
   excludeOf,
   kindsOf,
   limitsFor,
+  remoteOf,
   submodulesOf,
   ticketSourceOf,
 } from '../src/settings.ts'
@@ -126,6 +127,30 @@ describe('the accessors', () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues.some((issue) => issue.path.join('.') === 'source.tickets')).toBe(true)
+    }
+  })
+
+  /**
+   * `repo.remote` (#351). Absent defaults in the accessor, not the schema —
+   * the fixture's parsed `repo` carries no `remote` key at all, which is the
+   * half of this that pins the `configHash` decision.
+   */
+  it('reads `repo.remote`, defaulting to null where the recipe says nothing', () => {
+    expect(remoteOf(RECIPE)).toBeNull()
+    expect(RECIPE.repo).not.toHaveProperty('remote')
+
+    const url = Recipe.parse({ ...WRITTEN, repo: { ...WRITTEN.repo, remote: 'https://example.com/x.git' } })
+    expect(remoteOf(url)).toBe('https://example.com/x.git')
+
+    const path = Recipe.parse({ ...WRITTEN, repo: { ...WRITTEN.repo, remote: '/Users/steven/x' } })
+    expect(remoteOf(path)).toBe('/Users/steven/x')
+  })
+
+  it('refuses an empty `repo.remote`', () => {
+    const result = Recipe.safeParse({ ...WRITTEN, repo: { ...WRITTEN.repo, remote: '' } })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.join('.') === 'repo.remote')).toBe(true)
     }
   })
 
@@ -463,7 +488,7 @@ async function sources(dir: URL): Promise<URL[]> {
  * or a space — which is every mention of them in prose and in a refusal — do
  * not.
  */
-const MOVING = /\w\.(runtime\.(limits|assignee)|repo\.(base|submodules)|source\.(kinds|exclude|backoff))\b/
+const MOVING = /\w\.(runtime\.(limits|assignee)|repo\.(base|submodules|remote)|source\.(kinds|exclude|backoff))\b/
 
 describe('nothing reaches past them', () => {
   it('has no reader of a moving setting outside settings.ts', async () => {

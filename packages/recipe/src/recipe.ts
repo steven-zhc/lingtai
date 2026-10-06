@@ -1069,7 +1069,7 @@ const SOURCE_FIELDS = {
    * issue that happens to share its number. Refusing that by name is #382's
    * job; this field only carries the value.
    *
-   * **Not `source.local` (#351).** That field says where this project's code
+   * **Not `repo.remote` (#351).** That field says where this project's code
    * is pushed; this one says where its tickets live — independent axes, and
    * a project may set either, both, or neither.
    */
@@ -2829,6 +2829,40 @@ export const Recipe = z
       /** `git worktree add` does not populate submodules; not doing so breaks every
        *  test that imports one, and reads as "the agent broke the tests". */
       submodules: z.boolean().default(false),
+      /**
+       * The repository's own `origin` — where a mirror fetches from and the merge
+       * lane pushes to. `remoteOf` in `settings.ts` returns `recipe.repo.remote ??
+       * null`, and null means `worktree.ts:102`'s GitHub default,
+       * `https://github.com/<owner>/<repo>.git`.
+       *
+       * **No `.default(...)`, for `source.tickets`'s reason above**: a schema
+       * default would put the key into every recipe's parsed body and change every
+       * project's `configHash` the moment a restarted daemon loaded this code, with
+       * no edit to any recipe file. A recipe that does not write the key hashes
+       * exactly as it did before this field existed.
+       *
+       * **Not parsed as a URL.** Git accepts a URL, an scp-style `git@host:path`
+       * and a plain path, and it is the only reader that needs to understand any
+       * of them — a directory project (#394) writes an absolute path here, which
+       * `z.url()` would refuse. `min(1)` refuses the one value that is certainly
+       * wrong.
+       *
+       * **_Code, restart, paste_** ([the-plugin-body.md](../../../doc/design/the-plugin-body.md)):
+       * `repo:` is `z.object`, not `z.strictObject`, so an older daemon handed
+       * `remote: <url>` does not refuse it — it silently drops the key and keeps
+       * pushing to the GitHub default. There is no refusal to notice that by.
+       *
+       * Written by `init`/`add` (#394, #391) from the repository's own `origin`;
+       * no bare repository is made for it to point at.
+       *
+       * **Not where tickets live.** That is `source.tickets` (#381) — an
+       * independent axis, and a project may set either, both, or neither.
+       *
+       * **`repo:` was never only about what `admit` cuts.** `base` and
+       * `submodules` are; this field makes `repo:` a section about the repository
+       * itself again.
+       */
+      remote: z.string().min(1).optional(),
     }),
 
     /**
