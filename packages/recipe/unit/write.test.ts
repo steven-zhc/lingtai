@@ -214,6 +214,43 @@ repo:
       { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
     ])
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
+    // Only the steps the preset actually supplied and the one this change
+    // named are pinned — a step neither touches (`claim`, `admit`, …) is left
+    // out rather than written as an explicit empty default (#395's
+    // write.ts:139 finding).
+    expect(result.text).not.toMatch(/claim:/)
+    expect(result.text).not.toMatch(/admit:/)
+  })
+
+  it('widens a narrow steps.* write on a file created from scratch in the same call that names the preset', async () => {
+    // No file at all: the #396–#399 onboarding flow collects every first-run
+    // answer — `extends`, `repo.base`, `source.kinds`, `env.plantAt` and the
+    // build command typed — into one `setRecipe` call, per doc/design/395.md.
+    // `existing` is null, which used to skip widening outright and silently
+    // drop the preset's install and gate from the very first file written
+    // (#395's write.ts:164 finding).
+    const files = mapFiles()
+    const result = await setRecipe(
+      'app',
+      [
+        { path: ['extends'], value: 'pnpm-workspace' },
+        { path: ['repo', 'base'], value: 'main' },
+        { path: ['source', 'kinds'], value: ['bug'] },
+        { path: ['env', 'plantAt'], value: '.env.local' },
+        { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
+      ],
+      { home: HOME, files },
+    )
+
+    expect(result.written).toBe(true)
+    const resolved = resolveSource(result.text, 'main', PATH)
+    expect(resolved.recipe.steps.prepared).toEqual([
+      { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
+    ])
+    expect(resolved.recipe.steps.proposed).toEqual([
+      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
+    ])
+    expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
   })
 
   it('is a no-op when a change sets the value the file already has', async () => {

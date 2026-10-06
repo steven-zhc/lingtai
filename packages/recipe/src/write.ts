@@ -112,8 +112,23 @@ function editedText(existing: string | null, changes: readonly RecipeChange[], p
  * that supplies the missing answer is often the same one that writes the
  * first `steps:` key. Resolving the raw file would throw and fall into the
  * catch below, skipping the widening it most needs to do.
+ *
+ * `existing` is null for a file being created, same as everywhere else in
+ * this module — `extends:` plus a `steps.*` answer in one `setRecipe` call
+ * (the shape doc/design/395.md's onboarding flow describes) widens exactly
+ * like an edit to a file that already has the preset's steps inherited.
+ *
+ * Only the steps that actually moved are carried into the written value —
+ * the ones the preset supplies and the narrow edit would otherwise drop —
+ * plus the ones this change named. A step neither the preset nor this change
+ * touches resolves to the same schema default with or without a `steps:` key
+ * naming it, so it is left out rather than pinned.
  */
-function widenStepsIfNeeded(existing: string, changes: readonly RecipeChange[], path: string): readonly RecipeChange[] {
+function widenStepsIfNeeded(
+  existing: string | null,
+  changes: readonly RecipeChange[],
+  path: string,
+): readonly RecipeChange[] {
   const stepChanges = changes.filter((c) => c.path[0] === 'steps')
   if (stepChanges.length === 0 || stepChanges.some((c) => c.path.length === 1)) return changes
 
@@ -131,12 +146,13 @@ function widenStepsIfNeeded(existing: string, changes: readonly RecipeChange[], 
   const narrowSteps = resolveSource(narrowText, refFor(narrowText, path), path).recipe.steps as Record<string, unknown>
   const beforeSteps = before.recipe.steps as Record<string, unknown>
   const touched = new Set(stepChanges.map((c) => String(c.path[1])))
-  const displaced = Object.keys(beforeSteps).some(
+  const displacedKeys = Object.keys(beforeSteps).filter(
     (key) => !touched.has(key) && !isDeepStrictEqual(beforeSteps[key], narrowSteps[key]),
   )
-  if (!displaced) return changes
+  if (displacedKeys.length === 0) return changes
 
-  const fullSteps: Record<string, unknown> = { ...beforeSteps }
+  const fullSteps: Record<string, unknown> = {}
+  for (const key of displacedKeys) fullSteps[key] = beforeSteps[key]
   for (const key of touched) fullSteps[key] = narrowSteps[key]
   return [...changes.filter((c) => c.path[0] !== 'steps'), { path: ['steps'], value: fullSteps }]
 }
@@ -161,7 +177,7 @@ export async function setRecipe(
   const files = options?.files ?? diskFiles
   const path = recipePath(project, options?.home)
   const existing = await files.read(path)
-  const widened = existing === null ? changes : widenStepsIfNeeded(existing, changes, path)
+  const widened = widenStepsIfNeeded(existing, changes, path)
   const text = editedText(existing, widened, path)
 
   resolveSource(text, refFor(text, path), path)
