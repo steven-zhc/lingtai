@@ -38,17 +38,17 @@ import { close } from '@lingtai/conductor/close'
 // the same reason `./board` and `./projects` exist.
 import { approve, requeue } from '@lingtai/conductor/decide'
 import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
+import { projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
-import { currentRecipe, loadAllProjects, loadProject } from '@lingtai/conductor/projects'
+import { loadAllProjects, loadProject } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
 import { CONTROL_STREAM, parsePayload, parseWorkItemStream, reduceWorkItem, workItemStream } from '@lingtai/domain'
 import { isPending, isRegistered } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
-import { createGitHubClient } from '@lingtai/github'
 import { kindsOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { revalidatePath } from 'next/cache'
@@ -75,17 +75,14 @@ export async function approveCard(input: {
   try {
     if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
     const state = await project(input.project)
-    const client = await createGitHubClient({
-      auth: githubApp(),
-      owner: state.owner!,
-      repo: input.project,
-    })
+    const { client, resolved } = await projectClient(state)
 
     const result = await approve({
       project: input.project,
       issue: input.issue,
       base: state.base ?? (await client.defaultBranch()),
       client,
+      recipe: async () => resolved,
       by: actor(),
       // The sha the card was offering, which is the one the run is *asking*
       // about (`task_view.awaiting_sha`) and not the one it produced. Checked
@@ -194,11 +191,7 @@ export async function closeCard(input: { project: string; issue: number; reason:
     if (!input.reason.trim()) return { ok: false, detail: 'a close needs a reason' }
     if (!hasGitHubApp()) return { ok: false, detail: 'no GitHub App configured' }
     const state = await project(input.project)
-    const client = await createGitHubClient({
-      auth: githubApp(),
-      owner: state.owner!,
-      repo: input.project,
-    })
+    const { client, resolved } = await projectClient(state)
 
     const result = await close({
       project: input.project,
@@ -207,6 +200,7 @@ export async function closeCard(input: { project: string; issue: number; reason:
       reason: input.reason,
       state,
       client,
+      recipe: async () => resolved,
     })
 
     revalidatePath('/')
@@ -233,21 +227,18 @@ export async function acceptBacklogFinding(input: {
 }): Promise<ActionResult> {
   try {
     const state = await project(input.project)
-    const client = await createGitHubClient({
-      auth: githubApp(),
-      owner: state.owner!,
-      repo: input.project,
-    })
     // Read from this machine's recipe (#180), the one the queue obeys, not
     // trusted from the text box: a kind it does not list is an issue the queue
-    // never sees.
-    const { recipe } = await currentRecipe(state, client)
+    // never sees. `client` carries a `db` project's own ticket verbs
+    // (`projectClient`, #383), so `githubTicketStore` writes the finding
+    // wherever this project's tickets actually live.
+    const { client, resolved } = await projectClient(state)
     const result = await acceptFinding({
       project: input.project,
       key: input.key,
       by: actor(),
       kind: input.kind,
-      kinds: kindsOf(recipe),
+      kinds: kindsOf(resolved.recipe),
       labels: input.hold === false ? [] : ['agent:hold'],
       tickets: githubTicketStore(client),
     })
@@ -422,11 +413,7 @@ export async function concludeChat(input: {
     let ticket: { github: IssueChannel; body: string } | undefined
     if (input.outcome === 'ticket') {
       const state = await project(parsed.project)
-      const client = await createGitHubClient({
-        auth: githubApp(),
-        owner: state.owner!,
-        repo: parsed.project,
-      })
+      const { client } = await projectClient(state)
       const issue = await client.getIssue(Number(parsed.issue))
       ticket = { github: client, body: issue.body }
     }

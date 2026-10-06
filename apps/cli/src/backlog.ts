@@ -14,9 +14,9 @@ import { userInfo } from 'node:os'
  * accepts what it matches: a batch accept that means *all of them* is the rule
  * 0038 refused to write, typed at a terminal instead.
  */
-import { acceptFinding, currentRecipe, declineFinding, githubTicketStore, loadProject } from '@lingtai/conductor'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
-import { createGitHubClient } from '@lingtai/github'
+import { acceptFinding, declineFinding, githubTicketStore, loadProject } from '@lingtai/conductor'
+import { projectClient } from '@lingtai/conductor/filter'
+import { hasGitHubApp } from '@lingtai/env'
 import {
   type BacklogEntry,
   backlogProjection,
@@ -192,17 +192,18 @@ export async function backlogCommand(args: string[], log = console.log): Promise
       log(`no project named "${project}" — run lingtai add <owner>/<repo> first`)
       return 1
     }
-    const client = await createGitHubClient({ auth: githubApp(), owner: state.owner, repo: project })
     // The recipe on the base branch decides which kinds the queue sees, so it
-    // is read here rather than trusted from the flag.
-    const { recipe } = await currentRecipe(state, client)
+    // is read here rather than trusted from the flag. `client` carries a `db`
+    // project's own ticket verbs (`projectClient`, #383), so `githubTicketStore`
+    // writes the finding wherever this project's tickets actually live.
+    const { client, resolved } = await projectClient(state)
     return withProjector(log, async () => {
       const r = await acceptFinding({
         project,
         key,
         by,
         kind,
-        kinds: kindsOf(recipe),
+        kinds: kindsOf(resolved.recipe),
         labels: 'unheld' in flags ? [] : [HOLD],
         tickets: githubTicketStore(client),
       })

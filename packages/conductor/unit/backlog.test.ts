@@ -11,12 +11,15 @@
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { backlogStream, findingKey } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import type { BacklogEntry } from '@lingtai/projector'
 import { describe, expect, it } from 'vitest'
 
 import { acceptFinding, declineFinding, proposalFor } from '../src/backlog.ts'
-import { githubTicketStore, keyMarker, type TicketStore } from '../src/ticket-store.ts'
+import { dbTickets } from '../src/db-tickets.ts'
+import { githubTicketStore, keyMarker, passClientOf, type TicketStore } from '../src/ticket-store.ts'
+import { fakeGitHub as fullFakeGitHub } from '../test/one-pass.ts'
 
 const entry: BacklogEntry = {
   key: '0123456789ab',
@@ -408,6 +411,47 @@ describe('acceptFinding', () => {
     expect(r.detail).toContain('nothing was opened')
     expect(gh.issues).toEqual([])
     expect(log.typesOn(stream)).toEqual(['FindingDeclined'])
+  })
+
+  /**
+   * **A `db` project's accept writes to `dbTickets`, never to GitHub** (`#383`).
+   * `client` here is what `projectClient` hands every site this ticket moved
+   * — `passClientOf` over a `db` project's `dbTickets` — so this is the same
+   * shape `apps/cli/src/backlog.ts` and the board's `acceptBacklogFinding` now
+   * pass to `githubTicketStore`.
+   */
+  it("writes a db project's accepted finding to dbTickets, and calls GitHub for none of the four verbs it touches", async () => {
+    const calls: string[] = []
+    const github = fullFakeGitHub([])
+    const wrapped: Pick<GitHubClient, 'createIssue' | 'listIssuesSince' | 'comment' | 'closeIssue'> = {
+      createIssue: async () => {
+        calls.push('createIssue')
+        throw new Error('not reached in this test — the ticket verbs come from dbTickets, not this fake')
+      },
+      listIssuesSince: async () => {
+        calls.push('listIssuesSince')
+        return []
+      },
+      comment: async () => {
+        calls.push('comment')
+        return { id: 1 }
+      },
+      closeIssue: async () => {
+        calls.push('closeIssue')
+      },
+    }
+    const sql = createSqliteTicketSql(openSqliteLog(':memory:'))
+    const tickets = dbTickets(sql, 'lingtai')
+    const client = passClientOf({ ...github, ...wrapped } as GitHubClient, tickets)
+
+    const log = fakeLog()
+    const r = await accept(log, githubTicketStore(client), { kind: 'tech-debt' })
+    expect(r).toMatchObject({ ok: true })
+
+    expect(calls).toEqual([])
+    const opened = await tickets.listIssuesSince(new Date(0))
+    expect(opened).toHaveLength(1)
+    expect(opened[0]!.body).toContain(keyMarker(entry.key))
   })
 })
 

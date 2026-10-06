@@ -34,7 +34,7 @@ import {
 import { passCeiling } from './ceiling.ts'
 import type { TicketSource } from './discover.ts'
 import { currentRecipe } from './projects.ts'
-import { ticketsFor } from './ticket-store.ts'
+import { passClientOf, ticketsFor, type TicketedClient, type TicketsForOptions } from './ticket-store.ts'
 
 // Its own file so a page can call it in the browser (#164); every caller that
 // imported it from here still does.
@@ -216,6 +216,35 @@ export async function githubClientFor(state: ProjectState): Promise<GitHubClient
   if (!state.project) throw new Error('no repository name recorded — re-run lingtai add')
   if (!state.owner) throw new Error('no owner recorded — re-run lingtai add to record it')
   return createGitHubClient({ auth: githubApp(), owner: state.owner, repo: state.project })
+}
+
+/**
+ * One project's client and the recipe it resolved to, with the ticket verbs
+ * already taken from `ticketsFor` (#382, #383).
+ *
+ * The same sequence `projectFilter` runs, below: build the client, resolve
+ * the recipe against it, then ask `ticketsFor` where this project's tickets
+ * actually live — `client` itself for `github`, `dbTickets` for `db`. Before
+ * this, the commands that touch a ticket outside a pass — the board's
+ * actions, `lingtai backlog`, `close`, `approve`, `end replay` and
+ * `discuss` — built the first and stopped, so a `db` project's tickets were
+ * read and written as GitHub issues that do not exist wherever those commands
+ * touched them.
+ *
+ * `options.tickets` exists for the unit tests: handed a `:memory:` SQLite and
+ * a fake log, `ticketsFor` never reaches `processTicketSql()`'s default,
+ * which `HOME=/nonexistent pnpm test` cannot open.
+ */
+export async function projectClient(
+  state: ProjectState,
+  options: { clientFor?: ClientFor; recipeFor?: RecipeFor; tickets?: TicketsForOptions } = {},
+): Promise<{ client: TicketedClient; resolved: ResolvedRecipe }> {
+  const clientFor = options.clientFor ?? githubClientFor
+  const recipeFor = options.recipeFor ?? currentRecipe
+  const client = await clientFor(state)
+  const resolved = await recipeFor(state, client)
+  const tickets = await ticketsFor(state, resolved.recipe, client, options.tickets)
+  return { client: passClientOf(client, tickets), resolved }
 }
 
 /**

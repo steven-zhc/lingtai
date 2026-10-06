@@ -30,7 +30,8 @@ import { agentBranch } from './branches.ts'
 import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'
 import { signedInHere } from './projects.ts'
-import { tellGitHubAbout } from './tell.ts'
+import { tellGitHubAbout, type RefChannel } from './tell.ts'
+import type { Tickets } from './ticket-store.ts'
 
 /**
  * One decision about a work item at a time: `approve` and `requeue` hold this
@@ -114,7 +115,16 @@ export interface ApproveOptions {
   project: string
   issue: number
   base: string
-  client: GitHubClient
+  /**
+   * `refSha` for the staleness check against the branch (#150); `Tickets`,
+   * `RefChannel` and `owner`/`repo` for everything else this does to the
+   * ticket and the merge (#383) — the ticket verbs on `tellGitHubAbout`'s
+   * call, `owner`/`repo` on `integrate`'s. The same shape `conduct.ts` calls
+   * `PassClient`, named out here instead of imported from there so this file
+   * does not reach `conduct.ts` for one type. `TicketedClient`
+   * (`ticket-store.ts`) satisfies it.
+   */
+  client: Tickets & RefChannel & Pick<GitHubClient, 'refSha' | 'owner' | 'repo'>
   /** The recipe whose `end` point runs. The machine's file unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>
   /** Recorded on the approval. A waiver is never anonymous, and neither is this. */

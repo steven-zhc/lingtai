@@ -12,11 +12,22 @@
  * nothing anywhere saying why.
  */
 import type { ProjectState } from '@lingtai/domain'
+import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
+import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import type { GitHubClient } from '@lingtai/github'
 import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { type RecipeFor, describeAssignee, describeFilter, passCeiling, projectFilter } from '../src/filter.ts'
+import { dbTickets } from '../src/db-tickets.ts'
+import {
+  type RecipeFor,
+  describeAssignee,
+  describeFilter,
+  passCeiling,
+  projectClient,
+  projectFilter,
+} from '../src/filter.ts'
+import { fakeGitHub, project as onePassProject, PROJECT } from '../test/one-pass.ts'
 
 const project = { project: 'lingtai', owner: 'steven-zhc', base: 'main' } as ProjectState
 
@@ -188,6 +199,68 @@ describe('projectFilter', () => {
       ok: false,
       problem: 'no owner recorded — re-run lingtai add to record it',
     })
+  })
+})
+
+function freshSql(): TicketSql {
+  return createSqliteTicketSql(openSqliteLog(':memory:'))
+}
+
+const RECIPE_GITHUB_TICKETS = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps: {}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+const RECIPE_DB_TICKETS = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [], tickets: db }
+env: { required: [], plantAt: .env.local }
+steps: {}
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+/**
+ * The seam every site #383 moved onto — the client and the recipe, built and
+ * resolved together, with the ticket side already taken from `ticketsFor`.
+ */
+describe('projectClient', () => {
+  it('answers the client itself as `client` when the recipe names no source', async () => {
+    const said: string[] = []
+    const github = fakeGitHub(said, RECIPE_GITHUB_TICKETS)
+
+    const { client, resolved } = await projectClient(onePassProject, {
+      clientFor: async () => github,
+      recipeFor: fromFile,
+    })
+
+    expect(client).toBe(github)
+    expect(resolved.recipe.source.kinds).toEqual(['bug'])
+  })
+
+  /** `token`, `defaultBranch` and `refSha` still answer from the fake — only the eight ticket verbs move. */
+  it('answers from dbTickets when the recipe says db, and leaves the rest of the client alone', async () => {
+    const said: string[] = []
+    const github = fakeGitHub(said, RECIPE_DB_TICKETS)
+    const sql = freshSql()
+
+    const { client } = await projectClient(onePassProject, {
+      clientFor: async () => github,
+      recipeFor: fromFile,
+      tickets: { sql, log: { projectStreams: async () => [] } },
+    })
+
+    expect(client).not.toBe(github)
+    const opened = await dbTickets(sql, PROJECT).createIssue({ title: 'seeded', body: '', labels: ['bug'] })
+    await expect(client.getIssue(opened.number)).resolves.toMatchObject({ title: 'seeded' })
+
+    expect(await client.token()).toBe('not-a-real-token')
+    expect(await client.defaultBranch()).toBe('main')
+    expect(await client.refSha('heads/main')).toBe('0'.repeat(40))
   })
 })
 

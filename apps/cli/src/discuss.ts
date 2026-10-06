@@ -51,7 +51,7 @@ import {
   type DiscussionPorts,
   type ReadableRef,
 } from '@lingtai/conductor/discuss'
-import { githubClientFor } from '@lingtai/conductor/filter'
+import { projectClient } from '@lingtai/conductor/filter'
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { runLogPath } from '@lingtai/conductor/run-log'
 import {
@@ -188,7 +188,7 @@ export async function gatherEvidence(request: DiscussionRequest): Promise<Discus
     ticketProblem = `${project} is not a registered project`
   } else {
     try {
-      const client = await githubClientFor(state)
+      const { client } = await projectClient(state)
       const live = await client.getIssue(Number(parsed?.issue))
       ticket = { ref: String(live.number), title: live.title, body: live.body }
     } catch (err) {

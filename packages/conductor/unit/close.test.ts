@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 import { applyWorkItem, reduceWorkItem, type Envelope } from '@lingtai/domain'
+import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
+import type { GitHubClient } from '@lingtai/github'
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 /**
  * Closing a ticket nobody is going to do (#151).
@@ -14,6 +16,9 @@ import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import { close } from '../src/close.ts'
+import { dbTickets } from '../src/db-tickets.ts'
+import { passClientOf } from '../src/ticket-store.ts'
+import { fakeGitHub as fullFakeGitHub } from '../test/one-pass.ts'
 
 const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString()
 
@@ -225,5 +230,85 @@ describe('closing runs the end point', () => {
     // point is the silence this whole mechanism exists to prevent.
     expect(s.appends).toEqual([])
     expect(g.closedIssues).toEqual([])
+  })
+})
+
+/**
+ * `close()` narrowed to `IssueChannel & RefChannel` so `client` can be a
+ * `db` project's `TicketedClient` (`passClientOf`, #383) rather than a raw
+ * `GitHubClient` — the same client every CLI and board call site now gets
+ * from `projectClient`.
+ */
+describe("a db project's close", () => {
+  const RECIPE_DB_END_CLOSE = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [], tickets: db }
+env: { required: [], plantAt: .env.local }
+steps:
+  end:
+    - name: close it
+      when: closed
+      close: true
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+
+  /** Tracks every one of `IssueChannel`'s verbs reaching the raw fake, so a regression that hands `close()` the raw github client instead of its `dbTickets`-backed one is visible here. */
+  function recordIssueCalls(client: GitHubClient, calls: string[]): GitHubClient {
+    const wrapped: Record<string, unknown> = { ...client }
+    for (const verb of ['getIssue', 'comment', 'setLabels', 'closeIssue', 'updateBody'] as const) {
+      const original = (client as unknown as Record<string, unknown>)[verb]
+      wrapped[verb] = (...args: unknown[]) => {
+        calls.push(verb)
+        if (typeof original !== 'function') throw new Error(`fake.${verb} has no implementation`)
+        return (original as (...a: unknown[]) => unknown)(...args)
+      }
+    }
+    return wrapped as unknown as GitHubClient
+  }
+
+  it("closes a db project's ticket in dbTickets, and reaches none of IssueChannel's verbs on the raw client", async () => {
+    const calls: string[] = []
+    const github = recordIssueCalls(fullFakeGitHub([]), calls)
+    const sql = createSqliteTicketSql(openSqliteLog(':memory:'))
+    const tickets = dbTickets(sql, 'lingtai')
+    const opened = await tickets.createIssue({ title: 'a ticket', body: 'fix it', labels: ['bug'] })
+    const client = passClientOf(github, tickets)
+
+    const events: Envelope[] = []
+    const outcome = await close({
+      project: 'lingtai',
+      issue: opened.number,
+      by: 'human:steven',
+      reason: 'over-built for the need',
+      state: { project: 'lingtai', owner: 'steven-zhc', base: 'main' },
+      client,
+      recipe: () => resolveRecipe(async (p) => (p === RECIPE_PATH ? RECIPE_DB_END_CLOSE : null), 'main'),
+      store: {
+        async read() {
+          return events
+        },
+        async append(_id: string, _version: number, toAppend: { type: string; data: unknown }[]) {
+          for (const e of toAppend) {
+            events.push({
+              seq: events.length + 1,
+              type: e.type,
+              data: e.data,
+              actor: 'human:steven',
+            } as unknown as Envelope)
+          }
+          return []
+        },
+      },
+    } as unknown as Parameters<typeof close>[0])
+
+    expect(outcome.ok).toBe(true)
+    expect(calls).toEqual([])
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.state).toBe('closed')
+    // Lingtai's own labels came off, the same as `closing runs the end point`
+    // asserts against the real client above.
+    expect(after.labels.map((l) => l.name)).toEqual(['bug'])
   })
 })

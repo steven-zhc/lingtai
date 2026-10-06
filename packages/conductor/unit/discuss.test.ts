@@ -8,14 +8,19 @@ import type { Envelope, ToAppend } from '@lingtai/domain'
  * about what is stored. `readingFor` is the sentence Lingtai writes before the
  * assistant speaks; `parseReply` is what refuses to present prose as an answer.
  *
- * Unit, under `--project unit`: nothing here reads a database, and an
+ * Unit, under `--project unit`: most of this reads no database, and an
  * assistant whose containment needed one would be the wrong shape.
+ * `concludeDiscussion`'s `db`-project test below is SQLite `:memory:`, which
+ * 0060 §1 counts as unit too — it touches no filesystem and no process.
  */
+import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { describe, expect, it } from 'vitest'
 
+import { dbTickets } from '../src/db-tickets.ts'
 import {
   appendToBody,
   buildBrief,
+  concludeDiscussion,
   holdDiscussion,
   MAX_READ_ROUNDS,
   outstanding,
@@ -27,6 +32,8 @@ import {
   type Answered,
   type DiscussionEvidence,
 } from '../src/discuss.ts'
+import { passClientOf } from '../src/ticket-store.ts'
+import { fakeGitHub as fullFakeGitHub, memoryStore } from '../test/one-pass.ts'
 
 const EVIDENCE: DiscussionEvidence = {
   workItemId: 'wi-lingtai-89',
@@ -168,6 +175,47 @@ describe('the ticket, appended to', () => {
     expect(body).toContain('The original ticket.')
     expect(body).toContain('## Added from a discussion, 2026-09-09, by human:steven')
     expect(body).toContain('Pass --max-turns.')
+  })
+})
+
+/**
+ * `ticket.github` is `IssueChannel`, and a `db` project's `TicketedClient`
+ * (`passClientOf`, #383) satisfies it the same way the board's `concludeChat`
+ * now hands it one — `IssueChannel` is a subset of `TicketedClient`.
+ */
+describe('concludeDiscussion', () => {
+  it("writes a db project's ticket outcome to dbTickets' body, and reaches none of IssueChannel's verbs on the raw client", async () => {
+    const calls: string[] = []
+    const github = fullFakeGitHub([])
+    const wrapped = {
+      ...github,
+      updateBody: async (...args: Parameters<typeof github.updateBody>) => {
+        calls.push('updateBody')
+        return github.updateBody(...args)
+      },
+    }
+    const sql = createSqliteTicketSql(openSqliteLog(':memory:'))
+    const tickets = dbTickets(sql, 'lingtai')
+    const opened = await tickets.createIssue({ title: 't', body: 'the original ticket.', labels: ['bug'] })
+    const client = passClientOf(wrapped, tickets)
+
+    const store = memoryStore()
+    const result = await concludeDiscussion({
+      store,
+      workItemId: `wi-lingtai-${opened.number}`,
+      chatId: 'chat-1',
+      by: 'human:steven',
+      outcome: 'ticket',
+      text: 'Pass --max-turns.',
+      ticket: { github: client, body: opened.body },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(calls).toEqual([])
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.body).toContain('the original ticket.')
+    expect(after.body).toContain('Pass --max-turns.')
   })
 })
 

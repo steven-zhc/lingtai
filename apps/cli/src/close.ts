@@ -22,8 +22,8 @@ import { userInfo } from 'node:os'
  * for the same reason `lingtai approve` refuses.
  */
 import { close, loadProject } from '@lingtai/conductor'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
-import { createGitHubClient } from '@lingtai/github'
+import { projectClient } from '@lingtai/conductor/filter'
+import { hasGitHubApp } from '@lingtai/env'
 
 import { withProjector } from './projector.ts'
 
@@ -54,11 +54,7 @@ export function closeCommand(options: CloseCommandOptions, log = console.log): P
       return 1
     }
 
-    const client = await createGitHubClient({
-      auth: githubApp(),
-      owner: project.owner,
-      repo: options.project,
-    })
+    const { client, resolved } = await projectClient(project)
 
     return withProjector(log, async () => {
       // The local account, as `requeue`, `ask` and the board record it (0007).
@@ -70,6 +66,7 @@ export function closeCommand(options: CloseCommandOptions, log = console.log): P
         by,
         state: project,
         client,
+        recipe: async () => resolved,
       })
       log(outcome.detail)
       return outcome.ok ? 0 : 1

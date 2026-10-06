@@ -49,14 +49,13 @@
  */
 import { parsePayload, type ProjectState, reduceWorkItem, workItemStream } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import type { GitHubClient } from '@lingtai/github'
 import type { StepAction } from '@lingtai/recipe'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 
 import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'
 import { currentRecipe } from './projects.ts'
-import { tellGitHubAbout } from './tell.ts'
+import { tellGitHubAbout, type IssueChannel, type RefChannel } from './tell.ts'
 
 export interface CloseOutcome {
   ok: boolean
@@ -88,7 +87,8 @@ export async function close(options: {
    * two commands a person actually uses both pass them.
    */
   state?: ProjectState
-  client?: GitHubClient
+  /** Only what `tellGitHubAbout` carries this out with (#383) — never the refs or the merge. */
+  client?: IssueChannel & RefChannel
   /** The recipe whose `end` point runs. `currentRecipe` — the machine's file — unless a test says otherwise. */
   recipe?: () => Promise<ResolvedRecipe>
   store?: EventStore

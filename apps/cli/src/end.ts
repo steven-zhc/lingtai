@@ -21,11 +21,18 @@
  * from the log, and reading the current one is the same rule every other read
  * of a recipe follows (0005).
  */
-import { appendEndActions, currentRecipe, endedWithoutEndActions, loadProject } from '@lingtai/conductor'
+import {
+  appendEndActions,
+  currentRecipe,
+  endedWithoutEndActions,
+  loadProject,
+  type TicketedClient,
+} from '@lingtai/conductor'
 import { tellGitHubAbout } from '@lingtai/conductor'
-import { githubApp, hasGitHubApp } from '@lingtai/env'
+import { projectClient } from '@lingtai/conductor/filter'
+import { hasGitHubApp } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
-import { createGitHubClient, type GitHubClient } from '@lingtai/github'
+import type { ResolvedRecipe } from '@lingtai/recipe'
 
 import { withProjector } from './projector.ts'
 
@@ -58,9 +65,11 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
   // actions and the board reads a projection of them, so it follows the log
   // while it works — the same rule the daemon and `lingtai run` obey.
   return withProjector(log, async () => {
-    // One client per project. An installation token is scoped to one repository,
-    // and minting one per item would be a lookup per item.
-    const clients = new Map<string, GitHubClient>()
+    // One client per project — now a project's own ticket side too
+    // (`projectClient`, #383), never GitHub's for a `db` project. An
+    // installation token is scoped to one repository, and minting one per item
+    // would be a lookup per item.
+    const clients = new Map<string, TicketedClient>()
     let replayed = 0
 
     for (const item of found) {
@@ -71,15 +80,17 @@ export async function endReplay(options: EndReplayOptions = {}, log = console.lo
       }
       try {
         let client = clients.get(item.project)
+        let resolved: ResolvedRecipe
         if (!client) {
-          client = await createGitHubClient({
-            auth: githubApp(),
-            owner: project.owner,
-            repo: item.project,
-          })
+          // Built and resolved together, so the recipe that decided this
+          // project's ticket source is the one whose `end` runs here too.
+          const built = await projectClient(project)
+          client = built.client
+          resolved = built.resolved
           clients.set(item.project, client)
+        } else {
+          resolved = await currentRecipe(project, client)
         }
-        const resolved = await currentRecipe(project, client)
         // The outcome the item actually reached, not a constant. This read
         // `"landed"` when landing was the only ending audited; a closed ticket
         // replayed as landed would write a resolution naming an outcome its own

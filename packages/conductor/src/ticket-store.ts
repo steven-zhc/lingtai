@@ -31,7 +31,6 @@ import { ticketSourceOf } from '@lingtai/recipe/settings'
 
 import { dbTickets } from './db-tickets.ts'
 import type { TicketDetail, TicketListing } from './discover.ts'
-import type { RefChannel } from './tell.ts'
 
 /**
  * A ticket's detail plus where it lives, if anywhere a person can browse to —
@@ -258,7 +257,31 @@ export async function ticketsFor(
 }
 
 /**
- * The client a pass is handed, with its ticket verbs taken from `tickets`.
+ * `passClientOf`'s return type: every member of `GitHubClient` except the
+ * eight `Tickets` verbs, which come from `Tickets` instead.
+ *
+ * **Not `GitHubClient` itself.** `dbTickets` answers a label's `color` and
+ * the array it carries both as read-only — the same shape `Tickets.getIssue`
+ * promises — where `GitHubClient`'s own `Issue` promises a mutable `Label[]`
+ * for the issue it actually fetched; the two cannot both be true of the
+ * shared verbs' return type. `Omit`ting them from `GitHubClient` and taking
+ * them from `Tickets` alone is how both sides of that disagreement get to be
+ * right (#383).
+ *
+ * **Wider than the old `PassClient`-shaped return on purpose.** `runOnce`,
+ * `runQueue` and `runnableNow` only ever asked for `Tickets`, `RefChannel` and
+ * `owner`/`repo`, which is what this returned before #383. The sites #383
+ * moved off building their own `GitHubClient` — `close()`, `approve()`, the
+ * board's actions, `lingtai backlog`/`close`/`approve`/`end replay` — also
+ * need `token()`, `defaultBranch()` and `refSha()` on the one client they are
+ * handed, so this keeps every member `Tickets` does not replace rather than
+ * dropping them for a narrower type each caller would have had to recover.
+ */
+export type TicketedClient = Omit<GitHubClient, keyof Tickets> & Tickets
+
+/**
+ * The client a pass — or any other caller that touches a ticket — is handed,
+ * with its ticket verbs taken from `tickets`.
  *
  * `tickets === client` (`ticketsFor`'s `'github'` branch): returns `client`
  * unchanged. Otherwise returns a copy of `client` with each of `Tickets`'
@@ -269,19 +292,8 @@ export async function ticketsFor(
  * **The refs, `fileAt`, the default branch and the token are untouched.**
  * Those still go to GitHub for a project that is on GitHub; only the ticket
  * verbs move.
- *
- * **Typed `PassClient`'s own shape and not `GitHubClient`.** `dbTickets`
- * answers a label's `color` and the array it carries both as read-only — the
- * same shape `Tickets.getIssue` promises — where `GitHubClient`'s `Issue`
- * promises a mutable `Label[]` for the issue it actually fetched; the two
- * cannot both be true of one return type. Every real caller (`runOnce`,
- * `runQueue`, `runnableNow`, `convergeIssues`) asks for `Tickets`, `RefChannel`
- * and `owner`/`repo` and nothing wider, which is this.
  */
-export function passClientOf(
-  client: GitHubClient,
-  tickets: Tickets,
-): Tickets & RefChannel & { readonly owner: string; readonly repo: string } {
+export function passClientOf(client: GitHubClient, tickets: Tickets): TicketedClient {
   if ((tickets as unknown) === (client as unknown)) return client
   return {
     ...client,
