@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import {
   type RecipeFiles,
   RecipeInvalidError,
-  readRecipeComment,
   readRecipeKey,
   recipePath,
   resolveSource,
@@ -267,29 +266,5 @@ describe('readRecipeKey', () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     expect(await readRecipeKey('app', ['runtime', 'agent'], { home: HOME, files })).toBeNull()
     expect(await readRecipeKey('app', ['source', 'kinds'], { home: HOME, files: mapFiles() })).toBeNull()
-  })
-})
-
-describe('readRecipeComment', () => {
-  it('returns the comment written directly above a map key', async () => {
-    const files = mapFiles({ [PATH]: FIXTURE })
-    expect(await readRecipeComment('app', ['source', 'backoff'], { home: HOME, files })).toBe(
-      ' how long a backoff waits',
-    )
-  })
-
-  it('returns null for a key with no comment, an absent key, and an absent file', async () => {
-    const files = mapFiles({ [PATH]: FIXTURE })
-    expect(await readRecipeComment('app', ['env', 'plantAt'], { home: HOME, files })).toBeNull()
-    expect(await readRecipeComment('app', ['runtime', 'agent'], { home: HOME, files })).toBeNull()
-    expect(await readRecipeComment('app', ['source', 'backoff'], { home: HOME, files: mapFiles() })).toBeNull()
-  })
-
-  it('returns the comment above a field nested inside a list item, not the item itself', async () => {
-    const files = mapFiles({
-      [PATH]: `${FIXTURE}  review:\n    - name: review\n      agent: claude-code\n      # why opus\n      model: opus\n      prompt: ''\n`,
-    })
-    expect(await readRecipeComment('app', ['steps', 'review', 0, 'model'], { home: HOME, files })).toBe(' why opus')
-    expect(await readRecipeComment('app', ['steps', 'review', 0, 'agent'], { home: HOME, files })).toBeNull()
   })
 })

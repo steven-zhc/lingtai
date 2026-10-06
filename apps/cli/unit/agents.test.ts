@@ -379,15 +379,9 @@ describe('askAgents', () => {
       expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
     })
 
-    it('refuses rather than silently drop a comment above the model it would default away, on a writer switch', async () => {
-      // This repository's own house style: a comment explaining the model
-      // choice, directly above `model:` rather than above the whole action —
-      // so it is not the item-level comment `isDifferentItem` protects.
-      // Switching the writer resets `currentModel` to null (above), and
-      // pressing enter on the model question would otherwise write
-      // `value: undefined` straight through `editRecipe`'s `doc.deleteIn`,
-      // which takes a key's own comment with it the moment its exact path is
-      // named — never refused, because that deletion is never asked about.
+    it('a writer switch removes the model, and the comment on it goes with it (0104 §14)', async () => {
+      // The recipe is machine-managed: a key a change removes takes its own
+      // comment with it, and nothing refuses to write for that.
       const COMMENTED_MODEL = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      # opus, because the review prompt below is a hundred lines and sonnet skims it\n      model: opus\n      prompt: ''\n`
       const files = mapFiles({ [PATH]: COMMENTED_MODEL })
       const { world } = fakeWorld(['codex', '', '', ''])
@@ -398,19 +392,17 @@ describe('askAgents', () => {
         home: HOME,
         files,
       })
-      expect(result).toHaveProperty('refused')
-      const refusal = (result as { refused: string }).refused
-      expect(refusal).toContain('opus, because the review prompt')
-      expect(files.replaced).toEqual([])
+      if ('refused' in result) throw new Error(result.refused)
+
+      await setRecipe('app', result.changes, { home: HOME, files })
+      const written = await setRecipe('app', result.modelChanges, { home: HOME, files })
+      expect(written.text).not.toContain('model: opus')
+      expect(written.text).not.toContain('opus, because the review prompt')
     })
 
-    it('switching the writer on a commented action writes through two setRecipe calls rather than throw CommentWouldBeLostError', async () => {
-      // This repository's own house style: a comment above the implement
-      // action. Switching the writer changes `agent:` and removes `model:`
-      // on that same item — two fields of one commented action — which
-      // `isDifferentItem` (`emit.ts:286`) refuses when both land in the same
-      // `setRecipe` call. `askAgents` splits them into `changes` (agent) and
-      // `modelChanges` (model) for exactly this reason.
+    it("switching the writer on a commented action keeps the action's own comment", async () => {
+      // A comment above the implement action is about the action, which a
+      // writer switch edits in place rather than removes, so it stays.
       const COMMENTED_IMPLEMENT = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    # the writer: this is the action that opens the branch\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: ''\n`
       const files = mapFiles({ [PATH]: COMMENTED_IMPLEMENT })
       const { world } = fakeWorld(['codex', '', '', ''])

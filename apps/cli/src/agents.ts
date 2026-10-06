@@ -25,7 +25,7 @@
  */
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
-import { isBuiltInJudge, readRecipeComment, readRecipeKey } from '@lingtai/recipe'
+import { isBuiltInJudge, readRecipeKey } from '@lingtai/recipe'
 
 import { question, type QuestionWorld } from './question.ts'
 import type { RuntimeFound, RuntimeName } from './runtimes.ts'
@@ -46,26 +46,6 @@ function findAgentAction(list: unknown): { index: number; action: Record<string,
   if (!Array.isArray(list)) return null
   const index = list.findIndex((item) => item !== null && typeof item === 'object' && 'agent' in (item as object))
   return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
-}
-
-/**
- * A refusal when writing `value: undefined` at `path` would delete a comment
- * nobody was asked about — `editRecipe` takes a map key's comment with it the
- * moment the path names that key (`emit.ts`'s `RecipeChange` doc), which is
- * right when a person named the path and wrong when a question's own default
- * is what resolved to empty.
- */
-async function commentLossRefusal(
-  project: string,
-  path: readonly (string | number)[],
-  readOpts: { home: string | undefined; files: RecipeFiles | undefined },
-): Promise<string | null> {
-  const comment = await readRecipeComment(project, path, readOpts)
-  if (comment === null) return null
-  return (
-    `${path.join('.')} carries a comment ("${comment.split('\n')[0]!.trim()}") and this answer would remove it ` +
-    'silently — type the model to keep it, or edit the recipe by hand and run lingtai add again. Nothing was written'
-  )
 }
 
 /**
@@ -214,11 +194,6 @@ export async function askAgents(
   if ('refused' in modelAnswer) return modelAnswer
   const writerModel = modelAnswer.answer
 
-  if (implementAction && writerModel === '') {
-    const lost = await commentLossRefusal(at.project, ['steps', 'implement', implementAction.index, 'model'], readOpts)
-    if (lost !== null) return { refused: lost }
-  }
-
   // A different model, with no table of models anywhere in Lingtai, means a
   // different runtime (doc/design/398.md §1): with two signed in, the other
   // one; with one, there is nothing different *known* to be available.
@@ -295,11 +270,6 @@ export async function askAgents(
     })
     if ('refused' in reviewerModelAnswer) return reviewerModelAnswer
     reviewerModel = reviewerModelAnswer.answer
-
-    if (reviewAction && reviewerModel === '') {
-      const lost = await commentLossRefusal(at.project, ['steps', 'review', reviewAction.index, 'model'], readOpts)
-      if (lost !== null) return { refused: lost }
-    }
   }
 
   // `runtime.agent` is the pass's own runtime, resolved unconditionally
