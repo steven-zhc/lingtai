@@ -274,7 +274,7 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect(called).toBe(false)
   })
 
-  it('new creates a ticket with the parsed title, labels and body, from a form seeded with the recipe\'s kinds', async () => {
+  it("new creates a ticket with the parsed title, labels and body, from a form seeded with the recipe's kinds", async () => {
     const tickets = dbTickets(freshSql(), 'p')
     const fake = fakeEdit('a fresh bug\nlabels: bug, agent:hold\n\nSteps to reproduce.\n')
     const reading: TicketReading = {
@@ -354,6 +354,25 @@ describe('lingtai ticket new / edit (#386)', () => {
     const { log, lines } = sink()
     expect(await ticketNew({ project: 'p' }, log, reading)).toBe(1)
     expect(lines[0]).toContain('title')
+    expect(lines[0]).toContain('/fake/')
+    expect(fake.discards).toBe(0)
+    expect((await tickets.listIssuesSince(new Date(0))).length).toBe(0)
+  })
+
+  it('new refuses by name, without writing anything, a title starting #! — it would read back as a dropped instruction line', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const fake = fakeEdit(
+      '#!/usr/bin/env node is wrong in the built binary\nlabels: bug, agent:hold\n\nthe shebang the SEA writes points at the wrong node.\n',
+    )
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p' }, log, reading)).toBe(1)
     expect(lines[0]).toContain('/fake/')
     expect(fake.discards).toBe(0)
     expect((await tickets.listIssuesSince(new Date(0))).length).toBe(0)
@@ -463,6 +482,30 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect(after.title).toBe('old title')
     expect(after.body).toBe('new body')
     expect(after.labels.map((l) => l.name)).toEqual(['bug'])
+  })
+
+  it('edit that changes only the title leaves the stored body byte-for-byte unchanged', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({ title: 'old title', body: 'body line\n', labels: ['bug'] })
+    const fake = fakeEdit((initial) => initial.replace('old title', 'new title'))
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(0)
+    expect(lines[0]).toContain('title')
+    expect(lines[0]).not.toContain('body')
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('new title')
+    // The rendered form shows the body trimmed; saving it back must not
+    // overwrite the stored row's own trailing newline just because the title
+    // changed (#386 round 4).
+    expect(after.body).toBe('body line\n')
   })
 
   it('edit reports no change when the stored body ends in a newline the form never shows', async () => {
@@ -634,5 +677,19 @@ describe('renderTicketForm / parseTicketForm round-trip (#386)', () => {
     const parsed = parseTicketForm(text)
     expect(parsed.ok).toBe(false)
     expect(!parsed.ok && parsed.why).toContain('header')
+  })
+
+  it('a first line starting #! is refused rather than read as a dropped instruction, which would promote labels: into the title', () => {
+    const text = '#! not a title\nlabels: bug\n\nbody'
+    const parsed = parseTicketForm(text)
+    expect(parsed.ok).toBe(false)
+    expect(!parsed.ok && parsed.why).toContain('title')
+  })
+
+  it('a first line starting labels: is refused rather than read as the labels line', () => {
+    const text = 'labels: bug, feature\n\nbody'
+    const parsed = parseTicketForm(text)
+    expect(parsed.ok).toBe(false)
+    expect(!parsed.ok && parsed.why).toContain('title')
   })
 })
