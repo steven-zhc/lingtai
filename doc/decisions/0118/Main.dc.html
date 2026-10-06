@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Waiting on you</title>
+<script src="./dc-lite.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f1f4f4}
+@keyframes lt-pulse{0%,100%{box-shadow:0 0 0 0 rgba(156,90,8,.45)}50%{box-shadow:0 0 0 5px rgba(156,90,8,0)}}
+@keyframes lt-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.lt-live{animation:lt-pulse 2s ease-in-out infinite}
+.lt-skel{background:linear-gradient(90deg,#d8e0e1 0%,#f1f4f4 50%,#d8e0e1 100%);background-size:200% 100%;animation:lt-shimmer 1.6s linear infinite}
+.lt-card{display:flex;flex-direction:column;gap:9px;padding:14px 16px;background:#ffffff;border:1px solid #d8e0e1;color:#0f181c;text-decoration:none}
+.lt-card:hover{border-color:#0b6a70}
+@media (prefers-reduced-motion: reduce){.lt-live,.lt-skel{animation:none}}
+</style>
+</helmet>
+<div style="width: 440px; min-height: 1760px; box-sizing: border-box; padding: 24px 16px; background-color: #f1f4f4; background-image: radial-gradient(#d8e0e1 1px, transparent 1px); background-size: 16px 16px; font: 13.5px/1.5 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 10px">
+
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 4px 6px">
+<span class="lt-live" style="width: 8px; height: 8px; background: #9c5a08; flex: none"></span>
+<h2 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9c5a08">Waiting on you</h2>
+<span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 500; color: #9c5a08; line-height: 1">{{count}}</span>
+</div>
+
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="8">
+<a class="lt-card" href="{{c.href}}">
+<span style="display: flex; align-items: center; gap: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #5e6e74">
+<span>#{{c.n}}</span><span>·</span><span>{{c.kind}}</span>
+<span style="margin-left: auto; color: #9c5a08">waiting {{c.wait}}</span>
+</span>
+<span style="font-size: 14.5px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{c.title}}</span>
+<span style="display: flex; flex-direction: column; gap: 5px">
+<span style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px"><sc-for list="{{c.rail}}" as="s" hint-placeholder-count="10"><span style="{{s}}"></span></sc-for></span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #3a4a50">{{c.where}}</span>
+</span>
+<span style="display: flex; align-items: baseline; gap: 8px; padding-top: 2px">
+<span style="{{c.chip}}">{{c.cause}}</span>
+<sc-if value="{{c.running}}" hint-placeholder-val="{{ false }}"><span class="lt-skel" style="flex: 1; height: 11px; align-self: center"></span></sc-if>
+<span style="font-size: 12.5px; color: #3a4a50; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{c.say}}</span>
+</span>
+</a>
+</sc-for>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":440,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const C = { p: '#2c7a4c', f: '#a33029', y: '#9c5a08', n: '#d8e0e1' };
+    const rail = (codes) => codes.split('').map((k) => 'height: 5px; background: ' + C[k]);
+    const solid = (bg) => 'flex: none; font-size: 11px; font-weight: 600; color: #ffffff; background: ' + bg + '; border: 1px solid ' + bg + '; padding: 0 8px';
+    const outline = (c) => 'flex: none; font-size: 11px; font-weight: 600; color: ' + c + '; background: #ffffff; border: 1px solid ' + c + '; padding: 0 8px';
+    const T = { decision: solid('#0b6a70'), lines: solid('#3d74b8'), approach: solid('#a33029'), merge: solid('#63549e'), retry: solid('#7a3e6e'), setup: solid('#3a4a50'), ready: solid('#2c7a4c'), asked: outline('#0f181c'), running: outline('#5e6e74') };
+    const cards = [
+      { n: 390, kind: 'feature', wait: '11h', title: 'A run action at implement runs after the agent and commits what it changed', rail: 'ppppppfynn', where: 'review refused ×3 · 3/3 rounds · 1 restart left', cause: 'A decision for you', t: 'decision', say: '2 questions: what happens to files the agent left uncommitted.', href: 'Hold.dc.html' },
+      { n: 393, kind: 'feature', wait: '6h', title: 'The GitHub App step waits with a timeout, can be skipped, and is asked only for a GitHub project', rail: 'ppppppfynn', where: 'review refused ×3 · 3/3 rounds · 2 restarts left', cause: 'Lines to fix', t: 'lines', say: '4 edits would satisfy review; the approach is right.', href: 'Outcomes.dc.html' },
+      { n: 424, kind: 'bug', wait: '3h', title: 'The projector skips an event when two appends share a millisecond', rail: 'ppppppfynn', where: 'review refused ×3 · 3/3 rounds · 2 restarts left', cause: 'The approach is wrong', t: 'approach', say: 'Each round opened a new hole in the same place.', href: 'Outcomes.dc.html' },
+      { n: 427, kind: 'feature', wait: '20m', title: 'The board, the CLI and the site read spend from one function', rail: 'ppppppfynn', where: 'review refused ×3 · 3/3 rounds · no restarts left', cause: 'A decision for you', t: 'decision', say: 'It is three tickets; nothing is left to spend on it.', href: 'Outcomes.dc.html' },
+      { n: 412, kind: 'bug', wait: '40m', title: 'Doctor reports the lock holder’s commit, not the checkout’s', rail: 'ppppppppfn', where: 'merge refused · conflict not resolved in 3 rounds', cause: 'Merge by hand', t: 'merge', say: '7 hunks in 5 files; triage resolved 5, 2 need you.', href: 'Conflict.dc.html' },
+      { n: 418, kind: 'feature', wait: '1d', title: 'The board shows the recipe each attempt ran with', rail: 'nnnnnnnnnn', where: 'never run · asked before any run', cause: 'Asked', t: 'asked', say: 'YAML, or the resolved steps?', href: 'Hold.dc.html' },
+      { n: 421, kind: 'feature', wait: '12m', title: 'lingtai ticket list takes a --kind filter', rail: 'pppppppynn', where: 'every step passed · held by human: before merge', cause: 'Ready to land', t: 'ready', say: 'Every step passed; 3 files in apps/cli.', href: 'Hold.dc.html' },
+      { n: 431, kind: 'feature', wait: '25m', title: 'lingtai backlog shows the minors grouped by the step that raised them', rail: 'pppynnnnnn', where: 'design asked · nothing judged yet', cause: 'A decision for you', t: 'decision', say: 'The design agent asked whether a shared minor appears twice.', href: 'More.dc.html' },
+      { n: 433, kind: 'tech-debt', wait: '2h', title: 'The run log is tailed from the projector, not the file', rail: 'pppppfnynn', where: 'build:test refused ×3 · 3/3 rounds', cause: 'A decision for you', t: 'decision', say: 'One test fails; it failed on #429 too. Likely a flake.', href: 'More.dc.html' },
+      { n: 435, kind: 'bug', wait: '50m', title: 'lingtai attach follows a run across a daemon restart', rail: 'ppppfnnnnn', where: 'implement did not finish · 250/250 turns', cause: 'Try it again, narrower', t: 'retry', say: 'It spent its turns searching; the body can point it at the answer.', href: 'More.dc.html' },
+      { n: 437, kind: 'feature', wait: '10m', title: 'The bar shows how far the daemon is behind origin/main', rail: 'ppfnnnnnnn', where: 'prepared refused · nothing spent', cause: 'Fix the setup', t: 'setup', say: 'main\u2019s lockfile is stale; #438 and #439 refuse the same way.', href: 'More.dc.html' },
+      { n: 397, kind: 'feature', wait: '4h', title: 'The setup detects install and build commands from the repository and asks to confirm them', rail: 'ppppppfynn', where: 'review refused ×3 · 3/3 rounds · 2 restarts left', cause: 'Triage', t: 'running', say: '', running: true, href: 'Hold.dc.html' }
+    ].map((c) => Object.assign({}, c, { rail: rail(c.rail), chip: T[c.t], running: !!c.running }));
+    return { cards, count: String(cards.length) };
+  }
+}
+</script>
+</body>
+</html>

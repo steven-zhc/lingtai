@@ -143,7 +143,7 @@ env: { plantAt: .env.local }
 
     const extended = await resolveLocalRecipe('app', read(`${bare}extends: pnpm-workspace\n`))
     expect(extended.provenance?.['steps']).toBe(
-      'claim 0, admit 0, prepared 1, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← preset pnpm-workspace',
+      'claim 0, admit 0, prepared 1, design 0, implement 0, build 1, review 0, proposed 0, merge 0, end 0 ← preset pnpm-workspace',
     )
     // The preset has no `source` and no `env`, so these two are the schema's
     // in both recipes — naming a file for either sends a reader to open it.
@@ -159,13 +159,13 @@ env: { plantAt: .env.local }
 
     // **And a `gates:` with its block commented out is this file saying
     // nothing**, which is what `applyPreset`'s `??` makes of it: `null ??
-    // preset.gates` is the preset's, so the run gets `proposed: build` and a
+    // preset.gates` is the preset's, so the run gets `build: build` and a
     // reader who commented the block out and is asking why must be sent to the
     // preset. A key present and empty used to read as a key this file carried.
     const emptied = await resolveLocalRecipe('app', read(`${bare}extends: pnpm-workspace\nsteps:\n`))
-    expect(emptied.recipe.steps.proposed).toHaveLength(1)
+    expect(emptied.recipe.steps.build).toHaveLength(1)
     expect(emptied.provenance?.['steps']).toBe(
-      'claim 0, admit 0, prepared 1, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← preset pnpm-workspace',
+      'claim 0, admit 0, prepared 1, design 0, implement 0, build 1, review 0, proposed 0, merge 0, end 0 ← preset pnpm-workspace',
     )
 
     // And a file that carries them says so, in all three.

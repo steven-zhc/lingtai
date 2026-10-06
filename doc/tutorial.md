@@ -53,15 +53,18 @@ lingtai init
 
 1. ask where Lingtai's log lives — press Enter for a SQLite file under
    `~/.lingtai`, or paste a Postgres URL if you want one;
-2. select a signed-in agent runtime;
-3. open the local board;
-4. guide you through creating or verifying a GitHub App.
+2. open the local board;
+3. guide you through creating or verifying a GitHub App.
 
 ![Lingtai runs on your machine: GitHub holds the issues and the code; the daemon, the agent, the log and the board are all yours.](img/machine.svg)
 
 With no terminal to answer — a script, an installer, a container — give the
-store as a flag instead: `lingtai init --store sqlite`, or
-`lingtai init --store postgres --database-url <url>`.
+store and the project as flags instead: `lingtai init --store sqlite --project
+local`, or, for a GitHub project, `lingtai init --store postgres --database-url
+<url> --project github --github-app skip` (`--github-app create` opens a
+browser and waits for a person, which a container has none of). Each question
+refuses by name, rather than guessing, when a flag is missing and nobody is
+there to answer it.
 
 It writes machine settings to `~/.lingtai/config.yml`. If setup is interrupted,
 run `lingtai init` again; verified answers are kept and setup resumes at the

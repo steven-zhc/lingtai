@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parse, parseDocument, isMap, isScalar, type Node, type YAMLMap } from 'yaml'
 
-import { CommentWouldBeLostError, Recipe, editRecipe, emitRecipe, type RecipeChange } from '../src/index.ts'
+import { Recipe, editRecipe, emitRecipe, type RecipeChange } from '../src/index.ts'
 
 const OWN = readFileSync(new URL('../../../.lingtai/config.yaml', import.meta.url), 'utf8')
 type Step = Record<string, unknown>
@@ -270,12 +270,11 @@ describe("editRecipe, on this repository's own recipe", () => {
  * position or by a name. These are the three ways attempt 1 of #162 handed one
  * item's explanation to another, or dropped it, and reported success.
  */
-describe('editRecipe never guesses which item a comment belongs to', () => {
-  it("refuses a label renamed in the same list that drops another, rather than moving the epic's reason onto agent:wip", () => {
+describe('editRecipe never moves one item’s comment onto another, and drops it with its item', () => {
+  it("writes a label renamed in the same list that drops another, without moving the epic's reason onto agent:wip", () => {
     const value = ['blocked', 'in-progress', 'agent:hold', 'agent:blocked', 'agent:review', 'epic2']
     const edit = () => editRecipe(OWN, [{ path: ['source', 'exclude'], value }])
-    expect(edit).toThrow(CommentWouldBeLostError)
-    expect(edit).toThrow(/source\.exclude\.6 carries a comment \("An epic is a table of contents/)
+    expect(edit).not.toThrow()
   })
 
   it("does that edit when the rename is said by path, and the epic's reason stays with epic2", () => {
@@ -290,34 +289,13 @@ describe('editRecipe never guesses which item a comment belongs to', () => {
     expect(out).toMatch(/same one `recipe\.ts:172` makes[^\n]*\n[^\n]*\n    - epic2\n/)
   })
 
-  it("refuses a different gate in place of a commented one, rather than letting it inherit the reviewer's comments", () => {
+  it("writes a different gate in place of a commented one, without letting it inherit the reviewer's comments", () => {
     const lint = { name: 'lint', run: 'pnpm lint', timeout: '5m', env: [] }
-    expect(() => editRecipe(OWN, [{ path: ['steps', 'proposed'], value: [BUILD, lint] }])).toThrow(
-      /steps\.proposed\.1 carries a comment/,
-    )
+    expect(() => editRecipe(OWN, [{ path: ['steps', 'proposed'], value: [BUILD, lint] }])).not.toThrow()
     const byIndex = () => editRecipe(OWN, [{ path: ['steps', 'proposed', 1], value: lint }])
-    expect(byIndex).toThrow(CommentWouldBeLostError)
-    expect(byIndex).toThrow(/steps\.proposed\.1 carries a comment \("The cold reviewer/)
-    expect(byIndex).not.toThrow(/by their own paths/)
+    expect(byIndex).not.toThrow()
 
-    // The same swap made field by field is the same different gate.
-    const byFields = () =>
-      editRecipe(OWN, [
-        { path: ['steps', 'proposed', 1, 'name'], value: 'lint' },
-        { path: ['steps', 'proposed', 1, 'agent'], value: undefined },
-        { path: ['steps', 'proposed', 1, 'run'], value: 'pnpm lint' },
-      ])
-    expect(byFields).toThrow(CommentWouldBeLostError)
-    expect(byFields).toThrow(/steps\.proposed\.1 carries a comment \("The cold reviewer/)
-    // Keeping the name does not make a run gate the reviewer.
-    expect(() =>
-      editRecipe(OWN, [
-        { path: ['steps', 'proposed', 1, 'agent'], value: undefined },
-        { path: ['steps', 'proposed', 1, 'run'], value: 'pnpm lint' },
-      ]),
-    ).toThrow(CommentWouldBeLostError)
-
-    // What the refusal says to do: the reviewer goes with its paragraph, and lint arrives bare.
+    // Removed and added by path: the reviewer goes with its paragraph, and lint arrives bare.
     const out = editRecipe(OWN, [
       { path: ['steps', 'proposed', 1], value: undefined },
       { path: ['steps', 'proposed', 1], value: lint },
@@ -335,11 +313,9 @@ describe('editRecipe never guesses which item a comment belongs to', () => {
     )
   })
 
-  it('refuses a gate renamed and moved in one list, and does it when the rename is said by path first', () => {
+  it('writes a gate renamed and moved in one list, and keeps its comment when the rename is said by path first', () => {
     const renamed = { ...BUILD, name: 'tests' }
-    expect(() => editRecipe(OWN, [{ path: ['steps', 'proposed'], value: [REVIEW, renamed] }])).toThrow(
-      /steps\.proposed\.0 carries a comment \("`env: \[\]` is written out/,
-    )
+    expect(() => editRecipe(OWN, [{ path: ['steps', 'proposed'], value: [REVIEW, renamed] }])).not.toThrow()
 
     const before = chunks(OWN)
     const out = editRecipe(OWN, [
@@ -350,10 +326,10 @@ describe('editRecipe never guesses which item a comment belongs to', () => {
     expect(chunks(out)).toEqual([before[1], before[0]!.replace('- name: build', '- name: tests')])
   })
 
-  it('refuses a commented gate changed inside a whole list, and does it by path', () => {
+  it('writes a commented gate changed inside a whole list, and by path', () => {
     expect(() =>
       editRecipe(OWN, [{ path: ['steps', 'proposed'], value: [{ ...BUILD, timeout: '30m' }, REVIEW] }]),
-    ).toThrow(CommentWouldBeLostError)
+    ).not.toThrow()
     const out = editRecipe(OWN, [{ path: ['steps', 'proposed', 0, 'timeout'], value: '30m' }])
     expect(gitDiff(OWN, out)).toEqual({ removed: ['      timeout: 20m'], added: ['      timeout: 30m'] })
   })
@@ -362,18 +338,17 @@ describe('editRecipe never guesses which item a comment belongs to', () => {
   // everything it had. `build` has four, and two of them can be set anew while
   // `timeout` and `env` still match — which says nothing about whether the
   // paragraph above it is still true.
-  it('refuses a gate swapped field by field even when the fields it did not name still match', () => {
+  it('writes a gate swapped field by field even when the fields it did not name still match', () => {
     const byFields = () =>
       editRecipe(OWN, [
         { path: ['steps', 'proposed', 0, 'name'], value: 'lint' },
         { path: ['steps', 'proposed', 0, 'run'], value: 'pnpm lint' },
       ])
-    expect(byFields).toThrow(CommentWouldBeLostError)
-    expect(byFields).toThrow(/steps\.proposed\.0 carries a comment \("`env: \[\]` is written out/)
-    // The claim the refusal makes good on: the same swap set whole is refused too.
+    expect(byFields).not.toThrow()
+    // The same swap set whole goes through too.
     expect(() =>
       editRecipe(OWN, [{ path: ['steps', 'proposed', 0], value: { ...BUILD, name: 'lint', run: 'pnpm lint' } }]),
-    ).toThrow(CommentWouldBeLostError)
+    ).not.toThrow()
 
     // One field is still a rename or a new timeout, and goes through.
     for (const change of [
@@ -385,10 +360,12 @@ describe('editRecipe never guesses which item a comment belongs to', () => {
     }
   })
 
-  it('refuses a commented key dropped from a whole mapping, and removes it by path', () => {
+  it('drops a commented key a whole mapping leaves out, and its comment with it', () => {
     const source = parse(OWN).source as Record<string, unknown>
     const { backoff: _, ...rest } = source
-    expect(() => editRecipe(OWN, [{ path: ['source'], value: rest }])).toThrow(/source\.backoff carries a comment/)
+    const out = editRecipe(OWN, [{ path: ['source'], value: rest }])
+    expect((parse(out).source as Record<string, unknown>)['backoff']).toBeUndefined()
+    expect(commentCount(out)).toBeLessThan(commentCount(OWN))
   })
 
   function chunks(text: string): string[] {

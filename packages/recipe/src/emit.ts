@@ -17,8 +17,9 @@ import { isDeepStrictEqual } from 'node:util'
  *   value keeps an item's node only when the same value is in the new list —
  *   never by position and never by a field that looks like a name, because a
  *   guess that pairs `epic2` with `agent:wip` hands one label's explanation to
- *   another and reads as success. An item with a comment that the new list does
- *   not keep is refused by name, with the path that would say it outright.
+ *   another and reads as success. An item the new list does not keep goes with
+ *   its comment: the recipe is machine-managed and a comment is not protected
+ *   (0104).
  *
  * - **The bytes.** `Document.toString()` is a rendering, not the file: on this
  *   repository's recipe it drops a blank line and re-indents the sixteen-line
@@ -41,7 +42,6 @@ import {
   type Node,
   type Pair,
   type YAMLMap,
-  type YAMLSeq,
 } from 'yaml'
 
 import { Recipe } from './recipe.ts'
@@ -59,29 +59,11 @@ export type Said = Readonly<Record<string, string>>
  * The path is what says which node is meant: `["source", "exclude", 6]` set to
  * `"epic2"` renames that label where it stands, and its comment stays. A whole
  * list or mapping as the value keeps each item or key whose value is unchanged,
- * and refuses to drop one that carries a comment.
+ * and drops the rest together with their comments.
  */
 export interface RecipeChange {
   path: readonly (string | number)[]
   value: unknown
-}
-
-/** An edit that would silently lose a comment, refused rather than written. */
-export class CommentWouldBeLostError extends Error {
-  // Fields, not parameter properties: the source runs unbuilt (0010), and type stripping refuses those.
-  readonly path: readonly (string | number)[]
-  readonly comment: string
-
-  constructor(path: readonly (string | number)[], comment: string, remedy?: string) {
-    const at = path.join('.')
-    super(
-      `${at} carries a comment ("${comment.split('\n')[0]!.trim()}") and this change would remove it without naming it: ` +
-        (remedy ?? `set ${at} itself to change it where it stands, or remove ${at} to drop it and its comment`),
-    )
-    this.name = 'CommentWouldBeLostError'
-    this.path = path
-    this.comment = comment
-  }
 }
 
 const RENDER = { lineWidth: 0, flowCollectionPadding: false } as const
@@ -112,9 +94,8 @@ export function emitRecipe(recipe: Recipe, said: Said = {}): string {
  * The same file with `changes` made, and every other byte as it was.
  *
  * Throws if the file does not parse, if the edited recipe does not pass
- * `Recipe.parse`, if a change would drop a comment it did not name
- * ({@link CommentWouldBeLostError}), or if the changed lines cannot be carried
- * onto the file exactly.
+ * `Recipe.parse`, or if the changed lines cannot be carried onto the file
+ * exactly. A comment on a node the change removes or replaces goes with it.
  */
 export function editRecipe(existing: string, changes: readonly RecipeChange[]): string {
   const doc = read(existing)
@@ -123,23 +104,11 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
 
   const before = doc.toString(RENDER)
   const firsts = firstLines(doc)
-  const commented = commentedItems(doc)
   for (const { path, value } of changes) {
     if (value === undefined) doc.deleteIn(path)
     else if (doc.hasIn(path)) replace(doc, path, value)
     else doc.setIn(path, value)
   }
-  // Field by field is the same swap as a whole item set at an index, so it is judged on the item it leaves.
-  eachItem(doc.contents, [], (item, path) => {
-    const was = commented.get(item)
-    if (was && isDifferentItem(was.value, item.toJSON())) {
-      throw new CommentWouldBeLostError(
-        path,
-        was.comment,
-        `remove ${path.join('.')} with its comment and add the new item`,
-      )
-    }
-  })
   // A blank line above an item is space between items, and a new first item has nothing above it.
   for (const [collection, first] of firstLines(doc)) {
     if (first !== firsts.get(collection) && first.spaceBefore) first.spaceBefore = false
@@ -246,57 +215,6 @@ function firstLines(doc: Document): Map<unknown, Node> {
   return firsts
 }
 
-/** Every list item that is a mapping or a list and carries a comment of its own, with the value it had. */
-function commentedItems(doc: Document): Map<Node, { value: unknown; comment: string }> {
-  const items = new Map<Node, { value: unknown; comment: string }>()
-  eachItem(doc.contents, [], (item) => {
-    const first = item.items[0]
-    const key = isPair(first) ? first.key : undefined
-    const comment = item.commentBefore || item.comment || (isNode(key) ? key.commentBefore : undefined)
-    if (comment) items.set(item, { value: item.toJSON(), comment })
-  })
-  return items
-}
-
-function eachItem(
-  node: unknown,
-  path: (string | number)[],
-  fn: (item: YAMLMap | YAMLSeq, path: (string | number)[]) => void,
-): void {
-  if (isMap(node)) for (const pair of node.items) eachItem(pair.value, [...path, keyOf(pair)], fn)
-  if (isSeq(node)) {
-    node.items.forEach((item, i) => {
-      if (isMap(item) || isSeq(item)) fn(item, [...path, i])
-      eachItem(item, [...path, i], fn)
-    })
-  }
-}
-
-/**
- * Whether an item edited in place is no longer the item its comment is about:
- * nothing it had is left, or more than one of its fields moved.
- *
- * **One field is a rename or a new timeout; two is the item being replaced a
- * field at a time.** Counting is what the fields that stayed cannot tell us —
- * `{name, run, timeout, env}` with `name` and `run` both set anew is a
- * different gate, and its `timeout: 20m` and `env: []` matching say nothing
- * about it. A removal and an addition — a gate's `agent` traded for a `run` —
- * are two moves and refuse by the same count.
- */
-function isDifferentItem(was: unknown, now: unknown): boolean {
-  if (isDeepStrictEqual(was, now)) return false
-  if (isPlainObject(was) && isPlainObject(now)) {
-    const kept = Object.keys(was).filter((k) => Object.hasOwn(now, k) && isDeepStrictEqual(was[k], now[k]))
-    const fields = new Set([...Object.keys(was), ...Object.keys(now)])
-    const moved = [...fields].filter(
-      (k) => !Object.hasOwn(was, k) || !Object.hasOwn(now, k) || !isDeepStrictEqual(was[k], now[k]),
-    )
-    return kept.length === 0 || moved.length > 1
-  }
-  if (Array.isArray(was) && Array.isArray(now)) return !was.some((v) => now.some((w) => isDeepStrictEqual(v, w)))
-  return true
-}
-
 /** Set the node at an existing `path` to `value`, keeping every node that is still the same value. */
 function replace(doc: Document, path: readonly (string | number)[], value: unknown): void {
   const parentPath = path.slice(0, -1)
@@ -306,7 +224,6 @@ function replace(doc: Document, path: readonly (string | number)[], value: unkno
   // A list item is known by its value, not its position: a different mapping or
   // list at its index is a different item, and is held to the whole-list rule.
   if (isSeq(parent) && isCollection(old) && isObjectLike(value) && !isDeepStrictEqual(toJS(old), value)) {
-    refuseIfCommented(old, path, true, `remove ${path.join('.')} with its comment and add the new item`)
     doc.setIn(path, doc.createNode(value))
     return
   }
@@ -335,7 +252,6 @@ function reconcile(doc: Document, path: readonly (string | number)[], old: unkno
     for (const pair of [...old.items]) {
       const k = keyOf(pair)
       if (!Object.hasOwn(value, k) || value[k] === undefined) {
-        refuseIfCommented(pair, [...path, k])
         old.delete(k)
       }
     }
@@ -363,9 +279,6 @@ function reconcile(doc: Document, path: readonly (string | number)[], old: unkno
       kept.add(i)
       return items[i]
     })
-    items.forEach((item, i) => {
-      if (!kept.has(i)) refuseIfCommented(item, [...path, i])
-    })
     old.items = next
     // A flow list stays on its line only while it is a line's worth of scalars,
     // and the comment that followed it on that line stays beside its key.
@@ -375,28 +288,7 @@ function reconcile(doc: Document, path: readonly (string | number)[], old: unkno
     }
     return old
   }
-  if (isNode(old)) refuseIfCommented(old, path, false)
   return doc.createNode(value)
-}
-
-/** Refuse to drop `node` if it, or anything inside it, carries a comment. */
-function refuseIfCommented(node: unknown, path: readonly (string | number)[], self = true, remedy?: string): void {
-  const found = (n: unknown): string | undefined => {
-    if (isPair(n)) return (n.key as Node | null)?.commentBefore ?? (n.key as Node | null)?.comment ?? found(n.value)
-    if (!isNode(n)) return undefined
-    let comment = self ? (n.commentBefore ?? n.comment) : undefined
-    if (!comment && isCollection(n)) {
-      visit(n, (_, inner) => {
-        if (isNode(inner) && inner !== n && (inner.commentBefore || inner.comment)) {
-          comment = (inner.commentBefore || inner.comment)!
-          return visit.BREAK
-        }
-      })
-    }
-    return comment || undefined
-  }
-  const comment = found(node)
-  if (comment) throw new CommentWouldBeLostError(path, comment, remedy)
 }
 
 function moveComments(from: unknown, to: unknown): void {

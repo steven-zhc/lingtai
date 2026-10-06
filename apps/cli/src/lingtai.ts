@@ -47,8 +47,9 @@ import { createFileLocker } from '@lingtai/env/lock'
 import { createGitHubClient, installationForRepo, parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
-import { parseDuration, recipePath } from '@lingtai/recipe'
+import { diskFiles, parseDuration, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
 
+import { askAgents } from './agents.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -73,6 +74,7 @@ import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { askLanding, askLimits, liveQuestionWorld } from './landing.ts'
 import { pauseCommand } from './pause.ts'
+import { liveAsk, type QuestionWorld } from './question.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -83,6 +85,7 @@ import {
   restartSupervised,
 } from './restart.ts'
 import { run as runOnceCommand } from './run.ts'
+import { askRuntimes } from './runtimes.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
@@ -103,14 +106,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
   lingtai init                      a bare machine to the board, on the wizard:
                                 git and the agents looked at, a Postgres URL
-                                connected to and its tables made, the agent
-                                chosen, ~/.lingtai/config.yml written. Run it
-                                again to continue, or to see what is set
+                                connected to and its tables made,
+                                ~/.lingtai/config.yml written. Run it again to
+                                continue, or to see what is set
     --store <sqlite|postgres>   the store, instead of being asked — what a
                                 script or installer with no terminal gives.
                                 postgres takes --database-url with it
     --database-url <url>        instead of being asked
-    --agent <claude-code|codex> instead of being asked, where both are signed in
     --port <n>                  the board's port, for this run. default: 17820,
                                 or board.port in ~/.lingtai/config.yml
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
@@ -118,6 +120,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 base is — the recipe's own repo.base says that,
                                 and a --base contradicting it is refused.
                                 default: the repository's own default branch
+    --agent <claude-code|codex> which agent writes the change, instead of
+                                being asked — where the project already has a
+                                recipe. A fresh project is asked nothing here
+                                either way (#398)
+    --model <name>              the writer's model, instead of being asked
+    --reviewer <agent|none>     a cold reviewer, and which agent, or none,
+                                instead of being asked
+    --reviewer-model <name>     the reviewer's model, instead of being asked
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -385,6 +395,60 @@ async function addCommand(args: string[]): Promise<number> {
     console.error('lingtai add <owner>/<repo>')
     return 2
   }
+
+  // Which agent writes the change, and which cold-reviews it, is asked here —
+  // before `add()` resolves the recipe — because `resolveLocalRecipe` throws
+  // `AgentUnresolvedError` on a file naming no `runtime.agent` the moment more
+  // than one runtime is signed in (`#398`). An absent recipe is not created
+  // here (`doc/design/398.md`): with no file, `add()` still refuses with
+  // `RecipeMissingError` as it always has, except a flag naming an agent is
+  // refused by name rather than silently ignored.
+  const { repo } = parseSlug(slug)
+  const path = recipePath(repo)
+  const existing = await diskFiles.read(path)
+  const agentFlags = {
+    agent: flags['agent'],
+    model: flags['model'],
+    reviewer: flags['reviewer'],
+    reviewerModel: flags['reviewer-model'],
+  }
+  if (existing === null) {
+    if (Object.values(agentFlags).some((v) => v !== undefined)) {
+      console.error(`--agent needs a recipe to write into; there is none at ${path}. Nothing was written`)
+      return 1
+    }
+  } else {
+    // A file that `extends:` a preset and writes no `steps:` of its own
+    // inherits every step from the preset — the first `steps.*` answer below
+    // pins that preset's steps into the file for good (`write.ts`'s
+    // `widenStepsIfNeeded`). Named here, before the writer question, because
+    // showing that to a person is this caller's line to print, not
+    // `agents.ts`'s.
+    const extendsPreset = await readRecipeKey(repo, ['extends'])
+    const stepsWritten = await readRecipeKey(repo, ['steps'])
+    if (typeof extendsPreset === 'string' && stepsWritten === null) {
+      console.log(
+        `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
+          "preset's steps into the file, so a later change to the preset no longer reaches this project",
+      )
+    }
+
+    const runtimes = await askRuntimes()
+    const world: QuestionWorld = { ask: liveAsk, log: (line) => console.log(line) }
+    const asked = await askAgents(world, { project: repo, runtimes, flags: agentFlags })
+    if ('refused' in asked) {
+      console.error(asked.refused)
+      return 1
+    }
+    // Two calls, not one: `changes` sets an action's `agent:` (or creates it
+    // outright) and `modelChanges` sets that same action's `model:` next —
+    // combining them would change two fields of one item in a single
+    // `setRecipe` call, which `emit.ts`'s `CommentWouldBeLostError` refuses
+    // the moment that item carries a comment (`agents.ts`'s header).
+    await setRecipe(repo, asked.changes)
+    await setRecipe(repo, asked.modelChanges)
+  }
+
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
   // `named`, because a person typed it here: a recipe that contradicts `--base`

@@ -12,6 +12,8 @@
  * **The seam writes nothing.** It returns `{ answer }` or `{ refused }`; the
  * caller decides what that answer means to write, and when.
  */
+import { createInterface } from 'node:readline/promises'
+
 import { paint } from '@lingtai/env/colour'
 
 export interface QuestionWorld {
@@ -38,9 +40,37 @@ export interface Question {
   choices?: readonly string[]
   /** Null accepts the answer; a string is why not, logged, and asked again at a terminal. */
   validate?: (answer: string) => Promise<string | null>
+  /**
+   * The clause after "needs an answer: pass <flag>." — what is still true when
+   * this question goes unanswered. Defaults to "Nothing was written", which is
+   * only accurate for the first question a caller asks; a caller placed after
+   * its own write (`askFirstProject`, asked once the store is already on disk)
+   * must say what that write left behind instead.
+   */
+  kept?: string
 }
 
 export type Answered = { answer: string } | { refused: string }
+
+/**
+ * A readline reader over this process's own stdin/stdout — null with no
+ * terminal attached. Shared by every live `QuestionWorld`, `init` and `add`
+ * alike, so there is one terminal reader rather than one per command (#398).
+ */
+export async function liveAsk(prompt: string): Promise<string | null> {
+  if (!process.stdin.isTTY) return null
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  // Ctrl+C at a question: every earlier answer is already written, and this one was not.
+  rl.on('SIGINT', () => {
+    console.log('\nstopped at the question — its answer was not written, and running the command again asks it here')
+    process.exit(130)
+  })
+  try {
+    return await rl.question(prompt)
+  } finally {
+    rl.close()
+  }
+}
 
 async function accept(q: Question, answer: string): Promise<string | null> {
   if (q.choices !== undefined && !q.choices.includes(answer)) {
@@ -66,7 +96,8 @@ export async function question(world: QuestionWorld, q: Question): Promise<Answe
 
   for (;;) {
     const typed = await world.ask(prompt)
-    if (typed === null) return { refused: `${q.name} needs an answer: pass ${q.flag}. Nothing was written` }
+    if (typed === null)
+      return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
     const answer = typed.trim() === '' ? defaultValue : typed.trim()
     const why = await accept(q, answer)
     if (why === null) return { answer }
