@@ -393,6 +393,55 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect(fake.calls).toHaveLength(0)
   })
 
+  it('edit refuses, without opening the editor or writing anything, a ticket whose title starts #! — it would read back as a dropped header line', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({
+      title: '#!/usr/bin/env node is wrong in the built binary',
+      body: 'the shebang the SEA writes points at the wrong node.',
+      labels: ['bug', 'agent:hold'],
+    })
+    const fake = fakeEdit('unreached')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(1)
+    expect(lines[0]).toContain(`#${opened.number}`)
+    expect(fake.calls).toHaveLength(0)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.title).toBe('#!/usr/bin/env node is wrong in the built binary')
+    expect(after.labels.map((l) => l.name)).toEqual(['bug', 'agent:hold'])
+  })
+
+  it('edit refuses, without opening the editor or writing anything, a ticket with a comma inside one of its labels', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    const opened = await tickets.createIssue({
+      title: 'untouched',
+      body: 'body',
+      labels: ['bug', 'needs design, maybe'],
+    })
+    const fake = fakeEdit('unreached')
+    const reading: TicketReading = {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => tickets,
+      env: EDITOR_ENV,
+      edit: fake.edit,
+    }
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(1)
+    expect(lines[0]).toContain(`#${opened.number}`)
+    expect(fake.calls).toHaveLength(0)
+
+    const after = await tickets.getIssue(opened.number)
+    expect(after.labels.map((l) => l.name)).toEqual(['bug', 'needs design, maybe'])
+  })
+
   it('edit writes only the fields that changed', async () => {
     const tickets = dbTickets(freshSql(), 'p')
     const opened = await tickets.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })

@@ -343,6 +343,29 @@ function formFromTicket(ticket: { title: string; labels: readonly { name: string
   return parsed.ok ? parsed.form : raw
 }
 
+/**
+ * Whether `ticket`'s title and labels survive `renderTicketForm` /
+ * `parseTicketForm` unchanged — the round-trip property's own precondition,
+ * stated above. When they do not — a title starting `#!`, a title carrying a
+ * newline, a label containing a comma — the form `ticketEdit` would render
+ * shows the person something other than the ticket's real title or labels,
+ * and `formFromTicket`'s fallback to `raw` only covers `parse` returning
+ * `ok: false`, never a title or labels that parsed fine but changed. Saving
+ * that degraded form still matches `expected`'s `WHERE` clause in
+ * `updateFields` below — `expected` is the untouched row, not the form, so
+ * the UPDATE would commit the degraded title or labels silently (#386 round
+ * 3). `ticketEdit` must refuse before opening the editor on one of these,
+ * rather than let that save land.
+ */
+function titleAndLabelsRoundTrip(ticket: { title: string; labels: readonly { name: string }[] }): string | null {
+  const raw: TicketFormFields = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: '' }
+  const parsed = parseTicketForm(renderTicketForm(raw))
+  if (!parsed.ok) return parsed.why
+  if (parsed.form.title !== raw.title) return `its title would not come back unchanged from this form`
+  if (!sameLabels(parsed.form.labels, raw.labels)) return `its labels would not come back unchanged from this form`
+  return null
+}
+
 export interface TicketNewOptions {
   project?: string
 }
@@ -453,6 +476,12 @@ export async function ticketEdit(
     ticket = await tickets.getIssue(options.issue)
   } catch (err) {
     log((err as Error).message)
+    return 1
+  }
+
+  const roundTripIssue = titleAndLabelsRoundTrip(ticket)
+  if (roundTripIssue) {
+    log(`#${ticket.number} — ${roundTripIssue}, so lingtai ticket edit refuses to open it`)
     return 1
   }
 
