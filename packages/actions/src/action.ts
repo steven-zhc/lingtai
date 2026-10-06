@@ -98,13 +98,20 @@ export interface ActionResult {
    * **Where this action left the worktree**, and absent on every kind that only
    * judged one (0065 §2, `#268`).
    *
-   * One action produces it — the `worktree` kind, at `admit` — and it is on the
-   * result rather than inferred by the caller because the caller runs no git:
-   * `LeftTheTreeAt` in `packages/conductor/src/pass.ts` is the same field one
-   * layer up, and the step that moved the tree is the only thing that knows.
+   * Three actions produce it, each at a step with nothing before it to
+   * disagree: the `worktree` kind, at `admit` (`#268`); the `agent:` at
+   * `implement`, which is `createWorkAction`'s own commit (`#266`); and since
+   * `#390` a `run:` written after it at the same step, `createKeptRunAction`'s.
+   * It is on the result rather than inferred by the caller because the caller
+   * runs no git: `LeftTheTreeAt` in `packages/conductor/src/pass.ts` is the same
+   * field one layer up, and the step that moved the tree is the only thing that
+   * knows. `headFrom` there is what picks among more than one — *the last
+   * result that has one wins* — so a `run:` after the agent commits over the
+   * agent's own head, and one before it that found nothing to commit loses to
+   * the agent's.
    *
    * It is not the head a verdict is *about* — that is `ActionContext.onSha`, and
-   * for this action it is the base the pass arrived carrying.
+   * for the `worktree` kind it is the base the pass arrived carrying.
    */
   head?: string
   /**

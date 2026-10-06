@@ -7,8 +7,10 @@ import {
   type Action,
   type ActionContext,
   type ActionEvent,
+  type CleanAnswer,
   type CutAnswer,
   type KeptAnswer,
+  type KeptRunAnswer,
   type LandAnswer,
   type MergeStrategy,
   type TakeAnswer,
@@ -2067,6 +2069,67 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * `keptRun`'s half of the pair a `run:` at `implement` needs (`#390`,
+       * `kept-run-action.ts`'s `clean`): puts the worktree back to the agent's
+       * own `HEAD`, before the command runs and again when it did not pass.
+       *
+       * **Two git calls, in order, and neither reads the tree before acting on
+       * it.** `git reset --hard HEAD` drops every tracked change the command (or
+       * a previous call to this) made; `git clean -fd` removes what it left
+       * untracked. Scoped by construction rather than by comparing against a
+       * baseline taken earlier — a round of review this ticket went through
+       * tried the other way, excluding whatever `git status` found dirty before
+       * the command ran, and that is what let a command's own rewrite of a file
+       * the agent had already left dirty survive both the reset and the clean:
+       * the exclusion pathspec covered it on both commands, so neither put it
+       * back nor removed it. `implement`'s own contract already closes that
+       * question from the other side — an uncommitted change does not survive
+       * the pass (`prompts/ticket.md`) — so there is nothing worth reading
+       * before this resets to what the agent committed.
+       *
+       * **`-e`, not a `:(exclude)` pathspec, for the planted env file.** A
+       * pathspec excluding `recipe.env.plantAt` still lets `git clean -fd`
+       * remove the untracked *directory* that file is usually the only tracked
+       * exception inside — `git clean -fd -- . ':(exclude)sub/.env.local'`
+       * removes `sub/` whole, planted file and all, where `git clean -fd -e
+       * /sub/.env.local` does not. Checked in a scratch repository for this
+       * ticket. The leading `/` anchors the pattern to the worktree root, so it
+       * names exactly the one path `provisionWorktree` wrote.
+       */
+      const clean = async (): Promise<CleanAnswer> => {
+        const reset = await gitAsked(['reset', '--hard', 'HEAD'])
+        if (Either.isLeft(reset)) return { failed: `git reset refused it: ${reset.left.detail}` }
+        const cleaned = await gitAsked(['clean', '-fd', '-e', `/${recipe.env.plantAt}`])
+        if (Either.isLeft(cleaned)) return { failed: `git clean refused it: ${cleaned.left.detail}` }
+        return { ok: true }
+      }
+
+      /**
+       * `keptRun`'s other half: stages everything but the planted env file and
+       * commits it, where there is a difference from `HEAD`.
+       *
+       * **`-A` and not the single path `file:`'s `keep` adds above** — a `run:`
+       * at `implement` is a command the recipe wrote, not a destination for one
+       * document, so what it changed is whatever is in the worktree once it
+       * exits, and the only thing excluded from that is the one file this pass
+       * itself planted. `clean` above is what makes `-A` safe to write: by the
+       * time this runs, nothing is in the tree but what `HEAD` already held and
+       * what the command just did to it.
+       */
+      const keepRun = async (name: string): Promise<KeptRunAnswer> => {
+        const plant = `:(exclude)${recipe.env.plantAt}`
+        const added = await gitAsked(['add', '-A', '--', '.', plant])
+        if (Either.isLeft(added)) return { failed: `git add refused it: ${added.left.detail}` }
+        const staged = await gitAsked(['diff', '--cached', '--quiet'])
+        if (!Either.isLeft(staged)) return { nothing: true }
+        const committed = await gitAsked(['commit', '-m', `chore(implement): ${name} for #${options.issue}`])
+        if (Either.isLeft(committed)) return { failed: `git commit refused it: ${committed.left.detail}` }
+        const head = await gitAsked(['rev-parse', 'HEAD'])
+        if (Either.isLeft(head)) return { failed: `git rev-parse refused it: ${head.left.detail}` }
+        return { committed: head.right }
+      }
+
+      /**
        * `implement` — the design back off the path a `file:` kept it at (0066 §4,
        * 0069 §4, `#301`), and `keep`'s mirror.
        *
@@ -2185,6 +2248,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `implement` is briefed with the document the pass is already carrying,
         // exactly as it was before this existed.
         fileBrief: { read },
+        // The tenth, and `implement`'s own rather than a field on `file` above:
+        // a `run:` written after the agent there commits what it changed
+        // through this (`#390`), using the same two git calls regardless of
+        // what failed or passed — see `clean` and `keepRun` above for why
+        // neither reads the tree before acting on it. No `defaultsAt` row,
+        // because an unconfigured `implement` runs no command at all.
+        keptRun: { clean, keep: keepRun },
       }
 
       /**

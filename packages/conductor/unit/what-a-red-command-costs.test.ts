@@ -110,6 +110,6 @@ describe('the run page says what a red command costs at each step it may be writ
       costTable()
         .filter((row) => !row.bought)
         .map((row) => row.step),
-    ).toEqual(['prepared', 'proposed', 'merge'])
+    ).toEqual(['prepared', 'implement', 'proposed', 'merge'])
   })
 })

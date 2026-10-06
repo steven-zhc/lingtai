@@ -13,7 +13,7 @@
 import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
 import { describe, expect, it } from 'vitest'
 
-import { actionsFromRecipe } from '../src/from-recipe.ts'
+import { actionsFromRecipe, ActionUnavailableError } from '../src/from-recipe.ts'
 
 const outcome: RunOutcome = {
   exitCode: 0,
@@ -79,5 +79,30 @@ describe("usd through actionsFromRecipe's review dispatch", () => {
     await action!.run(context)
 
     expect(runtime.seen[0]!.limits.usd).toBeUndefined()
+  })
+})
+
+/**
+ * **`implement` wraps a `run:` and the other three steps do not** (`#390`).
+ *
+ * `env` alone is what a plain `run:` needs; `implement`'s copy needs a git
+ * port too, and the refusal names what is missing by name rather than falling
+ * back to a process action that would commit nothing silently.
+ */
+describe('a run: at implement needs the git port, and env: alone is not enough', () => {
+  const action = { name: 'format', run: 'pnpm fmt', timeout: '5m', env: [] as const }
+
+  it('refuses by name when no git port was supplied', () => {
+    expect(() => actionsFromRecipe('implement', [action], { env: () => ({}) })).toThrow(ActionUnavailableError)
+    expect(() => actionsFromRecipe('implement', [action], { env: () => ({}) })).toThrow(/no git port was supplied/)
+  })
+
+  it('builds once both are supplied', () => {
+    const built = actionsFromRecipe('implement', [action], {
+      env: () => ({}),
+      keptRun: { clean: async () => ({ ok: true }), keep: async () => ({ nothing: true }) },
+    })
+    expect(built.map((a) => a.name)).toEqual(['format'])
+    expect(built[0]!.kind).toBe('run')
   })
 })
