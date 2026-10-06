@@ -9,7 +9,9 @@
  *   project    github or local — github asks for the App (#393); local does not
  *   App        one already configured is verified by a real call; a new one
  *              waits with a deadline and a way to skip, never forever
- *   board      started here, and a browser opened on the wizard's first screen
+ *   board      started here; a browser is opened on the wizard's first screen
+ *              only when an App still has to be created — a local project or
+ *              a skipped App leaves one line printed instead
  *
  * **Resuming is not a mode.** Each choice is written to `~/.lingtai/config.yml`
  * the moment it is made and verified, and every run begins by reading what is
@@ -320,11 +322,11 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
           'Remove the App first, or leave out --project. The store chosen above is kept',
       )
     }
-    if (flags['github-app'] !== undefined) {
+    if (flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
       return refuse(
         world,
         `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is created now. ` +
-          'Leave out --github-app. The store chosen above is kept',
+          'Leave out --github-app, or pass --github-app skip. The store chosen above is kept',
       )
     }
   }
@@ -348,8 +350,8 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
 
   if (chosen.project === 'local') {
     world.log(
-      `project      local — the board is at ${board.url}, and registering a directory on this machine comes with ` +
-        'lingtai add',
+      `project      local — the board is at ${board.url}. Registering a directory on this machine is not built yet ` +
+        '(#394); there is nothing further to do here',
     )
   } else if (app.configured) {
     const wizard = `${board.url}/setup/repository`

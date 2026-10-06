@@ -184,7 +184,8 @@ describe('lingtai init (#186)', () => {
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
     expect(seen.lines.join('\n')).toContain('project      local')
-    expect(seen.lines.join('\n')).toContain('lingtai add')
+    expect(seen.lines.join('\n')).not.toContain('lingtai add')
+    expect(seen.lines.join('\n')).toContain('not built yet')
   })
 
   it('a skipped App opens no browser, at once, with the come-back line, and exits 0 (#393)', async () => {
@@ -217,15 +218,25 @@ describe('lingtai init (#186)', () => {
     expect(seen.opened).toEqual([])
   })
 
-  it('refuses --github-app when a GitHub App is already configured, rather than silently ignoring it (#393)', async () => {
+  it('refuses --github-app create when a GitHub App is already configured, rather than silently ignoring it (#393)', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, {
       answers: [URL_],
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
     })
-    expect(await initCommand(['--github-app', 'skip'], w)).toBe(1)
-    expect(seen.lines.at(-1)).toContain('--github-app skip')
+    expect(await initCommand(['--github-app', 'create'], w)).toBe(1)
+    expect(seen.lines.at(-1)).toContain('--github-app create')
     expect(seen.opened).toEqual([])
+  })
+
+  it('--github-app skip is accepted when a GitHub App is already configured — it asks for exactly what the machine already does (#393)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, {
+      answers: [URL_],
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
+    })
+    expect(await initCommand(['--github-app', 'skip'], w)).toBe(0)
+    expect(seen.opened).toEqual(['http://127.0.0.1:3200/setup/repository'])
   })
 
   describe('Ctrl+C at each step, then again: it continues', () => {
