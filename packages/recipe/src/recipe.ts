@@ -140,10 +140,35 @@ export const runPlugin = definePlugin('run', {
    * `review` has nowhere to put the failure until `proposed` has a judge to
    * read it. That judge is `judgePlugin.at.proposed`, open since `#274`, which
    * is where the rest of [T5d](../../../doc/design/the-pipeline.md) went.
+   *
+   * **`implement` is open since `#390`, and it is not `build` with an earlier
+   * seat.** Written after the agent (`implement: [agent, run]`), it runs after
+   * every agent run — the first and each fix round's — in the agent's own
+   * worktree, and **whatever it changed is committed onto the attempt's branch**
+   * before `build` sees it: `createKeptRunAction` in `@lingtai/actions` is the
+   * wrapper, and the commit is `packages/conductor/src/kept-run-port.ts`'s, the
+   * same shape `filePlugin`'s `keep` already has at `design` — *`file:` keeps
+   * what the action before it made* (`recipe.ts:571`). A project that wants
+   * `pnpm fmt` applied rather than merely checked writes it here instead of
+   * asking the implementing agent to remember it, or paying a whole fix round
+   * for what a formatter does in a second.
+   *
+   * **It cannot refuse, and that is `implement`'s own rule and not a weaker
+   * one written for this key.** `implement` is not one of `REFUSING_STEPS`
+   * (`pass.ts:108`), so a command that exits non-zero here is not a judgement
+   * about the diff — it has nowhere to put a refusal, the way `build`'s copy of
+   * this same command does. So the wrapper never reports `failed`: a command
+   * that fails leaves the tree exactly where the agent's own commit left it —
+   * `git reset --hard HEAD`, nothing committed, nothing staged carried forward —
+   * and the step passes with the failure first in its evidence. `build`'s own
+   * `pnpm fmt:check` is the backstop that catches it, at the cost of the one
+   * fix round 0057 §2 already prices. Nothing here is a second gate; it is a
+   * second chance for the first one to never fire.
    */
   at: {
     prepared: notBuiltYet,
     build: notBuiltYet,
+    implement: notBuiltYet,
     proposed: notBuiltYet,
     merge: notBuiltYet,
   },
@@ -2144,11 +2169,12 @@ function whyThatPair(step: Step, kind: ActionKind): string {
   }
   if (step === 'implement') {
     return (
-      '`implement` is the change itself (0058 §3), so the only plugin it carries is the one that ' +
-      'writes one — `agent:`, which is the key `agentPlugin` declares there, and at this step it ' +
-      "implements rather than reads. The step's own receipt is a commit (0057 §2), which is what " +
-      'none of the other three can leave: a command that checks what was written is `build`, a ' +
-      'cold read of it is `review`, a glob over its file list and a hold on it are questions about ' +
+      '`implement` is the change itself (0058 §3), so the plugins it carries are the one that ' +
+      'writes it — `agent:`, which is the key `agentPlugin` declares there, and at this step it ' +
+      'implements rather than reads — and the one that may run a mechanical fix-up after it, ' +
+      '`run:` (`#390`), which commits what it changed rather than judging it. The receipt is ' +
+      'a commit (0057 §2), which is what a glob and a hold cannot leave: a cold read of the ' +
+      'change is `review`, and a glob over its file list and a hold on it are questions about ' +
       'a change already made, which is `proposed`'
     )
   }

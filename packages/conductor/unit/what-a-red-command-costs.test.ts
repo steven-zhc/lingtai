@@ -96,9 +96,12 @@ describe('the run page says what a red command costs at each step it may be writ
   })
 
   /**
-   * And the two the page says buy nothing are the two nothing *could*: `prepared`
-   * is off `reachable` as well as `affordable`, so it is not a number somebody
-   * can raise, and `proposed` does not arrive at all.
+   * And three of the four the page says buy nothing are the three nothing
+   * *could*: `prepared` is off `reachable` as well as `affordable`, so it is
+   * not a number somebody can raise, and `proposed` does not arrive at all.
+   * `implement` is the fourth, and for a different reason — it is not that a
+   * refusal there has nowhere to go, it is that nothing there ever refuses:
+   * `createKeptRunAction` always answers `passed`.
    */
   it('says no round is bought where no ceiling would have bought one', () => {
     const spare: Ceilings = { rounds: 9, restartsLeft: 9 }
@@ -110,6 +113,6 @@ describe('the run page says what a red command costs at each step it may be writ
       costTable()
         .filter((row) => !row.bought)
         .map((row) => row.step),
-    ).toEqual(['prepared', 'proposed', 'merge'])
+    ).toEqual(['prepared', 'implement', 'proposed', 'merge'])
   })
 })

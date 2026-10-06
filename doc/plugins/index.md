@@ -25,7 +25,7 @@ plugin is a red test rather than something somebody has to remember.
 
 | key | may be declared at | what it is for |
 |---|---|---|
-| [`run`](run.md) | `prepared` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the extension point that needs nothing declared. |
+| [`run`](run.md) | `prepared` `build` `implement` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the extension point that needs nothing declared. |
 | [`agent`](agent.md) | `design` `implement` `review` `proposed` `merge` | Buys an agent a turn — to draft, to write, to read the diff cold, or to answer. |
 | [`file`](file.md) | `design` | Keeps the design the step made, as a file in the worktree, and answers with the path. |
 | [`file-brief`](file-brief.md) | `implement` | Reads that design back from where the `file:` kept it, and briefs the actions written after it. |

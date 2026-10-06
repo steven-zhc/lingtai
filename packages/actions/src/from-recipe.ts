@@ -22,6 +22,7 @@ import { type AgentActionDeps, createAgentAction, createDraftAction } from './ag
 import { createFileAction, type FileActionDeps } from './file-action.ts'
 import { createFileBriefAction, type FileBriefActionDeps } from './file-brief-action.ts'
 import { createHumanAction } from './human-action.ts'
+import { createKeptRunAction, type KeptRunActionDeps } from './kept-run-action.ts'
 import { createMergeAction, type MergeActionDeps } from './merge-action.ts'
 import { createProcessAction } from './process-action.ts'
 import { createQueueAction, type QueueActionDeps } from './queue-action.ts'
@@ -133,6 +134,19 @@ export interface ActionDeps {
    * name rather than running one with no environment at all.
    */
   env?: (declared: readonly string[]) => Record<string, string>
+  /**
+   * The commit a `run:` at `implement` makes — the write into the worktree and
+   * the commit onto the attempt's branch, after the command passed (`#390`).
+   *
+   * Its own dep and not a reuse of `file`: the two plugins write for different
+   * reasons — `file:` keeps a document an earlier action *made*, this commits
+   * whatever a command *changed* — and neither needs the other's. Optional for
+   * the reason the others are, and absent it refuses a `run:` at `implement` by
+   * name rather than quietly falling back to a plain process action that
+   * commits nothing — the one failure `createKeptRunAction`'s own header warns
+   * against.
+   */
+  keptRun?: KeptRunActionDeps
 }
 
 export class ActionUnavailableError extends Error {
@@ -249,7 +263,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // and read as a broken build rather than as an action built wrong.
         throw new ActionUnavailableError(action.name, kind, 'no environment resolver was supplied to actionsFromRecipe')
       }
-      return createProcessAction({
+      const inner = createProcessAction({
         name: action.name,
         run: action.run,
         timeout: action.timeout,
@@ -257,6 +271,19 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
       })
+      // **`implement` is the one step a `run:` commits for** (`#390`). Every
+      // other step judges a command's exit code; here the command runs after
+      // the implementing agent and whatever it changed is committed onto the
+      // attempt's branch before `build` sees it — `createKeptRunAction` is the
+      // wrapper, and it never reports `failed` (`implement` is not one of
+      // `REFUSING_STEPS`).
+      if (step === 'implement') {
+        if (!deps.keptRun) {
+          throw new ActionUnavailableError(action.name, kind, 'no commit port was supplied to actionsFromRecipe')
+        }
+        return createKeptRunAction(action.name, inner, deps.keptRun)
+      }
+      return inner
     }
 
     if ('agent' in action) {
