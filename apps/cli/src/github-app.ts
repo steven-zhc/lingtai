@@ -22,6 +22,10 @@ export type FirstProject = { project: 'local' } | { project: 'github'; app: 'cre
  * already says the project is GitHub, and nothing here is asked about it.
  */
 export async function askFirstProject(world: QuestionWorld, flags: Record<string, string>): Promise<FirstProject> {
+  // Called only once the store is already written (init.ts's call site), so a
+  // refusal here cannot say "Nothing was written" — that line is `question()`'s
+  // default, written for a question asked before any write exists.
+  const kept = 'the store chosen above is kept'
   const kind = await question(world, {
     name: 'the project',
     flag: '--project github, or --project local',
@@ -29,6 +33,7 @@ export async function askFirstProject(world: QuestionWorld, flags: Record<string
     prompt: 'a GitHub project, or one on this machine only',
     fallback: 'github',
     choices: ['github', 'local'],
+    kept,
   })
   if ('refused' in kind) return { refused: kind.refused }
   if (kind.answer === 'local') return { project: 'local' }
@@ -40,6 +45,7 @@ export async function askFirstProject(world: QuestionWorld, flags: Record<string
     prompt: 'create the GitHub App now, or skip it for later',
     fallback: 'create',
     choices: ['create', 'skip'],
+    kept,
   })
   if ('refused' in how) return { refused: how.refused }
   return { project: 'github', app: how.answer as 'create' | 'skip' }

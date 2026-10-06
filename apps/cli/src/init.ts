@@ -307,7 +307,27 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
 
   // ---- which project ---------------------------------------------------------
   // Asked only when no App is configured yet: a configured one already says
-  // the project is GitHub, and nothing here is asked about it (#393).
+  // the project is GitHub, and nothing here is asked about it (#393). A flag
+  // naming anything else is refused rather than silently discarded — the same
+  // rule `chooseStore` holds to for `--store` (init.ts:428-436: "naming another
+  // is refused, never ignored").
+  if (app.configured) {
+    const namedProject = flags['project'] ?? null
+    if (namedProject !== null && namedProject !== 'github') {
+      return refuse(
+        world,
+        `--project ${namedProject}, but a GitHub App is already configured here — the project is github already. ` +
+          'Remove the App first, or leave out --project. The store chosen above is kept',
+      )
+    }
+    if (flags['github-app'] !== undefined) {
+      return refuse(
+        world,
+        `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is created now. ` +
+          'Leave out --github-app. The store chosen above is kept',
+      )
+    }
+  }
   const chosen = app.configured ? ({ project: 'github', app: 'create' } as const) : await askFirstProject(world, flags)
   if ('refused' in chosen) return refuse(world, chosen.refused)
 
@@ -771,9 +791,15 @@ export function liveInitWorld(): InitWorld {
           signal.addEventListener('abort', () => resolve(), { once: true })
           return
         }
+        // Set once the wait ends any way at all, so the `setImmediate` below —
+        // scheduled before any of that can happen — never re-attaches `onData`
+        // onto a stdin this promise has already let go of.
+        let settled = false
         const done = () => {
+          settled = true
           stdin.setRawMode(false)
           stdin.pause()
+          stdin.removeListener('data', discard)
           stdin.removeListener('data', onData)
           signal.removeEventListener('abort', onAbort)
         }
@@ -787,6 +813,19 @@ export function liveInitWorld(): InitWorld {
           done()
           resolve()
         }
+        // A key pressed while stdin was paused during the board's boot sits in
+        // the tty's own buffer and would otherwise arrive the instant `resume`
+        // below is called — not a deliberate skip of a wait that has not
+        // visibly started yet. Discard that backlog for one pass of the event
+        // loop (a real Ctrl+C in it still stops, same as `onData`'s), then
+        // switch to listening for an actual press.
+        const discard = (data: Buffer) => {
+          if (data.toString('utf8') === '\x03') {
+            done()
+            console.log('\nstopped — nothing further was asked, and lingtai init again continues from here')
+            process.exit(130)
+          }
+        }
         const onAbort = () => {
           done()
           resolve()
@@ -794,7 +833,12 @@ export function liveInitWorld(): InitWorld {
         signal.addEventListener('abort', onAbort, { once: true })
         stdin.setRawMode(true)
         stdin.resume()
-        stdin.on('data', onData)
+        stdin.on('data', discard)
+        setImmediate(() => {
+          if (settled) return
+          stdin.removeListener('data', discard)
+          stdin.on('data', onData)
+        })
       }),
     boardAt: async (port) => {
       const url = `http://127.0.0.1:${port}`

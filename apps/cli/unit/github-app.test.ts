@@ -55,11 +55,11 @@ describe('askFirstProject (#393)', () => {
     expect(result).toEqual({ project: 'github', app: 'skip' })
   })
 
-  it('with no TTY and no flag, the project question refuses by naming its own flag', async () => {
+  it('with no TTY and no flag, the project question refuses by naming its own flag, and keeps the store rather than claiming nothing was written', async () => {
     const { world } = questionWorld([])
     const result = await askFirstProject(world, {})
     expect(result).toEqual({
-      refused: 'the project needs an answer: pass --project github, or --project local. Nothing was written',
+      refused: 'the project needs an answer: pass --project github, or --project local. the store chosen above is kept',
     })
   })
 
@@ -67,7 +67,8 @@ describe('askFirstProject (#393)', () => {
     const { world } = questionWorld(['github'])
     const result = await askFirstProject(world, {})
     expect(result).toEqual({
-      refused: 'the GitHub App needs an answer: pass --github-app create, or --github-app skip. Nothing was written',
+      refused:
+        'the GitHub App needs an answer: pass --github-app create, or --github-app skip. the store chosen above is kept',
     })
   })
 })
