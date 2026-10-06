@@ -42,7 +42,7 @@ export const PRESETS: Record<string, Preset> = {
    */
   'pnpm-workspace': {
     repo: { submodules: true },
-    // Only `prepared` and `proposed` are filled. The other eight steps are
+    // Only `prepared` and `build` are filled. The other eight steps are
     // empty and stay empty until a project says otherwise — which the board
     // renders as `skipped` rather than omitting (ADR 0016 §4). Written out
     // rather than left to the schema's default for the reason that default is
@@ -63,18 +63,12 @@ export const PRESETS: Record<string, Preset> = {
       prepared: [{ name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] }],
       design: [],
       implement: [],
-      // **Empty by choice since 2026-09-27, and no longer by necessity.**
-      // `runPlugin` serves `build` and `agentPlugin` serves `review`, so a
-      // recipe may declare the build here — this machine's own does. What a
-      // *preset* hands a repository nobody has thought about yet is a separate
-      // decision from where this repository puts its own build, and moving it
-      // would rewrite the first recipe of every project onboarded after it. So
-      // the one command stays at `proposed:` below until somebody decides that
-      // on its own terms, and the wizard's `homeStep` reads where the commands
-      // actually are rather than assuming this answer.
-      build: [],
-      review: [],
-      proposed: [
+      // **The check is at `build:`, where a red one buys a fix round.** At
+      // `proposed:` it stopped the pass for a person with no round bought, and
+      // the setup's build question (#397) answers `steps.build`, so a check
+      // left at `proposed:` kept running after the person replaced or declined
+      // it. `proposed:` is the router, and a preset declares nothing there.
+      build: [
         {
           name: 'build',
           run: 'pnpm typecheck && pnpm lint && pnpm test',
@@ -82,6 +76,8 @@ export const PRESETS: Record<string, Preset> = {
           env: [],
         },
       ],
+      review: [],
+      proposed: [],
       merge: [],
       end: [],
     },
