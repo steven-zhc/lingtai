@@ -6,12 +6,12 @@ An item in the Waiting lane is waiting on a person, so the page for it is the
 person's. It opens with the ticket itself (Problem, Want and Watch out, taken
 from the body), then where the pass stopped and what is left to spend (taken
 from the log, which costs nothing), then a triage band, then the moves, then
-the record. Triage is not a new kind of agent. It is the first turn of the
-Discussion that every task page already has, started automatically when a hold
-is recorded. It names the cause of the hold, asks the questions only a person
-can answer, and recommends one move. An answer is written into the ticket's
-body, because that is the only text every later attempt is sure to read. Triage
-advises; it never moves the item.
+the record. Triage is an agent the daemon runs when a hold is recorded. It
+names the cause of the hold, asks the questions only a person can answer, and
+recommends one move, and what it advised is recorded as an event. What the
+person then does is the decision, and it is recorded by the move they make. An
+answer is written into the ticket's body, because that is the only text every
+later attempt is sure to read. Triage advises; it never moves the item.
 
 ## Context
 
@@ -22,16 +22,24 @@ sentence of it can be true and still leave the reader unable to act. #377's and
 #390's holds were each answered in a terminal session that read the branch and
 the code around it, because the card could not be acted on as written.
 
-The pieces that session used already exist. Discussion
-(`apps/cli/src/discuss.ts`, `packages/conductor/src/discuss.ts`) is answered by
-the daemon off the pass path, takes no claim and no lock
+The machinery that session used already exists, in Discussion
+(`apps/cli/src/discuss.ts`, `packages/conductor/src/discuss.ts`). It is
+answered by the daemon off the pass path, takes no claim and no lock
 (`packages/daemon/src/work-loop.ts:225-243`), and reads files from the mirror at
 the base's and each attempt's head sha (`apps/cli/src/discuss.ts:148-213`), so
-it needs no worktree. Its answer is a JSON contract with an optional proposal
+it needs no worktree. Its answer is a JSON contract
 (`packages/conductor/src/discuss.ts:218-243`). Its `ticket` outcome appends a
-section to the issue body (`:646-650`). Its cost is on `DiscussionAnswered` and
-`DiscussionHeld`. And the body reaches every later attempt verbatim, as
-`{{body}}` in the brief (`packages/conductor/src/prompt.ts:263-291`).
+section to the issue body (`:646-650`). And the body reaches every later
+attempt verbatim, as `{{body}}` in the brief
+(`packages/conductor/src/prompt.ts:263-291`).
+
+Discussion and triage are not the same thing, though. A discussion is a place
+for a person to think with an agent. What comes out of it is the person's own
+move, approve, requeue or close, and that move already has its event. The
+conversation itself decides nothing and needs no fold. Triage is different. It
+is an analysis Lingtai pays for unasked, and its recommendation is a fact the
+board has to show on a card and the log has to keep. Then *what the agent
+advised* and *what the person chose* sit side by side.
 
 The holds are not one thing. The code reaches `waiting` by five kinds of
 route, and they want different moves:
@@ -70,18 +78,25 @@ route, and they want different moves:
      its line, and triage's cause with one sentence. Everything else, moves
      included, is on the page the card links to.
 
-3. **Triage is a Discussion turn started by the daemon.**
-   - After `WorkItemBlocked`, the daemon appends `DiscussionRequested` with the
-     triage brief, and the turn runs exactly as any discussion does: off the
-     pass, without the lock, reading the mirror.
-   - It is declared in the recipe's `discuss:` block with its runtime and
-     limits. Where it is not declared, nothing runs, and the page shows the
-     ticket, where it is, and the holder's own words.
+3. **Triage is its own step, run by the daemon after a block.**
+   - After `WorkItemBlocked`, the daemon runs the triage agent the way it runs
+     a discussion: off the pass, without the lock, reading the mirror, with no
+     tools. It reuses that code, not that conversation.
+   - It is declared in the recipe as `triage:` with its runtime and limits.
+     Where it is not declared, nothing runs, and the page shows the ticket,
+     where it is, and the holder's own words.
    - It runs for judgements and machine failures. It does not run for a
-     person's own question: the person wrote the question, and the Discussion
-     is there if they want to ask the code before answering it.
-   - The thread continues below the first turn. A follow-up is an ordinary
-     discussion turn.
+     person's own question, because the person wrote the question.
+   - **What it advised is one event, `HoldTriaged`, on the work item's stream.**
+     It names the block it explains and the head it read. It carries the cause,
+     the questions with their answers and the recommended one, any fixes or
+     conflict hunks, the recommended move, one sentence for the card, and its
+     usage ([0110](0110-tokens-on-the-event-money-at-display.md)). A triage
+     that fails still appends it, with the failure and the usage and no
+     advice.
+   - Below triage, the page offers Discussion for follow-ups, opened with
+     triage's analysis as its context. Discussion stays what it is: a place to
+     think, not a record.
 
 4. **Triage names one cause, and the budget is not a cause.**
    - The causes are:
@@ -96,15 +111,13 @@ route, and they want different moves:
        the same way.
    - Rounds and restarts left are facts on the log, shown on the rail line. A
      spent budget changes which moves are offered, never the cause.
-   - The answer contract gains these optional fields: the cause, questions each
-     with two or three answers and a recommended one, a list of fixes, and
-     conflict hunks with a resolution. An answer without them is still a valid
-     discussion answer, and the page shows it as text.
+   - Advice that will not parse into a cause and its parts is recorded as a
+     failed triage, never shown as advice.
 
 5. **When the judge and triage disagree, both are recorded and the person
    decides.** The page shows the two readings side by side and asks which is
    right, so the hold becomes *a decision for you*. Neither one is hidden, and
-   the log keeps both.
+   the log keeps both: the judge's on `PassRouted`, triage's on `HoldTriaged`.
 
 6. **An answer is written into the body.**
    - *Write it into the body & requeue* is one move. It appends a section to
@@ -118,6 +131,11 @@ route, and they want different moves:
      editable, and it stops following the answers once it is edited.
    - The requeue's reason is written for the person from those answers. They
      are not asked for one.
+   - **The person's move records what they chose against what was advised.**
+     `WorkItemUnblocked`, `ApprovalGranted` and `WorkItemClosed` gain an
+     optional reference to the `HoldTriaged` they answer and whether the move
+     taken was the one it recommended. How often the advice is taken is then a
+     query, not a guess.
    - A discussion answer can be added to whatever the recommended move will
      write: the body, the list of fixes, a split, or the person's own answer
      box.
@@ -144,17 +162,26 @@ route, and they want different moves:
    - Past 20 hunks it does not resolve them one by one. It recommends starting
      over from the new base.
 
-9. **Triage belongs to the block it explains.** Its turn names the
-   `WorkItemBlocked` it answers and the head it read. The page shows it only
-   while that block is the current one, so an approve, a requeue or a new head
-   retires it, and a triage still running when the person acts is answered
-   into a thread nobody is shown.
+9. **Triage belongs to the block it explains.** `HoldTriaged` names the
+   `WorkItemBlocked` it answers and the head it read. The page and the card
+   show it only while that block is the current one, so an approve, a requeue
+   or a new head retires it. A triage that finishes after the person has acted
+   is still recorded, for its cost, and shown nowhere.
+
+10. **The card reads triage from `task_view`.** The projection folds
+    `HoldTriaged` into three columns: the triage state (running, advised or
+    failed), the cause, and the one sentence. A running triage is the block
+    with no `HoldTriaged` yet, while `triage:` is declared. The full advice is
+    read from the event by the task page. Adding the columns is a rebuild:
+    `lingtai projection rebuild task_view`.
 
 ## Consequences
 
-- **Every hold that is a judgement or a machine failure costs one discussion
-  turn**, whether or not anybody opens it. It shows in `/spend` like any other
-  discussion, and a recipe that does not want it does not declare it.
+- **Every hold that is a judgement or a machine failure costs one triage
+  run**, whether or not anybody opens it. Its usage is on `HoldTriaged`, so it
+  shows in `/spend`, and a recipe that does not want it does not declare it.
+- **The log can answer how good the advice is.** `HoldTriaged` and the move that
+  answered it are both on the item's stream.
 - **Triage never delays the queue.** It runs beside the next pass, not inside
   this one.
 - **The holder's own text becomes evidence**: the judge's `why`, git's words
@@ -179,6 +206,10 @@ route, and they want different moves:
 - **The language triage writes in**, and whether the recipe names it.
 - **Whether `lingtai status` and the GitHub comment** carry the cause or only
   link to the page.
+- **Whether Discussion's turns leave the event log.** Today they are events
+  on `chat-<id>` streams. A discussion decides nothing, so its text is a trace
+  rather than a record, but its usage still needs somewhere to be counted.
+  That is Discussion's own decision. Triage depends on none of it.
 - **The per-kind table** of trigger, page, recommended move and whether triage
   runs. It is design, not decision, and belongs in `doc/design/`.
 
