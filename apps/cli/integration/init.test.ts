@@ -657,6 +657,17 @@ describe('--store answers the store question without a terminal (#345)', () => {
       expect(config(home)).toBeNull()
     })
 
+    it('--database-url alone, naming another database than an exported LINGTAI_DATABASE_URL, is refused rather than ignored', async () => {
+      const home = freshHome()
+      const { world: w, seen } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
+      const other = 'postgresql://me:pw@db.new.example:5432/lingtai'
+      expect(await initCommand(['--database-url', other], w)).toBe(1)
+      expect(seen.connected).toEqual([])
+      expect(seen.lines.at(-1)).toContain('exported URL wins')
+      expect(seen.lines.join('\n')).not.toContain('--store postgres')
+      expect(config(home)).toBeNull()
+    })
+
     it("with no URL, or an empty one, is a usage refusal — never the empty answer's SQLite", async () => {
       for (const argv of [
         ['--store', 'postgres'],

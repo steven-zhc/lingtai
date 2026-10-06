@@ -12,8 +12,10 @@
  * **Resuming is not a mode.** Each choice is written to `~/.lingtai/config.yml`
  * the moment it is made and verified, and every run begins by reading what is
  * already there — so an interrupted init continues where it stopped, and a
- * finished one reports and changes nothing, by the same code path. There is no
- * progress file to disagree with the configuration it describes.
+ * finished one run with no flags reports and changes nothing, by the same code
+ * path. There is no progress file to disagree with the configuration it
+ * describes. `--database-url` is the one flag that can still change a finished
+ * one — see below.
  *
  * **Nothing is written before its choice.** The URL is written after the
  * connection answered and the tables exist, and the App's key by the board's own page (`@lingtai/conductor/create-app`), which
@@ -43,14 +45,25 @@
  * `SQLITE_MACHINE`, in one place.
  *
  * **Changing a store that answers is an edit, not a re-run** — 0056 left that
- * open and this settles it. A store already written and connecting is reported
- * and not asked about again, exactly as the agent is: re-asking would make
- * every run of a finished `init` a chance to answer the wrong way. To switch,
- * set `database.store` in `~/.lingtai/config.yml` and run `lingtai init`, which
- * finds the half-state that edit leaves — `store: sqlite` beside the old
- * `url` — refuses it by name, and completes the switch by asking. 0055 §3 is
- * still the thing to know before doing it: the other store is a new log, not
- * the same one somewhere else.
+ * open and this settles it, for a run with no `--database-url`. A store
+ * already written and connecting is reported and not asked about again,
+ * exactly as the agent is: re-asking would make every run of a finished
+ * `init` a chance to answer the wrong way. To switch, set `database.store` in
+ * `~/.lingtai/config.yml` and run `lingtai init`, which finds the half-state
+ * that edit leaves — `store: sqlite` beside the old `url` — refuses it by
+ * name, and completes the switch by asking. 0055 §3 is still the thing to know
+ * before doing it: the other store is a new log, not the same one somewhere
+ * else.
+ *
+ * **`--database-url <url>` given on its own is the one re-run that is still a
+ * write** (#392): given to a machine already settled on another database that
+ * still answers, it repoints straight to the one it names — connecting there,
+ * creating its tables, and rewriting `database.url` — rather than reporting
+ * the old one. A flag given to be explicit is not discarded for being
+ * inconvenient. The same URL a settled machine already has is that same run,
+ * written again rather than asked about; naming another behind an exported
+ * `LINGTAI_DATABASE_URL` is refused rather than silently ignored, because
+ * that is the one case this process cannot obey the flag at all.
  *
  * **`--store` answers the store question without a terminal** (#345), and it
  * answers it by the same lines the person would: `--store sqlite` is the empty
@@ -368,13 +381,16 @@ async function chooseStore(
   // and this command does not own the process a daemon will be started in.
   const preset = storeChoice(world.env)
   if (!('refused' in preset) && preset.where === 'environment' && preset.store === 'postgres') {
-    // `--store postgres` naming a database the exported URL does not is a
-    // choice this process would not obey: refused, rather than connecting to
-    // the other one and reporting it as though it were what was asked.
-    if (named === 'postgres' && flag !== null && flag.trim() !== preset.url) {
+    // `--database-url` naming a database the exported URL does not is a
+    // choice this process would not obey — whether or not `--store postgres`
+    // named it too: refused, rather than connecting to the other one and
+    // reporting it as though it were what was asked (naming the same database
+    // is that same run; naming another is refused, never ignored).
+    if (flag !== null && flag.trim() !== preset.url) {
+      const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
       return refuse(
         world,
-        `--store postgres --database-url ${redactUrl(flag)}, but ${preset.from} names ${redactUrl(preset.url)}, and ` +
+        `${given} ${redactUrl(flag)}, but ${preset.from} names ${redactUrl(preset.url)}, and ` +
           'an exported URL wins over the file (0056 §3). Unset it, or leave out --database-url. Nothing was written',
       )
     }

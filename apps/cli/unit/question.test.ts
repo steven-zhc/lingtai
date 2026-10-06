@@ -4,9 +4,22 @@
  * writes nothing — writing is the caller's, never the seam's — and a re-run
  * offers the current value as the default.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { question, type QuestionWorld } from '../src/question.ts'
+
+// `paint` reads `FORCE_COLOR` on every call (colour.ts:54), and the assertions
+// below read its output as bare strings. `NO_COLOR` wins outright ahead of it
+// (colour.ts:50), so it is what makes this file's result the same whether or
+// not the process that runs `pnpm test` happens to have `FORCE_COLOR` exported.
+const before = process.env['NO_COLOR']
+beforeAll(() => {
+  process.env['NO_COLOR'] = '1'
+})
+afterAll(() => {
+  if (before === undefined) delete process.env['NO_COLOR']
+  else process.env['NO_COLOR'] = before
+})
 
 function world(answers: (string | null)[] = []): { world: QuestionWorld; lines: string[]; asked: string[] } {
   const lines: string[] = []
