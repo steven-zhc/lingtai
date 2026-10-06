@@ -66,34 +66,61 @@ async function currentRunActions(
 
 /**
  * The `run:` actions that would actually execute at `step` — the file's own,
- * or inherited from a preset the file `extends:` — `[]` where there is no
- * recipe yet or it does not resolve. `currentRunActions` reads the file's own
- * raw key and is right for *what to show as a default*; deciding whether an
- * answer changes anything needs this instead, or an answer that only restates
- * what a preset already supplies reads as unchanged and widening later pins
- * the preset's value in anyway.
+ * or inherited from a preset the file `extends:` — or `null` where there is
+ * no recipe yet or it does not resolve on its own. `currentRunActions` reads
+ * the file's own raw key and is right for *what to show as a default*;
+ * deciding whether an answer changes anything needs this instead, or an
+ * answer that only restates what a preset already supplies reads as
+ * unchanged and widening later pins the preset's value in anyway.
+ *
+ * `null` and `[]` are kept apart on purpose: `[]` is a confirmed "nothing
+ * runs here today", and the caller may skip writing a change that would say
+ * the same thing. `null` is "unknown" — the file does not exist yet, or does
+ * not resolve without an answer this call has not been given (`extends:`
+ * written by the same batch, elsewhere in a first-run call) — and the only
+ * safe reading of "unknown" is "assume it differs", so the caller always
+ * writes its answer explicitly rather than risk a later preset default
+ * silently filling in what the person declined.
  */
 async function resolvedRunActions(
   project: string,
   step: 'prepared' | 'build',
   options: { home?: string; files?: RecipeFiles },
-): Promise<NamedRun[]> {
+): Promise<NamedRun[] | null> {
   const files = options.files ?? diskFiles
   const path = recipePath(project, options.home)
   const text = await files.read(path)
-  if (text === null) return []
+  if (text === null) return null
   try {
     const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
     return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
   } catch {
-    return []
+    return null
   }
 }
 
-/** The script a command invokes, when it is `<pm> [run[-script]] <script>`; a numbered name otherwise. */
+/** A flag that takes its value as a separate following token, e.g. `pnpm --filter web test`. */
+const VALUE_FLAGS = /^(?:--filter|-F|--workspace|-w)$/
+/** A subcommand that runs an arbitrary following binary rather than naming the check itself. */
+const PASSTHROUGH_SUBCOMMAND = /^(?:exec|dlx|x)$/
+
+/**
+ * The script a command invokes, when it is `<pm> [run[-script]] <script>`.
+ * Walks past a `-F`/`--filter`-style flag's own value and past a passthrough
+ * subcommand like `exec`, since either would otherwise be captured in place
+ * of the check it actually names — a numbered name where nothing is left.
+ */
 function nameForCommand(command: string, index: number, used: Set<string>): string {
-  const m = /^(?:pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(?:-\S+\s+)*([\w:.-]+)/.exec(command.trim())
-  let base = m?.[1] ?? `check-${index + 1}`
+  const m = /^(?:pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(.*)$/.exec(command.trim())
+  let base = `check-${index + 1}`
+  if (m) {
+    const tokens = m[1]!.split(/\s+/).filter((t) => t !== '')
+    let i = 0
+    while (i < tokens.length && tokens[i]!.startsWith('-')) i += VALUE_FLAGS.test(tokens[i]!) ? 2 : 1
+    if (i < tokens.length && PASSTHROUGH_SUBCOMMAND.test(tokens[i]!)) i += 1
+    const candidate = tokens[i]
+    if (candidate !== undefined && /^[\w:.-]+$/.test(candidate)) base = candidate
+  }
   let name = base
   let n = 2
   while (used.has(name)) name = `${base}-${n++}`
@@ -108,23 +135,27 @@ function namedFromTyped(commands: readonly string[]): NamedRun[] {
 
 /**
  * `original` with its `run:` entries replaced by `wanted`, in place — every
- * other action keeps its position. An entry whose `run:` text is unchanged
- * keeps its other fields (`timeout`, `env`) too, rather than being rebuilt
- * bare — only a `run:` that actually changed loses them.
+ * other action keeps its position. A `wanted` entry is matched against
+ * `original` by its `run:` text, not by where either sits in its list — an
+ * action removed or reordered ahead of it must not make it look unchanged.
+ * A match keeps the original's other fields (`timeout`, `env`) too, rather
+ * than being rebuilt bare; an entry with no match in `original` is new and
+ * gets none.
  */
 function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
-  const queue = [...wanted]
+  const remaining = [...wanted]
   const merged: unknown[] = []
   for (const item of original) {
     if (isRunAction(item)) {
-      const next = queue.shift()
-      if (next === undefined) continue
-      merged.push(next.run === item.run ? { ...item, name: next.name, run: next.run } : next)
+      const i = remaining.findIndex((w) => w.run === item.run)
+      if (i === -1) continue
+      const [next] = remaining.splice(i, 1)
+      merged.push({ ...item, name: next!.name, run: next!.run })
     } else {
       merged.push(item)
     }
   }
-  merged.push(...queue)
+  merged.push(...remaining)
   return merged
 }
 
@@ -226,6 +257,7 @@ async function askBuild(
       return { refused: '--build none cannot be combined with another --build value' }
     }
     const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build)
+    if (build.length === 0) world.log('nothing will check a diff before review')
     return { build }
   }
 
@@ -263,6 +295,7 @@ async function askBuild(
 
 /** The change that strips a preset's own `proposed` build the moment this write would otherwise displace it onto it (decision 7). */
 async function unwidenProposed(
+  world: SetupWorld,
   project: string,
   options: { home?: string; files?: RecipeFiles },
 ): Promise<RecipeChange | null> {
@@ -278,6 +311,10 @@ async function unwidenProposed(
 
   const runActions = proposed.filter(isRunAction)
   if (runActions.length === 0) return null
+
+  world.log(
+    `removed ${extends_}'s own check at steps.proposed (${runActions.map((a) => a.run).join(', ')}) — it would otherwise run in addition to what was just set`,
+  )
 
   const rest = proposed.filter((a) => !isRunAction(a))
   return { path: ['steps', 'proposed'], value: rest }
@@ -303,8 +340,8 @@ export async function askInstallAndBuild(
   const fileOptions = { home: input.home, files: input.files }
 
   const effectiveInstall = await resolvedRunActions(input.project, 'prepared', fileOptions)
-  const effectiveInstallRun = effectiveInstall[0]?.run ?? null
-  if (install.run !== effectiveInstallRun) {
+  const effectiveInstallRun = effectiveInstall?.[0]?.run ?? null
+  if (effectiveInstall === null || install.run !== effectiveInstallRun) {
     const originalPrepared = (await readRecipeKey(input.project, ['steps', 'prepared'], fileOptions)) as
       | unknown[]
       | null
@@ -314,14 +351,16 @@ export async function askInstallAndBuild(
 
   const effectiveBuild = await resolvedRunActions(input.project, 'build', fileOptions)
   const sameBuild =
-    effectiveBuild.length === build.build.length && effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
+    effectiveBuild !== null &&
+    effectiveBuild.length === build.build.length &&
+    effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
   if (!sameBuild) {
     const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], fileOptions)) as unknown[] | null
     changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
   }
 
   if (changes.length > 0) {
-    const unwiden = await unwidenProposed(input.project, fileOptions)
+    const unwiden = await unwidenProposed(world, input.project, fileOptions)
     if (unwiden) changes.push(unwiden)
   }
 

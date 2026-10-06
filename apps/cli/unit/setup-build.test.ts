@@ -271,6 +271,52 @@ env:
     expect(resolved.recipe.steps.proposed).toEqual([])
   })
 
+  it('declining the install on a first run, before the recipe file exists, still writes the decline', async () => {
+    const files = mapFiles({})
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(result.changes).toEqual([
+      { path: ['steps', 'prepared'], value: [] },
+      { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
+    ])
+  })
+
+  it('removing an earlier command keeps the timeout and env of the one that is kept', async () => {
+    const FIXTURE = `version: 2
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+steps:
+  build:
+    - name: lint
+      run: pnpm lint
+    - name: test
+      run: pnpm test
+      timeout: 45m
+      env: [TURBO_TOKEN]
+`
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+
+    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const resolved = resolveSource(written.text, 'main', PATH)
+    expect(resolved.recipe.steps.build).toEqual([
+      { name: 'test', run: 'pnpm test', timeout: '45m', env: ['TURBO_TOKEN'] },
+    ])
+  })
+
   it('adding a build command keeps the timeout and env of the ones already there', async () => {
     const FIXTURE = `version: 2
 repo:
@@ -302,16 +348,55 @@ steps:
     ])
   })
 
-  it('a typed command with a flag is named after the flag’s value, never the flag itself', async () => {
+  it('a typed command with a --filter flag is named after the script it runs, never the flag’s value', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm --filter web test'], check: null }, files }),
+      input({
+        given: { install: 'none', build: ['pnpm --filter web test', 'pnpm --filter web lint'], check: null },
+        files,
+      }),
     )
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
-    expect(build?.value).toEqual([{ name: 'web', run: 'pnpm --filter web test' }])
+    expect(build?.value).toEqual([
+      { name: 'test', run: 'pnpm --filter web test' },
+      { name: 'lint', run: 'pnpm --filter web lint' },
+    ])
+  })
+
+  it('a typed command that execs a binary is named after the binary, never "exec"', async () => {
+    const files = mapFiles({ [PATH]: BASE })
+    const { world: w } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['pnpm exec playwright test'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
+    expect(build?.value).toEqual([{ name: 'playwright', run: 'pnpm exec playwright test' }])
+  })
+
+  it('logs the preset check it removes from steps.proposed, and the empty build it was given', async () => {
+    const FIXTURE = `version: 2
+extends: pnpm-workspace
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+`
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const { world: w, lines } = world([])
+    const result = await askInstallAndBuild(
+      w,
+      input({ given: { install: 'none', build: ['none'], check: null }, files }),
+    )
+    if ('refused' in result) throw new Error(result.refused)
+    expect(lines).toContain('nothing will check a diff before review')
+    expect(lines.some((l) => l.includes('removed') && l.includes('steps.proposed'))).toBe(true)
   })
 
   it('a red trial build under --check-build yes refuses and returns no changes', async () => {
