@@ -41,12 +41,13 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import { BOARD_PORT, boardPort } from '@lingtai/env'
+import { BOARD_PORT, boardPort, githubApp } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
+import { createGitHubClient, installationForRepo, parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
-import { parseDuration } from '@lingtai/recipe'
+import { parseDuration, recipePath } from '@lingtai/recipe'
 
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
@@ -70,6 +71,7 @@ import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
+import { askLanding, askLimits, liveQuestionWorld } from './landing.ts'
 import { pauseCommand } from './pause.ts'
 import { requeueCommand } from './requeue.ts'
 import {
@@ -359,6 +361,23 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
   return { positional, flags }
 }
 
+/**
+ * The repository's default branch, through the same three calls `add()` makes
+ * to read it (`onboard.ts:251-276`) — asked here only as a fallback for the
+ * land question's own default, and answered null on any failure, since a
+ * question's `detected` is just one more thing a person can type past (#399).
+ */
+async function defaultBranchOf(owner: string, repo: string): Promise<string | null> {
+  try {
+    const auth = githubApp()
+    const installation = await installationForRepo(auth, owner, repo)
+    const client = await createGitHubClient({ auth, owner, repo, installation })
+    return await client.defaultBranch()
+  } catch {
+    return null
+  }
+}
+
 async function addCommand(args: string[]): Promise<number> {
   const { positional, flags } = parseFlags(args)
   const slug = positional[0]
@@ -372,6 +391,44 @@ async function addCommand(args: string[]): Promise<number> {
   // is refused rather than adopted (#75), which is a refusal only a typed flag
   // may earn.
   const base = flags['base']
+  const land = flags['land']
+  // `--land <branch>` and `--base` are different questions — where to read the
+  // recipe from, and what it should land on — and a person who named both must
+  // not have one silently overrule the other (#399, mirroring #75's rule for
+  // `--base` against the recipe's own `repo.base`).
+  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
+    console.error(
+      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
+        'silently. Nothing was written',
+    )
+    return 2
+  }
+
+  // The questions are asked before add() runs, and only when the recipe is
+  // already there — an absent one is add()'s own refusal to speak, and
+  // nothing here seeds a file that cannot resolve on its own (#395).
+  const { owner, repo } = parseSlug(slug)
+  if (existsSync(recipePath(repo))) {
+    const world = liveQuestionWorld()
+    const landed = await askLanding(world, repo, land ?? null, {
+      defaultBranch: () => defaultBranchOf(owner, repo),
+    })
+    if ('refused' in landed) {
+      console.error(landed.refused)
+      return 1
+    }
+    const limited = await askLimits(
+      world,
+      repo,
+      { rounds: flags['rounds'], wall: flags['wall'], budget: flags['budget'] },
+      {},
+    )
+    if ('refused' in limited) {
+      console.error(limited.refused)
+      return 1
+    }
+  }
+
   return add({ slug, base: base === undefined ? undefined : { ref: base, named: true } })
 }
 

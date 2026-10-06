@@ -23,6 +23,7 @@
 import type { Runtime } from '@lingtai/agent'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { STEPS } from '@lingtai/domain'
+import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, setRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -348,6 +349,107 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
       action: 'approval',
       onSha: result.headSha,
     })
+  })
+
+  /**
+   * **#399's pin: what the setup's `--land hold` writes actually holds a
+   * pass, and not only that it resolves.**
+   *
+   * `landingChanges` is the pure half of the write — `apps/cli/src/landing.ts`
+   * calls it too, and asserts flag → file there. This asserts file → held: the
+   * change set is applied with `setRecipe` on `Map`-backed files, exactly as
+   * `apps/cli/unit/landing.test.ts` does, and the written text is handed to
+   * `fakeGitHub` and run for real. The two tests import the same builder so
+   * this is the same claim as `#58`'s, carried to the new seam rather than
+   * assumed of it.
+   */
+  it('holds at a person the setup answered "hold", with no flag anywhere', async () => {
+    const recipeHome = '/tmp/fake-home-answers'
+    const files: RecipeFiles = {
+      read: async (path) => (path === recipePath(PROJECT, recipeHome) ? RECIPE : null),
+      replace: async () => {},
+    }
+    const currentProposed = await readRecipeKey(PROJECT, ['steps', 'proposed'], { home: recipeHome, files })
+    const changes = landingChanges({ land: 'hold' }, Array.isArray(currentProposed) ? currentProposed : null)
+    const result = await setRecipe(PROJECT, changes, { home: recipeHome, files })
+    expect(result.written).toBe(true)
+
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+
+    const run = await once(
+      {
+        project,
+        client: fakeGitHub(said, result.text),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+
+    if (run.ok === false) throw new Error(`stopped at ${run.stage}: ${run.detail}`)
+    if (run.ok !== 'held') throw new Error('it merged, and the setup had answered hold')
+    expect(run.step).toBe('proposed')
+    // **Nothing reached the base branch.**
+    expect(did).not.toContain('integrate')
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).not.toContain('WorkItemLanded')
+  })
+
+  /**
+   * **The inverse: `--land <branch>` removes a hold the setup had written,
+   * and the pass lands.**
+   *
+   * `HUMAN_BEFORE_THE_LANE` is the fixture `#58`'s own test holds at — a
+   * `human:` at `proposed` with no flag anywhere. `landingChanges` reads its
+   * `steps.proposed` back, builds the change that strips the `human:` entry
+   * and sets `repo.base`, and the pass that follows lands exactly as
+   * `RECIPE`'s own landing case does.
+   */
+  it('lands once the setup answers a branch, removing the hold it had written', async () => {
+    const recipeHome = '/tmp/fake-home-answers-2'
+    let current = HUMAN_BEFORE_THE_LANE
+    const files: RecipeFiles = {
+      read: async (path) => (path === recipePath(PROJECT, recipeHome) ? current : null),
+      replace: async (path, text) => {
+        if (path !== recipePath(PROJECT, recipeHome)) throw new Error(`unexpected write to ${path}`)
+        current = text
+      },
+    }
+    const currentProposed = await readRecipeKey(PROJECT, ['steps', 'proposed'], { home: recipeHome, files })
+    const changes = landingChanges({ land: 'main' }, Array.isArray(currentProposed) ? currentProposed : null)
+    const result = await setRecipe(PROJECT, changes, { home: recipeHome, files })
+    expect(result.written).toBe(true)
+    expect(result.text).not.toContain('human:')
+
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+
+    const run = await once(
+      {
+        project,
+        client: fakeGitHub(said, result.text),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+
+    if (run.ok === false) throw new Error(`stopped at ${run.stage}: ${run.detail}`)
+    expect(run.ok).toBe(true)
+    expect(did).toContain('integrate')
+    expect((await store.read(`wi-${PROJECT}-7`)).map((e) => e.type)).toContain('WorkItemLanded')
   })
 
   /**
