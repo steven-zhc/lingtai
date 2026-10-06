@@ -376,6 +376,23 @@ async function chooseStore(
     if (refused !== null) return refuse(world, refused)
   }
 
+  // `--database-url` given as the empty string names nothing to connect to,
+  // with or without --store postgres beside it: unlike flag === null, it is
+  // not the question's business to answer, because reading it as the
+  // question's own empty answer would silently rewrite a settled Postgres
+  // machine to SQLite with no connection attempted (the only thing a flag
+  // given to be explicit should never do, #392). This runs ahead of the
+  // exported-URL check below, so an empty flag is refused for what it is
+  // rather than reported as naming a database the export does not.
+  if (flag !== null && flag.trim() === '') {
+    const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
+    return refuse(
+      world,
+      `${USAGE} — ${given} takes a postgres:// URL. Leave it out entirely for SQLite. Nothing was written`,
+      2,
+    )
+  }
+
   // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
   // and nothing is written for it: it is the process's answer, not the file's,
   // and this command does not own the process a daemon will be started in.
@@ -407,9 +424,11 @@ async function chooseStore(
   }
 
   // `--store postgres` names the store and the URL comes from `--database-url`.
-  // Without one there is nothing to connect to, and the question it would fall
-  // back on is not a Postgres question: its empty answer is SQLite.
-  if (named === 'postgres' && (flag === null || flag.trim() === '')) {
+  // Without one at all there is nothing to connect to, and the question it
+  // would fall back on is not a Postgres question: its empty answer is
+  // SQLite. (An empty `--database-url` is refused above, ahead of the
+  // exported-URL check, rather than here.)
+  if (named === 'postgres' && flag === null) {
     return refuse(
       world,
       `${USAGE} — --store postgres takes --database-url <postgres url>, or an exported LINGTAI_DATABASE_URL. Nothing was written`,

@@ -672,13 +672,36 @@ describe('--store answers the store question without a terminal (#345)', () => {
       for (const argv of [
         ['--store', 'postgres'],
         ['--store', 'postgres', '--database-url', ''],
+        ['--database-url', ''],
       ]) {
         const home = freshHome()
         const { world: w, seen } = world(home, { answers: [''] })
         expect(await initCommand(argv, w)).toBe(2)
         expect(seen.asked).toEqual([])
+        expect(seen.connected).toEqual([])
         expect(config(home)).toBeNull()
       }
+    })
+
+    it('--database-url alone, given as the empty string, refuses rather than repointing a settled machine to SQLite', async () => {
+      const home = freshHome()
+      expect(await initCommand(['--store', 'postgres', '--database-url', URL_], world(home, {}).world)).toBe(0)
+      const before = config(home)
+      const { world: w, seen } = world(home, {})
+      expect(await initCommand(['--database-url', ''], w)).toBe(2)
+      expect(seen.asked).toEqual([])
+      expect(seen.connected).toEqual([])
+      expect(config(home)).toBe(before)
+    })
+
+    it('--database-url alone, given as the empty string beside an exported LINGTAI_DATABASE_URL, is the same usage refusal — never "unset it"', async () => {
+      const home = freshHome()
+      const { world: w, seen } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
+      expect(await initCommand(['--database-url', ''], w)).toBe(2)
+      expect(seen.connected).toEqual([])
+      expect(seen.lines.at(-1)).toContain('takes a postgres:// URL')
+      expect(seen.lines.join('\n')).not.toContain('exported URL wins')
+      expect(config(home)).toBeNull()
     })
 
     it('whose URL does not answer refuses, rather than going on with the SQLite the file already says', async () => {
