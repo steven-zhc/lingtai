@@ -7,7 +7,8 @@ import { dirname } from 'node:path'
  * atomically. Nothing here re-serialises a recipe a person has edited —
  * `emit.ts`'s header says why that is the one thing this module must never do.
  *
- * `setRecipe` is not wired to a caller yet. #396–#399 are.
+ * `setRecipe`'s caller is `lingtai add` (`apps/cli/src/lingtai.ts`'s
+ * `addCommand`), through `apps/cli/src/agents.ts`'s `askAgents`.
  */
 import { isDeepStrictEqual } from 'node:util'
 

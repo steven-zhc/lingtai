@@ -295,7 +295,6 @@ describe('editRecipe never moves one item’s comment onto another, and drops it
     const byIndex = () => editRecipe(OWN, [{ path: ['steps', 'proposed', 1], value: lint }])
     expect(byIndex).not.toThrow()
 
-
     // Removed and added by path: the reviewer goes with its paragraph, and lint arrives bare.
     const out = editRecipe(OWN, [
       { path: ['steps', 'proposed', 1], value: undefined },

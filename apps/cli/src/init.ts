@@ -5,7 +5,6 @@
  *
  *   look       git, which runtimes are installed and signed in, what ~/.lingtai holds
  *   store      postgres or sqlite, written down — a URL connected to, its tables created
- *   agent      at least one runtime signed in, or refused by name — which one runs is each recipe's
  *   project    github or local — github asks for the App (#393); local does not
  *   App        one already configured is verified by a real call; a new one
  *              waits with a deadline and a way to skip, never forever
@@ -29,11 +28,13 @@
  * **A failure returns to the choice.** A URL that does not connect asks again —
  * never selects the other thing silently.
  *
- * **Which runtime runs is not this command's question** (`#372`). It is each
- * project's, written in its recipe as `runtime.agent` (or `agent:` on a step),
- * which the board's onboarding page asks; a machine-wide default under every
- * recipe was a choice no recipe could be read for. What is the machine's is
- * whether anything is signed in at all, and that is checked here.
+ * **Which runtime runs is not this command's question** (`#372`, `#398`). It
+ * is each project's, written in its recipe as `runtime.agent` (or `agent:` on
+ * a step) — asked by `lingtai add`'s `agents.ts` for every project, never
+ * here; a machine-wide default under every recipe was a choice no recipe
+ * could be read for. This command still refuses a `config.yml` that names
+ * one — see `machineRuntimeRefusal` — because that is a migration message
+ * for a file written before `#372`, not a question.
  *
  * **The store is written, never inferred** (0056, #215). `database.store` is
  * `postgres` or `sqlite` and it is this command that puts it there: an empty
@@ -44,15 +45,15 @@
  * disagree.
  *
  * **Either store finishes setup**, since #179: a written `sqlite` opens a log,
- * a projection and a beacon, so the run goes on to the agent, the App and the
- * board exactly as a Postgres one does. What is said about such a machine is
+ * a projection and a beacon, so the run goes on to the App and the board
+ * exactly as a Postgres one does. What is said about such a machine is
  * `SQLITE_MACHINE`, in one place.
  *
  * **Changing a store that answers is an edit, not a re-run** — 0056 left that
  * open and this settles it, for a run with no `--database-url`. A store
- * already written and connecting is reported and not asked about again,
- * exactly as the agent is: re-asking would make every run of a finished
- * `init` a chance to answer the wrong way. To switch, set `database.store` in
+ * already written and connecting is reported and not asked about again:
+ * re-asking would make every run of a finished `init` a chance to answer the
+ * wrong way. To switch, set `database.store` in
  * `~/.lingtai/config.yml` and run `lingtai init`, which finds the half-state
  * that edit leaves — `store: sqlite` beside the old `url` — refuses it by
  * name, and completes the switch by asking. 0055 §3 is still the thing to know
@@ -88,11 +89,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline/promises'
 
-import { runnableEnv } from '@lingtai/agent-env'
-import { askEveryRuntime } from '@lingtai/agent/auth'
-import { RuntimeId } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type StoreChosen,
@@ -109,27 +106,12 @@ import { Document, isMap, parseDocument } from 'yaml'
 
 import { boardLock, builtBoardDir, serveBoard } from './board.ts'
 import { APP_WAIT_MS, askFirstProject, appComeBackLine, waitForApp } from './github-app.ts'
-import { question } from './question.ts'
+import { liveAsk, question } from './question.ts'
+import { askRuntimes, type RuntimeFound } from './runtimes.ts'
 
 // -------------------------------------------------------------- the world --
 
-/**
- * `RuntimeId`, and not a list of its members written out again (`#313`).
- *
- * It was `["claude-code", "codex"] as const` with its own `RuntimeName` beside
- * it — a third runtime added to the enum would have been invisible to
- * `lingtai init`, which is the one command whose job is to say which agents this
- * machine has. `RuntimeId` is the enum; `askEveryRuntime` walks it.
- */
-export type RuntimeName = RuntimeId
-
-export interface RuntimeFound {
-  id: RuntimeName
-  installed: boolean
-  signedIn: boolean
-  /** What the runtime said, verbatim. */
-  detail: string
-}
+export type { RuntimeFound }
 
 export type DatabaseCheck = { ok: true; schema: SchemaOutcome } | { ok: false; why: string }
 
@@ -288,9 +270,13 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   const store = await chooseStore(world, config, path, home, flags['database-url'] ?? null, named)
   if (store !== null) return store
 
-  // ---- the agent ------------------------------------------------------------
-  const agent = checkAgent(world, config, path, runtimes)
-  if (agent !== null) return agent
+  // ---- the agent --------------------------------------------------------
+  // Which runtime runs is each project's question now (`#372`, `#398`),
+  // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
+  // `config.yml` naming one: that is a migration message for a file written
+  // before `#372`, not a question `init` is asking.
+  const agentRefusal = machineRuntimeRefusal(config, path)
+  if (agentRefusal !== null) return refuse(world, agentRefusal)
 
   // ---- the App --------------------------------------------------------------
   const app = await world.app()
@@ -671,41 +657,22 @@ function sqliteChosen(world: Pick<InitWorld, 'log'>, choice: StoreChosen): null 
 }
 
 /**
- * Null when something can run here; an exit code when nothing can, or when the
- * file still carries a runtime the recipes own now (`#372`).
+ * Null when the file names no runtime; the refusal to print when it does.
  *
- * Nothing is written: which runtime runs is each recipe's `runtime.agent`.
+ * **A migration message, not a question** (`#398`): `config.yml` is not where
+ * a runtime is chosen any more — each project's recipe is, asked by `lingtai
+ * add`'s `agents.ts` — so a file still carrying one is a leftover from before
+ * `#372` and is refused rather than read. Nothing is written either way: a
+ * pure function of the file, testable on its own in `unit/`.
  */
-function checkAgent(
-  world: InitWorld,
-  config: Document,
-  path: string,
-  runtimes: readonly RuntimeFound[],
-): number | null {
+export function machineRuntimeRefusal(config: Document, path: string): string | null {
   if (config.has('runtime') || config.has('projects')) {
-    return refuse(
-      world,
+    return (
       `${path} still names a runtime under runtime: or projects: — which one runs is each project's now, written ` +
-        "as runtime.agent in that project's recipe (~/.lingtai/<project>/recipe.yml). Move it there, remove it " +
-        'here, and run lingtai init again; nothing was written',
+      "as runtime.agent in that project's recipe (~/.lingtai/<project>/recipe.yml). Move it there, remove it " +
+      'here, and run lingtai init again; nothing was written'
     )
   }
-  const signedIn = runtimes.filter((r) => r.signedIn).map((r) => r.id)
-  if (signedIn.length === 0) {
-    const each = runtimes.map((r) =>
-      r.installed ? `${r.id} is installed and not signed in (${r.detail})` : `${r.id} is not installed`,
-    )
-    return refuse(
-      world,
-      `no agent runtime is signed in on this machine — ${each.join('; ')}. Sign in to one and run lingtai init again; ` +
-        'whether it is paid for is between you and its provider. Nothing was written',
-    )
-  }
-  world.log(
-    paint.pass(
-      `agent        ${signedIn.join(' and ')} signed in · each project's recipe names which one runs (runtime.agent)`,
-    ),
-  )
   return null
 }
 
@@ -805,36 +772,12 @@ export function liveInitWorld(): InitWorld {
   return {
     env: process.env,
     log: (line) => console.log(line),
-    ask: async (question) => {
-      if (!process.stdin.isTTY) return null
-      const rl = createInterface({ input: process.stdin, output: process.stdout })
-      // Ctrl+C at a question: every earlier answer is already written, and this one was not.
-      rl.on('SIGINT', () => {
-        console.log('\nstopped at the question — its answer was not written, and lingtai init again asks it here')
-        process.exit(130)
-      })
-      try {
-        return await rl.question(question)
-      } finally {
-        rl.close()
-      }
-    },
+    ask: liveAsk,
     git: async () => {
       const said = spawnSync('git', ['--version'], { encoding: 'utf8' })
       return said.status === 0 ? said.stdout.trim() : null
     },
-    runtimes: async () => {
-      // Keyed by id in `auth.ts`, not zipped positionally here: the pair of
-      // hand-written lists this replaces was one insertion away from reporting
-      // Codex's answer under Claude Code's name.
-      return (await askEveryRuntime(runnableEnv({}))).map(({ id, status }) => ({
-        id,
-        // A missing binary is a spawn error, and not a runtime saying it is signed out.
-        installed: !/ENOENT/.test(status.detail),
-        signedIn: status.loggedIn,
-        detail: status.detail,
-      }))
-    },
+    runtimes: askRuntimes,
     database: async (url) => {
       const pg = (await import('pg')).default
       const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })
