@@ -121,9 +121,6 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
 function signedIn(id: RuntimeFound['id']): RuntimeFound {
   return { id, installed: true, signedIn: true, detail: 'signed in via claude.ai' }
 }
-function signedOut(id: RuntimeFound['id']): RuntimeFound {
-  return { id, installed: true, signedIn: false, detail: 'not signed in' }
-}
 function notInstalled(id: RuntimeFound['id']): RuntimeFound {
   return { id, installed: false, signedIn: false, detail: `spawn ${id} ENOENT` }
 }
@@ -277,19 +274,29 @@ describe('lingtai init (#186)', () => {
   })
 
   /**
-   * **Which runtime runs is each recipe's** (`#372`), so init asks nothing
-   * about it and writes nothing for it — and a file that still names one is
-   * refused by name, because every resolve would refuse it next.
+   * **Which runtime runs is each recipe's** (`#372`, `#398`), so init asks
+   * nothing about it and writes nothing for it, whether or not anything is
+   * signed in here — that question is `lingtai add`'s now. A file that
+   * still names one at the machine level is refused by name, because every
+   * resolve would refuse it next.
    */
-  it('asks nothing about the agent when more than one is signed in, and writes none', async () => {
+  it('asks nothing about the agent, however many runtimes are signed in, and writes none', async () => {
     const home = freshHome()
     const runtimes = [signedIn('claude-code'), signedIn('codex')]
     const { world: w, seen } = world(home, { runtimes, answers: [URL_] })
     expect(await initCommand([], w)).toBe(0)
     expect(seen.asked).toEqual(['ask:database'])
-    expect(seen.lines.join('\n')).toContain(
-      "claude-code and codex signed in · each project's recipe names which one runs",
-    )
+    expect(config(home)).not.toContain('agent')
+  })
+
+  it('asks nothing about the agent when nothing is signed in either', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, {
+      runtimes: [notInstalled('claude-code'), notInstalled('codex')],
+      answers: [URL_],
+    })
+    expect(await initCommand([], w)).toBe(0)
+    expect(seen.asked).toEqual(['ask:database'])
     expect(config(home)).not.toContain('agent')
   })
 
@@ -302,20 +309,6 @@ describe('lingtai init (#186)', () => {
     expect(await initCommand([], w)).toBe(1)
     expect(seen.lines.at(-1)).toContain('runtime.agent in that project')
     expect(config(home)).toBe(before)
-    expect(seen.boards).toBe(0)
-  })
-
-  it('refuses by name when no runtime is signed in, and writes no agent', async () => {
-    const home = freshHome()
-    const { world: w, seen } = world(home, {
-      runtimes: [signedOut('claude-code'), notInstalled('codex')],
-      answers: [URL_],
-    })
-    expect(await initCommand([], w)).toBe(1)
-    const said = seen.lines.at(-1)!
-    expect(said).toContain('claude-code is installed and not signed in')
-    expect(said).toContain('codex is not installed')
-    expect(config(home)).not.toContain('agent')
     expect(seen.boards).toBe(0)
   })
 
@@ -371,7 +364,7 @@ describe('lingtai init (#186)', () => {
     expect(statSync(configPath({ LINGTAI_HOME: home })).mtimeMs).toBe(mtime)
     const said = again.seen.lines.join('\n')
     expect(said).toContain('tables present')
-    expect(said).toContain('claude-code signed in')
+    expect(said).toContain('claude-code  signed in via claude.ai')
     expect(said).toContain('lingtai-me, owned by me')
   })
 

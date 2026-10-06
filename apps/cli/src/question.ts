@@ -12,6 +12,8 @@
  * **The seam writes nothing.** It returns `{ answer }` or `{ refused }`; the
  * caller decides what that answer means to write, and when.
  */
+import { createInterface } from 'node:readline/promises'
+
 import { paint } from '@lingtai/env/colour'
 
 export interface QuestionWorld {
@@ -41,6 +43,26 @@ export interface Question {
 }
 
 export type Answered = { answer: string } | { refused: string }
+
+/**
+ * A readline reader over this process's own stdin/stdout — null with no
+ * terminal attached. Shared by every live `QuestionWorld`, `init` and `add`
+ * alike, so there is one terminal reader rather than one per command (#398).
+ */
+export async function liveAsk(prompt: string): Promise<string | null> {
+  if (!process.stdin.isTTY) return null
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  // Ctrl+C at a question: every earlier answer is already written, and this one was not.
+  rl.on('SIGINT', () => {
+    console.log('\nstopped at the question — its answer was not written, and running the command again asks it here')
+    process.exit(130)
+  })
+  try {
+    return await rl.question(prompt)
+  } finally {
+    rl.close()
+  }
+}
 
 async function accept(q: Question, answer: string): Promise<string | null> {
   if (q.choices !== undefined && !q.choices.includes(answer)) {

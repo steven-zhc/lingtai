@@ -101,14 +101,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
 
   lingtai init                      a bare machine to the board, on the wizard:
                                 git and the agents looked at, a Postgres URL
-                                connected to and its tables made, the agent
-                                chosen, ~/.lingtai/config.yml written. Run it
-                                again to continue, or to see what is set
+                                connected to and its tables made,
+                                ~/.lingtai/config.yml written. Run it again to
+                                continue, or to see what is set
     --store <sqlite|postgres>   the store, instead of being asked — what a
                                 script or installer with no terminal gives.
                                 postgres takes --database-url with it
     --database-url <url>        instead of being asked
-    --agent <claude-code|codex> instead of being asked, where both are signed in
     --port <n>                  the board's port, for this run. default: 17820,
                                 or board.port in ~/.lingtai/config.yml
   lingtai add <owner>/<repo>        onboard a repository the App is installed on
