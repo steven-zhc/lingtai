@@ -94,7 +94,7 @@
     const script = document.querySelector('script[data-dc-script]')
     if (!host || !script) return
     for (const h of host.querySelectorAll('helmet')) {
-      for (const child of [...h.children]) document.head.appendChild(child)
+      while (h.firstElementChild) document.head.appendChild(h.firstElementChild)
     }
     const template = host.cloneNode(true)
     const decl = JSON.parse(script.getAttribute('data-props') || '{}')
@@ -119,5 +119,6 @@
     c.__render()
   }
 
-  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', mount) : mount()
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount)
+  else mount()
 })()
