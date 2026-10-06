@@ -19,11 +19,15 @@ import { createInterface } from 'node:readline/promises'
 import { passCeiling } from '@lingtai/conductor/ceiling'
 import { paint } from '@lingtai/env/colour'
 import {
+  type Recipe,
   type RecipeFiles,
+  baseOf,
+  boundsBesides,
   budgetChange,
   ceilingOf,
   diskFiles,
   landingChanges,
+  limitsFor,
   parseDuration,
   readRecipeKey,
   recipePath,
@@ -66,7 +70,10 @@ async function resolvedFile(
 ): Promise<
   | {
       text: string
+      recipe: Recipe
       proposed: readonly Record<string, unknown>[]
+      admit: readonly Record<string, unknown>[]
+      base: string
       limits: { turns: number; wall: string; rounds: number; restarts: number; usd?: number }
       agent: string
     }
@@ -84,7 +91,10 @@ async function resolvedFile(
   }
   return {
     text,
+    recipe: resolved.recipe,
     proposed: resolved.recipe.steps.proposed,
+    admit: resolved.recipe.steps.admit,
+    base: baseOf(resolved.recipe),
     limits: ceilingOf(resolved.recipe),
     agent: resolved.recipe.runtime.agent,
   }
@@ -94,9 +104,12 @@ async function resolvedFile(
  * **Land on a branch, or hold every pass for a person** — `--land <branch>|hold`.
  *
  * `current` is `'hold'` when the resolved recipe already carries a `human:`
- * at `proposed` (a preset's counts, same as a person's own), else whatever
- * the file writes at `repo.base`. `detected` is the repository's default
- * branch, asked only when neither answers it.
+ * at `proposed` (a preset's counts, same as a person's own), else `baseOf`
+ * the resolved recipe — `steps.admit`'s `worktree.base` where one is
+ * declared, `repo.base` otherwise (`settings.ts`'s `baseOf`/`baseWrittenAt`).
+ * `detected` is the repository's default branch, asked only when neither
+ * answers it. `landingChanges` writes the branch answer back at that same
+ * place, never unconditionally at `repo.base`.
  */
 export async function askLanding(
   world: QuestionWorld,
@@ -109,9 +122,11 @@ export async function askLanding(
   if ('refused' in file) return file
 
   const currentlyHolds = file.proposed.some((action) => 'human' in action)
-  const currentBase = await readRecipeKey(project, ['repo', 'base'], options)
-  const current = currentlyHolds ? 'hold' : typeof currentBase === 'string' ? currentBase : null
-  const detected = await deps.defaultBranch()
+  const current = currentlyHolds ? 'hold' : file.base
+  // Paid only when nothing else answers the question — a flag or an already
+  // resolved `current` means `question()` never looks at `detected`, and
+  // this is the GitHub round trip `defaultBranch()` spends to get it (#399).
+  const detected = land === null && current === null ? await deps.defaultBranch() : null
 
   const result = await question(world, {
     name: 'the landing',
@@ -124,10 +139,10 @@ export async function askLanding(
   if ('refused' in result) return result
 
   const hadSteps = (await readRecipeKey(project, ['steps'], options)) !== null
-  const currentProposed = await readRecipeKey(project, ['steps', 'proposed'], options)
   const changes = landingChanges(
     result.answer === 'hold' ? { land: 'hold' } : { land: result.answer },
-    Array.isArray(currentProposed) ? currentProposed : null,
+    file.proposed,
+    file.admit,
   )
   const written = await setRecipe(project, changes, options)
   if (written.written && !hadSteps && changes.some((c) => c.path[0] === 'steps')) {
@@ -187,6 +202,8 @@ export async function askLimits(
     validate: async (answer) => (/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
   })
   if ('refused' in rounds) return rounds
+  const roundsValue = Number(rounds.answer)
+  if (roundsValue !== limits.rounds) await setRecipe(project, [roundsChange(roundsValue)], options)
 
   const wall = await question(world, {
     name: 'wall',
@@ -203,6 +220,7 @@ export async function askLimits(
     },
   })
   if ('refused' in wall) return wall
+  if (wall.answer !== limits.wall) await setRecipe(project, [wallChange(wall.answer)], options)
 
   const budget = await question(world, {
     name: 'the spend ceiling',
@@ -218,27 +236,28 @@ export async function askLimits(
   })
   if ('refused' in budget) return budget
 
-  const roundsValue = Number(rounds.answer)
   const usdValue =
     budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
+  if ((usdValue ?? null) !== (limits.usd ?? null)) await setRecipe(project, [budgetChange(usdValue)], options)
 
-  const changes = [
-    ...(roundsValue === limits.rounds ? [] : [roundsChange(roundsValue)]),
-    ...(wall.answer === limits.wall ? [] : [wallChange(wall.answer)]),
-    ...((usdValue ?? null) === (limits.usd ?? null) ? [] : [budgetChange(usdValue)]),
-  ]
-  await setRecipe(project, changes, options)
-
-  const finalLimits = {
-    ...limits,
-    rounds: roundsValue,
-    wall: wall.answer,
-    usd: usdValue ?? undefined,
-  }
+  // `add()`'s own sentence (`onboard.ts:335-341`) is `limitsFor`/`boundsBesides`
+  // against `implement`, not the bare ceiling: a per-step bound narrower than
+  // the ceiling makes the two disagree about what a pass costs, which is the
+  // one thing 0070 §9 put `steps` into `passCeiling` to prevent (#399). So this
+  // re-resolves what was just written and calls it the same way.
+  const after = await resolvedFile(project, options)
+  if ('refused' in after) return after
+  const implementLimits = limitsFor(after.recipe, 'implement')
   world.log(
-    paint.muted(`  ${'a pass'.padEnd(9)} ${passCeiling({ ...finalLimits, wallMs: parseDuration(finalLimits.wall) })}`),
+    paint.muted(
+      `  ${'a pass'.padEnd(9)} ${passCeiling({
+        ...implementLimits,
+        wallMs: parseDuration(implementLimits.wall),
+        steps: boundsBesides(after.recipe, 'implement'),
+      })}`,
+    ),
   )
-  if (file.agent !== 'claude-code' && finalLimits.usd !== undefined) {
+  if (file.agent !== 'claude-code' && after.limits.usd !== undefined) {
     world.log(
       paint.muted(
         `${file.agent} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime (#370)`,

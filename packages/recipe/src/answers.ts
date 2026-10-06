@@ -13,6 +13,10 @@ function isHumanEntry(entry: unknown): boolean {
   return typeof entry === 'object' && entry !== null && 'human' in entry
 }
 
+function isWorktreeEntry(entry: unknown): entry is Record<string, unknown> & { worktree: Record<string, unknown> } {
+  return typeof entry === 'object' && entry !== null && 'worktree' in entry
+}
+
 /** The one thing the setup's own hold says, quoted into the recipe. */
 export const SETUP_HOLD_TEXT = "Land this? The setup was answered 'hold'."
 
@@ -37,15 +41,40 @@ export type LandingAnswer = { land: 'hold' } | { land: string }
  * the one this function would have written — a hand-written hold left behind
  * is still a hold every pass meets. `judge:` and `watch:` entries at the same
  * step are untouched.
+ *
+ * **`<branch>` writes the base where `baseWrittenAt` says it is read, not
+ * always `repo.base`.** `currentAdmit` is `steps.admit` as the file resolves
+ * it; when one of its actions carries a `worktree:`, that is the entry
+ * `baseOf`/`baseWrittenAt` (`settings.ts:222-245`) read the base from, and
+ * writing `repo.base` instead would land on a key the conductor does not
+ * read. Absent that, the base is `repo.base` as always.
  */
-export function landingChanges(answer: LandingAnswer, currentProposed: readonly unknown[] | null): RecipeChange[] {
+export function landingChanges(
+  answer: LandingAnswer,
+  currentProposed: readonly unknown[] | null,
+  currentAdmit?: readonly unknown[] | null,
+): RecipeChange[] {
   const proposed = currentProposed ?? []
   if (answer.land === 'hold') {
     if (proposed.some(isHumanEntry)) return []
     return [{ path: ['steps', 'proposed'], value: [...proposed, { name: 'hold every pass', human: SETUP_HOLD_TEXT }] }]
   }
   const withoutHold = proposed.filter((entry) => !isHumanEntry(entry))
-  const changes: RecipeChange[] = [{ path: ['repo', 'base'], value: answer.land }]
+  const admit = currentAdmit ?? []
+  const worktreeIndex = admit.findIndex(isWorktreeEntry)
+  const changes: RecipeChange[] =
+    worktreeIndex === -1
+      ? [{ path: ['repo', 'base'], value: answer.land }]
+      : [
+          {
+            path: ['steps', 'admit'],
+            value: admit.map((entry, i) =>
+              i === worktreeIndex && isWorktreeEntry(entry)
+                ? { ...entry, worktree: { ...entry.worktree, base: answer.land } }
+                : entry,
+            ),
+          },
+        ]
   if (withoutHold.length !== proposed.length) changes.push({ path: ['steps', 'proposed'], value: withoutHold })
   return changes
 }

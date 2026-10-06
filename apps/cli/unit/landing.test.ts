@@ -103,7 +103,52 @@ steps: {}
 runtime: {agent: claude-code}
 `
 
+/**
+ * `extends: pnpm-workspace` and no `steps:` key — `steps.proposed` resolves
+ * entirely from the preset (`presets.ts`'s `build` action). The onboarding
+ * shape `doc/design/395.md` and `write.test.ts`'s widening tests describe.
+ */
+const PRESET_NO_STEPS = `version: 2
+extends: pnpm-workspace
+repo: {base: main}
+source: {kinds: [bug], exclude: []}
+env: {required: [], plantAt: .env.local}
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+
+/**
+ * `repo.base: main` but the branch a pass actually cuts from and lands on is
+ * `steps.admit`'s `worktree.base: release` (`#268`'s v2 spelling) — the
+ * shape `baseOf`/`baseWrittenAt` (`settings.ts:222-245`) exist to read
+ * correctly instead of assuming `repo.base`.
+ */
+const WORKTREE_ADMIT = `version: 2
+repo: {base: main, submodules: false}
+source: {kinds: [bug], exclude: []}
+env: {required: [], plantAt: .env.local}
+steps:
+  admit:
+    - name: cut the tree
+      worktree: {base: release, submodules: false}
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+
 describe('askLanding', () => {
+  it('--land hold never calls defaultBranch — a flag already answers the question', async () => {
+    const files = mapFiles({ [PATH]: FIXTURE })
+    let calls = 0
+    const result = await askLanding(world().world, PROJECT, 'hold', {
+      home: HOME,
+      files,
+      defaultBranch: async () => {
+        calls++
+        return 'main'
+      },
+    })
+    expect(result).toEqual({ ok: true })
+    expect(calls).toBe(0)
+  })
+
   it('--land hold writes exactly one human: at steps.proposed, and leaves steps.merge untouched', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const { world: w } = world()
@@ -148,6 +193,43 @@ describe('askLanding', () => {
     expect(resolved.repo.base).toBe('release')
   })
 
+  it('--land hold on a file inheriting steps.proposed from its preset keeps the preset build action', async () => {
+    const files = mapFiles({ [PATH]: PRESET_NO_STEPS })
+    const { world: w } = world()
+    const result = await askLanding(w, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
+    expect(result).toEqual({ ok: true })
+
+    const written = (await files.read(PATH))!
+    const resolved = resolveSource(written, PATH, PATH).recipe
+    expect(resolved.steps.proposed).toEqual([
+      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
+      { name: 'hold every pass', human: "Land this? The setup was answered 'hold'." },
+    ])
+  })
+
+  it("on a recipe cutting from steps.admit's worktree.base, the default offered is that base, not repo.base", async () => {
+    const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
+    const { world: w, asked } = world([])
+    // No flag and no queued answer: the question is asked and refused, but
+    // its own default — shown in the bracket — must be the branch the
+    // conductor actually cuts from, read before the refusal happens.
+    const result = await askLanding(w, PROJECT, null, { home: HOME, files, defaultBranch: async () => 'main' })
+    expect(result).toMatchObject({ refused: expect.any(String) })
+    expect(asked[0]).toContain('[release]')
+  })
+
+  it("--land develop on a recipe cutting from steps.admit's worktree.base writes it there, and leaves repo.base untouched", async () => {
+    const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
+    const { world: w } = world()
+    const result = await askLanding(w, PROJECT, 'develop', { home: HOME, files, defaultBranch: async () => 'main' })
+    expect(result).toEqual({ ok: true })
+
+    const written = (await files.read(PATH))!
+    const resolved = resolveSource(written, PATH, PATH).recipe
+    expect(resolved.repo.base).toBe('main')
+    expect(resolved.steps.admit).toEqual([{ name: 'cut the tree', worktree: { base: 'develop', submodules: false } }])
+  })
+
   it('with no terminal and no flag, refuses naming --land, and replace is never called', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const w: QuestionWorld = { ask: async () => null, log: () => {} }
@@ -156,6 +238,24 @@ describe('askLanding', () => {
     expect(files.replaced).toEqual([])
   })
 })
+
+/**
+ * `runtime.limits` is the wide ceiling; `steps.implement` narrows it for the
+ * one step that actually spends it. `add()`'s own sentence (`onboard.ts`'s
+ * `limitsFor(…, 'implement')`) prints the narrow figure, not the ceiling.
+ */
+const NARROW_IMPLEMENT = `version: 2
+repo: {base: main, submodules: false}
+source: {kinds: [bug], exclude: []}
+env: {required: [], plantAt: .env.local}
+steps:
+  implement:
+    - name: work
+      agent: claude-code
+      prompt: 'fix {{issue}}'
+      limits: {turns: 4, wall: 10m}
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2h, rounds: 2, restarts: 0}}
+`
 
 describe('askLimits', () => {
   it('--rounds 0 --wall 30m --budget 4 each land at their runtime.limits key', async () => {
@@ -200,5 +300,33 @@ describe('askLimits', () => {
     const { world: w, asked } = world(['', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, files })
     expect(asked.some((line) => line.includes('$'))).toBe(true)
+  })
+
+  it("the printed ceiling is implement's own narrower bound, not the recipe's wide runtime.limits", async () => {
+    const files = mapFiles({ [PATH]: NARROW_IMPLEMENT })
+    const { world: w, lines } = world(['', '', ''])
+    // Pressing enter on every question — the ceiling itself is unchanged by
+    // this run, only the sentence that reports it is under test.
+    const result = await askLimits(w, PROJECT, {}, { home: HOME, files })
+    expect(result).toEqual({ ok: true })
+
+    const printed = lines.find((l) => l.includes('a pass'))!
+    expect(printed).toContain('10m')
+    expect(printed).toContain('4 turns')
+    expect(printed).not.toContain('2h')
+  })
+
+  it('a Ctrl+C at the third question keeps the first two answers — each is its own setRecipe call', async () => {
+    const files = mapFiles({ [PATH]: FIXTURE })
+    // Two typed answers, then the budget question's `ask` returns null — the
+    // same shape a Ctrl+C leaves a readline-backed `ask` in.
+    const result = await askLimits(world(['0', '30m']).world, PROJECT, {}, { home: HOME, files })
+    expect(result).toMatchObject({ refused: expect.stringContaining('the spend ceiling') })
+
+    const written = (await files.read(PATH))!
+    const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
+    expect(limits.rounds).toBe(0)
+    expect(limits.wall).toBe('30m')
+    expect(files.replaced).toHaveLength(2)
   })
 })

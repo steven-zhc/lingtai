@@ -50,6 +50,27 @@ describe('landingChanges', () => {
     expect(landingChanges({ land: 'release' }, [JUDGE])).toEqual([{ path: ['repo', 'base'], value: 'release' }])
     expect(landingChanges({ land: 'release' }, null)).toEqual([{ path: ['repo', 'base'], value: 'release' }])
   })
+
+  it("a branch writes steps.admit's worktree.base, not repo.base, when admit declares one", () => {
+    const CUT_THE_TREE = { name: 'cut the tree', worktree: { base: 'main', submodules: false } }
+    expect(landingChanges({ land: 'develop' }, null, [CUT_THE_TREE])).toEqual([
+      {
+        path: ['steps', 'admit'],
+        value: [{ name: 'cut the tree', worktree: { base: 'develop', submodules: false } }],
+      },
+    ])
+  })
+
+  it('a branch beside a worktree admit still removes a hand-written hold at proposed', () => {
+    const CUT_THE_TREE = { name: 'cut the tree', worktree: { base: 'main', submodules: false } }
+    expect(landingChanges({ land: 'develop' }, [HAND_WRITTEN_HOLD], [CUT_THE_TREE])).toEqual([
+      {
+        path: ['steps', 'admit'],
+        value: [{ name: 'cut the tree', worktree: { base: 'develop', submodules: false } }],
+      },
+      { path: ['steps', 'proposed'], value: [] },
+    ])
+  })
 })
 
 describe('the limits', () => {
