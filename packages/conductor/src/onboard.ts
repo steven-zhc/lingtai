@@ -380,6 +380,13 @@ export async function add(options: AddOptions, log = console.log): Promise<numbe
  * `loadProjects` already draws, asked of the stream as it stood before this
  * append.
  */
+export function registrationLine(prior: readonly Envelope[], repo: string, resolved: ResolvedRecipe): string {
+  const before: ProjectState = reduceProject(prior)
+  return isRegistered(before)
+    ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
+    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`
+}
+
 /** What `chooseFirstProject`'s local branch (#394) has already resolved before it registers. */
 export interface AddLocalOptions {
   project: string
@@ -420,11 +427,4 @@ export async function addLocal(
   const line = registrationLine(existing, options.project, resolved)
   log(line)
   return line
-}
-
-export function registrationLine(prior: readonly Envelope[], repo: string, resolved: ResolvedRecipe): string {
-  const before: ProjectState = reduceProject(prior)
-  return isRegistered(before)
-    ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
-    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`
 }

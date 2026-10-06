@@ -39,7 +39,7 @@ import { choose, listRepositories, type Picker } from '@lingtai/conductor/pick-r
 import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
 import { boardPort, githubApp, stateDir } from '@lingtai/env'
-import { createAppReader } from '@lingtai/github'
+import { createAppReader, type Installation, parseSlug } from '@lingtai/github'
 import {
   AgentUnresolvedError,
   diskFiles,
@@ -94,6 +94,15 @@ export interface FirstProjectWorld extends QuestionWorld {
   signedIn: SignedIn
   /** Appends `ProjectConfigured` and returns the "added" or "updated" line. */
   register: (payload: RegisterLocalPayload) => Promise<string>
+  /**
+   * `init`'s only (#393): a configured App already answers *is the project*,
+   * so the question is refused past rather than asked, and `--project`/
+   * `--github-app` naming anything else is refused by name. `lingtai add` has
+   * none of this — a machine with an App configured for other projects can
+   * still add a local one (#394's finding 5), so it always asks, skipping only
+   * the now-moot "create the App" sub-question when one already answers.
+   */
+  githubAppIsTheProject?: boolean
   github: {
     app: () => Promise<AppCheck>
     /** A board already running, or null — `add` starts none of its own. */
@@ -131,6 +140,42 @@ function conflictingFlags(flags: Record<string, string>): string | null {
   return null
 }
 
+/**
+ * Just the project-kind half of #393's `askFirstProject` — asked on its own
+ * when an App is already configured and `lingtai add` is the caller, since
+ * the App sub-question ("create it now, or skip") is moot with one already
+ * answering. `askFirstProject` itself is not split to produce this: its
+ * contract is pinned by `github-app.test.ts`, which asks both questions every
+ * time and must keep doing so.
+ */
+async function askProjectKind(
+  world: QuestionWorld,
+  flags: Record<string, string>,
+): Promise<{ kind: 'local' | 'github' } | { refused: string }> {
+  const kept = 'the store chosen above is kept'
+  const kind = await question(world, {
+    name: 'the project',
+    flag: '--project github, or --project local',
+    given: flags['project'] ?? null,
+    prompt: 'a GitHub project, or one on this machine only',
+    fallback: 'github',
+    choices: ['github', 'local'],
+    kept,
+  })
+  if ('refused' in kind) return { refused: kind.refused }
+  if (kind.answer === 'local') {
+    if (flags['github-app'] !== undefined) {
+      return {
+        refused:
+          `--github-app ${flags['github-app']}, but --project local creates no GitHub App. Leave out ` +
+          `--github-app, or pass --project github. ${kept}`,
+      }
+    }
+    return { kind: 'local' }
+  }
+  return { kind: 'github' }
+}
+
 export async function chooseFirstProject(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -141,9 +186,15 @@ export async function chooseFirstProject(
   let kind: 'local' | 'github' | null =
     flags['local'] !== undefined ? 'local' : flags['github'] !== undefined ? 'github' : null
   let askedApp: 'create' | 'skip' | null = null
+  // Fetched at most once here, and handed to `runGithubBranch` rather than
+  // left for it to ask again — `world.github.app()` is a real call (`GET
+  // /app`, or `init`'s already-fetched one), and asking it twice for one run
+  // is a second one nobody needed.
+  let appCheck: AppCheck | null = null
 
   if (kind === null) {
     const app = await world.github.app()
+    appCheck = app
     if (app.configured && !app.ok) {
       return {
         refused:
@@ -151,7 +202,7 @@ export async function chooseFirstProject(
           'and run this again. Nothing was written',
       }
     }
-    if (app.configured) {
+    if (app.configured && world.githubAppIsTheProject === true) {
       const namedProject = flags['project'] ?? null
       if (namedProject !== null && namedProject !== 'github') {
         return {
@@ -168,6 +219,22 @@ export async function chooseFirstProject(
         }
       }
       kind = 'github'
+    } else if (app.configured) {
+      // The project question is still asked — unlike `init`, a machine with
+      // an App configured for other projects can still add a local one
+      // (#394's finding 5) — but the "create the App" sub-question is moot
+      // with one already answering, so an explicit request for one is refused
+      // rather than silently obeyed, and nothing beyond that is asked.
+      if (flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
+        return {
+          refused:
+            `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is ` +
+            'created now. Leave out --github-app, or pass --github-app skip. Nothing was written',
+        }
+      }
+      const asked = await askProjectKind(world, flags)
+      if ('refused' in asked) return { refused: asked.refused }
+      kind = asked.kind
     } else {
       const asked = await askFirstProject(world, flags)
       if ('refused' in asked) return { refused: asked.refused }
@@ -181,7 +248,7 @@ export async function chooseFirstProject(
 
   return kind === 'local'
     ? runLocalBranch(world, flags, flags['local'] ?? null)
-    : runGithubBranch(world, flags, flags['github'] ?? null, askedApp)
+    : runGithubBranch(world, flags, flags['github'] ?? null, askedApp, appCheck)
 }
 
 /** Git recognises a URL (`scheme://…`) and scp-style (`[user@]host:path`) — everything else is a path. */
@@ -236,13 +303,24 @@ async function runLocalBranch(
     }
   }
   if (found !== undefined && found.owner === null) {
+    // `repo.remote` is optional in the schema (`recipe.ts`), so a project
+    // registered before owners were recorded — #352's `unrecorded` state —
+    // may have none at all. Missing is never treated as a match: there is
+    // nothing here to confirm this directory is the same project, and
+    // proceeding would silently re-point an existing GitHub project's stream
+    // at this local directory.
     const existingRemote = await readRecipeKey(name, ['repo', 'remote'], { home: world.home, files: world.files })
-    if (typeof existingRemote === 'string' && existingRemote !== remote) {
+    if (existingRemote !== remote) {
       return {
         refused:
-          `a project called ${name} is already registered with repo.remote: ${existingRemote}, and ${toplevel}'s ` +
-          `origin is ${remote} — a project is keyed by its name, and registering this directory would silently ` +
-          'redirect it to this one. Remove the existing project first, or rename this directory. Nothing was written',
+          typeof existingRemote === 'string'
+            ? `a project called ${name} is already registered with repo.remote: ${existingRemote}, and ${toplevel}'s ` +
+              `origin is ${remote} — a project is keyed by its name, and registering this directory would silently ` +
+              'redirect it to this one. Remove the existing project first, or rename this directory. Nothing was written'
+            : `a project called ${name} is already registered with no repo.remote recorded — it may be a project ` +
+              'registered before owners were, and there is nothing here to confirm this directory is the same one ' +
+              `— and a project is keyed by its name, so registering ${toplevel} here would silently redirect it ` +
+              'to this directory instead. Remove the existing project first, or rename this directory. Nothing was written',
       }
     }
   }
@@ -314,7 +392,9 @@ async function runLocalBranch(
     read: world.files.read,
   })
 
-  const line = await world.register({
+  // `register`'s live implementation (`addLocal`) logs the "added"/"updated"
+  // line itself — logging it again here printed it twice.
+  await world.register({
     project: name,
     owner: null,
     base,
@@ -322,7 +402,6 @@ async function runLocalBranch(
     fromSha,
     resolved,
   })
-  world.log(line)
   return { ok: true, project: 'local', name, remote, base }
 }
 
@@ -331,8 +410,9 @@ async function runGithubBranch(
   flags: Record<string, string>,
   givenSlug: string | null,
   askedApp: 'create' | 'skip' | null,
+  knownApp: AppCheck | null,
 ): Promise<FirstProjectOutcome> {
-  const app = await world.github.app()
+  const app = knownApp ?? (await world.github.app())
   if (app.configured && !app.ok) {
     return {
       refused:
@@ -373,15 +453,34 @@ async function runGithubBranch(
   if (givenSlug === null) return { ok: true, project: 'github', app: appOutcome }
 
   const picker = await world.github.picker()
-  const picked = choose(picker, givenSlug)
-  if (!picked.ok) return { refused: picked.why }
+  // `choose()`'s "already onboarded" is written for the picker's offer-it-once
+  // screen, not for re-running `lingtai add` on a project this is — the
+  // `registrationLine` "updated" path (#163), and `unrecorded()`'s own advice
+  // to run exactly this command for the owner it names. `add()` resolves the
+  // installation itself (`installationForRepo`), so the given owner is the
+  // disambiguation rather than something `choose()` has to confirm first.
+  const { owner, repo } = parseSlug(givenSlug)
+  const alreadyOnboarded = picker.installations
+    .flatMap((listed) => listed.repositories)
+    .some(
+      (r) =>
+        r.owner.toLowerCase() === owner.toLowerCase() &&
+        r.repo.toLowerCase() === repo.toLowerCase() &&
+        (r.onboarded === 'registered' || r.onboarded === 'pending' || r.onboarded === 'unrecorded'),
+    )
+  let installation: Installation | undefined
+  if (!alreadyOnboarded) {
+    const picked = choose(picker, givenSlug)
+    if (!picked.ok) return { refused: picked.why }
+    installation = picked.installation
+  }
 
   const said: string[] = []
   const baseFlag = flags['base']
   const code = await world.github.add(
     {
       slug: givenSlug,
-      installation: picked.installation,
+      installation,
       base: baseFlag === undefined ? undefined : { ref: baseFlag, named: true },
     },
     (line) => {
@@ -399,7 +498,8 @@ async function runGithubBranch(
 
 const execFileAsync = promisify(execFile)
 
-async function liveGit(dir: string, args: readonly string[]): Promise<GitResult> {
+/** Exported for `init.ts`'s `liveInitWorld()` — one real `git`, not two. */
+export async function liveGit(dir: string, args: readonly string[]): Promise<GitResult> {
   try {
     const { stdout, stderr } = await execFileAsync('git', args as string[], { cwd: dir })
     return { ok: true, stdout, stderr }
@@ -426,7 +526,8 @@ async function liveInstallUrl(): Promise<string | null> {
   return app.configured && app.ok ? `https://github.com/apps/${app.slug}/installations/new` : null
 }
 
-async function livePicker(): Promise<Picker> {
+/** Exported for `init.ts`'s `liveInitWorld()` — one real picker, not two. */
+export async function livePicker(): Promise<Picker> {
   const credentials = githubApp()
   const reader = createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
   const [projects, installUrl] = await Promise.all([loadAllProjects(), liveInstallUrl()])

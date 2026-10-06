@@ -2,9 +2,13 @@ import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, exists
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { Picker } from '@lingtai/conductor/pick-repository'
+import type { ProjectState } from '@lingtai/domain'
 import { SQLITE_MACHINE, describeStore, storeChoice } from '@lingtai/env'
+import type { RecipeFiles } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
+import type { GitResult } from '../src/first-project.ts'
 import { type AppCheck, type InitWorld, type RuntimeFound, configPath, initCommand, redact } from '../src/init.ts'
 
 /**
@@ -47,6 +51,17 @@ interface Script {
   project?: 'github' | 'local' | null
   /** The App question's answer, when the project is `github` (#393). Defaults to `create`; `null` is the same no-terminal world, for this question alone. */
   appAnswer?: 'create' | 'skip' | null
+  /**
+   * The local branch's own seams (#394) — never reached unless a test asks
+   * for `--local`/`--project local` explicitly, since every other test here
+   * answers the project question `github` by default.
+   */
+  projects?: ProjectState[]
+  gitPlan?: Record<string, GitResult>
+  files?: Record<string, string>
+  registerLocal?: (payload: { project: string; base: string }) => Promise<string>
+  picker?: Picker
+  addGithub?: (options: { slug: string }, log: (line: string) => void) => Promise<number>
 }
 
 interface Recorded {
@@ -139,6 +154,26 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         seen.opened.push(url)
         return true
       },
+      runGit: async (dir, gitArgs) => {
+        const found = (script.gitPlan ?? {})[`${dir}::${gitArgs.join(' ')}`]
+        if (found === undefined) throw new Error(`unplanned git call: ${dir}::${gitArgs.join(' ')}`)
+        return found
+      },
+      projects: async () => script.projects ?? [],
+      files: (() => {
+        const store = new Map(Object.entries(script.files ?? {}))
+        return {
+          read: async (p) => store.get(p) ?? null,
+          replace: async (p, text) => {
+            store.set(p, text)
+          },
+        }
+      })() as RecipeFiles,
+      signedIn: async () => ['claude-code'] as never[],
+      registerLocal: async (payload) =>
+        (script.registerLocal ?? (async (p) => `added ${p.project}`))({ project: payload.project, base: payload.base }),
+      picker: async () => script.picker ?? { installations: [], installUrl: null },
+      addGithub: async (options, log) => (script.addGithub ?? (async () => 1))(options, log),
     },
   }
 }
@@ -177,27 +212,69 @@ describe('lingtai init (#186)', () => {
     expect(seen.lines.join('\n')).not.toContain('secret')
   })
 
-  it('a local project never calls appeared or opens a browser, and exits 0 (#393)', async () => {
+  it('a directory registered with --local never calls appeared or opens a browser, and exits 0 (#394)', async () => {
     const home = freshHome()
-    const { world: w, seen } = world(home, { answers: [URL_], project: 'local' })
-    expect(await initCommand([], w)).toBe(0)
+    const { world: w, seen } = world(home, {
+      answers: [URL_],
+      gitPlan: {
+        '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
+        '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
+        '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+      },
+    })
+    expect(await initCommand(['--local', '/repo', '--base', 'main'], w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
-    expect(seen.lines.join('\n')).toContain('project      local')
-    expect(seen.lines.join('\n')).not.toContain('lingtai add')
-    expect(seen.lines.join('\n')).toContain('not built yet')
+    expect(seen.lines.join('\n')).toContain('project      local — repo, registered with its own origin as repo.remote')
   })
 
-  it("a local project is not written down, so a re-run asks the question again (remembering it is #394's)", async () => {
+  it('a local project, once registered, is listed on a re-run rather than asked about again (#394)', async () => {
     const home = freshHome()
-    const first = world(home, { answers: [URL_], project: 'local' })
-    expect(await initCommand([], first.world)).toBe(0)
-    expect(config(home)).toBe('database:\n  store: postgres\n  url: ' + URL_ + '\n')
+    const git = {
+      '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
+      '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
+      '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
+      '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+    }
+    const first = world(home, { answers: [URL_], gitPlan: git })
+    expect(await initCommand(['--local', '/repo', '--base', 'main'], first.world)).toBe(0)
 
-    // No --project and no terminal: the question is asked, so it refuses by name.
-    const second = world(home, { project: null })
-    expect(await initCommand([], second.world)).not.toBe(0)
-    expect(second.seen.lines.join('\n')).toContain('--project github, or --project local')
+    // No --project, --local or --github and no terminal: with the directory
+    // already registered, the question is not asked again — it is listed.
+    const registered: ProjectState = {
+      project: 'repo',
+      owner: null,
+      base: 'main',
+      configHash: 'hash',
+      fromSha: 'abc123f',
+      refused: null,
+      version: 1,
+      lastSeq: 1n,
+    }
+    const second = world(home, { projects: [registered] })
+    expect(await initCommand([], second.world)).toBe(0)
+    expect(second.seen.lines.join('\n')).toContain('repo — local')
+    expect(second.seen.lines.join('\n')).toContain('lingtai add asks GitHub-or-directory')
+    expect(second.seen.asked).toEqual([])
+  })
+
+  it('a machine with a project already registered still starts the board, rather than stopping at the list (#394)', async () => {
+    const home = freshHome()
+    const registered: ProjectState = {
+      project: 'widget',
+      owner: null,
+      base: 'main',
+      configHash: 'hash',
+      fromSha: 'sha',
+      refused: null,
+      version: 1,
+      lastSeq: 1n,
+    }
+    const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
+    expect(await initCommand(['--port', '17900'], w)).toBe(0)
+    expect(seen.boards).toBe(1)
+    expect(seen.lines.join('\n')).toContain('widget — local')
   })
 
   it('--project local --github-app create is refused rather than silently creating no App and saying nothing (#393)', async () => {
@@ -629,10 +706,17 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(config(home)).toBeNull()
   })
 
-  it('--store sqlite, with --project local, writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
+  it('--store sqlite, with --local <dir> --base <branch>, writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
     const home = freshHome()
-    const { world: w, seen } = world(home, {})
-    expect(await initCommand(['--store', 'sqlite', '--project', 'local'], w)).toBe(0)
+    const { world: w, seen } = world(home, {
+      gitPlan: {
+        '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
+        '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
+        '/repo::symbolic-ref --short refs/remotes/origin/HEAD': { ok: true, stdout: 'origin/main\n', stderr: '' },
+        '/repo::rev-parse --verify main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+      },
+    })
+    expect(await initCommand(['--store', 'sqlite', '--local', '/repo', '--base', 'main'], w)).toBe(0)
     expect(seen.asked).toEqual([])
     expect(seen.connected).toEqual([])
     expect(config(home)).toBe('database:\n  store: sqlite\n')
@@ -652,7 +736,10 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(said).not.toContain('Nothing was written')
     // The store it names is kept: this is the claim the message makes good on.
     expect(config(home)).toBe('database:\n  store: sqlite\n')
-    expect(seen.boards).toBe(0)
+    // The board has to be up before the project question can wait for a new
+    // App (`waitForApp` needs `board.url`), so it starts before this question
+    // is asked — a refusal here no longer implies no board.
+    expect(seen.boards).toBe(1)
   })
 
   it('writes the same file the empty answer does', async () => {

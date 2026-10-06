@@ -380,6 +380,13 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
  */
 async function addCommand(args: string[]): Promise<number> {
   const { positional, flags } = parseFlags(args)
+  if (positional[0] !== undefined && flags['local'] !== undefined) {
+    console.error(
+      `lingtai add ${positional[0]} and --local ${flags['local']} name two different projects. Pass one or the ` +
+        'other. Nothing was written',
+    )
+    return 1
+  }
   if (positional[0] !== undefined && flags['github'] === undefined && flags['local'] === undefined) {
     flags['github'] = positional[0]
   }

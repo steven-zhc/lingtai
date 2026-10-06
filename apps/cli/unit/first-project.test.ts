@@ -231,6 +231,27 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     expect(registered).toEqual([])
   })
 
+  it('an owner: null project of the same name with no repo.remote recorded is refused by name, never silently re-pointed (#394 finding 1)', async () => {
+    const path = `${HOME}/widget/recipe.yml`
+    const { world, registered, files } = harness({
+      git: {
+        '/code/widget::rev-parse --show-toplevel': ok('/code/widget\n'),
+        '/code/widget::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+      },
+      // Registered before owners were recorded, as a GitHub project — no
+      // `repo.remote` was ever written for it, since the schema makes the
+      // key optional (`recipe.ts`).
+      projects: [project('widget', null)],
+      files: { [path]: 'version: 2\nrepo:\n  base: main\n' },
+    })
+
+    const result = await chooseFirstProject(world, { local: '/code/widget' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('already registered with no repo.remote recorded') })
+    expect(registered).toEqual([])
+    expect(files.replaced).toEqual({})
+  })
+
   it('no agent signed in is refused by name, before anything is written', async () => {
     const { world, registered, files } = harness({
       git: {
@@ -358,6 +379,42 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
 
     expect(result).toEqual({ ok: true, project: 'github', app: 'already' })
     expect(asked).toEqual([])
+  })
+
+  it('a registered project is re-registered rather than refused as already onboarded (#394 finding 2)', async () => {
+    const reader = fakeReader([{ id: 7, account: 'acme', repositories: ['widget'] }])
+    const picker = await listRepositories({ reader, projects: [project('widget', 'acme')], installUrl: null })
+
+    let addCalled = false
+    const { world } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      picker: async () => picker,
+      add: async (options, log) => {
+        addCalled = true
+        log('updated')
+        return 0
+      },
+    })
+
+    const result = await chooseFirstProject(world, { github: 'acme/widget' })
+
+    expect(result).toMatchObject({ ok: true, project: 'github', slug: 'acme/widget' })
+    expect(addCalled).toBe(true)
+  })
+
+  it('still asks local-or-github when an App is already configured — unlike init, add never forces github (#394 finding 5)', async () => {
+    const { world, asked } = harness({
+      app: async () => ({ configured: true, ok: true, slug: 'lingtai-steven', owner: 'steven-zhc' }),
+      answers: ['local'],
+    })
+
+    const result = await chooseFirstProject(world, {})
+
+    expect(asked.some((q) => q.includes('a GitHub project'))).toBe(true)
+    // No --local directory was given either, so the local branch's own
+    // question refuses by naming its flag — but reaching it at all is
+    // finding 5's claim: a configured App no longer silently forces github.
+    expect(result).toEqual({ refused: expect.stringContaining('the directory needs an answer') })
   })
 })
 

@@ -91,7 +91,10 @@ import { join } from 'node:path'
 
 import { runnableEnv } from '@lingtai/agent-env'
 import { askEveryRuntime } from '@lingtai/agent/auth'
-import { RuntimeId } from '@lingtai/domain'
+import { add, addLocal, type AddOptions } from '@lingtai/conductor/onboard'
+import type { Picker } from '@lingtai/conductor/pick-repository'
+import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
+import { type ProjectState, RuntimeId } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
   type StoreChosen,
@@ -104,11 +107,20 @@ import {
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
+import { diskFiles, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
 import { boardAt, boardLock, builtBoardDir, serveBoard } from './board.ts'
-import { chooseFirstProject, liveFirstProjectWorld } from './first-project.ts'
+import {
+  chooseFirstProject,
+  type FirstProjectWorld,
+  type GitResult,
+  liveGit,
+  livePicker,
+  type RegisterLocalPayload,
+} from './first-project.ts'
+import { APP_WAIT_MS, waitForApp } from './github-app.ts'
 import { liveAsk, question } from './question.ts'
 
 // -------------------------------------------------------------- the world --
@@ -170,11 +182,26 @@ export interface InitWorld {
   board: (port: number) => Promise<{ url: string } | { refused: string }>
   /** Open a browser. False when none could be. */
   open: (url: string) => Promise<boolean>
+  /**
+   * `FirstProjectWorld.git` (#394) — named distinctly from `git` above, which
+   * answers `git --version` rather than running a command in a directory.
+   */
+  runGit: (dir: string, args: readonly string[]) => Promise<GitResult>
+  /** `loadAllProjects` — registered and pending alike, keyed by name (#394). */
+  projects: () => Promise<readonly ProjectState[]>
+  files: RecipeFiles
+  signedIn: SignedIn
+  /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
+  registerLocal: (payload: RegisterLocalPayload) => Promise<string>
+  /** Every repository the App can see, for the GitHub branch's picker. */
+  picker: () => Promise<Picker>
+  /** `@lingtai/conductor/onboard`'s `add` — the GitHub branch's registration. */
+  addGithub: (options: AddOptions, log: (line: string) => void) => Promise<number>
 }
 
 const USAGE =
   'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
-  '[--project github|local] [--github-app create|skip]'
+  '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
 type StoreFlag = 'postgres' | 'sqlite'
@@ -224,7 +251,7 @@ function parseArgs(argv: readonly string[]): { flags: Record<string, string> } |
   const flags: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
     const name = argv[i]!
-    if (!['--store', '--database-url', '--port', '--project', '--github-app'].includes(name))
+    if (!['--store', '--database-url', '--port', '--project', '--local', '--base', '--github-app'].includes(name))
       return { refused: `${USAGE} — no ${name}` }
     const value = argv[i + 1]
     if (value === undefined) return { refused: `${USAGE} — ${name} takes a value` }
@@ -314,9 +341,14 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
   // (`entry.ts:5-10`), and this module answers before a fresh machine's store
   // exists at all.
   const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined || flags['github'] !== undefined
+  // Whether the project question is asked at all this run — false when the
+  // machine already has projects and nothing named which to add, so the
+  // question is not asked again (below), only answered by what is printed
+  // here (#394's finding 3: this must not itself end the run — the board
+  // still has to start, and the port flag still has to be obeyed).
+  let askProject = true
   if (!explicitChoice) {
-    const { loadAllProjects } = await import('@lingtai/conductor/projects')
-    const registered = await loadAllProjects()
+    const registered = await world.projects()
     if (registered.length > 0) {
       for (const p of registered) {
         world.log(p.owner !== null ? `  ${p.owner}/${p.project} — github` : `  ${p.project} — local`)
@@ -327,29 +359,7 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
             'the GitHub App on a machine that has only local projects',
         ),
       )
-      return 0
-    }
-  }
-
-  // A flag naming anything else, on a machine that already has an App
-  // configured, is refused rather than silently discarded — the same rule
-  // `chooseStore` holds to for `--store` (this file's `sqliteRefused`:
-  // "naming another is refused, never ignored").
-  if (app.configured) {
-    const namedProject = flags['project'] ?? null
-    if (namedProject !== null && namedProject !== 'github') {
-      return refuse(
-        world,
-        `--project ${namedProject}, but a GitHub App is already configured here — the project is github already. ` +
-          'Remove the App first, or leave out --project. The store chosen above is kept',
-      )
-    }
-    if (flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
-      return refuse(
-        world,
-        `--github-app ${flags['github-app']}, but a GitHub App is already configured here and none is created now. ` +
-          'Leave out --github-app, or pass --github-app skip. The store chosen above is kept',
-      )
+      askProject = false
     }
   }
 
@@ -368,29 +378,66 @@ export async function initCommand(argv: readonly string[], world: InitWorld): Pr
     )
   }
 
-  const firstProjectWorld = liveFirstProjectWorld({
-    ask: world.ask,
-    log: world.log,
-    boardUrl: board.url,
-    appWait: { open: world.open, appeared: world.appeared, pressed: world.pressed },
-  })
-  const chosen = await chooseFirstProject(firstProjectWorld, flags)
-  if ('refused' in chosen) return refuse(world, chosen.refused)
+  if (askProject) {
+    // Built from `world` directly rather than through a live default (#394's
+    // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
+    // log, the recipe files, the App — is the one this test or process was
+    // handed, never `checkApp`, `loadAllProjects`, a bare `stateDir()` or
+    // `diskFiles` reached for underneath it.
+    const firstProjectWorld: FirstProjectWorld = {
+      ask: world.ask,
+      log: world.log,
+      git: world.runGit,
+      projects: world.projects,
+      files: world.files,
+      home,
+      signedIn: world.signedIn,
+      register: world.registerLocal,
+      // `init`'s only (first-project.ts): a configured App already answers
+      // *is the project*, and `--project`/`--github-app` naming anything else
+      // is refused rather than asked past.
+      githubAppIsTheProject: true,
+      github: {
+        // Already fetched above, for the "the App" line — a second real call
+        // (`GET /app`) for the same run would answer the same question twice.
+        app: async () => app,
+        boardUrl: async () => board.url,
+        waitForApp: (boardUrl) =>
+          waitForApp({ log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed }, boardUrl, {
+            waitMs: APP_WAIT_MS,
+          }),
+        picker: world.picker,
+        add: world.addGithub,
+      },
+    }
+    const chosen = await chooseFirstProject(firstProjectWorld, flags)
+    if ('refused' in chosen) return refuse(world, chosen.refused)
 
-  if (chosen.project === 'local') {
-    world.log(paint.pass(`project      local — ${chosen.name}, registered with its own origin as repo.remote`))
-  } else if (chosen.app === 'already') {
+    if (chosen.project === 'local') {
+      world.log(paint.pass(`project      local — ${chosen.name}, registered with its own origin as repo.remote`))
+    } else if (chosen.app === 'already') {
+      const wizard = `${board.url}/setup/repository`
+      world.log(
+        (await world.open(wizard))
+          ? paint.pass(`opened ${wizard}`)
+          : paint.signal(`no browser could be opened here — open ${wizard}`),
+      )
+    } else if ('made' in chosen.app) {
+      world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
+    }
+    // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s own
+    // call to `waitForApp` (`appComeBackLine`).
+  } else if (app.configured) {
+    // Nothing new was asked — the machine already has projects, told above —
+    // but a configured App still has its one remaining screen: the wizard
+    // that picks a repository for it.
     const wizard = `${board.url}/setup/repository`
     world.log(
       (await world.open(wizard))
         ? paint.pass(`opened ${wizard}`)
         : paint.signal(`no browser could be opened here — open ${wizard}`),
     )
-  } else if ('made' in chosen.app) {
-    world.log(`next, install it and pick a repository: ${board.url}/setup/repository`)
   }
-  // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s own
-  // call to `waitForApp` (`appComeBackLine`).
 
   world.log(
     running !== null
@@ -893,5 +940,17 @@ export function liveInitWorld(): InitWorld {
           resolve(true)
         })
       }),
+    runGit: liveGit,
+    projects: () => loadAllProjects(),
+    files: diskFiles,
+    signedIn: signedInHere,
+    registerLocal: (payload) =>
+      addLocal(
+        { project: payload.project, base: payload.base, configHash: payload.configHash, fromSha: payload.fromSha },
+        payload.resolved,
+        (line) => console.log(line),
+      ),
+    picker: livePicker,
+    addGithub: (options, log) => add(options, log),
   }
 }
