@@ -1,3 +1,5 @@
+import type { TicketSql } from '@lingtai/event-store'
+
 /**
  * `tickets` and `ticket_comments` — Lingtai's own ticket store, created on
  * whichever database the log itself is (#379), and `dbTickets` (#380), the
@@ -31,8 +33,6 @@
  */
 import type { TicketListing } from './discover.ts'
 import type { Ticket, Tickets } from './ticket-store.ts'
-
-import type { TicketSql } from '@lingtai/event-store'
 
 const SQLITE_TICKETS = `
   CREATE TABLE IF NOT EXISTS tickets (

@@ -56,7 +56,7 @@ describe('memoryTickets, beyond the shared contract', () => {
     expect(sinceNearRealNow).toEqual([])
   })
 
-  it("listIssuesSince filters on the creation time it stored, placed exactly by an injected clock", async () => {
+  it('listIssuesSince filters on the creation time it stored, placed exactly by an injected clock', async () => {
     const times = [new Date('2026-01-01T00:00:00Z'), new Date('2026-01-02T00:00:00Z'), new Date('2026-01-03T00:00:00Z')]
     let i = 0
     const t = memoryTickets({ now: () => times[i++]! })

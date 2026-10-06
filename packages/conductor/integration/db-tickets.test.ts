@@ -135,9 +135,7 @@ describe.skipIf(!postgresUnderTest())('ensureTicketTables on Postgres', () => {
     const tickets = await sql.query<{ title: string }>('SELECT title FROM tickets WHERE project = $1', [project])
     expect(tickets).toEqual([{ title: 'a title' }])
 
-    const comments = await sql.query<{ body: string }>('SELECT body FROM ticket_comments WHERE project = $1', [
-      project,
-    ])
+    const comments = await sql.query<{ body: string }>('SELECT body FROM ticket_comments WHERE project = $1', [project])
     expect(comments).toEqual([{ body: 'a comment' }])
   })
 })

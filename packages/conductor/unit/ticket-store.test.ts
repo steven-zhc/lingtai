@@ -155,9 +155,7 @@ describe('ticketsFor', () => {
       const sql = freshSql()
       await dbTickets(sql, PROJECT).createIssue({ title: 'switched on purpose', body: '', labels: [] })
 
-      await expect(
-        ticketsFor(project, recipe, fakeGitHub([]), { sql, log: logOver(store) }),
-      ).resolves.toBeDefined()
+      await expect(ticketsFor(project, recipe, fakeGitHub([]), { sql, log: logOver(store) })).resolves.toBeDefined()
     })
 
     it('does not refuse a project with no wi- streams at all', async () => {

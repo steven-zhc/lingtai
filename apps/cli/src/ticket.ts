@@ -68,9 +68,7 @@ async function pickProject(
     return null
   }
   if (all.length > 1) {
-    log(
-      `more than one project is registered (${all.map((p) => p.project).join(', ')}) — say which with --project <p>`,
-    )
+    log(`more than one project is registered (${all.map((p) => p.project).join(', ')}) — say which with --project <p>`)
     return null
   }
   return all[0]!
