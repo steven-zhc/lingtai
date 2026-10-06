@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Triage outcomes</title>
+<script src="./dc-lite.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f1f4f4}
+a{color:#075056}a:hover{color:#0b6a70}
+code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
+.k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase}
+.m{font-family:'IBM Plex Mono',monospace}
+.lt-ghost:hover{background:#e9eeee}
+.lt-primary:hover{background:#075056}
+.lt-ans:hover{border-color:#0b6a70}
+.ctx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:#fff;border:1px solid #d8e0e1}
+.ctx>div{padding:14px 18px;display:flex;flex-direction:column;gap:4px}
+.ctx>div+div{border-left:1px solid #e9eeee}
+.ctx p{margin:0;font-size:13.5px}
+.mv{background:#fff;border:1px solid #d8e0e1;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.mv h3{margin:0;font-size:16px;font-weight:600}
+.mv p{margin:0;font-size:13px;color:#3a4a50}
+.btn{margin-top:auto;min-height:44px;border:1px solid #c3cfd1;background:transparent;color:#0f181c;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.btnp{margin-top:auto;min-height:44px;border:0;background:#0b6a70;color:#fff;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.new{font-size:12px;color:#9c5a08;background:#f7ead6;padding:6px 10px}
+.you{align-self:flex-end;max-width:560px;background:#0b6a70;color:#fff;padding:10px 14px;font-size:13.5px}
+.ai{align-self:flex-start;max-width:820px;background:#fff;padding:12px 16px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.add{align-self:flex-start;border:0;background:none;padding:0;font:500 12.5px 'IBM Plex Sans',sans-serif;color:#075056;cursor:pointer}
+.ask{display:flex;gap:8px}
+.ask input{flex:1;min-height:40px;padding:0 12px;border:1px solid #b9d9da;background:#fff;font:13.5px 'IBM Plex Sans',sans-serif}
+.ask button{min-height:40px;padding:0 16px;border:1px solid #0b6a70;background:transparent;color:#075056;font:600 13px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.disc{display:flex;flex-direction:column;gap:12px;padding-top:16px;border-top:1px solid #b9d9da}
+</style>
+</helmet>
+<div style="width: 1200px; min-height: 3900px; box-sizing: border-box; padding: 32px 48px 64px; background-color: #f1f4f4; background-image: linear-gradient(#e4eaea 1px, transparent 1px), linear-gradient(90deg, #e4eaea 1px, transparent 1px); background-size: 32px 32px; color: #0f181c; font: 14px/1.55 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 72px">
+
+<!-- ============ 1 · LINES TO FIX ============ -->
+<section style="display: flex; flex-direction: column; gap: 22px">
+<span class="k" style="color: #5e6e74">Lines to fix · #393’s real findings, line numbers made up</span>
+<header style="display: flex; flex-direction: column; gap: 12px">
+<div class="m" style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #5e6e74">
+<a href="https://github.com/steven-zhc/lingtai/issues/393" style="text-decoration: none">#393 ↗</a><span>feature</span><span>48 turns</span><span>$2.34</span><span>$6.07 answering</span>
+<span style="margin-left: auto; color: #9c5a08">blocked · waiting 6h 15m</span>
+</div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">The GitHub App step waits with a timeout, can be skipped, and is asked only for a GitHub project</h1>
+<div class="ctx">
+<div><span class="k" style="color: #5e6e74">Problem</span><p>With no App configured, <code>init</code> polls every 2 s with no deadline, so a first run cannot finish without a GitHub account.</p></div>
+<div><span class="k" style="color: #5e6e74">Want</span><p>The App is asked only for a GitHub project, waits with a timeout and a way to skip, and <code>init</code> goes on.</p></div>
+<div><span class="k" style="color: #9c5a08">Watch out</span><p>Keep the refusal for an App that is configured and does not answer: that is a broken machine.</p></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{rail}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
+<span class="m" style="font-size: 12px; color: #3a4a50">review refused ×3 · 3/3 rounds · held at proposed · 2 restarts left</span>
+</header>
+
+<div style="background: #dcedED; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span class="k" style="color: #075056">Triage</span>
+<span style="font-size: 12px; font-weight: 600; color: #ffffff; background: #3d74b8; padding: 2px 10px">Lines to fix</span>
+<span style="font-size: 13px; color: #075056">the approach is right; four edits would satisfy review · the judge agrees</span>
+<span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">11 turns · $0.41 · read at 696fb5a</span>
+</div>
+<p style="margin: 0; font: 400 20px/1.45 'IBM Plex Serif', Georgia, serif; max-width: 960px">The rounds ran out with the work nearly done. Each finding names a line and a fix; none of them asks to rethink the step.</p>
+<ol style="margin: 0; padding: 0; list-style: none; background: #ffffff; border: 1px solid #b9d9da">
+<sc-for list="{{fixes}}" as="f" hint-placeholder-count="5">
+<li style="display: grid; grid-template-columns: 28px 260px minmax(0, 1fr); gap: 14px; align-items: baseline; padding: 11px 16px; border-bottom: 1px solid #e9eeee">
+<span class="m" style="font-size: 12px; color: #075056; font-weight: 500">{{f.n}}</span>
+<span class="m" style="font-size: 12px; color: #5e6e74">{{f.at}}</span>
+<span style="font-size: 13.5px">{{f.fix}}</span>
+</li>
+</sc-for>
+</ol>
+<div class="disc">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #075056">Discussion</span><span style="font-size: 12.5px; color: #3a4a50">triage is its first turn</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">1 follow-up · $0.14</span></div>
+<div class="you">Does fix 2 need a test too?</div>
+<div class="ai"><span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 1 file · $0.14</span><span>Yes: nothing asserts that <code>project: local</code> is written back. Add a case to <code>init.test.ts</code> that runs init twice and reads the file.</span><span style="font-size: 12px; color: #075056">✓ added as fix 5</span></div>
+<div class="ask"><input type="text" aria-label="Ask a follow-up" placeholder="Ask a follow-up"><button type="button">Ask</button></div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+<article class="mv" style="border: 2px solid #0b6a70">
+<div style="display: flex; align-items: baseline; gap: 10px"><h3>One more round on this branch</h3><span class="k" style="margin-left: auto; color: #ffffff; background: #0b6a70; padding: 2px 9px">Recommended</span></div>
+<p>The fixer gets the five edits above, in agent/393 at 696fb5a. The work already done is kept.</p>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">1 run beyond the recipe's 3 · ≤ 1h · ≈ $0.40</span>
+<span class="new">New move. Today a requeue always starts from main, and this branch would be rebuilt from scratch.</span>
+<button type="button" class="btnp">Buy one more round</button>
+</article>
+<article class="mv">
+<h3>Start over with the fixes in the body</h3>
+<p>Appended to #393's body; a new pass from main reads it.</p>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">new pass · 3 fresh rounds · no restart used</span>
+<button type="button" class="btn">Write it into the body &amp; requeue</button>
+</article>
+<article class="mv">
+<h3>Take it over</h3>
+<p>Fix the lines yourself, push, then approve the new head.</p>
+<pre class="m" style="margin: 0; padding: 8px 10px; background: #f1f4f4; font-size: 11.5px; white-space: pre-wrap">git fetch origin agent/393
+git switch agent/393</pre>
+<button type="button" class="btn">Copy the commands</button>
+</article>
+</div>
+</section>
+
+<!-- ============ 2 · JUDGE AND TRIAGE DISAGREE ============ -->
+<section style="display: flex; flex-direction: column; gap: 22px">
+<span class="k" style="color: #5e6e74">The judge and triage disagree · ticket made up</span>
+<header style="display: flex; flex-direction: column; gap: 12px">
+<div class="m" style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #5e6e74">
+<a href="#" style="text-decoration: none">#424 ↗</a><span>bug</span><span>71 turns</span><span>$2.90</span><span>$5.20 answering</span>
+<span style="margin-left: auto; color: #9c5a08">blocked · waiting 3h</span>
+</div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">The projector skips an event when two appends share a millisecond</h1>
+<div class="ctx">
+<div><span class="k" style="color: #5e6e74">Problem</span><p>The checkpoint is a timestamp, so the second of two events in one millisecond is never folded.</p></div>
+<div><span class="k" style="color: #5e6e74">Want</span><p>Every appended event is folded exactly once, whatever its timestamp.</p></div>
+<div><span class="k" style="color: #9c5a08">Watch out</span><p>A projection is corrected by rebuild, never by hand.</p></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{rail}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
+<span class="m" style="font-size: 12px; color: #3a4a50">review refused ×3 · 3/3 rounds · held at proposed · 2 restarts left</span>
+</header>
+
+<div style="background: #dcedED; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span class="k" style="color: #075056">Triage</span>
+<span style="font-size: 12px; font-weight: 600; color: #ffffff; background: #0b6a70; padding: 2px 10px">A decision for you</span>
+<span style="font-size: 13px; color: #075056">the judge and triage read this differently; you decide which is right</span>
+<span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">16 turns · $0.70 · read at 9a2e4c1</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<div style="background: #ffffff; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+<span class="k" style="color: #5e6e74">The judge · lines</span>
+<p style="margin: 0; font: 400 17px/1.45 'IBM Plex Serif', Georgia, serif">“The finding names one function; persisting the seen-set fixes it.”</p>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">judge:claude-code · 1 turn · $0.33</span>
+</div>
+<div style="background: #ffffff; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; border: 2px solid #a33029">
+<span class="k" style="color: #a33029">Triage · the approach</span>
+<p style="margin: 0; font: 400 17px/1.45 'IBM Plex Serif', Georgia, serif">“Every round fixed its finding and opened a new one in the same place. The checkpoint is still a timestamp.”</p>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<sc-for list="{{rounds}}" as="r" hint-placeholder-count="3"><span style="font-size: 12.5px; color: #3a4a50"><span class="m" style="color: #a33029">{{r.n}}</span> {{r.text}}</span></sc-for>
+</div>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 20px; padding-top: 16px; border-top: 1px solid #b9d9da">
+<span style="width: 52px; height: 52px; background: #0b6a70; color: #ffffff; display: flex; align-items: center; justify-content: center; font: 500 20px 'IBM Plex Mono', monospace">Q1</span>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font: 400 22px/1.4 'IBM Plex Serif', Georgia, serif">Patch this branch once more, or start over keyed on <code style="font-size: 20px">seq</code>?</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{q424}}" as="a" hint-placeholder-count="2">
+<button type="button" class="lt-ans" onClick="{{a.pick}}" style="{{a.style}}">
+<span style="display: flex; align-items: center; gap: 8px"><span style="{{a.mark}}"></span><span style="font-size: 14px; font-weight: 600">{{a.label}}</span><span class="k" style="margin-left: auto; color: #075056">{{a.tag}}</span></span>
+<span style="font-size: 12.5px; color: #3a4a50">{{a.then}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</div>
+<div class="disc">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #075056">Discussion</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">1 follow-up · $0.20</span></div>
+<div class="you">Why seq and not (timestamp, id)?</div>
+<div class="ai"><span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 2 files · $0.20</span><span>The store already assigns <code>seq</code> unique and in order (<code>packages/event-store</code>). A composite key rebuilds that ordering by hand and still breaks if two writers share a clock.</span><button type="button" class="add">Add to the body below</button></div>
+<div class="ask"><input type="text" aria-label="Ask a follow-up" placeholder="Ask a follow-up"><button type="button">Ask</button></div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+<article class="mv" style="border: 2px solid #0b6a70">
+<div style="display: flex; align-items: baseline; gap: 10px"><h3>{{m424.title}}</h3><span class="k" style="margin-left: auto; color: #ffffff; background: #0b6a70; padding: 2px 9px">Follows Q1</span></div>
+<label for="dir" class="k" style="color: #5e6e74">Appended to #424's body</label>
+<textarea id="dir" rows="4" value="{{m424.body}}" style="padding: 10px 12px; background: #f8fafa; border: 1px solid #c3cfd1; font: 12.5px/1.6 'IBM Plex Mono', monospace; color: #0f181c; resize: vertical"></textarea>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">{{m424.cost}}</span>
+<button type="button" class="btnp">{{m424.btn}}</button>
+</article>
+<article class="mv">
+<h3>Land it as it is</h3>
+<p>9a2e4c1 lands with the restart bug open. Approving waives the refusing review.</p>
+<label for="n2" style="margin-top: auto; font-size: 12.5px; font-weight: 600">Why? <span style="font-weight: 400; color: #5e6e74">optional</span></label>
+<input id="n2" type="text" style="min-height: 36px; padding: 0 10px; border: 1px solid #c3cfd1">
+<button type="button" class="btn">Approve</button>
+</article>
+<article class="mv">
+<h3>Close it</h3>
+<p>Nothing lands. The branch stays at agent/424.</p>
+<label for="n3" style="margin-top: auto; font-size: 12.5px; font-weight: 600">Why? <span style="font-weight: 400; color: #5e6e74">optional</span></label>
+<input id="n3" type="text" style="min-height: 36px; padding: 0 10px; border: 1px solid #c3cfd1">
+<button type="button" class="btn">Close</button>
+</article>
+</div>
+</section>
+
+<!-- ============ 3 · NO RESTARTS LEFT ============ -->
+<section style="display: flex; flex-direction: column; gap: 22px">
+<span class="k" style="color: #5e6e74">A decision for you, with no restarts left · ticket made up</span>
+<header style="display: flex; flex-direction: column; gap: 12px">
+<div class="m" style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #5e6e74">
+<a href="#" style="text-decoration: none">#427 ↗</a><span>feature</span><span>412 turns</span><span>$9.80</span><span>$6.40 answering</span><span>attempt 3 · restart 2 of 2</span>
+<span style="margin-left: auto; color: #9c5a08">blocked · waiting 20m</span>
+</div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">The board, the CLI and the site read spend from one function</h1>
+<div class="ctx">
+<div><span class="k" style="color: #5e6e74">Problem</span><p>Three surfaces compute spend three ways and disagree by cents.</p></div>
+<div><span class="k" style="color: #5e6e74">Want</span><p>One function computes spend from tokens, and all three call it.</p></div>
+<div><span class="k" style="color: #9c5a08">Watch out</span><p>The site is built at release time; it cannot import server code.</p></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{rail}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline">
+<span class="m" style="font-size: 12px; color: #3a4a50">review refused ×3 · 3/3 rounds · held at proposed</span>
+<span class="m" style="font-size: 12px; color: #ffffff; background: #3a4a50; padding: 1px 8px">2/2 restarts · Lingtai will not restart it again</span>
+<span style="font-size: 12px; color: #5e6e74">from the log · free</span>
+</div>
+</header>
+
+<div style="background: #dcedED; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span class="k" style="color: #075056">Triage</span>
+<span style="font-size: 12px; font-weight: 600; color: #ffffff; background: #0b6a70; padding: 2px 10px">A decision for you</span>
+<span style="font-size: 13px; color: #075056">the ticket is too big for one pass · the judge agrees</span>
+<span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">19 turns · $0.88 · read 3 arms</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{passes}}" as="p" hint-placeholder-count="3">
+<div style="display: grid; grid-template-columns: 70px 260px minmax(0, 1fr); gap: 14px; align-items: baseline; background: #ffffff; padding: 10px 14px">
+<span class="m" style="font-size: 12px; font-weight: 500">{{p.n}}</span>
+<span class="m" style="font-size: 12px; color: #5e6e74">{{p.facts}}</span>
+<span style="font-size: 13px">{{p.text}}</span>
+</div>
+</sc-for>
+</div>
+<p style="margin: 0; font: 400 20px/1.45 'IBM Plex Serif', Georgia, serif; max-width: 960px">The ticket is three tickets. Every pass touched the board, the CLI and the site, and review's findings moved between them; no pass failed on the same thing twice.</p>
+<div class="disc">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #075056">Discussion</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">1 follow-up · $0.22</span></div>
+<div class="you">Could the site part wait? We don't publish spend there yet.</div>
+<div class="ai"><span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 2 files · $0.22</span><span>Then two tickets: the function, and the board and CLI reading it. Pass 1 failed only on the site, so dropping it removes one of the three refusals outright.</span><span style="font-size: 12px; color: #075056">✓ used as the split below</span></div>
+<div class="ask"><input type="text" aria-label="Ask a follow-up" placeholder="Ask a follow-up"><button type="button">Ask</button></div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+<article class="mv" style="border: 2px solid #0b6a70">
+<div style="display: flex; align-items: baseline; gap: 10px"><h3>Split it into two tickets</h3><span class="k" style="margin-left: auto; color: #ffffff; background: #0b6a70; padding: 2px 9px">Recommended</span></div>
+<p>Opened with agent:hold, chained with blocked-by. This ticket closes as split.</p>
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{split}}" as="s" hint-placeholder-count="2">
+<li style="display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center">
+<span class="m" style="font-size: 12px; color: #075056">{{s.n}}</span>
+<input type="text" value="{{s.title}}" aria-label="{{s.aria}}" style="min-height: 36px; padding: 0 10px; border: 1px solid #c3cfd1; font: 13px 'IBM Plex Sans', sans-serif">
+<span class="m" style="font-size: 11px; color: #5e6e74">{{s.after}}</span>
+</li>
+</sc-for>
+</ol>
+<span class="new">New move. Today a split is done by hand with gh.</span>
+<button type="button" class="btnp">Open 2 tickets &amp; close this one</button>
+</article>
+<article class="mv">
+<h3>Try once more anyway</h3>
+<p>A person's requeue always starts a new pass. Restarts only limit Lingtai's own.</p>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">new pass · 3 fresh rounds · ≈ $5</span>
+<button type="button" class="btn">Write it into the body &amp; requeue</button>
+</article>
+<article class="mv">
+<h3>Close it</h3>
+<p>The three arms stay on origin for whoever picks this up.</p>
+<label for="cl" style="margin-top: auto; font-size: 12.5px; font-weight: 600">Why? <span style="font-weight: 400; color: #5e6e74">optional</span></label>
+<input id="cl" type="text" style="min-height: 36px; padding: 0 10px; border: 1px solid #c3cfd1">
+<button type="button" class="btn">Close</button>
+</article>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":3900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { q424: 'b' };
+  }
+  renderVals() {
+    const steps = ['claim', 'admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge', 'end'];
+    const codes = 'ppppppfynn';
+    const C = { p: '#2c7a4c', f: '#a33029', y: '#9c5a08', n: '#d8e0e1' };
+    const rail = steps.map((step, i) => {
+      const k = codes[i];
+      return { step, bar: 'height: 8px; background: ' + C[k], lbl: 'font-family: \'IBM Plex Mono\', monospace; font-size: 11px; color: ' + (k === 'n' ? '#87999f' : k === 'p' ? '#3a4a50' : C[k]) + (k === 'f' || k === 'y' ? '; font-weight: 600' : '') };
+    });
+    const A = [
+      { id: 'a', label: 'Patch once more', tag: 'the judge', then: 'Persist the seen-set. Keeps the timestamp checkpoint.' },
+      { id: 'b', label: 'Start over on seq', tag: 'triage · recommended', then: 'Checkpoint on seq; drop the timestamp from the projector.' }
+    ];
+    const pick = this.state.q424;
+    const q424 = A.map((a) => {
+      const on = pick === a.id;
+      return Object.assign({}, a, {
+        pick: () => this.setState({ q424: a.id }),
+        style: 'text-align: left; min-height: 84px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; font: inherit; background: ' + (on ? '#ffffff' : 'rgba(255,255,255,0.45)') + '; border: ' + (on ? '2px solid #0b6a70' : '1px solid #b9d9da'),
+        mark: 'width: 12px; height: 12px; flex: none; ' + (on ? 'background: #0b6a70' : 'border: 1px solid #5e6e74')
+      });
+    });
+    const m424 = pick === 'b'
+      ? { title: 'Start over in the new direction', btn: 'Write it into the body & requeue', cost: 'new pass from main · 3 fresh rounds · no restart used', body: '## Added from triage, 2026-10-06\n- Q1: start over. Checkpoint on seq, not on the event’s timestamp.\n- Do not add a tiebreak; remove the timestamp from the projector.' }
+      : { title: 'Patch this branch once more', btn: 'Buy one more round', cost: '1 run beyond the recipe’s 3 · keeps agent/424 · new move', body: '## Added from triage, 2026-10-06\n- Q1: patch once more. Persist the seen-set across restarts.' };
+    return {
+      rail, q424, m424,
+      fixes: [
+        { n: '1', at: 'apps/cli/src/init.ts:288', fix: 'The settledLocal short-circuit returns before the --github-app refusal; check the flag first.' },
+        { n: '2', at: 'apps/cli/src/init.ts:241', fix: 'project: local is never rewritten; write it back, and document how to undo it.' },
+        { n: '3', at: 'apps/cli/unit/pressed.test.ts:57', fix: 'The guard is set up but never asserted; assert it.' },
+        { n: '4', at: 'apps/cli/src/init.ts:12', fix: 'The header comment still says the App is asked first; update the clause.' },
+        { n: '5', at: 'apps/cli/unit/init.test.ts', fix: 'Run init twice and assert project: local was written back. (from the discussion)' }
+      ],
+      rounds: [
+        { n: 'r1', text: 'Same-ms skip → fixed with a ≥ comparison.' },
+        { n: 'r2', text: 'First event folded twice → fixed with an in-memory seen-set.' },
+        { n: 'r3', text: 'The seen-set is lost on restart; the skip returns after a crash.' }
+      ],
+      passes: [
+        { n: 'pass 1', facts: '23 files · 3 packages · $5.10', text: 'Refused on the site: it imported server code to reach the function.' },
+        { n: 'pass 2', facts: '19 files · 3 packages · $5.60', text: 'Refused on the CLI: rounding moved from display into the function.' },
+        { n: 'pass 3', facts: '26 files · 3 packages · $5.50', text: 'Refused on the board: the /spend page lost its per-run breakdown.' }
+      ],
+      split: [
+        { n: '1', title: 'Spend is one pure function of tokens, in @lingtai/domain', aria: 'Ticket 1 title', after: 'first' },
+        { n: '2', title: 'The board and the CLI read spend from that function', aria: 'Ticket 2 title', after: 'blocked by 1' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

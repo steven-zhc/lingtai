@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Discussion states</title>
+<script src="./dc-lite.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f1f4f4}
+code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
+.k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase}
+.m{font-family:'IBM Plex Mono',monospace}
+.lt-ghost:hover{background:#e9eeee}
+.chip:hover{border-color:#0b6a70}
+@keyframes lt-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.lt-skel{background:linear-gradient(90deg,#d8e0e1 0%,#f1f4f4 50%,#d8e0e1 100%);background-size:200% 100%;animation:lt-shimmer 1.6s linear infinite}
+@media (prefers-reduced-motion: reduce){.lt-skel{animation:none}}
+</style>
+</helmet>
+<div style="width: 980px; min-height: 2300px; box-sizing: border-box; padding: 32px 40px 56px; background-color: #f1f4f4; background-image: linear-gradient(#e4eaea 1px, transparent 1px), linear-gradient(90deg, #e4eaea 1px, transparent 1px); background-size: 32px 32px; color: #0f181c; font: 14px/1.55 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 44px">
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 20px; font-weight: 600">Discussion, by the hold it sits under</h1>
+<p style="margin: 0; font-size: 13.5px; color: #3a4a50; max-width: 760px">One rule: an answer can be added to whatever the recommended move will write. The target changes with the hold, the thread does not.</p>
+</div>
+
+<!-- 1 · triage still running -->
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #5e6e74">1 · Triage still running</span><span style="font-size: 12.5px; color: #5e6e74">#393 · the first turn is being written</span></div>
+<div style="background: #e9eeee; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #3a4a50">Discussion</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #5e6e74">triage · 6 turns so far · $0.21</span></div>
+<div style="background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px">
+<span class="m" style="font-size: 11px; color: #5e6e74">claude-code · reading apps/cli/src/init.ts…</span>
+<span class="lt-skel" style="height: 12px; width: 90%"></span>
+<span class="lt-skel" style="height: 12px; width: 62%"></span>
+</div>
+<div style="display: flex; gap: 8px">
+<input type="text" aria-label="Ask a follow-up" placeholder="Ask now — it is answered after the first turn" style="flex: 1; min-height: 40px; padding: 0 12px; border: 1px solid #c3cfd1; background: #ffffff; font: 13.5px 'IBM Plex Sans', sans-serif">
+<button type="button" class="lt-ghost" style="min-height: 40px; padding: 0 16px; border: 1px solid #c3cfd1; background: transparent; font: 600 13px 'IBM Plex Sans', sans-serif; cursor: pointer">Queue it</button>
+</div>
+</div>
+</section>
+
+<!-- 2 · triage failed -->
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #5e6e74">2 · Triage failed</span><span style="font-size: 12.5px; color: #5e6e74">#397 · hit its limit before it finished</span></div>
+<div style="background: #e9eeee; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #3a4a50">Discussion</span><span style="font-size: 12.5px; color: #3a4a50">no first turn · triage stopped at 30 turns, $1.00</span></div>
+<p style="margin: 0; font-size: 13.5px">Start from what it was trying to answer:</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" class="chip" style="min-height: 36px; padding: 0 12px; border: 1px solid #c3cfd1; background: #ffffff; font: 500 13px 'IBM Plex Sans', sans-serif; cursor: pointer">What does review still refuse?</button>
+<button type="button" class="chip" style="min-height: 36px; padding: 0 12px; border: 1px solid #c3cfd1; background: #ffffff; font: 500 13px 'IBM Plex Sans', sans-serif; cursor: pointer">Is it the lines or the approach?</button>
+<button type="button" class="chip" style="min-height: 36px; padding: 0 12px; border: 1px solid #c3cfd1; background: #ffffff; font: 500 13px 'IBM Plex Sans', sans-serif; cursor: pointer">What would you write into the body?</button>
+</div>
+<div style="display: flex; gap: 8px">
+<input type="text" aria-label="Ask" placeholder="Ask anything about this hold" style="flex: 1; min-height: 40px; padding: 0 12px; border: 1px solid #c3cfd1; background: #ffffff; font: 13.5px 'IBM Plex Sans', sans-serif">
+<button type="button" class="lt-ghost" style="min-height: 40px; padding: 0 16px; border: 1px solid #c3cfd1; background: transparent; font: 600 13px 'IBM Plex Sans', sans-serif; cursor: pointer">Ask</button>
+</div>
+</div>
+</section>
+
+<!-- 3 · lines to fix -->
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #5e6e74">3 · Lines to fix</span><span style="font-size: 12.5px; color: #5e6e74">an answer joins the fix list</span></div>
+<div style="background: #dcedED; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #075056">Discussion</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">1 follow-up · $0.14</span></div>
+<div style="align-self: flex-end; max-width: 560px; background: #0b6a70; color: #ffffff; padding: 10px 14px"><span style="font-size: 13.5px">Does fix 2 need a test too?</span></div>
+<div style="align-self: flex-start; max-width: 760px; background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px">
+<span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 1 file · $0.14</span>
+<span style="font-size: 13.5px">Yes: nothing asserts that <code>project: local</code> is written back. Add a case to <code>init.test.ts</code> that runs init twice and reads the file.</span>
+<button type="button" style="align-self: flex-start; border: 0; background: none; padding: 0; font: 500 12.5px 'IBM Plex Sans', sans-serif; color: #075056; cursor: pointer">Add as fix 5</button>
+</div>
+</div>
+</section>
+
+<!-- 4 · out of budget -->
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #5e6e74">4 · Out of budget</span><span style="font-size: 12.5px; color: #5e6e74">an answer rewrites the split</span></div>
+<div style="background: #e9eeee; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #3a4a50">Discussion</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #5e6e74">1 follow-up · $0.22</span></div>
+<div style="align-self: flex-end; max-width: 560px; background: #0b6a70; color: #ffffff; padding: 10px 14px"><span style="font-size: 13.5px">Could the site part wait? We don't publish spend there yet.</span></div>
+<div style="align-self: flex-start; max-width: 760px; background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px">
+<span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 2 files · $0.22</span>
+<span style="font-size: 13.5px">Then two tickets: the function, and the board and CLI reading it. Pass 1 failed only on the site, so dropping it removes one of the three refusals outright.</span>
+<button type="button" style="align-self: flex-start; border: 0; background: none; padding: 0; font: 500 12.5px 'IBM Plex Sans', sans-serif; color: #075056; cursor: pointer">Use as the split (2 tickets)</button>
+</div>
+</div>
+</section>
+
+<!-- 5 · asked before any run -->
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #5e6e74">5 · Asked before any run</span><span style="font-size: 12.5px; color: #5e6e74">no triage; an answer fills your answer box</span></div>
+<div style="background: #f7ead6; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #9c5a08">Discussion</span><span style="font-size: 12.5px; color: #9c5a08">ask the code before you answer the question</span></div>
+<div style="align-self: flex-end; max-width: 560px; background: #0b6a70; color: #ffffff; padding: 10px 14px"><span style="font-size: 13.5px">Does the board already parse the recipe anywhere?</span></div>
+<div style="align-self: flex-start; max-width: 760px; background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px">
+<span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 3 files · $0.19</span>
+<span style="font-size: 13.5px">Yes: <code>RecipeGiven</code> on the task page already shows the resolved steps per attempt. Showing resolved steps reuses it; YAML would be a second renderer.</span>
+<button type="button" style="align-self: flex-start; border: 0; background: none; padding: 0; font: 500 12.5px 'IBM Plex Sans', sans-serif; color: #075056; cursor: pointer">Use as my answer</button>
+</div>
+</div>
+</section>
+
+<!-- 6 · acknowledgement -->
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #5e6e74">6 · Nothing to answer</span><span style="font-size: 12.5px; color: #5e6e74">merge conflict, human: before merge · collapsed to one line</span></div>
+<div style="background: #e9eeee; padding: 4px 22px">
+<button type="button" style="width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 0; font: 500 13.5px 'IBM Plex Sans', sans-serif; color: #3a4a50; cursor: pointer; text-align: left">
+<span class="m" style="color: #0b6a70">+</span>Discussion<span style="color: #5e6e74; font-weight: 400">· ask about this hold</span></button>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":980,"height":2300}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

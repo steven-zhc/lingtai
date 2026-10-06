@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The hold, triaged</title>
+<script src="./dc-lite.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f1f4f4}
+a{color:#075056}a:hover{color:#0b6a70}
+@keyframes lt-pulse{0%,100%{box-shadow:0 0 0 0 rgba(156,90,8,.45)}50%{box-shadow:0 0 0 5px rgba(156,90,8,0)}}
+.lt-live{animation:lt-pulse 2s ease-in-out infinite}
+.lt-ghost:hover{background:#e9eeee}
+.lt-primary:hover{background:#075056}
+.lt-ans:hover{border-color:#0b6a70}
+.lt-row:hover{background:#f6f8f8}
+@media (prefers-reduced-motion: reduce){.lt-live{animation:none}}
+</style>
+</helmet>
+<div style="width: 1200px; min-height: 2400px; box-sizing: border-box; padding: 20px 48px 56px; background-color: #f1f4f4; background-image: linear-gradient(#e4eaea 1px, transparent 1px), linear-gradient(90deg, #e4eaea 1px, transparent 1px); background-size: 32px 32px; color: #0f181c; font: 14px/1.55 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 28px">
+
+<!-- BAR -->
+<nav style="display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #d8e0e1; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5e6e74">
+<a href="Main.dc.html" style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; text-decoration: none">← Lingtai</a>
+<span>lingtai-390 · since 2026-10-05 19:41 UTC · from attempt 2 of 2 ↓</span>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; color: #2c7a4c"><span style="width: 8px; height: 8px; background: #2c7a4c"></span>Following</span>
+</nav>
+
+<!-- TICKET -->
+<header style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5e6e74">
+<a href="https://github.com/steven-zhc/lingtai/issues/390" style="text-decoration: none">#390 ↗</a>
+<span>feature</span>
+<span>25 turns</span><span>$0.80</span><span>$8.69 answering</span><span>attempt 2 · restart 1 of 2</span>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: #9c5a08"><span class="lt-live" style="width: 8px; height: 8px; background: #9c5a08"></span>blocked · waiting 11h 13m</span>
+</div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">A run action at implement runs after the agent and commits what it changed</h1>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; background: #ffffff; border: 1px solid #d8e0e1">
+<div style="padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid #e9eeee">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #5e6e74">Problem</span>
+<p style="margin: 0; font-size: 13.5px; color: #0f181c; text-wrap: pretty">A recipe cannot run a command after the implementing agent, so formatting costs a whole fix round for what <code style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px">pnpm fmt</code> does in a second.</p>
+</div>
+<div style="padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid #e9eeee">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #5e6e74">Want</span>
+<p style="margin: 0; font-size: 13.5px; color: #0f181c; text-wrap: pretty"><code style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px">implement: [agent, run]</code> runs the command after every agent run and commits what it changed before build sees it.</p>
+</div>
+<div style="padding: 14px 18px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #9c5a08">Watch out</span>
+<p style="margin: 0; font-size: 13.5px; color: #0f181c; text-wrap: pretty"><code style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px">implement</code> cannot refuse: a failing command must not become a refusal the step has no way to make.</p>
+<button type="button" onClick="{{showTicket}}" style="align-self: flex-start; margin-top: 4px; border: 0; background: none; padding: 0; font: 500 12.5px 'IBM Plex Sans', sans-serif; color: #075056; cursor: pointer">The whole ticket ↓</button>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px">
+<sc-for list="{{rail}}" as="r" hint-placeholder-count="10">
+<div style="display: flex; flex-direction: column; gap: 5px" title="{{r.tip}}">
+<span style="{{r.bar}}"></span>
+<span style="{{r.labelStyle}}">{{r.step}}</span>
+</div>
+</sc-for>
+</div>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #3a4a50">review:reviewer refused ×3 · 3/3 rounds · held at proposed for you · 1 restart left</span>
+</header>
+
+<!-- TRIAGE -->
+<section style="background: #dcedED; padding: 24px 28px 24px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #075056">Triage</span>
+<span style="font-size: 12px; font-weight: 600; color: #ffffff; background: #0b6a70; padding: 2px 10px">A decision for you</span>
+<span style="font-size: 13px; color: #075056">2 questions only a person can answer; the code is otherwise sound · the judge agrees</span>
+<span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #075056">claude-code · 14 turns · $0.62 · read at f1f961c</span>
+</div>
+
+<sc-for list="{{questions}}" as="q" hint-placeholder-count="2">
+<div style="display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 20px; padding-top: 18px; border-top: 1px solid #b9d9da">
+<span style="width: 52px; height: 52px; background: #0b6a70; color: #ffffff; display: flex; align-items: center; justify-content: center; font: 500 20px 'IBM Plex Mono', monospace">{{q.n}}</span>
+<div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<h2 style="margin: 0; font: 400 22px/1.4 'IBM Plex Serif', Georgia, serif; color: #0f181c; max-width: 996px; text-wrap: pretty">{{q.text}}</h2>
+<p style="margin: 0; font-size: 13.5px; color: #3a4a50; max-width: 860px; text-wrap: pretty">{{q.why}}</p>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-top: 4px">
+<sc-for list="{{q.answers}}" as="a" hint-placeholder-count="3">
+<button type="button" class="lt-ans" onClick="{{a.pick}}" style="{{a.style}}">
+<span style="display: flex; align-items: center; gap: 8px">
+<span style="{{a.mark}}"></span>
+<span style="font-size: 14px; font-weight: 600; color: #0f181c">{{a.label}}</span>
+<sc-if value="{{a.rec}}" hint-placeholder-val="{{ false }}"><span style="margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #075056">Recommended</span></sc-if>
+</span>
+<span style="font-size: 12.5px; color: #3a4a50; line-height: 1.45">{{a.then}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-for>
+
+<div style="display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 20px; padding-top: 18px; border-top: 1px solid #b9d9da">
+<span style="width: 52px; height: 52px; border: 1px solid #0b6a70; color: #075056; display: flex; align-items: center; justify-content: center; font: 500 13px 'IBM Plex Mono', monospace">ask</span>
+<div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #075056">Discussion</span>
+<span style="font-size: 12.5px; color: #3a4a50">triage is its first turn · reads the log, the ticket and the code, cannot run anything</span>
+<span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #075056">1 follow-up · $0.18</span>
+</div>
+<div style="align-self: flex-end; max-width: 640px; background: #0b6a70; color: #ffffff; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #cfe7e8">you · 08:12</span>
+<span style="font-size: 13.5px">Why not stash the leftovers instead of committing them?</span>
+</div>
+<div style="align-self: flex-start; max-width: 820px; background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #5e6e74">claude-code · read 2 files · $0.18</span>
+<span style="font-size: 13.5px; color: #0f181c">A stash has to be popped back after the command, and a pop can conflict with what the command just changed; that is the restore problem again under another name. Committing is the only answer that leaves nothing to put back.</span>
+<div style="display: flex; gap: 14px; padding-top: 2px">
+<button type="button" style="border: 0; background: none; padding: 0; font: 500 12.5px 'IBM Plex Sans', sans-serif; color: #075056; cursor: pointer">Add to the body below</button>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #87999f">packages/conductor/src/kept-run-port.ts · packages/actions/src/file-action.ts</span>
+</div>
+</div>
+<div style="display: flex; gap: 8px">
+<label for="followup" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Ask a follow-up</label>
+<input id="followup" type="text" placeholder="Ask a follow-up" style="flex: 1; min-height: 40px; padding: 0 12px; border: 1px solid #b9d9da; background: #ffffff; font: 13.5px 'IBM Plex Sans', sans-serif; color: #0f181c">
+<button type="button" class="lt-ghost" style="min-height: 40px; padding: 0 16px; border: 1px solid #0b6a70; background: transparent; color: #075056; font: 600 13px 'IBM Plex Sans', sans-serif; cursor: pointer">Ask</button>
+</div>
+</div>
+</div>
+</section>
+
+<!-- DECIDE -->
+<section style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<h2 style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5e6e74">Then</h2>
+<span style="margin-left: auto; font-size: 12.5px; color: #5e6e74">Advice only: each button does exactly what it does without triage</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch">
+
+<article style="background: #ffffff; border: 2px solid #0b6a70; padding: 22px 24px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<h3 style="margin: 0; font-size: 16px; font-weight: 600">Write the answers into the body and requeue</h3>
+<span style="margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #ffffff; background: #0b6a70; padding: 2px 9px">Recommended</span>
+</div>
+<div style="display: flex; align-items: baseline; gap: 8px">
+<label for="body" style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #5e6e74">Appended to #390's body · every later attempt's prompt includes it</label>
+<sc-if value="{{notEdited}}" hint-placeholder-val="{{ true }}">
+<span style="font-size: 11.5px; color: #075056">follows your answers above</span>
+</sc-if>
+<sc-if value="{{edited}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 11.5px; color: #9c5a08">edited · no longer follows your answers</span>
+<button type="button" onClick="{{resetBody}}" style="margin-left: auto; border: 0; background: none; padding: 0; font: 500 12px 'IBM Plex Sans', sans-serif; color: #075056; cursor: pointer">Reset to the answers</button>
+</sc-if>
+</div>
+<textarea id="body" rows="6" value="{{body}}" onInput="{{editBody}}" style="padding: 12px 14px; background: #f8fafa; border: 1px solid #c3cfd1; font: 12.5px/1.6 'IBM Plex Mono', monospace; color: #0f181c; resize: vertical"></textarea>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: #f1f4f4">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #5e6e74">Recorded as the reason</span>
+<span style="font-size: 12.5px; color: #0f181c">{{reason}}</span>
+</div>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">new pass from main · 3 fresh rounds · no restart used</span>
+<button type="button" class="lt-primary" style="margin-top: auto; width: 100%; min-height: 46px; border: 0; background: #0b6a70; color: #ffffff; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">Write it into the body &amp; requeue</button>
+</article>
+
+<article style="background: #ffffff; border: 1px solid #d8e0e1; padding: 22px 24px; display: flex; flex-direction: column; gap: 10px">
+<h3 style="margin: 0; font-size: 16px; font-weight: 600">Land it as it is</h3>
+<p style="margin: 0; font-size: 13px; color: #3a4a50">f1f961c lands on main with 2 majors open. Approving waives the refusing review.</p>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">now · no further spend</span>
+<label for="note2" style="margin-top: auto; font-size: 12.5px; font-weight: 600">Why merge over the refusal? <span style="font-weight: 400; color: #5e6e74">optional</span></label>
+<input id="note2" type="text" placeholder="the hole is filed as #4xx" style="min-height: 38px; padding: 0 10px; border: 1px solid #c3cfd1; background: #ffffff; font: 13px 'IBM Plex Sans', sans-serif; color: #0f181c">
+<button type="button" class="lt-ghost" style="width: 100%; min-height: 46px; border: 1px solid #c3cfd1; background: transparent; color: #0f181c; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">Approve</button>
+</article>
+
+<article style="background: #ffffff; border: 1px solid #d8e0e1; padding: 22px 24px; display: flex; flex-direction: column; gap: 10px">
+<h3 style="margin: 0; font-size: 16px; font-weight: 600">Don’t do it yet</h3>
+<p style="margin: 0; font-size: 13px; color: #3a4a50">Close the ticket. Formatting stays a build refusal from fmt:check. Nothing lifts a close.</p>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">nothing lands · branch kept at agent/390</span>
+<label for="note3" style="margin-top: auto; font-size: 12.5px; font-weight: 600">Why close it? <span style="font-weight: 400; color: #5e6e74">optional</span></label>
+<input id="note3" type="text" placeholder="superseded by #143" style="min-height: 38px; padding: 0 10px; border: 1px solid #c3cfd1; background: #ffffff; font: 13px 'IBM Plex Sans', sans-serif; color: #0f181c">
+<button type="button" class="lt-ghost" style="width: 100%; min-height: 46px; border: 1px solid #c3cfd1; background: transparent; color: #0f181c; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">Close</button>
+</article>
+
+</div>
+</section>
+
+<!-- RECORD -->
+<section style="background: #ffffff; border: 1px solid #d8e0e1; display: flex; flex-direction: column">
+<div role="tablist" style="display: flex; border-bottom: 1px solid #d8e0e1">
+<sc-for list="{{tabs}}" as="tb" hint-placeholder-count="5">
+<button type="button" role="tab" onClick="{{tb.pick}}" style="{{tb.style}}">{{tb.label}} <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">{{tb.fact}}</span></button>
+</sc-for>
+<span style="margin-left: auto; align-self: center; padding-right: 20px; font-size: 12px; color: #5e6e74">times and findings illustrative</span>
+</div>
+
+<sc-if value="{{tab.history}}" hint-placeholder-val="{{ true }}">
+<ol style="list-style: none; margin: 0; padding: 6px 0">
+<sc-for list="{{events}}" as="e" hint-placeholder-count="17">
+<li>
+<button type="button" class="lt-row" onClick="{{e.toggle}}" style="width: 100%; display: grid; grid-template-columns: 14px 64px 10px 170px 150px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 7px 20px; border: 0; border-bottom: 1px solid #f1f4f4; background: transparent; font: inherit; text-align: left; cursor: pointer">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #0b6a70">{{e.mark}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5e6e74">{{e.at}}</span>
+<span style="{{e.sq}}"></span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #0f181c; font-weight: 500">{{e.type}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">{{e.actor}}</span>
+<span style="font-size: 13px; color: #3a4a50; min-width: 0">{{e.what}}</span>
+<span style="{{e.tagStyle}}">{{e.tag}}</span>
+</button>
+<sc-if value="{{e.open}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 8px 20px 14px 116px; background: #f8fafa; border-bottom: 1px solid #e9eeee; display: flex; flex-direction: column; gap: 6px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">{{e.seq}}</span>
+<pre style="margin: 0; font: 12px/1.6 'IBM Plex Mono', monospace; color: #0f181c; white-space: pre-wrap">{{e.json}}</pre>
+</div>
+</sc-if>
+</li>
+</sc-for>
+</ol>
+</sc-if>
+
+<sc-if value="{{tab.diff}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column">
+<ul style="list-style: none; margin: 0; padding: 8px 0">
+<sc-for list="{{files}}" as="f" hint-placeholder-count="16">
+<li style="display: grid; grid-template-columns: minmax(0, 1fr) 90px 120px; gap: 14px; align-items: center; padding: 5px 20px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #0f181c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{f.path}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; text-align: right"><span style="color: #2c7a4c">{{f.add}}</span> <span style="color: #a33029">{{f.del}}</span></span>
+<span style="display: flex; height: 8px; background: #f1f4f4"><span style="{{f.addBar}}"></span><span style="{{f.delBar}}"></span></span>
+</li>
+</sc-for>
+</ul>
+<div style="border-top: 1px solid #d8e0e1">
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: #f1f4f4; font-family: 'IBM Plex Mono', monospace; font-size: 12px">
+<span style="color: #0f181c; font-weight: 500">packages/conductor/src/kept-run-port.ts</span>
+<span style="color: #5e6e74">excerpt</span>
+<span style="margin-left: auto; color: #5e6e74">git diff base…head on the mirror</span>
+</div>
+<pre style="margin: 0; padding: 10px 0; font: 12px/1.7 'IBM Plex Mono', monospace; overflow-x: auto"><sc-for list="{{hunk}}" as="l" hint-placeholder-count="13"><span style="{{l.style}}">{{l.text}}</span>
+</sc-for></pre>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{tab.findings}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px">
+<span style="font-size: 12.5px; color: #5e6e74">review:reviewer · refused · about f1f961c</span>
+<sc-for list="{{findings}}" as="fd" hint-placeholder-count="2">
+<div style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; padding-bottom: 14px; border-bottom: 1px solid #f1f4f4">
+<span style="align-self: start; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #ffffff; background: #a33029; padding: 2px 8px; text-align: center">major</span>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5e6e74">{{fd.at}}</span>
+<span style="font-size: 14px; font-weight: 500">{{fd.claim}}</span>
+<span style="font-size: 13px; color: #3a4a50"><strong style="font-weight: 600">Failure scenario.</strong> {{fd.scenario}}</span>
+</div>
+</div>
+</sc-for>
+<span style="font-size: 12.5px; color: #5e6e74">A passing step's minors wait in the <a href="#">backlog</a>.</span>
+</div>
+</sc-if>
+
+<sc-if value="{{tab.attempts}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 8px 0">
+<sc-for list="{{attempts}}" as="at" hint-placeholder-count="2">
+<div style="display: grid; grid-template-columns: 110px 120px repeat(4, 90px) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid #f1f4f4; font-size: 13px">
+<span style="font-weight: 600">{{at.name}}</span>
+<span style="{{at.pill}}">{{at.outcome}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px">{{at.turns}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px">{{at.dur}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px">{{at.cost}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px">{{at.diff}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #5e6e74">{{at.refs}}</span>
+</div>
+</sc-for>
+<div style="display: flex; gap: 20px; padding: 12px 20px; font-size: 12.5px">
+<a href="#">run log · ends here</a>
+<a href="#">recipe f59fd441 — this run's own</a>
+<a href="#">attempt 2's prompt · 8.2 KB</a>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{tab.ticket}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; max-width: 900px">
+<div style="display: flex; gap: 10px; align-items: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5e6e74"><span>#390</span><span>feature</span><a href="https://github.com/steven-zhc/lingtai/issues/390" style="margin-left: auto; font-family: 'IBM Plex Sans', sans-serif">on GitHub ↗</a></div>
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #5e6e74">The ticket, as it was written</span>
+<dl style="margin: 0; display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px 16px; font-size: 13px">
+<dt style="font-weight: 600">Problem</dt><dd style="margin: 0; color: #3a4a50">A recipe cannot run a mechanical command after the implementing agent, so formatting is either a prompt the agent may forget or a build refusal that spends a whole fix round on what pnpm fmt does in a second.</dd>
+<dt style="font-weight: 600">Want</dt><dd style="margin: 0; color: #3a4a50">run: is accepted at implement:. Written after the agent, it runs after every agent run, in the agent's worktree, and whatever it changed is committed onto the attempt's branch before build sees it.</dd>
+<dt style="font-weight: 600">Watch out</dt><dd style="margin: 0; color: #3a4a50">implement cannot refuse. A non-zero exit here must not turn into a refusal the step has no way to make.</dd>
+</dl>
+</div>
+</sc-if>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":2400}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { ans: { q1: 'a', q2: 'a' }, tab: 'history', open: 16, bodyText: null };
+  }
+  renderVals() {
+    const Q = [
+      { id: 'q1', n: 'Q1', text: 'When the agent leaves files it never committed, what should the formatter’s commit do with them?',
+        why: 'All three rounds patched the same hole: a leftover file the formatter touched is neither committed nor restored, and build still judges it. Uncommitted files are deleted with the worktree when the pass ends (file-action.ts:51), so protecting them buys nothing.',
+        answers: [
+          { id: 'a', label: 'Commit everything', then: 'git add -A, the env file excluded. The branch matches what build and review see.', body: 'When the command succeeds, git add -A and commit everything, the env file excluded; the agent’s leftovers go in too.' },
+          { id: 'b', label: 'Commit leftovers first', then: 'Leftovers in a commit of their own, then the command. Same outcome, more code.', body: 'Before the command runs, commit the agent’s leftovers on their own; after it succeeds, commit its changes.' },
+          { id: 'c', label: 'Refuse to run', then: 'A dirty tree skips the command with a note. Formatting is left to build.', body: 'When the worktree has uncommitted files, do not run the command; record a note on the verdict.' }
+        ] },
+      { id: 'q2', n: 'Q2', text: 'When the command fails, what happens to the files it half-changed?',
+        why: 'The ticket says “commit nothing and let build catch it”; the branch added a restore as well, and the second major is in that restore.',
+        answers: [
+          { id: 'a', label: 'Leave them', then: 'Neither committed nor restored. Build sees them and refuses, buying a round.', body: 'When the command fails, commit nothing and restore nothing; record a note and let build catch it.' },
+          { id: 'b', label: 'Restore them', then: 'Undo the command’s edits. Telling them apart is the logic on the branch now.', body: 'When the command fails, undo its own edits and keep the agent’s leftovers.' }
+        ] }
+    ];
+    const ans = this.state.ans;
+    const questions = Q.map((q) => ({
+      n: q.n, text: q.text, why: q.why,
+      answers: q.answers.map((a, i) => {
+        const on = ans[q.id] === a.id;
+        return {
+          label: a.label, then: a.then, rec: i === 0,
+          pick: () => this.setState({ ans: Object.assign({}, this.state.ans, { [q.id]: a.id }) }),
+          style: 'text-align: left; min-height: 96px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; font: inherit; background: ' + (on ? '#ffffff' : 'rgba(255,255,255,0.45)') + '; border: ' + (on ? '2px solid #0b6a70' : '1px solid #b9d9da'),
+          mark: 'width: 12px; height: 12px; flex: none; ' + (on ? 'background: #0b6a70' : 'border: 1px solid #5e6e74')
+        };
+      })
+    }));
+    const composed = '## Added from triage, 2026-10-06\n' + Q.map((q) => '- ' + q.n + ': ' + q.answers.find((x) => x.id === ans[q.id]).body).join('\n');
+    const edited = this.state.bodyText !== null;
+
+    const steps = ['claim', 'admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge', 'end'];
+    const kinds = ['p', 'p', 'p', 'p', 'p', 'p', 'f', 'y', 'n', 'n'];
+    const C = { p: '#2c7a4c', f: '#a33029', y: '#9c5a08', n: '#d8e0e1' };
+    const tips = { p: 'passed', f: 'refused', y: 'held for a person', n: 'not reached' };
+    const rail = steps.map((step, i) => ({
+      step, tip: step + ': ' + tips[kinds[i]],
+      bar: 'height: 8px; background: ' + C[kinds[i]],
+      labelStyle: 'font-family: \'IBM Plex Mono\', monospace; font-size: 11px; color: ' + (kinds[i] === 'n' ? '#87999f' : kinds[i] === 'p' ? '#3a4a50' : C[kinds[i]]) + (kinds[i] === 'y' || kinds[i] === 'f' ? '; font-weight: 600' : '')
+    }));
+
+    const kindColor = { claim: '#5e6e74', run: '#0b6a70', pass: '#2c7a4c', fail: '#a33029', fix: '#9c5a08', held: '#63549e', triage: '#075056' };
+    const E = [
+      ['19:41', 'WorkItemClaimed', 'daemon', 'attempt 2', 'claim'],
+      ['19:42', 'RunStarted', 'daemon', 'implement · claude-code', 'run'],
+      ['19:59', 'RunProducedDiff', 'agent:run-8c1f2a0e', 'd7cd63d', 'run'],
+      ['20:03', 'StepPassed', 'gate:build', 'build · test, typecheck, fmt:check, lint', 'pass'],
+      ['20:11', 'StepFailed', 'gate:review', 'review · 2 majors', 'fail'],
+      ['20:11', 'FixRequested', 'daemon', 'round 1 of 3', 'fix'],
+      ['21:39', 'FixApplied', 'agent:run-8c1f2a0e', 'd3ef3fc', 'fix'],
+      ['21:47', 'StepFailed', 'gate:review', 'review · 2 majors', 'fail'],
+      ['21:47', 'FixRequested', 'daemon', 'round 2 of 3', 'fix'],
+      ['21:59', 'FixApplied', 'agent:run-8c1f2a0e', '6187e73', 'fix'],
+      ['22:08', 'StepFailed', 'gate:review', 'review · 2 majors', 'fail'],
+      ['22:08', 'FixRequested', 'daemon', 'round 3 of 3', 'fix'],
+      ['22:25', 'FixApplied', 'agent:run-8c1f2a0e', 'f1f961c', 'fix'],
+      ['22:34', 'StepFailed', 'gate:review', 'review · 2 majors', 'fail'],
+      ['22:35', 'PassRouted', 'judge:claude-code', 'findings → a person', 'held'],
+      ['22:35', 'WorkItemBlocked', 'daemon', 'held at proposed', 'held'],
+      ['22:37', 'HoldTriaged', 'triage:claude-code', '2 questions · 14 turns · $0.62', 'triage']
+    ];
+    const open = this.state.open;
+    const events = E.map(([at, type, actor, what, k], i) => ({
+      at, type, actor, what,
+      open: open === i,
+      mark: open === i ? '−' : '+',
+      toggle: () => this.setState({ open: this.state.open === i ? -1 : i }),
+      seq: 'seq ' + (4810 + i) + ' · wi-lingtai-390 v' + (i + 1) + ' · schema 1',
+      json: type === 'HoldTriaged'
+        ? '{\n  "block": 4825,\n  "head": "f1f961c1",\n  "questions": [ { "text": "When the agent leaves files…", "answers": 3, "recommend": 0 },\n                 { "text": "When the command fails…", "answers": 2, "recommend": 0 } ],\n  "move": "edit-body-and-requeue",\n  "tokens": { "in": 182430, "out": 3120 }\n}'
+        : '{ "type": "' + type + '", … }',
+      sq: 'width: 8px; height: 8px; align-self: center; background: ' + kindColor[k],
+      tag: type === 'HoldTriaged' ? 'new' : '',
+      tagStyle: type === 'HoldTriaged' ? 'font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #075056; background: #dcedED; padding: 1px 8px' : 'display: none'
+    }));
+
+    const F = [
+      ['packages/conductor/unit/kept-run-port.test.ts', 305, 0], ['packages/conductor/src/kept-run-port.ts', 229, 0],
+      ['packages/conductor/unit/implement-run-commits.test.ts', 190, 0], ['packages/actions/unit/kept-run-action.test.ts', 175, 0],
+      ['packages/actions/src/kept-run-action.ts', 157, 0], ['doc/design/390.md', 71, 0],
+      ['packages/recipe/src/recipe.ts', 39, 5], ['packages/actions/src/from-recipe.ts', 28, 1],
+      ['packages/conductor/unit/step-matrix.test.ts', 21, 4], ['packages/conductor/src/conduct.ts', 23, 0],
+      ['packages/conductor/src/pass.ts', 14, 5], ['doc/plugins/run.md', 8, 8],
+      ['packages/conductor/unit/what-a-red-command-costs.test.ts', 9, 6], ['doc/decisions/0105-a-plugin-is-a-declaration-and-an-implementation.md', 6, 3],
+      ['packages/actions/src/index.ts', 7, 0], ['doc/plugins/index.md', 1, 1]
+    ];
+    const files = F.map(([path, a, d]) => ({
+      path, add: '+' + a, del: d ? '−' + d : '',
+      addBar: 'height: 100%; background: #2c7a4c; width: ' + (a / 305 * 100).toFixed(1) + '%',
+      delBar: 'height: 100%; background: #a33029; width: ' + (d / 305 * 100).toFixed(1) + '%'
+    }));
+    const H = [
+      ['@@ async keep(spec, baseline): Promise<KeptRunAnswer> {', 'h'],
+      ['+  const exclude = [`:(exclude)${plantAt}`, ...excluding(baseline)]', '+'],
+      ['+  const added = await git([\'add\', \'-A\', \'--\', \'.\', ...exclude])', '+'],
+      ['+  if (Either.isLeft(added)) return { notKept: `git add refused it: ${added.left.detail}` }', '+'],
+      ['+  const staged = await git([\'diff\', \'--cached\', \'--quiet\', \'--\', \'.\', ...exclude])', '+'],
+      ['+  if (!Either.isLeft(staged)) return { clean: true }', '+'],
+      ['+  const ref = (await issue()).ref', '+'],
+      ['+  const committed = await git([\'commit\', \'-m\', `chore(implement): ${spec.name} for #${ref}`,', '+'],
+      ['+    \'--\', \'.\', ...exclude])', '+']
+    ];
+    const hunk = H.map(([text, k]) => ({ text, style: 'display: block; padding: 0 20px; white-space: pre; ' + (k === 'h' ? 'color: #5e6e74; background: #f1f4f4' : 'color: #0f181c; background: #e6f2ea') }));
+
+    const findings = [
+      { at: 'packages/conductor/src/kept-run-port.ts:181', claim: 'A leftover file the formatter rewrote is excluded from keep and from restore.', scenario: 'The agent leaves src/a.ts unstaged; pnpm fmt rewrites it; keep commits nothing for it and build judges the rewritten file on disk.' },
+      { at: 'packages/conductor/src/kept-run-port.ts:197', claim: 'A failed run leaves its edit to a baseline file in the worktree, recorded nowhere.', scenario: 'The command exits 1 after editing src/a.ts; restore skips baseline paths, so the half-edit stays and the verdict says nothing about it.' }
+    ];
+    const pill = (c) => 'font-size: 11px; font-weight: 600; color: #ffffff; background: ' + c + '; padding: 1px 8px; justify-self: start';
+    const attempts = [
+      { name: 'attempt 2', outcome: 'blocked · deciding', pill: pill('#9c5a08'), turns: '25 turns', dur: '2h 54m', cost: '$0.80', diff: '16f +1283 −33', refs: 'base 41db678 · head f1f961c · agent/390' },
+      { name: 'attempt 1', outcome: 'restarted', pill: pill('#5e6e74'), turns: '61 turns', dur: '1h 02m', cost: '$2.40', diff: '9f +610 −12', refs: 'base 3c0e2b1 · head 0b77a4d · agent/390-attempt-1' }
+    ];
+
+    const tab = this.state.tab;
+    const T = [['history', 'History', '17 events'], ['diff', 'Diff', '16 files · +1283 −33'], ['findings', 'Findings', '2 majors'], ['attempts', 'Attempts', '2 · $11.29'], ['ticket', 'Ticket', '']];
+    const tabs = T.map(([id, label, fact]) => ({
+      label, fact,
+      pick: () => this.setState({ tab: id }),
+      style: 'min-height: 46px; padding: 0 18px; border: 0; background: none; cursor: pointer; display: flex; align-items: center; gap: 8px; font: ' + (tab === id ? '600' : '500') + ' 13.5px \'IBM Plex Sans\', sans-serif; color: ' + (tab === id ? '#0f181c' : '#5e6e74') + '; box-shadow: inset 0 ' + (tab === id ? '-2px 0 #0b6a70' : '0 0 transparent')
+    }));
+
+    return {
+      questions, rail, events, files, hunk, findings, attempts, tabs,
+      tab: { history: tab === 'history', diff: tab === 'diff', findings: tab === 'findings', attempts: tab === 'attempts', ticket: tab === 'ticket' },
+      body: edited ? this.state.bodyText : composed,
+      edited,
+      notEdited: !edited,
+      reason: 'Answered triage: ' + Q.map((q) => q.n + ' ' + q.answers.find((x) => x.id === ans[q.id]).label.toLowerCase()).join(', ') + (edited ? ', body edited by hand' : '') + '.',
+      editBody: (e) => this.setState({ bodyText: e.target.value }),
+      showTicket: () => this.setState({ tab: 'ticket' }),
+      resetBody: () => this.setState({ bodyText: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

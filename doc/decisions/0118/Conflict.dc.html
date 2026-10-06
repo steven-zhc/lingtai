@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Merge conflict</title>
+<script src="./dc-lite.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f1f4f4}
+a{color:#075056}a:hover{color:#0b6a70}
+code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
+.k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase}
+.m{font-family:'IBM Plex Mono',monospace}
+.lt-ans:hover{border-color:#0b6a70}
+.ctx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:#fff;border:1px solid #d8e0e1}
+.ctx>div{padding:14px 18px;display:flex;flex-direction:column;gap:4px}
+.ctx>div+div{border-left:1px solid #e9eeee}
+.ctx p{margin:0;font-size:13.5px}
+.code{margin:0;padding:10px 0;font:12px/1.7 'IBM Plex Mono',monospace;background:#fff;overflow-x:auto}
+.code span{display:block;padding:0 14px;white-space:pre}
+.mv{background:#fff;border:1px solid #d8e0e1;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.mv h3{margin:0;font-size:16px;font-weight:600}
+.mv p{margin:0;font-size:13px;color:#3a4a50}
+.btn{margin-top:auto;min-height:44px;border:1px solid #c3cfd1;background:transparent;color:#0f181c;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.btnp{margin-top:auto;min-height:44px;border:0;background:#0b6a70;color:#fff;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.new{font-size:12px;color:#9c5a08;background:#f7ead6;padding:6px 10px}
+.you{align-self:flex-end;max-width:560px;background:#0b6a70;color:#fff;padding:10px 14px;font-size:13.5px}
+.ai{align-self:flex-start;max-width:820px;background:#fff;padding:12px 16px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.add{align-self:flex-start;border:0;background:none;padding:0;font:500 12.5px 'IBM Plex Sans',sans-serif;color:#075056;cursor:pointer}
+.ask{display:flex;gap:8px}
+.ask input{flex:1;min-height:40px;padding:0 12px;border:1px solid #b9d9da;background:#fff;font:13.5px 'IBM Plex Sans',sans-serif}
+.ask button{min-height:40px;padding:0 16px;border:1px solid #0b6a70;background:transparent;color:#075056;font:600 13px 'IBM Plex Sans',sans-serif;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1200px; min-height: 1900px; box-sizing: border-box; padding: 20px 48px 56px; background-color: #f1f4f4; background-image: linear-gradient(#e4eaea 1px, transparent 1px), linear-gradient(90deg, #e4eaea 1px, transparent 1px); background-size: 32px 32px; color: #0f181c; font: 14px/1.55 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 28px">
+
+<nav style="display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #d8e0e1; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5e6e74">
+<a href="Main.dc.html" style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; text-decoration: none">← Lingtai</a>
+<span>lingtai-412 · since 2026-10-06 07:20 UTC · ticket made up</span>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; color: #2c7a4c"><span style="width: 8px; height: 8px; background: #2c7a4c"></span>Following</span>
+</nav>
+
+<header style="display: flex; flex-direction: column; gap: 12px">
+<div class="m" style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #5e6e74">
+<a href="#" style="text-decoration: none">#412 ↗</a><span>bug</span><span>18 turns</span><span>$0.61</span>
+<span style="margin-left: auto; color: #9c5a08">blocked · waiting 40m</span>
+</div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">Doctor reports the lock holder’s commit, not the checkout’s</h1>
+<div class="ctx">
+<div><span class="k" style="color: #5e6e74">Problem</span><p><code>daemon: currency</code> compares the checkout's HEAD, so a daemon started from an older commit reads as current.</p></div>
+<div><span class="k" style="color: #5e6e74">Want</span><p>Currency is measured from the commit the running daemon recorded in its beacon.</p></div>
+<div><span class="k" style="color: #9c5a08">Watch out</span><p>No daemon running is not the same as a current one; say which.</p></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px"><sc-for list="{{rail}}" as="r" hint-placeholder-count="10"><div style="display: flex; flex-direction: column; gap: 5px"><span style="{{r.bar}}"></span><span style="{{r.lbl}}">{{r.step}}</span></div></sc-for></div>
+<span class="m" style="font-size: 12px; color: #3a4a50">every step passed · merge refused: agent/412 does not merge into main · no round was bought</span>
+</header>
+
+<section style="background: #dcedED; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 10px">
+<span class="k" style="color: #075056">Triage</span>
+<span style="font-size: 12px; font-weight: 600; color: #ffffff; background: #63549e; padding: 2px 10px">Merge by hand</span>
+<span style="font-size: 13px; color: #075056">7 hunks in 5 files · 5 resolved with confidence · 2 need you</span>
+<span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">8 turns · $0.29 · read main@07b4f14 and agent/412@5c1d0e2</span>
+</div>
+<p style="margin: 0; font: 400 20px/1.45 'IBM Plex Serif', Georgia, serif; max-width: 980px">#395 landed on main after this branch was cut and touched the same five files. Five hunks are mechanical and triage resolved them; two change behaviour on both sides, and only you can say which wins.</p>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<div style="background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k" style="color: #5e6e74">Conflicting hunks</span><span class="m" style="font-size: 22px; font-weight: 500">7 <span style="font-size: 13px; color: #5e6e74">in 5 files</span></span></div>
+<div style="background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k" style="color: #2c7a4c">Resolved by triage</span><span class="m" style="font-size: 22px; font-weight: 500; color: #2c7a4c">5 <span style="font-size: 13px; color: #5e6e74">mechanical</span></span></div>
+<div style="background: #ffffff; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k" style="color: #9c5a08">Need you</span><span class="m" style="font-size: 22px; font-weight: 500; color: #9c5a08">2 <span style="font-size: 13px; color: #5e6e74">behaviour on both sides</span></span></div>
+</div>
+
+<div style="display: flex; flex-direction: column; background: #ffffff; border: 1px solid #b9d9da">
+<sc-for list="{{hunks}}" as="h" hint-placeholder-count="7">
+<div style="border-bottom: 1px solid #e9eeee">
+<button type="button" onClick="{{h.toggle}}" style="width: 100%; display: grid; grid-template-columns: 14px 44px 300px 120px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 14px; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer">
+<span class="m" style="font-size: 12px; color: #0b6a70">{{h.mark}}</span>
+<span class="m" style="{{h.qStyle}}">{{h.q}}</span>
+<span class="m" style="font-size: 12px; color: #0f181c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{h.file}}</span>
+<span style="{{h.chip}}">{{h.status}}</span>
+<span style="font-size: 13px; color: #3a4a50">{{h.say}}</span>
+</button>
+<sc-if value="{{h.open}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 0 14px 14px 70px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid #e9eeee">
+<div style="border-right: 1px solid #e9eeee"><div class="k" style="padding: 8px 14px 0; color: #5e6e74">main · since #395</div><pre class="code"><sc-for list="{{theirs}}" as="l" hint-placeholder-count="5"><span style="{{l.s}}">{{l.t}}</span></sc-for></pre></div>
+<div style="border-right: 1px solid #e9eeee"><div class="k" style="padding: 8px 14px 0; color: #5e6e74">agent/412</div><pre class="code"><sc-for list="{{ours}}" as="l" hint-placeholder-count="5"><span style="{{l.s}}">{{l.t}}</span></sc-for></pre></div>
+<div><div class="k" style="padding: 8px 14px 0; color: #075056">Triage's resolution</div><pre class="code"><sc-for list="{{merged}}" as="l" hint-placeholder-count="6"><span style="{{l.s}}">{{l.t}}</span></sc-for></pre></div>
+</div>
+<sc-if value="{{h.ask}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font: 400 18px/1.4 'IBM Plex Serif', Georgia, serif">{{h.question}}</span>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{h.answers}}" as="a" hint-placeholder-count="3">
+<button type="button" class="lt-ans" onClick="{{a.pick}}" style="{{a.style}}">
+<span style="display: flex; align-items: center; gap: 8px"><span style="{{a.mark}}"></span><span style="font-size: 13.5px; font-weight: 600">{{a.label}}</span><span class="k" style="margin-left: auto; color: #075056">{{a.tag}}</span></span>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+<span style="font-size: 12.5px; color: #3a4a50">Past 20 hunks, triage stops resolving them one by one and recommends starting over from the new main: a branch that far behind is cheaper rebuilt than merged.</span>
+
+<div style="display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid #b9d9da">
+<div style="display: flex; align-items: baseline; gap: 10px"><span class="k" style="color: #075056">Discussion</span><span class="m" style="margin-left: auto; font-size: 11.5px; color: #075056">1 follow-up · $0.12</span></div>
+<div class="you">Does #395's early return still need the beacon at all?</div>
+<div class="ai"><span class="m" style="font-size: 11px; color: #5e6e74">claude-code · read 1 file · $0.12</span><span>Yes. The early return only covers "no daemon"; a running daemon still needs its recorded commit to be compared, which is what this ticket adds.</span><button type="button" class="add">Add to the body below</button></div>
+<div class="ask"><input type="text" aria-label="Ask a follow-up" placeholder="Ask a follow-up"><button type="button">Ask</button></div>
+</div>
+</section>
+
+<section style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+<article class="mv" style="border: 2px solid #0b6a70">
+<div style="display: flex; align-items: baseline; gap: 10px"><h3>{{m.title}}</h3><span class="k" style="margin-left: auto; color: #ffffff; background: #0b6a70; padding: 2px 9px">Recommended</span></div>
+<p>{{m.then}}</p>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">{{m.cost}}</span>
+<sc-if value="{{m.isNew}}" hint-placeholder-val="{{ true }}"><span class="new">New move. Today a conflict buys no round, and a requeue rebuilds the branch from main.</span></sc-if>
+<button type="button" class="btnp">{{m.btn}}</button>
+</article>
+<article class="mv">
+<h3>Start over from the new main</h3>
+<p>Today's recommendation. The next pass is cut from main, which already has #395; the resolution goes into the body as a hint.</p>
+<span class="m" style="font-size: 11.5px; color: #5e6e74">new pass · 3 fresh rounds · ≈ $0.60</span>
+<button type="button" class="btn">Write it into the body &amp; requeue</button>
+</article>
+<article class="mv">
+<h3>Take it over</h3>
+<p>Merge main yourself, push, then approve the new head.</p>
+<pre class="m" style="margin: 0; padding: 8px 10px; background: #f1f4f4; font-size: 11.5px; white-space: pre-wrap">git switch agent/412
+git merge origin/main
+# resolve apps/cli/src/doctor.ts
+git push</pre>
+<button type="button" class="btn">Copy the commands</button>
+</article>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":1900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { open: 'h1', answers: {} }; }
+  renderVals() {
+    const steps = ['claim', 'admit', 'prepared', 'design', 'implement', 'build', 'review', 'proposed', 'merge', 'end'];
+    const codes = 'ppppppppfn';
+    const C = { p: '#2c7a4c', f: '#a33029', y: '#9c5a08', n: '#d8e0e1' };
+    const rail = steps.map((step, i) => {
+      const k = codes[i];
+      return { step, bar: 'height: 8px; background: ' + C[k], lbl: 'font-family: \'IBM Plex Mono\', monospace; font-size: 11px; color: ' + (k === 'n' ? '#87999f' : k === 'p' ? '#3a4a50' : C[k]) + (k === 'f' ? '; font-weight: 600' : '') };
+    });
+    const line = (bg) => (t) => ({ t, s: bg ? 'background: ' + bg : '' });
+    const ctx = line(''), add = line('#e6f2ea'), del = line('#f6e1de');
+    const theirs = [ctx('const status = await beacon()'), add('if (status === null) return absent(\'no daemon is running\')'), add('const sha = status.codeSha'), ctx('const behind = await revsBehind(sha)'), ctx('return currency({ sha, behind })')];
+    const ours = [ctx('const status = await beacon()'), add('const sha = status?.codeSha ?? null'), add('if (sha === null) return unknown(\'the daemon recorded no commit\')'), ctx('const behind = await revsBehind(sha)'), ctx('return currency({ sha, behind })')];
+    const merged = [ctx('const status = await beacon()'), add('if (status === null) return absent(\'no daemon is running\')'), add('const sha = status.codeSha ?? null'), add('if (sha === null) return unknown(\'the daemon recorded no commit\')'), ctx('const behind = await revsBehind(sha)'), ctx('return currency({ sha, behind })')];
+    const H = [
+      { id: 'h1', file: 'apps/cli/src/doctor.ts', status: 'needs you', q: 'Q1', say: 'Both sides changed the currency check.', question: 'Keep both checks, main\u2019s first?', ask: true },
+      { id: 'h2', file: 'apps/cli/src/lingtai.ts', status: 'needs you', q: 'Q2', say: 'main prints the commit; this branch prints the beacon\u2019s.', question: 'Which commit should status print?', ask: true },
+      { id: 'h3', file: 'apps/cli/src/doctor.ts', status: 'resolved', q: '', say: 'Imports on both sides; union.' },
+      { id: 'h4', file: 'apps/cli/src/service.ts', status: 'resolved', q: '', say: 'A renamed variable on main; applied to this side.' },
+      { id: 'h5', file: 'apps/cli/unit/doctor.test.ts', status: 'resolved', q: '', say: 'Two new test cases, one per side; both kept.' },
+      { id: 'h6', file: 'apps/cli/unit/doctor.test.ts', status: 'resolved', q: '', say: 'Shared fixture moved on main; re-pointed.' },
+      { id: 'h7', file: 'doc/operating.md', status: 'resolved', q: '', say: 'Two paragraphs added at one place; both kept.' }
+    ];
+    const open = this.state.open;
+    const answers = this.state.answers;
+    const hunks = H.map((h) => {
+      const isOpen = open === h.id;
+      const need = h.status === 'needs you';
+      const A = [
+        { id: 'a', label: 'Use triage\u2019s', tag: 'recommended' },
+        { id: 'b', label: 'Keep main\u2019s', tag: '' },
+        { id: 'c', label: 'Keep this branch\u2019s', tag: '' }
+      ].map((a) => {
+        const on = (answers[h.id] || 'a') === a.id;
+        return Object.assign({}, a, {
+          pick: () => this.setState({ answers: Object.assign({}, this.state.answers, { [h.id]: a.id }) }),
+          style: 'text-align: left; min-height: 48px; padding: 10px 14px; display: flex; cursor: pointer; font: inherit; background: ' + (on ? '#ffffff' : '#f8fafa') + '; border: ' + (on ? '2px solid #0b6a70' : '1px solid #d8e0e1'),
+          mark: 'width: 12px; height: 12px; flex: none; ' + (on ? 'background: #0b6a70' : 'border: 1px solid #5e6e74')
+        });
+      });
+      return Object.assign({}, h, {
+        open: isOpen, mark: isOpen ? '\u2212' : '+', answers: A,
+        toggle: () => this.setState({ open: this.state.open === h.id ? null : h.id }),
+        qStyle: need ? 'font-size: 12px; font-weight: 500; color: #ffffff; background: #0b6a70; padding: 1px 6px; text-align: center' : 'font-size: 12px',
+        chip: 'justify-self: start; font-size: 11px; font-weight: 600; padding: 1px 8px; ' + (need ? 'color: #9c5a08; background: #f7ead6' : 'color: #2c7a4c; background: #dfeee4')
+      });
+    });
+    const m = { title: 'Apply the resolution on the branch', then: 'An agent merges main into agent/412 with the 5 resolved hunks and your 2 answers, build and review run again, and the lane retries.', cost: '1 round on this branch \u00b7 keeps the work \u00b7 \u2248 $0.40', btn: 'Merge on the branch', isNew: true };
+    return { rail, theirs, ours, merged, hunks, m };
+  }
+}
+</script>
+</body>
+</html>

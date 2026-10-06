@@ -56,7 +56,7 @@ Three kinds of thing live here, and the distinction matters.
 | [`design/the-pipeline.md`](design/the-pipeline.md) | **The ten-step pipeline, whole: the design, the roadmap and the tickets.** A clean cut rather than a migration — the new pass was written beside the engine it replaced and that file is deleted (`#256`) — in fourteen tickets with their evidence and their traps, plus what a clean cut does *not* buy. Implements 0058, 0060 and 0061; the test split (#224, #225) has landed. |
 | [`design/the-v2-recipe.md`](design/the-v2-recipe.md) | **The v2 recipe for this repository, written out, and every v1 key mapped to where it went.** T0b of the pipeline plan and the target T3 is checked against. Six v1 keys have no home named in 0061, and the sixth is the finding: `runtime:` is the block the recipe/machine split is enforced on, and v2 does not have one. |
 | [`design/the-plugin-body.md`](design/the-plugin-body.md) | **Why 0064's `at` has keys and no values yet.** `#261` built the keys; the ticket for the values found three things the decision defers — an action's verdict is not an `EndingAt<S>` and `endingOf` is why, a body is not told which declared entry it is, and the plugins are declared a package below the types. A finding rather than a plan: each has two ways out and neither is a rewrite's to pick. |
-| [`design/`](design/) | One surface per file: what it is for, what it got wrong, and the rule that came out of it. The mockups are private artifacts and are linked, never inlined — **a picture of a decision is not the decision**, and only the decision belongs in the repository. |
+| [`design/`](design/) | One surface per file: what it is for, what it got wrong, and the rule that came out of it. A mockup may sit beside the ADR it illustrates, in `decisions/NNNN/`, as pages that open in a browser — but **a picture of a decision is not the decision**: the ADR text is, and where the two differ the text wins. |
 | [`decisions/`](decisions/) | One decision per file, with its context and its consequences. **Append-only in spirit** — a decision that turns out wrong gets a new file that supersedes it, not an edit. |
 | [`experiments/`](experiments/) | Things actually run against real data, with their results. A design claim backed by one of these is worth more than one backed by argument. |
 
@@ -100,6 +100,7 @@ replaces.
 | [0115](decisions/0115-unit-gates-integration-follows.md) | **Tests** — unit tests gate the diff, integration tests run apart, and the test side gets a store of its own | accepted; part not yet built |
 | [0116](decisions/0116-the-project-is-lingtai.md) | **The name** — the project, its commands and every name it owns are Lingtai | accepted |
 | [0117](decisions/0117-configuration-is-config-yml-and-the-environment.md) | **Configuration** — `~/.lingtai/config.yml` and the exported environment, the environment overriding, and no env file | accepted |
+| [0118](decisions/0118-a-hold-explains-itself.md) | **Waiting on you** — every hold says what kind it is, what is asked and what each answer does; triage is the Discussion's first turn, and an answer is written into the body | proposed |
 
 ## Experiments
 
