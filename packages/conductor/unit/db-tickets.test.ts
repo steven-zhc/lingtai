@@ -236,6 +236,41 @@ describe('dbTickets, beyond the shared contract', () => {
     await expect(t.updateTitle(999_999, 'x')).rejects.toThrow('no ticket #999999')
   })
 
+  it('updateFields writes all three fields when expected matches the row exactly', async () => {
+    const t = freshDbTickets()
+    const created = await t.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
+
+    await t.updateFields(
+      created.number,
+      { title: 'old title', labels: ['bug'], body: 'old body' },
+      { title: 'new title', labels: ['feature'], body: 'new body' },
+    )
+
+    const got = await t.getIssue(created.number)
+    expect(got.title).toBe('new title')
+    expect(got.body).toBe('new body')
+    expect(got.labels.map((l) => l.name)).toEqual(['feature'])
+  })
+
+  it('updateFields refuses and writes nothing when the row no longer matches expected', async () => {
+    const t = freshDbTickets()
+    const created = await t.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
+    await t.updateBody(created.number, 'a concurrent write landed first')
+
+    await expect(
+      t.updateFields(
+        created.number,
+        { title: 'old title', labels: ['bug'], body: 'old body' },
+        { title: 'new title', labels: ['feature'], body: 'new body' },
+      ),
+    ).rejects.toThrow('changed since this form was opened')
+
+    const got = await t.getIssue(created.number)
+    expect(got.title).toBe('old title')
+    expect(got.body).toBe('a concurrent write landed first')
+    expect(got.labels.map((l) => l.name)).toEqual(['bug'])
+  })
+
   it('createIssue rejects immediately on a non-duplicate error, without retrying', async () => {
     const sql = freshStore()
     let insertAttempts = 0

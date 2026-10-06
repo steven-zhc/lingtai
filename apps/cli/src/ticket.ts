@@ -390,8 +390,11 @@ export async function ticketNew(
     return 1
   }
   if (formsEqual(empty, after.form)) {
-    await edited.discard()
-    log('no change — nothing written')
+    // Not discarded: an editor that does not block (`spawnSync` returning
+    // before the person has actually finished, #386 round 2) would have this
+    // CLI delete the directory the person is still typing into. Only a
+    // write that actually landed earns the discard.
+    log(`no change — nothing written, your text is kept at ${edited.path}`)
     return 0
   }
   if (after.form.title === '') {
@@ -470,8 +473,8 @@ export async function ticketEdit(
     return 1
   }
   if (formsEqual(original, after.form)) {
-    await edited.discard()
-    log('no change — nothing written')
+    // Not discarded — see the matching comment in `ticketNew`.
+    log(`no change — nothing written, your text is kept at ${edited.path}`)
     return 0
   }
   if (after.form.title === '') {
@@ -479,39 +482,24 @@ export async function ticketEdit(
     return 1
   }
 
+  const changed: string[] = []
+  if (after.form.title !== original.title) changed.push('title')
+  if (!sameLabels(original.labels, after.form.labels)) changed.push('labels')
+  if (after.form.body !== original.body) changed.push('body')
+
   // The row this form was opened against may have moved while the editor had
-  // it open — a second `edit` on the same ticket, saved first. Re-reading it
-  // right before writing, rather than trusting `original`, is what stops that
-  // save from landing on top of this one unnoticed.
-  let current: Awaited<ReturnType<Tickets['getIssue']>>
+  // it open — a second `edit` on the same ticket, saved first. `updateFields`
+  // writes only if the row still holds exactly what `ticket` read, so the
+  // check and the write are one statement and nothing can land in between.
+  const expected = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: ticket.body }
   try {
-    current = await tickets.getIssue(options.issue)
+    await tickets.updateFields(options.issue, expected, {
+      title: after.form.title,
+      labels: after.form.labels,
+      body: after.form.body,
+    })
   } catch (err) {
     log(`${(err as Error).message} — your text is kept at ${edited.path}`)
-    return 1
-  }
-  if (!formsEqual(original, formFromTicket(current))) {
-    log(`#${ticket.number} changed since this form was opened — your text is kept at ${edited.path}`)
-    return 1
-  }
-
-  const changed: string[] = []
-  try {
-    if (after.form.title !== original.title) {
-      await tickets.updateTitle(options.issue, after.form.title)
-      changed.push('title')
-    }
-    if (!sameLabels(original.labels, after.form.labels)) {
-      await tickets.setLabels(options.issue, after.form.labels)
-      changed.push('labels')
-    }
-    if (after.form.body !== original.body) {
-      await tickets.updateBody(options.issue, after.form.body)
-      changed.push('body')
-    }
-  } catch (err) {
-    const landed = changed.length > 0 ? ` (${changed.join(', ')} already written)` : ''
-    log(`${(err as Error).message}${landed} — your text is kept at ${edited.path}`)
     return 1
   }
   await edited.discard()

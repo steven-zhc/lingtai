@@ -147,6 +147,18 @@ export interface DbTickets extends Tickets {
   commentBodies(issue: number): Promise<readonly string[]>
   /** Not on `Tickets` — no GitHub verb changes a title, so no caller through that interface needs one (`ticket.ts`'s `ticketEdit`, #386). */
   updateTitle(issue: number, title: string): Promise<void>
+  /**
+   * Writes title, labels and body together, and only if the row still holds
+   * exactly `expected`'s three fields — the assertion and the write are one
+   * statement, so nothing can land in the gap a separate pre-write re-read
+   * leaves open (`ticket.ts`'s `ticketEdit`, #386 round 2). Throws when the
+   * row no longer matches `expected`.
+   */
+  updateFields(
+    issue: number,
+    expected: { title: string; labels: readonly string[]; body: string },
+    next: { title: string; labels: readonly string[]; body: string },
+  ): Promise<void>
 }
 
 interface TicketRow {
@@ -358,6 +370,27 @@ export function dbTickets(sql: TicketSql, project: string, options: DbTicketsOpt
         [project, number, title, now().toISOString()],
       )
       if (rows.length === 0) throw noSuchTicket(project, number)
+    },
+
+    async updateFields(number, expected, next) {
+      await ensureReady()
+      const rows = await sql.query<{ number: number }>(
+        `UPDATE tickets SET title = $3, labels = $4, body = $5, updated_at = $6
+         WHERE project = $1 AND number = $2 AND title = $7 AND labels = $8 AND body = $9
+         RETURNING number`,
+        [
+          project,
+          number,
+          next.title,
+          JSON.stringify(next.labels),
+          next.body,
+          now().toISOString(),
+          expected.title,
+          JSON.stringify(expected.labels),
+          expected.body,
+        ],
+      )
+      if (rows.length === 0) throw new Error(`#${number} changed since this form was opened`)
     },
   }
 }

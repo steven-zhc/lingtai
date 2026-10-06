@@ -315,7 +315,7 @@ describe('lingtai ticket new / edit (#386)', () => {
     expect((await tickets.getIssue(1)).title).toBe('untriaged')
   })
 
-  it('new does nothing and discards the file when the form is quit unchanged', async () => {
+  it('new does nothing and keeps the file when the form is quit unchanged', async () => {
     let createCalled = false
     const fake = fakeEdit((initial) => initial)
     const reading: TicketReading = {
@@ -334,8 +334,11 @@ describe('lingtai ticket new / edit (#386)', () => {
     const { log, lines } = sink()
     expect(await ticketNew({ project: 'p' }, log, reading)).toBe(0)
     expect(lines[0]).toContain('no change')
+    expect(lines[0]).toContain('/fake/')
     expect(createCalled).toBe(false)
-    expect(fake.discards).toBe(1)
+    // Not discarded: a non-blocking editor would still have the person typing
+    // into this path (#386 round 2).
+    expect(fake.discards).toBe(0)
   })
 
   it('new refuses an empty title and keeps the file, even once the body was filled in', async () => {
@@ -427,13 +430,14 @@ describe('lingtai ticket new / edit (#386)', () => {
     const { log, lines } = sink()
     expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(0)
     expect(lines[0]).toContain('no change')
-    expect(fake.discards).toBe(1)
+    expect(lines[0]).toContain('/fake/')
+    expect(fake.discards).toBe(0)
 
     const after = await tickets.getIssue(opened.number)
     expect(after.body).toBe('steady body\n\nFinding: x\n')
   })
 
-  it('edit reports which fields already landed when a later write throws, and keeps the file', async () => {
+  it('edit keeps the file and lands nothing when the write throws', async () => {
     const tickets = dbTickets(freshSql(), 'p')
     const opened = await tickets.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
     const fake = fakeEdit('new title\nlabels: bug\n\nnew body\n')
@@ -442,7 +446,7 @@ describe('lingtai ticket new / edit (#386)', () => {
       recipeFor: async () => recipeFrom(DB_YAML),
       ticketsFor: async () => ({
         ...tickets,
-        updateBody: async () => {
+        updateFields: async () => {
           throw new Error('connection dropped')
         },
       }),
@@ -452,12 +456,12 @@ describe('lingtai ticket new / edit (#386)', () => {
     const { log, lines } = sink()
     expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(1)
     expect(lines[0]).toContain('connection dropped')
-    expect(lines[0]).toContain('title')
-    expect(lines[0]).toContain('already written')
     expect(fake.discards).toBe(0)
 
+    // The title and the body are written together in one statement
+    // (`updateFields`), so a throw there lands neither.
     const after = await tickets.getIssue(opened.number)
-    expect(after.title).toBe('new title')
+    expect(after.title).toBe('old title')
     expect(after.body).toBe('old body')
   })
 
@@ -465,18 +469,24 @@ describe('lingtai ticket new / edit (#386)', () => {
     const tickets = dbTickets(freshSql(), 'p')
     const opened = await tickets.createIssue({ title: 'old title', body: 'old body', labels: ['bug'] })
     const fake = fakeEdit('old title\nlabels: bug\n\nnew body\n')
-    let reads = 0
+    let firstRead = true
     const reading: TicketReading = {
       projects: async () => [project('p')],
       recipeFor: async () => recipeFrom(DB_YAML),
       ticketsFor: async () => ({
         ...tickets,
         async getIssue(n: number) {
-          reads++
           const row = await tickets.getIssue(n)
-          // The second read is the pre-write recheck — stand in for a second
-          // `edit` session that saved first, between this one's read and its write.
-          return reads === 1 ? row : { ...row, body: 'a second edit landed first' }
+          if (firstRead) {
+            firstRead = false
+            // A real second `edit` session, saved in full between this
+            // session's one read and its one write — not a mocked
+            // comparison, an actual write through the same store, so the
+            // refusal below comes from `updateFields`'s own compare-and-swap
+            // rather than from a second read this code no longer performs.
+            await tickets.updateBody(n, 'a second edit landed first')
+          }
+          return row
         },
       }),
       env: EDITOR_ENV,
@@ -489,7 +499,7 @@ describe('lingtai ticket new / edit (#386)', () => {
 
     const after = await tickets.getIssue(opened.number)
     expect(after.title).toBe('old title')
-    expect(after.body).toBe('old body')
+    expect(after.body).toBe('a second edit landed first')
   })
 
   it('edit does nothing when the form is quit unchanged', async () => {
@@ -506,7 +516,8 @@ describe('lingtai ticket new / edit (#386)', () => {
     const { log, lines } = sink()
     expect(await ticketEdit({ project: 'p', issue: opened.number }, log, reading)).toBe(0)
     expect(lines[0]).toContain('no change')
-    expect(fake.discards).toBe(1)
+    expect(lines[0]).toContain('/fake/')
+    expect(fake.discards).toBe(0)
 
     const after = await tickets.getIssue(opened.number)
     expect(after.title).toBe('steady')
