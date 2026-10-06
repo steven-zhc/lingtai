@@ -28,6 +28,7 @@ export {
   type ReviewIssue,
 } from './agent-action.ts'
 export { createFileAction, type FileActionDeps, type FileActionSpec, type KeptAnswer } from './file-action.ts'
+export { createKeptRunAction, type CleanAnswer, type KeptRunActionDeps, type KeptRunAnswer } from './kept-run-action.ts'
 export {
   createFileBriefAction,
   type FileBriefActionDeps,

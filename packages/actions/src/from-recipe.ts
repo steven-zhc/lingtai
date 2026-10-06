@@ -22,6 +22,7 @@ import { type AgentActionDeps, createAgentAction, createDraftAction } from './ag
 import { createFileAction, type FileActionDeps } from './file-action.ts'
 import { createFileBriefAction, type FileBriefActionDeps } from './file-brief-action.ts'
 import { createHumanAction } from './human-action.ts'
+import { createKeptRunAction, type KeptRunActionDeps } from './kept-run-action.ts'
 import { createMergeAction, type MergeActionDeps } from './merge-action.ts'
 import { createProcessAction } from './process-action.ts'
 import { createQueueAction, type QueueActionDeps } from './queue-action.ts'
@@ -133,6 +134,19 @@ export interface ActionDeps {
    * name rather than running one with no environment at all.
    */
   env?: (declared: readonly string[]) => Record<string, string>
+  /**
+   * The git port a `run:` at `implement` wraps itself in — put the worktree
+   * back to `HEAD` and commit what the command changed (`#390`).
+   *
+   * Its own dep and not a field on `env` above, because the two `run:` actions
+   * need different things from the caller: every step's needs an environment,
+   * and only `implement`'s needs a `git` binary under it to reset and commit
+   * with. Optional for the reason the others are, and absent it refuses a
+   * `run:` at `implement` by name rather than running a plain process action
+   * that commits nothing — which would make the ticket's own promise silently
+   * untrue.
+   */
+  keptRun?: KeptRunActionDeps
 }
 
 export class ActionUnavailableError extends Error {
@@ -249,7 +263,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // and read as a broken build rather than as an action built wrong.
         throw new ActionUnavailableError(action.name, kind, 'no environment resolver was supplied to actionsFromRecipe')
       }
-      return createProcessAction({
+      const inner = createProcessAction({
         name: action.name,
         run: action.run,
         timeout: action.timeout,
@@ -257,6 +271,15 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
       })
+      // **`implement` wraps and the other three do not** (`#390`): a `run:`
+      // there may not refuse (`REFUSING_STEPS`, `packages/conductor/src/pass.ts`),
+      // and what commits what it changed is `createKeptRunAction`, not the
+      // plain process action every other step runs unwrapped.
+      if (step !== 'implement') return inner
+      if (!deps.keptRun) {
+        throw new ActionUnavailableError(action.name, kind, 'no git port was supplied to actionsFromRecipe')
+      }
+      return createKeptRunAction(action.name, inner, deps.keptRun)
     }
 
     if ('agent' in action) {

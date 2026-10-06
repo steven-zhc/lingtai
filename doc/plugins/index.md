@@ -25,7 +25,7 @@ plugin is a red test rather than something somebody has to remember.
 
 | key | may be declared at | what it is for |
 |---|---|---|
-| [`run`](run.md) | `prepared` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the extension point that needs nothing declared. |
+| [`run`](run.md) | `prepared` `implement` `build` `proposed` `merge` | Runs a command. Its exit code is the verdict, and it is the extension point that needs nothing declared. |
 | [`agent`](agent.md) | `design` `implement` `review` `proposed` `merge` | Buys an agent a turn — to draft, to write, to read the diff cold, or to answer. |
 | [`file`](file.md) | `design` | Keeps the design the step made, as a file in the worktree, and answers with the path. |
 | [`file-brief`](file-brief.md) | `implement` | Reads that design back from where the `file:` kept it, and briefs the actions written after it. |
@@ -49,7 +49,7 @@ where that code is called instead. Naming a thing is not wiring it.
 
 **It is the plugin's own `at`, and it is the whole of what makes it legal.**
 There is no table of step × kind anywhere: `runPlugin.at` carries
-four keys, so a `run:` at `review` is refused when the recipe resolves — before
+five keys, so a `run:` at `review` is refused when the recipe resolves — before
 a worktree, before an agent, before any money — and the refusal says which
 steps `run:` does serve and why this pair would mean nothing
 (`whyNoKindAt` and `whyThatPair`, `packages/recipe/src/recipe.ts`).
