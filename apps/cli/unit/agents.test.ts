@@ -150,6 +150,37 @@ describe('askAgents', () => {
     })
   })
 
+  describe('a second agent: entry at steps.review is left as written', () => {
+    it('logs that it is untouched, and that it will refuse the next pass when its runtime is not signed in', async () => {
+      // Only the first `agent:` entry is ever asked about (`findAgentAction`)
+      // — the question on attempt 1 that left a second one, on a signed-out
+      // runtime, silently in place. The written recipe then fails
+      // `agentRefusal` (`conduct.ts:282`), which reads every `agent:` in the
+      // file, before the first pass even claims. This pins that the operator
+      // is told about the second entry rather than finding out from a refused
+      // pass.
+      const TWO_REVIEWERS = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n    - name: second review\n      agent: codex\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: TWO_REVIEWERS })
+      const { world, lines } = fakeWorld(['', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      if ('refused' in result) throw new Error(result.refused)
+      expect(
+        lines.some((l) => l.includes('second review') && l.includes('codex') && l.includes('not signed in here')),
+      ).toBe(true)
+      // The second entry is left exactly as written — never rewritten to the
+      // answer the first entry got.
+      expect(result.changes.some((c) => c.path.includes(1) && c.path[0] === 'steps' && c.path[1] === 'review')).toBe(
+        false,
+      )
+    })
+  })
+
   describe('the reviewer defaults to a different model', () => {
     it('with two signed in, the reviewer default is the other runtime', async () => {
       const files = mapFiles({ [PATH]: FIXTURE })
@@ -190,7 +221,15 @@ describe('askAgents', () => {
     })
 
     it('--model X on the writer does not default the reviewer model to X', async () => {
-      const files = mapFiles({ [PATH]: FIXTURE })
+      // An existing review action with no `model:` of its own, so the
+      // reviewer-model question's default is exercised through
+      // `path: [...,'model']` rather than through a whole-list `steps.review`
+      // write — the fixture used before this named no review action at all,
+      // so every write landed as `path: ['steps','review']` and `path.at(-1)`
+      // was never `'model'`: the assertion below passed whether or not the
+      // reviewer's model defaulted to the writer's.
+      const WITH_REVIEWER = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: WITH_REVIEWER })
       const { world } = fakeWorld(['', '', ''])
       const result = await askAgents(world, {
         project: 'app',

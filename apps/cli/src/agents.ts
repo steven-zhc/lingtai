@@ -94,6 +94,32 @@ export async function askAgents(
   const reviewList = await readRecipeKey(at.project, ['steps', 'review'], readOpts)
   const reviewAction = findAgentAction(reviewList)
 
+  // Only the first `agent:` entry in the list is ever rewritten below — this
+  // is the one `question()` above asks about. A second one is left exactly
+  // as written, which is silent the moment its runtime is not signed in here:
+  // `agentRefusal` (`conduct.ts:282`) reads every `agent:` in the file, so an
+  // untouched second entry on a signed-out runtime fails the very next pass.
+  // Named here, before any question, so the answer can account for it.
+  if (reviewAction && Array.isArray(reviewList)) {
+    for (let i = reviewAction.index + 1; i < reviewList.length; i++) {
+      const item = reviewList[i]
+      if (item === null || typeof item !== 'object' || !('agent' in item)) continue
+      const extraAgent = (item as Record<string, unknown>)['agent']
+      const extraName =
+        typeof (item as Record<string, unknown>)['name'] === 'string'
+          ? ((item as Record<string, unknown>)['name'] as string)
+          : `steps.review[${i}]`
+      const notSignedIn = typeof extraAgent === 'string' && !signedInIds.includes(extraAgent)
+      world.log(
+        `steps.review's "${extraName}" also names agent ${String(extraAgent)} — only the first agent: entry is ` +
+          `asked about here, so this one is left as written` +
+          (notSignedIn
+            ? `, and ${String(extraAgent)} is not signed in here: this recipe refuses on the next pass unless it is fixed by hand`
+            : ''),
+      )
+    }
+  }
+
   const writingAgent = asRuntime(
     implementAction && typeof implementAction.action['agent'] === 'string'
       ? implementAction.action['agent']

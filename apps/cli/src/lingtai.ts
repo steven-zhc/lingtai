@@ -44,10 +44,12 @@ import {
 import { BOARD_PORT, boardPort } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
+import { parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
-import { parseDuration } from '@lingtai/recipe'
+import { diskFiles, parseDuration, recipePath, setRecipe } from '@lingtai/recipe'
 
+import { askAgents } from './agents.ts'
 import { approveCommand } from './approve.ts'
 import { answerCommand, askCommand } from './ask.ts'
 import { attach } from './attach.ts'
@@ -71,6 +73,7 @@ import { envCommand } from './env.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
 import { pauseCommand } from './pause.ts'
+import { liveAsk, type QuestionWorld } from './question.ts'
 import { requeueCommand } from './requeue.ts'
 import {
   openDaemon,
@@ -81,6 +84,7 @@ import {
   restartSupervised,
 } from './restart.ts'
 import { run as runOnceCommand } from './run.ts'
+import { askRuntimes } from './runtimes.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
@@ -115,6 +119,14 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 base is — the recipe's own repo.base says that,
                                 and a --base contradicting it is refused.
                                 default: the repository's own default branch
+    --agent <claude-code|codex> which agent writes the change, instead of
+                                being asked — where the project already has a
+                                recipe. A fresh project is asked nothing here
+                                either way (#398)
+    --model <name>              the writer's model, instead of being asked
+    --reviewer <agent|none>     a cold reviewer, and which agent, or none,
+                                instead of being asked
+    --reviewer-model <name>     the reviewer's model, instead of being asked
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -365,6 +377,39 @@ async function addCommand(args: string[]): Promise<number> {
     console.error('lingtai add <owner>/<repo>')
     return 2
   }
+
+  // Which agent writes the change, and which cold-reviews it, is asked here —
+  // before `add()` resolves the recipe — because `resolveLocalRecipe` throws
+  // `AgentUnresolvedError` on a file naming no `runtime.agent` the moment more
+  // than one runtime is signed in (`#398`). An absent recipe is not created
+  // here (`doc/design/398.md`): with no file, `add()` still refuses with
+  // `RecipeMissingError` as it always has, except a flag naming an agent is
+  // refused by name rather than silently ignored.
+  const { repo } = parseSlug(slug)
+  const path = recipePath(repo)
+  const existing = await diskFiles.read(path)
+  const agentFlags = {
+    agent: flags['agent'],
+    model: flags['model'],
+    reviewer: flags['reviewer'],
+    reviewerModel: flags['reviewer-model'],
+  }
+  if (existing === null) {
+    if (Object.values(agentFlags).some((v) => v !== undefined)) {
+      console.error(`--agent needs a recipe to write into; there is none at ${path}. Nothing was written`)
+      return 1
+    }
+  } else {
+    const runtimes = await askRuntimes()
+    const world: QuestionWorld = { ask: liveAsk, log: (line) => console.log(line) }
+    const asked = await askAgents(world, { project: repo, runtimes, flags: agentFlags })
+    if ('refused' in asked) {
+      console.error(asked.refused)
+      return 1
+    }
+    await setRecipe(repo, asked.changes)
+  }
+
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
   // `named`, because a person typed it here: a recipe that contradicts `--base`
