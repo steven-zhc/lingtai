@@ -13,12 +13,19 @@
  * *staged*, not merely dirty, and an unscoped `git commit` commits every
  * staged path regardless of what `add -A` touched.
  *
- * `restore` cannot use `git reset --hard` — it takes no pathspec, so it would
- * revert `baseline` along with everything else — so it uses `git restore`
- * instead, scoped the same way as `add`. It and `git clean` are each tried
- * independently of the other's result, because `-z` on `git status` and
- * `git clean` taking no index lock are the two properties that make the
- * exclusion and the cleanup reliable even when one of them refuses.
+ * `restore` cannot use `git reset --hard` for tracked files — it takes no
+ * pathspec, so it would revert `baseline` along with everything else — so it
+ * uses `git restore` instead, scoped the same way as `add`. For what the run
+ * left *untracked*, it does not reuse that same pathspec-exclusion trick on
+ * `git clean`: `git clean -fd` treats a wholly untracked directory as one
+ * removable unit the moment any pathspec is given, `:(exclude)` included, so
+ * a baseline file inside an untracked directory would be deleted along with
+ * the directory around it. Instead `restore` asks `git status` again — which,
+ * like `baseline()`, only ever names individual files — and cleans exactly
+ * the literal paths that are not `baseline`'s, with no pathspec and no `-d`.
+ * `git restore`, `git status` and `git clean` are each tried independently of
+ * the others' results, because none of `git status` and `git clean` takes the
+ * index lock `git restore` does.
  */
 import { Either } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -59,20 +66,20 @@ describe('baseline reads what is already dirty, before the command runs', () => 
 
     const baseline = await port.baseline()
 
-    expect(baseline).toEqual(new Set(['src/b.ts', 'scratch.ts']))
+    expect(baseline).toEqual({ paths: new Set(['src/b.ts', 'scratch.ts']) })
   })
 
   it('names a path with a space or non-ASCII byte without the quoting `-z` turns off', async () => {
     // Without `-z`, `git status` would print `?? "new scratch.ts"` — quotes
     // and all — and that quoted text would never match the real file as a
-    // `:(exclude)` pathspec. `-z` never quotes, so the fixture here is the raw
-    // path `git` actually hands back.
+    // literal path or a `:(exclude)` pathspec. `-z` never quotes, so the
+    // fixture here is the raw path `git` actually hands back.
     const { git } = fakeGit({ status: Either.right('?? new scratch.ts\0') })
     const port = keptRunPort({ ...base, git })
 
     const baseline = await port.baseline()
 
-    expect(baseline).toEqual(new Set(['new scratch.ts']))
+    expect(baseline).toEqual({ paths: new Set(['new scratch.ts']) })
   })
 
   it('skips the original path of a rename or copy, which names nothing to exclude today', async () => {
@@ -81,14 +88,14 @@ describe('baseline reads what is already dirty, before the command runs', () => 
 
     const baseline = await port.baseline()
 
-    expect(baseline).toEqual(new Set(['src/new.ts', 'scratch.ts']))
+    expect(baseline).toEqual({ paths: new Set(['src/new.ts', 'scratch.ts']) })
   })
 
-  it('answers empty rather than throwing when `git status` itself refuses', async () => {
+  it('answers `unreadable` rather than throwing or claiming an empty tree, when `git status` itself refuses', async () => {
     const { git } = fakeGit({ status: Either.left({ detail: 'not a git repository' }) })
     const port = keptRunPort({ ...base, git })
 
-    await expect(port.baseline()).resolves.toEqual(new Set())
+    await expect(port.baseline()).resolves.toEqual({ unreadable: 'not a git repository' })
   })
 })
 
@@ -196,9 +203,9 @@ describe('keep commits what a run changed, and never what was already dirty', ()
   })
 })
 
-describe('restore puts tracked files back and removes what the run left untracked', () => {
-  it('restores from HEAD, then cleans, both excluding the planted env file and the baseline', async () => {
-    const { git, calls } = fakeGit({ restore: Either.right(''), clean: Either.right('') })
+describe('restore puts tracked files back, and removes only the literal untracked paths the run left', () => {
+  it('restores from HEAD excluding the baseline, then asks `git status` again rather than a scoped `git clean`', async () => {
+    const { git, calls } = fakeGit({ restore: Either.right(''), status: Either.right('?? leftover.txt\0') })
     const port = keptRunPort({ ...base, git })
 
     const answer = await port.restore(new Set(['scratch.ts']))
@@ -206,43 +213,93 @@ describe('restore puts tracked files back and removes what the run left untracke
     expect(answer).toEqual({ ok: true })
     expect(calls).toEqual([
       ['restore', '--source=HEAD', '--staged', '--worktree', '--', '.', ':(exclude).env.local', ':(exclude)scratch.ts'],
-      ['clean', '-fd', '--', '.', ':(exclude).env.local', ':(exclude)scratch.ts'],
+      ['status', '--porcelain=v1', '--untracked-files=all', '-z', '--', '.', ':(exclude).env.local'],
+      ['clean', '-f', '--', 'leftover.txt'],
     ])
   })
 
-  it('still cleans what the run left untracked when the restore itself refuses', async () => {
-    // `git clean` takes no index lock, unlike `git restore`, so a stale
-    // `.git/index.lock` that refuses the restore must not stop this from
-    // removing whatever the run left on disk.
-    const { git, calls } = fakeGit({ restore: Either.left({ detail: 'index.lock exists' }), clean: Either.right('') })
+  it('cleans every literal path the run left, even ones inside the same formerly-untracked directory as a baseline file', async () => {
+    // The scenario a scoped `git clean -fd` gets wrong: `baseline` names one
+    // file inside `scratchdir/`, and the run adds a second file in the same
+    // directory. `git status --untracked-files=all` names each file
+    // individually rather than the directory, which is what makes it safe to
+    // clean one and spare the other without ever asking git to reason about
+    // the directory as a whole.
+    const { git, calls } = fakeGit({
+      restore: Either.right(''),
+      status: Either.right('?? scratchdir/k.ts\0?? scratchdir/other.ts\0'),
+    })
+    const port = keptRunPort({ ...base, git })
+
+    const answer = await port.restore(new Set(['scratchdir/k.ts']))
+
+    expect(answer).toEqual({ ok: true })
+    const clean = calls.find((args) => args[0] === 'clean')!
+    // Literal paths only — never `.`, never `-d`, never a pathspec that
+    // could be read as "this whole directory".
+    expect(clean).toEqual(['clean', '-f', '--', 'scratchdir/other.ts'])
+  })
+
+  it('calls no `git clean` at all when nothing is left over', async () => {
+    const { git, calls } = fakeGit({ restore: Either.right(''), status: Either.right('?? scratch.ts\0') })
+    const port = keptRunPort({ ...base, git })
+
+    const answer = await port.restore(new Set(['scratch.ts']))
+
+    expect(answer).toEqual({ ok: true })
+    expect(calls.some((args) => args[0] === 'clean')).toBe(false)
+  })
+
+  it('still asks `git status` and cleans what the run left untracked when the restore itself refuses', async () => {
+    // Neither `git status` nor `git clean` takes the index lock `git
+    // restore` does, so a stale `.git/index.lock` that refuses the restore
+    // must not stop this from removing whatever the run left on disk.
+    const { git, calls } = fakeGit({
+      restore: Either.left({ detail: 'index.lock exists' }),
+      status: Either.right('?? leftover.txt\0'),
+    })
     const port = keptRunPort({ ...base, git })
 
     const answer = await port.restore(new Set())
 
     expect(answer).toEqual({ failed: 'git restore refused it: index.lock exists' })
-    expect(calls.some((args) => args[0] === 'clean')).toBe(true)
+    expect(calls.find((args) => args[0] === 'clean')).toEqual(['clean', '-f', '--', 'leftover.txt'])
   })
 
-  it('answers `failed` when the restore succeeds but the clean refuses', async () => {
-    const { git } = fakeGit({ restore: Either.right(''), clean: Either.left({ detail: 'permission denied' }) })
+  it('answers `failed` when the restore succeeds but the post-run status itself refuses', async () => {
+    const { git } = fakeGit({ restore: Either.right(''), status: Either.left({ detail: 'not a git repository' }) })
     const port = keptRunPort({ ...base, git })
 
     const answer = await port.restore(new Set())
 
-    expect(answer).toEqual({ failed: 'git clean refused it: permission denied' })
+    expect(answer).toEqual({ failed: 'the untracked files could not be read or removed: not a git repository' })
   })
 
-  it('names both refusals when neither step completes', async () => {
+  it('answers `failed` when the restore and status succeed but the clean itself refuses', async () => {
+    const { git } = fakeGit({
+      restore: Either.right(''),
+      status: Either.right('?? leftover.txt\0'),
+      clean: Either.left({ detail: 'permission denied' }),
+    })
+    const port = keptRunPort({ ...base, git })
+
+    const answer = await port.restore(new Set())
+
+    expect(answer).toEqual({ failed: 'the untracked files could not be read or removed: permission denied' })
+  })
+
+  it('names both refusals when neither the restore nor the status/clean pair completes', async () => {
     const { git } = fakeGit({
       restore: Either.left({ detail: 'index.lock exists' }),
-      clean: Either.left({ detail: 'index.lock exists' }),
+      status: Either.left({ detail: 'index.lock exists' }),
     })
     const port = keptRunPort({ ...base, git })
 
     const answer = await port.restore(new Set())
 
     expect(answer).toEqual({
-      failed: 'git restore refused it: index.lock exists; git clean refused it: index.lock exists',
+      failed:
+        'git restore refused it: index.lock exists; the untracked files could not be read or removed: index.lock exists',
     })
   })
 })

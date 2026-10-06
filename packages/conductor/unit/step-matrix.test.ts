@@ -227,7 +227,7 @@ const EVERY_DEP: ActionDeps = {
   // rather than merely judging (`#390`). Built, never run — same as every
   // other entry in this object.
   keptRun: {
-    baseline: async () => new Set(),
+    baseline: async () => ({ paths: new Set() }),
     keep: async () => ({ clean: true }),
     restore: async () => ({ ok: true }),
   },

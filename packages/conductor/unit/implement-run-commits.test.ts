@@ -47,7 +47,7 @@ function fakePort(answer: KeptRunAnswer): KeptRunActionDeps & { calls: string[] 
   return {
     calls,
     async baseline() {
-      return new Set()
+      return { paths: new Set() }
     },
     async keep() {
       calls.push('keep')

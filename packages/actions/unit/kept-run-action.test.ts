@@ -2,9 +2,12 @@
  * `createKeptRunAction` against a fake inner action and a fake port — `#390`.
  *
  * `implement` is not one of `REFUSING_STEPS` (`packages/conductor/src/pass.ts`),
- * so the one thing every case here has to show is that the wrapper never
- * reports `failed`: a failing command is a reason to restore and say so, never
- * a reason to refuse.
+ * so the command's own exit code is never turned into a `failed` verdict here:
+ * a failing command is a reason to restore and say so, never a reason to
+ * refuse. What *does* still answer `failed` is the port's own git plumbing —
+ * an unreadable baseline, or a restore that could not finish — because that is
+ * not a judgement about the diff, it is the step having no safe tree to leave
+ * `build` with.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -23,7 +26,7 @@ function port(answer: KeptRunAnswer): KeptRunActionDeps & { readonly calls: stri
     calls,
     async baseline() {
       calls.push('baseline')
-      return new Set()
+      return { paths: new Set() }
     },
     async keep() {
       calls.push('keep')
@@ -36,7 +39,7 @@ function port(answer: KeptRunAnswer): KeptRunActionDeps & { readonly calls: stri
   }
 }
 
-describe('a run at implement never reports failed', () => {
+describe('a run at implement never turns the command’s own exit code into failed', () => {
   it('commits what changed, and carries the new head', async () => {
     const deps = port({ committed: 'c'.repeat(40) })
     const action = createKeptRunAction('format', inner({ verdict: 'passed', evidence: 'pnpm fmt', findings: [] }), deps)
@@ -88,12 +91,43 @@ describe('a run at implement never reports failed', () => {
     expect(result.evidence).toContain('git commit refused it')
     expect(deps.calls).toEqual(['baseline', 'keep', 'restore'])
   })
+})
 
-  it('says so, rather than claiming it, when `restore` cannot finish the job', async () => {
+describe('the port’s own git plumbing failing is answered as `failed`, not swallowed into a pass', () => {
+  it('refuses by name, running neither the command nor keep or restore, when baseline is unreadable', async () => {
     const calls: string[] = []
     const deps: KeptRunActionDeps = {
       async baseline() {
-        return new Set()
+        calls.push('baseline')
+        return { unreadable: 'not a git repository' }
+      },
+      async keep() {
+        calls.push('keep')
+        return { clean: true }
+      },
+      async restore() {
+        calls.push('restore')
+        return { ok: true }
+      },
+    }
+    const action = createKeptRunAction('format', inner({ verdict: 'passed', evidence: 'pnpm fmt', findings: [] }), deps)
+
+    const result = await action.run(context)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.evidence).toContain('not a git repository')
+    expect(result).not.toHaveProperty('head')
+    // Neither `keep` nor `restore` is safe without a baseline — running
+    // either risks sweeping an agent's leftovers into the commit, or
+    // deleting them.
+    expect(calls).toEqual(['baseline'])
+  })
+
+  it('answers `failed` when the commit was refused and the restore after it also could not finish', async () => {
+    const calls: string[] = []
+    const deps: KeptRunActionDeps = {
+      async baseline() {
+        return { paths: new Set() }
       },
       async keep() {
         calls.push('keep')
@@ -101,17 +135,41 @@ describe('a run at implement never reports failed', () => {
       },
       async restore() {
         calls.push('restore')
-        return { failed: 'git reset refused it: index.lock exists' }
+        return { failed: 'git restore refused it: index.lock exists' }
       },
     }
     const action = createKeptRunAction('format', inner({ verdict: 'passed', evidence: 'pnpm fmt', findings: [] }), deps)
 
     const result = await action.run(context)
 
-    expect(result.verdict).toBe('passed')
+    expect(result.verdict).toBe('failed')
     expect(result.evidence).toContain('git commit refused it')
-    expect(result.evidence).toContain('the tree was not fully restored')
     expect(result.evidence).toContain('index.lock exists')
     expect(calls).toEqual(['keep', 'restore'])
+  })
+
+  it('answers `failed` when the command failed and the restore after it could not finish', async () => {
+    const deps: KeptRunActionDeps = {
+      async baseline() {
+        return { paths: new Set() }
+      },
+      async keep() {
+        throw new Error('must not be called — the command failed, so there is nothing to commit')
+      },
+      async restore() {
+        return { failed: 'git restore refused it: index.lock exists' }
+      },
+    }
+    const action = createKeptRunAction(
+      'format',
+      inner({ verdict: 'failed', evidence: 'pnpm fmt exited 1', findings: [] }),
+      deps,
+    )
+
+    const result = await action.run(context)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.evidence).toContain('pnpm fmt exited 1')
+    expect(result.evidence).toContain('index.lock exists')
   })
 })

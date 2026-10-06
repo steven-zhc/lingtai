@@ -9,14 +9,24 @@
  * `packages/conductor/src/pass.ts`), so a formatter that exits non-zero cannot
  * become a refusal the step has no way to make.
  *
- * **So this action never returns `failed`.** When the inner action passes, the
- * port commits whatever it changed (`KeptRunActionDeps.keep`); when it does
- * not — a non-zero exit, a timeout, or the commit itself refused — the port
- * puts the tracked files back to `HEAD` (`KeptRunActionDeps.restore`) and the
- * step still passes, with the failure first in `evidence`. `build`'s own copy
- * of the same command is the backstop that catches it, at the cost of the one
- * fix round 0057 §2 already prices — this is a second chance for that gate to
- * never fire, not a second gate.
+ * **The command's own exit code never becomes a `failed` verdict.** When the
+ * inner action passes, the port commits whatever it changed
+ * (`KeptRunActionDeps.keep`); when it does not — a non-zero exit, a timeout, or
+ * the commit itself refused — the port puts the tracked files back to `HEAD`
+ * (`KeptRunActionDeps.restore`) and the step still passes, with the failure
+ * first in `evidence`. `build`'s own copy of the same command is the backstop
+ * that catches it, at the cost of the one fix round 0057 §2 already prices —
+ * this is a second chance for that gate to never fire, not a second gate.
+ *
+ * **A `failed` verdict is still how this action answers when it cannot tell
+ * what is safe to touch, or cannot put what it touched back.** `baseline()`
+ * answering `unreadable`, or `restore()` answering `{ failed }`, are both the
+ * port's own git plumbing failing rather than a judgement about the diff — a
+ * stale `.git/index.lock` is the ordinary way the second happens. Neither is
+ * absorbed the way the command's exit code is: `implement` is not a refusing
+ * step, so `endingOf` turns a `failed` here into `did-not-finish` and the pass
+ * stops for a person, rather than letting `build` judge a tree nobody can
+ * vouch for (`#390`).
  *
  * **What the command found dirty, it must leave alone.** The implementing
  * agent may have left the worktree carrying uncommitted work it decided
@@ -48,6 +58,15 @@ export type KeptRunAnswer =
 export type RestoreAnswer = { readonly ok: true } | { readonly failed: string }
 
 /**
+ * What is already dirty or untracked before the command runs, or why that
+ * could not be told. An `unreadable` answer is read the same as a `failed`
+ * `restore` — the action has no way to tell the agent's own leftovers apart
+ * from what the command is about to do, so it refuses rather than guessing
+ * and risking either a sweep into the commit or a deletion (`#390`).
+ */
+export type BaselineAnswer = { readonly paths: ReadonlySet<string> } | { readonly unreadable: string }
+
+/**
  * The port, as the only thing this action needs from its caller.
  *
  * A method on an object rather than a bare function, so the shape matches
@@ -55,16 +74,11 @@ export type RestoreAnswer = { readonly ok: true } | { readonly failed: string }
  */
 export interface KeptRunActionDeps {
   /** What is already dirty or untracked before the command runs — `keep` and `restore` leave every one of these alone. */
-  baseline(): Promise<ReadonlySet<string>>
+  baseline(): Promise<BaselineAnswer>
   /** Stages everything but `baseline`, and commits it where there is a difference from `HEAD`. */
   keep(spec: { readonly name: string }, baseline: ReadonlySet<string>): Promise<KeptRunAnswer>
   /** Puts tracked files back to `HEAD` and removes what the run left untracked — called only when the run did not pass. */
   restore(baseline: ReadonlySet<string>): Promise<RestoreAnswer>
-}
-
-/** The tail every evidence string carries once `restore` has run, naming it when `restore` itself did not finish the job. */
-function restoreCaveat(restored: RestoreAnswer): string {
-  return 'failed' in restored ? ` — the tree was not fully restored (${restored.failed})` : ''
 }
 
 export function createKeptRunAction(name: string, inner: Action, deps: KeptRunActionDeps): Action {
@@ -74,21 +88,41 @@ export function createKeptRunAction(name: string, inner: Action, deps: KeptRunAc
 
     async run(context: ActionContext): Promise<ActionResult> {
       const baseline = await deps.baseline()
-      const ran = await inner.run(context)
-
-      if (ran.verdict !== 'passed') {
-        const restored = await deps.restore(baseline)
+      // **Refused by name rather than guessed at.** Neither `keep` nor
+      // `restore` is safe to call without knowing what was already dirty:
+      // `keep` would sweep an agent's abandoned work into the commit, and
+      // `restore` would delete it outright. `implement` is not a refusing
+      // step, so this is `failed` rather than `passed` — it stops the pass
+      // for a person instead of quietly proceeding on a tree nobody checked.
+      if ('unreadable' in baseline) {
         return {
-          verdict: 'passed',
-          evidence:
-            `${ran.evidence} — nothing committed, the tree is back where \`${name}\` found it; ` +
-            "`build` judges the agent's commit as it stands" +
-            restoreCaveat(restored),
+          verdict: 'failed',
+          evidence: `git status refused it: ${baseline.unreadable} — \`${name}\` did not run, nothing committed`,
           findings: [],
         }
       }
 
-      const kept = await deps.keep({ name }, baseline)
+      const ran = await inner.run(context)
+
+      if (ran.verdict !== 'passed') {
+        const restored = await deps.restore(baseline.paths)
+        if ('failed' in restored) {
+          return {
+            verdict: 'failed',
+            evidence: `${ran.evidence} — the tree could not be restored (${restored.failed}); build must not judge it`,
+            findings: [],
+          }
+        }
+        return {
+          verdict: 'passed',
+          evidence:
+            `${ran.evidence} — nothing committed, the tree is back where \`${name}\` found it; ` +
+            "`build` judges the agent's commit as it stands",
+          findings: [],
+        }
+      }
+
+      const kept = await deps.keep({ name }, baseline.paths)
       if ('committed' in kept) {
         return {
           verdict: 'passed',
@@ -101,13 +135,21 @@ export function createKeptRunAction(name: string, inner: Action, deps: KeptRunAc
         return { verdict: 'passed', evidence: `${ran.evidence} — nothing to commit`, findings: [] }
       }
 
-      const restored = await deps.restore(baseline)
+      const restored = await deps.restore(baseline.paths)
+      if ('failed' in restored) {
+        return {
+          verdict: 'failed',
+          evidence:
+            `${ran.evidence} — the commit was refused (${kept.notKept}), and the tree could not be restored ` +
+            `(${restored.failed}); build must not judge it`,
+          findings: [],
+        }
+      }
       return {
         verdict: 'passed',
         evidence:
           `${ran.evidence} — the commit was refused (${kept.notKept}); nothing committed, the tree is back ` +
-          `where \`${name}\` found it` +
-          restoreCaveat(restored),
+          `where \`${name}\` found it`,
         findings: [],
       }
     },

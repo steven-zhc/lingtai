@@ -1813,11 +1813,20 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
  * **Where the step's own plugins left the worktree**, or nothing where none of
  * them moved it (`#268`).
  *
- * One kind produces it — `worktree:`, at `admit` — so the last one that said
- * anything is the answer, and there can only be one of those: `StepMap` refuses
- * a second `worktree:` at a step when the recipe resolves. Read only on the
- * passing branch, because the tree a refused pipeline was cut into is the one
- * the arrival already carries: a cut that did not happen is
+ * At `admit`, one kind produces it — `worktree:` — and there can only be one
+ * of those: `StepMap` refuses a second `worktree:` at a step when the recipe
+ * resolves. **Since `#390`, `implement` is not that simple a step.** It
+ * carries two head-producing kinds in sequence, `agent:` (`createWorkAction`)
+ * and `run:` (`createKeptRunAction`), and nothing at resolve time refuses that
+ * pair — `implement: [agent, run]` is exactly the shape the design asks for.
+ * What stands in for a uniqueness rule there is the function below: *the last
+ * one that said anything is the answer*, so a `run:` written after the agent
+ * wins over the agent's own commit, and a `run:` written before it (finding
+ * nothing yet to commit) answers nothing and loses to the agent's. Ordering in
+ * the recipe is what decides it, not a count enforced anywhere else.
+ *
+ * Read only on the passing branch, because the tree a refused pipeline was cut
+ * into is the one the arrival already carries: a cut that did not happen is
  * `did-not-finish`, and its head is the base the pass came in on.
  *
  * Spread rather than assigned, so that *the tree did not move* stays an absent

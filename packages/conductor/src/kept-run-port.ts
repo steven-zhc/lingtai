@@ -1,4 +1,4 @@
-import type { KeptRunActionDeps, KeptRunAnswer, RestoreAnswer } from '@lingtai/actions'
+import type { BaselineAnswer, KeptRunActionDeps, KeptRunAnswer, RestoreAnswer } from '@lingtai/actions'
 /**
  * **The `run` at `implement`'s port into git** — the commit `createKeptRunAction`
  * is handed, lifted out into its own module for `file-port.ts`'s reason: so a
@@ -33,19 +33,29 @@ import type { KeptRunActionDeps, KeptRunAnswer, RestoreAnswer } from '@lingtai/a
  *   so `stepsOn` in `@lingtai/domain` keeps reading every verdict after this
  *   one off the run's own stream rather than filtering them out.
  *
- * `restore` is `git restore --source=HEAD --staged --worktree` and then
- * `git clean -fd`, both scoped away from the planted env file and from
- * `baseline` — the design this implements
- * ([doc/design/390.md](../../../doc/design/390.md) §*Failure*) calls for
- * exactly this pair, and the first is `restore` rather than `reset --hard`
- * because `--hard` takes no pathspec at all: scoping it to "everything but
- * `baseline`" is the only way to put the run's own changes back without
- * reverting a baseline file this port never touched. The two steps are tried
- * independently rather than one gating the other — `git clean` does not take
- * the index lock `git restore` does, so a stale `.git/index.lock` that fails
- * the restore still lets the clean remove what the run left untracked. Either
- * step's refusal is answered, not swallowed: `restore` returns `{ failed }`
- * rather than claiming a tree it did not actually put back.
+ * `restore` is `git restore --source=HEAD --staged --worktree`, scoped away
+ * from the planted env file and from `baseline`, for tracked content — the
+ * first is `restore` rather than `reset --hard` because `--hard` takes no
+ * pathspec at all: scoping it to "everything but `baseline`" is the only way
+ * to put the run's own changes back without reverting a baseline file this
+ * port never touched.
+ *
+ * **What the run left untracked is not removed by a scoped `git clean`.**
+ * `git clean -fd` treats a wholly untracked *directory* as one removable unit
+ * once any pathspec is given at all, `:(exclude)` included — verified on git
+ * 2.50: `git clean -fd -- . ':(exclude)d/keep.txt'` prints `Removing d/` and
+ * takes the excluded file with it, because the exclusion is checked against
+ * the directory as a whole rather than recursed into. So instead this reads
+ * `git status --untracked-files=all` again, which — like `baseline()` —
+ * never names a directory, only the individual files inside it, and cleans
+ * exactly the ones that are not in `baseline` by literal path, with no
+ * pathspec wildcard and no `-d` in that call at all: a literal file path
+ * needs neither. The two are tried independently rather than one gating the
+ * other — `git clean` does not take the index lock `git restore` does, so a
+ * stale `.git/index.lock` that fails the restore still lets the clean remove
+ * what the run left untracked. Either step's refusal is answered, not
+ * swallowed: `restore` returns `{ failed }` rather than claiming a tree it
+ * did not actually put back.
  *
  * ## What `baseline` protects, and why
  *
@@ -53,11 +63,11 @@ import type { KeptRunActionDeps, KeptRunAnswer, RestoreAnswer } from '@lingtai/a
  * work it decided against — an edit to a file it never staged, a scratch file
  * it never tracked. That is not this action's to touch, and it is not the
  * command's output either: `git add -A` with no exclusion for it would sweep
- * it into the command's commit, and `git clean -fd` with no exclusion for it
- * would delete it outright the moment the command fails. `baseline()` is read
+ * it into the command's commit, and cleaning with no regard for it would
+ * delete it outright the moment the command fails. `baseline()` is read
  * *before* the command runs, so both `keep` and `restore` can tell "already
  * here" apart from "the command's doing" and leave the former alone in either
- * direction — committed or deleted.
+ * direction — committed, or left out of what `restore` cleans.
  *
  * ## Why the planted env file is excluded
  *
@@ -65,10 +75,13 @@ import type { KeptRunActionDeps, KeptRunAnswer, RestoreAnswer } from '@lingtai/a
  * (`packages/repo/src/worktree.ts`), mode `0600`, and nothing adds it to
  * `.git/info/exclude`. A `git add -A` with no exclusion would commit it the
  * moment a managed repository's own `.gitignore` does not cover it, and the merge
- * lane would land the secrets it carries — and a `git clean -fd` with no
- * exclusion would delete that same untracked file. Both are pathspec
- * exclusions rather than `.gitignore` entries, because the worktree is not
- * this port's to edit.
+ * lane would land the secrets it carries — and naming it in either `git status`
+ * call would offer it up to `restore`'s clean the same way a `baseline` path
+ * is. The pathspec exclusion on `git status` is what keeps it out of both:
+ * neither `baseline()` nor `restore`'s own status read ever reports it, so
+ * nothing downstream has to remember to spare it a second time. A
+ * `.gitignore` entry is not the alternative, because the worktree is not this
+ * port's to edit.
  *
  * ## What it is allowed to know, and what it is not
  *
@@ -85,9 +98,9 @@ export type GitHere = (args: string[]) => Promise<Either.Either<string, { readon
 export interface KeptRunPortOptions {
   git: GitHere
   /**
-   * `recipe.env.plantAt` — the one path `git add -A` and `git clean -fd` must
-   * never touch, so the planted credentials never reach a commit this port
-   * makes, and never get deleted by its restore either.
+   * `recipe.env.plantAt` — the one path `git add -A` and every `git status`
+   * this port reads must never name, so the planted credentials never reach a
+   * commit this port makes, and never turn up in what `restore` cleans either.
    */
   plantAt: string
   /** The ticket's ref, for the commit message — `FileActionDeps.issue`'s own closure. */
@@ -105,36 +118,41 @@ function excluding(paths: Iterable<string>): string[] {
   return [...paths].map((path) => `:(exclude)${path}`)
 }
 
+/**
+ * The literal paths named by a `git status --porcelain=v1 --untracked-files=all
+ * -z` answer — never a directory, only the files inside it, which is what makes
+ * this safe to reuse for cleaning without `git clean`'s own directory-unit
+ * behaviour.
+ */
+function pathsFromStatus(raw: string): string[] {
+  // `-z`: without it, `git status` C-quotes a path that carries a space or a
+  // non-ASCII byte (`"new scratch.ts"`, quotes included), and that quoted text
+  // then fails to match the real file when reused as a literal path or a
+  // `:(exclude)` pathspec. `-z` prints every path verbatim, NUL-terminated.
+  const tokens = raw.split('\0').filter((token) => token.length > 0)
+  const paths: string[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!
+    paths.push(token.slice(3))
+    // A rename or copy prints two NUL-terminated paths — the entry's own,
+    // then the path it was renamed or copied from. The second is not a path
+    // in the worktree today, so it names nothing to exclude or clean.
+    if (token[0] === 'R' || token[0] === 'C') i++
+  }
+  return paths
+}
+
 export function keptRunPort(options: KeptRunPortOptions): KeptRunActionDeps {
   const { git, plantAt, issue, recordCompletion } = options
 
+  const status = () =>
+    git(['status', '--porcelain=v1', '--untracked-files=all', '-z', '--', '.', `:(exclude)${plantAt}`])
+
   return {
-    async baseline(): Promise<ReadonlySet<string>> {
-      // `-z`: without it, `git status` C-quotes a path that carries a space or
-      // a non-ASCII byte (`"new scratch.ts"`, quotes included), and that quoted
-      // text then fails to match the real file when reused as a `:(exclude)`
-      // pathspec. `-z` prints every path verbatim, NUL-terminated.
-      const status = await git([
-        'status',
-        '--porcelain=v1',
-        '--untracked-files=all',
-        '-z',
-        '--',
-        '.',
-        `:(exclude)${plantAt}`,
-      ])
-      if (Either.isLeft(status)) return new Set()
-      const tokens = status.right.split('\0').filter((token) => token.length > 0)
-      const paths = new Set<string>()
-      for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i]!
-        paths.add(token.slice(3))
-        // A rename or copy prints two NUL-terminated paths — the entry's own,
-        // then the path it was renamed or copied from. The second is not a
-        // path in the worktree today, so it names nothing to exclude.
-        if (token[0] === 'R' || token[0] === 'C') i++
-      }
-      return paths
+    async baseline(): Promise<BaselineAnswer> {
+      const answer = await status()
+      if (Either.isLeft(answer)) return { unreadable: answer.left.detail }
+      return { paths: new Set(pathsFromStatus(answer.right)) }
     },
 
     async keep(spec, baseline): Promise<KeptRunAnswer> {
@@ -173,18 +191,37 @@ export function keptRunPort(options: KeptRunPortOptions): KeptRunActionDeps {
       // back to `HEAD`, excluding the planted env file and every baseline
       // path, in both the index and the worktree.
       const restored = await git(['restore', '--source=HEAD', '--staged', '--worktree', '--', '.', ...exclude])
-      // Tried regardless of whether the restore above succeeded: `git clean`
-      // never touches the index, so a stale `.git/index.lock` that refuses the
-      // restore still lets this remove what the run left untracked.
-      const cleaned = await git(['clean', '-fd', '--', '.', ...exclude])
+
+      // Asked regardless of whether the restore above succeeded, and tried
+      // independently of it below: a stale `.git/index.lock` refuses
+      // `git restore` without refusing `git status` or `git clean`, neither of
+      // which takes that lock.
+      //
+      // **Not a scoped `git clean -fd`.** That call treats a wholly untracked
+      // directory as one removable unit the moment any pathspec is given —
+      // `:(exclude)` included — so a baseline file inside an untracked
+      // directory would be deleted along with the directory that carries it
+      // (`#390`). Asking `git status` again instead names every untracked file
+      // individually, the same way `baseline()` does, and this cleans exactly
+      // the literal paths that are not `baseline`'s own — no pathspec
+      // wildcard, no `-d`, and so no directory-unit removal to fall into.
+      const after = await status()
+      const leftover = Either.isLeft(after) ? null : pathsFromStatus(after.right).filter((path) => !baseline.has(path))
+      const cleaned =
+        leftover === null
+          ? after
+          : leftover.length === 0
+            ? Either.right('')
+            : await git(['clean', '-f', '--', ...leftover])
 
       if (Either.isLeft(restored) && Either.isLeft(cleaned)) {
         return {
-          failed: `git restore refused it: ${restored.left.detail}; git clean refused it: ${cleaned.left.detail}`,
+          failed: `git restore refused it: ${restored.left.detail}; the untracked files could not be read or removed: ${cleaned.left.detail}`,
         }
       }
       if (Either.isLeft(restored)) return { failed: `git restore refused it: ${restored.left.detail}` }
-      if (Either.isLeft(cleaned)) return { failed: `git clean refused it: ${cleaned.left.detail}` }
+      if (Either.isLeft(cleaned))
+        return { failed: `the untracked files could not be read or removed: ${cleaned.left.detail}` }
 
       return { ok: true }
     },

@@ -153,17 +153,25 @@ export const runPlugin = definePlugin('run', {
    * asking the implementing agent to remember it, or paying a whole fix round
    * for what a formatter does in a second.
    *
-   * **It cannot refuse, and that is `implement`'s own rule and not a weaker
-   * one written for this key.** `implement` is not one of `REFUSING_STEPS`
-   * (`pass.ts:108`), so a command that exits non-zero here is not a judgement
-   * about the diff — it has nowhere to put a refusal, the way `build`'s copy of
-   * this same command does. So the wrapper never reports `failed`: a command
-   * that fails leaves the tree exactly where the agent's own commit left it —
-   * `git reset --hard HEAD`, nothing committed, nothing staged carried forward —
-   * and the step passes with the failure first in its evidence. `build`'s own
-   * `pnpm fmt:check` is the backstop that catches it, at the cost of the one
-   * fix round 0057 §2 already prices. Nothing here is a second gate; it is a
-   * second chance for the first one to never fire.
+   * **The command's own exit code cannot refuse, and that is `implement`'s own
+   * rule and not a weaker one written for this key.** `implement` is not one of
+   * `REFUSING_STEPS` (`pass.ts:108`), so a command that exits non-zero here is
+   * not a judgement about the diff — it has nowhere to put a refusal, the way
+   * `build`'s copy of this same command does. So the wrapper never turns that
+   * exit code into `failed`: a command that fails is put back to a tree
+   * scoped to what the agent's own commit left — *scoped*, because the
+   * restore excludes whatever the agent left dirty or staged before the
+   * command ran, which stays exactly as the agent left it rather than being
+   * reverted; `git reset --hard HEAD` is not what runs, because `--hard` takes
+   * no pathspec and would revert that too. The step passes with the failure
+   * first in its evidence. `build`'s own `pnpm fmt:check` is the backstop that
+   * catches it, at the cost of the one fix round 0057 §2 already prices.
+   * Nothing here is a second gate; it is a second chance for the first one to
+   * never fire. **A `failed` verdict is still how the wrapper answers when its
+   * own git plumbing cannot do that restore** — a stale `.git/index.lock`, most
+   * often — because that is not the command's diff failing, it is the step
+   * having no way to tell `build` what tree it is judging; see
+   * `packages/actions/src/kept-run-action.ts`.
    */
   at: {
     prepared: notBuiltYet,

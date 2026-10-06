@@ -29,6 +29,7 @@ export {
 } from './agent-action.ts'
 export { createFileAction, type FileActionDeps, type FileActionSpec, type KeptAnswer } from './file-action.ts'
 export {
+  type BaselineAnswer,
   createKeptRunAction,
   type KeptRunActionDeps,
   type KeptRunAnswer,

@@ -6,7 +6,7 @@
 | **Write it at** | `prepared`, `build`, `implement`, `proposed`, `merge` — a red one buys a fix round only at `build`. |
 | **Needs** | `run`: the command. `timeout` defaults to `15m`; `env` defaults to `[]`, which is nothing. |
 | **Refuses** | Any other step, any field it does not declare, a `LINGTAI_*` name in `env`, a `run:` after the lane at `merge`. |
-| **Watch out** | The step decides what a red command costs: at `build` the agent gets a fix round, at `implement` it never refuses at all — it commits what it changed and leaves a refusal to `build`'s own copy of the check — and at the other three a person is asked and **no round is bought**. A `timeout` typo is not refused at resolve. |
+| **Watch out** | The step decides what a red command costs: at `build` the agent gets a fix round, at `implement` the command's own exit code never refuses — it commits what it changed and leaves a refusal to `build`'s own copy of the check — and at the other three a person is asked and **no round is bought**. `implement` still stops for a person if the wrapper's own restore cannot run (a stale lock, say) — that is the tree, not the command, failing. A `timeout` typo is not refused at resolve. |
 
 `run:` is **the extension point that needs nothing declared**: every check
 Lingtai does not make itself is one of these. It stops a change that satisfies the
@@ -35,7 +35,7 @@ red `run:` costs** — only `build` buys a round:
 |---|---|
 | `prepared` | `blocked`: no agent has run, so `implement` is not on offer. **No round bought.** |
 | `build` | Back to the agent with the error. **A fix round.** |
-| `implement` | Nothing refuses: a command written after the agent (`implement: [agent, run]`) runs after every agent run and commits what it changed onto the attempt's branch — `createKeptRunAction` in `@lingtai/actions`. `implement` may not refuse (`REFUSING_STEPS`), so a non-zero exit puts the tree back to `HEAD` and the step still passes, with the failure first in the evidence. **No round bought** — `build`'s own copy of the command is what catches it. |
+| `implement` | The command's own exit code never refuses: a command written after the agent (`implement: [agent, run]`) runs after every agent run and commits what it changed onto the attempt's branch — `createKeptRunAction` in `@lingtai/actions`. `implement` may not refuse (`REFUSING_STEPS`), so a non-zero exit puts the tree back to what the agent's commit left (excluding whatever the agent left dirty, which stays as it was) and the step still passes, with the failure first in the evidence. **No round bought** — `build`'s own copy of the command is what catches it. The one case this does stop for a person is the restore itself failing — a stale `.git/index.lock`, say — which is `did-not-finish` rather than a quiet pass, because then nobody can say what tree `build` would be judging. |
 | `proposed` | `blocked`: the router has nowhere above it to appeal to. **No round bought.** |
 | `merge` | `action-refused` is no direction a `judge:` answers: held for a person. **No round bought.** |
 
