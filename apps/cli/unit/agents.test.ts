@@ -151,17 +151,37 @@ describe('askAgents', () => {
   })
 
   describe('a second agent: entry at steps.review is left as written', () => {
-    it('logs that it is untouched, and that it will refuse the next pass when its runtime is not signed in', async () => {
+    it('refuses rather than write a recipe that fails the next pass, when the leftover entry is not signed in', async () => {
       // Only the first `agent:` entry is ever asked about (`findAgentAction`)
       // — the question on attempt 1 that left a second one, on a signed-out
       // runtime, silently in place. The written recipe then fails
       // `agentRefusal` (`conduct.ts:282`), which reads every `agent:` in the
-      // file, before the first pass even claims. This pins that the operator
-      // is told about the second entry rather than finding out from a refused
-      // pass.
+      // file, before the first pass even claims — so this must never write.
       const TWO_REVIEWERS = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n    - name: second review\n      agent: codex\n      prompt: ''\n`
       const files = mapFiles({ [PATH]: TWO_REVIEWERS })
-      const { world, lines } = fakeWorld(['', '', '', ''])
+      const { world } = fakeWorld(['', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      expect(result).toHaveProperty('refused')
+      const refusal = (result as { refused: string }).refused
+      expect(refusal).toContain('second review')
+      expect(refusal).toContain('codex')
+      expect(refusal).toContain('not signed in')
+      expect(files.replaced).toEqual([])
+    })
+
+    it('answering none removes the leftover entry too, so it is never checked against sign-in', async () => {
+      // The leftover entry's runtime is not signed in — which would refuse
+      // above — but `none` replaces the whole list, taking it with it, so
+      // there is nothing left to warn about or refuse.
+      const TWO_REVIEWERS = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n    - name: second review\n      agent: codex\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: TWO_REVIEWERS })
+      const { world, lines } = fakeWorld(['', '', 'none'])
       const result = await askAgents(world, {
         project: 'app',
         runtimes: [runtime('claude-code'), runtime('codex', { signedIn: false })],
@@ -170,9 +190,23 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      expect(
-        lines.some((l) => l.includes('second review') && l.includes('codex') && l.includes('not signed in here')),
-      ).toBe(true)
+      expect(lines.some((l) => l.includes('second review'))).toBe(false)
+      expect(result.changes).toContainEqual({ path: ['steps', 'review'], value: [] })
+    })
+
+    it('logs that a leftover entry is left as written when its own runtime is signed in', async () => {
+      const TWO_REVIEWERS = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n    - name: second review\n      agent: codex\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: TWO_REVIEWERS })
+      const { world, lines } = fakeWorld(['claude-code', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex')],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      if ('refused' in result) throw new Error(result.refused)
+      expect(lines.some((l) => l.includes('second review') && l.includes('left as written'))).toBe(true)
       // The second entry is left exactly as written — never rewritten to the
       // answer the first entry got.
       expect(result.changes.some((c) => c.path.includes(1) && c.path[0] === 'steps' && c.path[1] === 'review')).toBe(
@@ -300,7 +334,39 @@ describe('askAgents', () => {
       if ('refused' in result) throw new Error(result.refused)
       const modelPrompt = asked.find((p) => p.includes('which model'))!
       expect(modelPrompt).not.toContain('[claude-opus-5]')
-      expect(result.changes).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
+      expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
+    })
+
+    it('switching the writer on a commented action writes through two setRecipe calls rather than throw CommentWouldBeLostError', async () => {
+      // This repository's own house style: a comment above the implement
+      // action. Switching the writer changes `agent:` and removes `model:`
+      // on that same item — two fields of one commented action — which
+      // `isDifferentItem` (`emit.ts:286`) refuses when both land in the same
+      // `setRecipe` call. `askAgents` splits them into `changes` (agent) and
+      // `modelChanges` (model) for exactly this reason.
+      const COMMENTED_IMPLEMENT = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    # the writer: this is the action that opens the branch\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: COMMENTED_IMPLEMENT })
+      const { world } = fakeWorld(['codex', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex')],
+        flags: {},
+        home: HOME,
+        files,
+      })
+      if ('refused' in result) throw new Error(result.refused)
+
+      await setRecipe('app', result.changes, { home: HOME, files })
+      const written = await setRecipe('app', result.modelChanges, { home: HOME, files })
+
+      expect(written.text).toContain('the writer: this is the action that opens the branch')
+      const resolved = await resolveLocalRecipe('app', {
+        home: HOME,
+        read: files.read,
+        signedIn: async () => ['claude-code', 'codex'],
+      })
+      expect((resolved.recipe.steps.implement[0] as { agent?: string }).agent).toBe('codex')
+      expect((resolved.recipe.steps.implement[0] as { model?: string }).model).toBeUndefined()
     })
 
     it('a runtime.agent that is installed but signed out is never offered as the default', async () => {
@@ -419,6 +485,7 @@ describe('askAgents', () => {
     if ('refused' in result) throw new Error(result.refused)
 
     await setRecipe('app', result.changes, { home: HOME, files })
+    await setRecipe('app', result.modelChanges, { home: HOME, files })
     const resolved = await resolveLocalRecipe('app', {
       home: HOME,
       read: files.read,
@@ -461,7 +528,8 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      const written = await setRecipe('app', result.changes, { home: HOME, files })
+      await setRecipe('app', result.changes, { home: HOME, files })
+      const written = await setRecipe('app', result.modelChanges, { home: HOME, files })
       expect(written.written).toBe(true)
       expect(written.text).toContain('model: x')
       expect(written.text).toContain('Read the ticket.')

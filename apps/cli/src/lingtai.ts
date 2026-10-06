@@ -47,7 +47,7 @@ import { createFileLocker } from '@lingtai/env/lock'
 import { parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
-import { diskFiles, parseDuration, recipePath, setRecipe } from '@lingtai/recipe'
+import { diskFiles, parseDuration, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
 
 import { askAgents } from './agents.ts'
 import { approveCommand } from './approve.ts'
@@ -400,6 +400,21 @@ async function addCommand(args: string[]): Promise<number> {
       return 1
     }
   } else {
+    // A file that `extends:` a preset and writes no `steps:` of its own
+    // inherits every step from the preset — the first `steps.*` answer below
+    // pins that preset's steps into the file for good (`write.ts`'s
+    // `widenStepsIfNeeded`). Named here, before the writer question, because
+    // showing that to a person is this caller's line to print, not
+    // `agents.ts`'s.
+    const extendsPreset = await readRecipeKey(repo, ['extends'])
+    const stepsWritten = await readRecipeKey(repo, ['steps'])
+    if (typeof extendsPreset === 'string' && stepsWritten === null) {
+      console.log(
+        `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
+          "preset's steps into the file, so a later change to the preset no longer reaches this project",
+      )
+    }
+
     const runtimes = await askRuntimes()
     const world: QuestionWorld = { ask: liveAsk, log: (line) => console.log(line) }
     const asked = await askAgents(world, { project: repo, runtimes, flags: agentFlags })
@@ -407,7 +422,13 @@ async function addCommand(args: string[]): Promise<number> {
       console.error(asked.refused)
       return 1
     }
+    // Two calls, not one: `changes` sets an action's `agent:` (or creates it
+    // outright) and `modelChanges` sets that same action's `model:` next —
+    // combining them would change two fields of one item in a single
+    // `setRecipe` call, which `emit.ts`'s `CommentWouldBeLostError` refuses
+    // the moment that item carries a comment (`agents.ts`'s header).
     await setRecipe(repo, asked.changes)
+    await setRecipe(repo, asked.modelChanges)
   }
 
   // Tier, gates and the base are the recipe's, in the managed repository, which

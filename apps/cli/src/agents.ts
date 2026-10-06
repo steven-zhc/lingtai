@@ -8,11 +8,16 @@
  * question `add` has no business asking about would be the thing #392 kept
  * out. `RuntimeFound` lives in `runtimes.ts` for the same reason.
  *
- * **It writes nothing itself.** `askAgents` returns `{ changes }`, the same
- * `RecipeChange[]` shape `setRecipe` takes — the caller decides when to write
- * them, and whether that is one `setRecipe` call or one per question (see
- * `emit.ts`'s `CommentWouldBeLostError`, which only a caller writing two
- * fields of one commented action in the same call can hit).
+ * **It writes nothing itself.** `askAgents` returns `{ changes, modelChanges }`,
+ * both the same `RecipeChange[]` shape `setRecipe` takes — the caller decides
+ * when to write them, except the split itself is not the caller's to merge
+ * back into one call: `changes` sets an existing action's `agent:` (or
+ * creates the action outright), `modelChanges` sets that same action's
+ * `model:` afterwards, in a second `setRecipe` call. Both land on
+ * `steps.implement.<i>` or `steps.review.<i>` when an action already carries
+ * `agent:`, so one call changing both would change two fields of that one
+ * item — `emit.ts`'s `CommentWouldBeLostError` refuses that the moment the
+ * item carries a comment, which this repository's own recipe's actions do.
  *
  * **A caller writing `steps.*` for the first time widens a preset's steps
  * into the file** (`write.ts`'s `widenStepsIfNeeded`). Showing that to a
@@ -65,7 +70,7 @@ export interface AskAgentsAt {
 export async function askAgents(
   world: QuestionWorld,
   at: AskAgentsAt,
-): Promise<{ changes: RecipeChange[] } | { refused: string }> {
+): Promise<{ changes: RecipeChange[]; modelChanges: RecipeChange[] } | { refused: string }> {
   const signedIn = at.runtimes.filter((r) => r.signedIn)
   const signedInIds: string[] = signedIn.map((r) => r.id)
   for (const r of at.runtimes) {
@@ -93,32 +98,6 @@ export async function askAgents(
   const implementAction = findAgentAction(await readRecipeKey(at.project, ['steps', 'implement'], readOpts))
   const reviewList = await readRecipeKey(at.project, ['steps', 'review'], readOpts)
   const reviewAction = findAgentAction(reviewList)
-
-  // Only the first `agent:` entry in the list is ever rewritten below — this
-  // is the one `question()` above asks about. A second one is left exactly
-  // as written, which is silent the moment its runtime is not signed in here:
-  // `agentRefusal` (`conduct.ts:282`) reads every `agent:` in the file, so an
-  // untouched second entry on a signed-out runtime fails the very next pass.
-  // Named here, before any question, so the answer can account for it.
-  if (reviewAction && Array.isArray(reviewList)) {
-    for (let i = reviewAction.index + 1; i < reviewList.length; i++) {
-      const item = reviewList[i]
-      if (item === null || typeof item !== 'object' || !('agent' in item)) continue
-      const extraAgent = (item as Record<string, unknown>)['agent']
-      const extraName =
-        typeof (item as Record<string, unknown>)['name'] === 'string'
-          ? ((item as Record<string, unknown>)['name'] as string)
-          : `steps.review[${i}]`
-      const notSignedIn = typeof extraAgent === 'string' && !signedInIds.includes(extraAgent)
-      world.log(
-        `steps.review's "${extraName}" also names agent ${String(extraAgent)} — only the first agent: entry is ` +
-          `asked about here, so this one is left as written` +
-          (notSignedIn
-            ? `, and ${String(extraAgent)} is not signed in here: this recipe refuses on the next pass unless it is fixed by hand`
-            : ''),
-      )
-    }
-  }
 
   const writingAgent = asRuntime(
     implementAction && typeof implementAction.action['agent'] === 'string'
@@ -199,6 +178,39 @@ export async function askAgents(
     }
   }
 
+  // Only the first `agent:` entry in the list is ever rewritten below — this
+  // is the one `question()` above asked about. A second one is left exactly
+  // as written when `reviewer` keeps that entry in the file at all — never
+  // when the answer is `none`, which replaces the whole list and takes the
+  // leftover entry with it, so this is checked only now that both are known.
+  // `agentRefusal` (`conduct.ts:282`) reads every `agent:` in the file, so an
+  // untouched entry on a signed-out runtime fails the very next pass — refused
+  // here instead of written, rather than left to fail that pass.
+  if (reviewer !== 'none' && reviewAction && Array.isArray(reviewList)) {
+    for (let i = reviewAction.index + 1; i < reviewList.length; i++) {
+      const item = reviewList[i]
+      if (item === null || typeof item !== 'object' || !('agent' in item)) continue
+      const extraAgent = (item as Record<string, unknown>)['agent']
+      const extraName =
+        typeof (item as Record<string, unknown>)['name'] === 'string'
+          ? ((item as Record<string, unknown>)['name'] as string)
+          : `steps.review[${i}]`
+      if (typeof extraAgent !== 'string' || signedInIds.includes(extraAgent)) {
+        world.log(
+          `steps.review's "${extraName}" also names agent ${String(extraAgent)} — only the first agent: entry ` +
+            'is asked about here, so this one is left as written',
+        )
+        continue
+      }
+      return {
+        refused:
+          `steps.review's "${extraName}" also names agent ${extraAgent}, which is not signed in here — only the ` +
+          'first agent: entry is asked about here, so fix or remove that one by hand and run lingtai add again. ' +
+          'Nothing was written',
+      }
+    }
+  }
+
   let reviewerModel = ''
   if (reviewer !== 'none') {
     if (otherSignedIn.length === 0) {
@@ -229,10 +241,11 @@ export async function askAgents(
   // that leaves `runtime.agent` absent, or stale, with two runtimes signed
   // in — the refusal the ticket's Watch out names.
   const changes: RecipeChange[] = [{ path: ['runtime', 'agent'], value: writer }]
+  const modelChanges: RecipeChange[] = []
 
   if (implementAction) {
     changes.push({ path: ['steps', 'implement', implementAction.index, 'agent'], value: writer })
-    changes.push({
+    modelChanges.push({
       path: ['steps', 'implement', implementAction.index, 'model'],
       value: writerModel === '' ? undefined : writerModel,
     })
@@ -246,7 +259,7 @@ export async function askAgents(
     changes.push({ path: ['steps', 'review'], value: [] })
   } else if (reviewAction) {
     changes.push({ path: ['steps', 'review', reviewAction.index, 'agent'], value: reviewer })
-    changes.push({
+    modelChanges.push({
       path: ['steps', 'review', reviewAction.index, 'model'],
       value: reviewerModel === '' ? undefined : reviewerModel,
     })
@@ -256,5 +269,5 @@ export async function askAgents(
     changes.push({ path: ['steps', 'review'], value: [action] })
   }
 
-  return { changes }
+  return { changes, modelChanges }
 }
