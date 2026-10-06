@@ -91,6 +91,7 @@ import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { boardLock, builtBoardDir, serveBoard } from './board.ts'
+import { question } from './question.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -400,83 +401,100 @@ async function chooseStore(
     )
   }
 
-  let candidate = flag
-  // The inherited URL below is tried **once**. Taking it again on the next pass
-  // would be a loop that never reaches the question, since what makes it
-  // inheritable — a `url` with no `store` — is still true after it failed.
-  let inherited = false
-  for (;;) {
-    if (candidate === null) {
-      const settled = storeChoice(world.env)
-      if (!('refused' in settled)) {
-        if (settled.store === 'sqlite') return sqliteChosen(world, settled)
-        const check = await world.database(settled.url)
-        if (check.ok) {
-          world.log(paint.pass(`store        ${describeStore(settled)} · ${describeSchema(check.schema)}`))
-          return null
-        }
-        world.log(paint.fail(`store        ${describeStore(settled)} does not answer — ${check.why}`))
-      } else if (settled.because === 'unreadable') {
-        // `readConfig` refused this already; it is here because the two readers
-        // are separate and one of them must not be the only one that looks.
-        return refuse(world, settled.refused)
-      } else {
-        // *Nothing chosen* is the question this command is about to ask, so it
-        // is asked rather than reported — a refusal naming `lingtai init` is
-        // absurd inside `lingtai init`. The other two are a file being
-        // repaired, and what was wrong with it is said before asking again.
-        if (settled.because !== 'nothing chosen') world.log(paint.fail(settled.refused))
-        // A machine set up before the store was a written value (#186) has a
-        // `database.url` and no `store`. That URL is the choice nobody
-        // recorded: it is verified and recorded, not asked for a second time.
-        const older = config.getIn(['database', 'url'])
-        if (!inherited && settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
-          candidate = older
-          inherited = true
-        }
-      }
-    }
-    if (candidate === null) {
-      // `--store sqlite` is the empty answer, given in advance: the same write,
-      // by the same lines below, and no terminal needed to give it (#345).
-      const answer =
-        named === 'sqlite' ? '' : await world.ask(paint.signal('a Postgres URL for the log — empty for SQLite: '))
-      if (answer === null) {
-        return refuse(world, `nobody is at a terminal to say which store — ${USAGE}. Nothing was written`)
-      }
-      candidate = answer.trim()
-    }
-    if (candidate === '') {
-      // The SQLite choice, written — and `database.url` removed in the same
-      // write. Left behind it would go on selecting Postgres under a screen
-      // that had just said SQLite, which is the whole of #215.
-      config.setIn(['database', 'store'], 'sqlite')
-      config.deleteIn(['database', 'url'])
-      writeConfig(path, config, home)
-      const read = confirm(world, path, 'sqlite')
-      return typeof read === 'number' ? read : sqliteChosen(world, read)
-    }
-    if (!/^postgres(ql)?:\/\//.test(candidate)) {
-      world.log(paint.fail(`that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written`))
-    } else {
-      const check = await world.database(candidate)
+  // `--store postgres --database-url <url>` is a given answer that bypasses
+  // what follows entirely — settled, inherited and the question alike — so
+  // that a URL that fails to connect refuses on its own account rather than
+  // falling through to whatever the file already says (named `postgres`
+  // only reaches here with a `flag`: the no-URL case was refused above).
+  if (named !== 'postgres') {
+    // The settled-store check runs once: a machine already answering is
+    // reported and not asked about again (this file's header).
+    const settled = storeChoice(world.env)
+    if (!('refused' in settled)) {
+      if (settled.store === 'sqlite') return sqliteChosen(world, settled)
+      const check = await world.database(settled.url)
       if (check.ok) {
-        config.setIn(['database', 'store'], 'postgres')
-        config.setIn(['database', 'url'], candidate)
-        writeConfig(path, config, home)
-        const read = confirm(world, path, 'postgres')
-        if (typeof read === 'number') return read
-        world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`))
+        world.log(paint.pass(`store        ${describeStore(settled)} · ${describeSchema(check.schema)}`))
         return null
       }
-      world.log(paint.fail(`${redactUrl(candidate)} does not answer — ${check.why}. Nothing was written`))
+      world.log(paint.fail(`store        ${describeStore(settled)} does not answer — ${check.why}`))
+    } else if (settled.because === 'unreadable') {
+      // `readConfig` refused this already; it is here because the two readers
+      // are separate and one of them must not be the only one that looks.
+      return refuse(world, settled.refused)
+    } else {
+      // *Nothing chosen* is the question this command is about to ask, so it
+      // is asked rather than reported — a refusal naming `lingtai init` is
+      // absurd inside `lingtai init`. The other two are a file being
+      // repaired, and what was wrong with it is said before asking again.
+      if (settled.because !== 'nothing chosen') world.log(paint.fail(settled.refused))
+
+      // The inherited-URL check runs once, ahead of the question, and never
+      // through the seam: a machine set up before the store was a written
+      // value (#186) has a `database.url` and no `store`. That URL is the
+      // choice nobody recorded — it is verified and recorded, not asked for,
+      // and tried only this once. Taking it again on the next pass would be a
+      // loop that never reaches the question, since what makes it
+      // inheritable — a `url` with no `store` — is still true after it failed.
+      const older = config.getIn(['database', 'url'])
+      if (settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
+        const check = await world.database(older)
+        if (check.ok) {
+          config.setIn(['database', 'store'], 'postgres')
+          config.setIn(['database', 'url'], older)
+          writeConfig(path, config, home)
+          const read = confirm(world, path, 'postgres')
+          if (typeof read === 'number') return read
+          world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(check.schema)}`))
+          return null
+        }
+        world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
+      }
     }
-    // `--store postgres` whose URL failed stops here. Going round again would
-    // reach whatever the file already says — SQLite, on a machine that chose
-    // it — or a question whose empty answer is the store it did not name.
-    if (named === 'postgres') return refuse(world, '--store postgres, and its --database-url was not taken — see above')
-    candidate = null
   }
+
+  // Everything settled or inherited failed to answer the question, so one
+  // question is asked — `--store sqlite` is the empty answer, given in
+  // advance, with no terminal needed to give it (#345).
+  let schema: SchemaOutcome | null = null
+  const result = await question(world, {
+    name: 'the store',
+    flag: '--store sqlite, or --store postgres --database-url <url>',
+    given: named === 'sqlite' ? '' : flag,
+    prompt: 'a Postgres URL for the log — empty for SQLite',
+    fallback: '',
+    show: redactUrl,
+    validate: async (answer) => {
+      if (answer === '') return null
+      if (!/^postgres(ql)?:\/\//.test(answer)) {
+        return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
+      }
+      const check = await world.database(answer)
+      if (!check.ok) return `${redactUrl(answer)} does not answer — ${check.why}. Nothing was written`
+      schema = check.schema
+      return null
+    },
+  })
+  if ('refused' in result) return refuse(world, result.refused)
+
+  if (result.answer === '') {
+    // The SQLite choice, written — and `database.url` removed in the same
+    // write. Left behind it would go on selecting Postgres under a screen
+    // that had just said SQLite, which is the whole of #215.
+    config.setIn(['database', 'store'], 'sqlite')
+    config.deleteIn(['database', 'url'])
+    writeConfig(path, config, home)
+    const read = confirm(world, path, 'sqlite')
+    return typeof read === 'number' ? read : sqliteChosen(world, read)
+  }
+
+  config.setIn(['database', 'store'], 'postgres')
+  config.setIn(['database', 'url'], result.answer)
+  writeConfig(path, config, home)
+  const read = confirm(world, path, 'postgres')
+  if (typeof read === 'number') return read
+  world.log(paint.pass(`store        ${describeStore(read)} · ${describeSchema(schema!)}`))
+  return null
 }
 
 /**
