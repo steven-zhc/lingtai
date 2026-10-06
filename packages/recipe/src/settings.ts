@@ -194,6 +194,24 @@ export function boundsBesides(recipe: Recipe, named: Step): readonly StepBound[]
 }
 
 /**
+ * **Every step that dispatches, named rather than bounded** (`#348`).
+ *
+ * `boundsBesides` answers *which steps cost something different from
+ * `implement`*, and drops a step whose bound happens to equal `implement`'s —
+ * which is the common case for a reviewer left on the default ceiling. A
+ * caller that means *is anything beyond `implement` paying for a run at all*,
+ * regardless of what it costs, asks this instead and filters out `implement`
+ * itself.
+ *
+ * Built on `dispatchedBy`, so a step counts as dispatching on exactly the
+ * terms `limitsFor` already does: an `agent:` always, and a `judge:` only
+ * where it names a runtime rather than a built-in.
+ */
+export function dispatchingSteps(recipe: Recipe): readonly Step[] {
+  return STEPS.filter((step) => recipe.steps[step].some((action) => dispatchedBy(action) !== undefined))
+}
+
+/**
  * The `worktree:` this recipe declares at `admit`, or null where it declares
  * none and `repo:` is what says it.
  *

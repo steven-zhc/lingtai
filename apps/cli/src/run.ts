@@ -28,12 +28,22 @@ import { createRuntime } from '@lingtai/agent'
  * See `heedThePause` below for why this read is not scoped the way the daemon's
  * is.
  */
-import { currentRecipe, loadProject, passClientOf, runOnce, runQueue, tallyPass, ticketsFor } from '@lingtai/conductor'
+import {
+  currentRecipe,
+  loadProject,
+  passClientOf,
+  passCeiling,
+  runOnce,
+  runQueue,
+  tallyPass,
+  ticketsFor,
+} from '@lingtai/conductor'
 import { PortsLive } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon'
 import { githubApp, hasGitHubApp, repoRoot } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store'
 import { createGitHubClient } from '@lingtai/github'
+import { boundsBesides, dispatchingSteps, isBuiltInJudge, limitsFor, parseDuration, type Recipe } from '@lingtai/recipe'
 import { Data, Effect } from 'effect'
 
 import { ConductorLock, ConductorLockLive } from './conductor-lock.ts'
@@ -147,6 +157,55 @@ const stillPaused = (store: EventStore | undefined) => async (): Promise<string 
   }
 }
 
+/**
+ * What `lingtai run` says before it claims anything — the runtime, whose
+ * account it spends on, and what the pass may cost (`#348`).
+ *
+ * A pure function over the resolved recipe, and not a thing `run` discovers
+ * mid-flight: `run()` has no seam to drive to dispatch under the unit half
+ * (0060 §1 — `hasGitHubApp`, `loadProject` and `createGitHubClient` all reach
+ * outside the process), so this is what a unit test can hold instead. The
+ * order it is printed in is asserted straight off `run.ts`'s own source, the
+ * way `unit/run-pause.test.ts` already reads `lingtai.ts`'s.
+ */
+export function statedBeforeDispatch(recipe: Recipe): string[] {
+  const runtimes = new Set<string>([recipe.runtime.agent])
+  for (const step of dispatchingSteps(recipe)) {
+    for (const action of recipe.steps[step]) {
+      if ('agent' in action) runtimes.add(action.agent)
+      else if ('judge' in action && !isBuiltInJudge(action.judge)) runtimes.add(action.judge)
+    }
+  }
+  const named = [...runtimes]
+  const lines = [
+    `runtime: ${named.join(', ')} — lingtai holds no key of its own, so this pass spends on whatever account ` +
+      `${named.length === 1 ? 'that runtime is' : 'those runtimes are'} signed in to on this machine`,
+    `a pass ${passCeiling({
+      ...limitsFor(recipe, 'implement'),
+      wallMs: parseDuration(limitsFor(recipe, 'implement').wall),
+      // `implement`'s own runs, which is the whole of what the sentence counts
+      // ('the cold reviewer's own wall has never been in it', ceiling.ts).
+      steps: boundsBesides(recipe, 'implement'),
+    })}`,
+  ]
+
+  const further = dispatchingSteps(recipe).filter((step) => step !== 'implement')
+  const judgeSteps = further.filter((step) =>
+    recipe.steps[step].some((action) => 'judge' in action && !isBuiltInJudge(action.judge)),
+  )
+  const agentSteps = further.filter((step) => !judgeSteps.includes(step))
+
+  if (agentSteps.length > 0) {
+    lines.push(`not in that sentence: an agent run at ${agentSteps.join(', ')} — each its own run on the same account`)
+  }
+  if (judgeSteps.length > 0) {
+    lines.push(
+      `also not in it: a runtime judge at ${judgeSteps.join(', ')} may run — a further agent run, spent only when it is asked`,
+    )
+  }
+  return lines
+}
+
 export async function run(options: RunOptions, log = console.log): Promise<number> {
   const program = Effect.gen(function* () {
     /**
@@ -250,6 +309,11 @@ export async function run(options: RunOptions, log = console.log): Promise<numbe
         try: () => currentRecipe(project, client),
         catch: () => refuse(`could not read ${options.project}'s recipe — run lingtai doctor`),
       })
+
+      // Before anything is claimed: the runtime, whose account it spends on,
+      // and what the pass may cost (`#348`) — read off the recipe `resolved`
+      // just above, and printed once per `lingtai run` rather than per pass.
+      for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
 
       // Where this project's tickets actually live — the client itself for
       // `github`, `dbTickets` for `db` (`ticketsFor`, `#382`). `passClientOf`

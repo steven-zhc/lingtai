@@ -53,6 +53,7 @@ import {
   baseWrittenAt,
   boundsBesides,
   ceilingOf,
+  dispatchingSteps,
   excludeOf,
   kindsOf,
   limitsFor,
@@ -396,6 +397,30 @@ describe('the accessors', () => {
     // A recipe that narrows nothing names nothing, which is what keeps today's
     // sentence character for character (0070 §8).
     expect(boundsBesides(RECIPE, 'implement')).toEqual([])
+  })
+
+  /**
+   * **What `boundsBesides` drops and `#348` needs back.** A reviewer left on
+   * `implement`'s own ceiling costs nothing extra, so `boundsBesides` names
+   * nothing — but it is still a second agent run, which is the fact a
+   * statement about what a pass may cost must not omit.
+   */
+  it('names every dispatching step, including one whose bound matches implement', () => {
+    const sameCeiling = Recipe.parse({
+      ...WRITTEN,
+      steps: {
+        implement: [{ name: 'write it', agent: 'claude-code', prompt: 'go' }],
+        review: [{ name: 'cold', agent: 'claude-code', prompt: 'read' }],
+      },
+    })
+    expect(dispatchingSteps(sameCeiling)).toEqual(['implement', 'review'])
+    // `boundsBesides` says nothing here — same turns, same wall — but the run
+    // still happens, which is what `dispatchingSteps` is for.
+    expect(boundsBesides(sameCeiling, 'implement')).toEqual([])
+
+    // A step with no `agent:` and no runtime `judge:` buys nothing and is left
+    // out, same as `boundsBesides`' own rule.
+    expect(dispatchingSteps(RECIPE)).toEqual([])
   })
 
   it('do not invent a default — a resolved recipe has every value', () => {
