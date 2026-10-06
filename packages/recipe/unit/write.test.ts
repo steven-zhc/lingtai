@@ -138,6 +138,48 @@ steps:
       setRecipe('app', [{ path: ['source', 'kinds'], value: [] }], { home: HOME, files: emptied }),
     ).rejects.toThrow(RecipeInvalidError)
     expect(emptied.replaced).toEqual([])
+
+    // The three cases above are all refused by `editRecipe`'s own `Recipe.parse`
+    // before `resolveSource` ever runs: a missing `repo`/`source`/`env`, `steps`
+    // being a `z.strictObject`, and `source.kinds`'s own `.min(1)`. None of them
+    // exercises the resolver's distinctive check — an unknown *top-level* key,
+    // which `Recipe` (a plain `z.object`) would otherwise silently drop and only
+    // `resolveSource`'s `unknownKeys` (resolve.ts) refuses by name.
+    const mistyped = mapFiles({ [PATH]: FIXTURE })
+    await expect(
+      setRecipe('app', [{ path: ['reciep', 'base'], value: 'main' }], { home: HOME, files: mistyped }),
+    ).rejects.toThrow(/reciep: a recipe has no such key/)
+    expect(mistyped.replaced).toEqual([])
+  })
+
+  it('widens a narrow steps.* write to the whole block when the file inherits the rest from a preset', async () => {
+    const PRESET_FIXTURE = `version: 2
+extends: pnpm-workspace
+repo:
+  base: main
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+`
+    const files = mapFiles({ [PATH]: PRESET_FIXTURE })
+    const result = await setRecipe('app', [{ path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] }], {
+      home: HOME,
+      files,
+    })
+
+    expect(result.written).toBe(true)
+    const resolved = resolveSource(result.text, 'main', PATH)
+    // The preset's install still runs, and the preset's own gate is gone only
+    // because this change named `build` — not because writing `build` erased
+    // every other step the preset supplied (#395's write.ts:117 finding).
+    expect(resolved.recipe.steps.prepared).toEqual([
+      { name: 'install', run: 'pnpm install --frozen-lockfile', timeout: '10m', env: [] },
+    ])
+    expect(resolved.recipe.steps.proposed).toEqual([
+      { name: 'build', run: 'pnpm typecheck && pnpm lint && pnpm test', timeout: '15m', env: [] },
+    ])
+    expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
   })
 
   it('is a no-op when a change sets the value the file already has', async () => {

@@ -1,3 +1,5 @@
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 /**
  * Writing a project's recipe down (#395) — the part `editRecipe` (#162) does
  * not do: finding the file, creating it when there is none, checking the
@@ -7,8 +9,7 @@
  *
  * `setRecipe` is not wired to a caller yet. #396–#399 are.
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 
 import { isNode, parse as parseYaml, parseDocument } from 'yaml'
 import { z } from 'zod'
@@ -93,6 +94,44 @@ function editedText(existing: string | null, changes: readonly RecipeChange[], p
 }
 
 /**
+ * `changes`, widened to a whole `steps:` write when a narrow one would move a
+ * step this change did not name.
+ *
+ * `applyPreset` (`presets.ts:149`) is `steps: recipe['steps'] ?? preset.steps`
+ * — all-or-nothing, unlike `repo` and `runtime`, which merge key by key. A file
+ * that `extends:` a preset and writes no `steps:` of its own inherits every
+ * step from the preset; the moment a change gives it its first `steps:` key,
+ * `recipe['steps']` turns truthy and the preset's steps stop applying — a step
+ * this change never mentioned moves anyway. Caught by trying the narrow edit
+ * first and comparing: only a step named in `changes` may differ from what the
+ * file resolved to before.
+ */
+function widenStepsIfNeeded(existing: string, changes: readonly RecipeChange[], path: string): readonly RecipeChange[] {
+  const stepChanges = changes.filter((c) => c.path[0] === 'steps')
+  if (stepChanges.length === 0 || stepChanges.some((c) => c.path.length === 1)) return changes
+
+  let before
+  try {
+    before = resolveSource(existing, refFor(existing, path), path)
+  } catch {
+    return changes
+  }
+
+  const narrowText = editedText(existing, changes, path)
+  const narrowSteps = resolveSource(narrowText, refFor(narrowText, path), path).recipe.steps as Record<string, unknown>
+  const beforeSteps = before.recipe.steps as Record<string, unknown>
+  const touched = new Set(stepChanges.map((c) => String(c.path[1])))
+  const displaced = Object.keys(beforeSteps).some(
+    (key) => !touched.has(key) && !isDeepStrictEqual(beforeSteps[key], narrowSteps[key]),
+  )
+  if (!displaced) return changes
+
+  const fullSteps: Record<string, unknown> = { ...beforeSteps }
+  for (const key of touched) fullSteps[key] = narrowSteps[key]
+  return [...changes.filter((c) => c.path[0] !== 'steps'), { path: ['steps'], value: fullSteps }]
+}
+
+/**
  * Sets `changes` on a project's recipe: creates the file when it is absent,
  * edits it in place — keeping every comment and every key it was not asked to
  * change — when it exists. Validates the result with `resolveSource`, the same
@@ -112,7 +151,8 @@ export async function setRecipe(
   const files = options?.files ?? diskFiles
   const path = recipePath(project, options?.home)
   const existing = await files.read(path)
-  const text = editedText(existing, changes, path)
+  const widened = existing === null ? changes : widenStepsIfNeeded(existing, changes, path)
+  const text = editedText(existing, widened, path)
 
   resolveSource(text, refFor(text, path), path)
 
