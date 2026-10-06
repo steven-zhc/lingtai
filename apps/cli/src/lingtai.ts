@@ -41,10 +41,10 @@ import {
   type CodeVersion,
   type ShutdownRequest,
 } from '@lingtai/daemon'
-import { BOARD_PORT, boardPort } from '@lingtai/env'
+import { BOARD_PORT, boardPort, githubApp } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
-import { parseSlug } from '@lingtai/github'
+import { createGitHubClient, installationForRepo, parseSlug } from '@lingtai/github'
 import { createProjectionRunner, projectionLag } from '@lingtai/projector'
 import { backlogProjection, taskViewProjection } from '@lingtai/projector'
 import { diskFiles, parseDuration, readRecipeKey, recipePath, setRecipe } from '@lingtai/recipe'
@@ -72,6 +72,7 @@ import { endReplay } from './end.ts'
 import { envCommand } from './env.ts'
 import { configPath } from './init.ts'
 import { releaseCheck } from './install.ts'
+import { askLanding, askLimits, liveQuestionWorld } from './landing.ts'
 import { pauseCommand } from './pause.ts'
 import { liveAsk, type QuestionWorld } from './question.ts'
 import { requeueCommand } from './requeue.ts'
@@ -127,6 +128,13 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
     --reviewer <agent|none>     a cold reviewer, and which agent, or none,
                                 instead of being asked
     --reviewer-model <name>     the reviewer's model, instead of being asked
+    --land <branch|hold>        where a pass lands, or hold every pass for a
+                                person at proposed, instead of being asked
+    --rounds <n>                fix rounds a pass may buy, instead of being asked
+    --wall <duration>           wall time per agent run, e.g. 1h, instead of
+                                being asked
+    --budget <usd>              a dollar ceiling per agent run, instead of
+                                being asked
   lingtai run <project>             take the queue, in the recipe's priority order
     --issue <n>                 one nominated issue instead of the queue
     --max <n>                   stop after n items (--max 2 is Phase 2's bar)
@@ -370,11 +378,47 @@ function parseFlags(args: string[]): { positional: string[]; flags: Record<strin
   return { positional, flags }
 }
 
+/**
+ * The repository's default branch, through the same three calls `add()` makes
+ * to read it (`onboard.ts:251-276`) — asked here only as a fallback for the
+ * land question's own default, and answered null on any failure, since a
+ * question's `detected` is just one more thing a person can type past (#399).
+ */
+async function defaultBranchOf(owner: string, repo: string): Promise<string | null> {
+  try {
+    const auth = githubApp()
+    const installation = await installationForRepo(auth, owner, repo)
+    const client = await createGitHubClient({ auth, owner, repo, installation })
+    return await client.defaultBranch()
+  } catch {
+    return null
+  }
+}
+
 async function addCommand(args: string[]): Promise<number> {
   const { positional, flags } = parseFlags(args)
   const slug = positional[0]
   if (!slug) {
     console.error('lingtai add <owner>/<repo>')
+    return 2
+  }
+
+  // Tier, gates and the base are the recipe's, in the managed repository, which
+  // is why this takes a slug and — at most — the branch to find the file on.
+  // `named`, because a person typed it here: a recipe that contradicts `--base`
+  // is refused rather than adopted (#75), which is a refusal only a typed flag
+  // may earn.
+  const base = flags['base']
+  const land = flags['land']
+  // `--land <branch>` and `--base` are different questions — where to read the
+  // recipe from, and what it should land on — and a person who named both must
+  // not have one silently overrule the other (#399, mirroring #75's rule for
+  // `--base` against the recipe's own `repo.base`).
+  if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
+    console.error(
+      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
+        'silently. Nothing was written',
+    )
     return 2
   }
 
@@ -385,7 +429,7 @@ async function addCommand(args: string[]): Promise<number> {
   // here (`doc/design/398.md`): with no file, `add()` still refuses with
   // `RecipeMissingError` as it always has, except a flag naming an agent is
   // refused by name rather than silently ignored.
-  const { repo } = parseSlug(slug)
+  const { owner, repo } = parseSlug(slug)
   const path = recipePath(repo)
   const existing = await diskFiles.read(path)
   const agentFlags = {
@@ -422,21 +466,36 @@ async function addCommand(args: string[]): Promise<number> {
       console.error(asked.refused)
       return 1
     }
-    // Two calls, not one: `changes` sets an action's `agent:` (or creates it
-    // outright) and `modelChanges` sets that same action's `model:` next —
-    // combining them would change two fields of one item in a single
-    // `setRecipe` call, which `emit.ts`'s `CommentWouldBeLostError` refuses
-    // the moment that item carries a comment (`agents.ts`'s header).
+    // `changes` sets an action's `agent:` (or creates it) and `modelChanges`
+    // that same action's `model:`, written one after the other.
     await setRecipe(repo, asked.changes)
     await setRecipe(repo, asked.modelChanges)
   }
 
-  // Tier, gates and the base are the recipe's, in the managed repository, which
-  // is why this takes a slug and — at most — the branch to find the file on.
-  // `named`, because a person typed it here: a recipe that contradicts `--base`
-  // is refused rather than adopted (#75), which is a refusal only a typed flag
-  // may earn.
-  const base = flags['base']
+  // The questions are asked before add() runs, and only when the recipe is
+  // already there — an absent one is add()'s own refusal to speak, and
+  // nothing here seeds a file that cannot resolve on its own (#395).
+  if (existsSync(path)) {
+    const world = liveQuestionWorld()
+    const landed = await askLanding(world, repo, land ?? null, {
+      defaultBranch: () => defaultBranchOf(owner, repo),
+    })
+    if ('refused' in landed) {
+      console.error(landed.refused)
+      return 1
+    }
+    const limited = await askLimits(
+      world,
+      repo,
+      { rounds: flags['rounds'], wall: flags['wall'], budget: flags['budget'] },
+      {},
+    )
+    if ('refused' in limited) {
+      console.error(limited.refused)
+      return 1
+    }
+  }
+
   return add({ slug, base: base === undefined ? undefined : { ref: base, named: true } })
 }
 

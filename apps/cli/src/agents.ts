@@ -15,9 +15,7 @@
  * creates the action outright), `modelChanges` sets that same action's
  * `model:` afterwards, in a second `setRecipe` call. Both land on
  * `steps.implement.<i>` or `steps.review.<i>` when an action already carries
- * `agent:`, so one call changing both would change two fields of that one
- * item — `emit.ts`'s `CommentWouldBeLostError` refuses that the moment the
- * item carries a comment, which this repository's own recipe's actions do.
+ * `agent:`.
  *
  * **A caller writing `steps.*` for the first time widens a preset's steps
  * into the file** (`write.ts`'s `widenStepsIfNeeded`). Showing that to a
