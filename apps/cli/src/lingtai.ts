@@ -84,7 +84,7 @@ import { run as runOnceCommand } from './run.ts'
 import { BOARD_JOB, keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import { status } from './status.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
-import { ticketClose, ticketList } from './ticket.ts'
+import { ticketClose, ticketEdit, ticketList, ticketNew } from './ticket.ts'
 import { versionLine } from './version.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
@@ -164,6 +164,16 @@ const USAGE = `lingtai — event-sourced scheduler for autonomous code agents
                                 conductor reads this table yet, so closing one
                                 here has no effect on what the daemon offers
                                 next
+    --project <p>               as above
+  lingtai ticket new                opens $VISUAL or $EDITOR on a short text
+                                form — a title, a labels: line, then the body.
+                                Saving creates the ticket; quitting with the
+                                form unchanged does nothing. No kind label in
+                                labels: and the ticket is still created, with
+                                a warning that the queue will not take it
+    --project <p>               as above
+  lingtai ticket edit <n>           the same form, started from the ticket.
+                                Saving writes only the fields that changed
     --project <p>               as above
   lingtai ask <project> --issue <n> "<question>"
                                 hold a ticket on a decision before any run
@@ -1282,7 +1292,25 @@ async function main(argv: string[]): Promise<number> {
         }
         return ticketClose({ issue, ...(project === undefined ? {} : { project }) })
       }
-      console.error('lingtai ticket list [--all] [--project <p>]\nlingtai ticket close <n> [--project <p>]')
+      if (verb === 'new') {
+        if (positional.length > 0) {
+          console.error('lingtai ticket new [--project <p>]')
+          return 2
+        }
+        return ticketNew({ ...(project === undefined ? {} : { project }) })
+      }
+      if (verb === 'edit') {
+        const issue = Number(positional[0])
+        if (!positional[0] || !Number.isInteger(issue)) {
+          console.error('lingtai ticket edit <n> [--project <p>]')
+          return 2
+        }
+        return ticketEdit({ issue, ...(project === undefined ? {} : { project }) })
+      }
+      console.error(
+        'lingtai ticket list [--all] [--project <p>]\nlingtai ticket close <n> [--project <p>]\n' +
+          'lingtai ticket new [--project <p>]\nlingtai ticket edit <n> [--project <p>]',
+      )
       return 2
     }
     case 'attach': {
