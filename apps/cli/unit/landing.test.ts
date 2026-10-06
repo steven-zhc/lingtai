@@ -133,7 +133,79 @@ steps:
 runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
 `
 
+/**
+ * `repo.base: ""` already on disk — the shape a bare `--land` with no value
+ * used to write before this fix, and the one case `baseOf` can actually
+ * produce that answers nothing, so `current` must read as null and
+ * `defaultBranch` must get its turn.
+ */
+const EMPTY_BASE = `version: 2
+repo: {base: "", submodules: false}
+source: {kinds: [bug], exclude: []}
+env: {required: [], plantAt: .env.local}
+steps: {}
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+
+/** A terse `steps.proposed` entry, with none of `runPlugin`'s defaulted fields (`timeout`, `env`) written. */
+const TERSE_PROPOSED = `version: 2
+repo: {base: main, submodules: false}
+source: {kinds: [bug], exclude: []}
+env: {required: [], plantAt: .env.local}
+steps:
+  proposed:
+    - name: smoke
+      run: pnpm smoke
+runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+`
+
 describe('askLanding', () => {
+  it('a bare --land with no value is refused, and nothing is written', async () => {
+    const files = mapFiles({ [PATH]: FIXTURE })
+    const result = await askLanding(world().world, PROJECT, '', {
+      home: HOME,
+      files,
+      defaultBranch: async () => 'main',
+    })
+    expect(result).toMatchObject({ refused: expect.any(String) })
+    expect(files.replaced).toEqual([])
+    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    expect(resolved.repo.base).toBe('main')
+  })
+
+  it('an empty repo.base already on disk answers nothing, so the default branch is fetched and offered', async () => {
+    const files = mapFiles({ [PATH]: EMPTY_BASE })
+    const { world: w, asked } = world([])
+    let calls = 0
+    const result = await askLanding(w, PROJECT, null, {
+      home: HOME,
+      files,
+      defaultBranch: async () => {
+        calls++
+        return 'trunk'
+      },
+    })
+    expect(result).toMatchObject({ refused: expect.any(String) })
+    expect(calls).toBe(1)
+    expect(asked[0]).toContain('[trunk]')
+  })
+
+  it('--land hold on a file with its own terse steps.proposed entry leaves that entry exactly as written', async () => {
+    const files = mapFiles({ [PATH]: TERSE_PROPOSED })
+    const { world: w } = world()
+    const result = await askLanding(w, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
+    expect(result).toEqual({ ok: true })
+
+    const written = (await files.read(PATH))!
+    const smokeBlock = '  proposed:\n    - name: smoke\n      run: pnpm smoke\n'
+    expect(TERSE_PROPOSED).toContain(smokeBlock)
+    expect(written).toContain(smokeBlock)
+    // The schema's own defaults for `runPlugin`'s other fields, never pinned
+    // into an entry the person wrote without them.
+    expect(written).not.toContain('timeout:')
+    expect(written).not.toMatch(/run: pnpm smoke\n\s+env:/)
+  })
+
   it('--land hold never calls defaultBranch — a flag already answers the question', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     let calls = 0

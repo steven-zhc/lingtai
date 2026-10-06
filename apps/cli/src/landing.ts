@@ -58,7 +58,11 @@ export function liveQuestionWorld(): QuestionWorld {
 export interface LandingDeps {
   home?: string
   files?: RecipeFiles
-  /** The repository's default branch — asked only when nothing else answers it. */
+  /**
+   * The repository's default branch — asked only when nothing else answers
+   * it: no flag, and the file's own base is a blank `repo.base: ""` rather
+   * than a real branch.
+   */
   defaultBranch: () => Promise<string | null>
 }
 
@@ -106,10 +110,20 @@ async function resolvedFile(
  * `current` is `'hold'` when the resolved recipe already carries a `human:`
  * at `proposed` (a preset's counts, same as a person's own), else `baseOf`
  * the resolved recipe — `steps.admit`'s `worktree.base` where one is
- * declared, `repo.base` otherwise (`settings.ts`'s `baseOf`/`baseWrittenAt`).
- * `detected` is the repository's default branch, asked only when neither
- * answers it. `landingChanges` writes the branch answer back at that same
- * place, never unconditionally at `repo.base`.
+ * declared, `repo.base` otherwise (`settings.ts`'s `baseOf`/`baseWrittenAt`)
+ * — unless that resolves to `''`, which is not a branch and is treated the
+ * same as nothing having answered the question. `detected` is the
+ * repository's default branch, asked only when neither answers it.
+ * `landingChanges` writes the branch answer back at that same place, never
+ * unconditionally at `repo.base`.
+ *
+ * `landingChanges` is handed `steps.proposed`/`steps.admit` as the file
+ * itself writes them (`readRecipeKey`), not the resolved, schema-defaulted
+ * version — so an entry the file already wrote tersely is carried back
+ * exactly as written, instead of pinning every field the schema would have
+ * filled in for it. Only where the file writes nothing there at all (the
+ * step is inherited whole from a preset) does the resolved list stand in,
+ * so a step `extends:` supplies is not dropped.
  */
 export async function askLanding(
   world: QuestionWorld,
@@ -122,7 +136,7 @@ export async function askLanding(
   if ('refused' in file) return file
 
   const currentlyHolds = file.proposed.some((action) => 'human' in action)
-  const current = currentlyHolds ? 'hold' : file.base
+  const current = currentlyHolds ? 'hold' : file.base === '' ? null : file.base
   // Paid only when nothing else answers the question — a flag or an already
   // resolved `current` means `question()` never looks at `detected`, and
   // this is the GitHub round trip `defaultBranch()` spends to get it (#399).
@@ -135,14 +149,17 @@ export async function askLanding(
     prompt: 'land this on which branch, or "hold" to hold every pass for a person',
     current,
     detected,
+    validate: async (answer) => (answer.trim() === '' ? 'needs a branch name, or "hold"' : null),
   })
   if ('refused' in result) return result
 
+  const rawProposed = await readRecipeKey(project, ['steps', 'proposed'], options)
+  const rawAdmit = await readRecipeKey(project, ['steps', 'admit'], options)
   const hadSteps = (await readRecipeKey(project, ['steps'], options)) !== null
   const changes = landingChanges(
     result.answer === 'hold' ? { land: 'hold' } : { land: result.answer },
-    file.proposed,
-    file.admit,
+    Array.isArray(rawProposed) ? rawProposed : file.proposed,
+    Array.isArray(rawAdmit) ? rawAdmit : file.admit,
   )
   const written = await setRecipe(project, changes, options)
   if (written.written && !hadSteps && changes.some((c) => c.path[0] === 'steps')) {

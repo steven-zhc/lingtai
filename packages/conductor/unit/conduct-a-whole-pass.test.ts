@@ -23,7 +23,7 @@
 import type { Runtime } from '@lingtai/agent'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { STEPS } from '@lingtai/domain'
-import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, setRecipe } from '@lingtai/recipe'
+import { landingChanges, readRecipeKey, recipePath, type RecipeFiles, resolveSource, setRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -365,12 +365,17 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    */
   it('holds at a person the setup answered "hold", with no flag anywhere', async () => {
     const recipeHome = '/tmp/fake-home-answers'
+    const path = recipePath(PROJECT, recipeHome)
     const files: RecipeFiles = {
-      read: async (path) => (path === recipePath(PROJECT, recipeHome) ? RECIPE : null),
+      read: async (p) => (p === path ? RECIPE : null),
       replace: async () => {},
     }
-    const currentProposed = await readRecipeKey(PROJECT, ['steps', 'proposed'], { home: recipeHome, files })
-    const changes = landingChanges({ land: 'hold' }, Array.isArray(currentProposed) ? currentProposed : null)
+    // Raw where the file writes `steps.proposed` itself, resolved where it
+    // does not — the same contract `askLanding` relies on
+    // (`apps/cli/src/landing.ts`) so this pins the claim it actually makes.
+    const rawProposed = await readRecipeKey(PROJECT, ['steps', 'proposed'], { home: recipeHome, files })
+    const resolvedProposed = resolveSource(RECIPE, path, path).recipe.steps.proposed
+    const changes = landingChanges({ land: 'hold' }, Array.isArray(rawProposed) ? rawProposed : resolvedProposed)
     const result = await setRecipe(PROJECT, changes, { home: recipeHome, files })
     expect(result.written).toBe(true)
 
@@ -413,16 +418,21 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
    */
   it('lands once the setup answers a branch, removing the hold it had written', async () => {
     const recipeHome = '/tmp/fake-home-answers-2'
+    const path = recipePath(PROJECT, recipeHome)
     let current = HUMAN_BEFORE_THE_LANE
     const files: RecipeFiles = {
-      read: async (path) => (path === recipePath(PROJECT, recipeHome) ? current : null),
-      replace: async (path, text) => {
-        if (path !== recipePath(PROJECT, recipeHome)) throw new Error(`unexpected write to ${path}`)
+      read: async (p) => (p === path ? current : null),
+      replace: async (p, text) => {
+        if (p !== path) throw new Error(`unexpected write to ${p}`)
         current = text
       },
     }
-    const currentProposed = await readRecipeKey(PROJECT, ['steps', 'proposed'], { home: recipeHome, files })
-    const changes = landingChanges({ land: 'main' }, Array.isArray(currentProposed) ? currentProposed : null)
+    // Raw where the file writes `steps.proposed` itself, resolved where it
+    // does not — the same contract `askLanding` relies on
+    // (`apps/cli/src/landing.ts`) so this pins the claim it actually makes.
+    const rawProposed = await readRecipeKey(PROJECT, ['steps', 'proposed'], { home: recipeHome, files })
+    const resolvedProposed = resolveSource(current, path, path).recipe.steps.proposed
+    const changes = landingChanges({ land: 'main' }, Array.isArray(rawProposed) ? rawProposed : resolvedProposed)
     const result = await setRecipe(PROJECT, changes, { home: recipeHome, files })
     expect(result.written).toBe(true)
     expect(result.text).not.toContain('human:')

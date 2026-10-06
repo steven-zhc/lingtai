@@ -24,9 +24,15 @@ export const SETUP_HOLD_TEXT = "Land this? The setup was answered 'hold'."
 export type LandingAnswer = { land: 'hold' } | { land: string }
 
 /**
- * The changes `--land` writes, from the answer and what the file already
- * writes at `steps.proposed` (`readRecipeKey(['steps', 'proposed'])` — null
- * meaning `[]`).
+ * The changes `--land` writes, from the answer and `currentProposed`/
+ * `currentAdmit` — this function does not care whether either list is what
+ * the file literally writes (`readRecipeKey`) or the resolved, schema-filled
+ * version, only that it is a step neither of those is lost: the caller picks
+ * the raw list where the file writes one of its own, and the resolved list
+ * where it does not (a step inherited whole from a preset), so that an entry
+ * already in the file is carried back exactly as written rather than pinned
+ * with every schema default filled in (`apps/cli/src/landing.ts`). `null`
+ * means `[]`.
  *
  * **`hold` never writes `steps.merge`, empty or otherwise.** An absent or
  * empty `merge:` still runs the default lane (`conduct.ts`'s `defaultsAt`),
@@ -43,11 +49,11 @@ export type LandingAnswer = { land: 'hold' } | { land: string }
  * step are untouched.
  *
  * **`<branch>` writes the base where `baseWrittenAt` says it is read, not
- * always `repo.base`.** `currentAdmit` is `steps.admit` as the file resolves
- * it; when one of its actions carries a `worktree:`, that is the entry
- * `baseOf`/`baseWrittenAt` (`settings.ts:222-245`) read the base from, and
- * writing `repo.base` instead would land on a key the conductor does not
- * read. Absent that, the base is `repo.base` as always.
+ * always `repo.base`.** When one of `currentAdmit`'s actions carries a
+ * `worktree:`, that is the entry `baseOf`/`baseWrittenAt`
+ * (`settings.ts:222-245`) read the base from, and writing `repo.base`
+ * instead would land on a key the conductor does not read. Absent that, the
+ * base is `repo.base` as always.
  */
 export function landingChanges(
   answer: LandingAnswer,
